@@ -10,6 +10,8 @@ export interface Thread {
   status: ThreadStatus;
   last_point: string;
   touched_ms: number;
+  tags: { name: string; kept: boolean }[];
+  picture: string | null;
 }
 
 export interface Thought {
@@ -72,7 +74,11 @@ type Change =
   | { type: "thread_merged"; from: string; into: string }
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
-  | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null };
+  | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  | { type: "tag_suggested"; thread_id: string; tag: string }
+  | { type: "tag_kept"; thread_id: string; tag: string }
+  | { type: "tag_removed"; thread_id: string; tag: string }
+  | { type: "thread_picture"; thread_id: string; path: string };
 
 type ServerMsg =
   | { type: "snapshot"; world: World }
@@ -102,7 +108,21 @@ function apply(world: World, raw: Change): World {
         : "thread_id" in raw
           ? { ...raw, thread_id: r(raw.thread_id) }
           : raw;
+  const onThread = (id: string, edit: (t: Thread) => Thread): World => ({
+    ...world,
+    threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
+  });
   switch (c.type) {
+    case "tag_suggested":
+      return onThread(c.thread_id, (t) =>
+        t.tags.some((x) => x.name === c.tag) ? t : { ...t, tags: [...t.tags, { name: c.tag, kept: false }] },
+      );
+    case "tag_kept":
+      return onThread(c.thread_id, (t) => ({ ...t, tags: t.tags.map((x) => (x.name === c.tag ? { ...x, kept: true } : x)) }));
+    case "tag_removed":
+      return onThread(c.thread_id, (t) => ({ ...t, tags: t.tags.filter((x) => x.name !== c.tag) }));
+    case "thread_picture":
+      return onThread(c.thread_id, (t) => ({ ...t, picture: c.path }));
     case "thread_renamed":
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
     case "thread_merged": {
@@ -246,6 +266,7 @@ export function useCore() {
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
     setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
     approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
+    tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
     explanations,
     explain: (id: string, text: string, context: string) =>
       send(JSON.stringify({ type: "explain", id, text, context })),

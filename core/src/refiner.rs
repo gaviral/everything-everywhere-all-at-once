@@ -15,7 +15,8 @@ const SYSTEM: &str = "You tidy a live map of someone's spoken thoughts. Given th
 titles: better thread titles (up to 5 words), only where clearly better; \
 merges: threads that are really the same topic, merging the later id into the earlier; \
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
-actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty. \
+actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
+tags: for each thread, up to 3 short lowercase hashtags naming its topic (for example #rent, #hackathon), reusing tags across threads when topics overlap. \
 Never repeat an existing suggestion or action. Use empty lists when nothing applies.";
 
 #[derive(Deserialize, Default)]
@@ -28,6 +29,14 @@ struct Pass {
     suggestions: Vec<Idea>,
     #[serde(default)]
     actions: Vec<Task>,
+    #[serde(default)]
+    tags: Vec<Tags>,
+}
+
+#[derive(Deserialize)]
+struct Tags {
+    thread_id: String,
+    tags: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -114,9 +123,10 @@ async fn pass(core: &Core, world: &World) -> anyhow::Result<Vec<Change>> {
                 "titles": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "title": {"type": "string"}}, "required": ["thread_id", "title"]}},
                 "merges": {"type": "array", "items": {"type": "object", "properties": {"from": {"type": "string"}, "into": {"type": "string"}}, "required": ["from", "into"]}},
                 "suggestions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
-                "actions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "kind": {"type": "string", "enum": ["reminder", "event"]}, "title": {"type": "string"}, "when": {"type": "string"}}, "required": ["thread_id", "kind", "title", "when"]}}
+                "actions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "kind": {"type": "string", "enum": ["reminder", "event"]}, "title": {"type": "string"}, "when": {"type": "string"}}, "required": ["thread_id", "kind", "title", "when"]}},
+                "tags": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["thread_id", "tags"]}}
             },
-            "required": ["titles", "merges", "suggestions", "actions"]
+            "required": ["titles", "merges", "suggestions", "actions", "tags"]
         }}}
     });
     let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
@@ -166,6 +176,16 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
                     done_ms: None,
                 },
             });
+        }
+    }
+    for group in pass.tags {
+        let Some(thread) = world.thread(&group.thread_id) else { continue };
+        for raw in group.tags.into_iter().take(3) {
+            let word: String = raw.trim().trim_start_matches('#').to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '-').collect();
+            if word.is_empty() || thread.tags.iter().any(|t| t.name == format!("#{word}")) {
+                continue;
+            }
+            out.push(Change::TagSuggested { thread_id: thread.id.clone(), tag: format!("#{word}") });
         }
     }
     out

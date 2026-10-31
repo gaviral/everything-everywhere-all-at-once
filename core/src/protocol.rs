@@ -34,4 +34,6 @@ pub enum ClientMsg {
     Item { id: String, status: crate::world::ItemStatus },
     /// Approve an action: add it to Reminders or Calendar.
     Approve { id: String },
+    /// Keep a suggested hashtag, or remove one.
+    Tag { thread_id: String, tag: String, keep: bool },
 }

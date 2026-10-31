@@ -4,6 +4,7 @@
 mod apple;
 mod asr;
 mod explain;
+mod pictures;
 mod placer;
 mod refiner;
 mod protocol;
@@ -202,6 +203,8 @@ async fn main() -> anyhow::Result<()> {
     });
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
+    let images = Path::new(&data).join("images");
+    tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
         let _ = core.placer_queue.send(id);
     }
@@ -209,6 +212,7 @@ async fn main() -> anyhow::Result<()> {
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
         .route("/ws", get(connect))
+        .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
         .with_state(core);
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
@@ -272,6 +276,10 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                 }
                 Ok(ClientMsg::Approve { id }) => {
                     tokio::spawn(apple::approve(core.clone(), id));
+                }
+                Ok(ClientMsg::Tag { thread_id, tag, keep }) => {
+                    let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
+                    core.commit(vec![change]);
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),

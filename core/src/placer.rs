@@ -162,7 +162,16 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
             };
             let parent_id = Some(p.parent_id.clone()).filter(|x| exists(x));
             changes.push(Change::ThreadAdded {
-                thread: Thread { id: id.clone(), title, parent_id, status: ThreadStatus::Open, last_point: String::new(), touched_ms: now },
+                thread: Thread {
+                    id: id.clone(),
+                    title,
+                    parent_id,
+                    status: ThreadStatus::Open,
+                    last_point: String::new(),
+                    touched_ms: now,
+                    tags: Vec::new(),
+                    picture: None,
+                },
             });
             id
         }

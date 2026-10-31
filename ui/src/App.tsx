@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
 
-type Handlers = { setItem: (id: string, status: ItemStatus) => void; approve: (id: string) => void };
+type Handlers = {
+  setItem: (id: string, status: ItemStatus) => void;
+  approve: (id: string) => void;
+  tag: (threadId: string, tag: string, keep: boolean) => void;
+};
 import { startMic } from "./mic";
 
 const spring = { type: "spring", stiffness: 380, damping: 34 } as const;
@@ -161,7 +165,12 @@ export default function App() {
           </div>
         ) : (
           roots.map((t) => (
-            <ThreadCard key={t.id} thread={t} world={world} on={{ setItem: core.setItem, approve: core.approve }} />
+            <ThreadCard
+              key={t.id}
+              thread={t}
+              world={world}
+              on={{ setItem: core.setItem, approve: core.approve, tag: core.tag }}
+            />
           ))
         )}
       </main>
@@ -244,9 +253,28 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
       transition={spring}
     >
       <div className="thread-head">
-        <span className="title">{thread.title}</span>
-        {thread.status === "dropped" && <span className="chip dropped">dropped</span>}
-        {active && <span className="chip now">now</span>}
+        {thread.picture && <img className="picture" src={thread.picture} alt="" />}
+        <div className="head-text">
+          <div className="head-line">
+            <span className="title">{thread.title}</span>
+            {thread.status === "dropped" && <span className="chip dropped">dropped</span>}
+            {active && <span className="chip now">now</span>}
+          </div>
+          {(thread.tags ?? []).length > 0 && (
+            <div className="tags">
+              {thread.tags.map((t) => (
+                <button
+                  key={t.name}
+                  className={t.kept ? "tag kept" : "tag"}
+                  title={t.kept ? "Remove tag" : "Keep this tag"}
+                  onClick={() => on.tag(thread.id, t.name, !t.kept)}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <ul className="points">
         {thoughts.map((t) => (

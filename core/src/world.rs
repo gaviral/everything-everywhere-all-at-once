@@ -26,6 +26,18 @@ pub struct Thread {
     pub status: ThreadStatus,
     pub last_point: String,
     pub touched_ms: u64,
+    /// Hashtags: AI-suggested ones stay faded until kept.
+    #[serde(default)]
+    pub tags: Vec<Tag>,
+    /// A Muse Image picture that anchors the thread in memory.
+    #[serde(default)]
+    pub picture: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tag {
+    pub name: String,
+    pub kept: bool,
 }
 
 /// One finished spoken or typed turn.
@@ -116,6 +128,10 @@ pub enum Change {
     SuggestionAdded { suggestion: Suggestion },
     ActionProposed { action: Action },
     ItemStatus { id: String, status: ItemStatus, done_ms: Option<u64> },
+    TagSuggested { thread_id: String, tag: String },
+    TagKept { thread_id: String, tag: String },
+    TagRemoved { thread_id: String, tag: String },
+    ThreadPicture { thread_id: String, path: String },
 }
 
 impl World {
@@ -201,6 +217,28 @@ impl World {
                     self.actions.push(action.clone());
                 }
             }
+            Change::TagSuggested { thread_id, tag } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    if !th.tags.iter().any(|t| t.name == *tag) {
+                        th.tags.push(Tag { name: tag.clone(), kept: false });
+                    }
+                }
+            }
+            Change::TagKept { thread_id, tag } => {
+                if let Some(t) = self.thread_mut(thread_id).and_then(|th| th.tags.iter_mut().find(|t| t.name == *tag)) {
+                    t.kept = true;
+                }
+            }
+            Change::TagRemoved { thread_id, tag } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    th.tags.retain(|t| t.name != *tag);
+                }
+            }
+            Change::ThreadPicture { thread_id, path } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    th.picture = Some(path.clone());
+                }
+            }
             Change::ItemStatus { id, status, done_ms } => {
                 if let Some(s) = self.suggestions.iter_mut().find(|s| &s.id == id) {
                     s.status = *status;
@@ -221,7 +259,11 @@ impl World {
             | Change::ThreadTouched { thread_id, .. }
             | Change::ThreadStatus { thread_id, .. }
             | Change::ActiveChanged { thread_id }
-            | Change::ThreadRenamed { thread_id, .. } => *thread_id = self.resolve(thread_id),
+            | Change::ThreadRenamed { thread_id, .. }
+            | Change::TagSuggested { thread_id, .. }
+            | Change::TagKept { thread_id, .. }
+            | Change::TagRemoved { thread_id, .. }
+            | Change::ThreadPicture { thread_id, .. } => *thread_id = self.resolve(thread_id),
             Change::SuggestionAdded { suggestion } => suggestion.thread_id = self.resolve(&suggestion.thread_id),
             Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
             _ => {}
