@@ -52,7 +52,9 @@ type ServerMsg =
   | { type: "change"; change: Change }
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "notice"; message: string }
+  | { type: "explanation"; id: string; text: string };
 
 const EMPTY: World = { threads: [], thoughts: [], active: null };
 
@@ -103,6 +105,7 @@ export function useCore() {
   const [listening, setListening] = useState(false);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [explanations, setExplanations] = useState<Record<string, string>>({});
   const socket = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -135,7 +138,11 @@ export function useCore() {
             setListening(msg.listening);
             break;
           case "error":
+          case "notice":
             setNotice(msg.message);
+            break;
+          case "explanation":
+            setExplanations((e) => ({ ...e, [msg.id]: msg.text }));
             break;
         }
       };
@@ -168,5 +175,8 @@ export function useCore() {
     sendAudio: (frame: ArrayBuffer) => send(frame),
     listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
+    explanations,
+    explain: (id: string, text: string, context: string) =>
+      send(JSON.stringify({ type: "explain", id, text, context })),
   };
 }

@@ -2,6 +2,7 @@
 //! Muse Voice Transcribe, places thoughts with Muse Spark, and keeps every UI in sync.
 
 mod asr;
+mod explain;
 mod placer;
 mod protocol;
 mod world;
@@ -18,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
 use tower_http::services::{ServeDir, ServeFile};
-use world::{Change, Journal, Thought, World};
+use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
     world: Mutex<World>,
@@ -56,8 +57,47 @@ impl Core {
         let _ = self.updates.send(message);
     }
 
+    /// Makes a thread the active one; going back to a dropped thread reopens it.
+    pub fn focus(&self, thread_id: &str) {
+        let world = self.snapshot();
+        let Some(thread) = world.thread(thread_id) else { return };
+        let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into() }];
+        if thread.status == ThreadStatus::Dropped {
+            changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open });
+        }
+        self.commit(changes);
+    }
+
+    /// "Where was I?": back to the most recently dropped thread, else the previous one.
+    fn go_back(&self) {
+        let world = self.snapshot();
+        let dropped = world
+            .threads
+            .iter()
+            .filter(|t| t.status == ThreadStatus::Dropped)
+            .max_by_key(|t| t.touched_ms)
+            .map(|t| t.id.clone());
+        let previous = || {
+            world
+                .thoughts
+                .iter()
+                .rev()
+                .filter(|t| t.placed)
+                .filter_map(|t| t.thread_id.clone())
+                .find(|id| Some(id) != world.active.as_ref())
+        };
+        if let Some(id) = dropped.or_else(previous) {
+            let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
+            self.send(ServerMsg::Notice { message: format!("Back to {title}") });
+            self.focus(&id);
+        }
+    }
+
     /// A new thought lands in the active thread at once; the placer moves it if needed.
     pub fn add_thought(&self, speaker: &str, text: &str) {
+        if is_go_back(text) {
+            return self.go_back();
+        }
         let active = self.world.lock().unwrap().active.clone();
         let thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
@@ -75,6 +115,22 @@ impl Core {
         self.commit(vec![Change::ThoughtAdded { thought }]);
         let _ = self.placer_queue.send(id);
     }
+}
+
+/// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
+/// like "go back to the drawing board" stay thoughts.
+fn is_go_back(text: &str) -> bool {
+    const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
+    const ASK: [&str; 5] = ["where was i", "what was i saying", "go back", "take me back", "where were we"];
+    const TAIL: [&str; 6] = ["", "please", "to where i was", "to that", "to it", "there"];
+    let clean: String = text
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+        .collect();
+    let words: Vec<&str> = clean.split_whitespace().skip_while(|w| FILLER.contains(w)).collect();
+    let rest = words.join(" ");
+    ASK.iter().any(|ask| rest.strip_prefix(ask).map(|tail| TAIL.contains(&tail.trim())).unwrap_or(false))
 }
 
 pub fn now_ms() -> u64 {
@@ -172,10 +228,9 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                     });
                 }
                 Ok(ClientMsg::Listen { on: false }) => audio = None,
-                Ok(ClientMsg::Focus { thread_id }) => {
-                    if core.snapshot().thread(&thread_id).is_some() {
-                        core.commit(vec![Change::ActiveChanged { thread_id }]);
-                    }
+                Ok(ClientMsg::Focus { thread_id }) => core.focus(&thread_id),
+                Ok(ClientMsg::Explain { id, text, context }) => {
+                    tokio::spawn(explain::run(core.clone(), id, text, context));
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),

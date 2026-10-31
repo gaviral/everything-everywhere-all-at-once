@@ -353,6 +353,37 @@ header {
   }
 }
 
+.explain {
+  position: fixed;
+  z-index: 20;
+  max-width: 320px;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.explain button,
+.explain-text {
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.explain button {
+  padding: 7px 12px;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.explain-text {
+  padding: 10px 12px;
+  line-height: 1.4;
+}
+
 .notice {
   position: fixed;
   top: 60px;

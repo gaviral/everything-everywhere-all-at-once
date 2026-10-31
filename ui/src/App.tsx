@@ -11,6 +11,13 @@ export default function App() {
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
 
+  // Notices fade on their own.
+  useEffect(() => {
+    if (!core.notice) return;
+    const timer = window.setTimeout(core.clearNotice, 3500);
+    return () => window.clearTimeout(timer);
+  }, [core.notice, core.clearNotice]);
+
   // The camera follows the conversation; threads themselves never move.
   useEffect(() => {
     if (world.active) {
@@ -61,6 +68,40 @@ export default function App() {
     ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id).at(-1)?.text ?? ""
     : "";
 
+  // Select a word or phrase on the map to get it explained in its context.
+  const [selection, setSelection] = useState<{
+    id: string;
+    text: string;
+    context: string;
+    x: number;
+    y: number;
+    asked: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const onUp = () => {
+      const picked = window.getSelection();
+      const text = picked?.toString().trim() ?? "";
+      if (!picked || !text || text.length > 80 || picked.rangeCount === 0) return;
+      const range = picked.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const element = node instanceof Element ? node : node.parentElement;
+      if (!element?.closest(".map")) return;
+      const rect = range.getBoundingClientRect();
+      const context =
+        element.closest("li")?.getAttribute("title") || element.closest(".thread")?.textContent || text;
+      setSelection({ id: crypto.randomUUID(), text, context, x: rect.left + rect.width / 2, y: rect.top, asked: false });
+    };
+    const onDown = (event: MouseEvent) => {
+      if (!(event.target as Element).closest(".explain")) setSelection(null);
+    };
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, []);
+
   const goBack = (thread: Thread) => {
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
@@ -93,6 +134,23 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {selection && (
+        <div className="explain" style={{ left: selection.x, top: selection.y }}>
+          {selection.asked ? (
+            <div className="explain-text">{core.explanations[selection.id] ?? "…"}</div>
+          ) : (
+            <button
+              onClick={() => {
+                core.explain(selection.id, selection.text, selection.context);
+                setSelection({ ...selection, asked: true });
+              }}
+            >
+              Explain “{selection.text.length > 24 ? `${selection.text.slice(0, 24)}…` : selection.text}”
+            </button>
+          )}
+        </div>
+      )}
+
       <main className="map">
         {roots.length === 0 && pending.length === 0 ? (
           <div className="empty">
@@ -118,12 +176,12 @@ export default function App() {
               >
                 <div>
                   <div className="pullback-title">
-                    You dropped <b>{pullBack.title}</b> mid-thought
+                    You didn't finish <b>{pullBack.title}</b>
                   </div>
                   <div className="pullback-quote">“{lastWords}…”</div>
                 </div>
                 <div className="pullback-actions">
-                  <button onClick={() => goBack(pullBack)}>Go back</button>
+                  <button onClick={() => goBack(pullBack)}>Finish it</button>
                   <button className="quiet" onClick={() => setDismissed((d) => [...d, dropKey(pullBack)])}>
                     Later
                   </button>

@@ -13,6 +13,10 @@ pub enum ServerMsg {
     Partial { text: String },
     Status { listening: bool, note: String },
     Error { message: String },
+    /// A gentle note, e.g. "Back to Pay rent".
+    Notice { message: String },
+    /// The answer to an Explain request.
+    Explanation { id: String, text: String },
 }
 
 #[derive(Deserialize)]
@@ -22,6 +26,8 @@ pub enum ClientMsg {
     Text { text: String },
     /// Start or stop listening to the microphone.
     Listen { on: bool },
-    /// Go back to a thread, e.g. from a pull-back card.
+    /// Go back to a thread, e.g. from the unfinished-thought card.
     Focus { thread_id: String },
+    /// Explain a selected phrase in the context it appears in.
+    Explain { id: String, text: String, context: String },
 }
