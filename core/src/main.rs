@@ -95,10 +95,27 @@ impl Core {
         }
     }
 
+    /// "Next one": the thread after the active one, in the order they were started.
+    fn go_next(&self) {
+        let world = self.snapshot();
+        let position = world.active.as_ref().and_then(|a| world.threads.iter().position(|t| &t.id == a));
+        let next = match position {
+            Some(i) => world.threads.get(i + 1).or_else(|| world.threads.first()),
+            None => world.threads.first(),
+        };
+        if let Some(thread) = next {
+            self.send(ServerMsg::Notice { message: format!("On to {}", thread.title) });
+            self.focus(&thread.id.clone());
+        }
+    }
+
     /// A new thought lands in the active thread at once; the placer moves it if needed.
     pub fn add_thought(&self, speaker: &str, text: &str) {
         if is_go_back(text) {
             return self.go_back();
+        }
+        if is_go_next(text) {
+            return self.go_next();
         }
         let active = self.world.lock().unwrap().active.clone();
         let thought = Thought {
@@ -122,9 +139,17 @@ impl Core {
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
 /// like "go back to the drawing board" stay thoughts.
 fn is_go_back(text: &str) -> bool {
+    is_command(text, &["where was i", "what was i saying", "go back", "take me back", "where were we"], &["to where i was", "to that", "to it", "there"])
+}
+
+/// "Go to the next one" style requests.
+fn is_go_next(text: &str) -> bool {
+    is_command(text, &["go to the next one", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
+}
+
+/// True when the whole utterance is one of the asks, after filler words and before a short allowed tail.
+fn is_command(text: &str, asks: &[&str], tails: &[&str]) -> bool {
     const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
-    const ASK: [&str; 5] = ["where was i", "what was i saying", "go back", "take me back", "where were we"];
-    const TAIL: [&str; 6] = ["", "please", "to where i was", "to that", "to it", "there"];
     let clean: String = text
         .to_lowercase()
         .chars()
@@ -132,7 +157,14 @@ fn is_go_back(text: &str) -> bool {
         .collect();
     let words: Vec<&str> = clean.split_whitespace().skip_while(|w| FILLER.contains(w)).collect();
     let rest = words.join(" ");
-    ASK.iter().any(|ask| rest.strip_prefix(ask).map(|tail| TAIL.contains(&tail.trim())).unwrap_or(false))
+    asks.iter().any(|ask| {
+        rest.strip_prefix(ask)
+            .map(|tail| {
+                let tail = tail.trim();
+                tail.is_empty() || tail == "please" || tails.contains(&tail)
+            })
+            .unwrap_or(false)
+    })
 }
 
 pub fn now_ms() -> u64 {
