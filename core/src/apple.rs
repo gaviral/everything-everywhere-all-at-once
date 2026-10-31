@@ -44,12 +44,16 @@ fn date_lines(when: &str) -> Option<String> {
     ))
 }
 
+/// Reminders go to their own "E2A2O" list, so they never mix into your other lists unasked.
 fn reminder(title: &str, when: &str) -> String {
     let name = quoted(title);
-    match date_lines(when) {
-        Some(date) => format!("{date}\ntell application \"Reminders\" to make new reminder with properties {{name:{name}, due date:d}}"),
-        None => format!("tell application \"Reminders\" to make new reminder with properties {{name:{name}}}"),
-    }
+    let (date, due) = match date_lines(when) {
+        Some(date) => (date, ", due date:d"),
+        None => (String::new(), ""),
+    };
+    format!(
+        "{date}\ntell application \"Reminders\"\nif not (exists list \"E2A2O\") then make new list with properties {{name:\"E2A2O\"}}\ntell list \"E2A2O\" to make new reminder with properties {{name:{name}{due}}}\nend tell"
+    )
 }
 
 fn event(title: &str, when: &str) -> String {

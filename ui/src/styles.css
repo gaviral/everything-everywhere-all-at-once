@@ -355,6 +355,11 @@ header {
   background: var(--amber-soft);
 }
 
+.pullback-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .pullback-title {
   font-weight: 500;
 }

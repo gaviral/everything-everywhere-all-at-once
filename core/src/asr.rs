@@ -64,6 +64,7 @@ fn handle(core: &Core, text: &str) {
     let Ok(event) = serde_json::from_str::<Value>(text) else { return };
     match event["type"].as_str() {
         Some("transcript") => {
+            core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
             core.send(ServerMsg::Partial { text: words });
         }

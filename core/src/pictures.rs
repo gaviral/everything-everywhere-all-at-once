@@ -11,6 +11,12 @@ use std::time::Duration;
 
 const URL: &str = "https://api.meta.ai/v1/images/generations";
 
+/// The house style, so pictures read as one set of memory cards: one clear object
+/// that stands for the topic, recognizable even as a small thumbnail.
+const STYLE: &str = "A memory card: one clear central object or scene that stands for the topic, \
+recognizable at thumbnail size. Flat illustration, soft pastel palette, simple shapes, generous empty space. \
+No text, no letters, no logos.";
+
 pub async fn run(core: Arc<Core>, dir: PathBuf) {
     let mut tried: HashSet<String> = HashSet::new();
     loop {
@@ -18,10 +24,17 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
         if core.key.is_none() {
             continue;
         }
+        // Only while the person is quiet, and only for threads worth remembering:
+        // three or more thoughts, or two once the talk has moved on for half a minute.
+        if core.quiet_ms() < 4_000 {
+            continue;
+        }
         let world = core.snapshot();
+        let now = crate::now_ms();
         let next = world.threads.iter().find(|t| {
             let thoughts = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).count();
-            t.picture.is_none() && thoughts >= 2 && !tried.contains(&t.id)
+            let moved_on = world.active.as_deref() != Some(t.id.as_str()) && now.saturating_sub(t.touched_ms) > 30_000;
+            t.picture.is_none() && !tried.contains(&t.id) && (thoughts >= 3 || (thoughts >= 2 && moved_on))
         });
         let Some(thread) = next.cloned() else { continue };
         tried.insert(thread.id.clone());
@@ -40,10 +53,7 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
 
 async fn draw(core: &Core, dir: &PathBuf, thread_id: &str, title: &str, details: &str) -> anyhow::Result<String> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
-    let prompt = format!(
-        "A small, calm, minimal illustration that captures this topic, used as a memory aid. \
-         Soft muted colors, simple shapes, plenty of empty space, no text and no letters. Topic: {title}. Details: {details}."
-    );
+    let prompt = format!("{STYLE} Topic: {title}. Details: {details}.");
     let body = serde_json::json!({"model": "muse-image-1.0", "prompt": prompt, "n": 1, "size": "1024x1024"});
     let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
     let status = response.status();

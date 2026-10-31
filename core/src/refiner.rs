@@ -66,17 +66,30 @@ struct Task {
     when: String,
 }
 
-/// Runs a pass whenever new thoughts have landed since the last one, at most every 20 s.
+/// When a pass runs, working back from what the person needs:
+/// - never mid-sentence, so nothing moves while they talk;
+/// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
+/// - right away when they come back to the window, so the map is tidy when they look;
+/// - at most every 10 s, and only when something changed.
 pub async fn run(core: Arc<Core>) {
-    let mut seen = usize::MAX;
+    let (mut seen_thoughts, mut seen_threads, mut last_pass) = (0usize, 0usize, 0u64);
     loop {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        tokio::select! {
+            _ = core.wake.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+        }
+        let looked = core.take_looked();
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
-        if placed == 0 || placed == seen || core.key.is_none() {
+        let new_thoughts = placed.saturating_sub(seen_thoughts);
+        let new_threads = world.threads.len() > seen_threads;
+        let quiet = core.quiet_ms() >= 4_000;
+        let rested = crate::now_ms().saturating_sub(last_pass) >= 10_000;
+        let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
+        if !due || core.key.is_none() {
             continue;
         }
-        seen = placed;
+        (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         match pass(&core, &world).await {
             Ok(changes) if !changes.is_empty() => core.commit(changes),
             Ok(_) => {}

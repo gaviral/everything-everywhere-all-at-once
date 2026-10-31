@@ -32,9 +32,29 @@ pub struct Core {
     pub key: Option<String>,
     pub placer_model: String,
     pub http: reqwest::Client,
+    /// When the person last spoke or typed; background work waits for a pause.
+    last_activity: std::sync::atomic::AtomicU64,
+    /// Set when the person comes back to the window (e.g. opens their eyes).
+    looked: std::sync::atomic::AtomicBool,
+    /// Wakes the background passes early.
+    pub wake: tokio::sync::Notify,
 }
 
 impl Core {
+    pub fn touch(&self) {
+        self.last_activity.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Milliseconds since the person last spoke or typed.
+    pub fn quiet_ms(&self) -> u64 {
+        now_ms().saturating_sub(self.last_activity.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// True once after the person came back to the window.
+    pub fn take_looked(&self) -> bool {
+        self.looked.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn snapshot(&self) -> World {
         self.world.lock().unwrap().clone()
     }
@@ -112,6 +132,7 @@ impl Core {
 
     /// A new thought lands in the active thread at once; the placer moves it if needed.
     pub fn add_thought(&self, speaker: &str, text: &str) {
+        self.touch();
         if is_go_back(text) {
             return self.go_back();
         }
@@ -200,6 +221,9 @@ async fn main() -> anyhow::Result<()> {
         key,
         placer_model: std::env::var("PLACER_MODEL").unwrap_or_else(|_| "muse-spark-1.2-contributor".into()),
         http: reqwest::Client::new(),
+        last_activity: std::sync::atomic::AtomicU64::new(0),
+        looked: std::sync::atomic::AtomicBool::new(false),
+        wake: tokio::sync::Notify::new(),
     });
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
@@ -276,6 +300,10 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                 }
                 Ok(ClientMsg::Approve { id }) => {
                     tokio::spawn(apple::approve(core.clone(), id));
+                }
+                Ok(ClientMsg::Visible) => {
+                    core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
+                    core.wake.notify_waiters();
                 }
                 Ok(ClientMsg::Tag { thread_id, tag, keep }) => {
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };

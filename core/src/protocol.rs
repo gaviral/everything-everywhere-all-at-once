@@ -36,4 +36,6 @@ pub enum ClientMsg {
     Approve { id: String },
     /// Keep a suggested hashtag, or remove one.
     Tag { thread_id: String, tag: String, keep: bool },
+    /// The person came back to the window: a good moment to tidy the map.
+    Visible,
 }

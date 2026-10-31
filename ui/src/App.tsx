@@ -17,6 +17,20 @@ export default function App() {
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
 
+  // Coming back to the window is a good moment to tidy the map.
+  const { visible } = core;
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState === "visible") visible();
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => {
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("focus", back);
+    };
+  }, [visible]);
+
   // Notices fade on their own.
   useEffect(() => {
     if (!core.notice) return;
@@ -187,7 +201,8 @@ export default function App() {
                 exit={{ opacity: 0, y: 8 }}
                 transition={spring}
               >
-                <div>
+                {pullBack.picture && <img className="picture" src={pullBack.picture} alt="" />}
+                <div className="pullback-text">
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
                   </div>

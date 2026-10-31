@@ -267,6 +267,7 @@ export function useCore() {
     setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
     approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
     tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
+    visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,
     explain: (id: string, text: string, context: string) =>
       send(JSON.stringify({ type: "explain", id, text, context })),
