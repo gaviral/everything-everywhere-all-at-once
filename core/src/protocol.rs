@@ -30,4 +30,8 @@ pub enum ClientMsg {
     Focus { thread_id: String },
     /// Explain a selected phrase in the context it appears in.
     Explain { id: String, text: String, context: String },
+    /// Keep or dismiss a suggestion, or dismiss an action.
+    Item { id: String, status: crate::world::ItemStatus },
+    /// Approve an action: add it to Reminders or Calendar.
+    Approve { id: String },
 }

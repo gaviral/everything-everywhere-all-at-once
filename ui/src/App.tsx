@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCore, type Thread, type Thought, type World } from "./core";
+import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
+
+type Handlers = { setItem: (id: string, status: ItemStatus) => void; approve: (id: string) => void };
 import { startMic } from "./mic";
 
 const spring = { type: "spring", stiffness: 380, damping: 34 } as const;
@@ -158,7 +160,9 @@ export default function App() {
             <p>Talk or type. Every thought finds its thread, and nothing you start gets lost.</p>
           </div>
         ) : (
-          roots.map((t) => <ThreadCard key={t.id} thread={t} world={world} />)
+          roots.map((t) => (
+            <ThreadCard key={t.id} thread={t} world={world} on={{ setItem: core.setItem, approve: core.approve }} />
+          ))
         )}
       </main>
 
@@ -219,11 +223,13 @@ export default function App() {
   );
 }
 
-function ThreadCard({ thread, world }: { thread: Thread; world: World }) {
+function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: Handlers }) {
   const thoughts = useMemo(
     () => world.thoughts.filter((t) => t.placed && t.thread_id === thread.id),
     [world.thoughts, thread.id],
   );
+  const ideas = world.suggestions.filter((s) => s.thread_id === thread.id && s.status !== "dismissed");
+  const actions = world.actions.filter((a) => a.thread_id === thread.id && a.status !== "dismissed");
   const branches = world.threads.filter((t) => t.parent_id === thread.id);
   const active = world.active === thread.id;
   const classes = ["thread", active ? "active" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
@@ -247,10 +253,27 @@ function ThreadCard({ thread, world }: { thread: Thread; world: World }) {
           <Point key={t.id} thought={t} />
         ))}
       </ul>
+      {ideas.map((s) => (
+        <motion.div key={s.id} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <span className="ai-mark">✦</span>
+          <span>{s.text}</span>
+          {s.status === "new" && (
+            <span className="ai-actions">
+              <button onClick={() => on.setItem(s.id, "kept")}>Keep</button>
+              <button className="quiet" onClick={() => on.setItem(s.id, "dismissed")} aria-label="Dismiss">
+                ×
+              </button>
+            </span>
+          )}
+        </motion.div>
+      ))}
+      {actions.map((a) => (
+        <ActionRow key={a.id} action={a} on={on} />
+      ))}
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} world={world} />
+            <ThreadCard key={b.id} thread={b} world={world} on={on} />
           ))}
         </div>
       )}
@@ -269,6 +292,35 @@ function Point({ thought }: { thought: Thought }) {
       )}
       {thought.place_ms != null && <span className="speed">{(thought.place_ms / 1000).toFixed(1)} s</span>}
     </motion.li>
+  );
+}
+
+function ActionRow({ action, on }: { action: Action; on: Handlers }) {
+  const app = action.kind === "event" ? "Calendar" : "Reminders";
+  const when = action.when
+    ? new Date(`${action.when}T09:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+    : "";
+  return (
+    <motion.div layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <span className="action-icon">{action.status === "done" ? "✓" : action.kind === "event" ? "◷" : "○"}</span>
+      <span>
+        {action.title}
+        {when && <span className="when"> · {when}</span>}
+      </span>
+      {action.status === "new" && (
+        <span className="ai-actions">
+          <button onClick={() => on.approve(action.id)}>Add to {app}</button>
+          <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label="Dismiss">
+            ×
+          </button>
+        </span>
+      )}
+      {action.status === "done" && action.done_ms != null && (
+        <span className="when ai-actions">
+          in {app} · {(action.done_ms / 1000).toFixed(1)} s
+        </span>
+      )}
+    </motion.div>
   );
 }
 

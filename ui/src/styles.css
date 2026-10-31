@@ -209,6 +209,67 @@ header {
   opacity: 1;
 }
 
+.ai,
+.action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.ai {
+  background: var(--accent-soft);
+  opacity: 0.8;
+}
+
+.ai.kept {
+  opacity: 1;
+}
+
+.ai-mark,
+.action-icon {
+  color: var(--accent);
+}
+
+.action {
+  border: 1px solid var(--line);
+}
+
+.action.done {
+  opacity: 0.75;
+}
+
+.when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.ai-actions button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-actions button.quiet {
+  background: transparent;
+  color: var(--muted);
+}
+
 .branches {
   display: flex;
   flex-direction: column;

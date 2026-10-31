@@ -48,11 +48,50 @@ pub struct Thought {
     pub place_ms: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemStatus {
+    New,
+    Kept,
+    Dismissed,
+    Done,
+}
+
+/// An AI idea on a branch ("you could try this with that"); faded until kept.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub id: String,
+    pub thread_id: String,
+    pub text: String,
+    pub status: ItemStatus,
+}
+
+/// A task or event the talk decided on; waits for approval before it touches an app.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Action {
+    pub id: String,
+    pub thread_id: String,
+    /// "reminder" or "event".
+    pub kind: String,
+    pub title: String,
+    /// YYYY-MM-DD, or empty.
+    pub when: String,
+    pub status: ItemStatus,
+    pub done_ms: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
     pub active: Option<String>,
+    #[serde(default)]
+    pub suggestions: Vec<Suggestion>,
+    #[serde(default)]
+    pub actions: Vec<Action>,
+    /// Merged thread id → the thread it became, so late changes still land.
+    #[serde(default)]
+    pub merged: std::collections::HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -72,10 +111,25 @@ pub enum Change {
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
     ThreadStatus { thread_id: String, status: ThreadStatus },
     ActiveChanged { thread_id: String },
+    ThreadRenamed { thread_id: String, title: String },
+    ThreadMerged { from: String, into: String },
+    SuggestionAdded { suggestion: Suggestion },
+    ActionProposed { action: Action },
+    ItemStatus { id: String, status: ItemStatus, done_ms: Option<u64> },
 }
 
 impl World {
+    /// Follows merges, so a change aimed at a merged thread lands on its successor.
+    pub fn resolve(&self, id: &str) -> String {
+        let mut id = id.to_string();
+        while let Some(next) = self.merged.get(&id) {
+            id = next.clone();
+        }
+        id
+    }
+
     pub fn apply(&mut self, change: &Change) {
+        let change = &self.resolved(change);
         match change {
             Change::ThoughtAdded { thought } => {
                 if !self.thoughts.iter().any(|t| t.id == thought.id) {
@@ -110,7 +164,69 @@ impl World {
                 }
             }
             Change::ActiveChanged { thread_id } => self.active = Some(thread_id.clone()),
+            Change::ThreadRenamed { thread_id, title } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    th.title = title.clone();
+                }
+            }
+            Change::ThreadMerged { from, into } => {
+                if from == into || self.thread(into).is_none() {
+                    return;
+                }
+                for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from.as_str())) {
+                    t.thread_id = Some(into.clone());
+                }
+                for th in self.threads.iter_mut().filter(|t| t.parent_id.as_deref() == Some(from.as_str())) {
+                    th.parent_id = Some(into.clone());
+                }
+                for s in self.suggestions.iter_mut().filter(|s| &s.thread_id == from) {
+                    s.thread_id = into.clone();
+                }
+                for a in self.actions.iter_mut().filter(|a| &a.thread_id == from) {
+                    a.thread_id = into.clone();
+                }
+                if self.active.as_deref() == Some(from.as_str()) {
+                    self.active = Some(into.clone());
+                }
+                self.threads.retain(|t| &t.id != from);
+                self.merged.insert(from.clone(), into.clone());
+            }
+            Change::SuggestionAdded { suggestion } => {
+                if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
+                    self.suggestions.push(suggestion.clone());
+                }
+            }
+            Change::ActionProposed { action } => {
+                if !self.actions.iter().any(|a| a.id == action.id) {
+                    self.actions.push(action.clone());
+                }
+            }
+            Change::ItemStatus { id, status, done_ms } => {
+                if let Some(s) = self.suggestions.iter_mut().find(|s| &s.id == id) {
+                    s.status = *status;
+                }
+                if let Some(a) = self.actions.iter_mut().find(|a| &a.id == id) {
+                    a.status = *status;
+                    a.done_ms = *done_ms;
+                }
+            }
         }
+    }
+
+    /// The same change with thread ids followed through merges.
+    fn resolved(&self, change: &Change) -> Change {
+        let mut c = change.clone();
+        match &mut c {
+            Change::ThoughtPlaced { thread_id, .. }
+            | Change::ThreadTouched { thread_id, .. }
+            | Change::ThreadStatus { thread_id, .. }
+            | Change::ActiveChanged { thread_id }
+            | Change::ThreadRenamed { thread_id, .. } => *thread_id = self.resolve(thread_id),
+            Change::SuggestionAdded { suggestion } => suggestion.thread_id = self.resolve(&suggestion.thread_id),
+            Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
+            _ => {}
+        }
+        c
     }
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
@@ -121,8 +237,9 @@ impl World {
         self.threads.iter_mut().find(|t| t.id == id)
     }
 
+    /// Never reuses an id, even after merges remove threads.
     pub fn next_thread_id(&self) -> String {
-        format!("T{}", self.threads.len() + 1)
+        format!("T{}", self.threads.len() + self.merged.len() + 1)
     }
 }
 

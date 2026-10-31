@@ -1,9 +1,11 @@
 //! E2A2O core: holds the world in memory, journals every change, listens through
 //! Muse Voice Transcribe, places thoughts with Muse Spark, and keeps every UI in sync.
 
+mod apple;
 mod asr;
 mod explain;
 mod placer;
+mod refiner;
 mod protocol;
 mod world;
 
@@ -167,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         http: reqwest::Client::new(),
     });
     tokio::spawn(placer::run(core.clone(), queue));
+    tokio::spawn(refiner::run(core.clone()));
     for id in pending {
         let _ = core.placer_queue.send(id);
     }
@@ -231,6 +234,12 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&thread_id),
                 Ok(ClientMsg::Explain { id, text, context }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context));
+                }
+                Ok(ClientMsg::Item { id, status }) => {
+                    core.commit(vec![Change::ItemStatus { id, status, done_ms: None }]);
+                }
+                Ok(ClientMsg::Approve { id }) => {
+                    tokio::spawn(apple::approve(core.clone(), id));
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),

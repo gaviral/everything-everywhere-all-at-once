@@ -25,10 +25,32 @@ export interface Thought {
   place_ms: number | null;
 }
 
+export type ItemStatus = "new" | "kept" | "dismissed" | "done";
+
+export interface Suggestion {
+  id: string;
+  thread_id: string;
+  text: string;
+  status: ItemStatus;
+}
+
+export interface Action {
+  id: string;
+  thread_id: string;
+  kind: "reminder" | "event";
+  title: string;
+  when: string;
+  status: ItemStatus;
+  done_ms: number | null;
+}
+
 export interface World {
   threads: Thread[];
   thoughts: Thought[];
   active: string | null;
+  suggestions: Suggestion[];
+  actions: Action[];
+  merged: Record<string, string>;
 }
 
 type Change =
@@ -45,7 +67,12 @@ type Change =
     }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus }
-  | { type: "active_changed"; thread_id: string };
+  | { type: "active_changed"; thread_id: string }
+  | { type: "thread_renamed"; thread_id: string; title: string }
+  | { type: "thread_merged"; from: string; into: string }
+  | { type: "suggestion_added"; suggestion: Suggestion }
+  | { type: "action_proposed"; action: Action }
+  | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null };
 
 type ServerMsg =
   | { type: "snapshot"; world: World }
@@ -56,10 +83,52 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string };
 
-const EMPTY: World = { threads: [], thoughts: [], active: null };
+const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
 
-function apply(world: World, c: Change): World {
+// Follows merges, as the core does, so late changes land on the surviving thread.
+function resolve(world: World, id: string): string {
+  let current = id;
+  while (world.merged[current]) current = world.merged[current];
+  return current;
+}
+
+function apply(world: World, raw: Change): World {
+  const r = (id: string) => resolve(world, id);
+  const c: Change =
+    raw.type === "suggestion_added"
+      ? { ...raw, suggestion: { ...raw.suggestion, thread_id: r(raw.suggestion.thread_id) } }
+      : raw.type === "action_proposed"
+        ? { ...raw, action: { ...raw.action, thread_id: r(raw.action.thread_id) } }
+        : "thread_id" in raw
+          ? { ...raw, thread_id: r(raw.thread_id) }
+          : raw;
   switch (c.type) {
+    case "thread_renamed":
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
+    case "thread_merged": {
+      const move = (id: string | null) => (id === c.from ? c.into : id);
+      return {
+        ...world,
+        threads: world.threads.filter((t) => t.id !== c.from).map((t) => ({ ...t, parent_id: move(t.parent_id) })),
+        thoughts: world.thoughts.map((t) => ({ ...t, thread_id: move(t.thread_id) })),
+        suggestions: world.suggestions.map((s) => ({ ...s, thread_id: move(s.thread_id)! })),
+        actions: world.actions.map((a) => ({ ...a, thread_id: move(a.thread_id)! })),
+        active: move(world.active),
+        merged: { ...world.merged, [c.from]: c.into },
+      };
+    }
+    case "suggestion_added":
+      return world.suggestions.some((s) => s.id === c.suggestion.id)
+        ? world
+        : { ...world, suggestions: [...world.suggestions, c.suggestion] };
+    case "action_proposed":
+      return world.actions.some((a) => a.id === c.action.id) ? world : { ...world, actions: [...world.actions, c.action] };
+    case "item_status":
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: c.status } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms } : a)),
+      };
     case "thought_added":
       return world.thoughts.some((t) => t.id === c.thought.id)
         ? world
@@ -126,7 +195,7 @@ export function useCore() {
         const msg = JSON.parse(event.data as string) as ServerMsg;
         switch (msg.type) {
           case "snapshot":
-            setWorld(msg.world);
+            setWorld({ ...EMPTY, ...msg.world });
             break;
           case "change":
             setWorld((w) => apply(w, msg.change));
@@ -175,6 +244,8 @@ export function useCore() {
     sendAudio: (frame: ArrayBuffer) => send(frame),
     listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
+    setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
+    approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
     explanations,
     explain: (id: string, text: string, context: string) =>
       send(JSON.stringify({ type: "explain", id, text, context })),
