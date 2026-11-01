@@ -111,12 +111,15 @@ pub struct World {
     pub apps: Vec<crate::apps::MiniApp>,
     #[serde(default)]
     pub apps_seeded: bool,
+    #[serde(default)]
+    pub recaps: Vec<crate::recap::Recap>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
     AppEnabled { id: String, enabled: bool },
     AppRemoved { id: String },
@@ -169,6 +172,10 @@ impl World {
     pub fn apply(&mut self, change: &Change) {
         let change = &self.resolved(change);
         match change {
+            Change::RecapSaved { recap } => {
+                self.recaps.retain(|r| r.period != recap.period);
+                self.recaps.push(recap.clone());
+            }
             Change::AppRegistered { app } => {
                 if !self.apps.iter().any(|a| a.id == app.id) { self.apps.push(app.clone()); }
             }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { volumeReporter } from "./apps-audio";
+import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -50,6 +51,7 @@ export interface Action {
 }
 
 export interface World extends AppsWorld {
+  recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
   active: string | null;
@@ -59,6 +61,7 @@ export interface World extends AppsWorld {
 }
 
 type Change =
+  | { type: "recap_saved"; recap: RecapData }
   | AppChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
@@ -87,6 +90,7 @@ type Change =
   | { type: "thread_picture"; thread_id: string; path: string };
 
 type ServerMsg =
+  | RecapServerMsg
   | AppsServerMsg
   | { type: "snapshot"; world: World }
   | { type: "change"; change: Change }
@@ -96,7 +100,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string };
 
-const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -122,6 +126,8 @@ function apply(world: World, raw: Change): World {
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "recap_saved":
+      return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
     case "tag_suggested":
       return onThread(c.thread_id, (t) =>
         t.tags.some((x) => x.name === c.tag) ? t : { ...t, tags: [...t.tags, { name: c.tag, kept: false }] },
@@ -219,6 +225,9 @@ function apply(world: World, raw: Change): World {
 }
 
 export function useCore() {
+  const recap = useRecap();
+  const receiveRecap = recap.receive;
+  const recapDisconnected = recap.disconnected;
   const apps = useApps();
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
@@ -257,6 +266,7 @@ export function useCore() {
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
@@ -295,6 +305,7 @@ export function useCore() {
         }
       };
       ws.onclose = () => {
+        recapDisconnected();
         setConnected(false);
         setListening(false);
         setVoiceStatusRevision((revision) => revision + 1);
@@ -307,7 +318,7 @@ export function useCore() {
       window.clearTimeout(timer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
@@ -322,6 +333,11 @@ export function useCore() {
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
+    recap,
+    requestRecap: (period: RecapPeriod) => {
+      const sent = send(JSON.stringify({ type: "recap", period }));
+      recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent);
+    },
     apps,
     composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
     decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),

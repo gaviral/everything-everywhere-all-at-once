@@ -8,6 +8,7 @@ mod explain;
 mod pictures;
 mod placer;
 mod refiner;
+mod recap;
 mod protocol;
 mod world;
 
@@ -28,6 +29,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    recap: recap::Runtime,
     apps: apps::Runtime,
     world: Mutex<World>,
     journal: Mutex<Journal>,
@@ -137,6 +139,9 @@ impl Core {
     /// A new thought lands in the active thread at once; the placer moves it if needed.
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
+        if let Some(period) = recap::command(text) {
+            return recap::request(self.clone(), period);
+        }
         if let Some(request) = apps::command(text) {
             return apps::compose(self.clone(), request);
         }
@@ -222,6 +227,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
         world: Mutex::new(world),
         journal: Mutex::new(journal),
@@ -333,6 +339,7 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
     while let Some(Ok(message)) = incoming.next().await {
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), period),
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
                 Ok(ClientMsg::DecideApp { build_id, keep }) => apps::decide(&core, &build_id, keep),
                 Ok(ClientMsg::ToggleApp { id, enabled }) => apps::toggle(&core, id, enabled),
