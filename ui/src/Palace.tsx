@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { capitalized, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import "./palace.css";
@@ -40,26 +40,49 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
   const rooms = useMemo(() => makeRooms(threads), [threads]);
   const byId = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
   const container = useRef<HTMLElement>(null);
-  useEffect(() => {
-    container.current?.querySelector<HTMLButtonElement>(".palace-tile")?.focus();
+  // Before the first paint, the Palace opens at its own top, right under the map tools, as a page of its own would.
+  // Left where the map was, the apps above pushed its last row under the dock (map at its top, 1440×900), or a
+  // scrolled map hid its heading under the tools.
+  useLayoutEffect(() => {
+    const palace = container.current;
+    if (!palace) return;
+    const tools = document.querySelector<HTMLElement>(".map-tools");
+    const toolsBottom = tools ? parseFloat(getComputedStyle(tools).top) + tools.offsetHeight : 0;
+    window.scrollTo({ top: window.scrollY + palace.getBoundingClientRect().top - toolsBottom, behavior: "instant" });
+    palace.querySelector<HTMLButtonElement>(".palace-tile")?.focus();
   }, []);
+  // A thread that gets its first branch (or loses its last) moves to another section, so React mounts a new tile
+  // for it and focus falls to the page: the new tile takes it back, so the arrow keys and Enter keep working.
+  const focused = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    const was = focused.current;
+    if (!was || was.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+    const now = Array.from(container.current?.querySelectorAll<HTMLButtonElement>(".palace-tile") ?? []).find((tile) => tile.dataset.thread === was.dataset.thread);
+    now?.focus({ preventScroll: true });
+    now?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [rooms]);
 
+  // Where a tile's picture sits: a square as wide as the tile, at its top. Pictures in a row are level whatever the
+  // captions under them, so a taller neighbour never counts as above or below. Taken from the tile, not the picture's
+  // own box, which hover and focus lift by 3 px.
+  const spot = (tile: HTMLElement) => {
+    const rect = tile.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.width / 2 };
+  };
   const navigate = (event: KeyboardEvent<HTMLButtonElement>) => {
     const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const direction = directions[event.key];
     if (!direction) return;
     event.preventDefault();
-    const origin = event.currentTarget.getBoundingClientRect();
-    const x = origin.left + origin.width / 2;
-    const y = origin.top + origin.height / 2;
+    const { x, y } = spot(event.currentTarget);
     const candidates = Array.from(container.current?.querySelectorAll<HTMLButtonElement>(".palace-tile") ?? []);
     let best: HTMLButtonElement | undefined;
     let bestScore = Infinity;
     for (const candidate of candidates) {
       if (candidate === event.currentTarget) continue;
-      const rect = candidate.getBoundingClientRect();
-      const dx = rect.left + rect.width / 2 - x;
-      const dy = rect.top + rect.height / 2 - y;
+      const at = spot(candidate);
+      const dx = at.x - x;
+      const dy = at.y - y;
       const forward = dx * direction[0] + dy * direction[1];
       if (forward <= 1) continue;
       const sideways = Math.abs(dx * direction[1] - dy * direction[0]);
@@ -75,7 +98,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
     // The room's heading already names its root, so only a branch of a branch says where it hangs.
     const under = parent && parent.id !== root.id ? parent : undefined;
-    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
+    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
       <span className="palace-art">
         {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
         <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
