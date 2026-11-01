@@ -362,9 +362,12 @@ impl Journal {
     }
 }
 
-/// Replaces the first match of `from` in `text` (ignoring case) with `to`; unchanged when there's none.
+/// Replaces the first match of `from` in `text` with `to`; unchanged when there's none. Ignores case
+/// when lowercasing keeps the byte length (so offsets still line up), else matches exactly.
 fn swap(text: &str, from: &str, to: &str) -> String {
-    match text.to_lowercase().find(&from.to_lowercase()) {
+    let (lower, lower_from) = (text.to_lowercase(), from.to_lowercase());
+    let found = if lower.len() == text.len() && lower_from.len() == from.len() { lower.find(&lower_from) } else { text.find(from) };
+    match found {
         Some(i) if text.is_char_boundary(i) && text.is_char_boundary(i + from.len()) => {
             format!("{}{}{}", &text[..i], to, &text[i + from.len()..])
         }
@@ -410,6 +413,8 @@ mod tests {
         assert_eq!(world.thoughts[0].point, "Ask Muse Spark");
         assert_eq!(world.thoughts[1].text, "ask muse bark about it");
         assert!(world.thoughts.iter().all(|t| t.unclear.is_empty() && t.guess.is_empty()));
+        // Letters whose lowercase is longer can't shift the cut.
+        assert_eq!(super::swap("İstanbul moose", "moose", "Muse"), "İstanbul Muse");
     }
 
     #[test]

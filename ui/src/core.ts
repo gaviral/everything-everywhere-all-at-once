@@ -195,7 +195,10 @@ function apply(world: World, raw: Change): World {
       const t = world.thoughts.find((x) => x.id === c.thought_id);
       if (!t) return world;
       const swap = (text: string) => {
-        const i = c.accept && t.unclear && t.guess ? text.toLowerCase().indexOf(t.unclear.toLowerCase()) : -1;
+        if (!c.accept || !t.unclear || !t.guess) return text;
+        // Ignore case only when lowercasing keeps the length, so the cut lines up (as in the core).
+        const even = text.toLowerCase().length === text.length && t.unclear.toLowerCase().length === t.unclear.length;
+        const i = even ? text.toLowerCase().indexOf(t.unclear.toLowerCase()) : text.indexOf(t.unclear);
         return i < 0 ? text : text.slice(0, i) + t.guess + text.slice(i + t.unclear.length);
       };
       const fixed = { ...t, text: swap(t.text), point: swap(t.point), unclear: "", guess: "" };
