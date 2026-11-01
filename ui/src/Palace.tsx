@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from "react";
-import { capitalized, type Thread } from "./core";
+import { capitalized, firstLetter, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import "./palace.css";
 
@@ -101,7 +101,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
       <span className="palace-art">
         {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
-        <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
+        <span className="palace-placeholder" aria-hidden="true"><span>{firstLetter(thread.title)}</span></span>
         <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
       </span>
       <span className="palace-title">{thread.title}</span>
