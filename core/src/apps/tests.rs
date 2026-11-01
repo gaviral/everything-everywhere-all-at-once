@@ -258,6 +258,29 @@ async fn one_composition_answer_becomes_a_reviewable_draft_then_a_journaled_app(
 }
 
 #[tokio::test]
+async fn a_draft_that_doesnt_check_out_gets_one_more_try_told_why() {
+    let fixture = Fixture::new();
+    let spec = |template: &str| json!({"match_id":"", "app": {
+        "name":"Drift check", "purpose":"Notice when I drift from the topic.", "watcher":{"kind":"new_thought"},
+        "prompt":{"system":"Publish when the newest thought drifts from the topic.","template":template},
+        "publishers":[{"kind":"card","text":"{text}"}],"cooldown_secs":30
+    }});
+    let fresh = || Some(Build { id: "b".into(), request: "drift".into(), stage: "searching".into(), steps: Vec::new(), draft: None,
+        match_id: None, message: String::new() });
+    fixture.core.apps.state.lock().unwrap().build = fresh();
+    fixture.core.apps.answers.lock().unwrap().extend([spec("Thread: {thread}\nNewest: {thought}"), spec("Topic: {topic}\nNewest: {thought}")]);
+    compose_inner(&fixture.core, "b", "notice when I drift").await.unwrap();
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "no failure shows when the second try works");
+    assert_eq!(b.draft.unwrap().prompt.unwrap().template, "Topic: {topic}\nNewest: {thought}");
+    assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains("unknown template field {thread}"), "told what didn't check out");
+    // Two misses in a row still fail, as before.
+    fixture.core.apps.state.lock().unwrap().build = fresh();
+    fixture.core.apps.answers.lock().unwrap().extend([spec("{thread}"), spec("{thread}")]);
+    assert!(compose_inner(&fixture.core, "b", "notice when I drift").await.is_err());
+}
+
+#[tokio::test]
 async fn semantic_search_offers_a_disabled_app_before_any_composition() {
     let fixture = Fixture::new();
     seed(&fixture.core, false);
