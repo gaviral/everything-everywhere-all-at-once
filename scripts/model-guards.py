@@ -47,10 +47,71 @@ MANIFESTS = ("core/Cargo.toml", "core/Cargo.lock", "ui/package.json", "ui/packag
 
 
 def runtime_part(path, text):
-    """The code that runs: a Rust file up to its tests, no test files."""
+    """The code that runs: a Rust file without its test-only items, no test files."""
     if path.endswith(("tests.rs", ".test.ts", ".test.tsx")):
         return ""
-    return text.split("#[cfg(test)]")[0] if path.endswith(".rs") else text
+    return without_tests(text) if path.endswith(".rs") else text
+
+
+TEST_GATE = "#[cfg(test)]"
+
+
+def without_tests(text):
+    """Blanks each item under #[cfg(test)] (a module, impl, fn, field or statement) and keeps the rest, newlines
+    included so line numbers hold. Only that item goes: a test module declared near the top (main.rs `mod perf;`)
+    or a test-only field (apps.rs) mustn't hide the runtime code after it."""
+    out, at = [], 0
+    while (gate := text.find(TEST_GATE, at)) >= 0:
+        end = item_end(text, gate + len(TEST_GATE))
+        out += [text[at:gate], re.sub(r"[^\n]", " ", text[gate:end])]
+        at = end
+    return "".join(out + [text[at:]])
+
+
+def item_end(text, i):
+    """Where the Rust item starting at i ends: its `;` or `,` outside brackets, or its closing brace (and a `;`
+    right after). Strings, chars and comments are skipped so a brace inside one doesn't count. Generics aren't
+    tracked, so a `,` inside `<..>` ends a field early: the rest is then scanned, which can only add findings."""
+    depth, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            i = text.find("\n", i)
+            i = n if i < 0 else i
+            continue
+        if text.startswith("/*", i):
+            i = text.find("*/", i + 2)
+            i = n if i < 0 else i + 2
+            continue
+        raw = re.match(r'b?r(#*)"', text[i:i + 12]) if c in "br" and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")) else None
+        if raw:
+            close = '"' + raw.group(1)
+            j = text.find(close, i + raw.end())
+            i = n if j < 0 else j + len(close)
+            continue
+        if c == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+            i += 1
+            continue
+        if c == "'":
+            char = re.match(r"'(\\(x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]+\}|.)|[^\\'])'", text[i:i + 12])
+            i += char.end() if char else 1  # else a lifetime ('a)
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0 and c == "}":
+                after = re.match(r"\s*;", text[i + 1:])
+                return i + 1 + (after.end() if after else 0)
+            if depth < 0:  # the item was the last in its block: stop before the block's close
+                return i
+        elif c in ";," and depth == 0:
+            return i + 1
+        i += 1
+    return n
 
 
 def packages(path, text):
@@ -153,13 +214,32 @@ def self_test():
     }
     for path, text in planted.items():
         assert breaches({path: text}), f"missed a planted breach in {path}"
+    # Runtime code after a test-only module or field is still scanned (main.rs declares `mod perf` near the top,
+    # apps.rs gates a field of its Runtime): only the gated item is left out.
+    after_tests = {
+        "core/src/main.rs": '#[cfg(test)]\nmod perf;\n\nfn main() {\n    let placer = Setting::from_env("PLACER_MODEL", "gpt-4o");\n}\n',
+        "core/src/apps.rs": "pub struct Runtime {\n    #[cfg(test)]\n    answers: Mutex<VecDeque<Value>>,\n}\n"
+        'const URL: &str = "https://api.openai.com/v1/chat/completions";\n',
+    }
+    for path, text in after_tests.items():
+        assert breaches({path: text}), f"missed a breach after a test-only item in {path}"
+    gated = (
+        '#[cfg(test)]\nfn stand_in() { let close = "}"; let brace = \'{\'; let s = r#"x}"#; /* } */ let m = "gpt-4o"; }\n'
+        '#[cfg(test)]\nmod tests {\n    const URL: &str = "https://evil.com";\n}\n'
+        "fn model(core: &Core) {\n    #[cfg(test)]\n    if let Some(a) = core.answers.pop() { return a; }\n"
+        '    core.call_model("https://api.meta.ai/v1/chat/completions");\n}\n'
+    )
+    assert breaches({"core/src/apps.rs": gated}) == [], breaches({"core/src/apps.rs": gated})
+    assert runtime_part("core/src/apps.rs", gated).count("\n") == gated.count("\n"), "line numbers hold"
     model = "pub async fn call_model() {\n    self.spend()?;\n}\nfn ask_model() {\n    self.spend()?;\n    self.spend()?;\n}\n"
     inside = "let r = core\n    .ask_model(&setting, |model| {\n        core.http.post(URL).bearer_auth(key).send()\n    })\n"
     counted_clean = {"core/src/model.rs": model, "core/src/placer.rs": inside, "core/src/refiner_live.rs": "http.post(URL).bearer_auth(key)\n"}
     assert uncounted(counted_clean) == [], uncounted(counted_clean)
     assert uncounted({"core/src/apps.rs": "core.http.post(URL).bearer_auth(key).json(&body).send()\n"}), "missed a direct send"
+    late_send = "struct Runtime {\n    #[cfg(test)]\n    asked: Mutex<Vec<String>>,\n}\nfn model() {\n    core.http.post(URL).bearer_auth(key).send()\n}\n"
+    assert uncounted({"core/src/apps.rs": late_send}) == ["core/src/apps.rs:6: sends the key outside call_model or ask_model, so the cap can't count it"], "missed a send after a test-only field"
     assert uncounted({"core/src/model.rs": model.replace("    self.spend()?;\n}\nfn", "}\nfn", 1)}), "missed a call_model that doesn't spend"
-    print("PASS  model-guards self-test: 12 planted breaches caught, 0 false alarms on the clean sets")
+    print("PASS  model-guards self-test: 15 planted breaches caught (3 after test-only items), 0 false alarms on the clean sets")
 
 
 if __name__ == "__main__":
