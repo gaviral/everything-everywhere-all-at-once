@@ -48,17 +48,19 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         let _ = sink.send(Message::Text(r#"{"type":"endStream"}"#.into())).await;
     });
 
-    while let Some(message) = stream.next().await {
-        match message? {
-            Message::Text(t) => handle(&core, &speaker, t.as_str()),
-            Message::Close(_) => break,
-            _ => {}
+    // However the stream ends, the writer stops too: it holds the audio channel, and this window can
+    // only start listening again once that closes. The caller says listening stopped.
+    let ended = loop {
+        match stream.next().await {
+            Some(Ok(Message::Text(t))) => handle(&core, &speaker, t.as_str()),
+            Some(Ok(Message::Close(_))) | None => break Ok(()),
+            Some(Ok(_)) => {}
+            Some(Err(e)) => break Err(e),
         }
-    }
+    };
     writer.abort();
     core.send_to(&speaker, ServerMsg::Partial { text: String::new() });
-    core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() });
-    Ok(())
+    Ok(ended?)
 }
 
 fn handle(core: &Arc<Core>, speaker: &str, text: &str) {

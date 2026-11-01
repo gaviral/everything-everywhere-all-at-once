@@ -517,6 +517,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     });
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
+    // This window's listening sessions, counted, so only the latest one says listening stopped: after a
+    // quick off and on, the old session's late end mustn't switch the new mic off.
+    let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
     while let Some(Ok(message)) = incoming.next().await {
         match message {
@@ -533,12 +536,22 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     let (tx, rx) = mpsc::channel(256);
                     audio = Some(tx);
-                    let (core, speaker) = (core.clone(), speaker.clone());
+                    let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let (core, speaker, listens) = (core.clone(), speaker.clone(), listens.clone());
                     tokio::spawn(async move {
-                        if let Err(e) = asr::run(core.clone(), speaker.clone(), rx).await {
+                        let ended = asr::run(core.clone(), speaker.clone(), rx).await;
+                        if let Err(e) = &ended {
                             tracing::warn!("listening stopped: {e:#}");
-                            core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
-                            core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
+                        }
+                        if listens.load(std::sync::atomic::Ordering::Relaxed) != n {
+                            return;
+                        }
+                        match ended {
+                            Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
+                            Err(e) => {
+                                core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
+                                core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
+                            }
                         }
                     });
                 }

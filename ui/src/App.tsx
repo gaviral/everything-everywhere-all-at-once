@@ -98,12 +98,14 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [core.notice, core.clearNotice]);
 
-  // Stop local audio when the service reports a stop or the connection drops.
+  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
+  // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   useEffect(() => {
     if (stopMic && !core.listening && core.voiceStatusRevision > voiceStartedAt.current) {
       stopMic();
       setStopMic(null);
+      core.listen(false);
     }
   }, [core.listening, core.voiceStatusRevision, stopMic]);
 
