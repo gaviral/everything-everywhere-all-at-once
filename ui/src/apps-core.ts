@@ -28,11 +28,21 @@ export interface MiniApp {
 export interface AppBuild {
   id: string;
   request: string;
-  stage: "searching" | "composing" | "validating" | "ready" | "matched" | "kept" | "discarded" | "failed";
+  stage: "searching" | "composing" | "validating" | "ready" | "matched" | "kept" | "discarded" | "declined" | "failed";
   steps: string[];
   draft: MiniApp | null;
   match_id: string | null;
   message: string;
+  /** When declined: the closest app the blocks can make, as a request to send instead ("" when none). */
+  instead: string;
+}
+
+// The Volume watcher's two choices, as the core sets them (`volume_choice` in apps.rs).
+const VOLUME_CARD: Publisher = { kind: "card", text: "Voices have been loud for a little while. A small pause might help." };
+export function volumeChoice(sound: boolean): { purpose: string; publishers: Publisher[] } {
+  return sound
+    ? { purpose: "Play a short, silly tune and suggest a pause when voices stay loud, to ease the tension.", publishers: [{ kind: "sound" }, VOLUME_CARD] }
+    : { purpose: "Offer a quiet pause when voices stay loud for a few seconds.", publishers: [VOLUME_CARD] };
 }
 
 export interface AppsWorld { apps: MiniApp[]; apps_seeded: boolean }
@@ -60,35 +70,36 @@ export function applyAppChange<T extends AppsWorld>(world: T, c: AppChange): T {
       if (c.type === "app_enabled") return { ...a, enabled: c.enabled };
       if (c.type === "app_ran") return { ...a, last_run_ms: c.at_ms };
       if (a.watcher.kind !== "volume") return a;
-      const publishers: Publisher[] = c.sound ? [{ kind: "sound" }]
-        : [{ kind: "card", text: "Voices have been loud for a little while. A small pause might help." }];
-      return { ...a, publishers };
+      return { ...a, ...volumeChoice(c.sound) };
     }) };
   }
 }
 
-export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string };
+export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string; playful?: boolean };
+
+/** A tune the browser wouldn't play yet: which app, and which tune. */
+export interface PendingTune { name: string; playful: boolean }
+
+// The first click, tap or key press lets the page play sound. Taps count only when they end (pointerup).
+const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown"] as const;
 
 export function useApps() {
   const [build, setBuild] = useState<AppBuild | null>(null);
-  const [soundPending, setSoundPending] = useState("");
+  const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
   const reset = useCallback(() => setBuild(null), []);
   useEffect(() => {
-    window.addEventListener("pointerdown", unlockTune);
-    window.addEventListener("keydown", unlockTune);
-    return () => {
-      window.removeEventListener("pointerdown", unlockTune);
-      window.removeEventListener("keydown", unlockTune);
-    };
+    for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlockTune);
+    return () => { for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlockTune); };
   }, []);
   const receive = useCallback((message: { type: string }) => {
     const msg = message as AppsServerMsg;
     if (msg.type === "apps_build") { setBuild(msg.build); return true; }
     if (msg.type === "apps_sound") {
-      if (!playTune()) setSoundPending(msg.name);
+      const playful = !!msg.playful;
+      if (!playTune(playful)) setSoundPending({ name: msg.name, playful });
       return true;
     }
     return false;
   }, []);
-  return { build, soundPending, receive, reset, clearSound: () => setSoundPending("") };
+  return { build, soundPending, receive, reset, clearSound: () => setSoundPending(null) };
 }

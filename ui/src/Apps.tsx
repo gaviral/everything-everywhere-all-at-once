@@ -26,7 +26,8 @@ function Blocks({ app }: { app: MiniApp }) {
   return <ol className="apps-blocks" aria-label="App steps">
     <li><small>When</small>{watching(app.watcher)}</li>
     {app.prompt && <li><small>Consider</small>{app.watcher.kind === "app_request" ? "Look for an existing app" : "One prompt"}</li>}
-    {app.publishers.map((p, i) => <li key={i}><small>Then</small>{p.kind === "card" ? "Show a card" : p.kind === "sound" ? "Play a light tune" : "Propose a reminder"}</li>)}
+    {app.publishers.map((p, i) => <li key={i}><small>Then</small>{p.kind === "card" ? "Show a card"
+      : p.kind === "sound" ? app.watcher.kind === "volume" ? "Play a silly tune" : "Play a light tune" : "Propose a reminder"}</li>)}
   </ol>;
 }
 
@@ -60,29 +61,34 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
     return () => window.clearTimeout(closeTimer.current);
   }, [build?.id, build?.stage]);
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  const settledWithoutApp = build?.stage === "failed" || build?.stage === "declined";
   useEffect(() => {
-    if (open && build && ["searching", "ready", "matched", "failed", "kept"].includes(build.stage)) {
+    if (open && build && ["searching", "ready", "matched", "declined", "failed", "kept"].includes(build.stage)) {
       buildArea.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-      if ((ready || build.stage === "failed") && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
+      if ((ready || settledWithoutApp) && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
         buildArea.current?.focus({ preventScroll: true });
       }
     }
   }, [build?.id, build?.stage, open]);
+  // Typed here (or picked as the closest app): the panel stays open after Keep or Discard.
+  const compose = (text: string) => {
+    if (!core.composeApp(text)) return false;
+    panelRequest.current = text;
+    setOpen(true);
+    return true;
+  };
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!request.trim() || busy || ready || !core.connected) return;
-    const text = request.trim();
-    if (!core.composeApp(text)) return;
-    panelRequest.current = text;
-    setRequest("");
-    setOpen(true);
+    if (compose(request.trim())) setRequest("");
   };
   const matched = core.world.apps.find((a) => a.id === build?.match_id);
   const play = () => {
+    const playful = !!core.apps.soundPending?.playful;
     unlockTune();
     window.setTimeout(() => {
-      if (playTune()) core.apps.clearSound();
-      else core.showNotice("Sound isn't available right now. You can choose a card instead.");
+      if (playTune(playful)) core.apps.clearSound();
+      else core.showNotice("Sound isn't available in this browser right now.");
     }, 50);
   };
   const enabledCount = core.world.apps.filter((a) => a.enabled).length;
@@ -95,7 +101,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
       {open && <button className="apps-new" onClick={() => document.getElementById("app-request")?.focus()}>Make an app</button>}
     </div>
     {core.apps.soundPending && <div className="apps-sound" role="status">
-      <span>{core.apps.soundPending} has a quiet tune for you.</span><button onClick={play}>Play tune</button>
+      <span>{core.apps.soundPending.name} has a {core.apps.soundPending.playful ? "silly" : "quiet"} tune for you.</span><button onClick={play}>Play tune</button>
       <button onClick={core.apps.clearSound} aria-label="Dismiss tune">×</button>
     </div>}
     {open && <div id="apps-content">
@@ -103,9 +109,13 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
         <p className="apps-request">“{build.request}”</p>
         <ol className="apps-progress" aria-live="polite" aria-relevant="additions text">
           {build.steps.map((step, i) => <li key={`${build.id}-${i}`} style={{ animationDelay: `${i * 70}ms` }}>
-            <span aria-hidden="true">{busy && i === build.steps.length - 1 ? "◌" : build.stage === "failed" && i === build.steps.length - 1 ? "×" : "✓"}</span>{step}
+            <span aria-hidden="true">{i < build.steps.length - 1 ? "✓" : busy ? "◌" : build.stage === "failed" ? "×" : build.stage === "declined" ? "–" : "✓"}</span>{step}
           </li>)}
         </ol>
+        {build.stage === "declined" && build.instead && <div className="apps-instead">
+          <p>Closest app: “{build.instead}”</p>
+          <div className="apps-decisions"><button disabled={!core.connected} onClick={() => compose(build.instead)}>Make that instead</button></div>
+        </div>}
         {build.draft && !["kept", "discarded"].includes(build.stage) && <div className="apps-preview">
           <strong>{build.draft.name}</strong><p>{build.draft.purpose}</p><Blocks app={build.draft} />
           {build.draft.prompt && <details><summary>Prompt</summary><p className="apps-prompt">{build.draft.prompt.system}</p></details>}
@@ -136,7 +146,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
             {app.id === "app-volume" && app.watcher.kind === "volume" && <label className="apps-output">When it gets loud
               <select aria-label={`${app.name} response`} value={app.publishers.some((p) => p.kind === "sound") ? "sound" : "card"}
                 disabled={!core.connected} onChange={(e) => { if (e.target.value === "sound") unlockTune(); core.appOutput(app.id, e.target.value === "sound"); }}>
-                <option value="card">Show a calm card</option><option value="sound">Play a light tune</option>
+                <option value="sound">Play a silly tune, with a card</option><option value="card">Show a calm card only</option>
               </select>
             </label>}
           </div>

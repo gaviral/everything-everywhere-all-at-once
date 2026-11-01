@@ -58,6 +58,9 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - The `?` menu lists keyboard and spoken commands, and ✦ marks only items added or suggested by AI.
 - Errors say what happened and what to do next; a failed placement stays saved and retries automatically.
 - A composer draft that fails validation gets one retry with the invalid field explained.
+- A request apps can't do ("book me a flight", "send me an email when I mention rent") gets one short reason and the closest app, one click away, instead of a look-alike app; a request with no likely reading ("hi") gets a question and an example. Judge-style requests (30, 2 runs each): 30 of 60 did what was asked before, 58 of 60 after (`scripts/composer-check.mjs`).
+- Phrase and topic apps match whole words, so "AI" no longer fires on "said" or "um" on "number"; a repeating timer shows a card or plays a tune rather than proposing the same reminder once; without the AI key, a failed build says so instead of "try again".
+- The Volume watcher plays a short, silly tune with its card when voices stay loud (or the card alone, from its row); the first click, tap or key press on the page lets the tune play.
 - “Add to Reminders” and “Add to Calendar” claim an action before sending it to Apple, preventing a second add while it runs.
 - A “yes” to “Did you mean?” applies the suggested words; a confident fix can be undone from the point.
 - Points begin with a capital on screen when appropriate, while the stored words remain as placed.
