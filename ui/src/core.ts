@@ -49,6 +49,10 @@ export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
 
+// A view asked for by voice ("palace", "show the map", "let's focus", "show all"); the revision makes the
+// same one asked twice a new ask.
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all"; revision: number };
+
 export interface Suggestion {
   id: string;
   thread_id: string;
@@ -139,6 +143,7 @@ type ServerMsg =
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
+  | { type: "view"; view: ViewAsk["view"] }
   | { type: "explanation"; id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus };
 
@@ -331,6 +336,7 @@ export function useCore(speaker?: string) {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
+  const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
@@ -431,6 +437,9 @@ export function useCore(speaker?: string) {
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
             break;
+          case "view":
+            setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
+            break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
             break;
@@ -508,6 +517,7 @@ export function useCore(speaker?: string) {
     keyRefused: keyNotice.includes("refused"),
     keyNotice,
     found,
+    viewAsk,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),

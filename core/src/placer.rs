@@ -7,7 +7,7 @@ use anyhow::{bail, Context};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -51,6 +51,49 @@ pub enum Job {
     Place(String),
     Back(String),
     Next(String),
+    Previous(String),
+}
+
+/// "New thread": the next thought a speaker says after it starts a thread of its own, whatever the model
+/// answers, unless the model sets it all aside as filler. Asking ends at that thought, or when the speaker
+/// moves to a thread before saying one ("where was I?", a click), since they're somewhere again. Kept in
+/// memory: after a restart that thought is placed as any.
+#[derive(Default)]
+pub struct NewThreads {
+    /// Speakers who asked, until their next thought.
+    asked: Mutex<HashSet<String>>,
+    /// Those thoughts, until placed.
+    thoughts: Mutex<HashSet<String>>,
+}
+
+impl NewThreads {
+    pub fn ask(&self, speaker: &str) {
+        self.asked.lock().unwrap().insert(speaker.into());
+    }
+
+    pub fn cancel(&self, speaker: &str) {
+        self.asked.lock().unwrap().remove(speaker);
+    }
+
+    /// The speaker said a thought: it starts the thread, if they asked for one.
+    pub fn said(&self, speaker: &str, thought_id: &str) {
+        if self.asked.lock().unwrap().remove(speaker) {
+            self.thoughts.lock().unwrap().insert(thought_id.into());
+        }
+    }
+
+    pub fn starts(&self, thought_id: &str) -> bool {
+        self.thoughts.lock().unwrap().contains(thought_id)
+    }
+
+    /// Placed by `changes`; when they set aside only filler before the words, the `rest` starts the thread instead.
+    fn placed(&self, thought_id: &str, changes: &[Change], rest: Option<&str>) {
+        let mut thoughts = self.thoughts.lock().unwrap();
+        thoughts.remove(thought_id);
+        if changes.iter().any(|c| matches!(c, Change::ThoughtSkipped { .. })) {
+            thoughts.extend(rest.map(String::from));
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -115,6 +158,10 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                 core.go_next(&speaker);
                 continue;
             }
+            Job::Previous(speaker) => {
+                core.go_previous(&speaker);
+                continue;
+            }
         };
         // A blip (rate limit, timeout) shouldn't lose a thought: three tries, then say so.
         for attempt in 1..=3u64 {
@@ -173,6 +220,7 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
     if thought.placed {
         return Ok(None);
     }
+    let new_thread = core.new_threads.starts(thought_id);
 
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
@@ -184,7 +232,7 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
                     .bearer_auth(key)
                     // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
                     .timeout(patience(room))
-                    .json(&request(&world, &thought, model, room))
+                    .json(&request(&world, &thought, model, room, new_thread))
                     .send()
             })
             .await?;
@@ -203,8 +251,11 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
-    let (changes, rest) = settle(&world, &thought, placement, place_ms);
+    let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread);
     drop(world);
+    if new_thread {
+        core.new_threads.placed(thought_id, &changes, rest.as_deref());
+    }
     core.commit(changes);
     Ok(rest)
 }
@@ -238,13 +289,14 @@ fn read(body: &serde_json::Value) -> anyhow::Result<Option<Placement>> {
 
 /// The changes for one answer. A turn that moved on to another topic is cut in two first: the answer
 /// places the words before, and the rest, returned, is placed next on the map this one leaves.
-fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64) -> (Vec<Change>, Option<String>) {
+/// `new_thread`: the thought starts a thread of its own (see `NewThreads`).
+fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64, new_thread: bool) -> (Vec<Change>, Option<String>) {
     let Some((before, rest)) = cut(&thought.text, &p.split) else {
         // A quote that cuts nothing leaves the model unsure which words were filler: place them all.
         if p.action == "skip" && !clean(&p.split).is_empty() {
             p.action = "continue".into();
         }
-        return (decide(world, thought, p, place_ms), None);
+        return (decide(world, thought, p, place_ms, new_thread), None);
     };
     let first = Thought { text: before.clone(), ..thought.clone() };
     // Misheard words in the rest are found again when it's placed.
@@ -266,7 +318,7 @@ fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64) -> 
     };
     let rest_id = rest.id.clone();
     let mut changes = vec![Change::ThoughtSplit { thought_id: thought.id.clone(), text: before, rest }];
-    changes.extend(decide(world, &first, p, place_ms));
+    changes.extend(decide(world, &first, p, place_ms, new_thread));
     (changes, Some(rest_id))
 }
 
@@ -312,16 +364,16 @@ fn cut(text: &str, quote: &str) -> Option<(String, String)> {
 pub(crate) fn perf(world: &World, thought: &Thought) {
     crate::perf::measure_bytes("placer lookup + prompt", || {
         let thought = world.thoughts.iter().find(|t| t.id == thought.id).unwrap().clone();
-        serde_json::to_vec(&request(world, &thought, "perf-model", ROOM)).unwrap()
+        serde_json::to_vec(&request(world, &thought, "perf-model", ROOM, false)).unwrap()
     });
     crate::perf::measure("placer settle + dropped scans", || {
         let answer = json!({"action": "return", "thread_id": "T2", "point": "Review the project budget",
             "dropped": ["T1", "T149", "T150"]});
-        settle(world, thought, serde_json::from_value(answer).unwrap(), 2_000)
+        settle(world, thought, serde_json::from_value(answer).unwrap(), 2_000, false)
     }, |(changes, _)| serde_json::to_vec(changes).unwrap().len());
 }
 
-fn request(world: &World, thought: &Thought, model: &str, room: u32) -> serde_json::Value {
+fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool) -> serde_json::Value {
     let threads = if world.threads.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -350,6 +402,9 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32) -> serde_js
         .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
+    // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
+    let starts =
+        if new_thread { "The speaker asked for a new thread: this thought starts it (\"new\"), unless it adds nothing.\n" } else { "" };
     json!({
         "model": model,
         "reasoning_effort": "minimal",
@@ -357,7 +412,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32) -> serde_js
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{starts}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -455,7 +510,8 @@ fn capitalized(text: &str) -> Vec<String> {
 
 /// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
 /// the speaker: in a room, one person changing topic never drops a thread for the other.
-fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<Change> {
+/// `new_thread`: the speaker asked for one, so whatever is placed starts it (see `NewThreads`).
+fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool) -> Vec<Change> {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
     if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS {
         return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
@@ -479,6 +535,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
 
     let target = match p.action.as_str() {
         "new" => None,
+        _ if new_thread => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
         _ => world.active_for(speaker).cloned().filter(|a| exists(a)),
     };
@@ -553,7 +610,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::{cut, decide, patience, read, request, room_for, settle, Placement, MAX_ROOM, ROOM};
+    use super::{cut, decide, patience, read, request, room_for, settle, NewThreads, Placement, MAX_ROOM, ROOM};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
     use crate::Core;
     use serde_json::json;
@@ -646,7 +703,7 @@ mod tests {
             Thought { placed: false, ..said("g", "Waiting on Priya") },
         ];
         assert_eq!(super::names(&world), ["README", "Main Street", "Friday", "Mom", "Muse Spark", "PM"]);
-        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m", ROOM)["messages"][1]["content"].as_str().unwrap().to_string();
+        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt(&world).contains("Active thread: T1\nNames said: README, Main Street, Friday, Mom, Muse Spark, PM\nNEW THOUGHT"), "{}", prompt(&world));
         assert!(prompt(&map()).contains("Active thread: T1\nNEW THOUGHT"), "no names yet, no line");
     }
@@ -663,7 +720,7 @@ mod tests {
         }
         let names = super::names(&world);
         assert_eq!((names.len(), names[0].as_str(), names[1].as_str()), (super::NAMES, "Muse Spark", "Contact39"));
-        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m", ROOM)["messages"][1]["content"].as_str().unwrap().to_string();
+        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt.contains("Names said: Muse Spark, Contact39, "), "{prompt}");
     }
 
@@ -692,7 +749,7 @@ mod tests {
         let said = turn("I need to pay rent before Friday — oh, the Muse Bark demo is on Tuesday");
         let p = reply(json!({"split": "the Muse Bark demo is on Tuesday", "action": "continue", "thread_id": "T1",
             "point": "Pay rent before Friday", "unclear": "Muse Bark", "guess": "Muse Spark", "sure": true}));
-        let (changes, rest) = settle(&world, &said, p, 0);
+        let (changes, rest) = settle(&world, &said, p, 0, false);
         let Some(Change::ThoughtSplit { thought_id, text, rest: next }) = changes.first() else { panic!("{changes:?}") };
         assert_eq!((thought_id.as_str(), text.as_str()), ("a", "I need to pay rent before Friday"));
         assert_eq!(rest.as_deref(), Some(next.id.as_str()));
@@ -709,18 +766,18 @@ mod tests {
     fn a_skip_sets_aside_only_a_short_turn() {
         let world = map();
         let skip = || reply(json!({"split": "", "action": "skip", "thread_id": "", "point": ""}));
-        assert!(matches!(decide(&world, &turn("oh wow"), skip(), 0)[..], [Change::ThoughtSkipped { .. }]));
+        assert!(matches!(decide(&world, &turn("oh wow"), skip(), 0, false)[..], [Change::ThoughtSkipped { .. }]));
         // A long turn is placed whatever the model says: on the active thread.
         let long = turn("so I was thinking we could rent a van and drive down on Friday");
-        let changes = decide(&world, &long, skip(), 0);
+        let changes = decide(&world, &long, skip(), 0, false);
         assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T1")), "{changes:?}");
         // A skip whose quote cuts nothing can't say which words were filler: placed too.
         let unsure = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
-        let (changes, rest) = settle(&world, &turn("the demo is on Tuesday"), unsure, 0);
+        let (changes, rest) = settle(&world, &turn("the demo is on Tuesday"), unsure, 0, false);
         assert!(rest.is_none() && changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { .. })), "{changes:?}");
         // Filler before real words: the filler is set aside and the rest placed next.
         let lead = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
-        let (changes, rest) = settle(&world, &turn("yeah, so anyway, the demo is on Tuesday"), lead, 0);
+        let (changes, rest) = settle(&world, &turn("yeah, so anyway, the demo is on Tuesday"), lead, 0, false);
         assert!(rest.is_some());
         assert!(matches!(changes[..], [Change::ThoughtSplit { .. }, Change::ThoughtSkipped { .. }]), "{changes:?}");
     }
@@ -729,12 +786,63 @@ mod tests {
     fn one_person_moving_on_doesnt_drop_the_others_thread() {
         let world = room();
         // Sam keeps going on T2, and the model even calls T1 dropped: it isn't Sam's to drop.
-        let changes = decide(&world, &thought("c", "Sam", None, true), answer("continue", "T2", &["T1"]), 0);
+        let changes = decide(&world, &thought("c", "Sam", None, true), answer("continue", "T2", &["T1"]), 0, false);
         assert!(drops(&changes).is_empty(), "{changes:?}");
         // User moves to T2, leaving T1 unfinished: dropped, for User.
-        let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0);
+        let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0, false);
         assert_eq!(drops(&changes), [("T1".to_string(), "User".to_string())]);
         assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "User")));
+    }
+
+    #[test]
+    fn the_thought_after_new_thread_starts_one_whatever_the_answer() {
+        let world = map();
+        // The model would continue T1: it starts T3 instead, titled from its point when the answer has no title.
+        let continued = reply(json!({"action": "continue", "thread_id": "T1", "point": "Kitchen needs paint before Friday"}));
+        let changes = decide(&world, &turn("the kitchen needs paint before Friday"), continued, 0, true);
+        let added = changes.iter().find_map(|c| match c {
+            Change::ThreadAdded { thread } => Some((thread.id.as_str(), thread.title.as_str())),
+            _ => None,
+        });
+        assert_eq!(added, Some(("T3", "Kitchen needs paint before Friday")));
+        assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T3")), "{changes:?}");
+        assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, .. } if thread_id == "T3")), "{changes:?}");
+        // The model is told, so the thread it starts gets a title.
+        let prompt = request(&world, &turn("the kitchen needs paint"), "m", super::ROOM, true)["messages"][1]["content"].as_str().unwrap().to_string();
+        let told = "The speaker asked for a new thread: this thought starts it (\"new\"), unless it adds nothing.\n";
+        assert!(prompt.ends_with(&format!("{told}NEW THOUGHT: \"the kitchen needs paint\"")), "{prompt}");
+        // A short turn the model sets aside stays set aside.
+        let skip = reply(json!({"action": "skip"}));
+        assert!(matches!(decide(&world, &turn("hmm, okay then"), skip, 0, true)[..], [Change::ThoughtSkipped { .. }]));
+        // Filler before the words is set aside as ever; then the rest starts the thread.
+        let threads = NewThreads::default();
+        threads.ask("you");
+        threads.said("you", "a");
+        let lead = reply(json!({"split": "the kitchen needs paint", "action": "skip"}));
+        let (changes, rest) = settle(&world, &turn("um, so yeah, the kitchen needs paint"), lead, 0, true);
+        assert!(matches!(changes[..], [Change::ThoughtSplit { .. }, Change::ThoughtSkipped { .. }]), "{changes:?}");
+        threads.placed("a", &changes, rest.as_deref());
+        assert!(!threads.starts("a") && threads.starts(rest.as_deref().unwrap()));
+        // Placed, it's done.
+        let placed = decide(&world, &turn("the kitchen needs paint"), reply(json!({"action": "new", "title": "Kitchen"})), 0, true);
+        threads.placed(rest.as_deref().unwrap(), &placed, None);
+        assert!(!threads.starts(rest.as_deref().unwrap()));
+    }
+
+    #[test]
+    fn new_thread_marks_only_the_speakers_next_thought() {
+        let threads = NewThreads::default();
+        threads.said("User", "a");
+        threads.ask("User");
+        threads.said("Sam", "b");
+        threads.said("User", "c");
+        threads.said("User", "d");
+        assert_eq!(["a", "b", "c", "d"].map(|id| threads.starts(id)), [false, false, true, false]);
+        // Moving to a thread before saying anything ends the ask.
+        threads.ask("User");
+        threads.cancel("User");
+        threads.said("User", "e");
+        assert!(!threads.starts("e"));
     }
 
     #[test]
@@ -751,11 +859,11 @@ mod tests {
             assert_eq!(room_for(&turn_of(chars)), ROOM, "{chars}");
         }
         assert_eq!(patience(ROOM), Duration::from_secs(20));
-        assert_eq!(request(&map(), &turn("Pay rent"), "m", ROOM)["max_tokens"], 2000);
+        assert_eq!(request(&map(), &turn("Pay rent"), "m", ROOM, false)["max_tokens"], 2000);
         // Past that, two tokens a character: 3,344 for the 1,672 characters that ran out of 2,000; never past the most.
         assert_eq!([1001, 1672, 1934].map(|chars| room_for(&turn_of(chars))), [2002, 3344, 3868]);
         assert_eq!([6000, 6001, 50_000].map(|chars| room_for(&turn_of(chars))), [MAX_ROOM; 3]);
-        assert_eq!(request(&map(), &turn(&turn_of(1672)), "m", 3344)["max_tokens"], 3344);
+        assert_eq!(request(&map(), &turn(&turn_of(1672)), "m", 3344, false)["max_tokens"], 3344);
         // Room to fill takes time, though not as much as twice the time: 36 s for 4,000, not 40.
         assert_eq!(patience(4000), Duration::from_secs(36));
         assert!(patience(MAX_ROOM) < Duration::from_secs(120), "still sooner than the shared client's limit");
@@ -870,7 +978,7 @@ mod tests {
     #[test]
     fn the_placer_sees_the_speakers_own_thread() {
         let world = room();
-        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m", ROOM)["messages"][1]["content"].to_string();
+        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m", ROOM, false)["messages"][1]["content"].to_string();
         assert!(prompt("User").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
@@ -883,7 +991,7 @@ mod tests {
         let prompt = |before: &Thought, text: &str| {
             let reply = Thought { text: text.into(), ..thought("r", "you", None, true) };
             let world = World { thoughts: vec![before.clone(), reply.clone()], ..map() };
-            request(&world, &reply, "m", ROOM)["messages"][1]["content"].as_str().unwrap().to_string()
+            request(&world, &reply, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string()
         };
         assert!(prompt(&asked, "Yeah.").ends_with("Just asked: \"Should we say it runs on Meta's models?\"\nNEW THOUGHT: \"Yeah.\""));
         // Nothing was asked, or the turn is long enough to stand on its own.
@@ -911,7 +1019,7 @@ mod tests {
         let mut answer = json!({"action": "new", "title": "Muse Bark speed", "point": text});
         answer.as_object_mut().unwrap().extend(misheard.as_object().unwrap().clone());
         let placement: Placement = serde_json::from_value(answer).unwrap();
-        decide(&World::default(), &thought, placement, 0)
+        decide(&World::default(), &thought, placement, 0, false)
     }
 
     /// The new thread's title, then the placed point, unclear, guess, heard and fixed words.
