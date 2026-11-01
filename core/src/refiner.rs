@@ -320,9 +320,20 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         let (said, point) = about(world, &a.thread_id, &a.title);
         let said_on = point.and_then(said_on);
         a.when = day(a.when.trim(), &said, today, said_on.as_deref().unwrap_or(today));
-        let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
         // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
         let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
+        // The map and earlier actions in this pass share one guard, across reminders and events.
+        let normalized = |text: &str| words(&text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>());
+        let title = normalized(&a.title);
+        let repeated = world.actions.iter().chain(out.iter().filter_map(|c| match c {
+            Change::ActionProposed { action } => Some(action),
+            _ => None,
+        })).any(|x| {
+            let other = normalized(&x.title);
+            x.thread_id == a.thread_id && !title.is_empty() && !other.is_empty()
+                && (title == other || (!when.is_empty() && x.when == when
+                    && (title.iter().all(|w| other.contains(w)) || other.iter().all(|w| title.contains(w)))))
+        });
         if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated && !names_an_id(&a.title) {
             out.push(Change::ActionProposed {
                 action: Action {
@@ -632,6 +643,41 @@ mod tests {
             .collect();
         let expected = [["Demo day", "event", "2026-11-04"], ["Picnic", "reminder", ""], ["Pay rent", "reminder", ""]];
         assert_eq!(actions, expected.map(|a| a.map(String::from)), "an event without a real day is a reminder");
+    }
+
+    #[test]
+    fn equivalent_actions_on_one_thread_are_only_proposed_once() {
+        let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], ..World::default() };
+        let pass = |actions| serde_json::from_value::<Pass>(serde_json::json!({ "actions": actions })).unwrap();
+        let task = |thread: &str, title: &str, kind: &str, when: &str| serde_json::json!({
+            "thread_id": thread, "title": title, "kind": kind, "when": when
+        });
+        let first = changes_on(&world, pass(vec![
+            task("T1", "Pay rent", "reminder", "2026-11-04"),
+            task("T1", "PAY RENT!", "event", "2026-11-04"),
+            task("T1", "P.a.y rent!", "event", "2026-11-04"),
+            task("T1", "Pay November rent", "event", "2026-11-04"),
+            task("T1", "Pay electric bill", "reminder", "2026-11-04"),
+            task("T2", "Pay rent", "reminder", "2026-11-04"),
+        ]), TODAY);
+        let titles: Vec<_> = first.iter().filter_map(|c| match c {
+            Change::ActionProposed { action } => Some((action.thread_id.as_str(), action.title.as_str())),
+            _ => None,
+        }).collect();
+        assert_eq!(titles, [("T1", "Pay rent"), ("T1", "Pay electric bill"), ("T2", "Pay rent")]);
+        for change in first { world.apply(&change); }
+        assert!(changes_on(&world, pass(vec![
+            task("T1", "Pay rent!", "event", "2026-11-05"),
+            task("T1", "Pa.y rent", "event", "2026-11-05"),
+            task("T1", "Pay November rent", "event", "2026-11-04"),
+            task("T1", "Electric bill", "event", "2026-11-04"),
+        ]), TODAY).is_empty(), "existing actions use the same guard in both containment directions");
+        let distinct = changes_on(&world, pass(vec![
+            task("T1", "Pay December rent", "event", "2026-12-04"),
+            task("T1", "Rent", "reminder", ""),
+            task("T1", "Pay water bill", "reminder", "2026-11-04"),
+        ]), TODAY);
+        assert_eq!(distinct.len(), 3, "containment needs a real matching date; shared words alone aren't duplicates");
     }
 
     #[test]
