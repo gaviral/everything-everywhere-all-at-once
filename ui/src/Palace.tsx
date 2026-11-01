@@ -1,9 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { capitalized, firstLetter, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
+import { roomColors, roomStyle } from "./rooms";
 import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
+
+// The core writes a 512 px copy beside the map's 128 px one, named alike, so tiles stay sharp at Palace size.
+const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palace.webp");
 
 // The narrowest a picture gets and the space between two, as the grid had them (auto-fill, minmax(150px, 1fr), 18 px).
 const TILE_MIN = 150;
@@ -42,6 +46,7 @@ function makeRooms(threads: Thread[]): Room[] {
 export function Palace({ threads, active, onOpen }: { threads: Thread[]; active: string | null; onOpen: (thread: Thread) => void }) {
   const me = useMe();
   const rooms = useMemo(() => makeRooms(threads), [threads]);
+  const colors = useMemo(() => roomColors(threads), [threads]);
   const byId = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
   const container = useRef<HTMLElement>(null);
   // Before the first paint, the Palace opens at its own top, right under the map tools, as a page of its own would.
@@ -132,9 +137,13 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
     // The room's heading already names its root, so only a branch of a branch says where it hangs.
     const under = parent && parent.id !== root.id ? parent : undefined;
-    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
+    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} style={roomStyle(colors.get(root.id))} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
       <span className="palace-art">
-        {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
+        {thread.picture ? <img src={palaceCopy(thread.picture)} alt="" loading="lazy" onError={(event) => {
+          // A map that has no Palace copy (a shipped sample's older pictures) shows the map's copy instead.
+          const img = event.currentTarget;
+          if (img.dataset.small) img.hidden = true; else { img.dataset.small = "1"; img.src = thread.picture!; }
+        }} /> : null}
         <span className="palace-placeholder" aria-hidden="true"><span>{firstLetter(thread.title)}</span></span>
         <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
       </span>
@@ -157,7 +166,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
       </div>
       <div className="palace-rooms" ref={roomsRef} style={{ "--tile": `${columns.width}px` } as CSSProperties}>
         {branched.map(({ root, members }) => (
-          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`} style={span(members.length)}>
+          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`} style={{ ...roomStyle(colors.get(root.id)), ...span(members.length) }}>
             <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} threads</span></div>
             <div className="palace-grid">{members.map((thread) => tile(thread, root))}</div>
           </section>

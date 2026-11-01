@@ -60,3 +60,10 @@
 @media (prefers-reduced-motion: reduce) {
   .palace-art { transition: none; }
 }
+
+/* A room wears one color, the one its pictures are painted in (rooms.ts); a letter tile waits in it too. */
+.palace-room-heading { color: var(--room, var(--muted)); }
+.palace-room-rule { height: 2px; background: color-mix(in srgb, var(--room, var(--line)) 40%, transparent); }
+.palace-placeholder { background: var(--room-soft, var(--line)); color: var(--room, var(--muted)); }
+.palace-placeholder span { background: color-mix(in srgb, var(--room, var(--muted)) 12%, var(--card)); color: var(--room, var(--muted)); }
+

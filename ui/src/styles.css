@@ -13,6 +13,12 @@
   --ai-button-ink: #fff;
   --accent-button-ink: #fff;
   --amber-button-ink: #fff;
+  /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
+  --room-red: #b4253f; --room-red-soft: #fbe1e5;
+  --room-green: #1d7a43; --room-green-soft: #dcf2e3;
+  --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
+  --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
+  --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
   color-scheme: light;
 }
@@ -33,6 +39,11 @@
     --ai-button-ink: #20152f;
     --accent-button-ink: #102344;
     --amber-button-ink: #30200b;
+    --room-red: #ff8a9c; --room-red-soft: #3a1d23;
+    --room-green: #76d39c; --room-green-soft: #1b3125;
+    --room-pink: #f293d2; --room-pink-soft: #341c2e;
+    --room-teal: #6fd2ca; --room-teal-soft: #17302f;
+    --room-lime: #c2da6a; --room-lime-soft: #2b3117;
     --shadow: 0 2px 12px rgba(0, 0, 0, .24);
     color-scheme: dark;
   }
@@ -738,10 +749,10 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .keyboard-hint strong { display: block; margin-top: 10px; }
 .keyboard-hint strong:first-child { margin-top: 0; }
 .keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
-/* The picture slot: the thread's first letter, quiet (color is for meaning), until the picture fades in over it. */
+/* The picture slot: the thread's first letter in its room's soft color, so the picture fades in over the same color. */
 .picture-wrap { position: relative; flex: none; display: grid; }
 .picture-wrap > .picture { grid-area: 1 / 1; }
-.picture-letter { display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 20px/1 Georgia, serif; }
+.picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
 .thread.collapsed .picture-letter { font-size: 16px; }
 .picture-wrap > img.picture { opacity: 0; transition: opacity .2s ease-out; }
 .picture-wrap > img.picture.is-shown { opacity: 1; }
@@ -836,3 +847,13 @@ header:has(.shortcuts[open]) { z-index: 11; }
   .composer { position: sticky; bottom: 0; flex: none; }
   .away-items { max-height: 15dvh; }
 }
+
+/* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
+   ink, so color stays scarce enough to mean something. */
+.branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
+/* A folded thread's proposals still waiting for you: amber, as everything that needs you. */
+.chip.waiting { color: var(--amber); background: var(--amber-soft); }
+/* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
+.when.due { color: var(--amber); }
+.when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
+.when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
