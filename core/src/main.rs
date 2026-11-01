@@ -146,7 +146,8 @@ impl Core {
     }
 
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
-    /// never becomes a thought, and a spoken command waits behind the thoughts said before it.
+    /// never becomes a thought, and a spoken command keeps its place among the words: one the turn opens
+    /// with goes ahead of the words after it, one it ends with waits behind the words before it.
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
         self.find.cancel(speaker);
@@ -156,17 +157,17 @@ impl Core {
         if let Some(request) = apps::command(text) {
             return apps::compose(self.clone(), request);
         }
-        let said = command(text);
-        // "Take me back to where I was" is a command, not a search: only a whole-turn command comes first.
-        if !said.as_ref().is_some_and(|(before, _)| before.is_empty()) {
+        let (first, said, then) = turn(text);
+        // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
+        if first.is_none() {
             if let Some(query) = find::command(text) {
                 return find::request(self.clone(), speaker.into(), query);
             }
         }
-        let (text, then) = match said {
-            Some((before, job)) => (before, Some(job(speaker.into()))),
-            None => (text, None),
-        };
+        if let Some(job) = first {
+            let _ = self.placer_queue.send(job(speaker.into()));
+        }
+        let text = said;
         let (active, asked) = {
             let world = self.world.lock().unwrap();
             (world.active_for(speaker).cloned(), world.thoughts.last().is_some_and(|t| t.text.trim_end().ends_with('?')))
@@ -192,7 +193,7 @@ impl Core {
             let _ = self.placer_queue.send(placer::Job::Place(id));
         }
         if let Some(job) = then {
-            let _ = self.placer_queue.send(job);
+            let _ = self.placer_queue.send(job(speaker.into()));
         }
     }
 }
@@ -254,8 +255,47 @@ fn command(text: &str) -> Option<(&str, fn(String) -> placer::Job)> {
         .find_map(|i| job(&text[i..]).map(|job| (text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end(), job)))
 }
 
-/// Where a command may begin partway through a turn: a word after a punctuation mark, or a word that
-/// turns to one ("okay", "anyway"). So "fly there and go back" and "that song would take me back" stay thoughts.
+/// What a turn asks for, in the order said: a command it opens with (see `opening`), the words to place,
+/// and a command it ends with (see `command`); a turn that is only a command opens with it. Commands said
+/// back to back count once, the last: "where was I, where was I… oh right" goes back once.
+fn turn(text: &str) -> (Option<fn(String) -> placer::Job>, &str, Option<fn(String) -> placer::Job>) {
+    let (mut first, mut rest) = (None, text);
+    while let Some((job, after)) = opening(rest) {
+        (first, rest) = (Some(job), after);
+    }
+    match command(rest) {
+        Some(("", job)) => (Some(job), "", None),
+        Some((before, job)) => (first, before, Some(job)),
+        None => (first, rest, None),
+    }
+}
+
+/// A command a turn opens with, and the words after it: "Where was I? Oh right, the rent is due Friday."
+/// The words before a pause mark or a turning word must be exactly a command, with the same strict asks
+/// and tails as a whole-turn one. Anything less stays as it was: "Go back to the beginning of the song,
+/// it's the best part" (more words before the pause) and "Next one up is the dentist" (no pause) are
+/// thoughts. So are a bare "next", which at the start lists things ("Next, I'll call Mom"), and a command
+/// ending in "there", "to that" or "to it", which points at the words after the pause ("Go back there,
+/// it was lovely"; "Take me back to that, the budget thing" is still a search).
+fn opening(text: &str) -> Option<(fn(String) -> placer::Job, &str)> {
+    starts(text).into_iter().find_map(|i| {
+        let (head, rest) = text.split_at(i);
+        let said = format!(" {}", words(head).join(" "));
+        let points_on = [" there", " to that", " to it"].iter().any(|end| said.ends_with(end));
+        let job: fn(String) -> placer::Job = if is_go_back(head) && !points_on {
+            placer::Job::Back
+        } else if is_go_next(head) && !is_command(head, &["next"], &[]) {
+            placer::Job::Next
+        } else {
+            return None;
+        };
+        Some((job, rest.trim_start_matches([',', ';', ':', '—', '–']).trim_start()))
+    })
+}
+
+/// Where a command may begin partway through a turn, or the words after one: a word after a punctuation
+/// mark, or a word that turns the talk ("okay", "anyway"). So "fly there and go back" and "that song would
+/// take me back" stay thoughts.
 fn starts(text: &str) -> Vec<usize> {
     const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
     const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
@@ -739,7 +779,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 
 #[cfg(test)]
 mod tests {
-    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, way_back, Access, Core, Link};
+    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link};
     use crate::world::{Thought, Thread, ThreadStatus, World};
     use std::sync::{Arc, Mutex};
     use tokio::sync::{broadcast, mpsc};
@@ -789,7 +829,58 @@ mod tests {
     }
 
     #[test]
-    fn filler_never_becomes_a_thought_and_a_command_waits_behind_the_words_before_it() {
+    fn a_command_at_the_start_of_a_turn_goes_ahead_of_the_words_after_it() {
+        let name = |job: fn(String) -> Job| if matches!(job("you".into()), Job::Back(_)) { "back" } else { "next" };
+        let (back, next) = (Some("back"), Some("next"));
+        // (turn, the command it opens with, the words placed, the command it ends with)
+        let turns = [
+            // At the start: after a pause mark or a turning word, with or without punctuation.
+            ("Where was I? Oh right, the rent is due Friday.", back, "Oh right, the rent is due Friday.", None),
+            ("Okay, where were we? The demo is on Tuesday.", back, "The demo is on Tuesday.", None),
+            ("So, um, what was I saying? The budget is too tight.", back, "The budget is too tight.", None),
+            ("Next one. I still need slides for the demo.", next, "I still need slides for the demo.", None),
+            ("Take me back to where I was — the landlord wants it by Friday", back, "the landlord wants it by Friday", None),
+            ("where was I oh right the rent is due friday", back, "oh right the rent is due friday", None),
+            // Back to back, the last one counts: said twice, or changed midway.
+            ("Where was I, where was I… oh right, the rent.", back, "oh right, the rent.", None),
+            ("Next one, wait, go back. The rent is due Friday.", back, "The rent is due Friday.", None),
+            ("Where was I? Next one.", next, "", None),
+            // Only filler after it: add_thought keeps none of it.
+            ("Where was I? Um.", back, "Um.", None),
+            // At the end, as before, and at both ends.
+            ("It starts at two in the afternoon, okay, where was I?", None, "It starts at two in the afternoon", back),
+            ("I'll pay it on Thursday. Anyway, next one.", None, "I'll pay it on Thursday.", next),
+            ("Where was I? The rent, okay, next one.", back, "The rent", next),
+            // The whole turn.
+            ("Where was I?", back, "", None),
+            ("Okay, next one", next, "", None),
+            // In the middle, between words: stays a thought.
+            ("The rent is due Friday. Where was I? Oh right, the budget.", None, "The rent is due Friday. Where was I? Oh right, the budget.", None),
+        ];
+        for (text, first, words, then) in turns {
+            let (f, w, t) = turn(text);
+            assert_eq!((f.map(name), w, t.map(name)), (first, words, then), "{text}");
+        }
+        // Look-alikes at the start stay as they were: more words before the pause, no pause, a bare "next",
+        // or a command pointing past the pause ("that" is the budget thing: a search, as before).
+        for text in [
+            "Go back to the beginning of the song, it's the best part",
+            "Next one up is the dentist",
+            "Next, I'll call Mom about the dentist.",
+            "Next week, the dentist",
+            "Go back there, it was lovely",
+            "Take me back to that, the budget thing",
+            "Where was I when the power went out? At the store.",
+            "that song would take me back, honestly",
+            "Anyway back to the hackathon. The placement needs to be under three seconds.",
+        ] {
+            let (f, w, t) = turn(text);
+            assert_eq!((f.map(name), w, t.map(name)), (None, text, None), "{text}");
+        }
+    }
+
+    #[test]
+    fn filler_never_becomes_a_thought_and_commands_keep_their_place_among_the_words() {
         let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
         let (updates, _) = broadcast::channel(64);
@@ -837,6 +928,23 @@ mod tests {
         core.add_thought("you", "yeah");
         assert_eq!(texts(&core)[1..], ["Should I take the Google offer?", "yeah"]);
         assert_eq!(jobs(), ["place", "place"]);
+        // A command the turn opens with goes ahead of the words after it, and isn't a search either.
+        core.add_thought("you", "Where was I? Oh right, the rent is due Friday.");
+        assert_eq!(jobs(), ["back", "place"]);
+        core.add_thought("you", "Take me back to where I was. The landlord wants it by Friday.");
+        assert_eq!(jobs(), ["back", "place"]);
+        core.add_thought("you", "Where was I? The rent, okay, next one.");
+        assert_eq!(jobs(), ["back", "place", "next"]);
+        core.add_thought("you", "Where was I? Um.");
+        assert_eq!(jobs(), ["back"]);
+        core.add_thought("you", "Go back to the beginning of the song, it's the best part");
+        assert_eq!(jobs(), ["place"]);
+        core.add_thought("you", "Take me back to that, the budget thing");
+        assert!(jobs().is_empty(), "a search, as before");
+        assert_eq!(
+            texts(&core)[3..],
+            ["Oh right, the rent is due Friday.", "The landlord wants it by Friday.", "The rent", "Go back to the beginning of the song, it's the best part"]
+        );
         let _ = std::fs::remove_file(&path);
     }
 
