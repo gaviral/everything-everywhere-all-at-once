@@ -10,6 +10,7 @@ type Handlers = {
 };
 import { startMic } from "./mic";
 import { Apps } from "./Apps";
+import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 
@@ -282,46 +283,6 @@ export default function App() {
     ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
     : "";
 
-  // Select a word or phrase on the map to get it explained in its context.
-  const [selection, setSelection] = useState<{
-    id: string;
-    text: string;
-    context: string;
-    x: number;
-    y: number;
-    asked: boolean;
-  } | null>(null);
-  useEffect(() => {
-    const onUp = () => {
-      const picked = window.getSelection();
-      const text = picked?.toString().trim() ?? "";
-      if (!picked || !text || text.length > 80 || picked.rangeCount === 0) return;
-      const range = picked.getRangeAt(0);
-      const node = range.commonAncestorContainer;
-      const element = node instanceof Element ? node : node.parentElement;
-      if (!element?.closest(".map")) return;
-      const rect = range.getBoundingClientRect();
-      const context =
-        element.closest("li")?.getAttribute("title") || element.closest(".thread")?.textContent || text;
-      setSelection({ id: crypto.randomUUID(), text, context, x: rect.left + rect.width / 2, y: rect.top, asked: false });
-    };
-    const onDown = (event: MouseEvent) => {
-      if (!(event.target as Element).closest(".explain")) setSelection(null);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelection(null);
-      else if (event.key.startsWith("Arrow") && event.shiftKey) onUp();
-    };
-    document.addEventListener("keyup", onKey);
-    document.addEventListener("mouseup", onUp);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keyup", onKey);
-      document.removeEventListener("mouseup", onUp);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, []);
-
   const goBack = (thread: Thread) => {
     setView("map");
     setExpanded((state) => {
@@ -380,22 +341,7 @@ export default function App() {
         <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
-      {selection && (
-        <div className="explain" style={{ left: selection.x, top: selection.y }}>
-          {selection.asked ? (
-            <div className="explain-text">{core.explanations[selection.id] ?? "…"}</div>
-          ) : (
-            <button
-              onClick={() => {
-                core.explain(selection.id, selection.text, selection.context);
-                setSelection({ ...selection, asked: true });
-              }}
-            >
-              Explain “{selection.text.length > 24 ? `${selection.text.slice(0, 24)}…` : selection.text}”
-            </button>
-          )}
-        </div>
-      )}
+      <Explain explanations={core.explanations} explain={core.explain} />
 
       <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">

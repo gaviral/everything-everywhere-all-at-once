@@ -9,6 +9,8 @@ anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 dotenvy = "0.15"
 futures-util = "0.3"
+# Reads Muse Image's WebP and writes the small copy the map shows (pure Rust, two tiny dependencies).
+image-webp = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
