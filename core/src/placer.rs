@@ -222,8 +222,8 @@ fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64) -> 
 
 /// Cuts a turn where the model says it moved on to another topic: the words before, and the rest.
 /// The quote is found as said (whole words, its last match), or failing that by its first four or three
-/// words, so a reworded ending still cuts in the right place. Joining words at the cut ("and also") are
-/// left out. None when the quote isn't there or either side would be empty.
+/// words, so a reworded ending still cuts in the right place. Joining words at the cut ("and also"),
+/// on either side, are left out. None when the quote isn't there or either side would be empty.
 fn cut(text: &str, quote: &str) -> Option<(String, String)> {
     let words: Vec<&str> = quote.trim_matches(|c: char| !c.is_alphanumeric()).split_whitespace().collect();
     let mut tries = vec![words.len(), 4, 3];
@@ -243,7 +243,18 @@ fn cut(text: &str, quote: &str) -> Option<(String, String)> {
         }
         before = trimmed;
     }
-    let rest = text[at..].trim();
+    let mut rest = text[at..].trim();
+    loop {
+        let trimmed = rest.trim_start_matches(|c: char| c.is_whitespace() || ",;:—–-".contains(c));
+        let trimmed = match trimmed.split_once(char::is_whitespace) {
+            Some((first, tail)) if JOINS.contains(&first.trim_end_matches([',', ';', ':']).to_lowercase().as_str()) => tail,
+            _ => trimmed,
+        };
+        if trimmed.len() == rest.len() {
+            break;
+        }
+        rest = trimmed;
+    }
     (!before.is_empty() && !rest.is_empty()).then(|| (before.to_string(), rest.to_string()))
 }
 
@@ -471,8 +482,9 @@ mod tests {
         let expected = Some(("I need to pay rent".to_string(), "the hackathon demo is on Tuesday".to_string()));
         assert_eq!(cut(text, "the hackathon demo is on Tuesday"), expected);
         // Quoted with the joining words, or with its own punctuation.
-        let joined = cut(text, "\"also the hackathon demo is on Tuesday.\"").unwrap();
-        assert_eq!(joined, ("I need to pay rent".to_string(), "also the hackathon demo is on Tuesday".to_string()));
+        assert_eq!(cut(text, "\"and also the hackathon demo is on Tuesday.\""), expected);
+        let oh = cut("I'll order the cookbook tonight. Oh, and the electric bill, autopay.", "Oh, and the electric bill");
+        assert_eq!(oh.unwrap(), ("I'll order the cookbook tonight.".to_string(), "the electric bill, autopay.".to_string()));
         // A reworded ending still cuts by its first words; the last match wins.
         assert_eq!(cut(text, "the hackathon demo is Tuesday"), expected);
         assert_eq!(cut("the demo slides, and the demo is Tuesday", "the demo is Tuesday").unwrap().0, "the demo slides");
