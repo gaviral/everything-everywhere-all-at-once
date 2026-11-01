@@ -656,9 +656,10 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
-          {!collapsed && (thread.tags ?? []).length > 0 && (
+          {/* A suggested tag waits until the thread has said enough (3 thoughts) for it to add anything; kept tags always show. */}
+          {!collapsed && (thread.tags ?? []).some((t) => t.kept || thoughts.length >= 3) && (
             <div className="tags">
-              {thread.tags.map((t) => (
+              {thread.tags.filter((t) => t.kept || thoughts.length >= 3).map((t) => (
                 <button
                   key={t.name}
                   className={t.kept ? "tag kept" : "tag"}
