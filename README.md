@@ -45,6 +45,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
+- `scripts/demo-talk-v4.jsonl` adds what came later: filler that doesn't land (“Um, so, yeah.”), a turn that splits into two topics, and “…okay, where was I?” at the end of a turn. `node scripts/voice.mjs <talk>` speaks any of these through the real speech path instead of typing them.
 - `data/demo` keeps growing across runs; move it aside for an empty map.
 - To talk: `./run.sh` (its map is in `data/`), press the mic and allow it, then speak; or type and press Enter.
 - To start from your past chats: Import chats (top right), then choose `conversations.json` from a ChatGPT or Claude export, or press Try with a sample (`ui/public/sample-chats.json`: five made-up ChatGPT chats). You see what goes to which model, and a rough cost, before anything is sent.
