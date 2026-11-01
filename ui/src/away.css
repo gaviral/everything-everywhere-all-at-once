@@ -1,0 +1,22 @@
+.away {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.away-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 8px; }
+.away h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.away-top p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.away-dismiss { flex: none; min-width: 44px; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 22px; cursor: pointer; }
+.away-dismiss:hover { background: var(--bg); color: var(--ink); }
+.away-items { max-height: min(30vh, 260px); overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 0 6px 6px; }
+.away-items li + li { border-top: 1px solid var(--line); }
+.away-items a { display: block; min-height: 44px; padding: 9px 8px; border-radius: 7px; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+.away-items a:hover { background: var(--bg); }
+.away-items a:focus-visible, .away-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.away-title { display: block; font-size: 14px; font-weight: 550; }
+.away-arrow { margin-left: 8px; color: var(--accent); }
+.away-detail { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.away-mark { color: var(--ai); }

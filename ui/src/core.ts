@@ -454,7 +454,7 @@ export function useCore() {
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
     setItem, approve, correct, tag,
-    visible: () => send(JSON.stringify({ type: "visible" })),
+    visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
