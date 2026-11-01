@@ -87,7 +87,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
                 return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={`palace-point-${thread.id}`}>
                   <span className="palace-art">
                     {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
-                    <span className="palace-placeholder" aria-hidden="true" />
+                    <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
                     <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
                     <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{capitalized(thread.last_point) || "No point yet"}</span>
                   </span>
