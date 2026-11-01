@@ -102,14 +102,31 @@ fn spoken_app_requests_can_open_with_filler_and_ask_for_me() {
 }
 
 #[test]
-fn volume_needs_continuous_readings_from_one_source() {
-    let mut state = (1000, 1000);
-    for now in (1000..4000).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
-    assert!(feed_volume(&mut state, 4200, true, 3));
-    assert!(!feed_volume(&mut state, 4300, false, 3));
-    assert!(!feed_volume(&mut state, 4500, true, 3));
-    assert!(!feed_volume(&mut state, 8000, true, 3), "a missing mic report resets the duration");
+fn volume_needs_a_sustained_stretch_from_one_source() {
+    // A reading every 320 ms, as the UI sends them.
+    let mut state = (0, 0, false);
+    for now in (320..=3200).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
+    assert!(feed_volume(&mut state, 3520, true, 3), "3 s after the first loud reading");
+    let mut state = (0, 0, false);
+    for now in (320..=3200).step_by(320) { assert!(!feed_volume(&mut state, now, now != 1600, 3)); }
+    assert!(feed_volume(&mut state, 3520, true, 3), "one low reading, a breath between sentences, is ridden out");
+    let mut state = (0, 0, false);
+    for now in (320..=3520).step_by(320) { assert!(!feed_volume(&mut state, now, !(1600..=1920).contains(&now), 3)); }
+    assert_eq!(state.0, 2240, "two low readings in a row start the stretch again");
+    assert!(!feed_volume(&mut state, 8000, true, 3), "a missing mic report starts it again too");
     assert_eq!(state.0, 8000);
+}
+
+#[test]
+fn the_composer_the_seed_and_the_voice_script_share_one_volume_scale() {
+    let prompt = compose_prompt();
+    let Watcher::Volume { level, .. } = seeds(true)[1].watcher else { panic!("the Volume watcher is the second seed") };
+    assert!(prompt.contains(&format!("use {level} for loud voices")) && !prompt.contains("{volume}"), "{prompt}");
+    assert!(NORMAL_VOICE < level && level < RAISED_VOICE && RAISED_VOICE < SHOUT);
+    // scripts/voice.mjs speaks at normal speech's level, so its talks can't set off the Volume watcher.
+    let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/voice.mjs")).expect("voice.mjs");
+    let spoken = script.lines().find_map(|line| line.strip_prefix("const LEVEL = ")?.strip_suffix(';')?.parse::<f64>().ok());
+    assert_eq!(spoken, Some(NORMAL_VOICE));
 }
 
 #[tokio::test]
@@ -466,7 +483,7 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
         tune
     };
     let now = now_ms();
-    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-a".into(), "app-volume".into()), (now - 4000, now));
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-a".into(), "app-volume".into()), (now - 4000, now, false));
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
     assert!(fixture.core.snapshot().suggestions.is_empty(), "another tab cannot complete this mic's loud streak");
@@ -479,7 +496,7 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
     volume_output(&fixture.core, "app-volume".into(), false);
     assert!(!fixture.core.snapshot().apps.iter().find(|a| a.id == "app-volume").unwrap().purpose.contains("tune"), "the purpose says what it does");
     fixture.core.commit(vec![Change::AppRan { id: "app-volume".into(), at_ms: 0 }]);
-    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-b".into(), "app-volume".into()), (now - 4000, now));
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-b".into(), "app-volume".into()), (now - 4000, now, false));
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
     assert_eq!(playful(), None, "the card alone is quiet");
