@@ -211,7 +211,7 @@ fn retry_in(round: u32) -> Duration {
 
 /// Places one thought, asking the model at `url`; when the turn moved on to another topic partway, returns the rest's id.
 async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Option<String>> {
-    let key = core.key()?;
+    core.key()?;
     let world = core.snapshot();
     let thought = world
         .thoughts
@@ -227,30 +227,16 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let placement = loop {
-        // The model asked last, for the trace: a default may give way to its base model (model.rs).
-        let asked = Mutex::new(String::new());
-        let started = std::time::Instant::now();
-        let answered = async {
-            let response = core
-                .ask_model(&core.placer_model, |model| {
-                    *asked.lock().unwrap() = model.to_string();
-                    core.http
-                        .post(url)
-                        .bearer_auth(key)
-                        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-                        .timeout(patience(room))
-                        .json(&request(&world, &thought, model, room, new_thread))
-                        .send()
-                })
-                .await?;
-            crate::model::answer(response).await
-        }
-        .await;
-        if core.trace.is_on() {
-            let sent = request(&world, &thought, &asked.lock().unwrap(), room, new_thread);
-            core.trace.call(&sent, started, answered.as_ref(), json!({"thought": thought_id, "room": room}));
-        }
-        let body = answered?;
+        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+        let body = core
+            .ask_model(
+                &core.placer_model,
+                url,
+                patience(room),
+                |model| request(&world, &thought, model, room, new_thread),
+                json!({"thought": thought_id, "room": room}),
+            )
+            .await?;
         match read(&body)? {
             Some(placement) => break placement,
             None if !again && room < MAX_ROOM => {
