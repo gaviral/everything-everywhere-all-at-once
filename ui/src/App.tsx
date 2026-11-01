@@ -65,6 +65,27 @@ export default function App() {
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const [noticeFocused, setNoticeFocused] = useState(false);
+  const lastNavigation = useRef(0);
+  const following = useRef(false);
+  useEffect(() => {
+    const navigate = () => { lastNavigation.current = Date.now(); };
+    const scroll = () => { if (!following.current) navigate(); };
+    const key = (event: KeyboardEvent) => {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", " ", "j", "k"].includes(event.key)) navigate();
+    };
+    window.addEventListener("scroll", scroll, true);
+    window.addEventListener("wheel", navigate, { passive: true });
+    window.addEventListener("touchstart", navigate, { passive: true });
+    window.addEventListener("touchmove", navigate, { passive: true });
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("wheel", navigate);
+      window.removeEventListener("touchstart", navigate);
+      window.removeEventListener("touchmove", navigate);
+      window.removeEventListener("keydown", key, true);
+    };
+  }, []);
   const seenThoughts = useRef<Set<string> | null>(null);
   const seenSnapshot = useRef(0);
   useEffect(() => {
@@ -76,11 +97,29 @@ export default function App() {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
+        // A landing gets one chance to follow; never catch up later while someone is reading.
+        if (view === "map" && !query.trim() && !core.recap.view && thought.thread_id) {
+          const threadId = thought.thread_id;
+          requestAnimationFrame(() => {
+            if (Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
+                document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
+            const target = document.getElementById(`thread-${threadId}`);
+            if (!target) return;
+            const rect = target.getBoundingClientRect();
+            const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
+            const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
+            if (bottom <= top || (rect.bottom > top && rect.top < bottom)) return;
+            const delta = rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
+            following.current = true;
+            window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
+            window.setTimeout(() => { following.current = false; }, reducedMotion ? 100 : 1000);
+          });
+        }
       }
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
-  }, [world.thoughts, world.threads, core.snapshotRevision, me]);
+  }, [world.thoughts, world.threads, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
