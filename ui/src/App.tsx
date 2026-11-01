@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
 
 type Handlers = {
@@ -10,13 +10,29 @@ type Handlers = {
 };
 import { startMic } from "./mic";
 
-const spring = { type: "spring", stiffness: 380, damping: 34 } as const;
+const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 export default function App() {
   const core = useCore();
+  const reducedMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { world } = core;
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
+  const [announcement, setAnnouncement] = useState("");
+  const seenThoughts = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const placed = world.thoughts.filter((thought) => thought.placed);
+    if (seenThoughts.current) {
+      const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
+      if (added.length) {
+        const thought = added[added.length - 1];
+        const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
+        setAnnouncement(`${thought.point}${title ? ` — ${title}` : ""}`);
+      }
+    }
+    seenThoughts.current = new Set(placed.map((thought) => thought.id));
+  }, [world.thoughts, world.threads]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -42,9 +58,9 @@ export default function App() {
   // The camera follows the conversation; threads themselves never move.
   useEffect(() => {
     if (world.active) {
-      document.getElementById(`thread-${world.active}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      document.getElementById(`thread-${world.active}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "nearest" });
     }
-  }, [world.active]);
+  }, [world.active, reducedMotion]);
 
   // True once the voice service confirms it's listening; if it then stops (an error, a dropped
   // connection), the mic turns off too instead of pulsing at nothing.
@@ -72,7 +88,7 @@ export default function App() {
       setStopMic(() => stop);
     } catch (err) {
       core.listen(false);
-      core.showNotice(`Mic didn't start: ${err instanceof Error ? err.message : "no access"}`);
+      core.showNotice(`Couldn't start the mic: ${err instanceof Error ? err.message : "no access"}`);
     }
   };
 
@@ -84,6 +100,12 @@ export default function App() {
 
   const roots = world.threads.filter((t) => !t.parent_id);
   const pending = world.thoughts.filter((t) => !t.placed);
+  const activePath = new Set<string>();
+  let current = world.threads.find((t) => t.id === world.active);
+  while (current && !activePath.has(current.id)) {
+    activePath.add(current.id);
+    current = world.threads.find((t) => t.id === current?.parent_id);
+  }
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -129,9 +151,15 @@ export default function App() {
     const onDown = (event: MouseEvent) => {
       if (!(event.target as Element).closest(".explain")) setSelection(null);
     };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelection(null);
+      else if (event.key.startsWith("Arrow") && event.shiftKey) onUp();
+    };
+    document.addEventListener("keyup", onKey);
     document.addEventListener("mouseup", onUp);
     document.addEventListener("mousedown", onDown);
     return () => {
+      document.removeEventListener("keyup", onKey);
       document.removeEventListener("mouseup", onUp);
       document.removeEventListener("mousedown", onDown);
     };
@@ -140,10 +168,11 @@ export default function App() {
   const goBack = (thread: Thread) => {
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
-    document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
   };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="app">
       <header>
         <div className="brand">
@@ -151,14 +180,14 @@ export default function App() {
         </div>
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
-          {!core.connected ? "Connecting" : core.listening ? "Listening" : "Ready"}
+          {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
         </div>
       </header>
 
       <AnimatePresence>
         {core.notice && (
           <motion.div
-            className="notice"
+            className="notice" role="status"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -186,11 +215,12 @@ export default function App() {
         </div>
       )}
 
-      <main className="map">
+      <main className="map" aria-label="Thread map">
         {roots.length === 0 && pending.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
-            <p>Talk or type. Every thought finds its thread, and nothing you start gets lost.</p>
+            <p>Speak or type a thought to start your map.</p>
+            <p className="empty-hint">Use the mic below, or type and press Enter.</p>
           </div>
         ) : (
           roots.map((t) => (
@@ -198,19 +228,23 @@ export default function App() {
               key={t.id}
               thread={t}
               world={world}
+              activePath={activePath}
+              expanded={expanded}
+              setExpanded={setExpanded}
               on={{ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }}
             />
           ))
         )}
       </main>
 
-      <div className="dock">
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
+      <section className="dock" aria-label="Your thoughts">
         <div className="dock-inner">
           <AnimatePresence>
             {pullBack && (
               <motion.div
                 key={dropKey(pullBack)}
-                className="pullback"
+                className="pullback" role="status"
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8 }}
@@ -221,7 +255,7 @@ export default function App() {
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
                   </div>
-                  <div className="pullback-quote">“{lastWords}…”</div>
+                  {lastWords && <div className="pullback-quote">“{lastWords}”</div>}
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => goBack(pullBack)}>Finish it</button>
@@ -235,7 +269,7 @@ export default function App() {
           <div className="live">{core.partial}</div>
           <div className="pending">
             {pending.map((t) => (
-              <motion.span key={t.id} layoutId={t.id} transition={spring} className="pill">
+              <motion.span key={t.id} layoutId={reducedMotion ? undefined : t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={spring} className="pill">
                 {t.text}
               </motion.span>
             ))}
@@ -252,17 +286,23 @@ export default function App() {
               className={stopMic ? "mic on" : "mic"}
               onClick={toggleMic}
               aria-label={stopMic ? "Stop listening" : "Start listening"}
+              aria-pressed={!!stopMic}
             >
               <MicIcon />
             </button>
           </form>
         </div>
-      </div>
+      </section>
     </div>
+    </MotionConfig>
   );
 }
 
-function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: Handlers }) {
+function ThreadCard({ thread, world, on, activePath, expanded, setExpanded, depth = 2 }: {
+  thread: Thread; world: World; on: Handlers; activePath: Set<string>;
+  expanded: Record<string, boolean>; setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; depth?: number;
+}) {
+  const reducedMotion = useReducedMotion();
   const thoughts = useMemo(
     () => world.thoughts.filter((t) => t.placed && t.thread_id === thread.id),
     [world.thoughts, thread.id],
@@ -271,11 +311,12 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
   const actions = world.actions.filter((a) => a.thread_id === thread.id && a.status !== "dismissed");
   const branches = world.threads.filter((t) => t.parent_id === thread.id);
   const active = world.active === thread.id;
+  const collapsed = !activePath.has(thread.id) && (expanded[thread.id] === false || (expanded[thread.id] === undefined && world.threads.length >= 60));
   const classes = ["thread", active ? "active" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
 
   return (
     <motion.section
-      layout="position"
+      layout={reducedMotion ? false : true}
       id={`thread-${thread.id}`}
       className={classes}
       initial={{ opacity: 0, y: 8 }}
@@ -286,9 +327,9 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
         {thread.picture && <img className="picture" src={thread.picture} alt="" />}
         <div className="head-text">
           <div className="head-line">
-            <span className="title">{thread.title}</span>
-            {thread.status === "dropped" && <span className="chip dropped">dropped</span>}
-            {active && <span className="chip now">now</span>}
+            <div className="title" role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
+            {thread.status === "dropped" && <span className="chip dropped">left off</span>}
+            {active && <span className="chip now">active</span>}
           </div>
           {(thread.tags ?? []).length > 0 && (
             <div className="tags">
@@ -296,6 +337,7 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
                 <button
                   key={t.name}
                   className={t.kept ? "tag kept" : "tag"}
+                  aria-pressed={t.kept}
                   title={t.kept ? "Remove tag" : "Keep this tag"}
                   onClick={() => on.tag(thread.id, t.name, !t.kept)}
                 >
@@ -305,7 +347,9 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
             </div>
           )}
         </div>
+        {!activePath.has(thread.id) && <button className="collapse" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: collapsed }))}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>}
       </div>
+      {!collapsed && <>
       <ul className="points">
         {thoughts.map((t) => (
           <Point key={t.id} thought={t} on={on} />
@@ -317,8 +361,8 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
           <span>{s.text}</span>
           {s.status === "new" && (
             <span className="ai-actions">
-              <button onClick={() => on.setItem(s.id, "kept")}>Keep</button>
-              <button className="quiet" onClick={() => on.setItem(s.id, "dismissed")} aria-label="Dismiss">
+              <button aria-label={`Keep suggestion: ${s.text}`} onClick={() => on.setItem(s.id, "kept")}>Keep</button>
+              <button className="quiet" onClick={() => on.setItem(s.id, "dismissed")} aria-label={`Dismiss suggestion: ${s.text}`}>
                 ×
               </button>
             </span>
@@ -331,10 +375,11 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} world={world} on={on} />
+            <ThreadCard key={b.id} thread={b} world={world} on={on} activePath={activePath} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
           ))}
         </div>
       )}
+      </>}
     </motion.section>
   );
 }
@@ -342,8 +387,9 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
   const other = thought.speaker !== "you";
+  const reducedMotion = useReducedMotion();
   return (
-    <motion.li layoutId={thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+    <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       <span>{thought.point}</span>
       {thought.unclear && thought.guess ? (
@@ -356,7 +402,7 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
         </span>
       ) : (
         thought.unclear && (
-          <span className="unclear" title={`Did I hear this right? ${thought.unclear}`}>
+          <span className="unclear" title={`Might be misheard: ${thought.unclear}`} role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
             ?
           </span>
         )
@@ -381,8 +427,8 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
       </span>
       {action.status === "new" && (
         <span className="ai-actions">
-          <button onClick={() => on.approve(action.id)}>Add to {app}</button>
-          <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label="Dismiss">
+          <button aria-label={`Add ${action.title} to ${app}`} onClick={() => on.approve(action.id)}>Add to {app}</button>
+          <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
             ×
           </button>
         </span>
