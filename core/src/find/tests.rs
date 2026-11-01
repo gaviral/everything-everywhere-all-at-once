@@ -41,14 +41,28 @@ fn point(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
 #[test]
 fn accepts_whole_requests_with_filler_and_polite_words() {
     for ask in [
-        "Where did I talk about rent?", "where did we talk about rent", "Take me to rent.",
-        "Didn't I say something about rent?", "Didn’t I say something about rent?", "find rent",
-        "Okay, um, could you please find rent for me?", "So, take me back to the thread about rent, please.",
+        "Where did I talk about rent?", "where did we talk about rent", "Take me to the thread about rent.",
+        "Didn't I say something about rent?", "Didn’t I say something about rent?", "find the rent thread",
+        "Okay, um, could you please find what I said about rent for me?", "So, take me back to the thread about rent, please.",
         "Can you show me what I said about rent?", "Where have I talked about rent?", "Didn't I mention rent?",
         "WHERE DID I WRITE ABOUT RENT?!", "did i say anything about rent", "please find #rent",
-        "Didn't I talk about rent?", "Where have I mentioned rent?",
+        "Didn't I talk about rent?", "Where have I mentioned rent?", "Take me back to rent",
+        "Find where I talked about rent", "find where we said something about rent", "Take me to my thoughts on rent",
     ] {
-        assert_eq!(command(ask).as_deref(), Some(if ask.contains('#') { "#rent" } else { "rent" }), "{ask}");
+        assert_eq!(command(ask).as_deref(), Some(if ask.contains('#') { "#rent" } else if ask.contains("the rent") { "the rent" } else { "rent" }), "{ask}");
+    }
+    assert_eq!(command("Find where I said the deposit comes back").as_deref(), Some("the deposit comes back"));
+}
+
+#[test]
+fn find_and_take_me_to_are_errands_unless_they_point_at_the_map() {
+    // To-dos as often as asks: they stay thoughts, whatever is on the map.
+    for thought in [
+        "Find a dentist near the office", "Take me to the airport Friday", "Find time to call Mom",
+        "Find out whether the venue has Wi-Fi", "Okay, find a babysitter for Saturday", "Can you find a cheaper flight?",
+        "find rent", "Take me to rent.", "Find something about Roman history for the essay", "Find where I left my keys",
+    ] {
+        assert!(command(thought).is_none(), "{thought}");
     }
 }
 
@@ -206,20 +220,64 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
 }
 
 #[test]
-fn missing_and_weak_matches_without_a_key_leave_the_map_alone() {
-    let fixture = Fixture::new(World {
-        threads: vec![thread("T1", "Rent", 1)], active: Some("T1".into()), ..World::default()
-    });
-    let mut updates = fixture.core.updates.subscribe();
+fn missing_and_weak_matches_without_a_key_keep_the_words_as_a_thought() {
     for query in ["spaceship", "rent spaceship"] {
-        request(fixture.core.clone(), "Sam".into(), query.into());
+        let fixture = Fixture::new(World {
+            threads: vec![thread("T1", "Rent", 1)], active: Some("T1".into()), ..World::default()
+        });
+        let mut updates = fixture.core.updates.subscribe();
+        let said = format!("Where did I talk about {query}?");
+        request(fixture.core.clone(), "Sam".into(), query.into(), said.clone());
         let out = updates.try_recv().unwrap();
         assert_eq!(out.to.as_deref(), Some("Sam"));
-        assert!(matches!(out.message, ServerMsg::Notice { message } if message == "I couldn't find a matching thread or point."));
+        assert!(matches!(out.message, ServerMsg::Notice { message } if message == "I couldn't find a match, so I kept it as a thought."));
+        // Nothing moves, and the words aren't lost: they're a thought, to be placed like any other.
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { ref thought } }
+            if thought.text == said && thought.speaker == "Sam" && thought.thread_id.as_deref() == Some("T1") && !thought.placed));
         assert!(updates.try_recv().is_err());
         assert!(fixture.core.snapshot().active_by.is_empty());
-        assert!(std::fs::read_to_string(&fixture.path).unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(&fixture.path).unwrap().lines().count(), 1, "journaled like any thought");
     }
+}
+
+#[test]
+fn a_to_do_that_starts_with_find_or_take_me_to_reaches_the_map() {
+    let fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Dentist", 1), thread("T2", "Airport pickup", 2), thread("T3", "Call Mom", 3)],
+        thoughts: vec![point("a", "T1", "Find a dentist near the office", 1), point("b", "T2", "Airport Friday at six", 2), point("c", "T3", "Call Mom this week", 3)],
+        active_by: HashMap::from([("User".into(), "T3".into())]),
+        ..World::default()
+    });
+    let mut updates = fixture.core.updates.subscribe();
+    for said in ["Find a dentist near the office", "Take me to the airport Friday", "Find time to call Mom"] {
+        fixture.core.add_thought("User", said);
+        assert_eq!(fixture.core.snapshot().thoughts.last().map(|t| (t.text.as_str(), t.placed)), Some((said, false)), "{said}");
+    }
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T3"), "no jump");
+    while let Ok(out) = updates.try_recv() {
+        assert!(!matches!(out.message, ServerMsg::Found { .. } | ServerMsg::Notice { .. }), "a thought, not a search");
+    }
+    // Once those are placed (a search waits for them), the unmistakable ways still search.
+    let placed = fixture.core.snapshot().thoughts.iter().filter(|t| !t.placed).map(|t| Change::ThoughtPlaced {
+        thought_id: t.id.clone(), thread_id: "T1".into(), point: t.text.clone(), unclear: String::new(), guess: String::new(),
+        heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+    }).collect();
+    fixture.core.commit(placed);
+    fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T3".into(), speaker: "User".into() }]);
+    fixture.core.add_thought("User", "Find where I talked about the airport");
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"));
+    assert_eq!(fixture.core.snapshot().thoughts.len(), 6);
+}
+
+#[test]
+fn filler_while_a_search_is_looking_keeps_the_search() {
+    let fixture = Fixture::new(World::default());
+    let request = fixture.core.find.cancel("User");
+    fixture.core.add_thought("User", "Hmm.");
+    fixture.core.add_thought("User", "um, okay");
+    assert!(fixture.core.find.current("User", request), "\"hmm\" while it looks adds nothing");
+    fixture.core.add_thought("User", "The deposit comes back in June.");
+    assert!(!fixture.core.find.current("User", request), "a new thought is newer than the search");
 }
 
 #[test]
@@ -233,7 +291,7 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
     world.thoughts[0].point = "Rent deposit returns in June".into();
     let fixture = Fixture::new(world);
     let mut updates = fixture.core.updates.subscribe();
-    show(&fixture.core, "User", found);
+    show(&fixture.core, "User", found, "Where did I talk about the rent deposit?");
     let mut seen = false;
     while let Ok(out) = updates.try_recv() {
         if let ServerMsg::Found { thread_id, message, .. } = out.message {

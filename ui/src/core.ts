@@ -171,9 +171,14 @@ function apply(world: World, raw: Change): World {
       ? { ...raw, suggestion: { ...raw.suggestion, thread_id: r(raw.suggestion.thread_id) } }
       : raw.type === "action_proposed"
         ? { ...raw, action: { ...raw.action, thread_id: r(raw.action.thread_id) } }
-        : "thread_id" in raw
-          ? { ...raw, thread_id: r(raw.thread_id) }
-          : raw;
+        // An import's points and a new branch can name a thread merged while they were being made.
+        : raw.type === "thought_added" && raw.thought.thread_id
+          ? { ...raw, thought: { ...raw.thought, thread_id: r(raw.thought.thread_id) } }
+          : raw.type === "thread_added" && raw.thread.parent_id
+            ? { ...raw, thread: { ...raw.thread, parent_id: r(raw.thread.parent_id) } }
+            : "thread_id" in raw
+              ? { ...raw, thread_id: r(raw.thread_id) }
+              : raw;
   const onThread = (id: string, edit: (t: Thread) => Thread): World => ({
     ...world,
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
@@ -356,6 +361,9 @@ export function useCore() {
           case "snapshot":
             setFound(null);
             setNoKey(false);
+            // The core sends a running import's status right after the snapshot; one it doesn't has ended
+            // (it finished while this window was away, or the core restarted).
+            setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);

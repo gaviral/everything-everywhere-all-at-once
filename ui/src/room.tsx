@@ -5,14 +5,16 @@ import { createContext, useContext, useEffect, useLayoutEffect, useState, type F
 import "./room.css";
 
 type Seat = { me: string; code: string };
-// What the core says at /room: is a room open, and may this page use the map?
-type Door = { room: boolean; member: boolean };
+// What the core says at /room: is a room open, may this page use the map, and (asked with a name) does
+// another laptop hold that name? Private things (live words, the mic, notices) go to every window with a name.
+type Door = { room: boolean; member: boolean; taken?: boolean };
 
 const ALONE: Seat = { me: "you", code: "" };
 const NAME = "e2a2o.name";
 const CODE = "e2a2o.room";
 const JOINED = "e2a2o.joined";
 const GUEST_MACHINE = !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+const TAKEN = "That name is taken in this room. Pick another.";
 
 // The socket reads the seat each time it connects; Room keeps both current.
 let seat = ALONE;
@@ -93,10 +95,14 @@ function write(key: string, value: string, store: Store = "localStorage") {
   }
 }
 
-async function knock(code: string): Promise<Door> {
+async function knock(code: string, name = ""): Promise<Door> {
   // Pictures can't carry the code in their address, so it rides along as a cookie for this site only.
   if (code) document.cookie = `room=${code}; path=/; SameSite=Strict`;
-  const response = await fetch(code ? `/room?room=${code}` : "/room");
+  const params = new URLSearchParams();
+  if (code) params.set("room", code);
+  if (name) params.set("name", name);
+  const query = params.toString();
+  const response = await fetch(query ? `/room?${query}` : "/room");
   if (!response.ok) throw new Error(`The core said ${response.status}`);
   return (await response.json()) as Door;
 }
@@ -113,13 +119,14 @@ export function Room({ children }: { children: ReactNode }) {
   useEffect(() => {
     let stop = false;
     let timer: number | undefined;
+    const joined = read(JOINED, "sessionStorage");
     const look = () =>
-      knock(code)
+      knock(code, joined)
         .then((d) => {
           if (stop) return;
           setDoor(d);
-          const joined = read(JOINED, "sessionStorage");
           if (!d.room) setCurrent(ALONE);
+          else if (d.member && joined && d.taken) setNote(TAKEN);
           else if (d.member && joined) setCurrent({ me: joined, code });
           else if (!d.member && code) setNote("That code doesn't match this room.");
         })
@@ -138,16 +145,17 @@ export function Room({ children }: { children: ReactNode }) {
     seat = current ?? ALONE;
   }, [current]);
 
-  // A restarted core may be alone again, or a room with a new code: then ask again.
+  // A restarted core may be alone again, or a room with a new code; or another laptop holds this name
+  // (the core then refuses the map): then ask again.
   useEffect(() => {
     if (!current) return;
     recheck = () => {
-      knock(current.code)
+      knock(current.code, current === ALONE ? "" : current.me)
         .then((d) => {
-          if (d.room === (current !== ALONE) && (!d.room || d.member)) return;
+          if (d.room === (current !== ALONE) && (!d.room || d.member) && !d.taken) return;
           setDoor(d);
           setCurrent(d.room ? null : ALONE);
-          setNote(d.room && !d.member ? "The room has a new code. Ask the host for it." : "");
+          setNote(!d.room ? "" : !d.member ? "The room has a new code. Ask the host for it." : d.taken ? TAKEN : "");
         })
         .catch(() => {}); // the core is down; the socket keeps trying
     };
@@ -170,10 +178,11 @@ export function Room({ children }: { children: ReactNode }) {
     const tried = normal(code);
     setBusy(true);
     try {
-      const d = await knock(tried);
+      const d = await knock(tried, me);
       setDoor(d);
       if (!d.room) return setCurrent(ALONE);
       if (!d.member) return setNote(tried ? "That code doesn't match this room." : "Type the room code from the host.");
+      if (d.taken) return setNote(TAKEN);
       write(NAME, me);
       if (tried) write(CODE, tried);
       write(JOINED, me, "sessionStorage");
