@@ -26,6 +26,8 @@ export interface Thought {
   placed: boolean;
   unclear: string;
   guess?: string;
+  heard?: string;
+  fixed?: string;
   complete: boolean;
   at_ms: number;
   place_ms: number | null;
@@ -72,6 +74,8 @@ type Change =
       point: string;
       unclear: string;
       guess?: string;
+      heard?: string;
+      fixed?: string;
       complete: boolean;
       place_ms: number;
     }
@@ -108,6 +112,19 @@ function resolve(world: World, id: string): string {
   // At most one hop per merge, so a corrupt snapshot with a cycle can't freeze the tab.
   for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[current]; hops--) current = world.merged[current];
   return current;
+}
+
+// Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
+// when lowercasing keeps the length, so the cut lines up.
+function swap(text: string, from: string, to: string): string {
+  const even = text.toLowerCase().length === text.length && from.toLowerCase().length === from.length;
+  const [hay, needle] = even ? [text.toLowerCase(), from.toLowerCase()] : [text, from];
+  const word = /[A-Za-z0-9]/;
+  for (let i = needle ? hay.indexOf(needle) : -1; i >= 0; i = hay.indexOf(needle, i + needle.length)) {
+    const end = i + from.length;
+    if (!word.test(text[i - 1] ?? "") && !word.test(text[end] ?? "")) return text.slice(0, i) + to + text.slice(end);
+  }
+  return text;
 }
 
 function apply(world: World, raw: Change): World {
@@ -183,6 +200,10 @@ function apply(world: World, raw: Change): World {
                 point: c.point,
                 unclear: c.unclear,
                 guess: c.guess ?? "",
+                // A sure fix is already in the point; the text takes it too, only on first placing.
+                text: !t.placed && c.heard && c.fixed ? swap(t.text, c.heard, c.fixed) : t.text,
+                heard: c.heard ?? "",
+                fixed: c.fixed ?? "",
                 complete: c.complete,
                 placed: true,
                 place_ms: c.place_ms,
@@ -202,22 +223,30 @@ function apply(world: World, raw: Change): World {
     case "active_changed":
       return { ...world, active: c.thread_id };
     case "thought_corrected": {
-      // Mirrors the core: yes swaps the unclear words for the guess, no keeps them.
+      // Mirrors the core: yes swaps the unclear words for the guess, no keeps them;
+      // no to a fix made without asking puts the words back as heard.
       const t = world.thoughts.find((x) => x.id === c.thought_id);
       if (!t) return world;
-      const swap = (text: string) => {
-        if (!c.accept || !t.unclear || !t.guess) return text;
-        // Ignore case only when lowercasing keeps the length, so the cut lines up (as in the core).
-        const even = text.toLowerCase().length === text.length && t.unclear.toLowerCase().length === t.unclear.length;
-        const i = even ? text.toLowerCase().indexOf(t.unclear.toLowerCase()) : text.indexOf(t.unclear);
-        return i < 0 ? text : text.slice(0, i) + t.guess + text.slice(i + t.unclear.length);
+      const undo = !c.accept && !!t.heard && !!t.fixed;
+      const correct = (text: string) => {
+        if (c.accept && t.unclear && t.guess) return swap(text, t.unclear, t.guess);
+        if (!c.accept && t.heard && t.fixed) return swap(text, t.fixed, t.heard);
+        return text;
       };
-      const fixed = { ...t, text: swap(t.text), point: swap(t.point), unclear: "", guess: "" };
+      const next = {
+        ...t,
+        text: correct(t.text),
+        point: correct(t.point),
+        unclear: "",
+        guess: "",
+        heard: undo ? "" : t.heard,
+        fixed: undo ? "" : t.fixed,
+      };
       return {
         ...world,
-        thoughts: world.thoughts.map((x) => (x.id === t.id ? fixed : x)),
+        thoughts: world.thoughts.map((x) => (x.id === t.id ? next : x)),
         threads: world.threads.map((th) =>
-          th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: fixed.point } : th,
+          th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next.point } : th,
         ),
       };
     }

@@ -608,6 +608,13 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
+      {thought.heard && thought.fixed && (
+        // Fixed without asking: quiet until you look, and one tap puts the words back.
+        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
+          <span>fixed</span>
+          <span>heard “{thought.heard}” · undo</span>
+        </button>
+      )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?
