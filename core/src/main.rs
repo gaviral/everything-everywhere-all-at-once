@@ -11,8 +11,10 @@ mod protocol;
 mod world;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
-use axum::response::IntoResponse;
+use axum::extract::{Request, State};
+use axum::http::{header, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
@@ -238,12 +240,38 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(connect))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
+        .layer(middleware::from_fn(only_local))
         .with_state(core);
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     tracing::info!("E2A2O core on http://localhost:{port}");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Only pages served from this machine may use the core. A browser always sends Origin with a
+/// WebSocket handshake, so a site you happen to have open can't read your map or approve actions;
+/// checking Host too stops DNS rebinding (a site whose name resolves to 127.0.0.1).
+async fn only_local(request: Request, next: Next) -> Response {
+    let allowed = {
+        let value = |name| request.headers().get(name).and_then(|v| v.to_str().ok());
+        value(header::HOST).is_some_and(local) && value(header::ORIGIN).is_none_or(local)
+    };
+    if !allowed {
+        tracing::warn!("refused a request from origin {:?}", request.headers().get(header::ORIGIN));
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(request).await
+}
+
+/// True for localhost, 127.0.0.1 and [::1], with or without a scheme and a port.
+fn local(value: &str) -> bool {
+    let host = value.rsplit("://").next().unwrap_or(value);
+    let host = match host.rsplit_once(':') {
+        Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
 
 async fn connect(upgrade: WebSocketUpgrade, State(core): State<Arc<Core>>) -> impl IntoResponse {
@@ -322,4 +350,19 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
         }
     }
     forward.abort();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::local;
+
+    #[test]
+    fn only_this_machine_counts_as_local() {
+        for ok in ["localhost:4321", "127.0.0.1:4321", "[::1]:4321", "http://localhost:5173", "http://127.0.0.1:4321", "localhost"] {
+            assert!(local(ok), "{ok}");
+        }
+        for bad in ["evil.com:4321", "http://localhost.evil.com:4321", "http://127.0.0.1.nip.io", "null", "http://evil.com", "[::1"] {
+            assert!(!local(bad), "{bad}");
+        }
+    }
 }
