@@ -547,7 +547,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: !collapsed }))} disabled={searching && matches.has(thread.id)}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={() => { if (!(searching && matches.has(thread.id))) setExpanded((state) => ({ ...state, [thread.id]: !collapsed })); }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
