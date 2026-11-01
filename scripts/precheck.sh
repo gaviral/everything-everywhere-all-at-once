@@ -23,6 +23,17 @@ check "a room keeps the map behind its code (tested)" "grep -q 'fn a_room_lets_t
 check "model calls have a timeout (test fixtures aside)" "python3 -c 'import glob, sys; sys.exit(any(\"reqwest::Client::new()\" in open(f).read().split(\"#[cfg(test)]\")[0] for f in glob.glob(\"core/src/**/*.rs\", recursive=True) if not f.endswith(\"tests.rs\")))'"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
+# A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.
+samples_have_pictures() {
+  for journal in samples/*.jsonl; do
+    map=$(basename "$journal" .jsonl)
+    [ "$(grep -c '"type":"thread_added"' "$journal")" = "$(grep -c '"type":"thread_picture"' "$journal")" ] || return 1
+    for name in $(grep -o '"type":"thread_picture"[^}]*' "$journal" | sed 's|.*"path":"/images/||; s|"$||'); do
+      [ -f "samples/images/$map/$name" ] || return 1
+    done
+  done
+}
+check "samples: every thread has its picture shipped (no blank Palace without a key)" samples_have_pictures
 
 port=${PORT:-4321}
 if curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
