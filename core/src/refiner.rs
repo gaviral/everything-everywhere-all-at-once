@@ -124,10 +124,19 @@ fn rest_ms(failures: u32) -> u64 {
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let today = chrono_today();
+    let answer = ask(&core.http, key, &request(world, since, &today)).await?;
+    let pass: Pass = serde_json::from_str(&answer).context("answer wasn't the expected JSON")?;
+    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
+    // while the model worked, and a second idea on that thread would only repeat it.
+    Ok(changes(&core.snapshot(), pass))
+}
+
+/// What a pass sends: the rules, today's date, the bounded map and what's already on it.
+fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
     let map = describe(world, since);
     let existing = existing(world);
-    let today = chrono_today();
-    let body = json!({
+    json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort": "low",
         "max_tokens": 6000,
@@ -147,18 +156,18 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
             },
             "required": ["titles", "merges", "suggestions", "actions", "tags"]
         }}}
-    });
-    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
+    })
+}
+
+/// Sends a pass; the answer is the model's JSON as text.
+async fn ask(http: &reqwest::Client, key: &str, body: &serde_json::Value) -> anyhow::Result<String> {
+    let response = http.post(URL).bearer_auth(key).json(body).send().await?;
     let status = response.status();
     let value: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
     }
-    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
-    // while the model worked, and a second idea on that thread would only repeat it.
-    Ok(changes(&core.snapshot(), pass))
+    Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
 /// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
@@ -535,3 +544,8 @@ mod tests {
         assert!(all.contains("thought 12") && !all.contains("thought 4\n"), "keeps only the latest 8");
     }
 }
+
+/// Live checks against the real model (ignored unless asked for; see the file).
+#[cfg(test)]
+#[path = "refiner_live.rs"]
+mod live;
