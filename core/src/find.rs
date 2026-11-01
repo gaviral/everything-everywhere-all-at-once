@@ -67,11 +67,9 @@ pub fn command(text: &str) -> Option<String> {
         "did i say something about", "did i say anything about", "have i said anything about",
         "take me back to", "take me to", "go back to", "go to", "find",
     ];
-    // With no ask, a turn that is only "the one about …" points at the map on its own.
-    let (ask, query) = asks
-        .iter()
-        .find_map(|ask| Some((*ask, rest.strip_prefix(&format!("{ask} "))?)))
-        .or_else(|| the_one(&rest).map(|_| ("", rest.as_str())))?;
+    // "The one about …" alone stays a thought: speech often splits "She wants that cookbook. The one about
+    // Oaxacan food." into two turns, and a jump would lose the second one's words.
+    let (ask, query) = asks.iter().find_map(|ask| Some((*ask, rest.strip_prefix(&format!("{ask} "))?)))?;
     let mut query = query.trim();
     for suffix in [" for me please", " please", " for me"] {
         if let Some(head) = query.strip_suffix(suffix) { query = head.trim(); break; }

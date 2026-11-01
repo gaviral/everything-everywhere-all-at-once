@@ -550,7 +550,7 @@ export default function App() {
           <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
           <div>“New thread” or “Create a new one” · your next thought starts one</div>
           <div>“Palace”, “Map”, “Focus” or “Show all” · switch the view, as the buttons do</div>
-          <div>“Where did I talk about [topic]?” or “The one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>Back, next and last can follow a thought after a pause; the thought is kept.</div>
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
