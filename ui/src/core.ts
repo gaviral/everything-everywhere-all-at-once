@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { volumeReporter } from "./apps-audio";
-import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 
@@ -457,12 +457,16 @@ export function useCore(speaker?: string) {
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
+  const requestRecap = (requested?: RecapPeriod) => {
+    const since = requested === undefined ? recapFallback(world) : undefined;
+    const period = since !== undefined ? "session" : requested ?? "today";
+    const sent = !noKey && send(JSON.stringify({ type: "recap", period }));
+    recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent, since);
+  };
+
   return {
     recap,
-    requestRecap: (period: RecapPeriod) => {
-      const sent = send(JSON.stringify({ type: "recap", period }));
-      recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent);
-    },
+    requestRecap,
     apps,
     composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
     decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),
@@ -485,6 +489,7 @@ export function useCore(speaker?: string) {
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
+      if (isDefaultRecap(text)) { requestRecap(); return true; }
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
