@@ -64,6 +64,8 @@ grep -q 'contributor' core/src/main.rs && warn "default placer model is a contri
 grep -q 'e2a2o' run.sh && warn "run.sh names the developer's Keychain item"
 # Placeholders the owner still has to decide on (pitch, cover, ...) must not ship unnoticed.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do warn "README still has a $marker placeholder for User to decide"; done
+# So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them.
+for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at"; done
 grep -q 'timeout' core/src/asr.rs || warn "speech stream has no read timeout"
 [ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
 exit $failed
