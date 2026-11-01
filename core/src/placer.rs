@@ -6,7 +6,7 @@ use crate::{now_ms, protocol::ServerMsg, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -182,6 +182,7 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
     let (changes, rest) = settle(&world, &thought, placement, place_ms);
+    drop(world);
     core.commit(changes);
     Ok(rest)
 }
@@ -258,6 +259,19 @@ fn cut(text: &str, quote: &str) -> Option<(String, String)> {
     (!before.is_empty() && !rest.is_empty()).then(|| (before.to_string(), rest.to_string()))
 }
 
+#[cfg(test)]
+pub(crate) fn perf(world: &World, thought: &Thought) {
+    crate::perf::measure_bytes("placer lookup + prompt", || {
+        let thought = world.thoughts.iter().find(|t| t.id == thought.id).unwrap().clone();
+        serde_json::to_vec(&request(world, &thought, "perf-model")).unwrap()
+    });
+    crate::perf::measure("placer settle + dropped scans", || {
+        let answer = json!({"action": "return", "thread_id": "T2", "point": "Review the project budget",
+            "dropped": ["T1", "T149", "T150"]});
+        settle(world, thought, serde_json::from_value(answer).unwrap(), 2_000)
+    }, |(changes, _)| serde_json::to_vec(changes).unwrap().len());
+}
+
 fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
     let threads = if world.threads.is_empty() {
         "(none yet)".to_string()
@@ -273,6 +287,8 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             .join("\n")
     };
     let active = world.active_for(&thought.speaker).cloned().unwrap_or_else(|| "(none)".into());
+    let names = names(world);
+    let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     json!({
         "model": model,
         "reasoning_effort": "minimal",
@@ -280,7 +296,7 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\nNEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -300,6 +316,73 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             "required": ["action", "thread_id", "title", "parent_id", "point", "split", "complete", "dropped", "unclear", "guess", "sure"]
         }}}
     })
+}
+
+/// Names in the prompt, at most: the latest ones.
+const NAMES: usize = 30;
+
+/// Names said so far, the latest first: runs of capitalized words ("Muse Spark", "Main Street", "Dana") in the
+/// words as said. Points are summaries and often drop the name, and then a near miss of it ("Muse Bark") has
+/// nothing on the map to be a near miss of. Words still asked about ("Did you mean …?") don't count.
+fn names(world: &World) -> Vec<String> {
+    let mut said = Vec::new();
+    for t in world.thoughts.iter().filter(|t| t.placed) {
+        let text = if t.unclear.is_empty() { t.text.clone() } else { t.text.replace(t.unclear.as_str(), " ") };
+        said.extend(capitalized(&text));
+    }
+    let mut seen = HashSet::new();
+    said.into_iter().rev().filter(|name| seen.insert(name.to_lowercase())).take(NAMES).collect()
+}
+
+/// The runs of capitalized words in one turn. A lone one opening a sentence is an ordinary word ("Okay",
+/// "The"), as is "I"; a run opening a sentence loses a leading "The" or "And" ("The README" is "README").
+fn capitalized(text: &str) -> Vec<String> {
+    const OPENERS: [&str; 19] =
+        ["the", "a", "an", "and", "but", "so", "oh", "okay", "ok", "yeah", "well", "then", "also", "anyway", "back", "hey", "my", "this", "that"];
+    const ENDS: [char; 8] = ['.', '!', '?', ':', ';', '…', '—', '–'];
+    let finish = |run: &mut Vec<&str>, opens: bool, out: &mut Vec<String>| {
+        let mut words = &run[..];
+        if opens && words.len() == 1 {
+            words = &[];
+        } else if opens && words.first().is_some_and(|w| OPENERS.contains(&w.to_lowercase().as_str())) {
+            words = &words[1..];
+        }
+        if !words.is_empty() {
+            out.push(words.join(" "));
+        }
+        run.clear();
+    };
+    let mut out = Vec::new();
+    let (mut run, mut opens, mut end) = (Vec::new(), false, 0);
+    let mut start = None;
+    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
+        let inside = c.is_alphanumeric() || (start.is_some() && matches!(c, '\'' | '’' | '-'));
+        match (inside, start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                start = None;
+                let raw = text[s..i].trim_end_matches(['\'', '’', '-']);
+                let word = raw.strip_suffix("'s").or_else(|| raw.strip_suffix("’s")).unwrap_or(raw);
+                let before = text[..s].trim_end();
+                let capital = word.chars().next().is_some_and(char::is_uppercase)
+                    && !(word == "I" || word.starts_with("I'") || word.starts_with("I’"));
+                // A pause between two words ends a run: "Main Street, I think" is "Main Street".
+                if !capital || text[end..s].contains([',', '.', '!', '?', ':', ';', '…', '—', '–', '(', ')', '"']) {
+                    finish(&mut run, opens, &mut out);
+                }
+                if capital {
+                    if run.is_empty() {
+                        opens = before.is_empty() || before.ends_with(ENDS);
+                    }
+                    run.push(word);
+                }
+                end = i;
+            }
+            _ => {}
+        }
+    }
+    finish(&mut run, opens, &mut out);
+    out
 }
 
 /// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
@@ -474,6 +557,26 @@ mod tests {
 
     fn reply(value: serde_json::Value) -> Placement {
         serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn names_said_reach_the_placer_even_when_points_drop_them() {
+        let said = |id: &str, text: &str| Thought { text: text.into(), ..thought(id, "you", Some("T1"), true) };
+        let mut world = map();
+        world.thoughts = vec![
+            said("a", "Okay so I need to plan the hackathon demo. The submission deadline is tomorrow at nine PM."),
+            said("b", "Decided: we open with the mic turning on. Muse Spark places it in about two seconds. That's the hook."),
+            said("c", "Oh wait, Mom's birthday is Friday. I'm booking that cooking class she mentioned."),
+            said("d", "The one on Main Street, I think it's like sixty bucks."),
+            said("e", "The README should explain how to run it."),
+            // Still asked about: not a name yet.
+            Thought { unclear: "Dana".into(), ..said("f", "Ask Dana about it") },
+            Thought { placed: false, ..said("g", "Waiting on Priya") },
+        ];
+        assert_eq!(super::names(&world), ["README", "Main Street", "Friday", "Mom", "Muse Spark", "PM"]);
+        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m")["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt(&world).contains("Active thread: T1\nNames said: README, Main Street, Friday, Mom, Muse Spark, PM\nNEW THOUGHT"), "{}", prompt(&world));
+        assert!(prompt(&map()).contains("Active thread: T1\nNEW THOUGHT"), "no names yet, no line");
     }
 
     #[test]

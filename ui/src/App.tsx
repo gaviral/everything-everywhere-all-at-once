@@ -292,6 +292,10 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
+      if (event.key === "Escape") {
+        const shortcuts = document.querySelector<HTMLDetailsElement>(".shortcuts[open]");
+        if (shortcuts) { event.preventDefault(); shortcuts.open = false; shortcuts.querySelector("summary")?.focus(); return; }
+      }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
@@ -327,11 +331,14 @@ export default function App() {
   }, [firstHint]);
 
   const [mapChangeVisible, setMapChangeVisible] = useState(false);
+  const [mapAnnouncement, setMapAnnouncement] = useState("");
   useEffect(() => {
     if (!core.mapChange) return;
     setMapChangeVisible(true);
+    setMapAnnouncement("");
+    const announcement = window.setTimeout(() => setMapAnnouncement(core.mapChange!.text), 700);
     const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
   }, [core.mapChange]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
@@ -412,16 +419,18 @@ export default function App() {
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
-          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} />
-          {!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"}
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"} />
+          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"}</span>
         </div>
         </div>
       </header>
 
+      <div className="sr-only" role="status">{core.notice && (core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice)}</div>
+      <div className="sr-only" role="status">{mapAnnouncement}</div>
       <AnimatePresence>
         {core.notice && (
           <motion.div
-            className="notice" role="status"
+            className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
             initial={{ opacity: 0, y: -6 }}
@@ -435,7 +444,7 @@ export default function App() {
       </AnimatePresence>
 
       {core.mapChange && mapChangeVisible && (
-        <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+        <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} />
@@ -669,7 +678,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined} tabIndex={thought.place_ms != null ? 0 : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
@@ -695,7 +704,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
           </span>
         )
       )}
-      {thought.place_ms != null && <span className="speed">{(thought.place_ms / 1000).toFixed(1)} s</span>}
+      {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
     </motion.li>
   );
 });

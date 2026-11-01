@@ -75,19 +75,29 @@ struct Task {
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
 /// - right away when they come back to the window, so the map is tidy when they look;
-/// - at most every 10 s (longer after failed passes), and only when something changed.
+/// - at most every 10 s (longer after failed passes), and only when something changed;
+/// - a pass that comes back while they talk lands at the next pause (2 s quiet), not mid-sentence.
 pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     let mut failures = 0;
+    // A finished pass that came back while they were talking: it lands at the next pause instead.
+    let mut held: Option<Pass> = None;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
         let looked = core.take_looked();
+        if let Some(waiting) = held.take() {
+            if core.quiet_ms() < 2_000 {
+                held = Some(waiting);
+                continue;
+            }
+            land(&core, waiting, "held back until this pause");
+        }
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
         let new_thoughts = placed.saturating_sub(seen_thoughts);
@@ -101,12 +111,16 @@ pub async fn run(core: Arc<Core>) {
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         let result = pass(&core, &world, since).await;
+        let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
         match result {
-            // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
-            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
-            Ok(changes) if !changes.is_empty() => core.commit(changes),
-            Ok(_) => {}
+            // Talking resumed while the model worked: move nothing under them; it lands at the next pause, a few
+            // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
+            Ok(answer) if core.quiet_ms() < 2_000 => {
+                tracing::info!("refiner pass in {took} ms: held back, talk resumed");
+                held = Some(answer);
+            }
+            Ok(answer) => land(&core, answer, &format!("in {took} ms")),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
@@ -116,13 +130,23 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
+/// Puts a pass on the map. Checked against the map as it is now, not as it was sent: an app's card or reminder
+/// may have landed while the model worked (a second idea on that thread would only repeat it), or a thread merged.
+fn land(core: &Core, answer: Pass, when: &str) {
+    let changes = changes(&core.snapshot(), answer);
+    tracing::info!("refiner pass {when}: {} changes", changes.len());
+    if !changes.is_empty() {
+        core.commit(changes);
+    }
+}
+
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
 /// so a pass that keeps failing doesn't resend the whole map every 10 s for good.
 fn rest_ms(failures: u32) -> u64 {
     10_000 << failures.min(5)
 }
 
-async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
+async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let body = request(world, since, &chrono_today());
     let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
@@ -132,10 +156,7 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
     }
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
-    // while the model worked, and a second idea on that thread would only repeat it.
-    Ok(changes(&core.snapshot(), pass))
+    serde_json::from_str(content).context("answer wasn't the expected JSON")
 }
 
 /// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
@@ -224,6 +245,8 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
 /// The answer as changes, keeping only what a person wouldn't undo; `today` is "YYYY-MM-DD (Weekday)".
 fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     let exists = |id: &str| world.thread(id).is_some();
+    // Ids are the map's internals: an idea, task or title that names one ("before recording T3 setup") is left out.
+    let names_an_id = |text: &str| text.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && world.thread(&world.resolve(w)).is_some());
     let mut out = Vec::new();
     for t in pass.titles {
         // A new title is short and more than a change of case, and a name the person gave stays theirs
@@ -233,7 +256,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
             continue;
         }
         let current = world.thread(&t.thread_id).map(|th| th.title.as_str());
-        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) {
+        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) && !names_an_id(&t.title) {
             out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
         }
     }
@@ -258,7 +281,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
             continue;
         }
         let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
-        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && suggested.insert(s.thread_id.clone()) {
+        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && !names_an_id(&s.text) && suggested.insert(s.thread_id.clone()) {
             out.push(Change::SuggestionAdded {
                 suggestion: Suggestion { id: new_id("sg"), thread_id: s.thread_id, text: s.text.trim().into(), status: ItemStatus::New },
             });
@@ -270,7 +293,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
         // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
         let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
-        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated {
+        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated && !names_an_id(&a.title) {
             out.push(Change::ActionProposed {
                 action: Action {
                     id: new_id("ac"),
@@ -626,6 +649,33 @@ mod tests {
             })
             .collect();
         assert_eq!(tags, [("T1", "#recording"), ("T2", "#budget"), ("T2", "#money"), ("T2", "#plans")]);
+    }
+
+    #[test]
+    fn ideas_tasks_and_titles_that_name_a_thread_id_are_left_out() {
+        let world = World { threads: vec![thread("T2", None), thread("T3", None)], ..World::default() };
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [{"thread_id": "T2", "title": "Notes for T3"}, {"thread_id": "T3", "title": "Recording setup"}],
+            "suggestions": [
+                {"thread_id": "T2", "text": "Draft README before recording T3 setup?"},
+                {"thread_id": "T3", "text": "Test the dark background before recording"},
+            ],
+            "actions": [
+                {"thread_id": "T2", "kind": "reminder", "title": "Finish T2", "when": ""},
+                {"thread_id": "T2", "kind": "reminder", "title": "Write the README", "when": ""},
+            ],
+        }))
+        .unwrap();
+        let texts: Vec<String> = changes(&world, pass)
+            .into_iter()
+            .map(|c| match c {
+                Change::ThreadRenamed { title, .. } => title,
+                Change::SuggestionAdded { suggestion } => suggestion.text,
+                Change::ActionProposed { action } => action.title,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(texts, ["Recording setup", "Test the dark background before recording", "Write the README"]);
     }
 
     #[test]

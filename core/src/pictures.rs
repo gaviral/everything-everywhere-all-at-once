@@ -97,7 +97,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
             attempt.in_flight = true;
             let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
             drawing.push(async move {
+                let started = crate::now_ms();
                 let result = draw(&core, &dir, &thread, &points).await;
+                tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
                 (thread.id, result)
             });
         }
@@ -124,6 +126,17 @@ fn ready<'a>(world: &'a World, attempts: &HashMap<String, Attempt>, now: u64, qu
     threads.sort_by_key(|t| (attempts.get(&t.id).map_or(0, |a| a.count), t.touched_ms));
     threads.truncate(slots);
     threads
+}
+
+#[cfg(test)]
+pub(crate) fn perf(world: &World, now: u64) {
+    crate::perf::measure("picture ready + prompts", || {
+        ready(world, &HashMap::new(), now + SETTLE_MS, QUIET_MS).iter().map(|thread| {
+            let points = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
+                .map(|p| p.point.clone()).collect::<Vec<_>>();
+            prompt(thread, &points)
+        }).collect::<Vec<_>>()
+    }, |prompts| prompts.iter().map(String::len).sum());
 }
 
 /// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
@@ -171,7 +184,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
 
 /// Pictures drawn before small copies existed get one now, so older maps load light too.
 async fn shrink_old(core: &Core, dir: &Path) {
-    for thread in core.snapshot().threads {
+    for thread in core.snapshot().threads.clone() {
         let Some(name) = thread.picture.as_deref().and_then(|p| p.strip_prefix("/images/")) else { continue };
         if !name.ends_with(".webp") || name.ends_with("-small.webp") || name.contains(['/', '\\']) {
             continue;

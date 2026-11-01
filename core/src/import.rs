@@ -1568,7 +1568,7 @@ mod tests {
                 find: crate::find::Runtime::default(),
                 recap: crate::recap::Runtime::default(),
                 apps: crate::apps::Runtime::default(),
-                world: Mutex::new(world),
+                world: Mutex::new(world.into()),
                 journal: Mutex::new(journal),
                 updates,
                 placer_queue,
