@@ -17,6 +17,7 @@ Given the threads and their points, return JSON with: \
 titles: better thread titles (up to 5 words), only where clearly better; a thread several people spoke on keeps a title that fits all their points; \
 merges: threads that are really the same topic, merging the later id into the earlier; \
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
+never one about a point marked (trailed off): the app brings unfinished thoughts back itself; \
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
 tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
 #hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
@@ -24,6 +25,11 @@ Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. 
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
+/// How long a pass gets, its whole answer included: twice what filling its 6,000-token room takes, by the placer's rule
+/// (4 s and 8 ms a token), so a big first pass over an imported map still finishes. The 8 normal passes in the
+/// 2026-11-01 log took 5–13 s; a pass still out at 52 s is hung: it fails and is redone at the next pause (`run`),
+/// not two minutes on.
+const PATIENCE: Duration = Duration::from_secs(52);
 
 #[derive(Deserialize, Default)]
 struct Pass {
@@ -162,8 +168,7 @@ fn rest_ms(failures: u32) -> u64 {
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
     let body = request(world, since, &chrono_today());
-    // A pass runs in the background, so it can wait: two minutes is far past any real answer.
-    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
+    let value = core.call_model(URL, &body, PATIENCE).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     serde_json::from_str(content).context("answer wasn't the expected JSON")
 }
@@ -230,7 +235,8 @@ fn describe(world: &World, since: u64, today: &str) -> String {
     };
     let line = |p: &Thought| {
         let who = if named { format!("{}: ", p.speaker) } else { String::new() };
-        format!("  - {who}{}{}", p.text, dated(p))
+        // A thought that trailed off is the unfinished card's to bring back, so the model is told which ones did.
+        format!("  - {who}{}{}{}", p.text, if p.complete { "" } else { " (trailed off)" }, dated(p))
     };
     let quiet: Vec<String> = world
         .threads
@@ -827,6 +833,8 @@ mod tests {
         world.thoughts.push(said("b", "Sam"));
         let room = describe(&world, 0, TODAY);
         assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
+        world.thoughts.push(Thought { complete: false, ..said("c", "you") });
+        assert!(describe(&world, 0, TODAY).contains("  - you: c said (trailed off)"), "a trailed-off point is marked");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 use crate::world::{find, matches, swap, Change, Thought, Thread, ThreadStatus, World};
 use crate::{model::Verdict, now_ms, protocol::ServerMsg, Core};
-use anyhow::Context;
+use anyhow::{bail, Context};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -35,6 +35,15 @@ const SKIP_MAX_WORDS: usize = 8;
 
 /// Words that join two parts of a turn; left out where it's cut in two.
 const JOINS: [&str; 9] = ["and", "also", "plus", "but", "so", "oh", "then", "anyway", "or"];
+
+/// Tokens a placement may use, its reasoning included (Spark's counts toward max_tokens, as in find.rs). Plenty for
+/// a short turn. But the 1,672-character rest of a turn used up all 2,000 before its JSON ended (2026-11-01: cut off
+/// after 9.7 s, then answered in 3.2 s on the same request), so a turn over 1,000 characters gets two tokens a
+/// character (3,344 for that one).
+const ROOM: u32 = 2000;
+
+/// The most room a placement is asked for: as much as the chat import asks for.
+const MAX_ROOM: u32 = 12_000;
 
 /// What the placer works through, in the order it was said: a thought to place, or a speaker's spoken
 /// command. A command waits behind the thoughts said before it, so their placements can't undo it.
@@ -156,7 +165,7 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
         };
         // A blip (rate limit, timeout) shouldn't lose a thought: three tries, then say so.
         for attempt in 1..=3u64 {
-            match place(&core, &thought_id).await {
+            match place(&core, &thought_id, URL).await {
                 Ok(next) => {
                     rounds.remove(&thought_id);
                     rest = next;
@@ -198,8 +207,8 @@ fn retry_in(round: u32) -> Duration {
     Duration::from_secs(15 << round.min(4))
 }
 
-/// Places one thought; when the turn moved on to another topic partway, returns the rest's id.
-async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> {
+/// Places one thought, asking the model at `url`; when the turn moved on to another topic partway, returns the rest's id.
+async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Option<String>> {
     let key = core.key()?;
     let world = core.snapshot();
     let thought = world
@@ -213,20 +222,31 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     }
     let new_thread = core.new_threads.starts(thought_id);
 
-    let response = core
-        .ask_model(&core.placer_model, |model| {
-            core.http
-                .post(URL)
-                .bearer_auth(key)
-                // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-                .timeout(std::time::Duration::from_secs(20))
-                .json(&request(&world, &thought, model, new_thread))
-                .send()
-        })
-        .await?;
-    let body = crate::model::answer(response).await?;
-    let content = body["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let placement: Placement = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
+    // An answer cut off at its room is asked for once more with twice the room, not again with the same.
+    let (mut room, mut again) = (room_for(&thought.text), false);
+    let placement = loop {
+        let response = core
+            .ask_model(&core.placer_model, |model| {
+                core.http
+                    .post(url)
+                    .bearer_auth(key)
+                    // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+                    .timeout(patience(room))
+                    .json(&request(&world, &thought, model, room, new_thread))
+                    .send()
+            })
+            .await?;
+        let body = crate::model::answer(response).await?;
+        match read(&body)? {
+            Some(placement) => break placement,
+            None if !again && room < MAX_ROOM => {
+                let more = (2 * room).min(MAX_ROOM);
+                tracing::info!("answer cut off at {room} tokens: asking once more with {more}");
+                (room, again) = (more, true);
+            }
+            None => bail!("answer cut off at {room} tokens"),
+        }
+    };
     // From when the thought arrived, so time waiting in the queue counts too.
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
@@ -238,6 +258,33 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     }
     core.commit(changes);
     Ok(rest)
+}
+
+/// The room a turn gets (see `ROOM`).
+fn room_for(text: &str) -> u32 {
+    u32::try_from(2 * text.len()).unwrap_or(MAX_ROOM).clamp(ROOM, MAX_ROOM)
+}
+
+/// How long a try may take: twice what filling its room takes. The 2,000 tokens that ran out took 9.7 s
+/// (2026-11-01), so 4 s and 8 ms a token of room: 20 s for a short turn, and time to use a long turn's room.
+fn patience(room: u32) -> Duration {
+    Duration::from_millis(4_000 + 8 * u64::from(room))
+}
+
+/// The placement in a model answer, or None when the answer was cut off at its room: finish_reason "length", or
+/// JSON that ends mid-way.
+fn read(body: &serde_json::Value) -> anyhow::Result<Option<Placement>> {
+    let choice = &body["choices"][0];
+    let cut_off = choice["finish_reason"] == "length";
+    let content = choice["message"]["content"].as_str().filter(|c| !c.trim().is_empty());
+    if cut_off && content.is_none() {
+        return Ok(None);
+    }
+    match serde_json::from_str(content.context("no answer")?) {
+        Ok(placement) => Ok(Some(placement)),
+        Err(e) if cut_off || e.is_eof() => Ok(None),
+        Err(e) => Err(e).context("answer wasn't the expected JSON"),
+    }
 }
 
 /// The changes for one answer. A turn that moved on to another topic is cut in two first: the answer
@@ -317,7 +364,7 @@ fn cut(text: &str, quote: &str) -> Option<(String, String)> {
 pub(crate) fn perf(world: &World, thought: &Thought) {
     crate::perf::measure_bytes("placer lookup + prompt", || {
         let thought = world.thoughts.iter().find(|t| t.id == thought.id).unwrap().clone();
-        serde_json::to_vec(&request(world, &thought, "perf-model", false)).unwrap()
+        serde_json::to_vec(&request(world, &thought, "perf-model", ROOM, false)).unwrap()
     });
     crate::perf::measure("placer settle + dropped scans", || {
         let answer = json!({"action": "return", "thread_id": "T2", "point": "Review the project budget",
@@ -326,7 +373,7 @@ pub(crate) fn perf(world: &World, thought: &Thought) {
     }, |(changes, _)| serde_json::to_vec(changes).unwrap().len());
 }
 
-fn request(world: &World, thought: &Thought, model: &str, new_thread: bool) -> serde_json::Value {
+fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool) -> serde_json::Value {
     let threads = if world.threads.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -361,7 +408,7 @@ fn request(world: &World, thought: &Thought, model: &str, new_thread: bool) -> s
     json!({
         "model": model,
         "reasoning_effort": "minimal",
-        "max_tokens": 2000,
+        "max_tokens": room,
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
@@ -563,9 +610,12 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
 
 #[cfg(test)]
 mod tests {
-    use super::{cut, decide, request, settle, NewThreads, Placement};
+    use super::{cut, decide, patience, read, request, room_for, settle, NewThreads, Placement, MAX_ROOM, ROOM};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+    use crate::Core;
     use serde_json::json;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     fn thread(id: &str) -> Thread {
         Thread {
@@ -653,7 +703,7 @@ mod tests {
             Thought { placed: false, ..said("g", "Waiting on Priya") },
         ];
         assert_eq!(super::names(&world), ["README", "Main Street", "Friday", "Mom", "Muse Spark", "PM"]);
-        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m", false)["messages"][1]["content"].as_str().unwrap().to_string();
+        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt(&world).contains("Active thread: T1\nNames said: README, Main Street, Friday, Mom, Muse Spark, PM\nNEW THOUGHT"), "{}", prompt(&world));
         assert!(prompt(&map()).contains("Active thread: T1\nNEW THOUGHT"), "no names yet, no line");
     }
@@ -670,7 +720,7 @@ mod tests {
         }
         let names = super::names(&world);
         assert_eq!((names.len(), names[0].as_str(), names[1].as_str()), (super::NAMES, "Muse Spark", "Contact39"));
-        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m", false)["messages"][1]["content"].as_str().unwrap().to_string();
+        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt.contains("Names said: Muse Spark, Contact39, "), "{prompt}");
     }
 
@@ -758,7 +808,7 @@ mod tests {
         assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T3")), "{changes:?}");
         assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, .. } if thread_id == "T3")), "{changes:?}");
         // The model is told, so the thread it starts gets a title.
-        let prompt = request(&world, &turn("the kitchen needs paint"), "m", true)["messages"][1]["content"].as_str().unwrap().to_string();
+        let prompt = request(&world, &turn("the kitchen needs paint"), "m", super::ROOM, true)["messages"][1]["content"].as_str().unwrap().to_string();
         let told = "The speaker asked for a new thread: this thought starts it (\"new\"), unless it adds nothing.\n";
         assert!(prompt.ends_with(&format!("{told}NEW THOUGHT: \"the kitchen needs paint\"")), "{prompt}");
         // A short turn the model sets aside stays set aside.
@@ -802,9 +852,133 @@ mod tests {
     }
 
     #[test]
+    fn a_long_turn_gets_room_to_answer_and_time_to_use_it() {
+        let turn_of = |chars: usize| "a".repeat(chars);
+        // A short turn is asked as before: 2,000 tokens and 20 s.
+        for chars in [0, 40, 1000] {
+            assert_eq!(room_for(&turn_of(chars)), ROOM, "{chars}");
+        }
+        assert_eq!(patience(ROOM), Duration::from_secs(20));
+        assert_eq!(request(&map(), &turn("Pay rent"), "m", ROOM, false)["max_tokens"], 2000);
+        // Past that, two tokens a character: 3,344 for the 1,672 characters that ran out of 2,000; never past the most.
+        assert_eq!([1001, 1672, 1934].map(|chars| room_for(&turn_of(chars))), [2002, 3344, 3868]);
+        assert_eq!([6000, 6001, 50_000].map(|chars| room_for(&turn_of(chars))), [MAX_ROOM; 3]);
+        assert_eq!(request(&map(), &turn(&turn_of(1672)), "m", 3344, false)["max_tokens"], 3344);
+        // Room to fill takes time, though not as much as twice the time: 36 s for 4,000, not 40.
+        assert_eq!(patience(4000), Duration::from_secs(36));
+        assert!(patience(MAX_ROOM) < Duration::from_secs(120), "still sooner than the shared client's limit");
+    }
+
+    fn body(reason: serde_json::Value, content: serde_json::Value) -> serde_json::Value {
+        json!({"choices": [{"finish_reason": reason, "message": {"content": content}}]})
+    }
+
+    const WHOLE: &str = r#"{"action":"new","thread_id":"","title":"Rent","parent_id":"","point":"Pay rent","split":"","complete":true,"dropped":[],"unclear":"","guess":"","sure":false}"#;
+
+    /// The answer, stopped inside the title.
+    fn cut_short() -> &'static str {
+        &WHOLE[..WHOLE.find("Rent").unwrap() + 2]
+    }
+
+    #[test]
+    fn an_answer_cut_off_at_its_room_is_told_from_one_that_is_wrong() {
+        // A whole answer is read, however the model says it ended.
+        for reason in [json!("stop"), json!("length"), json!(null)] {
+            assert_eq!(read(&body(reason, json!(WHOLE))).unwrap().unwrap().point, "Pay rent");
+        }
+        // Cut off: it says "length", or the JSON just stops. With no JSON at all, only "length" says so.
+        for (reason, content) in [
+            (json!("length"), json!(cut_short())),
+            (json!("stop"), json!(cut_short())),
+            (json!(null), json!(cut_short())),
+            (json!("length"), json!(null)),
+            (json!("length"), json!("")),
+            (json!("length"), json!("  ")),
+        ] {
+            assert!(read(&body(reason.clone(), content.clone())).unwrap().is_none(), "{reason} {content}");
+        }
+        // Wrong, not cut off: asking again with more room would fail the same way.
+        for (content, said) in [
+            (json!("not json"), "answer wasn't the expected JSON"),
+            (json!("{}"), "answer wasn't the expected JSON"),
+            (json!("[1, 2]"), "answer wasn't the expected JSON"),
+            (json!(null), "no answer"),
+            (json!(""), "no answer"),
+        ] {
+            let e = read(&body(json!("stop"), content.clone())).err().unwrap();
+            assert!(format!("{e:#}").starts_with(said), "{content}: {e:#}");
+        }
+    }
+
+    /// A stand-in for the model service on this machine: each call is answered with the next of `answers` (the last
+    /// again when they run out), and the max_tokens it asked for is noted.
+    async fn stand_in(answers: Vec<serde_json::Value>) -> (String, Arc<Mutex<Vec<u64>>>) {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let seen = asked.clone();
+        let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let mut asked = seen.lock().unwrap();
+            asked.push(request["max_tokens"].as_u64().unwrap());
+            let answer = answers[(asked.len() - 1).min(answers.len() - 1)].clone();
+            async move { axum::Json(answer) }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        let routes = axum::Router::new().route("/v1/chat/completions", axum::routing::post(service));
+        tokio::spawn(async move { axum::serve(listener, routes).await });
+        (url, asked)
+    }
+
+    /// Places `text` as the one thought on an empty map, against a stand-in that answers with `answers` in turn:
+    /// what placing came to, the max_tokens each call asked for, and whether the thought was placed.
+    async fn place_against(text: &str, answers: Vec<serde_json::Value>) -> (anyhow::Result<Option<String>>, Vec<u64>, bool) {
+        let (url, asked) = stand_in(answers).await;
+        let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let core = Core { key: Some("good".into()), ..Core::test(journal, world) };
+        core.keep("you", text);
+        let id = core.snapshot().thoughts[0].id.clone();
+        let result = super::place(&core, &id, &url).await;
+        let placed = core.snapshot().thoughts[0].placed;
+        let _ = std::fs::remove_file(&path);
+        let asked = asked.lock().unwrap().clone();
+        (result, asked, placed)
+    }
+
+    #[tokio::test]
+    async fn an_answer_cut_off_is_asked_once_more_with_twice_the_room_and_a_wrong_one_is_not() {
+        let whole = || body(json!("stop"), json!(WHOLE));
+        // A short turn answered whole: one call, 2,000 tokens, as always.
+        let (result, asked, placed) = place_against("Pay rent before Friday", vec![whole()]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000]);
+        // Cut off, whether it says "length" or the JSON just stops, or there's nothing: once more, with 4,000.
+        for cut in [body(json!("length"), json!(cut_short())), body(json!("stop"), json!(cut_short())), body(json!("length"), json!(null))] {
+            let (result, asked, placed) = place_against("Pay rent before Friday", vec![cut.clone(), whole()]).await;
+            assert!(result.unwrap().is_none() && placed, "{cut}");
+            assert_eq!(asked, [2000, 4000], "{cut}");
+        }
+        // A long turn starts with more, and the second ask doubles that.
+        let (result, asked, placed) = place_against(&"I need to pay rent before Friday. ".repeat(60), vec![body(json!("length"), json!(cut_short())), whole()]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [4080, 8160]);
+        // Cut off again: said so, after two calls and not three; it waits to be placed.
+        let (result, asked, placed) = place_against("Pay rent before Friday", vec![body(json!("length"), json!(cut_short()))]).await;
+        assert_eq!(result.unwrap_err().to_string(), "answer cut off at 4000 tokens");
+        assert_eq!((asked, placed), (vec![2000, 4000], false));
+        // Already given the most there is: nothing bigger to ask for.
+        let (result, asked, _) = place_against(&"a".repeat(7000), vec![body(json!("length"), json!(cut_short()))]).await;
+        assert_eq!(result.unwrap_err().to_string(), "answer cut off at 12000 tokens");
+        assert_eq!(asked, [12_000]);
+        // Wrong, not cut off: one call, and the error as before.
+        let (result, asked, placed) = place_against("Pay rent before Friday", vec![body(json!("stop"), json!("not json"))]).await;
+        assert!(result.unwrap_err().to_string().starts_with("answer wasn't the expected JSON"));
+        assert_eq!((asked, placed), (vec![2000], false));
+    }
+
+    #[test]
     fn the_placer_sees_the_speakers_own_thread() {
         let world = room();
-        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m", false)["messages"][1]["content"].to_string();
+        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m", ROOM, false)["messages"][1]["content"].to_string();
         assert!(prompt("User").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
@@ -817,7 +991,7 @@ mod tests {
         let prompt = |before: &Thought, text: &str| {
             let reply = Thought { text: text.into(), ..thought("r", "you", None, true) };
             let world = World { thoughts: vec![before.clone(), reply.clone()], ..map() };
-            request(&world, &reply, "m", false)["messages"][1]["content"].as_str().unwrap().to_string()
+            request(&world, &reply, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string()
         };
         assert!(prompt(&asked, "Yeah.").ends_with("Just asked: \"Should we say it runs on Meta's models?\"\nNEW THOUGHT: \"Yeah.\""));
         // Nothing was asked, or the turn is long enough to stand on its own.
