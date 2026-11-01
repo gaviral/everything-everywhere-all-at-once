@@ -37,6 +37,13 @@ export interface Thought {
   place_ms: number | null;
 }
 
+/** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
+ * has a capital inside ("iPhone", "eBay") is a name, and stays as it is. */
+export function capitalized(point: string): string {
+  return point.replace(/^([\s"'\p{Ps}\p{Pi}]*)(\p{Ll})(\S*)/u, (word: string, lead: string, first: string, rest: string) =>
+    /\p{Lu}/u.test(rest) ? word : lead + first.toUpperCase() + rest);
+}
+
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
@@ -313,6 +320,8 @@ export function useCore() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
+  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
+  const [noKey, setNoKey] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -346,6 +355,7 @@ export function useCore() {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
+            setNoKey(false);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -373,6 +383,7 @@ export function useCore() {
             break;
           case "error":
           case "notice":
+            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
             setNotice(msg.message);
             break;
           case "found":
@@ -439,6 +450,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    noKey,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
@@ -447,7 +459,7 @@ export function useCore() {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); return false; }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },

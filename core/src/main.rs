@@ -276,25 +276,23 @@ fn starts(text: &str) -> Vec<usize> {
     out
 }
 
-/// Where "where was I?" takes a speaker: the thread they most recently dropped, else the last other
-/// one they spoke on. Never the other person's: in a room each has their own way back.
+/// Where "where was I?" takes a speaker: where their last line trailed off, even the thread they're on (that's
+/// where they left off; moving them away would also keep it from being marked unfinished when they move on);
+/// else the thread they most recently dropped; else the last other one they spoke on. Never the other
+/// person's: in a room each has their own way back.
 fn way_back(world: &World, speaker: &str) -> Option<String> {
     let current = world.active_by.get(speaker);
-    let dropped = world
-        .threads
-        .iter()
-        .filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == speaker)
-        .max_by_key(|t| t.touched_ms)
-        .map(|t| t.id.clone());
-    dropped.or_else(|| {
+    let theirs = || world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker);
+    let trailed_off = theirs().next().filter(|t| !t.complete).and_then(|t| t.thread_id.clone());
+    let dropped = || {
         world
-            .thoughts
+            .threads
             .iter()
-            .rev()
-            .filter(|t| t.placed && t.speaker == speaker)
-            .filter_map(|t| t.thread_id.clone())
-            .find(|id| Some(id) != current)
-    })
+            .filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == speaker)
+            .max_by_key(|t| t.touched_ms)
+            .map(|t| t.id.clone())
+    };
+    trailed_off.or_else(dropped).or_else(|| theirs().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
 }
 
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
@@ -497,9 +495,16 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
         return StatusCode::FORBIDDEN.into_response();
     }
     request.extensions_mut().insert(access);
-    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
+    // Built files and pictures never change under their names (content hash, uuid); everything else, the
+    // page above all, is checked every time, so after an update the browser never shows the old app.
+    let fixed = ["/assets/", "/images/"].iter().any(|dir| request.uri().path().starts_with(dir));
     let mut response = next.run(request).await;
+    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
     response.headers_mut().insert("cross-origin-resource-policy", header::HeaderValue::from_static("same-origin"));
+    // A missing file comes back as the page (the app's own routes), and that must not stick.
+    let page = response.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
+    let cache = if fixed && response.status().is_success() && !page { "public, max-age=31536000, immutable" } else { "no-cache" };
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static(cache));
     response
 }
 
@@ -599,6 +604,9 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    if core.key.is_none() {
+        messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
+    }
     messages
 }
 
@@ -676,7 +684,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         match ended {
                             Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
                             Err(e) => {
-                                core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
+                                core.send_to(&speaker, ServerMsg::Error { message: format!("Speech service error: {e}") });
                                 core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
                             }
                         }
@@ -941,5 +949,13 @@ mod tests {
         assert_eq!(way_back(&world, "Sam").as_deref(), Some("T2"));
         // Nothing dropped: the last other thread Lee spoke on.
         assert_eq!(way_back(&world, "Lee").as_deref(), Some("T3"));
+        // Right after a line of theirs trailed off, it's where they said it, even the thread they're on and
+        // even with an older loose end; someone else's unfinished line doesn't count.
+        world.threads.push(thread("T5", 5, "Lee"));
+        world.thoughts.push(Thought { complete: false, ..said("d", "Sam", "T4") });
+        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T5"));
+        world.thoughts.push(Thought { complete: false, ..said("e", "Lee", "T4") });
+        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T4"));
+        assert_eq!(way_back(&world, "Sam").as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
     }
 }

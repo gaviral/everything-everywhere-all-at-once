@@ -19,7 +19,7 @@
 .palace-art img { z-index: 1; object-fit: cover; }
 .palace-art img[hidden] { display: none; }
 .palace-placeholder { display: grid; place-items: center; background: radial-gradient(circle at 35% 25%, color-mix(in srgb, var(--accent-soft) 65%, var(--card)), transparent 60%), linear-gradient(145deg, var(--card), color-mix(in srgb, var(--ai-soft) 55%, var(--bg))); color: color-mix(in srgb, var(--ai) 45%, var(--muted)); }
-.palace-placeholder span { display: grid; place-items: center; width: 34%; aspect-ratio: 1; border: 1px solid currentColor; border-radius: 50%; opacity: .5; font-size: 20px; }
+.palace-placeholder span { display: grid; place-items: center; width: 34%; aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font-family: Georgia, serif; font-size: clamp(28px, 4vw, 48px); line-height: 1; }
 .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: translateY(-3px); box-shadow: 0 10px 26px #0002; }
 .palace-tile.is-active .palace-art { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent); }
 .palace-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; }
@@ -49,4 +49,8 @@
 .palace-point > span { font-size: 10px; }
 @media (prefers-reduced-motion: reduce) {
   .palace-art, .palace-point { transition: none; }
+}
+
+@media (hover: none) {
+  .palace-point { opacity: 1; }
 }

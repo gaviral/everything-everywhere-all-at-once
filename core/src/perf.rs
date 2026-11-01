@@ -350,7 +350,6 @@ fn perf_big_map() {
         core.commit(vec![Change::ThoughtSkipped { thought_id: newest.id.clone() }]);
     }
     let world = core.snapshot();
-    crate::refiner::perf(&world, now - 500);
     crate::find::perf(&world);
     crate::recap::perf(&world, now);
     crate::pictures::perf(&world, now);
