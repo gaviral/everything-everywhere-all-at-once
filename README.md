@@ -67,7 +67,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - ✦ marks what the AI added or proposes: tags (faint until kept), one suggestion per thread, actions with "Add to Reminders" or "Add to Calendar", "Did you mean …?", a "fixed" tag, pictures, app cards, Recap, and notes such as "AI renamed … to …".
 - Header: "This session · 12 thoughts · 4 threads", Recap, a ? for keys and spoken commands, Import chats, and in a room, who has added thoughts.
 - Map tools: Map or Palace, search, Focus, Recent first; `?` lists keyboard and spoken commands.
-- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread.
+- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread, using what other threads say about the same name or term.
 - The Apps panel: your apps with on and off switches, and a box to make one.
 
 ## How it works
@@ -109,7 +109,7 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
 ## Privacy and data
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
-- Sent to `api.meta.ai`, and nowhere else: mic audio while the mic is on; for placing, each new thought with every thread's title and last point; for the refiner, those plus each thread's tags, the last 8 thoughts of recently active threads (with who said them, in a room) and the suggestions and actions already there; for Take me there, only when no thread has all the words you asked about, your request and up to 48 likely threads' titles and latest 3 points; for Explain, the phrase, the words around it, its thread's points and the other thread titles; for Recap, the period's thoughts and their threads' actions; for a picture, the thread's title and first 6 points; for apps, your request and app list, and the recent thoughts an app reads when it runs; for an import, the messages and ideas described above.
+- Sent to `api.meta.ai`, and nowhere else: mic audio while the mic is on; for placing, each new thought with every thread's title and last point; for the refiner, those plus each thread's tags, the last 8 thoughts of recently active threads (with who said them, in a room) and the suggestions and actions already there; for Take me there, only when no thread has all the words you asked about, your request and up to 48 likely threads' titles and latest 3 points; for Explain, the phrase, the words around it, its thread's points, the other thread titles and up to 8 thoughts from other threads that name it; for Recap, the period's thoughts and their threads' actions; for a picture, the thread's title and first 6 points; for apps, your request and app list, and the recent thoughts an app reads when it runs; for an import, the messages and ideas described above.
 - Contributor mode: placing and Explain default to `muse-spark-1.2-contributor`, the cheaper and fastest-measured Spark, whose data Meta may keep to improve its products. That includes the titles and last points of imported threads, once they're on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`.
 - On disk: `data/<map>/journal.jsonl` (each thought's full text and speaker, and every change since) and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 - In a room, everyone with the code sees the whole map, and the other laptops' audio goes through the host's core and key.
