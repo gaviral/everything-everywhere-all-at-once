@@ -7,7 +7,17 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 
 ## Try it
 
-Tested on macOS. Needs Rust (stable, from rustup.rs) and Node.js 22.12 or newer. The first run compiles the Rust core, which takes a few minutes; then open http://localhost:4321.
+Tested on macOS. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs); run `rustup update` if yours is older) and Node.js 22.12 or newer. On a Mac with no developer tools, run `xcode-select --install` first.
+
+Get the code and step into its folder:
+
+```sh
+git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
+```
+
+The first run compiles the Rust core, which takes a few minutes. When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it. If first-time `npm install` warns about `fsevents` install scripts, that warning is harmless.
+
+If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk script below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**
 
@@ -15,7 +25,7 @@ Tested on macOS. Needs Rust (stable, from rustup.rs) and Node.js 22.12 or newer.
 ./run.sh sample
 ```
 
-- A prepared map of a student's week, dated Nov 3, 2026: 8 threads with branches, 30 thoughts, tags, two suggestions, two reminders, two threads left unfinished, and a picture for every thread (drawn once by the app's own picture pipeline and kept in `samples/images/`, so the Palace is full without a key). It starts fresh from `samples/` on each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.”
+- A prepared map of a student's week, dated Nov 3, 2026: 8 threads with branches, 30 thoughts, tags, two suggestions, two reminders, one thread left unfinished, and a picture for every thread (drawn once by the app's own picture pipeline and kept in `samples/images/`, so the Palace is full without a key). It starts fresh from `samples/` on each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.”
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, wait for the "You didn't finish …" card and press Finish it, open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
 - A second map, a founder's day: `./run.sh sample founder`.
@@ -23,11 +33,12 @@ Tested on macOS. Needs Rust (stable, from rustup.rs) and Node.js 22.12 or newer.
 **With a key: watch a map build itself.**
 
 ```sh
-cp .env.example .env                           # paste your Meta Model API key (dev.meta.ai)
+cp .env.example .env                           # then open .env and paste your Meta Model API key after MODEL_API_KEY= (dev.meta.ai)
 ./run.sh demo                                  # its own map in data/demo; the three seed apps start on
-node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal; --speed 2 goes faster
+node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
 - `data/demo` keeps growing across runs; move it aside for an empty map.
@@ -40,10 +51,11 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal; --speed 2
 ./run.sh room
 ```
 
+- Needs a key, like everything that calls a model. There's no sample room.
 - The core prints a link with a fresh room code, `http://<this laptop's address>:4321/?room=<code>`. Open it on a second laptop on the same network; the host uses http://localhost:4321. Each person joins with a name.
 - One map for both; each thought carries its speaker's name, and each person has their own place, unfinished card and "where was I?".
 - One laptop is enough to see it: with a key, `node scripts/demo.mjs scripts/room-talk.jsonl --room <code>` adds a second speaker, Sam.
-- The second laptop loads the page over plain http from a network address, which browsers don't treat as secure: its mic doesn't work, but typing and Explain do. Chrome's "Insecure origins treated as secure" flag lifts this for that address.
+- The second laptop loads the page over plain http from a network address, which browsers don't treat as secure: its mic doesn't work, but typing and Explain do. To use its mic in Chrome, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` on that laptop, add the link's address (for example `http://192.168.1.20:4321`), set the flag to Enabled and relaunch Chrome. If macOS asks whether the host may accept incoming connections, choose Allow.
 
 ## What you'll see
 
