@@ -114,7 +114,7 @@ impl Fixture {
                 room: Some("perf-room".into()),
                 key: None,
                 placer_model: "perf-model".into(),
-                http: reqwest::Client::new(),
+                http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap(),
                 last_activity: std::sync::atomic::AtomicU64::new(0),
                 looked: std::sync::atomic::AtomicBool::new(false),
                 wake: tokio::sync::Notify::new(),
