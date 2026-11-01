@@ -19,11 +19,11 @@ try {
   const stamps = new Map([["more", 100], ["newest", 200], ["idea", 300], ["task", 400], ["dropped:unfinished", 150]]);
   const rows = awayItems(base, after, "User", stamps);
   assert.equal(AWAY_AFTER_MS, 30_000);
-  assert.deepEqual(rows.map((r) => r.key), ["proposal:task", "proposal:idea", "thread:fresh", "thread:unfinished", "thread:old"]);
+  assert.deepEqual(rows.map((r) => r.key), ["thread:fresh", "proposal:idea", "thread:unfinished", "thread:old", "proposal:task"]);
   assert.match(rows.find((r) => r.threadId === "fresh" && r.kind === "thread").detail, /^New thread/);
   assert.match(rows.find((r) => r.key === "thread:old").detail, /^1 new point/);
   assert.match(rows.find((r) => r.key === "thread:unfinished").detail, /^Left unfinished/);
-  assert.equal(rows[0].itemId, "task");
+  assert.equal(rows[rows.findIndex((r) => r.key === "thread:old") + 1].itemId, "task", "a proposal follows its thread");
   assert.deepEqual(awayItems(base, base, "User"), []);
   assert.deepEqual(awayItems(base, { ...base, suggestions: after.suggestions }, "User"), []);
   assert.equal(awayItems(base, after, "Sam").length, 2);

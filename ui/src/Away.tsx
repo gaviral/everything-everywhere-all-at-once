@@ -77,7 +77,10 @@ export function awayItems(before: World, after: World, me: string, observed: Map
       detail: `New ${"text" in proposal ? "suggestion" : proposal.kind} · ${threads.get(id)!.title}`,
       kind: "proposal", at: observed.get(proposal.id) ?? threads.get(id)!.touched_ms });
   }
-  return items.sort((a, b) => b.at - a.at || (b.sourceAt ?? b.at) - (a.sourceAt ?? a.at) || a.key.localeCompare(b.key));
+  // Your own threads lead, newest first; each one's new proposals follow it.
+  const newest = (a: AwayItem, b: AwayItem) => b.at - a.at || (b.sourceAt ?? b.at) - (a.sourceAt ?? a.at) || a.key.localeCompare(b.key);
+  return items.filter((item) => item.kind === "thread").sort(newest).flatMap((row) =>
+    [row, ...items.filter((item) => item.kind === "proposal" && item.threadId === row.threadId).sort(newest)]);
 }
 
 type Absence = { before: World; since: number; observed: Map<string, number> };
