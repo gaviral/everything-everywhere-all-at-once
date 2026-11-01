@@ -9,8 +9,7 @@ use crate::protocol::ServerMsg;
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::Core;
 use anyhow::{bail, Context};
-use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Query, State};
+use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -102,6 +101,8 @@ pub struct Imports {
 struct Job {
     handle: tokio::task::AbortHandle,
     speaker: String,
+    /// The import's id, as in its status.
+    id: String,
 }
 
 impl Imports {
@@ -161,7 +162,7 @@ pub async fn prepare(
     State(core): State<Arc<Core>>,
     ConnectInfo(link): ConnectInfo<crate::Link>,
     Query(query): Query<FileName>,
-    body: Bytes,
+    request: Request,
 ) -> Response {
     let refuse = |status: StatusCode, message: &str| (status, Json(json!({ "error": message }))).into_response();
     if !link.here() {
@@ -176,6 +177,10 @@ pub async fn prepare(
     if core.imports.running() {
         return refuse(StatusCode::CONFLICT, "An import is already running. Stop it, or wait for it to finish.");
     }
+    // Read only after the checks: a caller who'd be refused can't make the core hold a 100 MB file first.
+    let Ok(body) = axum::body::to_bytes(request.into_body(), MAX_BYTES).await else {
+        return refuse(StatusCode::PAYLOAD_TOO_LARGE, "That file is over the 100 MB limit.");
+    };
     // An imported point keeps its message's exact time, so a message seen before is one already on the map
     // (whatever name it went under).
     let known: HashSet<u64> = core.snapshot().thoughts.iter().map(|t| t.at_ms).collect();
@@ -235,8 +240,9 @@ pub fn start(core: Arc<Core>, id: String, speaker: String, here: bool) {
     let Some(prepared) = prepared else {
         return core.send_to(&speaker, ServerMsg::Notice { message: "That file isn't ready any more. Choose it again to import.".into() });
     };
+    let id = prepared.id.clone();
     let handle = tokio::spawn(run(core.clone(), prepared, speaker.clone())).abort_handle();
-    *job = Some(Job { handle, speaker });
+    *job = Some(Job { handle, speaker, id });
 }
 
 /// Stops the running import when it's this speaker's. Threads that already landed stay; nothing more is added.
@@ -268,6 +274,12 @@ fn models() -> (String, String) {
 
 /// Only to the person importing: in a room, the others see the threads land, not the progress.
 fn publish(core: &Core, speaker: &str, status: &Status) {
+    // Held while sending, so Stop (which takes the job) can't slip between the check and the send.
+    let job = core.imports.job.lock().unwrap();
+    // A step that was mid-way when Stop took the job mustn't say the import is still going after "stopped".
+    if status.state != "stopped" && job.as_ref().is_none_or(|j| j.id != status.id) {
+        return;
+    }
     *core.imports.status.lock().unwrap() = Some(status.clone());
     core.send_to(speaker, ServerMsg::Import { status: status.clone() });
 }
@@ -1609,8 +1621,8 @@ mod tests {
 
         // The host's import: its progress goes to the host only, also to a window that reconnects.
         let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
-        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into() });
-        publish(&f.core, "User", &Status { state: "reading".into(), ..Status::default() });
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into(), id: "im-1".into() });
+        publish(&f.core, "User", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
         let progress = out.recv().await.unwrap();
         assert_eq!(progress.to.as_deref(), Some("User"));
         assert!(matches!(progress.message, ServerMsg::Import { ref status } if status.state == "reading"));
@@ -1624,6 +1636,49 @@ mod tests {
         let stopped = out.recv().await.unwrap();
         assert_eq!(stopped.to.as_deref(), Some("User"));
         assert!(matches!(stopped.message, ServerMsg::Import { ref status } if status.state == "stopped" && status.note.contains("Nothing was added")));
+    }
+
+    #[tokio::test]
+    async fn a_step_mid_way_when_stop_lands_never_says_the_import_is_still_going() {
+        let f = Fixture::new();
+        let mut out = f.core.updates.subscribe();
+        let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "you".into(), id: "im-1".into() });
+        let adding = Status { id: "im-1".into(), state: "adding".into(), points: 3, ..Status::default() };
+        publish(&f.core, "you", &adding);
+        cancel(&f.core, "you");
+        // The task was between two awaits when Stop aborted it: its next step still runs once.
+        publish(&f.core, "you", &adding);
+        let mut states = Vec::new();
+        while let Ok(sent) = out.try_recv() {
+            if let ServerMsg::Import { status } = sent.message {
+                states.push(status.state);
+            }
+        }
+        assert_eq!(states, ["adding", "stopped"]);
+        assert_eq!(f.core.imports.status.lock().unwrap().as_ref().map(|s| s.state.as_str()), Some("stopped"));
+        // Nor does an old import's late step speak for a new one.
+        let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "you".into(), id: "im-2".into() });
+        publish(&f.core, "you", &adding);
+        assert!(out.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn an_upload_from_another_laptop_is_refused_before_it_is_read() {
+        let f = Fixture::new();
+        // A body that fails if anything reads it: refusing must not need it.
+        let unread = || {
+            let failing = futures_util::stream::once(async { Err::<axum::body::Bytes, std::io::Error>(std::io::Error::other("read")) });
+            Request::new(axum::body::Body::from_stream(failing))
+        };
+        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+        let name = || Query(FileName { name: "conversations.json".into() });
+        let guest = prepare(State(f.core.clone()), link("192.168.1.9:51000"), name(), unread()).await;
+        assert_eq!(guest.status(), StatusCode::FORBIDDEN);
+        // The host gets past that check (here, to the missing key) without the body either.
+        let host = prepare(State(f.core.clone()), link("127.0.0.1:51000"), name(), unread()).await;
+        assert_eq!(host.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]

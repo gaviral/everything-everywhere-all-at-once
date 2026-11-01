@@ -109,7 +109,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
 /// Fill free slots, oldest quiet threads first; first pictures take priority over retries.
 /// Active threads use the same delay, so the last topic gets a picture after the talk ends too.
 fn ready<'a>(world: &'a World, attempts: &HashMap<String, Attempt>, now: u64, quiet_ms: u64) -> Vec<&'a Thread> {
-    if quiet_ms < QUIET_MS || world.thoughts.iter().any(|p| !p.placed) {
+    // Only fresh ones: a thought still unplaced after a minute failed and waits for a retry (as recap.rs `placing`),
+    // and one that keeps failing mustn't stop pictures for the whole map.
+    if quiet_ms < QUIET_MS || world.thoughts.iter().any(|p| !p.placed && now.saturating_sub(p.at_ms) < 60_000) {
         return Vec::new();
     }
     let slots = CONCURRENT.saturating_sub(attempts.values().filter(|a| a.in_flight).count());
@@ -354,6 +356,8 @@ mod tests {
         pending.placed = false;
         world.thoughts.push(pending);
         assert!(ready(&world, &HashMap::new(), now, QUIET_MS).is_empty());
+        // Still unplaced a minute after it was said: it failed and waits for a retry, so pictures go on.
+        assert_eq!(ready(&world, &HashMap::new(), world.thoughts[1].at_ms + 60_000, QUIET_MS).len(), 1);
         world.thoughts[1].placed = true;
         assert_eq!(ready(&world, &HashMap::new(), now, QUIET_MS).len(), 1);
     }

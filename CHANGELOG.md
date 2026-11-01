@@ -12,6 +12,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - A thread you leave mid-sentence is marked "left off"; at the next pause a card offers to take you back (Finish it, Later).
 - Voice commands include “where was I?” (“go back” or “take me back”) and “next one”; they work as a whole turn or after a pause at its end, with earlier words placed first.
 - Take me there: "where did I talk about …?" jumps to the thread and highlights the point.
+- “Find …” and “take me to …” search only when they point at the map (“find where I said …”), so “Find a dentist near the office” is a thought; a search that finds nothing keeps your words as a thought.
 - Header line: "This session · N thoughts · M threads" (a session ends at a 30-minute gap).
 - Search, Focus, Recent first, keys (`/`, `j`/`k`, Enter, Esc), a first-run tour, and an outbox for thoughts typed while disconnected.
 
@@ -41,6 +42,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 
 ### Rooms
 - `./run.sh room`: a second laptop on the network joins the same map with the code and a name ("Guest" if it gives none, or asks for "you", the host's); each person keeps their own active thread, unfinished card and way back; only the host approves actions.
+- A name is the host's or a guest's, never both, so notices, live words, the mic and an import stay with their person; the join form asks for another name.
 
 ### Running, demo and samples
 - `./run.sh` builds the UI and serves everything on localhost:4321; `./run.sh NAME` keeps a separate map in `data/NAME`; `./run.sh sample` opens a prepared map without a key or a mic.
@@ -66,6 +68,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - An unnamed room guest, or one who asks to join as “you”, joins as “Guest”.
 - Calendar events and reminders use the app's own E2A2O calendar and list; invalid dates are rejected, and an event without a real date becomes a reminder.
 - Explain also reads what other threads say about the selected name or term (up to 8 thoughts), so “Jordan” on a to-do list is explained from the hiring thread; acronyms are spelled out, and it is told never to give medical or health advice.
+- “Where was I?” goes by when things were said, so imported chats don't count as your latest words, and it acts at once unless your own words are still being placed.
+- “While you were away” stays up when your last turn is split in two or an import lands; the import panel no longer sticks on “Importing” after a restart.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.

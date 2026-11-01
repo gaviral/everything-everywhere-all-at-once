@@ -5,7 +5,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { awayItems, AWAY_AFTER_MS } = await server.ssrLoadModule("/src/Away.tsx");
+  const { awayItems, spokeAgain, AWAY_AFTER_MS } = await server.ssrLoadModule("/src/Away.tsx");
   const thread = (id, extra = {}) => ({ id, title: id, parent_id: null, status: "open", last_point: "", touched_ms: 100,
     tags: [], picture: null, dropped_by: "", ...extra });
   const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "User", text: id, point: id,
@@ -48,7 +48,15 @@ try {
   assert.ok(!awayItems(alreadyDropped, after, "User").some((r) => r.key === "thread:unfinished"), "old unfinished threads don't repeat");
   const oldProposal = { ...base, suggestions: [after.suggestions[0]] };
   assert.ok(!awayItems(oldProposal, after, "User").some((r) => r.key === "proposal:idea"));
-  console.log("Away map checks passed: new/updated threads, newest first, proposals, unfinished, room speakers, quiet returns, pending placement, merges, decisions.");
+  // Back while your last turn is still being placed: its split-off rest, or an import landing, isn't you speaking again.
+  const placing = { ...base, thoughts: [...base.thoughts, thought("turn", null, 50, { placed: false })] };
+  const split = { ...placing, thoughts: [...placing.thoughts.map((t) => t.id === "turn" ? { ...t, placed: true, thread_id: "old" } : t),
+    thought("rest", null, 50, { placed: false })] };
+  assert.equal(spokeAgain(placing, split, "User"), false, "a split's rest keeps its turn's time");
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("imported", "old", 7)] }, "User"), false, "imports arrive placed");
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("theirs", null, 60, { placed: false, speaker: "Sam" })] }, "User"), false);
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("again", null, 60, { placed: false })] }, "User"), true, "new words dismiss it");
+  console.log("Away map checks passed: new/updated threads, newest first, proposals, unfinished, room speakers, quiet returns, pending placement, merges, decisions, split turns and imports after a return.");
 } finally {
   await server.close();
 }

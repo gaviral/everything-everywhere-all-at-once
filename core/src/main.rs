@@ -28,7 +28,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, Outgoing, ServerMsg};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -45,8 +45,8 @@ pub struct Core {
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
-    /// Set when a room is open: the code another laptop needs (see `gate`).
-    room: Option<String>,
+    /// Set when a room is open.
+    room: Option<Room>,
     pub key: Option<String>,
     pub placer_model: String,
     pub http: reqwest::Client,
@@ -124,7 +124,7 @@ impl Core {
     /// "Where was I?": see `way_back`.
     fn go_back(&self, speaker: &str) {
         let world = self.snapshot();
-        if let Some(id) = way_back(&world, speaker) {
+        if let Some(id) = way_back(&world, speaker, now_ms()) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
             drop(world);
@@ -150,9 +150,17 @@ impl Core {
 
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
     /// never becomes a thought, and a spoken command keeps its place among the words: one the turn opens
-    /// with goes ahead of the words after it, one it ends with waits behind the words before it.
+    /// with goes ahead of the words after it, one it ends with waits behind the words before it. A search
+    /// that ends without a jump keeps its words as a thought too (see `find::request`).
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
+        // The latest thing said, by when (see `Thought::said_at`).
+        let now = now_ms();
+        let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
+        // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
+        if filler(text, asked) {
+            return;
+        }
         self.find.cancel(speaker);
         if let Some(period) = recap::command(text) {
             let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
@@ -165,39 +173,56 @@ impl Core {
         // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
         if first.is_none() {
             if let Some(query) = find::command(text) {
-                return find::request(self.clone(), speaker.into(), query);
+                return find::request(self.clone(), speaker.into(), query, text.into());
             }
         }
         if let Some(job) = first {
-            let _ = self.placer_queue.send(job(speaker.into()));
+            self.run_command(speaker, job);
         }
-        let text = said;
-        let (active, asked) = {
-            let world = self.world.lock().unwrap();
-            (world.active_for(speaker).cloned(), world.thoughts.last().is_some_and(|t| t.text.trim_end().ends_with('?')))
-        };
-        if !filler(text, asked) {
-            let thought = Thought {
-                id: format!("th-{}", uuid::Uuid::new_v4().simple()),
-                speaker: speaker.into(),
-                text: text.into(),
-                point: String::new(),
-                thread_id: active,
-                placed: false,
-                unclear: String::new(),
-                guess: String::new(),
-                heard: String::new(),
-                fixed: String::new(),
-                complete: true,
-                at_ms: now_ms(),
-                place_ms: None,
-            };
-            let id = thought.id.clone();
-            self.commit(vec![Change::ThoughtAdded { thought }]);
-            let _ = self.placer_queue.send(placer::Job::Place(id));
+        if !filler(said, asked) {
+            self.keep(speaker, said);
         }
         if let Some(job) = then {
-            let _ = self.placer_queue.send(job(speaker.into()));
+            self.run_command(speaker, job);
+        }
+    }
+
+    /// Words to place: a thought in the speaker's active thread, queued for the placer.
+    pub fn keep(&self, speaker: &str, text: &str) {
+        let thought = Thought {
+            id: format!("th-{}", uuid::Uuid::new_v4().simple()),
+            speaker: speaker.into(),
+            text: text.into(),
+            point: String::new(),
+            thread_id: self.snapshot().active_for(speaker).cloned(),
+            placed: false,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: now_ms(),
+            place_ms: None,
+        };
+        let id = thought.id.clone();
+        self.commit(vec![Change::ThoughtAdded { thought }]);
+        let _ = self.placer_queue.send(placer::Job::Place(id));
+    }
+
+    /// "Where was I?" or "next one" acts at once, unless words the speaker said before it are still being
+    /// placed: landing moves them to its thread and would undo it, so then it waits behind them in the
+    /// placer's queue. Always waiting would put it behind every placement queued, the other person's and
+    /// retries included, each up to a minute when the model is slow.
+    fn run_command(&self, speaker: &str, job: fn(String) -> placer::Job) {
+        let now = now_ms();
+        // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`).
+        let waiting = self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
+        match job(speaker.into()) {
+            placer::Job::Back(speaker) if !waiting => self.go_back(&speaker),
+            placer::Job::Next(speaker) if !waiting => self.go_next(&speaker),
+            job => {
+                let _ = self.placer_queue.send(job);
+            }
         }
     }
 }
@@ -338,10 +363,13 @@ fn starts(text: &str) -> Vec<usize> {
 /// where they left off; moving them away would also keep it from being marked unfinished when they move on);
 /// else the thread they most recently dropped; else the last other one they spoke on. Never the other
 /// person's: in a room each has their own way back.
-fn way_back(world: &World, speaker: &str) -> Option<String> {
+fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
     let current = world.active_by.get(speaker);
-    let theirs = || world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker);
-    let trailed_off = theirs().next().filter(|t| !t.complete).and_then(|t| t.thread_id.clone());
+    // Newest first by when it was said (see `Thought::said_at`). Reversed first, so the stable sort keeps
+    // a split turn's rest (same time) ahead of its first part.
+    let mut theirs: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker).collect();
+    theirs.sort_by_key(|t| std::cmp::Reverse(t.said_at(now)));
+    let trailed_off = theirs.first().filter(|t| !t.complete).and_then(|t| t.thread_id.clone());
     let dropped = || {
         world
             .threads
@@ -350,7 +378,7 @@ fn way_back(world: &World, speaker: &str) -> Option<String> {
             .max_by_key(|t| t.touched_ms)
             .map(|t| t.id.clone())
     };
-    trailed_off.or_else(dropped).or_else(|| theirs().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
+    trailed_off.or_else(dropped).or_else(|| theirs.iter().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
 }
 
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
@@ -418,7 +446,7 @@ async fn main() -> anyhow::Result<()> {
         journal: Mutex::new(journal),
         updates,
         placer_queue,
-        room: room.clone(),
+        room: room.as_deref().map(Room::from),
         key,
         placer_model: std::env::var("PLACER_MODEL").unwrap_or_else(|_| "muse-spark-1.2-contributor".into()),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
@@ -541,7 +569,7 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
     let link = request.extensions().get::<ConnectInfo<Link>>().map(|c| c.0);
     let access = {
         let value = |name| request.headers().get(name).and_then(|v| v.to_str().ok());
-        let has_code = core.room.as_deref().is_some_and(|code| codes(&request).iter().any(|c| same(&normal_code(c), code)));
+        let has_code = core.room.as_ref().is_some_and(|room| codes(&request).iter().any(|c| same(&normal_code(c), &room.code)));
         link.map_or(Access::None, |link| access(core.room.is_some(), link, value(header::HOST), value(header::ORIGIN), has_code))
     };
     if access == Access::None || (access == Access::Page && !public(request.uri().path())) {
@@ -608,10 +636,90 @@ fn codes(request: &Request) -> Vec<String> {
 }
 
 /// Whether a room is open and whether this page may join it, so the page knows to ask for a name
-/// and, on another laptop, the code.
-async fn room_info(State(core): State<Arc<Core>>, request: Request) -> Json<serde_json::Value> {
+/// and, on another laptop, the code. Asked with a name, also whether it's taken (see `Names`).
+async fn room_info(
+    State(core): State<Arc<Core>>,
+    ConnectInfo(link): ConnectInfo<Link>,
+    Query(join): Query<Join>,
+    request: Request,
+) -> Json<serde_json::Value> {
     let member = request.extensions().get::<Access>() == Some(&Access::Map);
-    Json(serde_json::json!({ "room": core.room.is_some(), "member": member }))
+    let taken = member
+        && !join.name.trim().is_empty()
+        && core.room.as_ref().is_some_and(|room| room.names.lock().unwrap().taken(&speaker_name(&join.name, link.here()), link.here()));
+    Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken }))
+}
+
+/// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
+pub struct Room {
+    code: String,
+    names: Mutex<Names>,
+}
+
+impl From<&str> for Room {
+    fn from(code: &str) -> Self {
+        Room { code: code.into(), names: Mutex::default() }
+    }
+}
+
+/// A name in a room is the host's or a guest's, never both, since what's private goes to every window with
+/// that name: live words, the mic going on and off, notices, an import. This machine keeps a name it joined
+/// with until the core stops, so it stays the host's while their window reconnects; another laptop holds one
+/// while connected.
+#[derive(Default)]
+struct Names {
+    host: HashSet<String>,
+    /// How many of another laptop's windows use each name.
+    guests: HashMap<String, usize>,
+}
+
+impl Names {
+    /// Held by the other side: a name this machine joined with, for another laptop; one another laptop
+    /// is using, for this machine. Case doesn't tell people apart.
+    fn taken(&self, name: &str, here: bool) -> bool {
+        let name = name.to_lowercase();
+        if here { self.guests.contains_key(&name) } else { self.host.contains(&name) }
+    }
+}
+
+/// A window's hold on its name; another laptop's lets go when its connection ends, or never starts.
+struct Seat {
+    core: Arc<Core>,
+    guest: Option<String>,
+}
+
+impl Seat {
+    /// Takes the name for a window, or None when the other side holds it.
+    fn take(core: &Arc<Core>, name: &str, here: bool) -> Option<Seat> {
+        let mut seat = Seat { core: core.clone(), guest: None };
+        let Some(room) = &core.room else { return Some(seat) };
+        let mut names = room.names.lock().unwrap();
+        if names.taken(name, here) {
+            return None;
+        }
+        let name = name.to_lowercase();
+        if here {
+            names.host.insert(name);
+        } else {
+            *names.guests.entry(name.clone()).or_default() += 1;
+            seat.guest = Some(name);
+        }
+        drop(names);
+        Some(seat)
+    }
+}
+
+impl Drop for Seat {
+    fn drop(&mut self) {
+        let (Some(room), Some(name)) = (&self.core.room, &self.guest) else { return };
+        let mut names = room.names.lock().unwrap();
+        if let Some(windows) = names.guests.get_mut(name) {
+            *windows -= 1;
+            if *windows == 0 {
+                names.guests.remove(name);
+            }
+        }
+    }
 }
 
 /// True for localhost, 127.0.0.1 and [::1], with or without a scheme and a port.
@@ -636,10 +744,14 @@ async fn connect(
     Query(join): Query<Join>,
     ConnectInfo(link): ConnectInfo<Link>,
     State(core): State<Arc<Core>>,
-) -> impl IntoResponse {
+) -> Response {
     let speaker = speaker_name(&join.name, link.here());
     let renamed = speaker != speaker_name(&join.name, true);
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed))
+    // The page asks /room for another name when this happens.
+    let Some(seat) = Seat::take(&core, &speaker, link.here()) else {
+        return (StatusCode::CONFLICT, "That name is taken in this room.").into_response();
+    };
+    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, seat))
 }
 
 /// What another laptop is called when it asks for this machine's name, or for none.
@@ -673,8 +785,9 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
 
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
-/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead.
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool) {
+/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead. `_seat`
+/// holds its name in a room until it closes.
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, _seat: Seat) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
@@ -756,9 +869,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }
-                Ok(ClientMsg::Item { id, status }) => {
-                    core.commit(vec![Change::ItemStatus { id, status, done_ms: None }]);
-                }
+                Ok(ClientMsg::Item { id, status }) => apple::item(&core, id, status),
                 // It goes into Reminders or Calendar on the laptop running the core, so it's that person's call.
                 Ok(ClientMsg::Approve { id }) if here => {
                     tokio::spawn(apple::approve(core.clone(), id));
@@ -778,7 +889,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
                 }
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
-                Ok(ClientMsg::ImportCancel) => import::cancel(&core, &speaker),
+                // Imports run on the host only (their key, their chats), so only the host stops one.
+                Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
             },
@@ -800,10 +912,69 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 
 #[cfg(test)]
 mod tests {
-    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link};
-    use crate::world::{Thought, Thread, ThreadStatus, World};
+    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
+    use crate::world::{Change, Thought, Thread, ThreadStatus, World};
     use std::sync::{Arc, Mutex};
     use tokio::sync::{broadcast, mpsc};
+
+    /// A core on an empty map, with the placer's queue to watch.
+    fn test_core(room: Option<&str>) -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let (updates, _) = broadcast::channel(64);
+        let (placer_queue, queue) = mpsc::unbounded_channel();
+        let core = Arc::new(Core {
+            find: crate::find::Runtime::default(),
+            recap: crate::recap::Runtime::default(),
+            apps: crate::apps::Runtime::default(),
+            imports: crate::import::Imports::default(),
+            world: Mutex::new(world.into()),
+            journal: Mutex::new(journal),
+            updates,
+            placer_queue,
+            room: room.map(Room::from),
+            key: None,
+            placer_model: "test".into(),
+            http: reqwest::Client::new(),
+            last_activity: std::sync::atomic::AtomicU64::new(0),
+            looked: std::sync::atomic::AtomicBool::new(false),
+            wake: tokio::sync::Notify::new(),
+            service: Default::default(),
+        });
+        (core, queue, path)
+    }
+
+    fn thread(id: &str, touched_ms: u64, dropped_by: &str) -> Thread {
+        Thread {
+            id: id.into(),
+            title: id.into(),
+            parent_id: None,
+            status: if dropped_by.is_empty() { ThreadStatus::Open } else { ThreadStatus::Dropped },
+            last_point: String::new(),
+            touched_ms,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: dropped_by.into(),
+        }
+    }
+
+    fn said(id: &str, speaker: &str, thread: &str, at_ms: u64) -> Thought {
+        Thought {
+            id: id.into(),
+            speaker: speaker.into(),
+            text: String::new(),
+            point: String::new(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms,
+            place_ms: None,
+        }
+    }
 
     #[test]
     fn filler_is_only_sounds_connectors_and_acknowledgements_after_no_question() {
@@ -968,7 +1139,7 @@ mod tests {
         core.add_thought("you", "Go back to the beginning of the song, it's the best part");
         assert_eq!(jobs(), ["place"]);
         core.add_thought("you", "Take me back to that, the budget thing");
-        assert!(jobs().is_empty(), "a search, as before");
+        assert!(jobs().is_empty(), "a search, as before (it waits for the thoughts still placing)");
         assert_eq!(
             texts(&core)[3..],
             ["Oh right, the rent is due Friday.", "The landlord wants it by Friday.", "The rent", "Go back to the beginning of the song, it's the best part"]
@@ -1048,32 +1219,8 @@ mod tests {
 
     #[test]
     fn where_was_i_is_each_speakers_own() {
-        let thread = |id: &str, touched_ms, dropped_by: &str| Thread {
-            id: id.into(),
-            title: id.into(),
-            parent_id: None,
-            status: if dropped_by.is_empty() { ThreadStatus::Open } else { ThreadStatus::Dropped },
-            last_point: String::new(),
-            touched_ms,
-            tags: Vec::new(),
-            picture: None,
-            dropped_by: dropped_by.into(),
-        };
-        let said = |id: &str, speaker: &str, thread: &str| Thought {
-            id: id.into(),
-            speaker: speaker.into(),
-            text: String::new(),
-            point: String::new(),
-            thread_id: Some(thread.into()),
-            placed: true,
-            unclear: String::new(),
-            guess: String::new(),
-            heard: String::new(),
-            fixed: String::new(),
-            complete: true,
-            at_ms: 0,
-            place_ms: None,
-        };
+        let said = |id: &str, speaker: &str, thread: &str| said(id, speaker, thread, 0);
+        let now = 1;
         let mut world = World {
             threads: vec![thread("T1", 1, "User"), thread("T2", 2, "Sam"), thread("T3", 3, ""), thread("T4", 4, "")],
             thoughts: vec![said("a", "Lee", "T3"), said("b", "Sam", "T4"), said("c", "Lee", "T4")],
@@ -1081,17 +1228,94 @@ mod tests {
         };
         world.active_by.insert("Lee".into(), "T4".into());
         // Sam dropped T2 more recently, but User's way back is User's own.
-        assert_eq!(way_back(&world, "User").as_deref(), Some("T1"));
-        assert_eq!(way_back(&world, "Sam").as_deref(), Some("T2"));
+        assert_eq!(way_back(&world, "User", now).as_deref(), Some("T1"));
+        assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T2"));
         // Nothing dropped: the last other thread Lee spoke on.
-        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T3"));
+        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T3"));
         // Right after a line of theirs trailed off, it's where they said it, even the thread they're on and
         // even with an older loose end; someone else's unfinished line doesn't count.
         world.threads.push(thread("T5", 5, "Lee"));
         world.thoughts.push(Thought { complete: false, ..said("d", "Sam", "T4") });
-        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T5"));
+        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T5"));
         world.thoughts.push(Thought { complete: false, ..said("e", "Lee", "T4") });
-        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T4"));
-        assert_eq!(way_back(&world, "Sam").as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
+        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T4"));
+        assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
+    }
+
+    #[test]
+    fn where_was_i_goes_by_when_things_were_said_not_by_imports_landing_last() {
+        let now = 1_800_000_000_000;
+        let mut world = World {
+            threads: vec![thread("Rent", 1, ""), thread("Demo", 2, ""), thread("Kitchen renovation", 3, "")],
+            // Rent a minute ago, then Demo; then an import landed a point from a chat a year back.
+            thoughts: vec![said("a", "you", "Rent", now - 60_000), said("b", "you", "Demo", now - 30_000), said("c", "you", "Kitchen renovation", now - 365 * 86_400_000)],
+            ..World::default()
+        };
+        world.active_by.insert("you".into(), "Demo".into());
+        assert_eq!(way_back(&world, "you", now).as_deref(), Some("Rent"));
+        // A line that trailed off before the import is still where they left off.
+        world.thoughts[1].complete = false;
+        assert_eq!(way_back(&world, "you", now).as_deref(), Some("Demo"));
+        // A sample map dated for its demo day, ahead of the clock, comes before anything said live.
+        world.thoughts[1].complete = true;
+        world.thoughts.insert(0, said("sample", "you", "Kitchen renovation", now + 3 * 86_400_000));
+        assert_eq!(way_back(&world, "you", now).as_deref(), Some("Rent"));
+    }
+
+    #[test]
+    fn a_command_acts_at_once_unless_words_said_before_it_are_still_placing() {
+        let (core, mut queue, path) = test_core(None);
+        let mut jobs = || std::iter::from_fn(|| queue.try_recv().ok()).map(|job| match job {
+            Job::Place(_) => "place",
+            Job::Back(_) => "back",
+            Job::Next(_) => "next",
+        }).collect::<Vec<_>>();
+        let unplaced = |id: &str, speaker: &str, at_ms| Thought { placed: false, thread_id: None, ..said(id, speaker, "", at_ms) };
+        let now = super::now_ms();
+        core.commit(vec![
+            Change::ThreadAdded { thread: thread("T1", 1, "User") },
+            Change::ThreadAdded { thread: thread("T2", 2, "") },
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+            // Sam's words are being placed, and one of User's failed a minute ago and waits for a retry.
+            Change::ThoughtAdded { thought: unplaced("sam", "Sam", now) },
+            Change::ThoughtAdded { thought: unplaced("old", "User", now - 61_000) },
+        ]);
+        // Neither holds User up: no wait behind the other person's placements or a retry.
+        core.add_thought("User", "Where was I?");
+        assert!(jobs().is_empty());
+        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+        core.add_thought("User", "Okay, next one");
+        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"));
+        // User's own words still placing: landing would undo the command, so it waits behind them.
+        core.add_thought("User", "The caterer needs the head count by Friday, okay, where was I?");
+        assert_eq!(jobs(), ["place", "back"]);
+        core.add_thought("User", "Where was I? The menu is final.");
+        assert_eq!(jobs(), ["back", "place"]);
+        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"), "not yet");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn in_a_room_a_name_belongs_to_one_laptop() {
+        let (core, _queue, path) = test_core(Some("k7m2x9qp"));
+        let taken = |name: &str, here: bool| core.room.as_ref().unwrap().names.lock().unwrap().taken(name, here);
+        // The host joined as User: another laptop can't be User, in any case, even while the host's window reconnects.
+        drop(Seat::take(&core, "User", true).unwrap());
+        assert!(Seat::take(&core, "User", false).is_none() && taken("User", false));
+        assert!(Seat::take(&core, "User", true).is_some(), "the host's other windows share it");
+        // Sam's laptop joined first: the host can't be Sam while Sam has a window open.
+        let sam = Seat::take(&core, "Sam", false).unwrap();
+        let another_tab = Seat::take(&core, "Sam", false).unwrap();
+        assert!(Seat::take(&core, "sam", true).is_none());
+        drop(sam);
+        assert!(taken("Sam", true), "one window is still open");
+        drop(another_tab);
+        assert!(!taken("Sam", true));
+        // Alone, every window is this machine's.
+        let (alone, _queue, alone_path) = test_core(None);
+        assert!(Seat::take(&alone, "you", true).is_some());
+        for path in [path, alone_path] {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }

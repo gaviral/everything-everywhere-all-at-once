@@ -404,8 +404,12 @@ export default function App() {
     .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
+  // Your last words there by when you said them, as the core's Thought::said_at: imported points land last in
+  // the list with their old times, and a time ahead of the clock (a sample map) counts as the earliest.
+  const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me)
+      .reduce<Thought | undefined>((last, t) => (!last || saidAt(t) >= saidAt(last) ? t : last), undefined)?.text ?? ""
     : "";
 
   const goBack = (thread: Thread) => {
@@ -455,7 +459,7 @@ export default function App() {
           <strong>Say or type</strong>
           <div>“Where was I?” or “Go back” · return to where you left off</div>
           <div>“Next one” · next thread in creation order, then back to the first</div>
-          <div>“Find [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Where did I talk about [topic]?” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>Back and next can follow a thought after a pause; the thought is kept.</div>
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
