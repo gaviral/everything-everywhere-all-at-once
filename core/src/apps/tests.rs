@@ -223,12 +223,33 @@ fn a_timer_with_a_prompt_waits_for_something_new_to_look_at() {
     timer.watcher = Watcher::Time { at_ms: 1, every_secs: 10 };
     timer.last_run_ms = 1_000;
     let mut world = World { thoughts: vec![said(500)], ..World::default() };
-    assert!(timer_due(&timer, &world, 20_000), "without a prompt it runs on time");
+    let apps = Runtime::default();
+    assert!(timer_due(&apps, &timer, &world, 20_000), "without a prompt it runs on time");
     timer.prompt = Some(Prompt { system: "Notice when I drift.".into(), template: "{points}".into() });
-    assert!(!timer_due(&timer, &world, 20_000), "nothing new since it last ran");
+    assert!(!timer_due(&apps, &timer, &world, 20_000), "nothing new since it last ran");
     world.thoughts.push(said(1_500));
-    assert!(timer_due(&timer, &world, 20_000));
-    assert!(!timer_due(&timer, &world, 5_000), "not time yet");
+    assert!(timer_due(&apps, &timer, &world, 20_000));
+    assert!(!timer_due(&apps, &timer, &world, 5_000), "not time yet");
+}
+
+/// On this machine's clock; in Los Angeles, Nov 1, 2026 is 25 hours long, and 24 hours after 5 PM the day
+/// before was 4 PM, when a daily 5 PM app used to fire.
+#[test]
+fn a_daily_timer_keeps_its_hour_when_the_clocks_change() {
+    let at = |local: &str| crate::clock::ms(local).unwrap();
+    let mut timer = app();
+    timer.watcher = Watcher::Time { at_ms: at("2026-10-31 17:00"), every_secs: 86_400 };
+    timer.last_run_ms = at("2026-10-31 17:00");
+    // The composer sees it in the local time it writes.
+    assert_eq!(shown(&timer.watcher), json!({"kind": "time", "at": "2026-10-31 17:00", "every_secs": 86_400}));
+    let (apps, world) = (Runtime::default(), World::default());
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-01 16:00")));
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-01 16:59")));
+    assert!(timer_due(&apps, &timer, &world, at("2026-11-01 17:00")));
+    // It ran late, at 9 PM, after the laptop slept through 5 PM: the next is still 5 PM.
+    timer.last_run_ms = at("2026-11-02 21:00");
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-03 16:59")));
+    assert!(timer_due(&apps, &timer, &world, at("2026-11-03 17:00")));
 }
 
 #[tokio::test]
@@ -359,23 +380,28 @@ async fn what_apps_cant_do_is_declined_with_a_reason_and_the_closest_app() {
 #[tokio::test]
 async fn a_missing_app_or_a_reminder_that_cant_repeat_gets_the_retry_told_why() {
     let fixture = Fixture::new();
-    let timer = |publishers: Value| json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Water", "purpose":"Drink water now and then.",
-        "watcher":{"kind":"time","at_ms":1,"every_secs":2700}, "prompt":null, "publishers":publishers, "cooldown_secs":60}});
+    let timed = |at: &str, every: u64, publishers: Value| json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Water",
+        "purpose":"Drink water now and then.", "watcher":{"kind":"time","at":at,"every_secs":every}, "prompt":null,
+        "publishers":publishers, "cooldown_secs":60}});
+    let timer = |publishers: Value| timed("2026-11-03 09:00", 2700, publishers);
     let fresh = || Some(Build { id: "b".into(), request: "water".into(), stage: "searching".into(), ..Build::default() });
     for (first, told) in [
         (json!({"match_id":"", "app": null, "cannot":"", "instead":""}), "say in cannot why"),
         (timer(json!([{"kind":"reminder","title":"Drink water","when":""}])), "a repeating timer needs a card or a sound"),
+        (timed("9 AM", 2700, json!([{"kind":"card","text":"Water."}])), "isn't a local date and time as YYYY-MM-DD HH:MM"),
     ] {
         fixture.core.apps.state.lock().unwrap().build = fresh();
         fixture.core.apps.answers.lock().unwrap().extend([first, timer(json!([{"kind":"card","text":"Time for some water."}]))]);
         compose_inner(&fixture.core, "b", "remind me to drink water every 45 minutes").await.unwrap();
-        assert_eq!(build(&fixture.core).unwrap().stage, "ready");
+        let b = build(&fixture.core).unwrap();
+        assert_eq!(b.stage, "ready");
         assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains(told), "{told}");
+        // The model says when in local time; the core works out the instant, by this machine's clock rules.
+        let at_ms = crate::clock::ms("2026-11-03 09:00").unwrap();
+        assert!(matches!(b.draft.unwrap().watcher, Watcher::Time { at_ms: a, every_secs: 2700 } if a == at_ms));
     }
     // Once, a reminder is fine; so is one whose title the prompt writes each time.
-    let mut once: MiniApp = serde_json::from_value(timer(json!([{"kind":"reminder","title":"Drink water","when":""}]))["app"].clone()).unwrap();
-    once.watcher = Watcher::Time { at_ms: 1, every_secs: 0 };
-    assert!(draft(&json!({"app": once})).is_ok());
+    assert!(draft(&timed("2026-11-03 09:00", 0, json!([{"kind":"reminder","title":"Drink water","when":""}]))).is_ok());
 }
 
 #[tokio::test]

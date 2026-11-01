@@ -1,7 +1,8 @@
 //! What every model call shares: whether the key still works, and what an answer's status means for the
 //! calls after it. A refused key (401 or 403) won't fix itself, so it stops every model call until a
 //! restart and every window is told; a busy service (429) is tried again on each caller's own schedule,
-//! and said once a spell.
+//! and said once a spell. A default model in Contributor mode that the key can't use gives way to the
+//! same model without it, for the rest of the session.
 
 use crate::{protocol::ServerMsg, Core};
 use reqwest::StatusCode;
@@ -72,6 +73,49 @@ impl std::fmt::Display for Verdict {
 
 impl std::error::Error for Verdict {}
 
+/// What a key gets for a model it isn't allowed (401 or 403), or can't see (404).
+fn cant_use(status: StatusCode) -> bool {
+    matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND)
+}
+
+/// A feature's model: the person's own setting, asked as is, or the default. A default in Contributor mode
+/// (Meta may keep what it reads) gives way to the same model without it when the key can't use it, since
+/// not every key is allowed Contributor mode.
+pub struct Setting {
+    name: String,
+    /// The same model without Contributor mode, for a default that has one; never for the person's own choice.
+    base: Option<String>,
+    /// Set once the key couldn't use `name` and `base` worked: `base` from then on, until a restart.
+    on_base: AtomicBool,
+}
+
+impl Setting {
+    /// The environment's `var`, the person's choice, when it's set and not empty; else `default`.
+    pub fn from_env(var: &str, default: &str) -> Self {
+        Self::new(std::env::var(var).ok().filter(|m| !m.trim().is_empty()), default)
+    }
+
+    fn new(chosen: Option<String>, default: &str) -> Self {
+        let base = if chosen.is_none() { default.strip_suffix("-contributor").map(String::from) } else { None };
+        Setting { name: chosen.unwrap_or_else(|| default.into()), base, on_base: AtomicBool::new(false) }
+    }
+
+    /// The model to ask now.
+    pub fn name(&self) -> &str {
+        match &self.base {
+            Some(base) if self.on_base.load(Ordering::Relaxed) => base,
+            _ => &self.name,
+        }
+    }
+}
+
+/// A fixed name, as the tests use: asked as is, like the person's own setting.
+impl From<&str> for Setting {
+    fn from(name: &str) -> Self {
+        Setting::new(Some(name.into()), name)
+    }
+}
+
 /// What the model service has said about the key and its load. It lives on the core, so it lasts until a restart.
 #[derive(Default)]
 pub struct Service {
@@ -121,11 +165,35 @@ impl Core {
             Verdict::Fine | Verdict::Other => Ok(()),
         }
     }
+
+    /// Asks a feature's model: `send` posts the request for one model name, and the answer's status is read as
+    /// `check` reads it. When the key can't use a default model in Contributor mode (401, 403 or 404), the same
+    /// request goes once to the model without it; if that one works, the feature keeps it until a restart, said
+    /// once. The key counts as refused only if that model refuses it too.
+    pub async fn ask_model<F, R>(&self, setting: &Setting, send: F) -> anyhow::Result<reqwest::Response>
+    where
+        F: Fn(&str) -> R,
+        R: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
+    {
+        let model = setting.name();
+        let mut response = send(model).await?;
+        if let Some(base) = setting.base.as_deref().filter(|base| *base != model && cant_use(response.status())) {
+            tracing::info!("{model} answered {}: asking {base} instead", response.status());
+            response = send(base).await?;
+            // Two features finding out at once say it once.
+            if response.status().is_success() && !setting.on_base.swap(true, Ordering::Relaxed) {
+                tracing::warn!("this key can't use {model}: {base} from now on, until a restart");
+                self.send(ServerMsg::Notice { message: format!("Using {base} (this key can't use the contributor model).") });
+            }
+        }
+        self.check(response.status())?;
+        Ok(response)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{status_of, verdict, Verdict, REFUSED};
+    use super::{status_of, verdict, Setting, Verdict, REFUSED};
     use crate::placer::{self, Job};
     use crate::protocol::{Outgoing, ServerMsg};
     use crate::world::Journal;
@@ -239,6 +307,97 @@ mod tests {
         assert!(said[0].contains("busy") && !said[0].contains("MODEL_API_KEY"), "{said:?}");
         assert!(!core.key_refused());
         assert_eq!(core.key().unwrap(), "good");
+    }
+
+    /// The default for placing and Explain (main.rs), and the same model without Contributor mode.
+    const CONTRIBUTOR: &str = "muse-spark-1.2-contributor";
+    const BASE: &str = "muse-spark-1.2";
+
+    /// Asks `setting` through a stand-in for the service that answers each model with its status in `statuses`
+    /// (else 200), after a yield, so two asks overlap the way placing and Explain can. `asked` records the models.
+    async fn ask(core: &Core, setting: &Setting, statuses: &[(&str, u16)], asked: &Mutex<Vec<String>>) -> anyhow::Result<StatusCode> {
+        let response = core
+            .ask_model(setting, |model| {
+                asked.lock().unwrap().push(model.to_string());
+                let status = statuses.iter().find(|(m, _)| *m == model).map_or(200, |(_, s)| *s);
+                async move {
+                    tokio::task::yield_now().await;
+                    let answer = axum::http::Response::builder().status(status).body(String::new()).unwrap();
+                    Ok::<_, reqwest::Error>(reqwest::Response::from(answer))
+                }
+            })
+            .await?;
+        Ok(response.status())
+    }
+
+    #[tokio::test]
+    async fn a_key_that_cant_use_contributor_mode_gets_the_same_model_without_it_said_once() {
+        for status in [401, 403, 404] {
+            let fixture = Fixture::new(Some("good"));
+            let core = &fixture.core;
+            let mut updates = core.updates.subscribe();
+            let setting = Setting::new(None, CONTRIBUTOR);
+            let (statuses, asked) = ([(CONTRIBUTOR, status)], Mutex::new(Vec::new()));
+            // Placing and Explain at once: both find out, one says so.
+            let (a, b) = tokio::join!(ask(core, &setting, &statuses, &asked), ask(core, &setting, &statuses, &asked));
+            assert_eq!((a.unwrap(), b.unwrap()), (StatusCode::OK, StatusCode::OK), "{status}");
+            assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR, CONTRIBUTOR, BASE, BASE], "{status}");
+            assert_eq!(setting.name(), BASE);
+            assert!(!core.key_refused(), "{status}");
+            assert_eq!(notices(&mut updates), ["Using muse-spark-1.2 (this key can't use the contributor model)."], "{status}");
+            // From then on, only the base is asked, and nothing more is said.
+            asked.lock().unwrap().clear();
+            assert_eq!(ask(core, &setting, &statuses, &asked).await.unwrap(), StatusCode::OK);
+            assert_eq!(*asked.lock().unwrap(), [BASE]);
+            assert!(notices(&mut updates).is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_key_counts_as_refused_only_if_the_model_without_contributor_mode_refuses_it_too() {
+        let fixture = Fixture::new(Some("wrong"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        let setting = Setting::new(None, CONTRIBUTOR);
+        let asked = Mutex::new(Vec::new());
+        // Busy: nothing is switched or refused, and the next call starts from the default again.
+        let busy = ask(core, &setting, &[(CONTRIBUTOR, 403), (BASE, 429)], &asked).await.unwrap_err();
+        assert_eq!(Verdict::of(&busy), Some(Verdict::Busy));
+        assert!(!core.key_refused());
+        let refused = ask(core, &setting, &[(CONTRIBUTOR, 403), (BASE, 401)], &asked).await.unwrap_err();
+        assert_eq!(Verdict::of(&refused), Some(Verdict::Refused));
+        assert!(core.key_refused());
+        assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR, BASE, CONTRIBUTOR, BASE]);
+        assert_eq!(setting.name(), CONTRIBUTOR, "nothing worked, so nothing switched");
+        let said = notices(&mut updates);
+        assert_eq!(said.last().map(String::as_str), Some(REFUSED), "{said:?}");
+        assert!(!said.iter().any(|s| s.starts_with("Using")), "{said:?}");
+    }
+
+    #[tokio::test]
+    async fn the_persons_own_model_and_a_working_default_are_asked_once_as_before() {
+        // PLACER_MODEL set, even to the default: never switched; a refusal stops every call, as before.
+        let fixture = Fixture::new(Some("good"));
+        let chosen = Setting::new(Some(CONTRIBUTOR.into()), CONTRIBUTOR);
+        let asked = Mutex::new(Vec::new());
+        let refused = ask(&fixture.core, &chosen, &[(CONTRIBUTOR, 403)], &asked).await.unwrap_err();
+        assert_eq!(Verdict::of(&refused), Some(Verdict::Refused));
+        assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR]);
+        assert_eq!(chosen.name(), CONTRIBUTOR);
+        // The default: the same answer as before when it works, is busy or fails another way.
+        for (status, verdict) in [(200, None), (500, None), (429, Some(Verdict::Busy))] {
+            let fixture = Fixture::new(Some("good"));
+            let setting = Setting::new(None, CONTRIBUTOR);
+            let asked = Mutex::new(Vec::new());
+            let answer = ask(&fixture.core, &setting, &[(CONTRIBUTOR, status)], &asked).await;
+            match verdict {
+                None => assert_eq!(answer.unwrap().as_u16(), status, "the caller reads it, as before"),
+                Some(verdict) => assert_eq!(Verdict::of(&answer.unwrap_err()), Some(verdict)),
+            }
+            assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR], "{status}");
+            assert_eq!(setting.name(), CONTRIBUTOR);
+            assert!(!fixture.core.key_refused());
+        }
     }
 
     /// The placer used to retry a refused thought forever (15 s, doubling to 4 min) and say it would.

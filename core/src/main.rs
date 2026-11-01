@@ -5,6 +5,7 @@
 mod apple;
 mod apps;
 mod asr;
+mod clock;
 mod explain;
 mod find;
 mod import;
@@ -48,7 +49,8 @@ pub struct Core {
     /// Set when a room is open.
     room: Option<Room>,
     pub key: Option<String>,
-    pub placer_model: String,
+    /// Placing and Explain's model (model.rs).
+    pub placer_model: model::Setting,
     pub http: reqwest::Client,
     /// When the person last spoke or typed; background work waits for a pause.
     last_activity: std::sync::atomic::AtomicU64,
@@ -448,7 +450,8 @@ async fn main() -> anyhow::Result<()> {
         placer_queue,
         room: room.as_deref().map(Room::from),
         key,
-        placer_model: std::env::var("PLACER_MODEL").unwrap_or_else(|_| "muse-spark-1.2-contributor".into()),
+        // A key that can't use Contributor mode gets muse-spark-1.2 instead, unless PLACER_MODEL is set (model.rs).
+        placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))

@@ -165,16 +165,17 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     }
 
     let response = core
-        .http
-        .post(URL)
-        .bearer_auth(key)
-        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-        .timeout(std::time::Duration::from_secs(20))
-        .json(&request(&world, &thought, &core.placer_model))
-        .send()
+        .ask_model(&core.placer_model, |model| {
+            core.http
+                .post(URL)
+                .bearer_auth(key)
+                // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+                .timeout(std::time::Duration::from_secs(20))
+                .json(&request(&world, &thought, model))
+                .send()
+        })
         .await?;
     let status = response.status();
-    core.check(status)?;
     let body: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", body["error"]["message"].as_str().unwrap_or("no message"));

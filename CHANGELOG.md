@@ -52,6 +52,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 
 ### Recent changes
 - A refused key (wrong or expired) stops model calls after the first, says so plainly (“AI key refused”), and keeps waiting thoughts until a restart with a working key; a busy service backs off and says so once.
+- A key that can't use Contributor mode no longer reads as refused: placing and Explain switch to `muse-spark-1.2` until a restart and say so once; a `PLACER_MODEL` you set is used as is.
+- Time apps keep the local time you asked for on days the clocks change: “play a tune at 5 PM”, made early on Nov 1, started at 4 PM before (2 of 2 runs) and at 5 PM now (2 of 2), and an app repeating every day keeps its hour, even after a run that came late.
 - Filler such as “um, so” is set aside before placement; “yeah, okay” is set aside unless the last turn was a question.
 - A turn that moves to another topic is split at the change, with joining words removed; a short filler turn can be skipped, but turns over 8 words are placed.
 - When your thoughts land during an absence of at least 30 seconds, “While you were away” lists those threads and their new proposals; each row opens its thread.
