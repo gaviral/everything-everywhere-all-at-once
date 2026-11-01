@@ -28,7 +28,7 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 ./run.sh sample
 ```
 
-- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.” Recap has nothing to cover on it unless today's date overlaps: it covers today or this session.
+- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.” Recap needs a key; with one, a bare "recap" covers the sample's last session (once its Nov 3, 2026 date has passed).
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, try the unfinished card (see [How it works](#how-it-works)), open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
 - With a wrong or expired key, the first model call is refused and the app stops calling: the header says “AI key refused” and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart. If the service is busy (rate limited), it backs off and says so once.
@@ -227,4 +227,4 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s for Take
 - In a room, a name is the host's or a guest's, never both; two guests who pick the same name share notices and live words.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
-- The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap's Today is empty for those dates unless today's date overlaps, and This session needs a key.
+- The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).
