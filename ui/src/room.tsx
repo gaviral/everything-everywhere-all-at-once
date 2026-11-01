@@ -12,6 +12,7 @@ const ALONE: Seat = { me: "you", code: "" };
 const NAME = "e2a2o.name";
 const CODE = "e2a2o.room";
 const JOINED = "e2a2o.joined";
+const GUEST_MACHINE = !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 
 // The socket reads the seat each time it connects; Room keeps both current.
 let seat = ALONE;
@@ -37,11 +38,12 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
       <div className="room-panel">
         <div className="room-panel-title">This room</div>
         <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
+        {GUEST_MACHINE && <p className="room-guest">Guest on this map · Your thoughts are saved on the host's computer.</p>}
         {others.length > 0 ? <>
           <p className="room-panel-label">Also on this map</p>
           <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
           <p className="room-panel-hint">Names appear here after someone adds a thought.</p>
-        </> : <p className="room-panel-hint">When someone adds a thought, their name will appear here.</p>}
+        </> : <p className="room-panel-hint">As people add thoughts, their names appear here.</p>}
         <button type="button" className="room-leave" onClick={actions.leave}>Leave room</button>
       </div>
     </details>

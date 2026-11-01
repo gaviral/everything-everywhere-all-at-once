@@ -1,7 +1,7 @@
 //! Placer: asks a Muse model where each new thought belongs, one thought at a time,
 //! so every placement sees the map the previous one left.
 
-use crate::world::{find, swap, Change, Thought, Thread, ThreadStatus, World};
+use crate::world::{find, matches, swap, Change, Thought, Thread, ThreadStatus, World};
 use crate::{now_ms, protocol::ServerMsg, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
@@ -19,6 +19,8 @@ For each NEW THOUGHT decide: \"continue\" if it says more about the active threa
 \"return\" if it says more about an earlier thread's, \
 or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
 (set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip an answer, even a bare \"yes\" or \"no\". \
+split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string. \
 thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
 point: the thought in at most 12 words, in the speaker's own voice. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
@@ -27,8 +29,25 @@ unclear: words that look mistranscribed, such as a near miss of a name on the ma
 guess: what those words most likely were, judging by the context, else an empty string. \
 sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. Answer with JSON only.";
 
+/// A skip never sets aside a turn longer than this, whatever the model says: filler is short.
+const SKIP_MAX_WORDS: usize = 8;
+
+/// Words that join two parts of a turn; left out where it's cut in two.
+const JOINS: [&str; 9] = ["and", "also", "plus", "but", "so", "oh", "then", "anyway", "or"];
+
+/// What the placer works through, in the order it was said: a thought to place, or a speaker's spoken
+/// command. A command waits behind the thoughts said before it, so their placements can't undo it.
+pub enum Job {
+    Place(String),
+    Back(String),
+    Next(String),
+}
+
 #[derive(Deserialize)]
 struct Placement {
+    /// Where the turn moves on to another thread, quoted; empty when it stays on one.
+    #[serde(default)]
+    split: String,
     action: String,
     #[serde(default)]
     thread_id: String,
@@ -63,15 +82,36 @@ fn clean(text: &str) -> String {
     }
 }
 
-pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<String>) {
+pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
     // Rounds of three failed tries so far, for each thought still waiting to be placed.
     let mut rounds: HashMap<String, u32> = HashMap::new();
-    while let Some(thought_id) = queue.recv().await {
+    // The rest of a turn cut in two goes next, before anything said after it.
+    let mut rest: Option<String> = None;
+    loop {
+        let job = match rest.take() {
+            Some(id) => Job::Place(id),
+            None => match queue.recv().await {
+                Some(job) => job,
+                None => return,
+            },
+        };
+        let thought_id = match job {
+            Job::Place(id) => id,
+            Job::Back(speaker) => {
+                core.go_back(&speaker);
+                continue;
+            }
+            Job::Next(speaker) => {
+                core.go_next(&speaker);
+                continue;
+            }
+        };
         // A blip (rate limit, timeout) shouldn't lose a thought: three tries, then say so.
         for attempt in 1..=3u64 {
             match place(&core, &thought_id).await {
-                Ok(()) => {
+                Ok(next) => {
                     rounds.remove(&thought_id);
+                    rest = next;
                     break;
                 }
                 Err(e) if attempt < 3 => {
@@ -92,7 +132,7 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<String>) {
                         *round += 1;
                         tokio::spawn(async move {
                             tokio::time::sleep(wait).await;
-                            let _ = core.placer_queue.send(id);
+                            let _ = core.placer_queue.send(Job::Place(id));
                         });
                     }
                 }
@@ -107,7 +147,8 @@ fn retry_in(round: u32) -> Duration {
     Duration::from_secs(15 << round.min(4))
 }
 
-async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
+/// Places one thought; when the turn moved on to another topic partway, returns the rest's id.
+async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let world = core.snapshot();
     let thought = world
@@ -117,7 +158,7 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
         .cloned()
         .context("thought not found")?;
     if thought.placed {
-        return Ok(());
+        return Ok(None);
     }
 
     let response = core
@@ -140,8 +181,81 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
-    core.commit(decide(&world, &thought, placement, place_ms));
-    Ok(())
+    let (changes, rest) = settle(&world, &thought, placement, place_ms);
+    core.commit(changes);
+    Ok(rest)
+}
+
+/// The changes for one answer. A turn that moved on to another topic is cut in two first: the answer
+/// places the words before, and the rest, returned, is placed next on the map this one leaves.
+fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64) -> (Vec<Change>, Option<String>) {
+    let Some((before, rest)) = cut(&thought.text, &p.split) else {
+        // A quote that cuts nothing leaves the model unsure which words were filler: place them all.
+        if p.action == "skip" && !clean(&p.split).is_empty() {
+            p.action = "continue".into();
+        }
+        return (decide(world, thought, p, place_ms), None);
+    };
+    let first = Thought { text: before.clone(), ..thought.clone() };
+    // Misheard words in the rest are found again when it's placed.
+    if find(&first.text, &clean(&p.unclear)).is_none() {
+        (p.unclear, p.guess, p.sure) = (String::new(), String::new(), false);
+    }
+    let rest = Thought {
+        id: format!("th-{}", uuid::Uuid::new_v4().simple()),
+        text: rest,
+        point: String::new(),
+        placed: false,
+        unclear: String::new(),
+        guess: String::new(),
+        heard: String::new(),
+        fixed: String::new(),
+        complete: true,
+        place_ms: None,
+        ..thought.clone()
+    };
+    let rest_id = rest.id.clone();
+    let mut changes = vec![Change::ThoughtSplit { thought_id: thought.id.clone(), text: before, rest }];
+    changes.extend(decide(world, &first, p, place_ms));
+    (changes, Some(rest_id))
+}
+
+/// Cuts a turn where the model says it moved on to another topic: the words before, and the rest.
+/// The quote is found as said (whole words, its last match), or failing that by its first four or three
+/// words, so a reworded ending still cuts in the right place. Joining words at the cut ("and also"),
+/// on either side, are left out. None when the quote isn't there or either side would be empty.
+fn cut(text: &str, quote: &str) -> Option<(String, String)> {
+    let words: Vec<&str> = quote.trim_matches(|c: char| !c.is_alphanumeric()).split_whitespace().collect();
+    let mut tries = vec![words.len(), 4, 3];
+    tries.retain(|&n| n > 0 && n <= words.len());
+    tries.dedup();
+    let at = tries.iter().find_map(|&n| matches(text, &words[..n].join(" ")).last().map(|r| r.start))?;
+    let mut before = text[..at].trim_end();
+    loop {
+        let trimmed = before.trim_end_matches(|c: char| c.is_whitespace() || ",;:—–-".contains(c));
+        let trimmed = match trimmed.rsplit_once(char::is_whitespace) {
+            Some((head, last)) if JOINS.contains(&last.to_lowercase().as_str()) => head,
+            None if JOINS.contains(&trimmed.to_lowercase().as_str()) => "",
+            _ => trimmed,
+        };
+        if trimmed.len() == before.len() {
+            break;
+        }
+        before = trimmed;
+    }
+    let mut rest = text[at..].trim();
+    loop {
+        let trimmed = rest.trim_start_matches(|c: char| c.is_whitespace() || ",;:—–-".contains(c));
+        let trimmed = match trimmed.split_once(char::is_whitespace) {
+            Some((first, tail)) if JOINS.contains(&first.trim_end_matches([',', ';', ':']).to_lowercase().as_str()) => tail,
+            _ => trimmed,
+        };
+        if trimmed.len() == rest.len() {
+            break;
+        }
+        rest = trimmed;
+    }
+    (!before.is_empty() && !rest.is_empty()).then(|| (before.to_string(), rest.to_string()))
 }
 
 fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
@@ -171,18 +285,19 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["continue", "return", "new"]},
+                "action": {"type": "string", "enum": ["continue", "return", "new", "skip"]},
                 "thread_id": {"type": "string"},
                 "title": {"type": "string"},
                 "parent_id": {"type": "string"},
                 "point": {"type": "string"},
+                "split": {"type": "string"},
                 "complete": {"type": "boolean"},
                 "dropped": {"type": "array", "items": {"type": "string"}},
                 "unclear": {"type": "string"},
                 "guess": {"type": "string"},
                 "sure": {"type": "boolean"}
             },
-            "required": ["action", "thread_id", "title", "parent_id", "point", "complete", "dropped", "unclear", "guess", "sure"]
+            "required": ["action", "thread_id", "title", "parent_id", "point", "split", "complete", "dropped", "unclear", "guess", "sure"]
         }}}
     })
 }
@@ -190,6 +305,10 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
 /// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
 /// the speaker: in a room, one person changing topic never drops a thread for the other.
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<Change> {
+    // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
+    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS {
+        return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
+    }
     let now = now_ms();
     let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();
@@ -282,7 +401,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::{decide, request, Placement};
+    use super::{cut, decide, request, settle, Placement};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
     use serde_json::json;
 
@@ -342,6 +461,77 @@ mod tests {
         world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
         world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
         world
+    }
+
+    fn turn(text: &str) -> Thought {
+        Thought { text: text.into(), at_ms: 7, ..thought("a", "you", None, true) }
+    }
+
+    /// A map with T1 (active) and T2.
+    fn map() -> World {
+        World { threads: vec![thread("T1"), thread("T2")], active: Some("T1".into()), ..World::default() }
+    }
+
+    fn reply(value: serde_json::Value) -> Placement {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn a_turn_is_cut_where_it_moves_on() {
+        let text = "I need to pay rent and also the hackathon demo is on Tuesday";
+        let expected = Some(("I need to pay rent".to_string(), "the hackathon demo is on Tuesday".to_string()));
+        assert_eq!(cut(text, "the hackathon demo is on Tuesday"), expected);
+        // Quoted with the joining words, or with its own punctuation.
+        assert_eq!(cut(text, "\"and also the hackathon demo is on Tuesday.\""), expected);
+        let oh = cut("I'll order the cookbook tonight. Oh, and the electric bill, autopay.", "Oh, and the electric bill");
+        assert_eq!(oh.unwrap(), ("I'll order the cookbook tonight.".to_string(), "the electric bill, autopay.".to_string()));
+        // A reworded ending still cuts by its first words; the last match wins.
+        assert_eq!(cut(text, "the hackathon demo is Tuesday"), expected);
+        assert_eq!(cut("the demo slides, and the demo is Tuesday", "the demo is Tuesday").unwrap().0, "the demo slides");
+        // Nothing to cut: no quote, a quote that isn't there, nothing before it, or only joining words before it.
+        for quote in ["", "the budget", text, "also the hackathon demo"] {
+            assert_eq!(cut(&text.replace("I need to pay rent and ", ""), quote), None, "{quote}");
+        }
+        assert_eq!(cut("and also the demo is on Tuesday", "the demo is on Tuesday"), None);
+    }
+
+    #[test]
+    fn the_first_part_is_placed_and_the_rest_waits_its_turn() {
+        let world = map();
+        let said = turn("I need to pay rent before Friday — oh, the Muse Bark demo is on Tuesday");
+        let p = reply(json!({"split": "the Muse Bark demo is on Tuesday", "action": "continue", "thread_id": "T1",
+            "point": "Pay rent before Friday", "unclear": "Muse Bark", "guess": "Muse Spark", "sure": true}));
+        let (changes, rest) = settle(&world, &said, p, 0);
+        let Some(Change::ThoughtSplit { thought_id, text, rest: next }) = changes.first() else { panic!("{changes:?}") };
+        assert_eq!((thought_id.as_str(), text.as_str()), ("a", "I need to pay rent before Friday"));
+        assert_eq!(rest.as_deref(), Some(next.id.as_str()));
+        assert_eq!((next.text.as_str(), next.at_ms, next.placed), ("the Muse Bark demo is on Tuesday", 7, false));
+        let placed = changes.iter().find_map(|c| match c {
+            Change::ThoughtPlaced { thread_id, point, unclear, heard, .. } => Some((thread_id, point, unclear, heard)),
+            _ => None,
+        });
+        // The misheard words are in the rest: they're asked about, or fixed, when it's placed.
+        assert_eq!(placed, Some((&"T1".to_string(), &"Pay rent before Friday".to_string(), &String::new(), &String::new())));
+    }
+
+    #[test]
+    fn a_skip_sets_aside_only_a_short_turn() {
+        let world = map();
+        let skip = || reply(json!({"split": "", "action": "skip", "thread_id": "", "point": ""}));
+        assert!(matches!(decide(&world, &turn("oh wow"), skip(), 0)[..], [Change::ThoughtSkipped { .. }]));
+        // A long turn is placed whatever the model says: on the active thread.
+        let long = turn("so I was thinking we could rent a van and drive down on Friday");
+        let changes = decide(&world, &long, skip(), 0);
+        assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T1")), "{changes:?}");
+        // A skip whose quote cuts nothing can't say which words were filler: placed too.
+        let unsure = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
+        let (changes, rest) = settle(&world, &turn("the demo is on Tuesday"), unsure, 0);
+        assert!(rest.is_none() && changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { .. })), "{changes:?}");
+        // Filler before real words: the filler is set aside and the rest placed next.
+        let lead = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
+        let (changes, rest) = settle(&world, &turn("yeah, so anyway, the demo is on Tuesday"), lead, 0);
+        assert!(rest.is_some());
+        assert!(matches!(changes[..], [Change::ThoughtSplit { .. }, Change::ThoughtSkipped { .. }]), "{changes:?}");
     }
 
     #[test]

@@ -112,6 +112,8 @@ type Change =
       place_ms: number;
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
+  | { type: "thought_skipped"; thought_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
@@ -222,6 +224,16 @@ function apply(world: World, raw: Change): World {
       return world.thoughts.some((t) => t.id === c.thought.id)
         ? world
         : { ...world, thoughts: [...world.thoughts, c.thought] };
+    case "thought_split": {
+      // Mirrors the core: the thought keeps the words before, and the rest follows it, to be placed next.
+      const i = world.thoughts.findIndex((t) => t.id === c.thought_id);
+      if (i < 0) return world;
+      const thoughts = world.thoughts.map((t) => (t.id === c.thought_id ? { ...t, text: c.text } : t));
+      if (!thoughts.some((t) => t.id === c.rest.id)) thoughts.splice(i + 1, 0, c.rest);
+      return { ...world, thoughts };
+    }
+    case "thought_skipped":
+      return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
@@ -403,11 +415,15 @@ export function useCore() {
     socket.current.send(data);
     return true;
   }, []);
-  const sendOrWarn = (data: string) => {
+  const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
     return false;
-  };
+  }, [send]);
+  const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
+  const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
+  const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
@@ -444,11 +460,8 @@ export function useCore() {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem: (id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })),
-    approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
-    correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
-    tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
-    visible: () => send(JSON.stringify({ type: "visible" })),
+    setItem, approve, correct, tag,
+    visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
