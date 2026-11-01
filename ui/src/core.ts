@@ -342,7 +342,7 @@ export function useCore() {
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
-    listen: (on: boolean) => { volume.reset(); send(JSON.stringify({ type: "listen", on })); },
+    listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
     setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
     approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
