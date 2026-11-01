@@ -588,6 +588,14 @@ fn speaker_name(name: &str, here: bool) -> String {
     }
 }
 
+/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress.
+fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
+    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
+    messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
+    messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    messages
+}
+
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
 /// `renamed`: it asked for a name it can't have, so the reply says what it's called instead.
@@ -597,28 +605,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         tracing::info!("{speaker} joined the room");
     }
     let mut updates = core.updates.subscribe();
-    let snapshot = ServerMsg::Snapshot { world: core.snapshot() };
-    if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
-        return;
+    for message in catch_up(&core, &speaker) {
+        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
     }
     if renamed {
         let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
         if out.send(Message::Text(serde_json::to_string(&notice).unwrap().into())).await.is_err() { return; }
     }
-    if let Some(build) = apps::unsettled_build(&core) {
-        let message = ServerMsg::AppsBuild { build };
-        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
-    }
-    // A window that opens mid-import picks up its progress, if the import is this speaker's.
-    if let Some(status) = core.imports.live_for(&speaker) {
-        let message = ServerMsg::Import { status };
-        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() {
-            return;
-        }
-    }
     let (source, reader) = (core.clone(), speaker.clone());
     let forward = tokio::spawn(async move {
-        loop {
+        'forward: loop {
             match updates.recv().await {
                 // Someone else's live words, mic and notices.
                 Ok(Outgoing { to: Some(to), .. }) if to != reader => {}
@@ -628,11 +624,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         break;
                     }
                 }
-                // Fell too far behind to replay the missed changes: send the whole world again.
+                // Fell too far behind to replay the missed changes: catch up as if just connected.
                 Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let snapshot = ServerMsg::Snapshot { world: source.snapshot() };
-                    if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
-                        break;
+                    for message in catch_up(&source, &reader) {
+                        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() {
+                            break 'forward;
+                        }
                     }
                 }
                 Err(_) => break,
