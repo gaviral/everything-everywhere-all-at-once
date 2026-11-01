@@ -69,19 +69,34 @@ export default function App() {
   const following = useRef(false);
   useEffect(() => {
     const navigate = () => { lastNavigation.current = Date.now(); };
-    const scroll = () => { if (!following.current) navigate(); };
+    // A scroll is you moving around only just after you pressed something (a scrollbar, a key): the page also
+    // scrolls on its own when a thread folds away and the page gets shorter, or a picture loads above, and that
+    // held the next landing back for 5 s (rehearsal 3: a thought stayed under the composer for 6 s).
+    let pressed = 0;
+    let holding = false;
+    const press = () => { pressed = Date.now(); };
+    const down = () => { holding = true; press(); };
+    const up = () => { holding = false; press(); };
+    const scroll = () => { if (!following.current && (holding || Date.now() - pressed < 1000)) navigate(); };
     const key = (event: KeyboardEvent) => {
+      press();
       // Keys typed into a field (a space in a thought, "j" in a search) aren't moving around the map.
       if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", " ", "j", "k"].includes(event.key)) navigate();
     };
     window.addEventListener("scroll", scroll, true);
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
     window.addEventListener("wheel", navigate, { passive: true });
     window.addEventListener("touchstart", navigate, { passive: true });
     window.addEventListener("touchmove", navigate, { passive: true });
     window.addEventListener("keydown", key, true);
     return () => {
       window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
       window.removeEventListener("wheel", navigate);
       window.removeEventListener("touchstart", navigate);
       window.removeEventListener("touchmove", navigate);
