@@ -223,10 +223,14 @@ export function useCore() {
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
   const [partial, setPartial] = useState("");
   const [listening, setListening] = useState(false);
+  const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
@@ -235,6 +239,8 @@ export function useCore() {
     let closed = false;
     let retry = 500;
     let timer: number | undefined;
+    let currentWorld = EMPTY;
+    let changeId = 0;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -247,22 +253,37 @@ export function useCore() {
         retry = 500;
         // Thoughts typed while the connection was down go out now.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        setQueuedCount(0);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
         if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
-            setWorld({ ...EMPTY, ...msg.world });
+            currentWorld = { ...EMPTY, ...msg.world };
+            setWorld(currentWorld);
+            setSnapshotRevision((revision) => revision + 1);
             break;
-          case "change":
-            setWorld((w) => apply(w, msg.change));
+          case "change": {
+            const change = msg.change;
+            if (change.type === "thread_renamed") {
+              const old = currentWorld.threads.find((thread) => thread.id === resolve(currentWorld, change.thread_id));
+              if (old && old.title !== change.title) setMapChange({ id: ++changeId, text: `AI renamed “${old.title}” to “${change.title}”` });
+            } else if (change.type === "thread_merged") {
+              const from = currentWorld.threads.find((thread) => thread.id === change.from);
+              const into = currentWorld.threads.find((thread) => thread.id === change.into);
+              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+            }
+            currentWorld = apply(currentWorld, change);
+            setWorld(currentWorld);
             break;
+          }
           case "partial":
             setPartial(msg.text);
             break;
           case "status":
             setListening(msg.listening);
+            setVoiceStatusRevision((revision) => revision + 1);
             break;
           case "error":
           case "notice":
@@ -276,6 +297,7 @@ export function useCore() {
       ws.onclose = () => {
         setConnected(false);
         setListening(false);
+        setVoiceStatusRevision((revision) => revision + 1);
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
@@ -288,7 +310,9 @@ export function useCore() {
   }, [receiveApps, resetApps]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
-    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(data);
+    if (socket.current?.readyState !== WebSocket.OPEN) return false;
+    socket.current.send(data);
+    return true;
   }, []);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
@@ -300,16 +324,22 @@ export function useCore() {
     removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
     appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    snapshotRevision,
+    mapChange,
     partial,
     listening,
+    voiceStatusRevision,
     connected,
     notice,
-    clearNotice: () => setNotice(""),
+    queuedCount,
+    clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
-      else if (outbox.current.length < 50) outbox.current.push(message);
+      else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
+      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); send(JSON.stringify({ type: "listen", on })); },
