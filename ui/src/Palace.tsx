@@ -6,6 +6,9 @@ import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
 
+// The core writes a 512 px copy beside the map's 128 px one, named alike, so tiles stay sharp at Palace size.
+const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palace.webp");
+
 // Keep each family together, including malformed or temporarily orphaned data.
 function makeRooms(threads: Thread[]): Room[] {
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
@@ -89,7 +92,11 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
                 const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
                 return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
                   <span className="palace-art">
-                    {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
+                    {thread.picture ? <img src={palaceCopy(thread.picture)} alt="" loading="lazy" onError={(event) => {
+                      // A map that has no Palace copy (a shipped sample's older pictures) shows the map's copy instead.
+                      const img = event.currentTarget;
+                      if (img.dataset.small) img.hidden = true; else { img.dataset.small = "1"; img.src = thread.picture!; }
+                    }} /> : null}
                     <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
                     <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
                     {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{capitalized(thread.last_point)}</span>}
