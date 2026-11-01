@@ -17,7 +17,7 @@ Core, one process (core/src: axum, tokio)
   protocol.rs    ServerMsg, ClientMsg
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time
-  trace.rs       E2A2O_TRACE=1: every model call and placement to data/<map>/trace.jsonl
+  trace.rs       E2A2O_TRACE=1: every model request (a contributor model's turned-away try too), placement and saved picture to data/<map>/trace.jsonl
   refiner.rs     tidies the map at pauses
   pictures.rs    one picture per thread
   explain.rs     one sentence on a selected phrase
@@ -110,5 +110,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 - Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
 - `node scripts/away-check.mjs` and `node scripts/recap-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, and which messages close an open Recap.
-- Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, the words and where they may land; or a journal up to a thought, for a real miss kept outside the repo. `node scripts/where.mjs data/<map>` prints each thought's thread, with the model's answer when a trace exists.
+- Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, someone else's turn in between, the words and where they may land; or a journal up to a thought, for a real miss kept outside the repo. `node scripts/where.mjs data/<map>` prints each thought's thread, with the model's answer when a trace exists.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.
