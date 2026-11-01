@@ -12,10 +12,13 @@ futures-util = "0.3"
 # Reads Muse Image's WebP and writes the small copy the map shows (pure Rust, two tiny dependencies).
 image-webp = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
+# Room certificates and a TLS adapter for axum's existing Listener API.
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
