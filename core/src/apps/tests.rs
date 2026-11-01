@@ -58,6 +58,21 @@ fn seed_defaults_are_journaled_once_and_removal_survives_restart() {
 }
 
 #[test]
+fn loud_voices_are_held_long_enough_that_normal_speech_cant_set_them_off() {
+    let held = |level: f64, seconds: u64| {
+        let answer = json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
+            "watcher":{"kind":"volume","level":level,"seconds":seconds}, "prompt":null, "publishers":[{"kind":"sound"}], "cooldown_secs":60}});
+        let Watcher::Volume { seconds, .. } = draft(&answer).unwrap().watcher else { panic!("a volume watcher") };
+        seconds
+    };
+    let (loud, _) = loud_voices();
+    assert_eq!(held(loud, 2), LOUD_SECONDS, "beat 5's sentence, as the composer answered it before it was told");
+    assert_eq!(held(loud, 10), 10);
+    assert_eq!(held(0.05, 1), 1, "an app for any talk");
+    assert_eq!(held(between(RAISED_VOICE, SHOUT), 1), 1, "shouting is well over normal speech");
+}
+
+#[test]
 fn rejects_unknown_blocks_fields_and_unsafe_ranges() {
     assert!(serde_json::from_str::<Publisher>(r#"{"kind":"shell","command":"open"}"#).is_err());
     assert!(serde_json::from_str::<Publisher>(r#"{"kind":"sound","url":"https://example.com"}"#).is_err());
@@ -120,9 +135,11 @@ fn volume_needs_a_sustained_stretch_from_one_source() {
 #[test]
 fn the_composer_the_seed_and_the_voice_script_share_one_volume_scale() {
     let prompt = compose_prompt();
-    let Watcher::Volume { level, .. } = seeds(true)[1].watcher else { panic!("the Volume watcher is the second seed") };
+    let Watcher::Volume { level, seconds } = seeds(true)[1].watcher else { panic!("the Volume watcher is the second seed") };
     assert!(prompt.contains(&format!("use {level} for loud voices")) && !prompt.contains("{volume}"), "{prompt}");
+    assert!(prompt.contains(&format!("at least {seconds} for loud voices")), "{prompt}");
     assert!(NORMAL_VOICE < level && level < RAISED_VOICE && RAISED_VOICE < SHOUT);
+    assert_eq!(seconds, LOUD_SECONDS);
     // scripts/voice.mjs speaks at normal speech's level, so its talks can't set off the Volume watcher.
     let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/voice.mjs")).expect("voice.mjs");
     let spoken = script.lines().find_map(|line| line.strip_prefix("const LEVEL = ")?.strip_suffix(';')?.parse::<f64>().ok());
