@@ -4,7 +4,7 @@
 
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -160,15 +160,9 @@ fn rest_ms(failures: u32) -> u64 {
 }
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
-    let key = core.key()?;
     let body = request(world, since, &chrono_today());
-    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
-    let status = response.status();
-    core.check(status)?;
-    let value: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    // A pass runs in the background, so it can wait: two minutes is far past any real answer.
+    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     serde_json::from_str(content).context("answer wasn't the expected JSON")
 }
@@ -394,7 +388,7 @@ fn named_at(title: &str, text: &str) -> Option<usize> {
     })
 }
 
-/// Every word of a thread, its title's and what was said on it.
+/// The words that carry a thread's meaning (see `content`): its title's and what was said on it.
 fn vocabulary(world: &World, id: &str) -> HashSet<String> {
     world.thread(id).map(|t| t.title.as_str()).into_iter().chain(said_in(world, id)).flat_map(content).collect()
 }
@@ -514,7 +508,7 @@ fn new_id(prefix: &str) -> String {
     format!("{prefix}-{}", uuid::Uuid::new_v4().simple())
 }
 
-/// Today's date as YYYY-MM-DD in local time, from the system's `date` (no extra crate).
+/// Today's date in local time, as "2026-11-01 (Sunday)", from the system's `date` (no extra crate).
 fn chrono_today() -> String {
     std::process::Command::new("date")
         .arg("+%Y-%m-%d (%A)")
@@ -987,7 +981,7 @@ mod tests {
         assert_eq!(
             shown(&changes_on(&world, pass, TODAY)),
             [
-                // Not the name the person gave, a change of case, or six words; words they only used are fine.
+                // Not the name the person gave, a change of case, or over five words; words they only used are fine.
                 "T5 title Mom's birthday class",
                 "T8 title Taxes and car registration",
                 // Lease and electric bill share no word; the rent threads do.

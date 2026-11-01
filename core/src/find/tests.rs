@@ -1,7 +1,9 @@
+//! Tests for "take me to …" (find.rs): which words are a search, how points rank, what the model
+//! may choose, and what the person sees when nothing matches. No test calls the model.
+
 use super::*;
 use crate::world::{Tag, Thread};
 use crate::world::{Change, Journal, ThreadStatus};
-use tokio::sync::{broadcast, mpsc};
 
 struct Fixture { core: Arc<Core>, path: std::path::PathBuf }
 
@@ -9,16 +11,7 @@ impl Fixture {
     fn new(world: World) -> Self {
         let path = std::env::temp_dir().join(format!("e2a2o-find-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, _) = Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(128);
-        let (placer_queue, _) = mpsc::unbounded_channel();
-        Self { path, core: Arc::new(Core {
-            find: Runtime::default(), recap: crate::recap::Runtime::default(), apps: crate::apps::Runtime::default(), imports: crate::import::Imports::default(),
-            world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
-            key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
-            wake: tokio::sync::Notify::new(),
-            service: Default::default(),
-        }) }
+        Self { path, core: Arc::new(Core::test(journal, world)) }
     }
 }
 

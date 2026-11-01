@@ -8,7 +8,7 @@
 use crate::protocol::ServerMsg;
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::Core;
-use anyhow::{bail, Context};
+use anyhow::Context;
 use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -68,7 +68,7 @@ happens on a date (a launch, a birthday, a class), \"reminder\" for something to
 else empty. Skip tasks that later ideas show are done, and dates already past. \
 Use empty lists when nothing applies. Answer with JSON only.";
 
-/// Where an import stands, sent to every window on each step.
+/// Where an import stands, sent to the importing person's windows on each step.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Status {
     pub id: String,
@@ -951,7 +951,6 @@ async fn ask(
     schema: &Value,
     wait: Duration,
 ) -> anyhow::Result<String> {
-    let key = core.key()?;
     let body = json!({
         "model": model,
         "reasoning_effort": effort,
@@ -963,13 +962,7 @@ async fn ask(
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
     });
-    let response = core.http.post(URL).bearer_auth(key).timeout(wait).json(&body).send().await?;
-    let status = response.status();
-    core.check(status)?;
-    let value: Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    let value = core.call_model(URL, &body, wait).await?;
     Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
@@ -1235,7 +1228,7 @@ fn to_do(idea: &Idea) -> bool {
     if idea.kind == "task" { idea.open } else { !idea.when.is_empty() }
 }
 
-/// When grouping fails: one thread per topic, with its latest open question and its dated tasks.
+/// When grouping fails: one thread per topic, with its latest open question and up to two of its dated tasks.
 fn by_topic(topics: &[Topic], ideas: &[Idea]) -> Vec<Group> {
     topics
         .iter()
@@ -1578,26 +1571,7 @@ mod tests {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!("e2a2o-import-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, world) = crate::world::Journal::open(&path).unwrap();
-            let (updates, _) = tokio::sync::broadcast::channel(64);
-            let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
-            let core = Arc::new(Core {
-                find: crate::find::Runtime::default(),
-                recap: crate::recap::Runtime::default(),
-                apps: crate::apps::Runtime::default(),
-                world: Mutex::new(world.into()),
-                journal: Mutex::new(journal),
-                updates,
-                placer_queue,
-                room: Some("k7m2x9qp".into()),
-                key: None,
-                placer_model: "test".into(),
-                http: reqwest::Client::new(),
-                last_activity: std::sync::atomic::AtomicU64::new(0),
-                looked: std::sync::atomic::AtomicBool::new(false),
-                wake: tokio::sync::Notify::new(),
-                imports: Imports::default(),
-                service: Default::default(),
-            });
+            let core = Arc::new(Core { room: Some("k7m2x9qp".into()), ..Core::test(journal, world) });
             Fixture { path, core }
         }
     }
