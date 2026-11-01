@@ -58,7 +58,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 4. `Um, so, anyway.` → filler is set aside; nothing lands.
 5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
 6. Select a phrase on the map and press **Explain** → one sentence of context after the model call.
-7. `What did I decide today?` → a recap after the model call; it covers today's thoughts.
+7. `What did I decide today?` → a recap after the model call, decisions first; it covers today's thoughts. Say `palace` (or `map`) and it closes on that view.
 8. In Apps, ask `Make an app that shows a card when I mention the demo.` Keep it, then say `demo` in a new thought → the app may take several seconds to build; the card appears when its phrase watcher fires.
 9. Switch away for 30 seconds after adding a thought, then return (see [What you'll see](#what-youll-see)).
 10. Click **Palace** → the thread pictures appear in a grid.
@@ -97,7 +97,7 @@ The Palace: one picture per thread, drawn by Muse Image during pauses.
 
 ![A Recap sheet with a summary, what you worked on, decisions and plans](docs/screens/recap.webp)
 
-Recap: what you worked on, decided and planned, each line linking back to its thread.
+Recap: what you decided and planned, then what you worked on, each line linking back to its thread.
 
 - The first time, a three-step tour (Skip tour ends it).
 - Your words appear live at the bottom; each finished thought waits there (“Finding a thread,” or “Needs the AI key” without a key), then moves onto the map when placement is available. Hover a point for its original words and how long placing took.
@@ -143,7 +143,7 @@ An app is a watcher (a new thought, a phrase, a topic, loud voices for some seco
 
 ### Recap
 
-Say "recap", "what did I decide today?" or "recap this session", or press Recap. Today runs from local midnight; a session, from the last 30-minute gap. Only that period's thoughts go to the model, in the speakers' own words, capped at 24 threads, 16 thoughts each and 64 actions. It returns a summary that names your threads, what you worked on, plans (intentions such as "I want to…"), decisions (explicit choices only) and open questions; the core adds the unfinished threads and their actions, drops any thread the model invents, and if none are named, links the three threads with the most points. Each line links to its thread. The recap is saved in the journal; asking again with nothing new makes no call.
+Say "recap", "what did I decide today?" or "recap this session", or press Recap. Today runs from local midnight; a session, from the last 30-minute gap. Only that period's thoughts go to the model, in the speakers' own words, capped at 24 threads, 16 thoughts each and 64 actions. It returns a summary that names your threads, what you worked on, plans (intentions such as "I want to…"), decisions (explicit choices only) and open questions; the core adds the unfinished threads and their actions, drops any thread the model invents, and if none are named, links the three threads with the most points. Each line links to its thread. The sheet opens on decisions ("None yet" when there are none), plans and open questions, then what you worked on. Saying "map" or "palace", a search that jumps, "where was I?", "next one" or "last one" closes it, so the result shows; a thought said while it's open lands behind it. The recap is saved in the journal; asking again with nothing new makes no call.
 
 ### Importing your chats
 

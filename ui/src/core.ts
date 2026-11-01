@@ -322,6 +322,7 @@ export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
+  const closeRecap = recap.close;
   const apps = useApps();
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
@@ -355,6 +356,8 @@ export function useCore(speaker?: string) {
     let lastPartial = "";
     let awaitingThought = false;
     let handoffTimer: number | undefined;
+    // The thread your own words are about to take you to: the placer moves you with them in the same commit.
+    let landing: string | null = null;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -376,6 +379,7 @@ export function useCore(speaker?: string) {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
+            landing = null;
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
             setKeyNotice("");
             setNotice((shown) => (shown.includes("MODEL_API_KEY") ? "" : shown));
@@ -401,6 +405,16 @@ export function useCore(speaker?: string) {
               lastPartial = "";
               awaitingThought = false;
               setHandoff("");
+            }
+            // A move you asked for ("where was I?", "next one", "last one", a search's jump) closes an open Recap
+            // in this same update, so the map follows you there (App.tsx doesn't while Recap is open). Your words
+            // landing on another thread move you too, but that's talk, not a request: the sheet stays while you
+            // read. The placer moves you only when they land off your thread (placer.rs `decide`).
+            if (speaker && change.type === "thought_placed" && currentWorld.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
+              landing = currentWorld.active !== change.thread_id || currentWorld.active_by[speaker] !== change.thread_id ? change.thread_id : null;
+            } else if (change.type === "active_changed" && change.speaker === speaker) {
+              if (change.thread_id !== landing) closeRecap();
+              landing = null;
             }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
@@ -433,12 +447,15 @@ export function useCore(speaker?: string) {
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice(msg.message);
             break;
+          // Answers to your own requests: an open Recap makes way, so you see where you went.
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
+            closeRecap();
             break;
           case "view":
             setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
+            closeRecap();
             break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
@@ -468,7 +485,7 @@ export function useCore(speaker?: string) {
       window.clearTimeout(handoffTimer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, speaker]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, closeRecap, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
