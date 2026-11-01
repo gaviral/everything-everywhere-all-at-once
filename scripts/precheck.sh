@@ -17,7 +17,7 @@ check "no .env, journal or data files tracked" "! git ls-files | grep -qE '(^|/)
 check "no key-like strings tracked" "[ -z \"\$(tracked '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}')\" ]"
 check "no key-like strings anywhere in git history" "! git log --all -p 2>/dev/null | grep -qE '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}'"
 check "run.sh parses" "sh -n run.sh"
-check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"
+if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"; else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
 [ -f LICENSE ] || warn "no LICENSE file yet (User's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "no code or paths from the author's other projects (hackathon rule: new work only)" "[ -z \"\$(tracked '/code/(e2a2o|e2a2o|canvas)|e2a2o-memory|e2a2o|e2a2o (codex|muse|cursor)')\" ]"

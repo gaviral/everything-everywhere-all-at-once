@@ -95,6 +95,9 @@ type Absence = { before: World; since: number; observed: Map<string, number> };
 type Return = Absence & { through: World };
 
 /** Hidden and blurred are one continuous absence; duplicate focus events cannot restart it. */
+// `?recording` in the address: a screen recording driven from a terminal isn't someone walking away.
+const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
+
 export function useAway(world: World, me: string, ready: boolean) {
   const current = useRef(world);
   current.current = world;
@@ -103,7 +106,7 @@ export function useAway(world: World, me: string, ready: boolean) {
   const dismiss = useCallback(() => setReturned(null), []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || RECORDING) return;
     const looking = () => document.visibilityState === "visible" && document.hasFocus();
     const leave = () => {
       if (!absence.current) absence.current = { before: current.current, since: Date.now(), observed: new Map() };

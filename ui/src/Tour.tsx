@@ -5,7 +5,8 @@ const TOURED_KEY = "e2a2o.toured";
 let dismissedInMemory = false;
 
 export function hasToured() {
-  try { return dismissedInMemory || localStorage.getItem(TOURED_KEY) === "1"; }
+  // `?recording` in the address skips the tour, so a fresh browser profile can record straight away.
+  try { return dismissedInMemory || new URLSearchParams(location.search).has("recording") || localStorage.getItem(TOURED_KEY) === "1"; }
   catch { return dismissedInMemory; }
 }
 
