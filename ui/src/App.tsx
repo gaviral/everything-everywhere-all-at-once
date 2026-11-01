@@ -275,6 +275,12 @@ export default function App() {
       group.push(thought);
       grouped.set(thought.thread_id, group);
     }
+    // In the order they were said, not the order they arrived: an import adds its old points after the live ones.
+    // A time well ahead of the clock (a sample map dated for the demo) counts as the earliest, as in the core;
+    // an hour's grace keeps another laptop's clock a little behind from sending its newest point to the top.
+    const limit = Date.now() + 60 * 60 * 1000;
+    const said = (thought: Thought) => (thought.at_ms > limit ? 0 : thought.at_ms);
+    for (const group of grouped.values()) group.sort((a, b) => said(a) - said(b));
     for (const [id, group] of grouped) {
       const previous = previousThoughtGroups.current.get(id);
       if (previous && previous.length === group.length && previous.every((thought, i) => thought === group[i])) grouped.set(id, previous);
