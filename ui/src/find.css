@@ -1,0 +1,18 @@
+/* A steady wash of colour, with no pulse or movement. */
+.points li {
+  scroll-margin-top: 160px;
+  scroll-margin-bottom: calc(var(--dock-height, 150px) + 24px);
+}
+
+.points li[data-found="true"], .thread[data-found="true"] {
+  background: var(--accent-soft);
+  border-radius: 8px;
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 4px;
+}
+
+.notice span { overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .points li { scroll-margin-top: 190px; }
+}

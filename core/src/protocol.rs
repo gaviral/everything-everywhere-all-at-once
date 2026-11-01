@@ -18,8 +18,12 @@ pub enum ServerMsg {
     Error { message: String },
     /// A gentle note, e.g. "Back to Pay rent".
     Notice { message: String },
+    /// A private jump to an existing answer; not replayed when a journal opens.
+    Found { thread_id: String, thought_id: Option<String>, message: String },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
+    /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
+    Import { status: crate::import::Status },
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
@@ -64,4 +68,8 @@ pub enum ClientMsg {
     Correct { thought_id: String, accept: bool },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
+    /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.
+    ImportStart { id: String },
+    /// Stop the running import; what already landed stays.
+    ImportCancel,
 }

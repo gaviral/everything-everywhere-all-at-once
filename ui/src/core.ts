@@ -3,6 +3,7 @@ import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMs
 import { volumeReporter } from "./apps-audio";
 import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
+import type { Found } from "./find";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -58,6 +59,22 @@ export interface Action {
   done_ms: number | null;
 }
 
+// How an import of past chats is going (core/src/import.rs).
+export interface ImportStatus {
+  id: string;
+  file: string;
+  state: "reading" | "grouping" | "adding" | "done" | "stopped" | "failed";
+  parts: number;
+  parts_done: number;
+  ideas: number;
+  threads: number;
+  extended: number;
+  points: number;
+  questions: number;
+  actions: number;
+  note: string;
+}
+
 export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
@@ -110,7 +127,9 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "explanation"; id: string; text: string; failed: boolean };
+  | { type: "found"; thread_id: string; thought_id: string | null; message: string }
+  | { type: "explanation"; id: string; text: string; failed: boolean }
+  | { type: "import"; status: ImportStatus };
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
@@ -281,8 +300,10 @@ export function useCore() {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [found, setFound] = useState<Found | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -312,6 +333,7 @@ export function useCore() {
         if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
+            setFound(null);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -341,8 +363,15 @@ export function useCore() {
           case "notice":
             setNotice(msg.message);
             break;
+          case "found":
+            setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
+            setNotice(msg.message);
+            break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
+            break;
+          case "import":
+            setImportStatus(msg.status);
             break;
         }
       };
@@ -394,6 +423,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
@@ -415,5 +445,8 @@ export function useCore() {
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    importStatus,
+    startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
+    cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),
   };
 }
