@@ -125,7 +125,9 @@ type Change =
   | { type: "tag_suggested"; thread_id: string; tag: string }
   | { type: "tag_kept"; thread_id: string; tag: string }
   | { type: "tag_removed"; thread_id: string; tag: string }
-  | { type: "thread_picture"; thread_id: string; path: string };
+  | { type: "thread_picture"; thread_id: string; path: string }
+  // An import's record of the messages it read; only the core uses it.
+  | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
   | RecapServerMsg
@@ -196,6 +198,8 @@ function apply(world: World, raw: Change): World {
       return onThread(c.thread_id, (t) => ({ ...t, tags: t.tags.filter((x) => x.name !== c.tag) }));
     case "thread_picture":
       return onThread(c.thread_id, (t) => ({ ...t, picture: c.path }));
+    case "messages_read":
+      return world;
     case "thread_renamed":
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
     case "thread_merged": {
