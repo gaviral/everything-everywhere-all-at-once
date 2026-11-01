@@ -83,11 +83,12 @@ fn reminder(title: &str, when: &str) -> String {
     )
 }
 
-/// Only called with a usable date (see `approve`).
+/// Events go to their own "E2A2O" calendar, as reminders go to their own list, so none lands in a shared
+/// or work calendar unasked. Only called with a usable date (see `approve`).
 fn event(title: &str, when: &str) -> String {
     let date = date_lines(when).unwrap_or_default();
     format!(
-        "{date}\ntell application \"Calendar\"\ntell (first calendar whose writable is true)\nmake new event with properties {{summary:{}, start date:d, end date:d + 1 * days, allday event:true}}\nend tell\nend tell",
+        "{date}\ntell application \"Calendar\"\nif not (exists calendar \"E2A2O\") then make new calendar with properties {{name:\"E2A2O\"}}\ntell calendar \"E2A2O\"\nmake new event with properties {{summary:{}, start date:d, end date:d + 1 * days, allday event:true}}\nend tell\nend tell",
         quoted(title)
     )
 }
@@ -137,6 +138,7 @@ mod tests {
             assert!(date_lines(bad).is_none(), "{bad}");
         }
         assert!(event("Freeze", "2026-11-03").contains("allday event:true"));
+        assert!(event("Freeze", "2026-11-03").contains("tell calendar \"E2A2O\"") && !event("Freeze", "2026-11-03").contains("first calendar"));
         assert!(reminder("Pay rent", "2026-11-03").contains("allday due date:d"));
         assert!(!reminder("Pay rent", "").contains("due date"));
     }
