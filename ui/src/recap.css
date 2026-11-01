@@ -1,0 +1,72 @@
+.header-actions { display: flex; align-items: center; gap: 16px; }
+.recap-button { min-height: 36px; padding: 6px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.recap-button span { color: var(--ai); margin-right: 5px; }
+.recap-button:hover { border-color: var(--ai); background: var(--ai-soft); }
+.recap-sheet { position: fixed; inset: 0; width: min(820px, calc(100% - 48px)); max-height: calc(100dvh - 64px); padding: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--card); color: var(--ink); box-shadow: 0 24px 100px #0003; overflow-y: auto; overscroll-behavior: contain; }
+.recap-sheet::backdrop { background: color-mix(in srgb, var(--bg) 55%, #0005); backdrop-filter: blur(5px); }
+.recap-sheet[open] { animation: recap-arrive .22s ease-out; }
+@keyframes recap-arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.recap-sheet button { font: inherit; cursor: pointer; }
+.recap-sheet button:disabled { opacity: .5; cursor: default; }
+.recap-sheet a { text-decoration: none; }
+.recap-sheet a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.recap-sheet a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
+.recap-top { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 18px 24px 0 32px; background: var(--card); }
+.recap-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--ai); font-size: 12px; font-weight: 650; letter-spacing: .05em; }
+.recap-eyebrow > span:first-child { font-size: 18px; }
+.recap-close { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 23px !important; }
+.recap-close:hover { color: var(--ink); }
+.recap-intro { padding: 8px 32px 24px; }
+.recap-intro h1 { margin: 0 0 16px; font-size: clamp(25px, 4vw, 34px); line-height: 1.18; letter-spacing: -.035em; font-weight: 650; }
+.recap-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.recap-period { display: flex; flex: none; padding: 3px; border-radius: 11px; background: var(--bg); border: 1px solid var(--line); }
+.recap-period button { min-height: 38px; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; }
+.recap-period button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
+.recap-meta { color: var(--muted); font-size: 12px; }
+.recap-feedback p { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+.recap-feedback .recap-loading { color: var(--ai); }
+.recap-feedback .recap-error { padding: 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); }
+.recap-summary { max-width: 660px; margin: 22px 0 0; font-size: 18px; line-height: 1.55; letter-spacing: -.015em; }
+.recap-limit { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.recap-content { padding: 0 32px; overflow-wrap: anywhere; }
+.recap-content section { padding-block: 22px; border-top: 1px solid var(--line); }
+.recap-content h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 0 14px; font-size: 14px; font-weight: 650; }
+.recap-content h2 > span { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; }
+.recap-work ol, .recap-items, .recap-unfinished ul, .recap-actions { margin: 0; padding: 0; list-style: none; }
+.recap-work ol { display: grid; gap: 13px; }
+.recap-work li { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; align-items: baseline; gap: 20px; }
+.recap-thread { color: var(--ink); font-size: 14px; font-weight: 550; }
+.recap-work li p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.recap-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
+.recap-items, .recap-actions { display: grid; gap: 13px; }
+.recap-item-link { color: var(--ink); font-size: 14px; line-height: 1.55; }
+.recap-source { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.recap-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.recap-content .recap-unfinished { padding: 18px 20px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--amber) 25%, var(--line)); border-radius: 12px; background: var(--amber-soft); }
+.recap-unfinished h2 { color: var(--amber); }
+.recap-unfinished li { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.recap-unfinished li + li { margin-top: 12px; }
+.recap-unfinished small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.recap-finish { display: flex; flex: none; align-items: center; min-height: 44px; padding: 6px 0 6px 8px; color: var(--amber); font-size: 13px; font-weight: 600; }
+.recap-content .recap-action-section { padding-top: 20px; }
+.recap-action-section h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.recap-action-section h3 > span:last-child { margin-left: 2px; font-variant-numeric: tabular-nums; }
+.recap-pending-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ai); }
+.recap-added-mark { color: var(--accent); }
+.recap-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 32px 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.recap-refresh { flex: none; min-height: 40px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--bg); font-size: 12px !important; }
+.recap-refresh:hover:not(:disabled) { background: var(--ai-soft); border-color: var(--ai); }
+@media (max-width: 560px) {
+  .header-actions { gap: 10px; }
+  .recap-sheet { width: calc(100% - 16px); max-height: calc(100dvh - 24px); border-radius: 16px; }
+  .recap-top { padding: 12px 12px 0 20px; }
+  .recap-intro { padding: 8px 20px 20px; }
+  .recap-content { padding-inline: 20px; }
+  .recap-content section { padding-block: 20px; }
+  .recap-work li { grid-template-columns: 1fr; gap: 3px; }
+  .recap-columns { grid-template-columns: 1fr; }
+  .recap-action-section .recap-columns { gap: 22px; }
+  .recap-content .recap-unfinished { padding: 16px; }
+  .recap-unfinished li { gap: 8px; }
+  .recap-footer { padding: 16px 20px max(18px, env(safe-area-inset-bottom)); flex-wrap: wrap; gap: 10px; }
+}

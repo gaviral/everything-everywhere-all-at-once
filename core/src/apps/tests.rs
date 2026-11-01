@@ -12,6 +12,7 @@ impl Fixture {
         let (updates, _) = broadcast::channel(1024);
         let (placer_queue, _) = mpsc::unbounded_channel();
         Self { path, core: Arc::new(Core {
+            recap: crate::recap::Runtime::default(),
             apps: Runtime::default(), world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue,
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
