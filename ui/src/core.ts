@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
-import { volumeReporter } from "./apps-audio";
+import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
 import type { Found } from "./find";
@@ -484,7 +484,7 @@ export function useCore(speaker?: string) {
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
-  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
+  const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
   const noKey = keyNotice !== "";
   const requestRecap = (requested?: RecapPeriod) => {

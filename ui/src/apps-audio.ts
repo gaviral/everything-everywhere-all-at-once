@@ -20,6 +20,16 @@ export function volumeReporter(report: (level: number) => void) {
   };
 }
 
+const readings = new Set<(level: number) => void>();
+
+/** Each reading the core received, for the `?level` meter (Level.tsx); without it nothing listens. */
+export function received(level: number) { readings.forEach((listener) => listener(level)); }
+
+export function onReading(listener: (level: number) => void) {
+  readings.add(listener);
+  return () => { readings.delete(listener); };
+}
+
 let sound: AudioContext | undefined;
 
 export function unlockTune() {
