@@ -72,7 +72,10 @@ struct Task {
 /// - right away when they come back to the window, so the map is tidy when they look;
 /// - at most every 10 s, and only when something changed.
 pub async fn run(core: Arc<Core>) {
-    let (mut seen_thoughts, mut seen_threads, mut last_pass) = (0usize, 0usize, 0u64);
+    // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
+    let start = core.snapshot();
+    let (mut seen_thoughts, mut seen_threads, mut last_pass) =
+        (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), 0u64);
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}

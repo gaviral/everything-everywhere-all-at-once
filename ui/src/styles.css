@@ -227,6 +227,17 @@ header {
   transform: translateY(-2px);
 }
 
+.points li.other::before {
+  background: var(--accent);
+}
+
+.speaker {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .unclear {
   display: inline-grid;
   place-items: center;

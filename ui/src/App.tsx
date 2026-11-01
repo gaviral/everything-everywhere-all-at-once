@@ -85,7 +85,7 @@ export default function App() {
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id).at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
     : "";
 
   // Select a word or phrase on the map to get it explained in its context.
@@ -325,8 +325,11 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
 }
 
 function Point({ thought }: { thought: Thought }) {
+  // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
+  const other = thought.speaker !== "you";
   return (
-    <motion.li layoutId={thought.id} transition={spring} title={thought.text}>
+    <motion.li layoutId={thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+      {other && <span className="speaker">{thought.speaker}</span>}
       <span>{thought.point}</span>
       {thought.unclear && (
         <span className="unclear" title={`Did I hear this right? ${thought.unclear}`}>
