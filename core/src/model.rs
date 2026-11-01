@@ -174,6 +174,12 @@ impl Core {
     /// One model call: posts `body` to `url` with the key and waits at most `patience` for the whole answer,
     /// its body included. The answer's status goes through `check`, then its JSON through `answer`.
     pub async fn call_model(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
+        self.call_model_noting(url, body, patience, Value::Null).await
+    }
+
+    /// `call_model`, with `extra` fields on its trace line: a call with no prompt cache key names its feature
+    /// here, and says what it was for.
+    pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
         let key = self.key()?;
         let started = std::time::Instant::now();
         let result = async {
@@ -182,7 +188,7 @@ impl Core {
             answer(response).await
         }
         .await;
-        self.trace.call(body, started, result.as_ref(), Value::Null);
+        self.trace.call(body, started, result.as_ref(), extra);
         result
     }
 

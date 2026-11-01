@@ -1,8 +1,8 @@
 //! The trace: where each thought went and why, for checking the placer against what was meant. Off unless
 //! `E2A2O_TRACE=1`; then `trace.jsonl` beside the journal gets one JSON line for each model call (what was
 //! sent, what came back, how long it took), each placement (the thread chosen, the one active when it was said,
-//! the changes it made) and each finished voice turn (the words as heard and as kept). Lines about one thought
-//! share its id. Never the key or any header. A line that can't be written is warned about and dropped:
+//! the changes it made), each finished voice turn (the words as heard and as kept) and each thread picture
+//! saved (where). Lines about one thought share its id; a picture's call and its saved line share the thread's. Never the key or any header. A line that can't be written is warned about and dropped:
 //! the trace never holds up or loses a thought. Read it with `node scripts/where.mjs`.
 
 use serde_json::{json, Value};
@@ -68,8 +68,9 @@ impl Trace {
     }
 
     /// One model call: the feature (its prompt cache key without "e2a2o-"), the model, what was sent (the
-    /// messages, or the prompt), and the answer's text, finish reason and usage, or the error. `extra` adds
-    /// fields, such as the thought being placed.
+    /// messages, or the prompt), and the answer's text, finish reason and usage (for a picture, how many came
+    /// back), or the error. `extra` adds fields, such as the thought being placed, and overrides them: a call
+    /// with no prompt cache key names its feature there.
     pub fn call(
         &self,
         body: &Value,
@@ -94,6 +95,12 @@ impl Trace {
                 "sent": sent,
             });
             match result {
+                // A picture comes back as `data`, not a message: how many, never the image itself (megabytes
+                // of base64); the line the caller writes once it's saved says where (`picture`).
+                Ok(value) if value["data"].is_array() => {
+                    line["answer"] = json!({"images": value["data"].as_array().map_or(0, Vec::len)});
+                    line["usage"] = value["usage"].clone();
+                }
                 Ok(value) => {
                     let choice = &value["choices"][0];
                     line["answer"] = choice["message"]["content"].clone();
@@ -193,6 +200,22 @@ mod tests {
             .unwrap()
             .to_lowercase()
             .contains("bearer"));
+    }
+
+    #[test]
+    fn a_picture_call_names_its_feature_and_counts_the_images_without_holding_them() {
+        let dir = dir("picture");
+        let trace = Trace::to(&dir);
+        let body = json!({"model": "muse-image-1.0", "prompt": "a lighthouse", "n": 1});
+        let image = "A".repeat(4096);
+        let answer = json!({"data": [{"b64_json": image}], "usage": {"total_tokens": 3}});
+        trace.call(&body, Instant::now(), Ok(&answer), json!({"feature": "picture", "thread": "T1"}));
+        let text = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
+        let line = &lines(&dir)[0];
+        assert_eq!((line["feature"].as_str(), line["thread"].as_str()), (Some("picture"), Some("T1")));
+        assert_eq!((line["sent"].as_str(), line["answer"]["images"].as_u64()), (Some("a lighthouse"), Some(1)));
+        assert_eq!(line["usage"]["total_tokens"], 3);
+        assert!(!text.contains(&image) && text.len() < 1024, "the image stays out: {} bytes", text.len());
     }
 
     #[test]
