@@ -34,6 +34,10 @@ const REPLY_CONTEXT: usize = 240;
 const PART: usize = 8_000;
 /// Parts read at once.
 const PARALLEL: usize = 6;
+/// The most messages one part holds. Past about a dozen the fast model starts skipping messages, late ones first
+/// (in our 147-message test export it left out 30, among them "booked the flights" and "take-home on October 21");
+/// at 12 it left out 20 and 7 in two runs, and most of what's left out is "thanks" and pasted code.
+const PART_MESSAGES: usize = 12;
 
 // Stable text first, so the API's prompt cache can reuse it.
 const EXTRACT: &str = "You read part of someone's past chats with an AI assistant and pull out what the person was thinking: \
@@ -806,6 +810,7 @@ fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) 
 
 /// Splits the reading into parts for the fast model: whole conversations where they fit, and small
 /// enough that even a short import reads in parallel (a long conversation splits between messages).
+/// A part holds at most `PART` characters and `PART_MESSAGES` messages.
 fn pack(said: Vec<Said>) -> Vec<Vec<Said>> {
     let size = |s: &Said| s.text.len() + s.reply.len() + 60;
     let budget = (said.iter().map(size).sum::<usize>() / 4).clamp(1_500, PART);
@@ -816,12 +821,12 @@ fn pack(said: Vec<Said>) -> Vec<Vec<Said>> {
         let conversation = said[i].conversation;
         let end = said[i..].iter().position(|s| s.conversation != conversation).map_or(said.len(), |n| i + n);
         // A conversation that won't fit starts a fresh part.
-        if !current.is_empty() && used + said[i..end].iter().map(size).sum::<usize>() > budget {
+        if !current.is_empty() && (used + said[i..end].iter().map(size).sum::<usize>() > budget || current.len() + (end - i) > PART_MESSAGES) {
             parts.push(std::mem::take(&mut current));
             used = 0;
         }
         for s in &said[i..end] {
-            if !current.is_empty() && used + size(s) > PART {
+            if !current.is_empty() && (used + size(s) > PART || current.len() >= PART_MESSAGES) {
                 parts.push(std::mem::take(&mut current));
                 used = 0;
             }
@@ -1510,6 +1515,15 @@ mod tests {
         for part in &parts {
             assert!(part.iter().map(|s| s.text.len() + s.reply.len() + 60).sum::<usize>() <= PART);
         }
+        // Short messages fill a part by count before they fill it by size, and a conversation that fits in a part stays whole.
+        let chatty = |n: u64, messages: usize| Conversation {
+            title: format!("c{n}"),
+            turns: (0..messages as u64).map(|m| Turn { mine: true, text: format!("word {n} {m}"), at_ms: Some(n * 1_000 + m) }).collect(),
+        };
+        let lines = select(vec![chatty(1, 30), chatty(2, 5), chatty(3, 5), chatty(4, 5)], 0, &HashSet::new());
+        let parts = pack(lines.said);
+        assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [12, 12, 11, 10], "30 split at 12; each small chat stays in one part");
+        assert!(parts.iter().all(|part| part.len() <= PART_MESSAGES));
         // A small import still splits by conversation, so its parts read in parallel.
         let small = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello ".repeat(150), at_ms: Some(n) }] }).collect(), 0, &HashSet::new());
         assert_eq!(pack(small.said).len(), 3);
