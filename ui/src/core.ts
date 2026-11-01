@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 
@@ -403,8 +404,9 @@ export function useCore(speaker?: string) {
         resetApps();
         setConnected(true);
         retry = 500;
-        // Thoughts typed while the connection was down go out now.
+        // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        coreBack();
         setQueuedCount(0);
       };
       ws.onmessage = (event) => {

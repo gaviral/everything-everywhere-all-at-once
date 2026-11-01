@@ -3,6 +3,7 @@ import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
+import { usePicture } from "./pictures";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -1013,15 +1014,15 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
 }
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
- *  arrives later fades in over it and moves nothing. A card used to grow 5–19 px when its picture came, its title
- *  sliding right. ✦ marks a picture only once one shows. */
+ *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
+ *  rule in pictures.ts). A card used to grow 5–19 px when its picture came, its title sliding right, and a picture
+ *  that failed showed a broken-image glyph. ✦ marks a picture only once one shows. */
 function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
-  const [loaded, setLoaded] = useState<string | null>(null);
-  const shown = !!thread.picture && loaded === thread.picture;
+  const { shown, img } = usePicture(thread.picture ? [thread.picture] : []);
   return (
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
-      {thread.picture && <img key={thread.picture} className={shown ? "picture is-shown" : "picture"} src={thread.picture} alt="" onLoad={() => setLoaded(thread.picture)} />}
+      {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
       {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
     </span>
   );

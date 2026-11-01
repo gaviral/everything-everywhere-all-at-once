@@ -9,6 +9,7 @@ Browser, one page per window (ui/src)
   App.tsx        map, dock, header, unfinished-thought card
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
+  pictures.ts    the one picture-slot rule (map, unfinished card, Palace): letter until decoded, capped refetches
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
@@ -108,5 +109,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 ## Tests and checks
 
 - Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
-- `node scripts/away-check.mjs` and `node scripts/recap-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, and which messages close an open Recap.
+- `node scripts/away-check.mjs`, `node scripts/recap-check.mjs` and `node scripts/picture-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, which messages close an open Recap, and the picture-slot rule (letter until decoded, next copy, capped refetches, one more when the core is back).
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.

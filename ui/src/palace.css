@@ -26,7 +26,6 @@
 .palace-art { position: relative; display: block; overflow: hidden; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s, border-color .2s; }
 .palace-art img, .palace-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; }
 .palace-art img { z-index: 1; object-fit: cover; }
-.palace-art img[hidden] { display: none; }
 .palace-placeholder { display: grid; place-items: center; background: radial-gradient(circle at 35% 25%, color-mix(in srgb, var(--accent-soft) 65%, var(--card)), transparent 60%), linear-gradient(145deg, var(--card), color-mix(in srgb, var(--ai-soft) 55%, var(--bg))); color: color-mix(in srgb, var(--ai) 45%, var(--muted)); }
 .palace-placeholder span { display: grid; place-items: center; width: 34%; aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font-family: Georgia, serif; font-size: clamp(28px, 4vw, 48px); line-height: 1; }
 .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: translateY(-3px); box-shadow: 0 10px 26px #0002; }
