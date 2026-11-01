@@ -749,10 +749,10 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .keyboard-hint strong { display: block; margin-top: 10px; }
 .keyboard-hint strong:first-child { margin-top: 0; }
 .keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
-/* The picture slot: the thread's first letter, quiet (color is for meaning), until the picture fades in over it. */
+/* The picture slot: the thread's first letter in its room's soft color, so the picture fades in over the same color. */
 .picture-wrap { position: relative; flex: none; display: grid; }
 .picture-wrap > .picture { grid-area: 1 / 1; }
-.picture-letter { display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 20px/1 Georgia, serif; }
+.picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
 .thread.collapsed .picture-letter { font-size: 16px; }
 .picture-wrap > img.picture { opacity: 0; transition: opacity .2s ease-out; }
 .picture-wrap > img.picture.is-shown { opacity: 1; }
@@ -858,4 +858,5 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
 .when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
 /* stand-in: `?look=ink` shows option 2 (no room colors) for side-by-side screenshots; one look ships. */
+.look-ink .picture-letter { background: var(--bg); color: var(--muted); }
 .look-ink .branches { border-left-color: var(--line); }
