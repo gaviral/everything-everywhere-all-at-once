@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { playTune, unlockTune } from "./apps-audio";
 
 export type Watcher =
@@ -85,15 +85,31 @@ const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown"] as const;
 
 export function useApps() {
   const [build, setBuild] = useState<AppBuild | null>(null);
+  // A build asked for in the Apps panel's own form (or by its "Make that instead") shows there, where it was asked.
+  // Any other (said, typed in the composer, or still waiting when this window connected) shows in the dock.
+  const [panelBuild, setPanelBuild] = useState<string | null>(null);
+  const panelRequest = useRef<string | null>(null);
+  const latest = useRef<string | null>(null);
   const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
-  const reset = useCallback(() => setBuild(null), []);
+  const reset = useCallback(() => { latest.current = null; setBuild(null); }, []);
   useEffect(() => {
     for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlockTune);
     return () => { for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlockTune); };
   }, []);
   const receive = useCallback((message: { type: string }) => {
     const msg = message as AppsServerMsg;
-    if (msg.type === "apps_build") { setBuild(msg.build); return true; }
+    if (msg.type === "apps_build") {
+      if (msg.build.id !== latest.current) {
+        latest.current = msg.build.id;
+        // The core drops a leading "Make an app that…", so what was typed in the panel ends with the build's request.
+        const asked = !!panelRequest.current?.trimEnd().endsWith(msg.build.request);
+        panelRequest.current = null;
+        // The same build sent again after a reconnect stays where it was.
+        setPanelBuild((previous) => (asked || previous === msg.build.id ? msg.build.id : null));
+      }
+      setBuild(msg.build);
+      return true;
+    }
     if (msg.type === "apps_sound") {
       const playful = !!msg.playful;
       if (!playTune(playful)) setSoundPending({ name: msg.name, playful });
@@ -101,5 +117,12 @@ export function useApps() {
     }
     return false;
   }, []);
-  return { build, soundPending, receive, reset, clearSound: () => setSoundPending(null) };
+  return {
+    build,
+    /** Whether the current build was asked for in the Apps panel, so it shows there and not in the dock. */
+    inPanel: !!build && build.id === panelBuild,
+    /** Marks the next build as the panel's, before its request goes out (null takes that back if it couldn't go). */
+    askedInPanel: useCallback((text: string | null) => { panelRequest.current = text; }, []),
+    soundPending, receive, reset, clearSound: () => setSoundPending(null),
+  };
 }

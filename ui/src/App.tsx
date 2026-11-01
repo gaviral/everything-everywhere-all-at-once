@@ -11,7 +11,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
-import { Apps } from "./Apps";
+import { Apps, DockBuild } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -241,8 +241,10 @@ export default function App() {
     };
   }, [visible]);
 
-  // Keep the end of the map reachable even when pending thoughts or the card grow.
+  // Keep the end of the map reachable even when pending thoughts or the card grow, and never shorten the page under
+  // you when they go.
   useHeightVar(dockRef, "--dock-height");
+  useDockRoom(dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
   // (Back to active, Finish it, a Palace tile) stops under both.
   const headerRef = useRef<HTMLElement>(null);
@@ -728,6 +730,9 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
+              unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
+          <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
@@ -829,6 +834,42 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
     observer.observe(element);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
   }, [present]);
+}
+
+/** The room the page's end leaves for the dock, as --dock-room: the map and the Palace pad their ends with it. It
+ *  grows with the dock at once; when the dock shrinks (a card goes), it gives back only what is below the screen, and
+ *  the rest as you scroll up. A page at its end used to get shorter by all the dock gave back, which pulled the map
+ *  down in one frame: 78 px as the unfinished card went (rough cut, take 2, 56.4 s), 74 px as a build's card went
+ *  (1440×900). */
+function useDockRoom(ref: RefObject<HTMLElement | null>) {
+  const room = useRef(0);
+  const fit = useRef(() => {
+    const dock = ref.current;
+    if (!dock) return;
+    const height = dock.offsetHeight;
+    const page = document.documentElement;
+    const below = Math.max(0, Math.floor(page.scrollHeight - window.innerHeight - window.scrollY));
+    const next = height >= room.current ? height : Math.max(height, room.current - below);
+    if (next === room.current) return;
+    room.current = next;
+    page.style.setProperty("--dock-room", `${next}px`);
+  }).current;
+  useLayoutEffect(fit);
+  useEffect(() => {
+    const dock = ref.current;
+    if (!dock) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(dock);
+    window.addEventListener("scroll", fit, { passive: true });
+    window.addEventListener("resize", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", fit);
+      window.removeEventListener("resize", fit);
+      room.current = 0;
+      document.documentElement.style.removeProperty("--dock-room");
+    };
+  }, []);
 }
 
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
