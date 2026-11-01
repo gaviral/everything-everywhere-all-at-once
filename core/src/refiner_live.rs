@@ -7,7 +7,7 @@
 //! under _ref/refiner-live/LABEL (git-ignored; LABEL defaults to "live"); `refiner_replay` checks saved
 //! answers again with the guards as they are now, without the model, so a guard is measured on the same answers.
 
-use super::{ask, changes, request, Pass};
+use super::{changes_on, request, Pass, URL};
 use crate::world::{Action, Change, ItemStatus, Tag, Thought, Thread, ThreadStatus, World};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -36,6 +36,8 @@ struct Case {
     dates: &'static [(&'static str, &'static str, &'static str, &'static str)],
     /// Tags that would be wrong on a thread: (thread, tag).
     wrong_tags: &'static [(&'static str, &'static str)],
+    /// An action whose title has one of these words is wrong (it's done already).
+    no_actions: &'static [&'static str],
 }
 
 fn thought(n: usize, thread: &str, text: &str, point: &str) -> Thought {
@@ -308,6 +310,23 @@ fn cases() -> Vec<Case> {
             wrong_tags: &[("T2", "#birthday")],
             ..Default::default()
         },
+        Case {
+            name: "january-in-december",
+            today: "2026-12-28 (Monday)",
+            stages: one(map(&[("T1", "Quarterly taxes", "", &["I need to file the quarterly taxes by January fifteenth.", "And renew the car registration before the new year."])])),
+            dates: &[("tax", "2027-01-01", "2027-01-15", ""), ("registration", "2026-12-28", "2026-12-31", "")],
+            ..Default::default()
+        },
+        Case {
+            name: "past-days",
+            stages: one(map(&[
+                ("T1", "Bills", "", &["I already paid the gas bill last Friday, so that's done.", "The water bill is due on the fifteenth."]),
+                ("T2", "Mom", "", &["Mom's birthday was last Friday and I forgot.", "I should still send her a card."]),
+            ])),
+            dates: &[("water", "2026-11-15", "2026-11-15", "")],
+            no_actions: &["gas"],
+            ..Default::default()
+        },
         Case { name: "demo-sunday", stages: demo(), dates: demo_dates, ..Default::default() },
         Case { name: "demo-tuesday", today: TUESDAY, stages: demo(), dates: &[("cooking", "2026-11-03", "2026-11-06", ""), ("class", "2026-11-03", "2026-11-06", ""), ("birthday", "2026-11-06", "2026-11-06", "friday"), ("lease", "2026-11-03", "2026-11-10", ""), ("landlord", "2026-11-03", "2026-11-10", "")], ..Default::default() },
     ]
@@ -358,6 +377,11 @@ fn weekday(date: &str) -> &'static str {
     WEEK[crate::import::days_from_civil(n(0..4), n(5..7), n(8..10)).rem_euclid(7) as usize]
 }
 
+/// Names a thread by its id ("add this to T3").
+fn names_an_id(world: &World, text: &str) -> bool {
+    text.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && world.thread(&world.resolve(w)).is_some())
+}
+
 fn same(a: &str, b: &str) -> bool {
     words(a) == words(b)
 }
@@ -378,6 +402,9 @@ fn problems(case: &Case, before: &World, out: &[Change]) -> Vec<(&'static str, S
                 if case.named.contains(&thread_id.as_str()) {
                     found.push(("renamed a title the person gave", format!("{old:?} to {title:?}")));
                 }
+                if names_an_id(before, title) {
+                    found.push(("names a thread id", format!("title {title:?}")));
+                }
                 if title.split_whitespace().count() > 5 {
                     found.push(("title over 5 words", format!("{title:?}")));
                 }
@@ -393,15 +420,24 @@ fn problems(case: &Case, before: &World, out: &[Change]) -> Vec<(&'static str, S
             }
             Change::SuggestionAdded { suggestion: s } => {
                 let said = before.thoughts.iter().filter(|p| p.thread_id.as_deref() == Some(s.thread_id.as_str())).map(|p| p.text.clone());
+                if names_an_id(before, &s.text) {
+                    found.push(("names a thread id", format!("idea {:?}", s.text)));
+                }
                 if let Some(p) = said.chain(actions.iter().cloned()).find(|p| restates(&s.text, p)) {
                     found.push(("idea repeats a point", format!("{:?} repeats {p:?}", s.text)));
                 }
             }
             Change::ActionProposed { action: a } => {
-                if let Some(x) = actions.iter().find(|x| restates(&a.title, x) || restates(x, &a.title)) {
+                if names_an_id(before, &a.title) {
+                    found.push(("names a thread id", format!("action {:?}", a.title)));
+                }
+                if let Some(x) = actions.iter().find(|x| restates(&a.title, x) && restates(x, &a.title)) {
                     found.push(("action repeats one", format!("{:?} repeats {x:?}", a.title)));
                 }
                 actions.push(a.title.clone());
+                if case.no_actions.iter().any(|w| a.title.to_lowercase().contains(w)) {
+                    found.push(("action for something done", a.title.clone()));
+                }
                 if a.when.is_empty() {
                     continue;
                 }
@@ -445,6 +481,15 @@ fn show(change: &Change) -> Option<String> {
         Change::TagSuggested { thread_id, tag } => format!("tag {thread_id} {tag}"),
         _ => return None,
     })
+}
+
+/// Sends the request as a pass does; the answer is the model's JSON as text.
+async fn ask(http: &reqwest::Client, key: &str, body: &serde_json::Value) -> anyhow::Result<String> {
+    let response = http.post(URL).bearer_auth(key).json(body).send().await?;
+    let status = response.status();
+    let value: serde_json::Value = response.json().await?;
+    anyhow::ensure!(status.is_success(), "{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
+    Ok(value["choices"][0]["message"]["content"].as_str().ok_or_else(|| anyhow::anyhow!("no answer"))?.to_string())
 }
 
 fn folder(label: &str) -> PathBuf {
@@ -511,7 +556,7 @@ async fn run(index: usize, case: Case, number: usize, source: Source) -> Outcome
             }
         };
         let out = match serde_json::from_str::<Pass>(&answer) {
-            Ok(pass) => changes(&world, pass),
+            Ok(pass) => changes_on(&world, pass, case.today),
             Err(e) => {
                 problems_found.push(("answer wasn't the JSON", e.to_string()));
                 continue;
@@ -604,4 +649,12 @@ fn the_live_checks_catch_what_they_should() {
     assert_eq!((weekday("2026-11-01"), weekday("2026-11-03"), weekday("2026-11-07")), ("sunday", "tuesday", "saturday"));
     let demo = demo();
     assert_eq!(demo.iter().map(|w| (w.threads.len(), w.thoughts.len())).collect::<Vec<_>>(), [(3, 3), (4, 6), (8, 11), (10, 13)]);
+}
+
+#[test]
+#[ignore = "prints what the model sees for the demo's third pass"]
+fn refiner_show_demo() {
+    let stages = demo();
+    let body = request(&stages[2], stages[1].thoughts.iter().map(|t| t.at_ms).max().unwrap(), SUNDAY);
+    println!("{}", body["messages"][1]["content"].as_str().unwrap());
 }
