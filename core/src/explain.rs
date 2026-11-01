@@ -123,20 +123,23 @@ fn names(text: &str, term: &str) -> bool {
 async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
     let key = core.key()?;
     let phrase: String = phrase.chars().take(200).collect();
-    let body = json!({
-        "model": core.placer_model,
-        "reasoning_effort": "minimal",
-        // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
-        "max_tokens": 1200,
-        "prompt_cache_key": "e2a2o-explain",
-        "messages": [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
-        ],
-    });
-    let response = core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send().await?;
+    let response = core
+        .ask_model(&core.placer_model, |model| {
+            let body = json!({
+                "model": model,
+                "reasoning_effort": "minimal",
+                // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
+                "max_tokens": 1200,
+                "prompt_cache_key": "e2a2o-explain",
+                "messages": [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
+                ],
+            });
+            core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send()
+        })
+        .await?;
     let status = response.status();
-    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
@@ -345,7 +348,7 @@ mod tests {
                 room: None,
                 key: Some(key.clone()),
                 // As main.rs.
-                placer_model: std::env::var("PLACER_MODEL").unwrap_or_else(|_| "muse-spark-1.2-contributor".into()),
+                placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
                 http: reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build().unwrap(),
                 last_activity: std::sync::atomic::AtomicU64::new(0),
                 looked: std::sync::atomic::AtomicBool::new(false),

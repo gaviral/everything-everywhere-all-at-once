@@ -23,6 +23,8 @@ Core, one process (core/src: axum, tokio)
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
   apps.rs        watchers, prompts, publishers; the composer
+  clock.rs       local wall-clock time from the system's date, so timers keep their hour
+  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
 ```
@@ -53,7 +55,7 @@ Core, one process (core/src: axum, tokio)
 |---|---|---|
 | Refiner | checked every 2 s, or at once when a window regains focus; runs with a key, a new placed thought, 10 s since the last pass (doubling with each failed pass in a row, to about 5 min), and either 4 s of quiet after two new thoughts or a new thread, or the window coming back | Quiet threads as one line each; recent ones with their last 8 thoughts (with who said each, in a room); each thread's tags; the latest 30 suggestions and 30 actions. The answer is checked against the map as it is when it arrives: at most one suggestion per thread (an app's card counts) and three tags. If talk resumed (under 2 s quiet) by then, nothing is applied and the pass is redone at the next pause; a failed pass too |
 | Pictures | every second, once 2 s are quiet and every thought is placed: threads without a picture, 12 s after they were last touched, the longest settled first | 3 at a time; 3 tries per thread, 10 s apart, until the core restarts; a 128 px lossless WebP copy that keeps the image's XMP note; older pictures get copies on start |
-| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; a timer with a prompt runs only when a thought was placed since its last run; `AppRan` is journaled before the call, so a restart can't loop a timer |
+| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; a timer with a prompt runs only when a thought was placed since its last run; a timer repeating whole days keeps its start's local time of day (`clock.rs`); `AppRan` is journaled before the call, so a restart can't loop a timer |
 
 ## Model calls
 
@@ -62,7 +64,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Call | Model (setting) | Reasoning | Timeout | Tries | Cache key |
 |---|---|---|---|---|---|
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
-| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor` | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
+| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor`, or `muse-spark-1.2` once the key can't use it (401, 403 or 404 on the default only) | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
 | Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 120 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
