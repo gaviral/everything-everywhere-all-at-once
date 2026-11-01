@@ -18,6 +18,30 @@ let seat = ALONE;
 let recheck = () => {};
 
 const Me = createContext(ALONE.me);
+const RoomActions = createContext<{ leave: () => void } | null>(null);
+
+/** Room controls are absent when thinking alone. Contributors are not a live presence list. */
+export function RoomControl({ speakers }: { speakers: string[] }) {
+  const actions = useContext(RoomActions);
+  const me = useMe();
+  if (!actions) return null;
+  const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
+  return (
+    <details className="room-menu">
+      <summary aria-label="Room details">Room <span aria-hidden="true">⌄</span></summary>
+      <div className="room-panel">
+        <div className="room-panel-title">This room</div>
+        <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
+        {others.length > 0 ? <>
+          <p className="room-panel-label">Also on this map</p>
+          <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
+          <p className="room-panel-hint">Names appear here after someone adds a thought.</p>
+        </> : <p className="room-panel-hint">When someone adds a thought, their name will appear here.</p>}
+        <button type="button" className="room-leave" onClick={actions.leave}>Leave room</button>
+      </div>
+    </details>
+  );
+}
 
 /** The name this window's own thoughts carry: "you" alone, the name you joined with in a room. */
 export const useMe = () => useContext(Me);
@@ -125,6 +149,13 @@ export function Room({ children }: { children: ReactNode }) {
     };
   }, [current]);
 
+  const leave = () => {
+    write(JOINED, "", "sessionStorage");
+    document.cookie = "room=; path=/; Max-Age=0; SameSite=Strict";
+    setNote("You left the room. Thoughts already on the map stay there.");
+    setCurrent(null);
+  };
+
   const join = async (event: FormEvent) => {
     event.preventDefault();
     const me = cleanName(name);
@@ -152,45 +183,53 @@ export function Room({ children }: { children: ReactNode }) {
     // A new seat is a new connection: the map starts fresh under the new name.
     return (
       <Me.Provider key={`${current.me}|${current.code}`} value={current.me}>
-        {children}
+        <RoomActions.Provider value={current === ALONE ? null : { leave }}>
+          {children}
+        </RoomActions.Provider>
       </Me.Provider>
     );
   }
-  if (!door) return <div className="join" />;
+  if (!door) return <div className="join"><div className="join-loading" role="status">Opening the room…</div></div>;
   return (
-    <div className="join">
+    <main className="join">
+      <div className="join-brand">E2A2O <span>threads</span></div>
       <form className="join-card" onSubmit={join}>
+        <div className="join-kicker">A shared map</div>
         <h1>Think together.</h1>
-        <p>One map, a laptop each. The other person sees your name next to what you say.</p>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Your name"
-          aria-label="Your name"
-          maxLength={24}
-          autoComplete="nickname"
-          autoFocus
-        />
+        <p className="join-intro">Two people, one map. Your thoughts find their place together.</p>
         {!door.member && (
+          <label className="join-field">
+            <span>Room code</span>
+            <input
+              value={code}
+              onChange={(e) => { setCode(e.target.value); setNote(""); }}
+              placeholder="Code from the host"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              autoFocus
+              aria-describedby={note ? "join-note" : undefined}
+            />
+          </label>
+        )}
+        <label className="join-field">
+          <span>Your name</span>
           <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="Room code"
-            aria-label="Room code"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
+            value={name}
+            onChange={(e) => { setName(e.target.value); setNote(""); }}
+            placeholder="A short name"
+            maxLength={24}
+            autoComplete="nickname"
+            autoFocus={door.member}
+            aria-describedby={note ? "join-note" : "name-hint"}
           />
-        )}
+          <small id="name-hint">The other person will see this next to your thoughts.</small>
+        </label>
+        {note && <div id="join-note" className="join-note" role="status">{note}</div>}
         <button type="submit" disabled={busy || !cleanName(name) || (!door.member && !normal(code))}>
-          Join
+          {busy ? "Joining…" : "Join the map"}
         </button>
-        {note && (
-          <div className="join-note" role="status">
-            {note}
-          </div>
-        )}
       </form>
-    </div>
+    </main>
   );
 }

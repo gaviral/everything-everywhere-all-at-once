@@ -13,7 +13,7 @@ import { Apps } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
-import { leftBy, useMe } from "./room";
+import { leftBy, RoomControl, useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
@@ -38,6 +38,9 @@ export default function App() {
     return { thoughts, threads: threads.size };
   }, [world.thoughts, world.threads, world.merged]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
@@ -60,12 +63,12 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
-  }, [world.thoughts, world.threads, core.snapshotRevision]);
+  }, [world.thoughts, world.threads, core.snapshotRevision, me]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -124,7 +127,10 @@ export default function App() {
     }
     setStartingMic(true);
     try {
-      const stop = await startMic(core.sendAudio);
+      const stopAudio = await startMic(core.sendAudio);
+      let stopped = false;
+      const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
+      if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = core.voiceStatusRevision;
       setStopMic(() => stop);
       if (!core.listen(true)) {
@@ -133,11 +139,12 @@ export default function App() {
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
+      if (!mounted.current) return;
       core.listen(false);
       const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
       core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
     } finally {
-      setStartingMic(false);
+      if (mounted.current) setStartingMic(false);
     }
   };
 
@@ -334,6 +341,7 @@ export default function App() {
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
         <div className="header-actions">
+        <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
@@ -569,7 +577,8 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
 
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const other = thought.speaker !== useMe();
+  const me = useMe();
+  const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
     <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
