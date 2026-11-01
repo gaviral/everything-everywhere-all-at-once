@@ -74,6 +74,43 @@ fn leaves_ordinary_thoughts_alone() {
 }
 
 #[test]
+fn the_one_about_a_topic_searches_on_its_own_or_after_go_to() {
+    for (ask, query) in [
+        ("The one about never finishing things", "never finishing things"),
+        ("the one where I talked about rent", "rent"),
+        ("Okay, the one about rent.", "rent"),
+        ("The one where we said something about the lease, please", "the lease"),
+        ("Go to the one about rent", "rent"),
+        ("Take me to the one where I mentioned the lease", "the lease"),
+        ("find the one about rent", "rent"),
+        ("Go back to the thread about rent", "rent"),
+        ("go to the rent thread", "the rent"),
+    ] {
+        assert_eq!(command(ask).as_deref(), Some(query), "{ask}");
+    }
+    // Only mentioned, no topic, or a "go to" that doesn't point at the map.
+    for thought in [
+        "I liked the one about rent", "the one", "the one about", "The one I bought is blue", "go to the one", "Go to the gym",
+        "Go to the store on Friday", "go to the last one", "go back to the drawing board",
+    ] {
+        assert!(command(thought).is_none(), "{thought}");
+    }
+}
+
+#[test]
+fn the_one_about_a_topic_jumps_as_where_did_i_talk_about_does() {
+    let fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Habits", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "I never finish what I start", 1)],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    });
+    fixture.core.add_thought("User", "The one about never finishing things");
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    assert_eq!(fixture.core.snapshot().thoughts.len(), 1, "a jump, not a thought");
+}
+
+#[test]
 fn finds_old_points_before_recent_but_weaker_threads() {
     let world = World {
         threads: vec![thread("old", "Home", 1), thread("new", "Rent", 900)],

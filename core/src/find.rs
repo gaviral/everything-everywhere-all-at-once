@@ -36,10 +36,12 @@ impl Runtime {
 }
 
 /// A search must be unmistakable, since otherwise the words are a thought: an ask that can only mean the map
-/// starts the turn ("Where did I talk about the lease?", "Take me back to the budget"). "Find" and "take me
-/// to" start errands as often ("Find a dentist near the office", "Take me to the airport Friday"), so they
-/// search only when what follows points at the map: "find where I said…", "take me to the thread about…",
-/// "find the rent thread", "find #rent". "I need to find my keys" is a thought too.
+/// starts the turn ("Where did I talk about the lease?", "Take me back to the budget"), or the whole turn is
+/// a thread named by its topic ("The one about the lease"). "Find", "take me to" and "go (back) to" start
+/// errands and sayings as often ("Find a dentist near the office", "Take me to the airport Friday", "Go back
+/// to the drawing board"), so they search only when what follows points at the map: "find where I said…",
+/// "take me to the thread about…", "go to the one about…", "find the rent thread", "find #rent". "I need to
+/// find my keys" is a thought too.
 pub fn command(text: &str) -> Option<String> {
     let clean: String = text.to_lowercase().chars().filter_map(|c| match c {
         '\'' | '’' => None,
@@ -63,17 +65,23 @@ pub fn command(text: &str) -> Option<String> {
         "show me where i talked about", "show me where we talked about", "show me what i said about",
         "didnt i say something about", "didnt we say something about", "didnt i mention", "didnt we discuss", "didnt i talk about",
         "did i say something about", "did i say anything about", "have i said anything about",
-        "take me back to", "take me to", "find",
+        "take me back to", "take me to", "go back to", "go to", "find",
     ];
-    let (ask, query) = asks.iter().find_map(|ask| Some((*ask, rest.strip_prefix(&format!("{ask} "))?)))?;
+    // With no ask, a turn that is only "the one about …" points at the map on its own.
+    let (ask, query) = asks
+        .iter()
+        .find_map(|ask| Some((*ask, rest.strip_prefix(&format!("{ask} "))?)))
+        .or_else(|| the_one(&rest).map(|_| ("", rest.as_str())))?;
     let mut query = query.trim();
     for suffix in [" for me please", " please", " for me"] {
         if let Some(head) = query.strip_suffix(suffix) { query = head.trim(); break; }
     }
-    let pointed = POINTERS.iter().find_map(|p| query.strip_prefix(&format!("{p} "))).or_else(|| query.strip_suffix(" thread"));
+    let pointed = the_one(query)
+        .or_else(|| POINTERS.iter().find_map(|p| query.strip_prefix(&format!("{p} "))))
+        .or_else(|| query.strip_suffix(" thread"));
     let query = match pointed {
         Some(topic) => topic.trim(),
-        None if matches!(ask, "find" | "take me to") && !query.starts_with('#') => return None,
+        None if matches!(ask, "" | "find" | "take me to" | "go back to" | "go to") && !query.starts_with('#') => return None,
         // Other ways of referring to a topic, rather than words to search for.
         None => ["that thing about ", "something about "].iter().find_map(|p| query.strip_prefix(p)).unwrap_or(query).trim(),
     };
@@ -88,6 +96,13 @@ const POINTERS: [&str; 19] = [
     "where i wrote about", "where i discussed", "where we discussed", "what i said about", "what we said about",
     "the thread about", "the thread on", "the part about", "my thoughts on",
 ];
+
+/// "The one about the lease", or "the one" before any "where …" above ("the one where I said…"): the topic.
+fn the_one(query: &str) -> Option<&str> {
+    let rest = query.strip_prefix("the one ")?;
+    rest.strip_prefix("about ")
+        .or_else(|| POINTERS.iter().filter(|p| p.starts_with("where ")).find_map(|p| rest.strip_prefix(&format!("{p} "))))
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Found {

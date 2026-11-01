@@ -56,6 +56,16 @@ export default function App() {
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
+  // A view said aloud works as its button: Map or Palace, Focus (with a thread to focus on), Show all.
+  useEffect(() => {
+    if (!core.viewAsk || !world.threads.length) return;
+    const asked = core.viewAsk.view;
+    setView(asked === "palace" ? "palace" : "map");
+    if (asked === "all" || (asked === "focus" && world.active)) {
+      setFocusMode(asked === "focus");
+      setQuery("");
+    }
+  }, [core.viewAsk]);
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -537,9 +547,11 @@ export default function App() {
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
           <strong>Say or type</strong>
           <div>“Where was I?” or “Go back” · return to where you left off</div>
-          <div>“Next one” · next thread in creation order, then back to the first</div>
-          <div>“Where did I talk about [topic]?” · “Recap” or “Recap this session” · “Make an app that…”</div>
-          <div>Back and next can follow a thought after a pause; the thought is kept.</div>
+          <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
+          <div>“New thread” or “Create a new one” · your next thought starts one</div>
+          <div>“Palace”, “Map”, “Focus” or “Show all” · switch the view, as the buttons do</div>
+          <div>“Where did I talk about [topic]?” or “The one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>Back, next and last can follow a thought after a pause; the thought is kept.</div>
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
