@@ -682,7 +682,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .branches { margin-top: 14px; }
 .thread.active { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent), 0 0 0 3px var(--accent-soft), var(--shadow); }
 .thread.dropped:not(.active) { box-shadow: none; }
-.map-tools { position: sticky; top: 48px; z-index: 4; padding: 4px 24px 8px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(14px); }
+.map-tools { position: sticky; top: var(--header-height, 64px); z-index: 4; padding: 4px 24px 8px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(14px); }
 .map-tools-inner { display: flex; align-items: center; gap: 6px; max-width: 712px; margin: auto; }
 .map-tools button, .search input { min-height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--muted); font: inherit; font-size: 12px; }
 .map-tools button { padding: 6px 10px; white-space: nowrap; cursor: pointer; }
@@ -704,7 +704,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .notice button { flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
 .mic:disabled { opacity: .5; cursor: default; }
 @media (max-width: 560px) {
-  .map-tools { top: 44px; padding-inline: 16px; }
+  .map-tools { padding-inline: 16px; }
   .map-tools-inner { flex-wrap: wrap; }
   .search { flex-basis: 100%; }
   .thread { scroll-margin-top: 240px; }
@@ -752,14 +752,12 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .brand small { margin-left: 0; }
   .session-count { flex-basis: 100%; margin-left: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
   .brand, .session-count { min-width: 0; }
-  .map-tools { top: 62px; }
 }
 @media (max-width: 560px) {
   .header-actions { gap: 8px; }
   .keyboard-hint { position: fixed; right: 8px; top: 58px; width: min(310px, calc(100vw - 16px)); }
   .recap-button { padding-inline: 9px; }
   .status { font-size: 12px; }
-  .map-tools { top: 58px; }
 }
 
 /* Keep the marker with the first line even when point content wraps. */
