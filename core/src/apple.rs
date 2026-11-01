@@ -107,6 +107,8 @@ mod tests {
         let (updates, _) = tokio::sync::broadcast::channel(16);
         let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
         let core = Core {
+            find: crate::find::Runtime::default(),
+            imports: crate::import::Imports::default(),
             recap: Default::default(), apps: Default::default(), world: Mutex::new(world), journal: Mutex::new(journal),
             updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
