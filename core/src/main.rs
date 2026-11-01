@@ -4,6 +4,7 @@
 mod apple;
 mod asr;
 mod explain;
+mod import;
 mod pictures;
 mod placer;
 mod refiner;
@@ -11,11 +12,11 @@ mod protocol;
 mod world;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Request, State};
+use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, ServerMsg};
@@ -40,6 +41,8 @@ pub struct Core {
     looked: std::sync::atomic::AtomicBool,
     /// Wakes the background passes early.
     pub wake: tokio::sync::Notify,
+    /// Importing past AI chats.
+    pub imports: import::Imports,
 }
 
 impl Core {
@@ -231,6 +234,7 @@ async fn main() -> anyhow::Result<()> {
         last_activity: std::sync::atomic::AtomicU64::new(0),
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
+        imports: import::Imports::default(),
     });
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
@@ -243,6 +247,7 @@ async fn main() -> anyhow::Result<()> {
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
         .route("/ws", get(connect))
+        .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
         .layer(middleware::from_fn(only_local))
@@ -293,6 +298,13 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
     let snapshot = ServerMsg::Snapshot { world: core.snapshot() };
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
+    }
+    // A window that opens mid-import picks up its progress.
+    if let Some(status) = core.imports.live() {
+        let message = ServerMsg::Import { status };
+        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() {
+            return;
+        }
     }
     let source = core.clone();
     let forward = tokio::spawn(async move {
@@ -356,6 +368,8 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                 Ok(ClientMsg::Correct { thought_id, accept }) => {
                     core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
                 }
+                Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id),
+                Ok(ClientMsg::ImportCancel) => import::cancel(&core),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
             },

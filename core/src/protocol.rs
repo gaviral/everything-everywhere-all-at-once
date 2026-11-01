@@ -17,6 +17,8 @@ pub enum ServerMsg {
     Notice { message: String },
     /// The answer to an Explain request.
     Explanation { id: String, text: String },
+    /// How an import of past chats is going; also sent to a window that connects mid-import.
+    Import { status: crate::import::Status },
 }
 
 #[derive(Deserialize)]
@@ -40,4 +42,8 @@ pub enum ClientMsg {
     Correct { thought_id: String, accept: bool },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
+    /// Start importing a file the core has read (POST /import returned its id).
+    ImportStart { id: String },
+    /// Stop the running import; what already landed stays.
+    ImportCancel,
 }

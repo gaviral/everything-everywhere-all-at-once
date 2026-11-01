@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
+import { ImportChats } from "./Import";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -333,6 +334,7 @@ export default function App() {
           E2A2O <small>threads</small>
         </div>
         <div className="status">
+          <ImportChats core={core} />
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
         </div>

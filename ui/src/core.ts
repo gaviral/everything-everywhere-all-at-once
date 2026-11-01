@@ -47,6 +47,22 @@ export interface Action {
   done_ms: number | null;
 }
 
+// How an import of past chats is going (core/src/import.rs).
+export interface ImportStatus {
+  id: string;
+  file: string;
+  state: "reading" | "grouping" | "adding" | "done" | "stopped" | "failed";
+  parts: number;
+  parts_done: number;
+  ideas: number;
+  threads: number;
+  extended: number;
+  points: number;
+  questions: number;
+  actions: number;
+  note: string;
+}
+
 export interface World {
   threads: Thread[];
   thoughts: Thought[];
@@ -90,7 +106,8 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "explanation"; id: string; text: string };
+  | { type: "explanation"; id: string; text: string }
+  | { type: "import"; status: ImportStatus };
 
 const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
 
@@ -224,6 +241,7 @@ export function useCore() {
   const [notice, setNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -282,6 +300,9 @@ export function useCore() {
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: msg.text }));
             break;
+          case "import":
+            setImportStatus(msg.status);
+            break;
         }
       };
       ws.onclose = () => {
@@ -335,5 +356,8 @@ export function useCore() {
     explanations,
     explain: (id: string, text: string, context: string) =>
       send(JSON.stringify({ type: "explain", id, text, context })),
+    importStatus,
+    startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
+    cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),
   };
 }
