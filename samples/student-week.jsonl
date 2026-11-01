@@ -1,102 +1,110 @@
-{"type":"thread_added","thread":{"id":"T1","title":"Hackathon plan","parent_id":null,"status":"open","last_point":"","touched_ms":1730674800000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T1","title":"Hackathon plan","parent_id":null,"status":"open","last_point":"","touched_ms":1793746800000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T1"}
-{"type":"thought_added","thought":{"id":"th-1","speaker":"you","text":"Okay so the hackathon deadline is tomorrow at 9 PM and I still need to record the demo video","point":"Deadline tomorrow 9 PM, need to record demo","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730674800000,"place_ms":1800}}
-{"type":"thread_touched","thread_id":"T1","last_point":"Deadline tomorrow 9 PM, need to record demo","at_ms":1730674800000}
-{"type":"thought_added","thought":{"id":"th-2","speaker":"you","text":"The repo is ready and precheck passes but I haven't written the README yet","point":"Repo ready, precheck passes, README not done","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730674830000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T1","last_point":"Repo ready, precheck passes, README not done","at_ms":1730674830000}
-{"type":"thought_added","thought":{"id":"th-3","speaker":"you","text":"I should probably write the README first and then record because the repo has to be public","point":"Write README before recording","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730674870000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T1","last_point":"Write README before recording","at_ms":1730674870000}
+{"type":"thought_added","thought":{"id":"th-1","speaker":"you","text":"Okay so the hackathon deadline is tomorrow at 9 PM and I still need to record the demo video","point":"Deadline tomorrow 9 PM, need to record demo","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793746800000,"place_ms":1800}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Deadline tomorrow 9 PM, need to record demo","at_ms":1793746800000}
+{"type":"thought_added","thought":{"id":"th-2","speaker":"you","text":"The repo is ready and precheck passes but I haven't written the README yet","point":"Repo ready, precheck passes, README not done","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793746830000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Repo ready, precheck passes, README not done","at_ms":1793746830000}
+{"type":"thought_added","thought":{"id":"th-3","speaker":"you","text":"I should probably write the README first and then record because the repo has to be public","point":"Write README before recording","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793746870000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Write README before recording","at_ms":1793746870000}
 {"type":"tag_suggested","thread_id":"T1","tag":"hackathon"}
 {"type":"tag_suggested","thread_id":"T1","tag":"deadline"}
-{"type":"thread_added","thread":{"id":"T2","title":"Rent is due","parent_id":null,"status":"open","last_point":"","touched_ms":1730674920000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T2","title":"Rent is due","parent_id":null,"status":"open","last_point":"","touched_ms":1793746920000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T2"}
-{"type":"thought_added","thought":{"id":"th-4","speaker":"you","text":"Wait I just remembered rent is due on the 1st and I forgot to set up the transfer","point":"Rent due Nov 1, forgot the transfer","thread_id":"T2","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730674920000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T2","last_point":"Rent due Nov 1, forgot the transfer","at_ms":1730674920000}
-{"type":"thought_added","thought":{"id":"th-5","speaker":"you","text":"It's already the 3rd so it's technically late, I need to do it right now before they charge a fee","point":"Already late, need to transfer before fee","thread_id":"T2","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730674960000,"place_ms":1400}}
-{"type":"thread_touched","thread_id":"T2","last_point":"Already late, need to transfer before fee","at_ms":1730674960000}
+{"type":"thought_added","thought":{"id":"th-4","speaker":"you","text":"Wait I just remembered rent is due on the 1st and I forgot to set up the transfer","point":"Rent due Nov 1, forgot the transfer","thread_id":"T2","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793746920000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Rent due Nov 1, forgot the transfer","at_ms":1793746920000}
+{"type":"thought_added","thought":{"id":"th-5","speaker":"you","text":"It's already the 3rd so it's technically late, I need to do it right now before they charge a fee","point":"Already late, need to transfer before fee","thread_id":"T2","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793746960000,"place_ms":1400}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Already late, need to transfer before fee","at_ms":1793746960000}
 {"type":"action_proposed","action":{"id":"ac-1","thread_id":"T2","kind":"reminder","title":"Transfer rent to landlord","when":"2026-11-03","status":"new","done_ms":null}}
 {"type":"tag_suggested","thread_id":"T2","tag":"rent"}
 {"type":"tag_suggested","thread_id":"T2","tag":"urgent"}
 {"type":"thread_status","thread_id":"T2","status":"dropped"}
+{"type":"thread_picture","thread_id":"T2","path":"/images/T2-c737d1318fe54077aab3a96e8eeb35bd-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
-{"type":"thread_added","thread":{"id":"T3","title":"Group project meeting","parent_id":null,"status":"open","last_point":"","touched_ms":1730675100000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T3","title":"Group project meeting","parent_id":null,"status":"open","last_point":"","touched_ms":1793747100000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T3"}
-{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Also the group project presentation is Wednesday and Priya hasn't sent her slides yet","point":"Group presentation Wednesday, Priya's slides missing","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675100000,"place_ms":1900}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation Wednesday, Priya's slides missing","at_ms":1730675100000}
-{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"I should text her tonight and also check if Marcus finished the data analysis section","point":"Text Priya tonight, check Marcus's data section","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675150000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Text Priya tonight, check Marcus's data section","at_ms":1730675150000}
-{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"We need to rehearse at least once before Wednesday morning","point":"Rehearse before Wednesday morning","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675200000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Rehearse before Wednesday morning","at_ms":1730675200000}
+{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Also the group project presentation is Wednesday and Priya hasn't sent her slides yet","point":"Group presentation Wednesday, Priya's slides missing","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747100000,"place_ms":1900}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation Wednesday, Priya's slides missing","at_ms":1793747100000}
+{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"I should text her tonight and also check if Marcus finished the data analysis section","point":"Text Priya tonight, check Marcus's data section","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747150000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Text Priya tonight, check Marcus's data section","at_ms":1793747150000}
+{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"We need to rehearse at least once before Wednesday morning","point":"Rehearse before Wednesday morning","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747200000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Rehearse before Wednesday morning","at_ms":1793747200000}
 {"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Text Priya about slides","when":"2026-11-03","status":"new","done_ms":null}}
 {"type":"tag_suggested","thread_id":"T3","tag":"school"}
 {"type":"tag_suggested","thread_id":"T3","tag":"group-project"}
 {"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T3","text":"Could combine the rehearsal with a Zoom call Tuesday evening","status":"new"}}
-{"type":"thread_added","thread":{"id":"T4","title":"Demo recording plan","parent_id":"T1","status":"open","last_point":"","touched_ms":1730675400000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T4","title":"Demo recording plan","parent_id":"T1","status":"open","last_point":"","touched_ms":1793747400000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T4"}
-{"type":"thought_added","thought":{"id":"th-9","speaker":"you","text":"Okay back to the hackathon. For the demo I want to show the mic working, then the map building, then the apps","point":"Demo: mic, map building, then apps","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675400000,"place_ms":1800}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Demo: mic, map building, then apps","at_ms":1730675400000}
-{"type":"thought_added","thought":{"id":"th-10","speaker":"you","text":"I think I should use the demo script so it's repeatable and I don't stumble over words","point":"Use demo script for repeatable recording","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675450000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Use demo script for repeatable recording","at_ms":1730675450000}
-{"type":"thought_added","thought":{"id":"th-11","speaker":"you","text":"Actually no, the whole point is that it handles real messy speech, I should just talk naturally","point":"Talk naturally instead, show real messy speech","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675500000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Talk naturally instead, show real messy speech","at_ms":1730675500000}
+{"type":"thought_added","thought":{"id":"th-9","speaker":"you","text":"Okay back to the hackathon. For the demo I want to show the mic working, then the map building, then the apps","point":"Demo: mic, map building, then apps","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747400000,"place_ms":1800}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Demo: mic, map building, then apps","at_ms":1793747400000}
+{"type":"thought_added","thought":{"id":"th-10","speaker":"you","text":"I think I should use the demo script so it's repeatable and I don't stumble over words","point":"Use demo script for repeatable recording","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747450000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Use demo script for repeatable recording","at_ms":1793747450000}
+{"type":"thought_added","thought":{"id":"th-11","speaker":"you","text":"Actually no, the whole point is that it handles real messy speech, I should just talk naturally","point":"Talk naturally instead, show real messy speech","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747500000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Talk naturally instead, show real messy speech","at_ms":1793747500000}
 {"type":"tag_suggested","thread_id":"T4","tag":"hackathon"}
 {"type":"tag_suggested","thread_id":"T4","tag":"demo"}
-{"type":"thread_added","thread":{"id":"T5","title":"Mom's birthday","parent_id":null,"status":"open","last_point":"","touched_ms":1730675700000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T5","title":"Mom's birthday","parent_id":null,"status":"open","last_point":"","touched_ms":1793747700000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T5"}
-{"type":"thought_added","thought":{"id":"th-12","speaker":"you","text":"Oh shoot Mom's birthday is Friday and I haven't gotten her anything","point":"Mom's birthday Friday, no gift yet","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675700000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T5","last_point":"Mom's birthday Friday, no gift yet","at_ms":1730675700000}
-{"type":"thought_added","thought":{"id":"th-13","speaker":"you","text":"She mentioned wanting that cooking class at the place on Main Street","point":"She wants the cooking class on Main Street","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675750000,"place_ms":1400}}
-{"type":"thread_touched","thread_id":"T5","last_point":"She wants the cooking class on Main Street","at_ms":1730675750000}
-{"type":"thought_added","thought":{"id":"th-14","speaker":"you","text":"I could book it online tonight if it's not too expensive, maybe like sixty bucks","point":"Book online tonight if under sixty dollars","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730675800000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T5","last_point":"Book online tonight if under sixty dollars","at_ms":1730675800000}
+{"type":"thought_added","thought":{"id":"th-12","speaker":"you","text":"Oh shoot Mom's birthday is Friday and I haven't gotten her anything","point":"Mom's birthday Friday, no gift yet","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747700000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T5","last_point":"Mom's birthday Friday, no gift yet","at_ms":1793747700000}
+{"type":"thought_added","thought":{"id":"th-13","speaker":"you","text":"She mentioned wanting that cooking class at the place on Main Street","point":"She wants the cooking class on Main Street","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747750000,"place_ms":1400}}
+{"type":"thread_touched","thread_id":"T5","last_point":"She wants the cooking class on Main Street","at_ms":1793747750000}
+{"type":"thought_added","thought":{"id":"th-14","speaker":"you","text":"I could book it online tonight if it's not too expensive, maybe like sixty bucks","point":"Book online tonight if under sixty dollars","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747800000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T5","last_point":"Book online tonight if under sixty dollars","at_ms":1793747800000}
 {"type":"tag_suggested","thread_id":"T5","tag":"family"}
 {"type":"tag_suggested","thread_id":"T5","tag":"birthday"}
 {"type":"suggestion_added","suggestion":{"id":"sg-2","thread_id":"T5","text":"Check if the cooking class has gift card options for easier wrapping","status":"new"}}
-{"type":"thread_added","thread":{"id":"T6","title":"README sections","parent_id":"T1","status":"open","last_point":"","touched_ms":1730676000000,"tags":[],"picture":null}}
+{"type":"thread_added","thread":{"id":"T6","title":"README sections","parent_id":"T1","status":"open","last_point":"","touched_ms":1793748000000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T6"}
-{"type":"thought_added","thought":{"id":"th-15","speaker":"you","text":"Okay the README needs to have how to run it, what it does, and the how we built it section","point":"README: how to run, what it does, how we built it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676000000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T6","last_point":"README: how to run, what it does, how we built it","at_ms":1730676000000}
-{"type":"thought_added","thought":{"id":"th-16","speaker":"you","text":"The how we built it section should mention Claude and the overnight agents, that's a real part of the story","point":"Mention Claude and overnight agents in how-we-built-it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676060000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T6","last_point":"Mention Claude and overnight agents in how-we-built-it","at_ms":1730676060000}
-{"type":"thought_added","thought":{"id":"th-17","speaker":"you","text":"And I need to put the env example with the model api key setup","point":"Include .env.example with API key setup","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676120000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T6","last_point":"Include .env.example with API key setup","at_ms":1730676120000}
+{"type":"thought_added","thought":{"id":"th-15","speaker":"you","text":"Okay the README needs to have how to run it, what it does, and the how we built it section","point":"README: how to run, what it does, how we built it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748000000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T6","last_point":"README: how to run, what it does, how we built it","at_ms":1793748000000}
+{"type":"thought_added","thought":{"id":"th-16","speaker":"you","text":"The how we built it section should mention Claude and the overnight agents, that's a real part of the story","point":"Mention Claude and overnight agents in how-we-built-it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748060000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T6","last_point":"Mention Claude and overnight agents in how-we-built-it","at_ms":1793748060000}
+{"type":"thought_added","thought":{"id":"th-17","speaker":"you","text":"And I need to put the env example with the model api key setup","point":"Include .env.example with API key setup","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748120000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T6","last_point":"Include .env.example with API key setup","at_ms":1793748120000}
 {"type":"tag_suggested","thread_id":"T6","tag":"hackathon"}
 {"type":"tag_suggested","thread_id":"T6","tag":"docs"}
-{"type":"thread_added","thread":{"id":"T7","title":"Electric bill autopay","parent_id":"T2","status":"open","last_point":"","touched_ms":1730676300000,"tags":[],"picture":null}}
+{"type":"thread_picture","thread_id":"T6","path":"/images/T6-23dd26336e174a53ab252a5f15586ef1-small.webp"}
+{"type":"thread_added","thread":{"id":"T7","title":"Electric bill autopay","parent_id":"T2","status":"open","last_point":"","touched_ms":1793748300000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T7"}
-{"type":"thought_added","thought":{"id":"th-18","speaker":"you","text":"While I'm thinking about money stuff I should set up autopay for the electric bill too","point":"Set up autopay for electric bill","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676300000,"place_ms":1800}}
-{"type":"thread_touched","thread_id":"T7","last_point":"Set up autopay for electric bill","at_ms":1730676300000}
-{"type":"thought_added","thought":{"id":"th-19","speaker":"you","text":"I think BC Hydro has an online portal for that but I need to find my account number","point":"BC Hydro portal, need account number","thread_id":"T7","placed":true,"unclear":"BC Hydro","guess":"BC Hydro","complete":true,"at_ms":1730676350000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T7","last_point":"BC Hydro portal, need account number","at_ms":1730676350000}
+{"type":"thought_added","thought":{"id":"th-18","speaker":"you","text":"While I'm thinking about money stuff I should set up autopay for the electric bill too","point":"Set up autopay for electric bill","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748300000,"place_ms":1800}}
+{"type":"thread_touched","thread_id":"T7","last_point":"Set up autopay for electric bill","at_ms":1793748300000}
+{"type":"thought_added","thought":{"id":"th-19","speaker":"you","text":"I think BC Hydra has an online portal for that but I need to find my account number","point":"BC Hydra portal, need account number","thread_id":"T7","placed":true,"unclear":"BC Hydra","guess":"BC Hydro","complete":true,"at_ms":1793748350000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T7","last_point":"BC Hydro portal, need account number","at_ms":1793748350000}
 {"type":"tag_suggested","thread_id":"T7","tag":"bills"}
 {"type":"thread_status","thread_id":"T7","status":"dropped"}
 {"type":"active_changed","thread_id":"T4"}
-{"type":"thought_added","thought":{"id":"th-20","speaker":"you","text":"Okay the demo should be three minutes, the rules say that, and I want to open with the disclosure about what existed before","point":"Three minutes, open with pre-existing work disclosure","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676600000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Three minutes, open with pre-existing work disclosure","at_ms":1730676600000}
-{"type":"thought_added","thought":{"id":"th-21","speaker":"you","text":"Then show the mic turning on and the first thought landing on the map, that's the hook","point":"Hook: mic on, first thought lands on map","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676660000,"place_ms":1400}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Hook: mic on, first thought lands on map","at_ms":1730676660000}
-{"type":"thread_added","thread":{"id":"T8","title":"Submission checklist","parent_id":"T1","status":"open","last_point":"","touched_ms":1730676900000,"tags":[],"picture":null}}
+{"type":"thought_added","thought":{"id":"th-20","speaker":"you","text":"Okay the demo should be three minutes, the rules say that, and I want to open with the disclosure about what existed before","point":"Three minutes, open with pre-existing work disclosure","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748600000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Three minutes, open with pre-existing work disclosure","at_ms":1793748600000}
+{"type":"thought_added","thought":{"id":"th-21","speaker":"you","text":"Then show the mic turning on and the first thought landing on the map, that's the hook","point":"Hook: mic on, first thought lands on map","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748660000,"place_ms":1400}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Hook: mic on, first thought lands on map","at_ms":1793748660000}
+{"type":"thread_picture","thread_id":"T4","path":"/images/T4-f3654349211d4c0aabbc39802383a604-small.webp"}
+{"type":"thread_added","thread":{"id":"T8","title":"Submission checklist","parent_id":"T1","status":"open","last_point":"","touched_ms":1793748900000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T8"}
-{"type":"thought_added","thought":{"id":"th-22","speaker":"you","text":"For submission I need the public repo link, the demo video link, and my team member info","point":"Need: public repo, demo video link, team member info","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676900000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T8","last_point":"Need: public repo, demo video link, team member info","at_ms":1730676900000}
-{"type":"thought_added","thought":{"id":"th-23","speaker":"you","text":"I'm solo so it's just me but I should double check the submission form has all the fields","point":"Solo entry, double check submission form fields","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730676960000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T8","last_point":"Solo entry, double check submission form fields","at_ms":1730676960000}
-{"type":"thought_added","thought":{"id":"th-24","speaker":"you","text":"I should submit a few hours early in case anything goes wrong with the upload","point":"Submit a few hours early in case of upload issues","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677020000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T8","last_point":"Submit a few hours early in case of upload issues","at_ms":1730677020000}
+{"type":"thought_added","thought":{"id":"th-22","speaker":"you","text":"For submission I need the public repo link, the demo video link, and my team member info","point":"Need: public repo, demo video link, team member info","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748900000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T8","last_point":"Need: public repo, demo video link, team member info","at_ms":1793748900000}
+{"type":"thought_added","thought":{"id":"th-23","speaker":"you","text":"I'm solo so it's just me but I should double check the submission form has all the fields","point":"Solo entry, double check submission form fields","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748960000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T8","last_point":"Solo entry, double check submission form fields","at_ms":1793748960000}
+{"type":"thought_added","thought":{"id":"th-24","speaker":"you","text":"I should submit a few hours early in case anything goes wrong with the upload","point":"Submit a few hours early in case of upload issues","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749020000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T8","last_point":"Submit a few hours early in case of upload issues","at_ms":1793749020000}
 {"type":"tag_suggested","thread_id":"T8","tag":"hackathon"}
 {"type":"tag_suggested","thread_id":"T8","tag":"submission"}
-{"type":"thought_added","thought":{"id":"th-25","speaker":"you","text":"Oh and I need to post the demo on X for the Most Viral bonus prize","point":"Post demo on X for Most Viral prize","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677080000,"place_ms":1400}}
-{"type":"thread_touched","thread_id":"T8","last_point":"Post demo on X for Most Viral prize","at_ms":1730677080000}
-{"type":"thought_added","thought":{"id":"th-26","speaker":"you","text":"Back to the group project, I just realized our presentation and the hackathon deadline are basically the same week","point":"Group presentation and hackathon deadline same week","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677200000,"place_ms":1800}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation and hackathon deadline same week","at_ms":1730677200000}
+{"type":"thought_added","thought":{"id":"th-25","speaker":"you","text":"Oh and I need to post the demo on X for the Most Viral bonus prize","point":"Post demo on X for Most Viral prize","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749080000,"place_ms":1400}}
+{"type":"thread_touched","thread_id":"T8","last_point":"Post demo on X for Most Viral prize","at_ms":1793749080000}
+{"type":"thread_picture","thread_id":"T8","path":"/images/T8-441ee924d1414795b820b0dd7b28e7a3-small.webp"}
+{"type":"thought_added","thought":{"id":"th-26","speaker":"you","text":"Back to the group project, I just realized our presentation and the hackathon deadline are basically the same week","point":"Group presentation and hackathon deadline same week","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749200000,"place_ms":1800}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation and hackathon deadline same week","at_ms":1793749200000}
 {"type":"active_changed","thread_id":"T3"}
-{"type":"thought_added","thought":{"id":"th-27","speaker":"you","text":"I think I need to do the hackathon stuff tonight and tomorrow morning and the group stuff Tuesday afternoon","point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677260000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","at_ms":1730677260000}
-{"type":"thought_added","thought":{"id":"th-28","speaker":"you","text":"The cooking class thing I can do on my phone while waiting for the demo to render or whatever","point":"Book cooking class on phone during downtime","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677400000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T5","last_point":"Book cooking class on phone during downtime","at_ms":1730677400000}
+{"type":"thought_added","thought":{"id":"th-27","speaker":"you","text":"I think I need to do the hackathon stuff tonight and tomorrow morning and the group stuff Tuesday afternoon","point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749260000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","at_ms":1793749260000}
+{"type":"thread_picture","thread_id":"T3","path":"/images/T3-b8498b6119a54b63a1b2bcf545ec1916-small.webp"}
+{"type":"thought_added","thought":{"id":"th-28","speaker":"you","text":"The cooking class thing I can do on my phone while waiting for the demo to render or whatever","point":"Book cooking class on phone during downtime","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749400000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T5","last_point":"Book cooking class on phone during downtime","at_ms":1793749400000}
+{"type":"thread_picture","thread_id":"T5","path":"/images/T5-ec0c212470e04a6ebc9871cd2e280826-small.webp"}
 {"type":"active_changed","thread_id":"T5"}
-{"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Alright I think the priority is README then record then submit, rent transfer right now, and text Priya before I forget","point":"Priority: README, record, submit; rent now; text Priya","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1730677500000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Priya","at_ms":1730677500000}
+{"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Alright I think the priority is README then record then submit, rent transfer right now, and text Priya before I forget","point":"Priority: README, record, submit; rent now; text Priya","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749500000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Priya","at_ms":1793749500000}
+{"type":"thread_picture","thread_id":"T1","path":"/images/T1-e980671503b1418fb6043d8a66e0ca2b-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
-{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet I think the","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":false,"at_ms":1730677560000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T7","last_point":"Electric bill can wait until after hackathon","at_ms":1730677560000}
+{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet I think the","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":false,"at_ms":1793749560000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T7","last_point":"Electric bill can wait until after hackathon","at_ms":1793749560000}
+{"type":"thread_picture","thread_id":"T7","path":"/images/T7-effe9df785664f6ea459a3cf4d7a6bd2-small.webp"}

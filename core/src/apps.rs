@@ -107,6 +107,7 @@ pub fn seed(core: &Core, demo: bool) {
         .filter(|a| !world.apps.iter().any(|old| old.id == a.id))
         .map(|app| Change::AppRegistered { app }).collect();
     changes.push(Change::AppsSeeded);
+    drop(world);
     core.commit(changes);
 }
 
@@ -329,7 +330,7 @@ pub fn command(text: &str) -> Option<String> {
 pub fn volume(core: &Arc<Core>, source: &str, level: f64) {
     if !level.is_finite() || !(0.0..=1.0).contains(&level) { return; }
     let now = now_ms();
-    for app in core.snapshot().apps.into_iter().filter(|a| a.enabled) {
+    for app in core.snapshot().apps.iter().filter(|a| a.enabled) {
         let Watcher::Volume { level: threshold, seconds } = app.watcher else { continue };
         let sustained = {
             let mut state = core.apps.state.lock().unwrap();
@@ -338,7 +339,7 @@ pub fn volume(core: &Arc<Core>, source: &str, level: f64) {
             if due { *entry = (now, now); }
             due
         };
-        if sustained { launch(core, app, None); }
+        if sustained { launch(core, app.clone(), None); }
     }
 }
 
@@ -408,6 +409,19 @@ fn on_thought(core: &Arc<Core>, thought_id: &str) {
         };
         if matches { launch(core, app.clone(), thought.thread_id.clone().map(|id| (id, thought_id.into()))); }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn perf(core: &Arc<Core>, thought_id: &str) {
+    crate::perf::measure("app watchers per thought", || on_thought(core, thought_id), |_| 0);
+    crate::perf::measure("app volume frame", || volume(core, "perf-input", 0.01), |_| 0);
+    let world = core.snapshot();
+    let thought = world.thoughts.iter().find(|t| t.id == thought_id).unwrap();
+    crate::perf::measure("app points + speaker text", || {
+        let points: Vec<_> = world.thoughts.iter().filter(|t| t.placed && t.thread_id == thought.thread_id)
+            .filter(|t| t.at_ms <= thought.at_ms && t.id != thought.id).collect();
+        said(&points[points.len().saturating_sub(8)..], Some(thought))
+    }, |(points, newest)| points.len() + newest.len());
 }
 
 fn launch(core: &Arc<Core>, app: MiniApp, thought: Option<(String, String)>) {
@@ -490,6 +504,8 @@ async fn execute(core: &Core, app: &MiniApp, target: Option<(String, String)>) -
             }
         }
     }
+    drop(live);
+    drop(world);
     core.commit(changes);
     if sound { core.send(ServerMsg::AppsSound { name: app.name.clone() }); }
     Ok(())

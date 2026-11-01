@@ -292,6 +292,10 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
+      if (event.key === "Escape") {
+        const shortcuts = document.querySelector<HTMLDetailsElement>(".shortcuts[open]");
+        if (shortcuts) { event.preventDefault(); shortcuts.open = false; shortcuts.querySelector("summary")?.focus(); return; }
+      }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
@@ -327,11 +331,14 @@ export default function App() {
   }, [firstHint]);
 
   const [mapChangeVisible, setMapChangeVisible] = useState(false);
+  const [mapAnnouncement, setMapAnnouncement] = useState("");
   useEffect(() => {
     if (!core.mapChange) return;
     setMapChangeVisible(true);
+    setMapAnnouncement("");
+    const announcement = window.setTimeout(() => setMapAnnouncement(core.mapChange!.text), 700);
     const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
   }, [core.mapChange]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
@@ -396,33 +403,48 @@ export default function App() {
         </div>
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
-        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
+        <details className="shortcuts"><summary aria-label="Keyboard and voice commands">?</summary><div className="keyboard-hint">
+          <div>✦ added or suggested by AI</div>
+          <strong>Keyboard</strong>
+          <div>Map: / search · j / k move between threads · Enter show or hide · Esc fold quiet threads</div>
+          <div>Palace: arrow keys move · Enter open a thread</div>
+          <div>Esc clears search or closes the room menu when focused there</div>
+          <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
+          <strong>Say or type</strong>
+          <div>“Where was I?” or “Go back” · return to where you left off</div>
+          <div>“Next one” · next thread in creation order, then back to the first</div>
+          <div>“Find [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>Back and next can follow a thought after a pause; the thought is kept.</div>
+        </div></details>
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
-          <span className={core.connected ? "dot ok" : "dot"} />
-          {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"} />
+          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"}</span>
         </div>
         </div>
       </header>
 
+      <div className="sr-only" role="status">{core.notice && (core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice)}</div>
+      <div className="sr-only" role="status">{mapAnnouncement}</div>
       <AnimatePresence>
         {core.notice && (
           <motion.div
-            className="notice" role="status"
+            className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            <span>{core.notice.includes("MODEL_API_KEY") ? "Set MODEL_API_KEY in .env to turn on listening and placement. See .env.example." : core.notice}</span>
+            <span>{core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
       </AnimatePresence>
 
       {core.mapChange && mapChangeVisible && (
-        <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+        <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} />
@@ -440,7 +462,7 @@ export default function App() {
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
-          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details></>}
+          </>}
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
@@ -497,7 +519,7 @@ export default function App() {
           <div className="pending">
             {pending.map((t) => (
               <motion.span key={t.id} layoutId={reducedMotion ? undefined : t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={spring} className="pill">
-                <span className="pending-label">Finding a thread</span> {t.text}
+                <span className="pending-label">{core.noKey ? "Needs the AI key" : "Finding a thread"}</span> {t.text}
               </motion.span>
             ))}
           </div>
@@ -656,7 +678,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined} tabIndex={thought.place_ms != null ? 0 : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
@@ -682,7 +704,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
           </span>
         )
       )}
-      {thought.place_ms != null && <span className="speed">{(thought.place_ms / 1000).toFixed(1)} s</span>}
+      {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
     </motion.li>
   );
 });
