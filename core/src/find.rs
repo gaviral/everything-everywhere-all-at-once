@@ -4,12 +4,17 @@
 use crate::protocol::ServerMsg;
 use crate::world::{Thought, World};
 use crate::Core;
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+const URL: &str = "https://api.meta.ai/v1/chat/completions";
+/// How long the model gets, its whole answer included: a match any later has missed its moment, and the words
+/// stay a thought instead. One call, never retried.
+const PATIENCE: Duration = Duration::from_secs(4);
 
 #[derive(Default)]
 pub struct Runtime {
@@ -240,14 +245,13 @@ fn search(core: Arc<Core>, speaker: String, query: String, said: String, request
     }
     core.send_to(&speaker, ServerMsg::Notice { message: "Looking through your threads…".into() });
     tokio::spawn(async move {
-        // Includes reading and parsing the response; no retries or second model call.
-        let answer = tokio::time::timeout(Duration::from_secs(4), model_match(&core, &world, &query, &ranked)).await;
+        let answer = model_match(&core, &world, &query, &ranked).await;
         if !core.find.current(&speaker, request) { return; }
         match answer {
-            Ok(Ok(Some(found))) => show(&core, &speaker, found, &said),
-            Ok(Ok(None)) => missing(&core, &speaker, &said),
-            other => {
-                tracing::warn!("find did not finish: {other:?}");
+            Ok(Some(found)) => show(&core, &speaker, found, &said),
+            Ok(None) => missing(&core, &speaker, &said),
+            Err(e) => {
+                tracing::warn!("find did not finish: {e:#}");
                 kept(&core, &speaker, &said, "I couldn't search just now, so I kept it as a thought.");
             }
         }
@@ -336,13 +340,8 @@ fn checked(world: &World, source: &[SourceThread], choice: Choice) -> Option<Fou
 }
 
 async fn model_match(core: &Core, world: &World, query: &str, ranked: &[Ranked]) -> anyhow::Result<Option<Found>> {
-    let key = core.key()?;
     let source = source(world, ranked);
-    let body = model_body(&source, query)?;
-    let response = core.http.post("https://api.meta.ai/v1/chat/completions").bearer_auth(key).json(&body).send().await?;
-    core.check(response.status())?;
-    if !response.status().is_success() { bail!("model returned {}", response.status()); }
-    let value: serde_json::Value = response.json().await?;
+    let value = core.call_model(URL, &model_body(&source, query)?, PATIENCE).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let choice = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     Ok(checked(world, &source, choice))

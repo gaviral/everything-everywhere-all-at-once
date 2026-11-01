@@ -302,54 +302,8 @@ impl World {
                     th.title = title.clone();
                 }
             }
-            Change::ThreadMerged { from, into } => {
-                if from == into || self.thread(into).is_none() {
-                    return;
-                }
-                for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from.as_str())) {
-                    t.thread_id = Some(into.clone());
-                }
-                for th in self.threads.iter_mut().filter(|t| t.parent_id.as_deref() == Some(from.as_str())) {
-                    th.parent_id = Some(into.clone());
-                }
-                for s in self.suggestions.iter_mut().filter(|s| &s.thread_id == from) {
-                    s.thread_id = into.clone();
-                }
-                for a in self.actions.iter_mut().filter(|a| &a.thread_id == from) {
-                    a.thread_id = into.clone();
-                }
-                if self.active.as_deref() == Some(from.as_str()) {
-                    self.active = Some(into.clone());
-                }
-                for id in self.active_by.values_mut().filter(|id| **id == *from) {
-                    *id = into.clone();
-                }
-                self.threads.retain(|t| &t.id != from);
-                self.merged.insert(from.clone(), into.clone());
-            }
-            Change::ThoughtCorrected { thought_id, accept } => {
-                let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) else { return };
-                let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
-                if *accept && !t.unclear.is_empty() && !t.guess.is_empty() {
-                    t.text = swap(&t.text, &t.unclear, &t.guess);
-                    t.point = swap(&t.point, &t.unclear, &t.guess);
-                }
-                if !*accept && !t.heard.is_empty() && !t.fixed.is_empty() {
-                    t.text = swap(&t.text, &t.fixed, &t.heard);
-                    t.point = swap(&t.point, &t.fixed, &t.heard);
-                    t.heard.clear();
-                    t.fixed.clear();
-                }
-                t.unclear.clear();
-                t.guess.clear();
-                let point = t.point.clone();
-                // The thread's last point is a copy; keep it in step.
-                if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
-                    if th.last_point == old_point {
-                        th.last_point = point;
-                    }
-                }
-            }
+            Change::ThreadMerged { from, into } => self.merge(from, into),
+            Change::ThoughtCorrected { thought_id, accept } => self.correct(thought_id, *accept),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
                     self.suggestions.push(suggestion.clone());
@@ -390,6 +344,60 @@ impl World {
                     a.status = *status;
                     a.done_ms = *done_ms;
                 }
+            }
+        }
+    }
+
+    /// Folds thread `from` into `into`: its thoughts, branches, ideas and tasks, and everyone on it, move over,
+    /// and a change still aimed at `from` lands on `into` (see `resolve`). Nothing happens when `into` is
+    /// `from` or doesn't exist.
+    fn merge(&mut self, from: &str, into: &str) {
+        if from == into || self.thread(into).is_none() {
+            return;
+        }
+        for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from)) {
+            t.thread_id = Some(into.into());
+        }
+        for th in self.threads.iter_mut().filter(|t| t.parent_id.as_deref() == Some(from)) {
+            th.parent_id = Some(into.into());
+        }
+        for s in self.suggestions.iter_mut().filter(|s| s.thread_id == from) {
+            s.thread_id = into.into();
+        }
+        for a in self.actions.iter_mut().filter(|a| a.thread_id == from) {
+            a.thread_id = into.into();
+        }
+        if self.active.as_deref() == Some(from) {
+            self.active = Some(into.into());
+        }
+        for id in self.active_by.values_mut().filter(|id| **id == from) {
+            *id = into.into();
+        }
+        self.threads.retain(|t| t.id != from);
+        self.merged.insert(from.into(), into.into());
+    }
+
+    /// A "Did you mean …?" answered: see `Change::ThoughtCorrected`.
+    fn correct(&mut self, thought_id: &str, accept: bool) {
+        let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
+        let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
+        if accept && !t.unclear.is_empty() && !t.guess.is_empty() {
+            t.text = swap(&t.text, &t.unclear, &t.guess);
+            t.point = swap(&t.point, &t.unclear, &t.guess);
+        }
+        if !accept && !t.heard.is_empty() && !t.fixed.is_empty() {
+            t.text = swap(&t.text, &t.fixed, &t.heard);
+            t.point = swap(&t.point, &t.fixed, &t.heard);
+            t.heard.clear();
+            t.fixed.clear();
+        }
+        t.unclear.clear();
+        t.guess.clear();
+        let point = t.point.clone();
+        // The thread's last point is a copy; keep it in step.
+        if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
+            if th.last_point == old_point {
+                th.last_point = point;
             }
         }
     }
@@ -756,6 +764,35 @@ mod tests {
         assert_eq!(replayed.thoughts.len(), 3);
         assert!(std::fs::read_to_string(&path).unwrap().contains("\"yeah\""), "the journal keeps what was set aside");
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn a_merge_moves_everything_on_the_thread_and_later_changes_follow() {
+        let mut world = World::default();
+        for (id, parent) in [("T1", None), ("T2", None), ("T3", Some("T1"))] {
+            world.apply(&Change::ThreadAdded { thread: test_thread(id, parent) });
+        }
+        let new = super::ItemStatus::New;
+        world.apply(&Change::ThoughtAdded { thought: test_thought("a", "User", "T1") });
+        world.apply(&Change::SuggestionAdded {
+            suggestion: super::Suggestion { id: "s".into(), thread_id: "T1".into(), text: "Ask Sam".into(), status: new },
+        });
+        world.apply(&Change::ActionProposed {
+            action: super::Action { id: "x".into(), thread_id: "T1".into(), kind: "reminder".into(), title: "Pay".into(), when: String::new(), status: new, done_ms: None },
+        });
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        // Never into itself, or into a thread that isn't there.
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T1".into() });
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T9".into() });
+        assert!(world.thread("T1").is_some() && world.merged.is_empty());
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        assert!(world.thread("T1").is_none());
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T2"));
+        assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "its branch");
+        assert_eq!((world.suggestions[0].thread_id.as_str(), world.actions[0].thread_id.as_str()), ("T2", "T2"));
+        assert_eq!((world.active.as_deref(), world.active_for("User").map(String::as_str)), (Some("T2"), Some("T2")));
+        world.apply(&Change::ThreadRenamed { thread_id: "T1".into(), title: "Rent".into() });
+        assert_eq!(world.thread("T2").unwrap().title, "Rent", "a late change follows the merge");
     }
 
     #[test]

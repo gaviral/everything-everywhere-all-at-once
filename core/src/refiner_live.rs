@@ -1,10 +1,10 @@
 //! Live checks of the refiner against the real model, on maps built to tempt it into what a person would
 //! undo: merging unrelated threads, a bad rename, a past or mismatched date, an idea that only repeats a
 //! point, tags that only split the title. Each run sends the request a pass sends and keeps what the
-//! guards keep. Never part of `cargo test`:
+//! guards keep. The live runs are never part of `cargo test`:
 //!   MODEL_API_KEY=… cargo test --release -- --ignored refiner_live --nocapture
 //! RUNS sets the runs per case (default 3) and CASE keeps the cases whose name has it. Answers are saved
-//! under _ref/refiner-live/LABEL (git-ignored; LABEL defaults to "live"); `refiner_replay` checks saved
+//! under _ref/refiner-live/LABEL (LABEL defaults to "live"); `refiner_replay` checks saved
 //! answers again with the guards as they are now, without the model, so a guard is measured on the same answers.
 
 use super::{changes_on, request, Pass, URL};
@@ -335,6 +335,8 @@ fn cases() -> Vec<Case> {
     .collect()
 }
 
+// The checks' own words, stems and stop words, simpler than the refiner's (`refiner::content`) on purpose:
+// a check built from the guard's code would only ever agree with it.
 fn words(text: &str) -> Vec<String> {
     text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(String::from).collect()
 }
@@ -485,10 +487,7 @@ fn show(change: &Change) -> Option<String> {
 
 /// Sends the request as a pass does; the answer is the model's JSON as text.
 async fn ask(http: &reqwest::Client, key: &str, body: &serde_json::Value) -> anyhow::Result<String> {
-    let response = http.post(URL).bearer_auth(key).json(body).send().await?;
-    let status = response.status();
-    let value: serde_json::Value = response.json().await?;
-    anyhow::ensure!(status.is_success(), "{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
+    let value = crate::model::answer(http.post(URL).bearer_auth(key).json(body).send().await?).await?;
     Ok(value["choices"][0]["message"]["content"].as_str().ok_or_else(|| anyhow::anyhow!("no answer"))?.to_string())
 }
 

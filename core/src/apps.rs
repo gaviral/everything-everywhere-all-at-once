@@ -252,8 +252,8 @@ async fn compose_inner(core: &Core, build_id: &str, request: &str) -> anyhow::Re
 fn draft(answer: &Value) -> anyhow::Result<MiniApp> {
     if answer["app"].is_null() { bail!("app is null with no reason: give the app, or say in cannot why apps can't do this"); }
     let mut app = answer["app"].clone();
-    // The model says when in local time and the core works out the instant (clock.rs): from the time now and its
-    // offset, "5 PM" on a day the clocks change came out an hour off.
+    // The model says when in local time and the core works out the instant (clock.rs): working from the time now
+    // and its offset, the model puts "5 PM" an hour off on a day the clocks change.
     if app["watcher"]["kind"] == "time" {
         let at = app["watcher"]["at"].as_str().unwrap_or_default().to_string();
         let at_ms = crate::clock::ms(&at).with_context(|| format!("the time watcher's at \"{at}\" isn't a local date and time as YYYY-MM-DD HH:MM"))?;
@@ -649,7 +649,6 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
     core.apps.asked.lock().unwrap().push(user.into());
     #[cfg(test)]
     if let Some(answer) = core.apps.answers.lock().unwrap().pop_front() { return Ok(answer); }
-    let key = core.key()?;
     let body = json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort":"low", "max_tokens":2500,
@@ -659,11 +658,7 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
     // Now and then a reply comes back with no answer in it (about 1 build in 60); a second try has one.
     let mut again = false;
     loop {
-        let response = core.http.post(URL).bearer_auth(key).timeout(Duration::from_secs(45)).json(&body).send().await?;
-        let status = response.status();
-        core.check(status)?;
-        let value: Value = response.json().await?;
-        if !status.is_success() { bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message")); }
+        let value = core.call_model(URL, &body, Duration::from_secs(45)).await?;
         let finish = &value["choices"][0]["finish_reason"];
         match value["choices"][0]["message"]["content"].as_str() {
             Some(content) => return serde_json::from_str(content).context("answer wasn't the expected JSON"),
