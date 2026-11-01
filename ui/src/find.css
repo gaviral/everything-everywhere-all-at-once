@@ -7,11 +7,17 @@
 .points li[data-found="true"], .thread[data-found="true"] {
   background: var(--accent-soft);
   border-radius: 8px;
-  outline: 2px solid var(--accent-soft);
+  outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
+.points li[data-found="true"]:focus-visible, .thread[data-found="true"]:focus-visible {
+  outline-color: var(--accent);
+}
+
 .notice span { overflow-wrap: anywhere; }
+.notice button { min-width: 32px; min-height: 32px; border-radius: 6px; }
+.notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
 @media (max-width: 560px) {
   .points li { scroll-margin-top: 190px; }

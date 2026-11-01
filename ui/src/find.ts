@@ -48,7 +48,12 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
           ?? document.getElementById(`thread-${id}`);
         if (!target) return;
         target.dataset.found = "true";
+        // Make the destination available to keyboard and screen-reader users as well as sighted users.
+        const hadTabindex = target.hasAttribute("tabindex");
+        if (!hadTabindex) target.setAttribute("tabindex", "-1");
         target.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
+        target.focus({ preventScroll: true });
+        if (!hadTabindex) target.addEventListener("blur", () => target?.removeAttribute("tabindex"), { once: true });
         timer = window.setTimeout(() => target?.removeAttribute("data-found"), 4200);
       });
     });

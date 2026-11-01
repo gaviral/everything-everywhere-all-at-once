@@ -57,6 +57,7 @@ export default function App() {
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [noticeFocused, setNoticeFocused] = useState(false);
   const seenThoughts = useRef<Set<string> | null>(null);
   const seenSnapshot = useRef(0);
   useEffect(() => {
@@ -100,10 +101,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!core.notice || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
+    if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.found, core.clearNotice]);
+  }, [core.notice, core.found, core.clearNotice, noticeFocused]);
 
   // Stop local audio when the service reports a stop or the connection drops, and tell the core,
   // so the next tap starts a fresh session.
@@ -362,6 +363,8 @@ export default function App() {
         {core.notice && (
           <motion.div
             className="notice" role="status"
+            onFocus={() => setNoticeFocused(true)}
+            onBlur={() => setNoticeFocused(false)}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
