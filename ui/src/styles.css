@@ -330,7 +330,7 @@ header {
   transition: opacity 0.2s;
 }
 
-.points li:hover .speed {
+.points li:is(:hover, :focus-visible) .speed {
   opacity: 1;
 }
 
@@ -466,6 +466,24 @@ header {
   min-height: 22px;
   color: var(--muted);
   font-style: italic;
+}
+
+/* ?recording (main.tsx): the words being said read as captions, every placing time shows, and a take clock runs. */
+.recording .live.words {
+  font-size: 22px;
+  line-height: 1.35;
+  font-style: normal;
+  color: var(--ink);
+}
+
+.recording .speed {
+  opacity: 1;
+}
+
+.take-clock {
+  margin-left: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .pending {
