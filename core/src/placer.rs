@@ -2,8 +2,8 @@
 //! so every placement sees the map the previous one left.
 
 use crate::world::{find, matches, swap, Change, Thought, Thread, ThreadStatus, World};
-use crate::{now_ms, protocol::ServerMsg, Core};
-use anyhow::{anyhow, bail, Context};
+use crate::{model::Verdict, now_ms, protocol::ServerMsg, Core};
+use anyhow::{bail, Context};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -114,6 +114,9 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                     rest = next;
                     break;
                 }
+                // Nothing can place it until a restart with a working key, and every window was told: it waits,
+                // saved, and is placed after that restart.
+                Err(_) if core.key_refused() => break,
                 Err(e) if attempt < 3 => {
                     tracing::warn!("placement failed (try {attempt}): {e:#}");
                     tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
@@ -121,8 +124,8 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                 Err(e) => {
                     tracing::warn!("placement failed: {e:#}");
                     let round = rounds.entry(thought_id.clone()).or_default();
-                    // Said once: its "Finding a thread" stays up while it waits.
-                    if *round == 0 {
+                    // Said once: its "Finding a thread" stays up while it waits. A busy service was already said.
+                    if *round == 0 && Verdict::of(&e) != Some(Verdict::Busy) {
                         core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
                     }
                     // A longer outage shouldn't leave it unplaced until a restart: it goes back in the queue
@@ -149,7 +152,7 @@ fn retry_in(round: u32) -> Duration {
 
 /// Places one thought; when the turn moved on to another topic partway, returns the rest's id.
 async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let world = core.snapshot();
     let thought = world
         .thoughts
@@ -171,6 +174,7 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
         .send()
         .await?;
     let status = response.status();
+    core.check(status)?;
     let body: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", body["error"]["message"].as_str().unwrap_or("no message"));

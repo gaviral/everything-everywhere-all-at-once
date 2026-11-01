@@ -2,7 +2,7 @@
 
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::{now_ms, protocol::{Outgoing, ServerMsg}, Core};
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -172,8 +172,9 @@ pub fn compose(core: Arc<Core>, request: String) {
     tokio::spawn(async move {
         if let Err(e) = compose_inner(&core, &b.id, &request).await {
             tracing::warn!("composer failed: {e:#}");
-            progress(&core, &b.id, "failed", "Couldn't make this app just now. Please try again.", None, None);
-            notice(&core, "Couldn't make this app just now. Please try again.");
+            let message = if core.key_refused() { crate::model::REFUSED } else { "Couldn't make this app just now. Please try again." };
+            progress(&core, &b.id, "failed", message, None, None);
+            notice(&core, message);
         }
     });
 }
@@ -425,7 +426,8 @@ pub(crate) fn perf(core: &Arc<Core>, thought_id: &str) {
 }
 
 fn launch(core: &Arc<Core>, app: MiniApp, thought: Option<(String, String)>) {
-    if validate(&app).is_err() { return; }
+    // One that asks the model can't run on a refused key, and the header already says why.
+    if validate(&app).is_err() || (app.prompt.is_some() && core.key_refused()) { return; }
     {
         let mut state = core.apps.state.lock().unwrap();
         if state.running.contains(&app.id) || now_ms().saturating_sub(app.last_run_ms) < app.cooldown_secs.saturating_mul(1000) {
@@ -544,7 +546,7 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
     core.apps.asked.lock().unwrap().push(user.into());
     #[cfg(test)]
     if let Some(answer) = core.apps.answers.lock().unwrap().pop_front() { return Ok(answer); }
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let response = core.http.post(URL).bearer_auth(key).timeout(Duration::from_secs(45)).json(&json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort":"low", "max_tokens":2500,
@@ -552,6 +554,7 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
         "response_format":{"type":"json_schema","json_schema":{"name":name,"schema":schema}}
     })).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: Value = response.json().await?;
     if !status.is_success() { bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message")); }
     serde_json::from_str(value["choices"][0]["message"]["content"].as_str().context("no answer")?).context("answer wasn't the expected JSON")

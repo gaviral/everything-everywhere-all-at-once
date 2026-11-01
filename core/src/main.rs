@@ -8,6 +8,7 @@ mod asr;
 mod explain;
 mod find;
 mod import;
+mod model;
 mod pictures;
 mod placer;
 mod refiner;
@@ -57,6 +58,8 @@ pub struct Core {
     pub wake: tokio::sync::Notify,
     /// Importing past AI chats.
     pub imports: import::Imports,
+    /// Whether the model service refused the key or is busy (model.rs).
+    service: model::Service,
 }
 
 impl Core {
@@ -427,6 +430,7 @@ async fn main() -> anyhow::Result<()> {
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
+        service: model::Service::default(),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
@@ -661,6 +665,8 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
+    } else if core.key_refused() {
+        messages.push(ServerMsg::Notice { message: model::REFUSED.into() });
     }
     messages
 }
@@ -922,6 +928,7 @@ mod tests {
             last_activity: std::sync::atomic::AtomicU64::new(0),
             looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(),
+            service: Default::default(),
         });
         let mut jobs = || {
             let mut out = Vec::new();

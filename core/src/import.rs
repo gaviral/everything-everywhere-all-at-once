@@ -8,7 +8,7 @@
 use crate::protocol::ServerMsg;
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::Core;
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
@@ -169,6 +169,9 @@ pub async fn prepare(
     }
     if core.key.is_none() {
         return refuse(StatusCode::SERVICE_UNAVAILABLE, "Importing needs the model key. Set MODEL_API_KEY in .env (see .env.example).");
+    }
+    if core.key_refused() {
+        return refuse(StatusCode::SERVICE_UNAVAILABLE, crate::model::REFUSED);
     }
     if core.imports.running() {
         return refuse(StatusCode::CONFLICT, "An import is already running. Stop it, or wait for it to finish.");
@@ -936,7 +939,7 @@ async fn ask(
     schema: &Value,
     wait: Duration,
 ) -> anyhow::Result<String> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let body = json!({
         "model": model,
         "reasoning_effort": effort,
@@ -950,6 +953,7 @@ async fn ask(
     });
     let response = core.http.post(URL).bearer_auth(key).timeout(wait).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
@@ -957,7 +961,7 @@ async fn ask(
     Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
-/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between.
+/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't one.
 async fn retry<T, F, Fut>(tries: u64, mut call: F) -> anyhow::Result<T>
 where
     F: FnMut() -> Fut,
@@ -967,7 +971,7 @@ where
     loop {
         match call().await {
             Ok(value) => return Ok(value),
-            Err(e) if attempt < tries => {
+            Err(e) if attempt < tries && crate::model::Verdict::of(&e) != Some(crate::model::Verdict::Refused) => {
                 tracing::warn!("import call failed (try {attempt}): {e:#}");
                 tokio::time::sleep(Duration::from_millis(800 * attempt)).await;
                 attempt += 1;
@@ -1580,6 +1584,7 @@ mod tests {
                 looked: std::sync::atomic::AtomicBool::new(false),
                 wake: tokio::sync::Notify::new(),
                 imports: Imports::default(),
+                service: Default::default(),
             });
             Fixture { path, core }
         }
