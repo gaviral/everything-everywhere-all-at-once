@@ -94,7 +94,8 @@ const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [],
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
   let current = id;
-  while (world.merged[current]) current = world.merged[current];
+  // At most one hop per merge, so a corrupt snapshot with a cycle can't freeze the tab.
+  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[current]; hops--) current = world.merged[current];
   return current;
 }
 

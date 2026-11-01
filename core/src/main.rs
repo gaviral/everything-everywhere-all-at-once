@@ -222,7 +222,11 @@ async fn main() -> anyhow::Result<()> {
         placer_queue,
         key,
         placer_model: std::env::var("PLACER_MODEL").unwrap_or_else(|_| "muse-spark-1.2-contributor".into()),
-        http: reqwest::Client::new(),
+        // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
+        http: reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?,
         last_activity: std::sync::atomic::AtomicU64::new(0),
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
@@ -261,7 +265,10 @@ async fn only_local(request: Request, next: Next) -> Response {
         tracing::warn!("refused a request from origin {:?}", request.headers().get(header::ORIGIN));
         return StatusCode::FORBIDDEN.into_response();
     }
-    next.run(request).await
+    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
+    let mut response = next.run(request).await;
+    response.headers_mut().insert("cross-origin-resource-policy", header::HeaderValue::from_static("same-origin"));
+    response
 }
 
 /// True for localhost, 127.0.0.1 and [::1], with or without a scheme and a port.

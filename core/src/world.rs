@@ -136,10 +136,14 @@ pub enum Change {
 
 impl World {
     /// Follows merges, so a change aimed at a merged thread lands on its successor.
+    /// At most one hop per merge, so a corrupt journal with a cycle can't loop forever.
     pub fn resolve(&self, id: &str) -> String {
         let mut id = id.to_string();
-        while let Some(next) = self.merged.get(&id) {
-            id = next.clone();
+        for _ in 0..self.merged.len() {
+            match self.merged.get(&id) {
+                Some(next) => id = next.clone(),
+                None => break,
+            }
         }
         id
     }
@@ -319,5 +323,20 @@ impl Journal {
         self.file.write_all(line.as_bytes())?;
         self.file.flush()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::World;
+
+    #[test]
+    fn resolve_follows_merges_and_survives_a_cycle() {
+        let mut world = World::default();
+        world.merged.insert("T1".into(), "T2".into());
+        world.merged.insert("T2".into(), "T3".into());
+        assert_eq!(world.resolve("T1"), "T3");
+        world.merged.insert("T3".into(), "T1".into());
+        world.resolve("T1"); // returns instead of looping forever
     }
 }
