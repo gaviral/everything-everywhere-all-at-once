@@ -458,7 +458,7 @@ export default function App() {
           <div>“Find [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>Back and next can follow a thought after a pause; the thought is kept.</div>
         </div></details>
-        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"} />
@@ -586,7 +586,7 @@ export default function App() {
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
-      <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
