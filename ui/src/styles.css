@@ -656,3 +656,16 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .map-change > span { color: var(--ai); }
 .map-change button { margin-left: auto; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 18px; cursor: pointer; }
 .branches .branches .branches { padding-left: 4px; }
+
+/* Keep the camera's secondary text and decisions legible without promoting them. */
+.map-tools button, .search input, .thread-count, .collapse, .keyboard-hint { font-size: 13px; }
+.chip, .tag, .speaker, .when { font-size: 12px; }
+.ai, .action { padding: 9px 12px; border-radius: 10px; line-height: 1.45; }
+.ai:not(.kept), .action:not(.done) { border-color: color-mix(in srgb, var(--ai) 40%, var(--line)); }
+.ai-actions button { min-height: 32px; font-size: 13px; }
+.ai-actions button.quiet { min-width: 32px; font-size: 16px; }
+.did-you-mean { gap: 6px; padding: 4px 5px 4px 10px; font-size: 13px; }
+.did-you-mean button { min-height: 30px; }
+.pullback-title { font-size: 15px; }
+.pullback-actions button { min-height: 40px; }
+.composer input::placeholder { color: var(--muted); opacity: 1; }
