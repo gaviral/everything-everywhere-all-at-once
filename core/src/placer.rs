@@ -454,28 +454,27 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // A short turn right after a question may answer it ("Yeah."). The points above often drop the
     // "?", so the question goes in as said; without it the model sets the answer aside as filler.
     // The latest said before it, by time: imported points land last in the list, with their old times.
-    let asked = world
+    let question = world
         .thoughts
         .iter()
         .take_while(|t| t.id != thought.id)
         .filter(|t| t.at_ms <= thought.at_ms)
         .max_by_key(|t| t.at_ms)
-        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
-        .map(|t| format!("Just asked: \"{}\"\n", t.text.trim()))
-        .unwrap_or_default();
+        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS);
+    let asked = question.map(|t| format!("Just asked: \"{}\"\n", t.text.trim())).unwrap_or_default();
     // What the speaker said just before, word for word, and where it went: a thread's title and last point say
     // what it's about, not what was just said, so a turn on "the cursor thing" right after one on a coding tool's
     // subscription went to the thread named for the UI cursor (2026-11-01 replay). Only a turn said moments
     // before counts: in a real session turns came a median 31 s apart (9 s at the quarter), and one said longer
-    // ago than `JUST_BEFORE_MS` is context the map's points already give. Left out when it's the question just
-    // asked, which is already there.
+    // ago than `JUST_BEFORE_MS` is context the map's points already give. Left out only when it's that same turn
+    // as the question just asked, which is already there; another speaker's question doesn't hide it.
     let before = world
         .thoughts
         .iter()
         .take_while(|t| t.id != thought.id)
         .filter(|t| t.placed && t.speaker == thought.speaker && t.at_ms <= thought.at_ms)
         .max_by_key(|t| t.at_ms)
-        .filter(|t| thought.at_ms.saturating_sub(t.at_ms) <= JUST_BEFORE_MS && asked.is_empty())
+        .filter(|t| thought.at_ms.saturating_sub(t.at_ms) <= JUST_BEFORE_MS && question.is_none_or(|q| q.id != t.id))
         .and_then(|t| Some(format!("Said just before (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim())))
         .unwrap_or_default();
     let names = names(world);
@@ -1090,6 +1089,12 @@ mod tests {
         assert!(two.contains(line) && !two.contains("Older words"));
         let asked = prompt(vec![earlier("you", 20_000, "Should we use the cursor plan?")], "Yeah.");
         assert!(asked.contains("Just asked") && !asked.contains("Said just before"));
+        // Someone else's question in between is a different turn: both go in.
+        let both = prompt(
+            vec![earlier("you", 30_000, "And the coding tool subscription I have"), earlier("Sam", 10_000, "Who's bringing lunch?")],
+            "The cursor thing also has limits.",
+        );
+        assert!(both.contains("Just asked: \"Who's bringing lunch?\"") && both.contains(line), "{both}");
     }
 
     #[test]
