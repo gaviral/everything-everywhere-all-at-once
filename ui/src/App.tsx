@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
+import { ImportChats } from "./Import";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -345,6 +346,7 @@ export default function App() {
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
+        <ImportChats core={core} />
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}

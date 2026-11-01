@@ -319,6 +319,7 @@ mod tests {
                 world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
                 key, placer_model: "test".into(), http: reqwest::Client::new(),
                 last_activity: AtomicU64::new(0), looked: AtomicBool::new(false), wake: tokio::sync::Notify::new(),
+                imports: crate::import::Imports::default(),
             }) }
         }
     }

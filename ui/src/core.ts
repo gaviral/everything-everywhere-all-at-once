@@ -58,6 +58,22 @@ export interface Action {
   done_ms: number | null;
 }
 
+// How an import of past chats is going (core/src/import.rs).
+export interface ImportStatus {
+  id: string;
+  file: string;
+  state: "reading" | "grouping" | "adding" | "done" | "stopped" | "failed";
+  parts: number;
+  parts_done: number;
+  ideas: number;
+  threads: number;
+  extended: number;
+  points: number;
+  questions: number;
+  actions: number;
+  note: string;
+}
+
 export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
@@ -110,7 +126,8 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "explanation"; id: string; text: string; failed: boolean };
+  | { type: "explanation"; id: string; text: string; failed: boolean }
+  | { type: "import"; status: ImportStatus };
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
@@ -281,6 +298,7 @@ export function useCore() {
   const [notice, setNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -341,6 +359,9 @@ export function useCore() {
             break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
+            break;
+          case "import":
+            setImportStatus(msg.status);
             break;
         }
       };
@@ -413,5 +434,8 @@ export function useCore() {
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    importStatus,
+    startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
+    cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),
   };
 }
