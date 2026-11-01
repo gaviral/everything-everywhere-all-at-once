@@ -50,6 +50,7 @@ export function Explain({ explanations, explain }: {
     const anchor = open.range.getBoundingClientRect();
     const ceiling = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
     const floor = document.querySelector(".dock")?.getBoundingClientRect().top ?? window.innerHeight;
+    if (!anchor.width && !anchor.height && open.asked) return;
     if ((!anchor.width && !anchor.height) || anchor.bottom < ceiling || anchor.top > floor) return setPicked(null);
     const gap = 8;
     const { offsetWidth: width, offsetHeight: height } = element;

@@ -103,13 +103,15 @@ export default function App() {
           requestAnimationFrame(() => {
             if (Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
                 document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
-            const target = document.getElementById(`thread-${threadId}`);
+            const point = document.getElementById(`point-${thought.id}`);
+            const target = point ?? document.getElementById(`thread-${threadId}`);
             if (!target) return;
             const rect = target.getBoundingClientRect();
             const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
             const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
-            if (bottom <= top || (rect.bottom > top && rect.top < bottom)) return;
-            const delta = rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
+            // A point stays clear of the pull-back card, which grows the dock at the next pause.
+            if (bottom <= top || (point ? rect.top >= top && rect.bottom <= bottom - 100 : rect.bottom > top && rect.top < bottom)) return;
+            const delta = point ? rect.top + rect.height / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
             following.current = true;
             window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
             window.setTimeout(() => { following.current = false; }, reducedMotion ? 100 : 1000);
@@ -146,6 +148,7 @@ export default function App() {
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
   }, []);
 
+  useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
     if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
@@ -157,6 +160,8 @@ export default function App() {
   // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   const voiceErrorStartedAt = useRef(0);
+  const voiceRevisions = useRef({ status: 0, error: 0 });
+  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
   useEffect(() => {
     if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
       stopMic();
@@ -187,8 +192,8 @@ export default function App() {
       let stopped = false;
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
-      voiceStartedAt.current = core.voiceStatusRevision;
-      voiceErrorStartedAt.current = core.voiceErrorRevision;
+      voiceStartedAt.current = voiceRevisions.current.status;
+      voiceErrorStartedAt.current = voiceRevisions.current.error;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();

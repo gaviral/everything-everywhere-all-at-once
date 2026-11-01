@@ -436,6 +436,11 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        window.clearTimeout(handoffTimer);
+        lastPartial = "";
+        awaitingThought = false;
+        setPartial("");
+        setHandoff("");
         recapDisconnected();
         setConnected(false);
         setListening(false);
