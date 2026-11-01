@@ -24,7 +24,7 @@ Core, one process (core/src: axum, tokio)
   find.rs        "where did I talk about …?": Take me there
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
-  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it
+  model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused)
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
 ```
@@ -64,7 +64,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Call | Model (setting) | Reasoning | Timeout | Tries | Cache key |
 |---|---|---|---|---|---|
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
-| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor`, or `muse-spark-1.2` once the key can't use it (401, 403 or 404 on the default only) | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
+| Placing | `PLACER_MODEL`, default `muse-spark-1.2` (Contributor mode is opt-in) | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
 | Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 120 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
