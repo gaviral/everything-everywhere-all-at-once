@@ -108,5 +108,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 ## Tests and checks
 
 - Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
-- `node scripts/away-check.mjs` and `node scripts/recap-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, and which messages close an open Recap.
+- `node scripts/away-check.mjs`, `node scripts/recap-check.mjs` and `node scripts/placing-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, which messages close an open Recap, and what a pending thought's pill says and when a landing moves the map.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.

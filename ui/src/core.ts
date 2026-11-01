@@ -161,6 +161,51 @@ type ServerMsg =
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
 export type Placing = { now: string | null; retryAt: Record<string, number> };
 
+/** What a pending thought's pill says: waiting in line, being placed, or retrying after a failed try (with when).
+ *  Seconds count from when it was said, after the first 5. */
+export function pendingLabel(thought: Thought, placing: Placing, now: number, noKey: boolean, refused: boolean) {
+  if (refused) return "Waiting for a working key";
+  if (noKey) return "Needs the AI key";
+  const since = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
+  const after = since > 5 ? ` · ${since}s` : "";
+  if (placing.now === thought.id) return `Finding a thread${after}`;
+  const retryAt = placing.retryAt[thought.id];
+  if (retryAt !== undefined) {
+    const left = Math.ceil((retryAt - now) / 1000);
+    return left >= 2 ? `Couldn't place yet · retrying in ${left}s` : "Couldn't place yet · retrying";
+  }
+  // Behind another being placed, or the whole line waiting out a busy service: "Finding a thread" only while a call
+  // for this one is running.
+  return `Waiting${after}`;
+}
+
+export type Landing = { thread: string; thought: string; mine: boolean };
+
+/**
+ * The landing the map follows among thoughts just placed (`added`, in list order): the newest, except a late one of
+ * yours. A thought of yours that failed a try (`retried`) and lands after you moved on (newer words of yours landed,
+ * or you went elsewhere) doesn't move your place (placer.rs `decide`), so it doesn't move the map either: it's
+ * returned as `held`, and followed only if the next message moves your place to its thread (`held` passed back).
+ * The rest of a late thought cut in two lands just as late, so it joins `retried` (placer.rs `Placing::placed`).
+ */
+export function landingToFollow(world: World, added: Thought[], me: string, moved: boolean, retried: Set<string>, held: Landing | null) {
+  let landing: Landing | null = null;
+  let late: Landing | null = null;
+  for (const thought of added) {
+    if (!thought.thread_id) continue;
+    const at = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
+    if (!at.mine || moved || at.thread === world.active || !retried.has(thought.id)) {
+      landing = at;
+      continue;
+    }
+    late = at;
+    const rest = world.thoughts[world.thoughts.findIndex((t) => t.id === thought.id) + 1];
+    if (rest && !rest.placed && rest.speaker === thought.speaker && rest.at_ms === thought.at_ms) retried.add(rest.id);
+  }
+  if (!landing && moved && held?.thread === world.active) landing = held;
+  return { landing, held: late };
+}
+
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
