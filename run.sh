@@ -3,7 +3,6 @@
 # `./run.sh demo` keeps a separate journal (data/demo) so real work stays clean.
 # `./run.sh room` opens a room on its own journal (data/room): a second laptop on the same
 # network joins the same map at the address the core prints. ROOM_CODE sets the code; else it's new each run.
-# Rooms opt into HTTPS; ROOM_HTTPS=0 keeps the old HTTP room mode (guest mic unavailable).
 # The Meta Model API key comes from MODEL_API_KEY, a .env file, or (on User's Mac)
 # the login Keychain item the e2a2o app saved.
 set -e
@@ -33,6 +32,7 @@ if [ "$1" = room ] && [ -z "$ROOM_CODE" ]; then
   ROOM_CODE="$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 8)"
   export ROOM_CODE
 fi
+# Rooms opt into HTTPS; ROOM_HTTPS=0 keeps the old HTTP room mode (guest mic unavailable).
 if [ "$1" = room ]; then
   export ROOM_HTTPS="${ROOM_HTTPS:-1}"
 fi
