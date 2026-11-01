@@ -36,6 +36,9 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
   const build = core.apps.build;
   const buildArea = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
+  const panelRequest = useRef<string | null>(null);
+  const panelBuild = useRef<string | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
   const ready = build?.stage === "ready" || build?.stage === "matched";
   const busy = !!build && ["searching", "composing", "validating"].includes(build.stage);
   useEffect(() => {
@@ -44,8 +47,19 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
     if (core.world.apps.length === 0) setOpen(true);
   }, [core.snapshotRevision, core.world.apps.length]);
   useEffect(() => {
-    if (build) setOpen(true);
+    window.clearTimeout(closeTimer.current);
+    if (build) {
+      panelBuild.current = panelRequest.current === build.request ? build.id : null;
+      panelRequest.current = null;
+      setOpen(true);
+    }
   }, [build?.id]);
+  useEffect(() => {
+    if (!build || !["kept", "discarded"].includes(build.stage) || panelBuild.current === build.id) return;
+    closeTimer.current = window.setTimeout(() => setOpen(false), 2000);
+    return () => window.clearTimeout(closeTimer.current);
+  }, [build?.id, build?.stage]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(() => {
     if (open && build && ["searching", "ready", "matched", "failed", "kept"].includes(build.stage)) {
       buildArea.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
@@ -57,7 +71,9 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!request.trim() || busy || ready || !core.connected) return;
-    core.composeApp(request.trim());
+    const text = request.trim();
+    if (!core.composeApp(text)) return;
+    panelRequest.current = text;
     setRequest("");
     setOpen(true);
   };
@@ -70,10 +86,11 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
     }, 50);
   };
   const enabledCount = core.world.apps.filter((a) => a.enabled).length;
-  return <aside className={`apps-panel${open ? " is-open" : ""}${core.apps.soundPending ? " has-sound" : ""}`} aria-label="Apps">
+  return <aside className={`apps-panel${open ? " is-open" : ""}${core.apps.soundPending ? " has-sound" : ""}`} aria-label="Apps"
+    onPointerDownCapture={() => window.clearTimeout(closeTimer.current)} onKeyDownCapture={() => window.clearTimeout(closeTimer.current)}>
     <div className="apps-heading">
-      <button className="apps-title" aria-expanded={open} aria-controls="apps-content" onClick={() => setOpen(!open)}>
-        <span className="apps-mark" aria-hidden="true">✦</span><strong>Apps</strong><span>{enabledCount} on</span><span className="apps-toggle">{open ? "Close" : "Open"}</span>
+      <button className="apps-title" aria-expanded={open} aria-controls="apps-content" onClick={() => { window.clearTimeout(closeTimer.current); setOpen(!open); }}>
+        <strong>Apps</strong><span>{enabledCount} on</span><span className="apps-toggle">{open ? "Close" : "Open"}</span>
       </button>
       {open && <button className="apps-new" onClick={() => document.getElementById("app-request")?.focus()}>Make an app</button>}
     </div>

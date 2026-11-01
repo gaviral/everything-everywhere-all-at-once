@@ -39,7 +39,8 @@
 .recap-work .recap-thread { color: var(--accent); }
 .recap-work li p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .recap-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
-.recap-columns > :only-child { grid-column: 1 / -1; }
+/* An odd one out (the only section, or the third) takes the whole row. */
+.recap-columns > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 .recap-items, .recap-actions { display: grid; gap: 13px; }
 .recap-item-link { color: var(--ink); font-size: 14px; line-height: 1.55; }
 .recap-source { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }

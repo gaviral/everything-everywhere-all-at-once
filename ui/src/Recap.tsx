@@ -12,6 +12,8 @@ export interface RecapData {
   source_key: string;
   summary: string;
   worked_on: RecapItem[];
+  /** Intentions stated but not settled ("I want to…"). */
+  plans: RecapItem[];
   decisions: RecapItem[];
   questions: RecapItem[];
   unfinished: RecapItem[];
@@ -60,6 +62,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     sheet.showModal();
+    sheet.querySelector<HTMLButtonElement>(".recap-close")?.focus();
     return () => {
       sheet.close();
       document.body.style.overflow = overflow;
@@ -88,14 +91,16 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     {link(action.thread_id, action.title, "recap-item-link")}
     <span className="recap-source">{title(action.thread_id)}{action.when ? ` · ${action.when}` : ""} · {action.kind === "event" && action.when ? "Calendar" : "Reminders"}</span>
   </li>)}</ul>;
-  const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms);
+  const plans = recap?.plans ?? [];
+  // Only thoughts that arrived since, not ones dated ahead of this clock (the samples are dated Nov 3, 2026).
+  const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms && t.at_ms <= Date.now());
   const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
   return <dialog ref={dialog} className="recap-sheet" aria-labelledby="recap-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}>
     <div className="recap-top">
       <span className="recap-eyebrow"><span aria-hidden="true">✦</span> Recap <span className="sr-only">by AI</span></span>
-      <button className="recap-close" onClick={onClose} aria-label="Close recap" autoFocus>×</button>
+      <button className="recap-close" onClick={onClose} aria-label="Close recap">×</button>
     </div>
     <div className="recap-intro">
       <h1 id="recap-title">{view.period === "today" ? "Your day, in one place." : "Your session, in one place."}</h1>
@@ -107,7 +112,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
         {recap && <span className="recap-meta">{recap.thought_count} {recap.thought_count === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "thread" : "threads"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
       </div>
       <div className="recap-feedback" role="status" aria-live="polite">
-        {view.loading ? <p className="recap-loading">✦ Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
+        {view.loading ? <p className="recap-loading">Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>
@@ -121,8 +126,9 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
           {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p>{item.text}</p>
         </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
       </section>
-      {(recap.decisions.length > 0 || recap.questions.length > 0) && <div className="recap-columns">
+      {(recap.decisions.length > 0 || plans.length > 0 || recap.questions.length > 0) && <div className="recap-columns">
         {recap.decisions.length > 0 && <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{rows(recap.decisions)}</section>}
+        {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
         {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
       </div>}
       {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">

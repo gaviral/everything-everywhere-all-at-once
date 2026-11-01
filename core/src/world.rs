@@ -2,6 +2,7 @@
 //! appended to the journal on disk, and sent to every connected UI.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -210,8 +211,8 @@ impl World {
     }
 
     pub fn apply(&mut self, change: &Change) {
-        let change = &self.resolved(change);
-        match change {
+        let change = self.resolved(change);
+        match change.as_ref() {
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
                 self.recaps.push(recap.clone());
@@ -385,7 +386,26 @@ impl World {
     }
 
     /// The same change with thread ids followed through merges.
-    fn resolved(&self, change: &Change) -> Change {
+    fn resolved<'a>(&self, change: &'a Change) -> Cow<'a, Change> {
+        let id = match change {
+            Change::ThoughtPlaced { thread_id, .. }
+            | Change::ThreadTouched { thread_id, .. }
+            | Change::ThreadStatus { thread_id, .. }
+            | Change::ActiveChanged { thread_id, .. }
+            | Change::ThreadRenamed { thread_id, .. }
+            | Change::TagSuggested { thread_id, .. }
+            | Change::TagKept { thread_id, .. }
+            | Change::TagRemoved { thread_id, .. }
+            | Change::ThreadPicture { thread_id, .. } => Some(thread_id),
+            Change::SuggestionAdded { suggestion } => Some(&suggestion.thread_id),
+            Change::ActionProposed { action } => Some(&action.thread_id),
+            _ => None,
+        };
+        // Most changes don't name a merged thread. Apply those directly instead of copying
+        // every string (including full thoughts) just to discover there's nothing to resolve.
+        if !id.is_some_and(|id| self.merged.contains_key(id)) {
+            return Cow::Borrowed(change);
+        }
         let mut c = change.clone();
         match &mut c {
             Change::ThoughtPlaced { thread_id, .. }
@@ -401,7 +421,7 @@ impl World {
             Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
             _ => {}
         }
-        c
+        Cow::Owned(c)
     }
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
@@ -436,22 +456,33 @@ impl Journal {
         }
         let mut world = World::default();
         if path.exists() {
-            for (n, line) in BufReader::new(File::open(path)?).lines().enumerate() {
-                let line = match line {
-                    Ok(line) => line,
+            let mut reader = BufReader::new(File::open(path)?);
+            let mut line = String::new();
+            let mut n = 0usize;
+            loop {
+                line.clear();
+                n += 1;
+                match reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {}
                     // A crash mid-write can cut a character in half: skip that line rather than refuse to start.
                     Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                        tracing::warn!("skipping journal line {} that isn't valid text", n + 1);
+                        tracing::warn!("skipping journal line {} that isn't valid text", n);
                         continue;
                     }
                     Err(e) => return Err(e.into()),
-                };
+                }
+                // Match BufRead::lines, reusing its allocation instead of allocating for every change.
+                if line.ends_with('\n') {
+                    line.pop();
+                    if line.ends_with('\r') { line.pop(); }
+                }
                 if line.trim().is_empty() {
                     continue;
                 }
                 match serde_json::from_str::<Change>(&line) {
                     Ok(change) => world.apply(&change),
-                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n + 1),
+                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n),
                 }
             }
         }
@@ -537,6 +568,22 @@ mod tests {
         let (_, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T2"));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn replay_continues_after_bad_lines_and_reuses_the_buffer_for_shorter_lines() {
+        let path = std::env::temp_dir().join(format!("e2a2o-journal-lines-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut bytes = b" \r\n{bad json}\ninvalid UTF-8: \xff\n".to_vec();
+        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"a long thread id\"}\r\n\n");
+        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"T2\"}");
+        std::fs::write(&path, bytes).unwrap();
+        let (mut journal, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T2"));
+        journal.append(&Change::ActiveChanged { thread_id: "T3".into(), speaker: "Guest".into() }).unwrap();
+        let (_, replayed) = super::Journal::open(&path).unwrap();
+        assert_eq!(replayed.active_for("you").map(String::as_str), Some("T2"));
+        assert_eq!(replayed.active_for("Guest").map(String::as_str), Some("T3"));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -704,5 +751,277 @@ mod tests {
         assert_eq!(world.resolve("T1"), "T3");
         world.merged.insert("T3".into(), "T1".into());
         world.resolve("T1"); // returns instead of looping forever
+    }
+
+    #[test]
+    fn late_changes_follow_merge_chains_without_changing_the_journal_record() {
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3"] {
+            let change = serde_json::json!({"type":"thread_added", "thread":{
+                "id":id, "title":id, "parent_id":null, "status":"open", "last_point":"", "touched_ms":0
+            }});
+            world.apply(&serde_json::from_value(change).unwrap());
+        }
+        world.apply(&serde_json::from_str(r#"{"type":"thought_added","thought":{"id":"a","speaker":"Guest","text":"a point","point":"","thread_id":null,"placed":false,"unclear":"","at_ms":0,"place_ms":null}}"#).unwrap());
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T3".into() });
+        let late: Vec<Change> = serde_json::from_value(serde_json::json!([
+            {"type":"thought_placed", "thought_id":"a", "thread_id":"T1", "point":"a point", "unclear":"", "place_ms":5},
+            {"type":"thread_touched", "thread_id":"T2", "last_point":"a point", "at_ms":5},
+            {"type":"active_changed", "thread_id":"T1", "speaker":"Guest"},
+            {"type":"suggestion_added", "suggestion":{"id":"s", "thread_id":"T1", "text":"an idea", "status":"new"}},
+            {"type":"action_proposed", "action":{"id":"a", "thread_id":"T2", "kind":"reminder", "title":"a task", "when":"", "status":"new", "done_ms":null}},
+            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"}
+        ])).unwrap();
+        let records = serde_json::to_string(&late).unwrap();
+        for change in &late { world.apply(change); }
+        assert_eq!(serde_json::to_string(&late).unwrap(), records);
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T3"));
+        assert_eq!(world.active_for("Guest").map(String::as_str), Some("T3"));
+        assert_eq!(world.thread("T3").unwrap().last_point, "a point");
+        assert_eq!(world.thread("T3").unwrap().tags[0].name, "#late");
+        assert_eq!(world.suggestions[0].thread_id, "T3");
+        assert_eq!(world.actions[0].thread_id, "T3");
+    }
+
+    fn test_thread(id: &str, parent: Option<&str>) -> super::Thread {
+        super::Thread {
+            id: id.into(),
+            title: format!("Topic {id}"),
+            parent_id: parent.map(Into::into),
+            status: super::ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 1,
+            tags: vec![super::Tag { name: "#plans".into(), kept: true }],
+            picture: Some(format!("/images/{id}-small.webp")),
+            dropped_by: String::new(),
+        }
+    }
+
+    fn test_thought(id: &str, speaker: &str, thread: &str) -> Thought {
+        Thought {
+            id: id.into(),
+            speaker: speaker.into(),
+            text: format!("ask muse bark about {id}"),
+            point: String::new(),
+            thread_id: Some(thread.into()),
+            placed: false,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 2,
+            place_ms: None,
+        }
+    }
+
+    fn item(thread_id: &str, text: &str) -> crate::recap::Item {
+        crate::recap::Item { thread_id: thread_id.into(), text: text.into() }
+    }
+
+    /// A talk in two voices that uses every kind of change, with the fields added since the first journals
+    /// (rooms, sure fixes, apps, recaps) set away from their defaults, so a field that doesn't survive shows.
+    fn every_change() -> Vec<Change> {
+        use crate::apps::{MiniApp, Prompt, Publisher, Watcher};
+        let app = |id: &str, watcher| MiniApp {
+            id: id.into(),
+            name: format!("App {id}"),
+            purpose: "Notice things.".into(),
+            watcher,
+            prompt: Some(Prompt { system: "Look.".into(), template: "{points}\n{thought}".into() }),
+            publishers: vec![Publisher::Card { text: "{text}".into() }, Publisher::Reminder { title: "{text}".into(), when: "{when}".into() }],
+            enabled: true,
+            request: "notice things".into(),
+            cooldown_secs: 45,
+            created_ms: 100,
+            last_run_ms: 0,
+        };
+        let placed = |thought_id: &str, thread_id: &str, heard: &str, fixed: &str, complete: bool| Change::ThoughtPlaced {
+            thought_id: thought_id.into(),
+            thread_id: thread_id.into(),
+            point: format!("Ask Muse Spark about {thought_id}"),
+            unclear: "Muse Bark".into(),
+            guess: "Muse Spark".into(),
+            heard: heard.into(),
+            fixed: fixed.into(),
+            complete,
+            place_ms: 2400,
+        };
+        let changes = vec![
+            Change::AppsSeeded,
+            Change::AppRegistered { app: app("app-volume", Watcher::Volume { level: 0.2, seconds: 3 }) },
+            Change::AppRegistered { app: app("app-timer", Watcher::Time { at_ms: 50, every_secs: 3600 }) },
+            Change::AppEnabled { id: "app-volume".into(), enabled: false },
+            Change::AppRan { id: "app-volume".into(), at_ms: 500 },
+            Change::AppOutput { id: "app-volume".into(), sound: true },
+            Change::AppRemoved { id: "app-timer".into() },
+            Change::ThreadAdded { thread: test_thread("T1", None) },
+            Change::ThreadAdded { thread: test_thread("T2", Some("T1")) },
+            Change::ThreadAdded { thread: test_thread("T3", None) },
+            Change::ThoughtAdded { thought: test_thought("a", "User", "T1") },
+            placed("a", "T1", "", "", false),
+            Change::ThreadTouched { thread_id: "T1".into(), last_point: "Ask Muse Spark about a".into(), at_ms: 10 },
+            Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() },
+            Change::ThoughtAdded { thought: test_thought("b", "Sam", "T1") },
+            placed("b", "T3", "muse bark", "Muse Spark", true),
+            Change::ThreadTouched { thread_id: "T3".into(), last_point: "Ask Muse Spark about b".into(), at_ms: 20 },
+            Change::ActiveChanged { thread_id: "T3".into(), speaker: "Sam".into() },
+            Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() },
+            Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget".into() },
+            Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
+            Change::TagKept { thread_id: "T2".into(), tag: "#money".into() },
+            Change::TagRemoved { thread_id: "T1".into(), tag: "#plans".into() },
+            Change::ThreadPicture { thread_id: "T3".into(), path: "/images/T3-new-small.webp".into() },
+            Change::SuggestionAdded {
+                suggestion: super::Suggestion { id: "sg-1".into(), thread_id: "T2".into(), text: "Ask Sam".into(), status: super::ItemStatus::New },
+            },
+            Change::ActionProposed {
+                action: super::Action {
+                    id: "ac-1".into(),
+                    thread_id: "T2".into(),
+                    kind: "event".into(),
+                    title: "Demo day".into(),
+                    when: "2026-11-04".into(),
+                    status: super::ItemStatus::New,
+                    done_ms: None,
+                },
+            },
+            Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
+            Change::ThoughtCorrected { thought_id: "a".into(), accept: true },
+            Change::ThoughtCorrected { thought_id: "b".into(), accept: false },
+            Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
+            Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
+            Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
+            // Aimed at the merged thread, so it follows the merge on replay too.
+            Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget and demo".into() },
+            Change::RecapSaved {
+                recap: crate::recap::Recap {
+                    period: crate::recap::Period::Session,
+                    since_ms: 1,
+                    through_ms: 20,
+                    generated_ms: 30,
+                    source_key: "abc".into(),
+                    summary: "You spent time on Topic T1 and Budget.".into(),
+                    worked_on: vec![item("T1", "Asked about Muse Spark.")],
+                    plans: vec![item("T3", "Show the Palace view at the end.")],
+                    decisions: vec![item("T3", "Open with the mic.")],
+                    questions: vec![item("T1", "Which model?")],
+                    unfinished: vec![item("T1", "Topic T1 still has a loose end.")],
+                    actions: Vec::new(),
+                    thought_count: 2,
+                    thread_count: 2,
+                    limited: true,
+                },
+            },
+        ];
+        // Stops compiling when a kind of change is added: add one to the list above too.
+        for change in &changes {
+            match change {
+                Change::RecapSaved { .. }
+                | Change::AppRegistered { .. }
+                | Change::AppEnabled { .. }
+                | Change::AppRemoved { .. }
+                | Change::AppRan { .. }
+                | Change::AppOutput { .. }
+                | Change::AppsSeeded
+                | Change::ThoughtAdded { .. }
+                | Change::ThreadAdded { .. }
+                | Change::ThoughtPlaced { .. }
+                | Change::ThreadTouched { .. }
+                | Change::ThreadStatus { .. }
+                | Change::ActiveChanged { .. }
+                | Change::ThreadRenamed { .. }
+                | Change::ThreadMerged { .. }
+                | Change::SuggestionAdded { .. }
+                | Change::ActionProposed { .. }
+                | Change::ItemStatus { .. }
+                | Change::TagSuggested { .. }
+                | Change::TagKept { .. }
+                | Change::TagRemoved { .. }
+                | Change::ThreadPicture { .. }
+                | Change::ThoughtCorrected { .. }
+                | Change::ThoughtSplit { .. }
+                | Change::ThoughtSkipped { .. } => {}
+            }
+        }
+        changes
+    }
+
+    #[test]
+    fn every_change_variant_round_trips_through_serde() {
+        let changes = every_change();
+        let kinds: std::collections::HashSet<String> =
+            changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
+        assert_eq!(kinds.len(), 25, "one of each kind of change");
+        for change in &changes {
+            let json = serde_json::to_string(change).unwrap();
+            let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
+            assert_eq!(json, serde_json::to_string(&back).unwrap(), "a field was lost");
+        }
+    }
+
+    #[test]
+    fn journal_replay_matches_direct_apply() {
+        let changes = every_change();
+        let mut direct = World::default();
+        for change in &changes {
+            direct.apply(change);
+        }
+        let path = std::env::temp_dir().join(format!("e2a2o-roundtrip-{}.jsonl", uuid::Uuid::new_v4()));
+        {
+            let (mut journal, _) = super::Journal::open(&path).unwrap();
+            for change in &changes {
+                journal.append(change).unwrap();
+            }
+        }
+        let (_, replayed) = super::Journal::open(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        // As JSON values, so the speakers' map compares whatever order it iterates in.
+        assert_eq!(serde_json::to_value(&direct).unwrap(), serde_json::to_value(&replayed).unwrap());
+
+        // And the talk landed as told.
+        let w = &replayed;
+        assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T3"]);
+        assert_eq!(w.thread("T3").unwrap().title, "Budget and demo", "a change aimed at a merged thread follows it");
+        assert_eq!((w.active_for("User").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));
+        assert_eq!(w.thread("T1").unwrap().dropped_by, "User");
+        assert!(w.thread("T1").unwrap().tags.is_empty());
+        assert_eq!(w.thoughts[0].text, "ask Muse Spark about a", "yes to Did you mean");
+        assert_eq!(w.thoughts[1].text, "ask muse bark about b", "no to a sure fix puts the words back");
+        assert!(!w.thoughts[0].complete && w.thoughts[1].complete);
+        assert_eq!((w.suggestions[0].thread_id.as_str(), w.actions[0].thread_id.as_str()), ("T3", "T3"));
+        assert_eq!((w.actions[0].status, w.actions[0].done_ms), (super::ItemStatus::Done, Some(300)));
+        assert_eq!(w.apps.len(), 1);
+        assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}]) && !w.apps[0].enabled);
+        assert_eq!(w.recaps[0].plans[0].text, "Show the Palace view at the end.");
+    }
+
+    #[test]
+    fn pre_rooms_pre_autofix_journal_loads() {
+        let lines = [
+            // A thread without tags, a picture or dropped_by.
+            r#"{"type":"thread_added","thread":{"id":"T1","title":"Rent","parent_id":null,"status":"open","last_point":"pay","touched_ms":1}}"#,
+            // A thought without guess, heard, fixed or complete.
+            r#"{"type":"thought_added","thought":{"id":"a","speaker":"you","text":"pay rent","point":"","thread_id":null,"placed":false,"unclear":"","at_ms":1,"place_ms":null}}"#,
+            r#"{"type":"thought_placed","thought_id":"a","thread_id":"T1","point":"Pay rent","unclear":"","place_ms":3}"#,
+            // Moves and drops without a speaker.
+            r#"{"type":"active_changed","thread_id":"T1"}"#,
+            r#"{"type":"thread_status","thread_id":"T1","status":"dropped"}"#,
+            // A recap without plans.
+            r#"{"type":"recap_saved","recap":{"period":"today","since_ms":0,"through_ms":5,"generated_ms":6,"source_key":"k","summary":"You spent time on Rent.","worked_on":[{"thread_id":"T1","text":"Paid rent."}],"decisions":[],"questions":[],"unfinished":[],"actions":[],"thought_count":1,"thread_count":1,"limited":false}}"#,
+        ];
+        let mut world = World::default();
+        for line in lines {
+            world.apply(&serde_json::from_str(line).unwrap_or_else(|e| panic!("{line} didn't load: {e}")));
+        }
+        let thread = &world.threads[0];
+        assert_eq!(thread.dropped_by, "you", "one speaker, as before rooms");
+        assert!(thread.tags.is_empty() && thread.picture.is_none());
+        assert_eq!(world.active_for("you").map(String::as_str), Some("T1"));
+        let t = &world.thoughts[0];
+        assert!(t.placed && t.complete && t.guess.is_empty() && t.heard.is_empty() && t.fixed.is_empty());
+        assert!(world.recaps[0].plans.is_empty() && world.recaps[0].worked_on.len() == 1);
     }
 }

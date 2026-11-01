@@ -13,7 +13,7 @@ impl Fixture {
         let (placer_queue, _) = mpsc::unbounded_channel();
         Self { path, core: Arc::new(Core {
             find: Runtime::default(), recap: crate::recap::Runtime::default(), apps: crate::apps::Runtime::default(), imports: crate::import::Imports::default(),
-            world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
+            world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(),
@@ -126,7 +126,7 @@ fn model_choices_need_supplied_ids_and_real_evidence() {
         thoughts: vec![point("rent", "T1", "Pay the landlord on Friday", 1), point("work", "T2", "Ship on Monday", 2)],
         ..World::default()
     };
-    let source = source(&world, "rent");
+    let source = source(&world, &rank(&world, "rent"));
     let choose = |thread: &str, thought: &str, evidence: &str| checked(&world, &source, Choice {
         thread_id: thread.into(), thought_id: thought.into(), evidence: evidence.into(),
     });
@@ -144,7 +144,7 @@ fn fallback_is_bounded_and_only_offers_latest_points() {
         thoughts: (0..10).map(|i| point(&format!("p{i}"), "T59", &"word ".repeat(100), i)).collect(),
         ..World::default()
     };
-    let source = source(&world, "unrelated");
+    let source = source(&world, &rank(&world, "unrelated"));
     assert_eq!(source.len(), 48);
     assert_eq!(source[0].thread_id, "T59");
     assert_eq!(source[0].last_points.len(), 3);
@@ -243,4 +243,39 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
         }
     }
     assert!(seen);
+}
+
+#[tokio::test]
+async fn a_jump_waits_for_the_thought_said_just_before_it() {
+    // User said something a moment ago; it's still finding its thread when User asks where the rent deposit came up.
+    let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+    let fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    });
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "nothing moves while it's placed");
+    // It lands on Work and makes Work User's thread; only then the jump, which User keeps.
+    fixture.core.commit(vec![
+        Change::ThoughtPlaced {
+            thought_id: "pending".into(), thread_id: "T2".into(), point: "Paint the kitchen".into(), unclear: String::new(),
+            guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+        },
+        Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+    ]);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    let mut said = Vec::new();
+    while let Ok(out) = updates.try_recv() {
+        match out.message {
+            ServerMsg::Notice { message } => said.push(message),
+            ServerMsg::Found { message, .. } => said.push(message),
+            _ => {}
+        }
+    }
+    assert_eq!(said, ["Looking through your threads…", "Here: Home — Rent deposit comes back in June"]);
 }

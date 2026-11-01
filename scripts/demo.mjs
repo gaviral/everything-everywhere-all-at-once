@@ -6,7 +6,9 @@
 //   ./run.sh demo                         # the core, with the demo journal (data/demo)
 //   node scripts/demo.mjs scripts/demo-talk.jsonl [--speed 2] [--port 4321]
 // Each line of the talk: {"at": seconds from the start, "text": "what is said"}.
-// In a room (--room CODE), a line may add "speaker": "Name": a second socket joins as that person.
+// In a room (--room CODE), a line may add "speaker": "Name": a second socket joins as that person. Give the
+// host's lines the name the host's window joined with too: a line without one is typed as "you", which no
+// window in a room is, so it shows with no name and the host's window follows the other person's moves.
 import { readFileSync } from "node:fs";
 
 const [file, ...flags] = process.argv.slice(2);
