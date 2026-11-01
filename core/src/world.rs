@@ -10,6 +10,11 @@ fn yes() -> bool {
     true
 }
 
+/// The speaker of changes from before rooms, when there was only one.
+fn you() -> String {
+    "you".into()
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ThreadStatus {
@@ -32,6 +37,9 @@ pub struct Thread {
     /// A Muse Image picture that anchors the thread in memory.
     #[serde(default)]
     pub picture: Option<String>,
+    /// While it's dropped: who left it unfinished, so only they are offered it back.
+    #[serde(default)]
+    pub dropped_by: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -99,7 +107,11 @@ pub struct Action {
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    /// Where the talk is now: the thread whoever moved last is on.
     pub active: Option<String>,
+    /// Each speaker's own active thread, so in a room placement and "where was I?" follow the person.
+    #[serde(default)]
+    pub active_by: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub suggestions: Vec<Suggestion>,
     #[serde(default)]
@@ -127,8 +139,18 @@ pub enum Change {
         place_ms: u64,
     },
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
-    ThreadStatus { thread_id: String, status: ThreadStatus },
-    ActiveChanged { thread_id: String },
+    /// `speaker`: whose move it was; a thread is dropped for the person who left it.
+    ThreadStatus {
+        thread_id: String,
+        status: ThreadStatus,
+        #[serde(default = "you")]
+        speaker: String,
+    },
+    ActiveChanged {
+        thread_id: String,
+        #[serde(default = "you")]
+        speaker: String,
+    },
     ThreadRenamed { thread_id: String, title: String },
     ThreadMerged { from: String, into: String },
     SuggestionAdded { suggestion: Suggestion },
@@ -185,14 +207,19 @@ impl World {
                     th.last_point = last_point.clone();
                     th.touched_ms = *at_ms;
                     th.status = ThreadStatus::Open;
+                    th.dropped_by.clear();
                 }
             }
-            Change::ThreadStatus { thread_id, status } => {
+            Change::ThreadStatus { thread_id, status, speaker } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.status = *status;
+                    th.dropped_by = if *status == ThreadStatus::Dropped { speaker.clone() } else { String::new() };
                 }
             }
-            Change::ActiveChanged { thread_id } => self.active = Some(thread_id.clone()),
+            Change::ActiveChanged { thread_id, speaker } => {
+                self.active = Some(thread_id.clone());
+                self.active_by.insert(speaker.clone(), thread_id.clone());
+            }
             Change::ThreadRenamed { thread_id, title } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.title = title.clone();
@@ -216,6 +243,9 @@ impl World {
                 }
                 if self.active.as_deref() == Some(from.as_str()) {
                     self.active = Some(into.clone());
+                }
+                for id in self.active_by.values_mut().filter(|id| **id == *from) {
+                    *id = into.clone();
                 }
                 self.threads.retain(|t| &t.id != from);
                 self.merged.insert(from.clone(), into.clone());
@@ -288,7 +318,7 @@ impl World {
             Change::ThoughtPlaced { thread_id, .. }
             | Change::ThreadTouched { thread_id, .. }
             | Change::ThreadStatus { thread_id, .. }
-            | Change::ActiveChanged { thread_id }
+            | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
@@ -303,6 +333,11 @@ impl World {
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
         self.threads.iter().find(|t| t.id == id)
+    }
+
+    /// Where a speaker is: their own active thread, else where the talk is now (they just joined).
+    pub fn active_for(&self, speaker: &str) -> Option<&String> {
+        self.active_by.get(speaker).or(self.active.as_ref())
     }
 
     fn thread_mut(&mut self, id: &str) -> Option<&mut Thread> {
@@ -385,10 +420,53 @@ mod tests {
         std::fs::write(&path, "{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"active_ch").unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T1"));
-        journal.append(&Change::ActiveChanged { thread_id: "T2".into() }).unwrap();
+        journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();
         let (_, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T2"));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn old_journals_load_as_one_speaker() {
+        // From before rooms: no speaker on a move or a drop, no dropped_by on a thread.
+        let lines = [
+            r#"{"type":"thread_added","thread":{"id":"T1","title":"Rent","parent_id":null,"status":"open","last_point":"","touched_ms":1}}"#,
+            r#"{"type":"active_changed","thread_id":"T1"}"#,
+            r#"{"type":"thread_status","thread_id":"T1","status":"dropped"}"#,
+        ];
+        let mut world = World::default();
+        for line in lines {
+            world.apply(&serde_json::from_str::<Change>(line).unwrap());
+        }
+        assert_eq!(world.active_by.get("you").map(String::as_str), Some("T1"));
+        assert_eq!(world.threads[0].dropped_by, "you");
+    }
+
+    #[test]
+    fn each_speaker_keeps_their_own_place() {
+        let thread = |id: &str| super::Thread {
+            id: id.into(),
+            title: id.into(),
+            parent_id: None,
+            status: super::ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 0,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        };
+        let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
+        assert_eq!(world.active.as_deref(), Some("T2"), "the talk is where the last move went");
+        assert_eq!(world.active_for("User").map(String::as_str), Some("T1"));
+        assert_eq!(world.active_for("Lee").map(String::as_str), Some("T2"), "someone new starts where the talk is");
+        world.apply(&Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() });
+        assert_eq!(world.threads[0].dropped_by, "User");
+        world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "back".into(), at_ms: 5 });
+        assert_eq!(world.threads[0].dropped_by, "", "picking it up again clears the drop");
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        assert_eq!(world.active_for("User").map(String::as_str), Some("T2"), "a merge moves everyone on it");
     }
 
     #[test]

@@ -9,6 +9,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
+import { useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 380, damping: 34 } as const;
 
@@ -95,12 +96,14 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+  // Only threads you left: in a room, the other person's are theirs to pick up.
+  const me = useMe();
   const dropped = world.threads
-    .filter((t) => t.status === "dropped" && !dismissed.includes(dropKey(t)))
+    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
     : "";
 
   // Select a word or phrase on the map to get it explained in its context.
@@ -341,7 +344,7 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
 
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const other = thought.speaker !== "you";
+  const other = thought.speaker !== useMe();
   return (
     <motion.li layoutId={thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}

@@ -11,7 +11,10 @@ Needs Rust (stable) and Node.js 20 or newer.
 ```sh
 cp .env.example .env   # add your Meta Model API key from dev.meta.ai
 ./run.sh               # builds the UI and serves everything on http://localhost:4321
+./run.sh room          # think together: prints an address for a second laptop on the same network
 ```
+
+In a room, each person joins with a short name, each laptop transcribes its own mic, and every thought shows who said it; "where was I?" and the unfinished-thought card follow each person. The room has its own map (`data/room`). Without one, the core only answers this machine.
 
 ## How it's built
 

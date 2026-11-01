@@ -124,7 +124,7 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let active = world.active.clone().unwrap_or_else(|| "(none)".into());
+    let active = world.active_for(&thought.speaker).cloned().unwrap_or_else(|| "(none)".into());
     json!({
         "model": model,
         "reasoning_effort": "minimal",
@@ -152,9 +152,11 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
     })
 }
 
-/// Turns the model's answer into changes, trusting only ids that exist.
+/// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
+/// the speaker: in a room, one person changing topic never drops a thread for the other.
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<Change> {
     let now = now_ms();
+    let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();
     let point = if p.point.trim().is_empty() { thought.text.clone() } else { p.point.trim().to_string() };
     let mut changes = Vec::new();
@@ -162,7 +164,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     let target = match p.action.as_str() {
         "new" => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
-        _ => world.active.clone().filter(|a| exists(a)),
+        _ => world.active_for(speaker).cloned().filter(|a| exists(a)),
     };
     let thread_id = match target {
         Some(id) => id,
@@ -184,6 +186,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
                     touched_ms: now,
                     tags: Vec::new(),
                     picture: None,
+                    dropped_by: String::new(),
                 },
             });
             id
@@ -205,12 +208,15 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     });
     changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
 
-    // Leaving a thread whose last thought trailed off means it was dropped.
-    let mut dropped = p.dropped;
-    if let Some(previous) = world.active.clone().filter(|a| *a != thread_id) {
-        let last = world.thoughts.iter().rev().find(|t| t.placed && t.thread_id.as_deref() == Some(previous.as_str()));
-        if last.map(|t| !t.complete).unwrap_or(false) {
-            dropped.push(previous);
+    // Leaving a thread whose last thought trailed off means it was dropped. Only the speaker's own
+    // words count, so only threads they spoke on can be dropped, and only for them.
+    let their_last = |id: &str| {
+        world.thoughts.iter().rev().find(|t| t.placed && t.speaker == *speaker && t.thread_id.as_deref() == Some(id))
+    };
+    let mut dropped: Vec<String> = p.dropped.into_iter().filter(|d| their_last(d).is_some()).collect();
+    if let Some(previous) = world.active_by.get(speaker).filter(|a| **a != thread_id) {
+        if their_last(previous).is_some_and(|t| !t.complete) {
+            dropped.push(previous.clone());
         }
     }
     dropped.sort();
@@ -218,11 +224,95 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     for d in dropped {
         let open = world.thread(&d).map(|t| t.status == ThreadStatus::Open).unwrap_or(false);
         if d != thread_id && open {
-            changes.push(Change::ThreadStatus { thread_id: d, status: ThreadStatus::Dropped });
+            changes.push(Change::ThreadStatus { thread_id: d, status: ThreadStatus::Dropped, speaker: speaker.clone() });
         }
     }
-    if world.active.as_deref() != Some(thread_id.as_str()) {
-        changes.push(Change::ActiveChanged { thread_id });
+    // Alone these always agree; in a room the talk can be elsewhere while the speaker stays put.
+    if world.active.as_deref() != Some(thread_id.as_str()) || world.active_by.get(speaker) != Some(&thread_id) {
+        changes.push(Change::ActiveChanged { thread_id, speaker: speaker.clone() });
     }
     changes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decide, request, Placement};
+    use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+
+    fn thread(id: &str) -> Thread {
+        Thread {
+            id: id.into(),
+            title: format!("Topic {id}"),
+            parent_id: None,
+            status: ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 0,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        }
+    }
+
+    fn thought(id: &str, speaker: &str, thread: Option<&str>, complete: bool) -> Thought {
+        Thought {
+            id: id.into(),
+            speaker: speaker.into(),
+            text: format!("{speaker} says {id}"),
+            point: String::new(),
+            thread_id: thread.map(Into::into),
+            placed: thread.is_some(),
+            unclear: String::new(),
+            guess: String::new(),
+            complete,
+            at_ms: 0,
+            place_ms: None,
+        }
+    }
+
+    fn answer(action: &str, thread_id: &str, dropped: &[&str]) -> Placement {
+        serde_json::from_value(serde_json::json!({"action": action, "thread_id": thread_id, "dropped": dropped})).unwrap()
+    }
+
+    fn drops(changes: &[Change]) -> Vec<(String, String)> {
+        changes
+            .iter()
+            .filter_map(|c| match c {
+                Change::ThreadStatus { thread_id, status: ThreadStatus::Dropped, speaker } => Some((thread_id.clone(), speaker.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// User trailed off on T1; Sam talks on T2.
+    fn room() -> World {
+        let mut world = World {
+            threads: vec![thread("T1"), thread("T2")],
+            thoughts: vec![thought("a", "User", Some("T1"), false), thought("b", "Sam", Some("T2"), true)],
+            ..World::default()
+        };
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
+        world
+    }
+
+    #[test]
+    fn one_person_moving_on_doesnt_drop_the_others_thread() {
+        let world = room();
+        // Sam keeps going on T2, and the model even calls T1 dropped: it isn't Sam's to drop.
+        let changes = decide(&world, &thought("c", "Sam", None, true), answer("continue", "T2", &["T1"]), 0);
+        assert!(drops(&changes).is_empty(), "{changes:?}");
+        // User moves to T2, leaving T1 unfinished: dropped, for User.
+        let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0);
+        assert_eq!(drops(&changes), [("T1".to_string(), "User".to_string())]);
+        assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "User")));
+    }
+
+    #[test]
+    fn the_placer_sees_the_speakers_own_thread() {
+        let world = room();
+        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m")["messages"][1]["content"].to_string();
+        assert!(prompt("User").contains("Active thread: T1"));
+        assert!(prompt("Sam").contains("Active thread: T2"));
+        assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
+    }
 }

@@ -263,6 +263,7 @@ mod tests {
             touched_ms,
             tags: Vec::new(),
             picture: None,
+            dropped_by: String::new(),
         };
         let thought = |n: u64, thread: &str| Thought {
             id: format!("th-{n}"),
