@@ -287,6 +287,16 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             .join("\n")
     };
     let active = world.active_for(&thought.speaker).cloned().unwrap_or_else(|| "(none)".into());
+    // A short turn right after a question may answer it ("Yeah."). The points above often drop the
+    // "?", so the question goes in as said; without it the model sets the answer aside as filler.
+    let asked = world
+        .thoughts
+        .iter()
+        .take_while(|t| t.id != thought.id)
+        .last()
+        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
+        .map(|t| format!("Just asked: \"{}\"\n", t.text.trim()))
+        .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     json!({
@@ -296,7 +306,7 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -662,6 +672,21 @@ mod tests {
         assert!(prompt("User").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
+    }
+
+    #[test]
+    fn a_short_reply_to_a_question_comes_with_the_question() {
+        let asked = Thought { text: "Should we say it runs on Meta's models?".into(), ..thought("q", "you", Some("T1"), true) };
+        let told = Thought { text: "It runs on Meta's models.".into(), ..thought("s", "you", Some("T1"), true) };
+        let prompt = |before: &Thought, text: &str| {
+            let reply = Thought { text: text.into(), ..thought("r", "you", None, true) };
+            let world = World { thoughts: vec![before.clone(), reply.clone()], ..map() };
+            request(&world, &reply, "m")["messages"][1]["content"].as_str().unwrap().to_string()
+        };
+        assert!(prompt(&asked, "Yeah.").ends_with("Just asked: \"Should we say it runs on Meta's models?\"\nNEW THOUGHT: \"Yeah.\""));
+        // Nothing was asked, or the turn is long enough to stand on its own.
+        assert!(!prompt(&told, "Yeah.").contains("Just asked"));
+        assert!(!prompt(&asked, "Yeah, and the intro should be shorter before we record it again.").contains("Just asked"));
     }
 
     /// Places `text` as a new thread, with the model's answer about the misheard words.

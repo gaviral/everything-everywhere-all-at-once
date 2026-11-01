@@ -65,6 +65,11 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
 
 fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
     let Ok(event) = serde_json::from_str::<Value>(text) else { return };
+    // Turn boundaries with their audio position, to see how long endpointing takes (scripts/voice.mjs):
+    // RUST_LOG=info,e2a2o_core::asr=debug. Drafts are left out, one per word.
+    if event["type"] != "transcript" {
+        tracing::debug!("voice event: {text}");
+    }
     match event["type"].as_str() {
         Some("transcript") => {
             core.touch();
