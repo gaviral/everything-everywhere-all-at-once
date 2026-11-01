@@ -11,6 +11,7 @@ type Handlers = {
 import { startMic } from "./mic";
 import { Apps } from "./Apps";
 import { Palace } from "./Palace";
+import { Recap } from "./Recap";
 import { leftBy, useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -224,6 +225,7 @@ export default function App() {
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { event.preventDefault(); searchRef.current?.focus(); }
@@ -355,9 +357,12 @@ export default function App() {
         <div className="brand">
           E2A2O <small>threads</small>
         </div>
+        <div className="header-actions">
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
+        </div>
         </div>
       </header>
 
@@ -496,6 +501,14 @@ export default function App() {
           </form>
         </div>
       </section>
+      <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+        const thread = world.threads.find((t) => t.id === id);
+        if (thread) goBack(thread);
+        requestAnimationFrame(() => {
+          const target = document.getElementById(`thread-${id}`)?.querySelector<HTMLButtonElement>(".thread-toggle");
+          target?.focus({ preventScroll: true });
+        });
+      }} />
     </div>
     </MotionConfig>
   );
@@ -602,6 +615,13 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
+      {thought.heard && thought.fixed && (
+        // Fixed without asking: quiet until you look, and one tap puts the words back.
+        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
+          <span>fixed</span>
+          <span>heard “{thought.heard}” · undo</span>
+        </button>
+      )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?

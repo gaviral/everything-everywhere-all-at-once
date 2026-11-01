@@ -1,7 +1,7 @@
 //! Placer: asks a Muse model where each new thought belongs, one thought at a time,
 //! so every placement sees the map the previous one left.
 
-use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+use crate::world::{find, swap, Change, Thought, Thread, ThreadStatus, World};
 use crate::{now_ms, protocol::ServerMsg, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
@@ -13,14 +13,17 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 
 // Stable text first, so the API's prompt cache can reuse it.
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
-For each NEW THOUGHT decide: \"continue\" if it belongs to the active thread, \"return\" if it goes back to an earlier thread, \
-or \"new\" if it starts a new topic or tangent (set parent_id to the thread it branched from, or leave it empty). \
+For each NEW THOUGHT decide: \"continue\" if it says more about the active thread's last point (a detail, an answer, a correction), \
+\"return\" if it says more about an earlier thread's, \
+or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
+(set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
 thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
 point: the thought in at most 12 words, in the speaker's own voice. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
-unclear: words that look mistranscribed, else an empty string. \
-guess: what those words most likely were, judging by the context, else an empty string. Answer with JSON only.";
+unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
+guess: what those words most likely were, judging by the context, else an empty string. \
+sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. Answer with JSON only.";
 
 #[derive(Deserialize)]
 struct Placement {
@@ -41,6 +44,8 @@ struct Placement {
     unclear: String,
     #[serde(default)]
     guess: String,
+    #[serde(default)]
+    sure: bool,
 }
 
 fn yes() -> bool {
@@ -92,6 +97,8 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
         .http
         .post(URL)
         .bearer_auth(key)
+        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+        .timeout(std::time::Duration::from_secs(20))
         .json(&request(&world, &thought, &core.placer_model))
         .send()
         .await?;
@@ -145,9 +152,10 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
                 "complete": {"type": "boolean"},
                 "dropped": {"type": "array", "items": {"type": "string"}},
                 "unclear": {"type": "string"},
-                "guess": {"type": "string"}
+                "guess": {"type": "string"},
+                "sure": {"type": "boolean"}
             },
-            "required": ["action", "thread_id", "title", "parent_id", "point", "complete", "dropped", "unclear", "guess"]
+            "required": ["action", "thread_id", "title", "parent_id", "point", "complete", "dropped", "unclear", "guess", "sure"]
         }}}
     })
 }
@@ -158,7 +166,18 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     let now = now_ms();
     let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();
-    let point = if p.point.trim().is_empty() { thought.text.clone() } else { p.point.trim().to_string() };
+    // A guess only counts when something looked misheard and the guess differs.
+    let unclear = clean(&p.unclear);
+    let guess = match clean(&p.guess) {
+        guess if unclear.is_empty() || guess.eq_ignore_ascii_case(&unclear) => String::new(),
+        guess => guess,
+    };
+    // A guess the context leaves no doubt about is made without asking: marked, and one tap puts the
+    // words back. Only for words really in what was said, and not when the guess was said too (then
+    // it's less clear, and undo couldn't tell which words to put back). Anything less is asked.
+    let sure = p.sure && !guess.is_empty() && find(&thought.text, &unclear).is_some() && find(&thought.text, &guess).is_none();
+    let fix = |text: &str| if sure { swap(text, &unclear, &guess) } else { text.to_string() };
+    let point = fix(if p.point.trim().is_empty() { thought.text.as_str() } else { p.point.trim() });
     let mut changes = Vec::new();
 
     let target = match p.action.as_str() {
@@ -173,7 +192,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
             let title = if p.title.trim().is_empty() {
                 point.split_whitespace().take(5).collect::<Vec<_>>().join(" ")
             } else {
-                p.title.trim().to_string()
+                fix(p.title.trim())
             };
             let parent_id = Some(p.parent_id.clone()).filter(|x| exists(x));
             changes.push(Change::ThreadAdded {
@@ -193,16 +212,16 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
         }
     };
 
+    let (unclear, guess, heard, fixed) =
+        if sure { (String::new(), String::new(), unclear, guess) } else { (unclear, guess, String::new(), String::new()) };
     changes.push(Change::ThoughtPlaced {
         thought_id: thought.id.clone(),
         thread_id: thread_id.clone(),
         point: point.clone(),
-        unclear: clean(&p.unclear),
-        // Only worth asking when something looked misheard and the guess differs.
-        guess: match (clean(&p.unclear), clean(&p.guess)) {
-            (unclear, guess) if unclear.is_empty() || guess.eq_ignore_ascii_case(&unclear) => String::new(),
-            (_, guess) => guess,
-        },
+        unclear,
+        guess,
+        heard,
+        fixed,
         complete: p.complete,
         place_ms,
     });
@@ -238,6 +257,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
 mod tests {
     use super::{decide, request, Placement};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+    use serde_json::json;
 
     fn thread(id: &str) -> Thread {
         Thread {
@@ -263,6 +283,8 @@ mod tests {
             placed: thread.is_some(),
             unclear: String::new(),
             guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
             complete,
             at_ms: 0,
             place_ms: None,
@@ -314,5 +336,76 @@ mod tests {
         assert!(prompt("User").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
+    }
+
+    /// Places `text` as a new thread, with the model's answer about the misheard words.
+    fn place(text: &str, misheard: serde_json::Value) -> Vec<Change> {
+        let thought = Thought {
+            id: "a".into(),
+            speaker: "you".into(),
+            text: text.into(),
+            point: String::new(),
+            thread_id: None,
+            placed: false,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        let mut answer = json!({"action": "new", "title": "Muse Bark speed", "point": text});
+        answer.as_object_mut().unwrap().extend(misheard.as_object().unwrap().clone());
+        let placement: Placement = serde_json::from_value(answer).unwrap();
+        decide(&World::default(), &thought, placement, 0)
+    }
+
+    /// The new thread's title, then the placed point, unclear, guess, heard and fixed words.
+    fn outcome(changes: &[Change]) -> [String; 6] {
+        let title = changes.iter().find_map(|c| match c {
+            Change::ThreadAdded { thread } => Some(thread.title.clone()),
+            _ => None,
+        });
+        let placed = changes.iter().find_map(|c| match c {
+            Change::ThoughtPlaced { point, unclear, guess, heard, fixed, .. } => {
+                Some([point, unclear, guess, heard, fixed].map(|s| s.clone()))
+            }
+            _ => None,
+        });
+        let [point, unclear, guess, heard, fixed] = placed.unwrap();
+        [title.unwrap(), point, unclear, guess, heard, fixed]
+    }
+
+    #[test]
+    fn a_sure_guess_is_made_without_asking() {
+        let changes = place("Muse Bark is fast enough", json!({"unclear": "Bark", "guess": "Spark", "sure": true}));
+        assert_eq!(outcome(&changes), ["Muse Spark speed", "Muse Spark is fast enough", "", "", "Bark", "Spark"]);
+        let touched = changes.iter().find_map(|c| match c {
+            Change::ThreadTouched { last_point, .. } => Some(last_point.as_str()),
+            _ => None,
+        });
+        assert_eq!(touched, Some("Muse Spark is fast enough"));
+    }
+
+    #[test]
+    fn anything_less_than_sure_is_asked() {
+        let text = "Muse Bark is fast enough";
+        let asked = ["Muse Bark speed", text, "Muse Bark", "Muse Spark", "", ""];
+        // Unsure, or an older answer with no "sure" at all.
+        assert_eq!(outcome(&place(text, json!({"unclear": "Muse Bark", "guess": "Muse Spark", "sure": false}))), asked);
+        assert_eq!(outcome(&place(text, json!({"unclear": "Muse Bark", "guess": "Muse Spark"}))), asked);
+        // Sure, but those words aren't in what was said, or only inside a longer word.
+        let elsewhere = outcome(&place(text, json!({"unclear": "Moose Bark", "guess": "Muse Spark", "sure": true})));
+        assert_eq!(elsewhere[2..], ["Moose Bark", "Muse Spark", "", ""]);
+        let inside = outcome(&place("the barking is fast", json!({"unclear": "bark", "guess": "park", "sure": true})));
+        assert_eq!(inside[2..], ["bark", "park", "", ""]);
+        // Sure, but the guess was said too.
+        let both = "Muse Spark is good but Muse Bark is faster";
+        let said = outcome(&place(both, json!({"unclear": "Bark", "guess": "Spark", "sure": true})));
+        assert_eq!(said[1..], [both, "Bark", "Spark", "", ""]);
+        // Sure, but nothing to change.
+        let same = outcome(&place(text, json!({"unclear": "Muse Bark", "guess": "muse bark", "sure": true})));
+        assert_eq!(same[2..], ["Muse Bark", "", "", ""]);
     }
 }

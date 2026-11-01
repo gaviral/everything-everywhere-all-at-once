@@ -12,6 +12,7 @@ impl Fixture {
         let (updates, _) = broadcast::channel(1024);
         let (placer_queue, _) = mpsc::unbounded_channel();
         Self { path, core: Arc::new(Core {
+            recap: crate::recap::Runtime::default(),
             apps: Runtime::default(), world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
@@ -161,7 +162,7 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     a.cooldown_secs = 10;
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     let thought = Thought { id: "th-test".into(), speaker: "you".into(), text: "Record the demo before lunch".into(),
-        point: "Record the demo".into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(),
+        point: "Record the demo".into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
         complete: true, at_ms: now_ms(), place_ms: Some(10) };
     fixture.core.commit(vec![Change::ThoughtAdded { thought }]);
     on_thought(&fixture.core, "th-test");
@@ -303,7 +304,7 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
 #[test]
 fn in_a_room_an_app_hears_who_said_what() {
     let said_by = |speaker: &str, text: &str| Thought { id: text.into(), speaker: speaker.into(), text: text.into(), point: String::new(),
-        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), complete: true, at_ms: 0, place_ms: None };
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None };
     let (rent, friday, agree) = (said_by("User", "rent is due"), said_by("User", "pay it friday"), said_by("Sam", "friday works"));
     // One speaker: the prompt reads exactly as it did before rooms.
     assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));
