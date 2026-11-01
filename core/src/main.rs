@@ -243,9 +243,23 @@ fn command(text: &str) -> Option<(&str, fn(String) -> placer::Job)> {
     if let Some(job) = job(text) {
         return Some(("", job));
     }
-    starts(text)
-        .into_iter()
-        .find_map(|i| job(&text[i..]).map(|job| (text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end(), job)))
+    let before = |i: usize| text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end();
+    starts(text).into_iter().find_map(|i| job(&text[i..]).map(|job| (before(i), job))).or_else(|| {
+        // The transcriber sometimes writes a whole turn without punctuation ("…at three where was I").
+        let back: fn(String) -> placer::Job = placer::Job::Back;
+        word_starts(text).find(|&i| is_lost_place(&text[i..])).map(|i| (before(i), back))
+    })
+}
+
+/// Where each word after the first begins.
+fn word_starts(text: &str) -> impl Iterator<Item = usize> + '_ {
+    text.char_indices().filter(|&(i, c)| i > 0 && !c.is_whitespace() && text[..i].ends_with(char::is_whitespace)).map(|(i, _)| i)
+}
+
+/// "Where was I?" and its kin, which no sentence has partway through ("where I was" is how one would),
+/// so they end a turn as a command even with no pause marked before them.
+fn is_lost_place(text: &str) -> bool {
+    is_command(text, &["where was i", "where were we", "what was i saying", "what was i talking about"], &["going with this", "going with that", "again"])
 }
 
 /// Where a command may begin partway through a turn: a word after a punctuation mark, or a word that
@@ -759,7 +773,10 @@ mod tests {
         assert_eq!(said("the budget, now where was I"), back("the budget"));
         assert_eq!(said("the budget um where was I"), back("the budget"));
         assert_eq!(said("I'll pay it on Thursday. Anyway, next one."), Some(("I'll pay it on Thursday.".into(), "next")));
-        // Ordinary speech stays a thought: no pause before the words, or more words after them.
+        // Heard with no punctuation at all: a question only the command asks still ends the turn.
+        assert_eq!(said("oh and the dentist moved my cleaning to Thursday at three where was I"), back("oh and the dentist moved my cleaning to Thursday at three"));
+        assert_eq!(said("the caterer needs the headcount by Friday what was I saying"), back("the caterer needs the headcount by Friday"));
+        // Ordinary speech stays a thought: "go back" or "next" with no pause before them, or more words after a command.
         for text in [
             "go back to the drawing board on this",
             "that song would take me back",
@@ -769,6 +786,8 @@ mod tests {
             "Tuesday, next week",
             "What's next?",
             "Anyway back to the hackathon. The placement needs to be under three seconds.",
+            "she asked where was I supposed to park",
+            "I'll take the next one",
         ] {
             assert_eq!(said(text), None, "{text}");
         }
