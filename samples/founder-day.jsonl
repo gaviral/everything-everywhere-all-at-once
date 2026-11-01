@@ -28,6 +28,7 @@
 {"type":"thread_touched","thread_id":"T3","last_point":"Could also be CSP header changes from security audit","at_ms":1793812320000}
 {"type":"tag_suggested","thread_id":"T3","tag":"bug"}
 {"type":"tag_suggested","thread_id":"T3","tag":"production"}
+{"type":"thread_picture","thread_id":"T3","path":"/images/T3-9c3caa447b404d4ba76f9d8692b33c3a-small.webp"}
 {"type":"thread_added","thread":{"id":"T4","title":"Bug investigation steps","parent_id":"T3","status":"open","last_point":"","touched_ms":1793812500000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T4"}
 {"type":"thought_added","thought":{"id":"th-10","speaker":"you","text":"First thing is to check the error logs in Datadog and see if there's a pattern with Safari version","point":"Check Datadog logs for Safari version pattern","thread_id":"T4","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793812500000,"place_ms":1800}}
@@ -36,6 +37,7 @@
 {"type":"thread_touched","thread_id":"T4","last_point":"If CSP, add SDK domain to allowed list","at_ms":1793812560000}
 {"type":"action_proposed","action":{"id":"ac-1","thread_id":"T4","kind":"reminder","title":"Check Datadog Safari checkout errors","when":"2026-11-04","status":"new","done_ms":null}}
 {"type":"thread_status","thread_id":"T4","status":"dropped"}
+{"type":"thread_picture","thread_id":"T4","path":"/images/T4-be8e04afe4da434b8231bd72fc3cafe1-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
 {"type":"thread_added","thread":{"id":"T5","title":"Mom's appointment","parent_id":null,"status":"open","last_point":"","touched_ms":1793812800000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T5"}
@@ -48,6 +50,7 @@
 {"type":"action_proposed","action":{"id":"ac-2","thread_id":"T5","kind":"reminder","title":"Call Dr. Chen's office to book Mom's follow-up","when":"2026-11-05","status":"new","done_ms":null}}
 {"type":"tag_suggested","thread_id":"T5","tag":"family"}
 {"type":"tag_suggested","thread_id":"T5","tag":"health"}
+{"type":"thread_picture","thread_id":"T5","path":"/images/T5-489f355b29864905b3c5f441ff703f0f-small.webp"}
 {"type":"thread_added","thread":{"id":"T6","title":"Pitch deck updates","parent_id":"T1","status":"open","last_point":"","touched_ms":1793813100000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T6"}
 {"type":"thought_added","thought":{"id":"th-15","speaker":"you","text":"Going back to the investor stuff, the deck needs the new metrics slide and I should add the customer logos we got permission for","point":"Deck needs new metrics slide and approved customer logos","thread_id":"T6","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793813100000,"place_ms":1700}}
@@ -59,6 +62,7 @@
 {"type":"tag_suggested","thread_id":"T6","tag":"fundraising"}
 {"type":"tag_suggested","thread_id":"T6","tag":"deck"}
 {"type":"suggestion_added","suggestion":{"id":"sg-2","thread_id":"T6","text":"Ask Maya to include net revenue retention alongside MRR on the metrics slide","status":"new"}}
+{"type":"thread_picture","thread_id":"T6","path":"/images/T6-3f08de664c184a76afde4eac678c68e3-small.webp"}
 {"type":"thread_added","thread":{"id":"T7","title":"Team morale","parent_id":null,"status":"open","last_point":"","touched_ms":1793813400000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T7"}
 {"type":"thought_added","thought":{"id":"th-18","speaker":"you","text":"Jordan seemed really frustrated in standup today, I think the security audit pressure is getting to the team","point":"Jordan frustrated, security audit pressure on team","thread_id":"T7","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793813400000,"place_ms":1800}}
@@ -75,11 +79,13 @@
 {"type":"thread_touched","thread_id":"T1","last_point":"September cohort retained 15% better than August","at_ms":1793813760000}
 {"type":"thought_added","thought":{"id":"th-23","speaker":"you","text":"Oh and I should mention that we're getting inbound interest from enterprise, two companies with 500 plus seats asked for a demo last week","point":"Two enterprise demos requested last week, 500+ seats","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793813820000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T1","last_point":"Two enterprise demos requested last week, 500+ seats","at_ms":1793813820000}
+{"type":"thread_picture","thread_id":"T1","path":"/images/T1-d32fea89619a4e3bb0e9ef9372bd68c9-small.webp"}
 {"type":"thought_added","thought":{"id":"th-24","speaker":"you","text":"Switching back to the hiring thing for a sec, the offer deadline for Priya is Friday so this is actually urgent","point":"Priya offer deadline Friday, urgent","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793814000000,"place_ms":1600}}
 {"type":"thread_touched","thread_id":"T2","last_point":"Priya offer deadline Friday, urgent","at_ms":1793814000000}
 {"type":"active_changed","thread_id":"T2"}
 {"type":"thought_added","thought":{"id":"th-25","speaker":"you","text":"If Jordan says yes I'll extend the offer tomorrow morning, if no then we reopen the search and that's another month","point":"Jordan yes → offer tomorrow; no → reopen, one month delay","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793814060000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T2","last_point":"Jordan yes → offer tomorrow; no → reopen, one month delay","at_ms":1793814060000}
+{"type":"thread_picture","thread_id":"T2","path":"/images/T2-d8b8343b5ee74a0db79aa8ba2d2a2b8f-small.webp"}
 {"type":"thread_added","thread":{"id":"T8","title":"This week's priorities","parent_id":null,"status":"open","last_point":"","touched_ms":1793814300000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T8"}
 {"type":"thought_added","thought":{"id":"th-26","speaker":"you","text":"Alright let me think about the week, today is Tuesday so Thursday is the investor call and Friday is the offer deadline","point":"Thursday: investor call; Friday: offer deadline","thread_id":"T8","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793814300000,"place_ms":1800}}
@@ -91,6 +97,8 @@
 {"type":"tag_suggested","thread_id":"T8","tag":"planning"}
 {"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Actually I should also budget time to rehearse the pitch out loud at least twice before Thursday","point":"Rehearse pitch at least twice before Thursday","thread_id":"T8","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793814480000,"place_ms":1400}}
 {"type":"thread_touched","thread_id":"T8","last_point":"Rehearse pitch at least twice before Thursday","at_ms":1793814480000}
+{"type":"thread_picture","thread_id":"T8","path":"/images/T8-e22b95d98ab74194a7358cb2a7b68c77-small.webp"}
 {"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"The team lunch could be a good time to also casually bring up the hiring decision and see if anyone has concerns about","point":"Team lunch could surface hiring concerns","thread_id":"T7","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":false,"at_ms":1793814540000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T7","last_point":"Team lunch could surface hiring concerns","at_ms":1793814540000}
 {"type":"thread_status","thread_id":"T7","status":"dropped"}
+{"type":"thread_picture","thread_id":"T7","path":"/images/T7-38fa03abb5ef424591954950075b47a5-small.webp"}

@@ -45,6 +45,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 ### Running, demo and samples
 - `./run.sh` builds the UI and serves everything on localhost:4321; `./run.sh NAME` keeps a separate map in `data/NAME`; `./run.sh sample` opens a prepared map without a key or a mic.
 - `./run.sh demo` plus `scripts/demo.mjs` replays a prepared talk at real speed, with real model calls; in a room, a second speaker too.
+- Both sample maps come with a picture for every thread, drawn once by the app's own picture pipeline and kept in `samples/images/` (128 px copies, about 300 KB in all), so the Palace is full without a key.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
