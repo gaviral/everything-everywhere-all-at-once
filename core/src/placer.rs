@@ -342,13 +342,20 @@ const NAMES: usize = 30;
 /// words as said. Points are summaries and often drop the name, and then a near miss of it ("Muse Bark") has
 /// nothing on the map to be a near miss of. Words still asked about ("Did you mean …?") don't count.
 fn names(world: &World) -> Vec<String> {
-    let mut said = Vec::new();
-    for t in world.thoughts.iter().filter(|t| t.placed) {
-        let text = if t.unclear.is_empty() { t.text.clone() } else { t.text.replace(t.unclear.as_str(), " ") };
-        said.extend(capitalized(&text));
-    }
+    // Newest first by when it was said (see `Thought::said_at`): an import lands last in the list, with old times.
+    // Reversed first, so the stable sort keeps a split turn's rest (same time) ahead of its first part.
+    let now = now_ms();
+    let mut said: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed).collect();
+    said.sort_by_key(|t| std::cmp::Reverse(t.said_at(now)));
     let mut seen = HashSet::new();
-    said.into_iter().rev().filter(|name| seen.insert(name.to_lowercase())).take(NAMES).collect()
+    said.into_iter()
+        .flat_map(|t| {
+            let text = if t.unclear.is_empty() { t.text.clone() } else { t.text.replace(t.unclear.as_str(), " ") };
+            capitalized(&text).into_iter().rev()
+        })
+        .filter(|name| seen.insert(name.to_lowercase()))
+        .take(NAMES)
+        .collect()
 }
 
 /// The runs of capitalized words in one turn. A lone one opening a sentence is an ordinary word ("Okay",
@@ -595,6 +602,22 @@ mod tests {
         let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m")["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt(&world).contains("Active thread: T1\nNames said: README, Main Street, Friday, Mom, Muse Spark, PM\nNEW THOUGHT"), "{}", prompt(&world));
         assert!(prompt(&map()).contains("Active thread: T1\nNEW THOUGHT"), "no names yet, no line");
+    }
+
+    #[test]
+    fn names_said_go_by_when_they_were_said_not_by_an_import_landing_last() {
+        let now = crate::now_ms();
+        let said = |id: &str, text: &str, at_ms: u64| Thought { text: text.into(), at_ms, ..thought(id, "you", Some("T1"), true) };
+        // Said a minute ago; then an import of last year's chats landed after it in the list, with 40 names.
+        let mut world = map();
+        world.thoughts.push(said("live", "The placement uses Muse Spark.", now - 60_000));
+        for n in 0..40 {
+            world.thoughts.push(said(&format!("old{n}"), &format!("I met with Contact{n} about it."), now - 365 * 86_400_000));
+        }
+        let names = super::names(&world);
+        assert_eq!((names.len(), names[0].as_str(), names[1].as_str()), (super::NAMES, "Muse Spark", "Contact39"));
+        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m")["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt.contains("Names said: Muse Spark, Contact39, "), "{prompt}");
     }
 
     #[test]

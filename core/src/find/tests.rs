@@ -308,12 +308,14 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
 async fn a_jump_waits_for_the_thought_said_just_before_it() {
     // User said something a moment ago; it's still finding its thread when User asks where the rent deposit came up.
     let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
-    let fixture = Fixture::new(World {
+    let mut fixture = Fixture::new(World {
         threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
         active_by: HashMap::from([("User".into(), "T2".into())]),
         ..World::default()
     });
+    // A working key, so the thought can land.
+    Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
     let mut updates = fixture.core.updates.subscribe();
     fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -337,4 +339,31 @@ async fn a_jump_waits_for_the_thought_said_just_before_it() {
         }
     }
     assert_eq!(said, ["Looking through your threads…", "Here: Home — Rent deposit comes back in June"]);
+}
+
+/// Without a working key the thought said just before is never placed, so the jump doesn't wait for it: with no
+/// key, with one the service refused, or from the moment the service refuses it.
+#[tokio::test(start_paused = true)]
+async fn without_a_working_key_a_jump_doesnt_wait_for_a_thought_that_cant_be_placed() {
+    for key in ["none", "refused", "refused while the jump waits"] {
+        let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+        let mut fixture = Fixture::new(World {
+            threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
+            thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
+            active_by: HashMap::from([("User".into(), "T2".into())]),
+            ..World::default()
+        });
+        if key != "none" {
+            Arc::get_mut(&mut fixture.core).unwrap().key = Some("wrong".into());
+        }
+        if key == "refused" {
+            let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+        }
+        fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+        if key == "refused while the jump waits" {
+            let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"), "{key}");
+    }
 }
