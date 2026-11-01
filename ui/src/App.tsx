@@ -11,7 +11,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
-import { Apps } from "./Apps";
+import { Apps, DockBuild } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -73,17 +73,24 @@ export default function App() {
   // The map keeps its place while you look at the Palace, as a tab does: Map (the button or "map") brings you back
   // where you were. Opening a thread from the Palace, a search or "where was I?" goes to that thread instead.
   const mapScroll = useRef<number | null>(null);
+  // With the room the page's end left for the dock then (useDockRoom): a dock card that went while the map was at its
+  // end left its room, which the Palace's own top gives back, so the map came back on a shorter page, 74 px down.
+  const mapRoom = useRef(0);
   const restoreMap = useRef(false);
   const showView = (next: "map" | "palace") => {
     if (next === view) return;
-    if (next === "palace") mapScroll.current = window.scrollY;
-    else restoreMap.current = true;
+    if (next === "palace") {
+      mapScroll.current = window.scrollY;
+      mapRoom.current = dockRoom.now();
+    } else restoreMap.current = true;
     setView(next);
   };
   useLayoutEffect(() => {
     if (view !== "map" || !restoreMap.current) return;
     restoreMap.current = false;
-    if (mapScroll.current !== null) window.scrollTo({ top: mapScroll.current, behavior: "instant" });
+    if (mapScroll.current === null) return;
+    dockRoom.hold(mapRoom.current);
+    window.scrollTo({ top: mapScroll.current, behavior: "instant" });
   }, [view]);
   // A view said aloud works as its button: Map or Palace, Focus on (with a thread to focus on), or off ("show all");
   // and the "?" list, on an empty map too, where "What can I say?" is most likely.
@@ -241,8 +248,10 @@ export default function App() {
     };
   }, [visible]);
 
-  // Keep the end of the map reachable even when pending thoughts or the card grow.
+  // Keep the end of the map reachable even when pending thoughts or the card grow, and never shorten the page under
+  // you when they go.
   useHeightVar(dockRef, "--dock-height");
+  const dockRoom = useDockRoom(dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
   // (Back to active, Finish it, a Palace tile) stops under both.
   const headerRef = useRef<HTMLElement>(null);
@@ -530,30 +539,37 @@ export default function App() {
       (laterAt[dropKey(t)] === undefined || now - laterAt[dropKey(t)] >= 5 * 60 * 1000))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
-  // The card grows the dock upward as it rises; the thought the map just showed you moves clear of it, once. Under
-  // 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its words, the card after 2.5 s of
-  // quiet) the newest landing is younger than that when the card rises. Not once you've moved the map yourself.
-  const pullKey = !hasAway && pullBack ? dropKey(pullBack) : "";
-  useEffect(() => {
-    if (!pullKey || view !== "map") return;
-    let frame = 0;
-    const keepClear = () => {
-      const shown = shownLanding.current;
-      if (!shown || Date.now() - shown.at > 10000 || lastNavigation.current > shown.at || lookingElsewhere()) return;
-      // After the map's own scroll, when the card rises while it still runs.
-      if (following.current) { frame = requestAnimationFrame(keepClear); return; }
-      const point = document.getElementById(`point-${shown.thought}`);
-      const dockTop = dockRef.current?.getBoundingClientRect().top;
-      if (!point || dockTop === undefined) return;
-      const rect = settledRect(point);
-      // The 12 px the follow leaves between a card and the dock.
-      const overlap = rect.bottom + 12 - dockTop;
-      if (overlap > 0 && rect.top < window.innerHeight) scrollForMap(following, overlap, !!reducedMotion);
-    };
-    // The map's end has already grown with the dock: its height is published as the card renders (useHeightVar).
-    keepClear();
-    return () => cancelAnimationFrame(frame);
-  }, [pullKey, view, reducedMotion]);
+  // A card rising in the dock (the unfinished card, a build's) grows it upward; the thought the map just showed you
+  // moves clear of it, once. Under 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its
+  // words, the card after 2.5 s of quiet) the newest landing is younger than that when the card rises. Not once you've
+  // moved the map yourself. Your own words in the dock (the live line, a thought on its way) don't move it: they land
+  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review of 1eb1226).
+  const clearFrame = useRef(0);
+  const cardsHeight = useRef(0);
+  const keepClear = () => {
+    cancelAnimationFrame(clearFrame.current);
+    const shown = shownLanding.current;
+    if (view !== "map" || !shown || Date.now() - shown.at > 10000 || lastNavigation.current > shown.at || lookingElsewhere()) return;
+    // After the map's own scroll, when the card rises while it still runs.
+    if (following.current) { clearFrame.current = requestAnimationFrame(keepClear); return; }
+    const point = document.getElementById(`point-${shown.thought}`);
+    const dockTop = dockRef.current?.getBoundingClientRect().top;
+    if (!point || dockTop === undefined) return;
+    const rect = settledRect(point);
+    // The 12 px the follow leaves between a card and the dock.
+    const overlap = rect.bottom + 12 - dockTop;
+    if (overlap > 0 && rect.top < window.innerHeight) scrollForMap(following, overlap, !!reducedMotion);
+  };
+  // After each render, the dock's cards as measured: any growing, keep clear. The map's end has already grown with the
+  // dock (useDockRoom's layout effect runs before this one).
+  useLayoutEffect(() => {
+    const cards = dockRef.current?.querySelectorAll<HTMLElement>("[data-dock-card]") ?? [];
+    const height = Array.from(cards, (card) => card.offsetHeight).reduce((sum, h) => sum + h, 0);
+    const grew = height > cardsHeight.current;
+    cardsHeight.current = height;
+    if (grew) keepClear();
+  });
+  useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   // Your last words there by when you said them, as the core's Thought::said_at: imported points land last in
   // the list with their old times, and a time ahead of the clock (a sample map) counts as the earliest.
   const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
@@ -702,7 +718,7 @@ export default function App() {
             {!hasAway && pullBack && (
               <motion.div
                 key={dropKey(pullBack)}
-                className="pullback" role="status"
+                className="pullback" role="status" data-dock-card
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8 }}
@@ -728,6 +744,9 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
+              unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
+          <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
@@ -829,6 +848,50 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
     observer.observe(element);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
   }, [present]);
+}
+
+/** The room the page's end leaves for the dock, as --dock-room: the map and the Palace pad their ends with it. It
+ *  grows with the dock at once; when the dock shrinks (a card goes), it gives back only what is below the screen, and
+ *  the rest as you scroll up. A page at its end used to get shorter by all the dock gave back, which pulled the map
+ *  down in one frame: 78 px as the unfinished card went (rough cut, take 2, 56.4 s), 74 px as a build's card went
+ *  (1440×900). */
+function useDockRoom(ref: RefObject<HTMLElement | null>) {
+  const room = useRef(0);
+  const set = (next: number) => {
+    room.current = next;
+    document.documentElement.style.setProperty("--dock-room", `${next}px`);
+  };
+  const fit = useRef(() => {
+    const dock = ref.current;
+    if (!dock) return;
+    const height = dock.offsetHeight;
+    const page = document.documentElement;
+    const below = Math.max(0, Math.floor(page.scrollHeight - window.innerHeight - window.scrollY));
+    const next = height >= room.current ? height : Math.max(height, room.current - below);
+    if (next !== room.current) set(next);
+  }).current;
+  useLayoutEffect(fit);
+  useEffect(() => {
+    const dock = ref.current;
+    if (!dock) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(dock);
+    window.addEventListener("scroll", fit, { passive: true });
+    window.addEventListener("resize", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", fit);
+      window.removeEventListener("resize", fit);
+      room.current = 0;
+      document.documentElement.style.removeProperty("--dock-room");
+    };
+  }, []);
+  return useMemo(() => ({
+    /** The room the page's end leaves now. */
+    now: () => room.current,
+    /** At least this much again (a place saved with the room it had), given back as you scroll up. */
+    hold: (px: number) => { if (px > room.current) set(px); },
+  }), []);
 }
 
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {

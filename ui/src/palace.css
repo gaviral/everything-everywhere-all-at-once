@@ -2,7 +2,7 @@
 .palace-switch { display: inline-flex; flex: none; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .map-tools .palace-switch button { min-height: 30px; padding: 5px 12px; border: 0; background: transparent; }
 .map-tools .palace-switch button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
-.palace { max-width: 1180px; margin: 0 auto; padding: 38px 32px calc(var(--dock-height, 150px) + 48px); }
+.palace { max-width: 1180px; margin: 0 auto; padding: 38px 32px calc(var(--dock-room, var(--dock-height, 150px)) + 48px); }
 .palace-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 12px; }
 .palace-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
 .palace-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 48px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
@@ -45,7 +45,7 @@
 /* Twice the caption's gap, so "Branch of …" reads as its own line, not the end of the thought. */
 .palace-point + .palace-parent { margin-top: 6px; }
 @media (max-width: 560px) {
-  .palace { padding: 26px 16px calc(var(--dock-height, 150px) + 32px); }
+  .palace { padding: 26px 16px calc(var(--dock-room, var(--dock-height, 150px)) + 32px); }
   .palace-intro { display: block; }
   .palace-intro p { margin-top: 10px; }
   .palace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }

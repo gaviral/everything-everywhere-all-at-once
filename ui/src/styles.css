@@ -702,7 +702,9 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */
-.map { padding-bottom: calc(var(--dock-height, 150px) + 32px); }
+/* The page's end leaves the dock its room (--dock-room, App.tsx useDockRoom): the last card can rise above the dock,
+   and the page never gets shorter under you when a dock card goes. */
+.map { padding-bottom: calc(var(--dock-room, var(--dock-height, 150px)) + 32px); }
 /* A card brought to the top stops under the header and tools, as measured, one card gap (12px) below them. */
 .thread { scroll-margin-top: calc(var(--header-height, 64px) + var(--tools-height, 50px) + 12px); scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
 .thread.collapsed { padding-block: 10px; }

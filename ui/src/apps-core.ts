@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { playTune, unlockTune } from "./apps-audio";
 
 export type Watcher =
@@ -77,6 +77,18 @@ export function applyAppChange<T extends AppsWorld>(world: T, c: AppChange): T {
 
 export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string; playful?: boolean };
 
+/** What the core says when it won't start a build (core/src/apps.rs `compose`): an empty request or one over its
+ *  2,000 bytes, or another app still waiting. No build answers the request then. */
+export const DESCRIBE_APP = "Describe the app in one short sentence.";
+const REFUSALS = [DESCRIBE_APP, "Keep or discard the current app first."];
+
+/** Over the core's limit: it counts UTF-8 bytes, so 1,000 "é" are 2,000 of them, though an input counts 1,000. The
+ *  core counts after dropping a leading "make an app that"; this counts it too, so only a request within a few bytes
+ *  of the limit that starts that way is held back here and not there. */
+export function tooLongForApp(request: string): boolean {
+  return new TextEncoder().encode(request.trim()).length > 2000;
+}
+
 /** A tune the browser wouldn't play yet: which app, and which tune. */
 export interface PendingTune { name: string; playful: boolean }
 
@@ -85,15 +97,35 @@ const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown"] as const;
 
 export function useApps() {
   const [build, setBuild] = useState<AppBuild | null>(null);
+  // A build asked for in the Apps panel's own form (or by its "Make that instead") shows there, where it was asked.
+  // Any other (said, typed in the composer, or still waiting when this window connected) shows in the dock.
+  const [panelBuild, setPanelBuild] = useState<string | null>(null);
+  const panelRequest = useRef<string | null>(null);
+  const latest = useRef<string | null>(null);
   const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
-  const reset = useCallback(() => setBuild(null), []);
+  // A new connection: a request sent on the old one gets no answer.
+  const reset = useCallback(() => { latest.current = null; panelRequest.current = null; setBuild(null); }, []);
   useEffect(() => {
     for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlockTune);
     return () => { for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlockTune); };
   }, []);
   const receive = useCallback((message: { type: string }) => {
+    // A panel request the core refused claims no build: left waiting, it took the next one that ended the same way
+    // (a composer build, then shown in the panel). The notice itself is the core's to show (core.ts).
+    if (message.type === "notice" && REFUSALS.includes((message as { message?: string }).message ?? "")) panelRequest.current = null;
     const msg = message as AppsServerMsg;
-    if (msg.type === "apps_build") { setBuild(msg.build); return true; }
+    if (msg.type === "apps_build") {
+      if (msg.build.id !== latest.current) {
+        latest.current = msg.build.id;
+        // The core drops a leading "Make an app that…", so what was typed in the panel ends with the build's request.
+        const asked = !!panelRequest.current?.trimEnd().endsWith(msg.build.request);
+        panelRequest.current = null;
+        // The same build sent again after a reconnect stays where it was.
+        setPanelBuild((previous) => (asked || previous === msg.build.id ? msg.build.id : null));
+      }
+      setBuild(msg.build);
+      return true;
+    }
     if (msg.type === "apps_sound") {
       const playful = !!msg.playful;
       if (!playTune(playful)) setSoundPending({ name: msg.name, playful });
@@ -101,5 +133,12 @@ export function useApps() {
     }
     return false;
   }, []);
-  return { build, soundPending, receive, reset, clearSound: () => setSoundPending(null) };
+  return {
+    build,
+    /** Whether the current build was asked for in the Apps panel, so it shows there and not in the dock. */
+    inPanel: !!build && build.id === panelBuild,
+    /** Marks the next build as the panel's, before its request goes out (null takes that back if it couldn't go). */
+    askedInPanel: useCallback((text: string | null) => { panelRequest.current = text; }, []),
+    soundPending, receive, reset, clearSound: () => setSoundPending(null),
+  };
 }
