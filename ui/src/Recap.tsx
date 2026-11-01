@@ -77,17 +77,17 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
   const link = (id: string, text: string, className = "recap-thread") => (
     <a className={className} href={`#thread-${resolve(id)}`} onClick={(event) => { event.preventDefault(); follow(id); }}>{text}</a>
   );
-  const rows = (items: RecapItem[], empty: string) => items.length ? <ul className="recap-items">{items.map((item, i) => <li key={`${item.thread_id}-${i}`}>
+  const rows = (items: RecapItem[]) => <ul className="recap-items">{items.map((item, i) => <li key={`${item.thread_id}-${i}`}>
     {link(item.thread_id, item.text, "recap-item-link")}
-    <span className="recap-source">{title(item.thread_id)}</span>
-  </li>)}</ul> : <p className="recap-empty">{empty}</p>;
+    <span className="recap-source">{title(item.thread_id)} ↗</span>
+  </li>)}</ul>;
   const actions = (recap?.actions ?? []).map((a) => world.actions.find((current) => current.id === a.id) ?? a).filter((a) => a.status !== "dismissed");
   const pending = actions.filter((a) => a.status !== "done");
   const added = actions.filter((a) => a.status === "done");
-  const actionRows = (items: Action[], empty: string) => items.length ? <ul className="recap-actions">{items.map((action) => <li key={action.id}>
+  const actionRows = (items: Action[]) => <ul className="recap-actions">{items.map((action) => <li key={action.id}>
     {link(action.thread_id, action.title, "recap-item-link")}
     <span className="recap-source">{title(action.thread_id)}{action.when ? ` · ${action.when}` : ""} · {action.kind === "event" && action.when ? "Calendar" : "Reminders"}</span>
-  </li>)}</ul> : <p className="recap-empty">{empty}</p>;
+  </li>)}</ul>;
   const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms);
   const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
@@ -118,29 +118,29 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
       <section className="recap-work" aria-labelledby="recap-work-title">
         <h2 id="recap-work-title">What you worked on <span>Newest first</span></h2>
         {recap.worked_on.length ? <ol>{recap.worked_on.map((item) => <li key={item.thread_id}>
-          {link(item.thread_id, title(item.thread_id))}<p>{item.text}</p>
+          {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p>{item.text}</p>
         </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
       </section>
-      <div className="recap-columns">
-        <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{rows(recap.decisions, "No explicit decisions recorded.")}</section>
-        <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions, "No open questions found in these notes.")}</section>
-      </div>
-      <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
-        <h2 id="recap-unfinished-title">Still unfinished</h2>
-        {recap.unfinished.length ? <ul>{recap.unfinished.map((item) => {
+      {(recap.decisions.length > 0 || recap.questions.length > 0) && <div className="recap-columns">
+        {recap.decisions.length > 0 && <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{rows(recap.decisions)}</section>}
+        {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
+      </div>}
+      {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
+        <h2 id="recap-unfinished-title">Room to return</h2>
+        <ul>{recap.unfinished.map((item) => {
           const thread = world.threads.find((t) => t.id === resolve(item.thread_id));
           const last = world.thoughts.filter((t) => t.placed && t.thread_id === thread?.id).at(-1);
           const resumed = thread?.status === "open" && last?.complete !== false;
-          return <li key={item.thread_id}><span>{link(item.thread_id, title(item.thread_id))}<small>{resumed ? "Picked back up since this recap" : "A place to pick back up"}</small></span>{link(item.thread_id, resumed ? "Open thread →" : "Finish it →", "recap-finish")}</li>;
-        })}</ul> : <p className="recap-empty">No unfinished threads in this recap.</p>}
-      </section>
-      <section className="recap-action-section" aria-labelledby="recap-actions-title">
+          return <li key={item.thread_id}><span>{link(item.thread_id, title(item.thread_id))}<small>{resumed ? "Picked back up since this recap" : "Left off here"}</small></span>{link(item.thread_id, resumed ? "Open thread →" : "Pick up →", "recap-finish")}</li>;
+        })}</ul>
+      </section>}
+      {actions.length > 0 && <section className="recap-action-section" aria-labelledby="recap-actions-title">
         <h2 id="recap-actions-title">Actions <span>On these threads</span></h2>
         <div className="recap-columns">
-          <div><h3><span className="recap-pending-dot" aria-hidden="true" />Pending approval <span>{pending.length}</span></h3>{actionRows(pending, "Nothing waiting for approval.")}</div>
-          <div><h3><span className="recap-added-mark" aria-hidden="true">✓</span> Added <span>{added.length}</span></h3>{actionRows(added, "Nothing added yet.")}</div>
+          {pending.length > 0 && <div><h3><span className="recap-pending-dot" aria-hidden="true" />Pending approval <span>{pending.length}</span></h3>{actionRows(pending)}</div>}
+          {added.length > 0 && <div><h3><span className="recap-added-mark" aria-hidden="true">✓</span> Added <span>{added.length}</span></h3>{actionRows(added)}</div>}
         </div>
-      </section>
+      </section>}
     </div>}
     <footer className="recap-footer">
       <span>{recap?.thought_count ? "Pick up any thread when you're ready." : "Your thoughts will be here."}</span>

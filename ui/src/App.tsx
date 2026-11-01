@@ -10,6 +10,7 @@ type Handlers = {
 };
 import { startMic } from "./mic";
 import { Apps } from "./Apps";
+import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 import { leftBy, useMe } from "./room";
@@ -22,6 +23,20 @@ export default function App() {
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { world } = core;
+  const sessionCounts = useMemo(() => {
+    const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
+    let start = times.at(-1) ?? 0;
+    for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
+    const threads = new Set<string>();
+    let thoughts = 0;
+    for (const thought of world.thoughts) {
+      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now()) continue;
+      let id = thought.thread_id;
+      for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+      if (world.threads.some((thread) => thread.id === id)) { thoughts++; threads.add(id); }
+    }
+    return { thoughts, threads: threads.size };
+  }, [world.thoughts, world.threads, world.merged]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -286,46 +301,6 @@ export default function App() {
     ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
     : "";
 
-  // Select a word or phrase on the map to get it explained in its context.
-  const [selection, setSelection] = useState<{
-    id: string;
-    text: string;
-    context: string;
-    x: number;
-    y: number;
-    asked: boolean;
-  } | null>(null);
-  useEffect(() => {
-    const onUp = () => {
-      const picked = window.getSelection();
-      const text = picked?.toString().trim() ?? "";
-      if (!picked || !text || text.length > 80 || picked.rangeCount === 0) return;
-      const range = picked.getRangeAt(0);
-      const node = range.commonAncestorContainer;
-      const element = node instanceof Element ? node : node.parentElement;
-      if (!element?.closest(".map")) return;
-      const rect = range.getBoundingClientRect();
-      const context =
-        element.closest("li")?.getAttribute("title") || element.closest(".thread")?.textContent || text;
-      setSelection({ id: crypto.randomUUID(), text, context, x: rect.left + rect.width / 2, y: rect.top, asked: false });
-    };
-    const onDown = (event: MouseEvent) => {
-      if (!(event.target as Element).closest(".explain")) setSelection(null);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelection(null);
-      else if (event.key.startsWith("Arrow") && event.shiftKey) onUp();
-    };
-    document.addEventListener("keyup", onKey);
-    document.addEventListener("mouseup", onUp);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keyup", onKey);
-      document.removeEventListener("mouseup", onUp);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, []);
-
   const goBack = (thread: Thread) => {
     setView("map");
     setExpanded((state) => {
@@ -356,6 +331,7 @@ export default function App() {
       <header>
         <div className="brand">
           E2A2O <small>threads</small>
+          {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
         <div className="header-actions">
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
@@ -384,22 +360,7 @@ export default function App() {
         <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
-      {selection && (
-        <div className="explain" style={{ left: selection.x, top: selection.y }}>
-          {selection.asked ? (
-            <div className="explain-text">{core.explanations[selection.id] ?? "…"}</div>
-          ) : (
-            <button
-              onClick={() => {
-                core.explain(selection.id, selection.text, selection.context);
-                setSelection({ ...selection, asked: true });
-              }}
-            >
-              Explain “{selection.text.length > 24 ? `${selection.text.slice(0, 24)}…` : selection.text}”
-            </button>
-          )}
-        </div>
-      )}
+      <Explain explanations={core.explanations} explain={core.explain} />
 
       <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
@@ -618,8 +579,8 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
-          <span>fixed</span>
-          <span>heard “{thought.heard}” · undo</span>
+          <span><span aria-hidden="true">✦</span> fixed</span>
+          <span><span aria-hidden="true">✦</span> heard “{thought.heard}” · undo</span>
         </button>
       )}
       {thought.unclear && thought.guess ? (

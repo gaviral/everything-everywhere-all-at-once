@@ -302,12 +302,12 @@ header {
   cursor: pointer;
 }
 
-.fixed span + span,
-.fixed:is(:hover, :focus-visible) span:first-child {
+.fixed > span + span,
+.fixed:is(:hover, :focus-visible) > span:first-child {
   display: none;
 }
 
-.fixed:is(:hover, :focus-visible) span + span {
+.fixed:is(:hover, :focus-visible) > span + span {
   display: inline;
 }
 
@@ -522,25 +522,20 @@ header {
   }
 }
 
+/* Placed by Explain.tsx: above the phrase, inside the window. */
 .explain {
   position: fixed;
   z-index: 20;
-  max-width: 320px;
-  transform: translate(-50%, calc(-100% - 8px));
+  max-width: min(320px, calc(100vw - 16px));
 }
 
-.explain button,
-.explain-text {
-  border-radius: 12px;
-  background: var(--ink);
-  color: var(--bg);
-  box-shadow: var(--shadow);
-  font-size: 13px;
-}
-
-.explain button {
+.explain > button {
   padding: 7px 12px;
   border: 0;
+  border-radius: 12px;
+  background: var(--ai);
+  color: var(--ai-button-ink);
+  box-shadow: var(--shadow);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -548,9 +543,50 @@ header {
   cursor: pointer;
 }
 
-.explain-text {
+.explain-card {
   padding: 10px 12px;
-  line-height: 1.4;
+  border: 1px solid color-mix(in srgb, var(--ai) 35%, var(--line));
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.explain-wait {
+  color: var(--muted);
+  animation: explain-wait 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes explain-wait {
+  to {
+    opacity: 0.4;
+  }
+}
+
+.explain-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.explain-actions button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ai);
+  color: var(--ai-button-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.explain-actions button.quiet {
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .notice {
@@ -690,3 +726,23 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .pullback-title { font-size: 15px; }
 .pullback-actions button { min-height: 40px; }
 .composer input::placeholder { color: var(--muted); opacity: 1; }
+
+/* The active thread is the map's anchor; session progress stays secondary. */
+.session-count { margin-left: 18px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
+.pullback { background: var(--card); border-color: color-mix(in srgb, var(--amber) 30%, var(--line)); }
+.pullback-actions button:not(.quiet) { background: var(--amber-soft); color: var(--amber); }
+.fixed { max-width: 100%; padding: 3px 8px; border-color: color-mix(in srgb, var(--ai) 30%, var(--line)); background: var(--ai-soft); color: var(--ai); font-size: 12px; line-height: 1.4; text-align: left; overflow-wrap: anywhere; }
+.fixed:hover, .fixed:focus-visible { border-color: var(--ai); }
+.did-you-mean { border: 1px solid color-mix(in srgb, var(--ai) 30%, var(--line)); }
+@media (max-width: 700px) {
+  .brand { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 4px; }
+  .brand small { margin-left: 0; }
+  .session-count { flex-basis: 100%; margin-left: 0; font-size: 11px; }
+  .map-tools { top: 62px; }
+}
+@media (max-width: 560px) {
+  .header-actions { gap: 8px; }
+  .recap-button { padding-inline: 9px; }
+  .status { font-size: 12px; }
+  .map-tools { top: 58px; }
+}

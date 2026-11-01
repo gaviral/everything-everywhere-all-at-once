@@ -18,8 +18,8 @@ pub enum ServerMsg {
     Error { message: String },
     /// A gentle note, e.g. "Back to Pay rent".
     Notice { message: String },
-    /// The answer to an Explain request.
-    Explanation { id: String, text: String },
+    /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
+    Explanation { id: String, text: String, failed: bool },
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
@@ -46,8 +46,14 @@ pub enum ClientMsg {
     Listen { on: bool },
     /// Go back to a thread, e.g. from the unfinished-thought card.
     Focus { thread_id: String },
-    /// Explain a selected phrase in the context it appears in.
-    Explain { id: String, text: String, context: String },
+    /// Explain a selected phrase in the context it appears in, within its thread when it has one.
+    Explain {
+        id: String,
+        text: String,
+        context: String,
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
     /// Keep or dismiss a suggestion, or dismiss an action.
     Item { id: String, status: crate::world::ItemStatus },
     /// Approve an action: add it to Reminders or Calendar.

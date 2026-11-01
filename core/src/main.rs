@@ -544,8 +544,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
-                Ok(ClientMsg::Explain { id, text, context }) => {
-                    tokio::spawn(explain::run(core.clone(), id, text, context));
+                Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
+                    tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }
                 Ok(ClientMsg::Item { id, status }) => {
                     core.commit(vec![Change::ItemStatus { id, status, done_ms: None }]);
