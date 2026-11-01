@@ -8,6 +8,10 @@ For people who think out loud and lose their threads. You talk (or type), and E2
 
 Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
 
+![A real 16-second run at normal speed: a synthesized voice speaks through the app's speech path, and 2 to 3 seconds after each line the thought lands on the map. A related idea branches under its thread, a new topic starts a thread, "Um, so, yeah." lands nowhere, and "Okay, where was I?" jumps back to the earlier thread.](docs/screens/loop.gif)
+
+*Real time, real models, no edits; the voice is synthesized.*
+
 ## Try it
 
 Tested on macOS. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs); run `rustup update` if yours is older) and Node.js 22.12 or newer. On a Mac with no developer tools, run `xcode-select --install` first.
