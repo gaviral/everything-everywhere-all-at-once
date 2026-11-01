@@ -96,6 +96,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - Each room has one color, shared by its pictures, its branch rail and its Palace heading, chosen away from the blue, amber and purple that carry meaning.
 - The Palace shows a 512 px copy of each picture; it used to stretch the map's 128 px copy about 3 times.
 - An action's date says Today, Tomorrow or Overdue, in amber's shades: later dates stay quiet.
+- A folded thread shows how many of the AI's proposals still wait for you there ("2 to review"), so folding never hides them.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
