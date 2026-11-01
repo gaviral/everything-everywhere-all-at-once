@@ -441,7 +441,7 @@ export function useCore() {
     approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
     correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
     tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
-    visible: () => send(JSON.stringify({ type: "visible" })),
+    visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),

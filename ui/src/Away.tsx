@@ -1,0 +1,175 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { World } from "./core";
+import "./away.css";
+
+export const AWAY_AFTER_MS = 30_000;
+
+export type AwayItem = {
+  key: string;
+  threadId: string;
+  thoughtId?: string;
+  itemId?: string;
+  title: string;
+  detail: string;
+  kind: "thread" | "proposal";
+  unfinished?: boolean;
+  at: number;
+  sourceAt?: number;
+};
+
+function resolve(world: World, id: string): string {
+  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+  return id;
+}
+
+/** A map diff, not a recap request. Only this speaker's newly placed words count. */
+export function awayItems(before: World, after: World, me: string, observed: Map<string, number> = new Map()): AwayItem[] {
+  const placedBefore = new Set(before.thoughts.filter((t) => t.placed).map((t) => t.id));
+  const oldThreads = new Set(before.threads.map((t) => resolve(after, t.id)));
+  const threads = new Map(after.threads.map((t) => [t.id, t]));
+  const own = after.thoughts.filter((t) => t.speaker === me && t.placed && t.thread_id);
+  const landed = own.filter((t) => !placedBefore.has(t.id));
+  // No card for an idle absence, other people's speech, renames or proposals alone.
+  if (!landed.length) return [];
+  const groups = new Map<string, typeof landed>();
+  for (const thought of landed) {
+    const id = resolve(after, thought.thread_id!);
+    if (!threads.has(id)) continue;
+    const group = groups.get(id) ?? [];
+    group.push(thought);
+    groups.set(id, group);
+  }
+  const lastOwn = new Map<string, typeof own[number]>();
+  for (const thought of own) {
+    const id = resolve(after, thought.thread_id!);
+    const previous = lastOwn.get(id);
+    if (!previous || thought.at_ms >= previous.at_ms) lastOwn.set(id, thought);
+  }
+  const newlyDropped = (id: string) => !before.threads.some((t) => resolve(after, t.id) === id && t.status === "dropped" && t.dropped_by === me);
+  const unfinished = [...lastOwn.entries()].filter(([id, thought]) => {
+    const thread = threads.get(id);
+    return thread && ((thread.status === "dropped" && thread.dropped_by === me && newlyDropped(id))
+      || (!thought.complete && groups.has(id) && (thread.status !== "dropped" || thread.dropped_by === me)));
+  }).sort((a, b) => b[1].at_ms - a[1].at_ms)[0];
+  const items: AwayItem[] = [];
+  for (const [id, thoughts] of groups) {
+    const latest = [...thoughts].sort((a, b) => b.at_ms - a.at_ms)[0];
+    const changes = oldThreads.has(id) ? `${thoughts.length} new ${thoughts.length === 1 ? "point" : "points"}` : "New thread";
+    items.push({ key: `thread:${id}`, threadId: id, thoughtId: latest.id, title: threads.get(id)!.title,
+      detail: `${changes}${unfinished?.[0] === id ? " · Left unfinished" : ""} · ${latest.point || latest.text}`,
+      kind: "thread", unfinished: unfinished?.[0] === id, sourceAt: latest.at_ms,
+      at: thoughts.reduce((at, t) => Math.max(at, observed.get(t.id) ?? t.at_ms), 0) });
+  }
+  // A thought begun before looking away may be left behind when the speaker moves on.
+  if (unfinished && !groups.has(unfinished[0])) {
+    const [id, thought] = unfinished;
+    items.push({ key: `thread:${id}`, threadId: id, thoughtId: thought.id, title: threads.get(id)!.title,
+      detail: `Left unfinished · ${thought.point || thought.text}`, kind: "thread", unfinished: true,
+      sourceAt: thought.at_ms, at: observed.get(`dropped:${id}`) ?? thought.at_ms });
+  }
+  const oldProposals = new Set([...before.suggestions, ...before.actions].map((p) => p.id));
+  for (const proposal of [...after.suggestions, ...after.actions]) {
+    const id = resolve(after, proposal.thread_id);
+    // Proposals have no speaker field. Scope them to threads where this person landed words.
+    if (oldProposals.has(proposal.id) || proposal.status !== "new" || !groups.has(id)) continue;
+    items.push({ key: `proposal:${proposal.id}`, threadId: id, itemId: proposal.id,
+      title: "text" in proposal ? proposal.text : proposal.title,
+      detail: `New ${"text" in proposal ? "suggestion" : proposal.kind} · ${threads.get(id)!.title}`,
+      kind: "proposal", at: observed.get(proposal.id) ?? threads.get(id)!.touched_ms });
+  }
+  return items.sort((a, b) => b.at - a.at || (b.sourceAt ?? b.at) - (a.sourceAt ?? a.at) || a.key.localeCompare(b.key));
+}
+
+type Absence = { before: World; since: number; observed: Map<string, number> };
+type Return = Absence & { through: World };
+
+/** Hidden and blurred are one continuous absence; duplicate focus events cannot restart it. */
+export function useAway(world: World, me: string, ready: boolean) {
+  const current = useRef(world);
+  current.current = world;
+  const absence = useRef<Absence | null>(null);
+  const [returned, setReturned] = useState<Return | null>(null);
+  const dismiss = useCallback(() => setReturned(null), []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const looking = () => document.visibilityState === "visible" && document.hasFocus();
+    const leave = () => {
+      if (!absence.current) absence.current = { before: current.current, since: Date.now(), observed: new Map() };
+    };
+    const back = () => {
+      if (!looking()) return;
+      const away = absence.current;
+      absence.current = null;
+      if (away && Date.now() - away.since >= AWAY_AFTER_MS) {
+        setReturned(awayItems(away.before, current.current, me, away.observed).length ? { ...away, through: current.current } : null);
+      }
+    };
+    const visibility = () => { if (looking()) back(); else leave(); };
+    if (!looking()) leave();
+    window.addEventListener("blur", leave);
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("blur", leave);
+      window.removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", visibility);
+      absence.current = null;
+    };
+  }, [ready, me]);
+
+  useEffect(() => {
+    const away = absence.current;
+    if (away) {
+      const now = Date.now();
+      for (const thought of world.thoughts) if (thought.placed && !away.observed.has(thought.id)) away.observed.set(thought.id, now);
+      for (const proposal of [...world.suggestions, ...world.actions]) if (!away.observed.has(proposal.id)) away.observed.set(proposal.id, now);
+      for (const thread of world.threads) if (thread.status === "dropped" && thread.dropped_by === me && !away.observed.has(`dropped:${thread.id}`)) away.observed.set(`dropped:${thread.id}`, now);
+    }
+    // Continuing to speak is an action too; don't dismiss for late placement of an existing turn.
+    if (returned) {
+      const known = new Set(returned.through.thoughts.map((t) => t.id));
+      if (world.thoughts.some((t) => t.speaker === me && !known.has(t.id))) dismiss();
+    }
+  }, [world, me, returned, dismiss]);
+
+  const items = useMemo(() => {
+    if (!returned) return [];
+    // Freeze the return boundary, but follow subsequent merges/renames and proposal decisions.
+    const eligible = new Set(returned.through.thoughts.map((t) => t.id));
+    const proposals = new Set([...returned.through.suggestions, ...returned.through.actions].map((p) => p.id));
+    return awayItems(returned.before, { ...world,
+      thoughts: world.thoughts.filter((t) => eligible.has(t.id)),
+      suggestions: world.suggestions.filter((p) => proposals.has(p.id)),
+      actions: world.actions.filter((p) => proposals.has(p.id)),
+    }, me, returned.observed);
+  }, [returned, world, me]);
+  return { items, dismiss };
+}
+
+export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
+  items: AwayItem[];
+  onFollow: (item: AwayItem) => void;
+  onDismiss: () => void;
+  onDismissFocus: () => void;
+}) {
+  if (!items.length) return null;
+  const close = () => { onDismiss(); onDismissFocus(); };
+  return <section className="away" aria-labelledby="away-title" onKeyDown={(event) => {
+    if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); }
+  }}>
+    <div className="away-top">
+      <div><h2 id="away-title">While you were away</h2><p>Your thoughts · Newest first</p></div>
+      <button className="away-dismiss" onClick={close} aria-label="Dismiss while you were away">×</button>
+    </div>
+    <ol className="away-items" aria-label="What landed while you were away">
+      {items.map((item) => <li key={item.key}>
+        <a href={`#${item.itemId ? `item-${item.itemId}` : item.thoughtId ? `point-${item.thoughtId}` : `thread-${item.threadId}`}`}
+          onClick={(event) => { event.preventDefault(); onFollow(item); }}>
+          <span className="away-title">{item.kind === "proposal" && <span className="away-mark" role="img" aria-label="AI proposal">✦ </span>}{item.title}<span className="away-arrow" aria-hidden="true">↗</span></span>
+          <span className="away-detail">{item.detail}</span>
+        </a>
+      </li>)}
+    </ol>
+  </section>;
+}

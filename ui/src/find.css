@@ -1,17 +1,17 @@
 /* A steady wash of colour, with no pulse or movement. */
-.points li {
+.points li, .ai[id], .action[id] {
   scroll-margin-top: 160px;
   scroll-margin-bottom: calc(var(--dock-height, 150px) + 24px);
 }
 
-.points li[data-found="true"], .thread[data-found="true"] {
+.points li[data-found="true"], .thread[data-found="true"], .ai[data-found="true"], .action[data-found="true"] {
   background: var(--accent-soft);
   border-radius: 8px;
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
-.points li[data-found="true"]:focus-visible, .thread[data-found="true"]:focus-visible {
+.points li[data-found="true"]:focus-visible, .thread[data-found="true"]:focus-visible, .ai[data-found="true"]:focus-visible, .action[data-found="true"]:focus-visible {
   outline-color: var(--accent);
 }
 
@@ -20,5 +20,5 @@
 .notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
 @media (max-width: 560px) {
-  .points li { scroll-margin-top: 190px; }
+  .points li, .ai[id], .action[id] { scroll-margin-top: 190px; }
 }

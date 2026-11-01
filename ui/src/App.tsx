@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
 import { ImportChats } from "./Import";
+import { Away, useAway } from "./Away";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -48,12 +49,16 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
-  useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  const away = useAway(world, me, core.snapshotRevision > 0);
+  const hasAway = away.items.length > 0;
+  useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLInputElement>(null);
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -258,10 +263,11 @@ export default function App() {
       if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (event.key === "/") { event.preventDefault(); searchRef.current?.focus(); }
+      if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
         const buttons = Array.from(mapRef.current?.querySelectorAll<HTMLButtonElement>(".thread-toggle:not(:disabled)") ?? []);
         if (!buttons.length) return;
+        away.dismiss();
         event.preventDefault();
         const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
         const next = index < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, index + (event.key === "j" ? 1 : -1)));
@@ -269,12 +275,13 @@ export default function App() {
         buttons[next].scrollIntoView({ block: "nearest" });
       }
       if (event.key === "Escape") {
+        if (hasAway) { away.dismiss(); return; }
         setExpanded(Object.fromEntries(world.threads.filter((thread) => !activePath.has(thread.id)).map((thread) => [thread.id, true])));
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [world.threads, activePath]);
+  }, [world.threads, activePath, hasAway, away.dismiss]);
 
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
@@ -307,6 +314,12 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+  // Once the return card covers an unfinished thread, don't repeat it in the pull-back.
+  useEffect(() => {
+    const covered = away.items.filter((item) => item.unfinished)
+      .flatMap((item) => world.threads.filter((t) => t.id === item.threadId && t.dropped_by === me).map(dropKey));
+    if (covered.length) setDismissed((previous) => covered.every((key) => previous.includes(key)) ? previous : [...new Set([...previous, ...covered])]);
+  }, [away.items, world.threads, me]);
   // Only threads you left: in a room, the other person's are theirs to pick up.
   const dropped = world.threads
     .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
@@ -342,7 +355,10 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="app">
+    <div className="app" onClickCapture={(event) => {
+      const target = event.target as HTMLElement;
+      if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
+    }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
       <header>
         <div className="brand">
           E2A2O <small>threads</small>
@@ -427,8 +443,14 @@ export default function App() {
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className="dock" aria-label="Your thoughts">
         <div className="dock-inner">
+          <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
+          <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+            core.focus(item.threadId);
+            reveal(item.threadId, item.thoughtId ?? null, item.itemId);
+            away.dismiss();
+          }} />
           <AnimatePresence>
-            {pullBack && (
+            {!hasAway && pullBack && (
               <motion.div
                 key={dropKey(pullBack)}
                 className="pullback" role="status"
@@ -466,6 +488,7 @@ export default function App() {
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
             <input
+              ref={composerRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={core.listening ? "Listening… or type" : core.connected ? "Type a thought, or tap the mic" : "Type a thought — it will send when connected"}
@@ -561,7 +584,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
         ))}
       </ul>
       {ideas.map((s) => (
-        <motion.div key={s.id} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
@@ -640,7 +663,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const app = action.kind === "event" && date ? "Calendar" : "Reminders";
   const when = date ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
   return (
-    <motion.div layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
