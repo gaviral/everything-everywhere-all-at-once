@@ -122,12 +122,13 @@ export default function App() {
   // arrive as a landing and then your place moving to it.
   const followLanding = useRef<{ thread: string; thought: string } | null>(null);
   const followTimer = useRef<number | undefined>(undefined);
+  const followFrame = useRef(0);
   // The landing the map last showed you, and when: the unfinished card keeps clear of it.
   const shownLanding = useRef<{ thought: string; at: number } | null>(null);
   // The map holds still while something else has your eyes: a search, or a panel, menu or dialog over it.
   const lookingElsewhere = () => document.activeElement === searchRef.current || !!searchRef.current?.value.trim() ||
     !!document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
-  useEffect(() => () => window.clearTimeout(followTimer.current), []);
+  useEffect(() => () => { window.clearTimeout(followTimer.current); cancelAnimationFrame(followFrame.current); }, []);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
     if (!core.snapshotRevision) return;
@@ -156,14 +157,15 @@ export default function App() {
     followTarget.current = follow;
     if (landing?.mine) followLanding.current = landing;
     // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
-    window.clearTimeout(followTimer.current);
-    followTimer.current = window.setTimeout(() => requestAnimationFrame(() => {
+    const look = () => {
+      // A scroll the map is already making (the last landing's, or clearing the unfinished card) isn't interrupted:
+      // the look waits for it to end, then runs. Dropping it left off screen a thought that landed as the card rose.
+      if (following.current) { followFrame.current = requestAnimationFrame(look); return; }
       const target = followTarget.current;
       const landed = followLanding.current;
       followTarget.current = null;
       followLanding.current = null;
-      // A scroll already under way isn't interrupted by the next landing.
-      if (!target || following.current || lookingElsewhere()) return;
+      if (!target || lookingElsewhere()) return;
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
       const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
@@ -186,7 +188,10 @@ export default function App() {
       if (point ? rect.top >= top && rect.bottom <= bottom : rect.bottom > top && rect.top < bottom) return;
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       scrollForMap(following, delta, !!reducedMotion);
-    }), 120);
+    };
+    window.clearTimeout(followTimer.current);
+    cancelAnimationFrame(followFrame.current);
+    followTimer.current = window.setTimeout(() => { followFrame.current = requestAnimationFrame(look); }, 120);
   }, [world.thoughts, world.threads, world.active, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
 
   // Coming back to the window is a good moment to tidy the map.
@@ -738,6 +743,10 @@ function ownRect(card: HTMLElement) {
 /** Scrolls the page for the map itself. That isn't you moving around, until it ends: smooth scrolling can outlast a
  *  fixed second when frames are slow, and a late scroll event then held the next landing back for 5 s. */
 function scrollForMap(following: { current: boolean }, top: number, instant: boolean) {
+  // A scroll that can't move (the page's end, under a pixel) sends no scrollend, and a landing waiting for the map's
+  // scroll to end would wait out the cap.
+  const end = document.documentElement.scrollHeight - window.innerHeight;
+  if (Math.abs(Math.min(Math.max(window.scrollY + top, 0), end) - window.scrollY) < 1) return;
   following.current = true;
   const ends = "onscrollend" in document;
   const done = () => { following.current = false; document.removeEventListener("scrollend", done); window.clearTimeout(cap); };
