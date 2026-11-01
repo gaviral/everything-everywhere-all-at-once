@@ -10,7 +10,7 @@ pub enum ServerMsg {
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
     AppsSound { name: String },
-    Snapshot { world: World },
+    Snapshot { world: std::sync::Arc<World> },
     Change { change: Change },
     /// Draft words of the turn being spoken; replaces the previous draft.
     Partial { text: String },

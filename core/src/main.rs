@@ -14,6 +14,8 @@ mod refiner;
 mod recap;
 mod protocol;
 mod world;
+#[cfg(test)]
+mod perf;
 
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -38,7 +40,7 @@ pub struct Core {
     find: find::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
-    world: Mutex<World>,
+    world: Mutex<Arc<World>>,
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
@@ -72,8 +74,8 @@ impl Core {
         self.looked.swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn snapshot(&self) -> World {
-        self.world.lock().unwrap().clone()
+    pub fn snapshot(&self) -> Arc<World> {
+        Arc::clone(&self.world.lock().unwrap())
     }
 
     /// Applies a batch of changes together, journals each one, then tells every UI.
@@ -82,7 +84,7 @@ impl Core {
             let mut world = self.world.lock().unwrap();
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
-                world.apply(change);
+                Arc::make_mut(&mut world).apply(change);
                 if let Err(e) = journal.append(change) {
                     tracing::error!("journal write failed: {e:#}");
                 }
@@ -112,6 +114,7 @@ impl Core {
         if thread.status == ThreadStatus::Dropped {
             changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
         }
+        drop(world);
         self.commit(changes);
     }
 
@@ -121,6 +124,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            drop(world);
             self.focus(speaker, &id);
         }
     }
@@ -135,7 +139,9 @@ impl Core {
         };
         if let Some(thread) = next {
             self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
-            self.focus(speaker, &thread.id.clone());
+            let id = thread.id.clone();
+            drop(world);
+            self.focus(speaker, &id);
         }
     }
 
@@ -390,7 +396,7 @@ async fn main() -> anyhow::Result<()> {
         find: find::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
-        world: Mutex::new(world),
+        world: Mutex::new(world.into()),
         journal: Mutex::new(journal),
         updates,
         placer_queue,
@@ -529,9 +535,16 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
         return StatusCode::FORBIDDEN.into_response();
     }
     request.extensions_mut().insert(access);
-    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
+    // Built files and pictures never change under their names (content hash, uuid); everything else, the
+    // page above all, is checked every time, so after an update the browser never shows the old app.
+    let fixed = ["/assets/", "/images/"].iter().any(|dir| request.uri().path().starts_with(dir));
     let mut response = next.run(request).await;
+    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
     response.headers_mut().insert("cross-origin-resource-policy", header::HeaderValue::from_static("same-origin"));
+    // A missing file comes back as the page (the app's own routes), and that must not stick.
+    let page = response.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
+    let cache = if fixed && response.status().is_success() && !page { "public, max-age=31536000, immutable" } else { "no-cache" };
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static(cache));
     response
 }
 
@@ -631,6 +644,9 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    if core.key.is_none() {
+        messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
+    }
     messages
 }
 
@@ -708,7 +724,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         match ended {
                             Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
                             Err(e) => {
-                                core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
+                                core.send_to(&speaker, ServerMsg::Error { message: format!("Speech service error: {e}") });
                                 core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
                             }
                         }
@@ -874,7 +890,7 @@ mod tests {
             recap: crate::recap::Runtime::default(),
             apps: crate::apps::Runtime::default(),
             imports: crate::import::Imports::default(),
-            world: Mutex::new(world),
+            world: Mutex::new(world.into()),
             journal: Mutex::new(journal),
             updates,
             placer_queue,

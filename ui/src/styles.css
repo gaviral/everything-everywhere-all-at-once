@@ -97,6 +97,10 @@ header {
   background: #34c759;
 }
 
+.dot.warn {
+  background: var(--amber);
+}
+
 .map {
   display: flex;
   flex-direction: column;
@@ -711,6 +715,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .shortcuts summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .keyboard-hint { position: absolute; z-index: 8; right: 0; top: calc(100% + 6px); width: min(310px, 80vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 12px; }
 .keyboard-hint div + div { margin-top: 6px; color: var(--muted); }
+.keyboard-hint strong { display: block; margin-top: 10px; }
+.keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
 .picture-wrap { position: relative; flex: none; display: flex; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
 .point-mark { font-size: 11px; }
@@ -748,6 +754,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 @media (max-width: 560px) {
   .header-actions { gap: 8px; }
+  .keyboard-hint { position: fixed; right: 8px; top: 58px; width: min(310px, calc(100vw - 16px)); }
   .recap-button { padding-inline: 9px; }
   .status { font-size: 12px; }
   .map-tools { top: 58px; }
@@ -770,4 +777,34 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #tour-composer .tour-tip { margin: 0; }
 @media (max-width: 760px) {
   #tour-tools .tour-tip, #tour-map .tour-tip { margin-inline: 16px; }
+}
+
+/* Touch controls expose their actions without relying on hover. */
+@media (hover: none) {
+  .app button, .app summary, .app a, .app input, .app select { min-width: 40px; min-height: 40px; }
+  .app .did-you-mean button, .app .ai-actions button, .app .recap-period button { min-height: 40px; }
+  .shortcuts summary { width: 40px; height: 40px; }
+  .map-tools .palace-switch button { min-height: 40px; }
+  .fixed > span:first-child { display: none; }
+  .fixed > span + span { display: inline; }
+  .points li .speed { opacity: 1; }
+}
+
+@media (max-width: 560px) {
+  /* Notices participate in the page flow so they cannot obscure the tour. */
+  .notice, .map-change, .notice ~ .map-change {
+    position: relative; top: auto; left: auto; translate: none;
+    width: auto; max-width: none; margin: 8px 16px;
+  }
+  .dock { max-height: 50dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
+  .dock-inner { gap: 4px; }
+  .pullback { flex-wrap: nowrap; gap: 4px; padding: 2px 4px 2px 10px; }
+  .pullback .picture, .pullback-quote { display: none; }
+  .pullback-title { font-size: 13px; }
+  .pullback-actions { margin-left: 0; gap: 0; }
+  .pullback-actions button { padding-inline: 8px; }
+  .pending { display: flex; flex-direction: column; flex-wrap: nowrap; max-height: min(96px, 12dvh); }
+  .pill { display: block; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-block: 3px; }
+  .composer { position: sticky; bottom: 0; flex: none; }
+  .away-items { max-height: 15dvh; }
 }

@@ -17,10 +17,14 @@ if [ "$1" = room ] && [ -z "$ROOM_CODE" ]; then
   export ROOM_CODE
 fi
 # `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
-# or a founder's day); it starts fresh from samples/ each time.
+# or a founder's day); it starts fresh from samples/ each time. Its pictures were drawn once, by the app's
+# own picture pipeline, and the sample's journal names them: they go where the core serves /images from
+# (pictures left from the other sample are never named, so they do no harm).
 if [ "$1" = "sample" ]; then
   case "${2:-}" in founder) map=founder-day ;; *) map=student-week ;; esac
-  mkdir -p data/sample && cp "samples/$map.jsonl" data/sample/journal.jsonl
+  mkdir -p data/sample/images
+  cp "samples/$map.jsonl" data/sample/journal.jsonl
+  cp "samples/images/$map"/* data/sample/images/
 fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"

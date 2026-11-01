@@ -182,6 +182,7 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
     let (changes, rest) = settle(&world, &thought, placement, place_ms);
+    drop(world);
     core.commit(changes);
     Ok(rest)
 }
@@ -256,6 +257,19 @@ fn cut(text: &str, quote: &str) -> Option<(String, String)> {
         rest = trimmed;
     }
     (!before.is_empty() && !rest.is_empty()).then(|| (before.to_string(), rest.to_string()))
+}
+
+#[cfg(test)]
+pub(crate) fn perf(world: &World, thought: &Thought) {
+    crate::perf::measure_bytes("placer lookup + prompt", || {
+        let thought = world.thoughts.iter().find(|t| t.id == thought.id).unwrap().clone();
+        serde_json::to_vec(&request(world, &thought, "perf-model")).unwrap()
+    });
+    crate::perf::measure("placer settle + dropped scans", || {
+        let answer = json!({"action": "return", "thread_id": "T2", "point": "Review the project budget",
+            "dropped": ["T1", "T149", "T150"]});
+        settle(world, thought, serde_json::from_value(answer).unwrap(), 2_000)
+    }, |(changes, _)| serde_json::to_vec(changes).unwrap().len());
 }
 
 fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {

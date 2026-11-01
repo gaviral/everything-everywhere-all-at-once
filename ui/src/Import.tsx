@@ -99,7 +99,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
       setPreview(body as Preview);
       setStep("preview");
     } catch (err) {
-      setError(err instanceof TypeError ? "Couldn't reach the core. Check that it's running, then try again." : err instanceof Error ? err.message : "Couldn't read that file.");
+      setError(err instanceof TypeError ? "Couldn't upload the file. Check that E2A2O is running, then try again." : err instanceof Error ? err.message : "Couldn't read that file.");
       setStep("error");
     }
   };
@@ -120,7 +120,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
     if (!preview) return;
     if (core.startImport(preview.id)) setStarted(preview.id);
     else {
-      setError("Not connected to the core. Try again once it reconnects.");
+      setError("Not connected. Try again once E2A2O reconnects.");
       setStep("error");
     }
   };
@@ -164,7 +164,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   const body = job ? (
     running ? (
       <>
-        <div className="import-eyebrow"><span aria-hidden="true">✦</span> Making your map</div>
+        <div className="import-eyebrow">Making your map</div>
         <h2 id="import-title">Importing {job.file}</h2>
         <div className="import-bar" role="progressbar" aria-label="Import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress(job) * 100)}>
           <span style={{ width: `${progress(job) * 100}%` }} />
@@ -223,7 +223,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
         </p>
       )}
       <div className="import-privacy">
-      <h3><span aria-hidden="true">✦</span> Before you import</h3>
+      <h3>Before you import</h3>
       <ul className="import-list">
         <li>
           Your {plural(preview.messages, "message")} (about {plural(preview.words, "word")}), with the first lines of each AI reply for context, go to
