@@ -193,9 +193,16 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
             out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
         }
     }
+    // Each merge is checked against the map the earlier ones leave: a chain (T3 into T1, then T5 into T3)
+    // lands on the thread that's left, and a thread never goes into its own branch, which would make the
+    // branch its own parent and drop it from the map.
+    let mut merged = world.clone();
     for m in pass.merges {
-        if m.from != m.into && exists(&m.from) && exists(&m.into) {
-            out.push(Change::ThreadMerged { from: m.from, into: m.into });
+        let into = merged.resolve(&m.into);
+        if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) {
+            let change = Change::ThreadMerged { from: m.from, into };
+            merged.apply(&change);
+            out.push(change);
         }
     }
     for s in pass.suggestions {
@@ -236,6 +243,20 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     out
 }
 
+/// True when `id` is `of`'s parent, or its parent's, and so on up.
+fn above(world: &World, id: &str, of: &str) -> bool {
+    let mut parent = world.thread(of).and_then(|t| t.parent_id.clone());
+    // At most one step per thread, so a corrupt journal with a cycle can't loop forever.
+    for _ in 0..world.threads.len() {
+        match parent {
+            Some(p) if p == id => return true,
+            Some(p) => parent = world.thread(&p).and_then(|t| t.parent_id.clone()),
+            None => return false,
+        }
+    }
+    false
+}
+
 fn new_id(prefix: &str) -> String {
     format!("{prefix}-{}", uuid::Uuid::new_v4().simple())
 }
@@ -253,8 +274,73 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::describe;
-    use crate::world::{Thought, Thread, ThreadStatus, World};
+    use super::{changes, describe, Pass};
+    use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+
+    #[test]
+    fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
+        let thread = |id: &str, parent: Option<&str>| Thread {
+            id: id.into(),
+            title: format!("Topic {id}"),
+            parent_id: parent.map(Into::into),
+            status: ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 0,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        };
+        let thought = |id: &str, thread: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: id.into(),
+            point: id.into(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        // T7 branches from T5, and T9 from T7.
+        let world = World {
+            threads: vec![thread("T1", None), thread("T3", None), thread("T5", None), thread("T7", Some("T5")), thread("T9", Some("T7"))],
+            thoughts: ["T1", "T3", "T5", "T7", "T9"].iter().map(|t| thought(&format!("on {t}"), t)).collect(),
+            ..World::default()
+        };
+        let merges = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<_> = pairs.iter().map(|(from, into)| serde_json::json!({"from": from, "into": into})).collect();
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "merges": pairs })).unwrap();
+            changes(&world, pass)
+        };
+        let pairs = |changes: &[Change]| -> Vec<(String, String)> {
+            changes
+                .iter()
+                .filter_map(|c| match c {
+                    Change::ThreadMerged { from, into } => Some((from.clone(), into.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+        let to = |from: &str, into: &str| (from.to_string(), into.to_string());
+
+        // A chain lands on the thread that's left, and every thought stays on the map.
+        let chain = merges(&[("T3", "T1"), ("T5", "T3")]);
+        assert_eq!(pairs(&chain), [to("T3", "T1"), to("T5", "T1")]);
+        let mut after = world.clone();
+        chain.iter().for_each(|c| after.apply(c));
+        assert!(after.thoughts.iter().all(|t| after.thread(t.thread_id.as_deref().unwrap()).is_some()));
+        assert_eq!(after.thread("T7").unwrap().parent_id.as_deref(), Some("T1"));
+        // Never into its own branch, however far down.
+        assert!(pairs(&merges(&[("T5", "T7"), ("T5", "T9")])).is_empty());
+        // Nor into itself, nor from a thread that isn't there or was just merged away.
+        assert_eq!(pairs(&merges(&[("T1", "T1"), ("T2", "T1"), ("T3", "T1"), ("T3", "T5")])), [to("T3", "T1")]);
+        // A branch into a thread above it is fine.
+        assert_eq!(pairs(&merges(&[("T9", "T5")])), [to("T9", "T5")]);
+    }
 
     #[test]
     fn quiet_threads_shrink_to_one_line() {
