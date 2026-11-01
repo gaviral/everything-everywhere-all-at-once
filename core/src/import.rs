@@ -233,9 +233,11 @@ struct Known {
 }
 
 /// Exact message hashes from new imports, including messages that gave no point ("thanks", pasted code).
-/// Old records only have times: keep honoring those so previously imported files stay skipped.
+/// Times still count too: old records only have times, and a point keeps its message's exact time, so
+/// an import stopped after some points landed but before its record was written doesn't add them twice.
 fn known(world: &World) -> Known {
-    Known { times: world.read_ms.clone(), keys: world.read_keys.clone() }
+    let times = world.thoughts.iter().map(|t| t.at_ms).chain(world.read_ms.iter().copied()).collect();
+    Known { times, keys: world.read_keys.clone() }
 }
 
 /// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
