@@ -857,6 +857,3 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .when.due { color: var(--amber); }
 .when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
 .when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
-/* stand-in: `?look=ink` shows option 2 (no room colors) for side-by-side screenshots; one look ships. */
-.look-ink .picture-letter { background: var(--bg); color: var(--muted); }
-.look-ink .branches { border-left-color: var(--line); }
