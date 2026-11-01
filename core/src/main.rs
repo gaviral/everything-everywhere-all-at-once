@@ -212,9 +212,11 @@ fn is_go_next(text: &str) -> bool {
     is_command(text, &["go to the next one", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
 }
 
+/// Words a spoken command may open with.
+const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
+
 /// True when the whole utterance is one of the asks, after filler words and before a short allowed tail.
 fn is_command(text: &str, asks: &[&str], tails: &[&str]) -> bool {
-    const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
     let clean: String = text
         .to_lowercase()
         .chars()
@@ -279,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
         imports: import::Imports::default(),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
+    apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
@@ -475,15 +478,22 @@ async fn connect(
     ConnectInfo(link): ConnectInfo<Link>,
     State(core): State<Arc<Core>>,
 ) -> impl IntoResponse {
-    let speaker = speaker_name(&join.name);
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here()))
+    let speaker = speaker_name(&join.name, link.here());
+    let renamed = speaker != speaker_name(&join.name, true);
+    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed))
 }
 
+/// What another laptop is called when it asks for this machine's name, or for none.
+const GUEST: &str = "Guest";
+
 /// What a window's thoughts are labeled with: its name in the room, on one line and at most 24
-/// characters; alone, "you".
-fn speaker_name(name: &str) -> String {
+/// characters; alone, "you". "you" is this machine's own name (alone, and on everything from before
+/// rooms), so another laptop that asks for it, or for no name, is "Guest": else it would get the host's
+/// live words, mic and notices.
+fn speaker_name(name: &str, here: bool) -> String {
     let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(24).collect();
     match name.trim() {
+        name if !here && (name.is_empty() || name.eq_ignore_ascii_case("you")) => GUEST.into(),
         "" => "you".into(),
         name => name.into(),
     }
@@ -491,7 +501,8 @@ fn speaker_name(name: &str) -> String {
 
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool) {
+/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead.
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
@@ -501,7 +512,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
     }
-    if let Some(build) = apps::build(&core) {
+    if renamed {
+        let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
+        if out.send(Message::Text(serde_json::to_string(&notice).unwrap().into())).await.is_err() { return; }
+    }
+    if let Some(build) = apps::unsettled_build(&core) {
         let message = ServerMsg::AppsBuild { build };
         if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
     }
@@ -537,6 +552,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     });
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
+    // This window's listening sessions, counted, so only the latest one says listening stopped: after a
+    // quick off and on, the old session's late end mustn't switch the new mic off.
+    let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
     while let Some(Ok(message)) = incoming.next().await {
         match message {
@@ -553,12 +571,22 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     let (tx, rx) = mpsc::channel(256);
                     audio = Some(tx);
-                    let (core, speaker) = (core.clone(), speaker.clone());
+                    let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let (core, speaker, listens) = (core.clone(), speaker.clone(), listens.clone());
                     tokio::spawn(async move {
-                        if let Err(e) = asr::run(core.clone(), speaker.clone(), rx).await {
+                        let ended = asr::run(core.clone(), speaker.clone(), rx).await;
+                        if let Err(e) = &ended {
                             tracing::warn!("listening stopped: {e:#}");
-                            core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
-                            core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
+                        }
+                        if listens.load(std::sync::atomic::Ordering::Relaxed) != n {
+                            return;
+                        }
+                        match ended {
+                            Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
+                            Err(e) => {
+                                core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
+                                core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
+                            }
                         }
                     });
                 }
@@ -669,9 +697,19 @@ mod tests {
 
     #[test]
     fn names_label_thoughts() {
-        assert_eq!(speaker_name("  Sam \n Lee "), "Sam Lee");
-        assert_eq!(speaker_name(""), "you");
-        assert_eq!(speaker_name(&"x".repeat(40)).len(), 24);
+        assert_eq!(speaker_name("  Sam \n Lee ", false), "Sam Lee");
+        assert_eq!(speaker_name("", true), "you");
+        assert_eq!(speaker_name(&"x".repeat(40), false).len(), 24);
+    }
+
+    #[test]
+    fn another_laptop_cant_take_this_machines_name() {
+        // "you" is this machine's, and private messages go to every window with the same name.
+        assert_eq!(speaker_name("you", true), "you");
+        for name in ["", "you", " YOU ", "You\n", "yo\u{0}u"] {
+            assert_eq!(speaker_name(name, false), "Guest", "{name:?}");
+        }
+        assert_eq!(speaker_name("Youssef", false), "Youssef");
     }
 
     #[test]

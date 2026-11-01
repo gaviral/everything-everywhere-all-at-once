@@ -80,11 +80,11 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         // Placement is already in progress; don't pay for a second placement call,
         // or summarize a thought on the provisional branch it may soon leave.
         for _ in 0..40 {
-            if !core.snapshot().thoughts.iter().any(|t| !t.placed && t.at_ms >= since) { break; }
+            if !placing(&core.snapshot(), since, crate::now_ms()) { break; }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         let world = core.snapshot();
-        if world.thoughts.iter().any(|t| !t.placed && t.at_ms >= since) {
+        if placing(&world, since, crate::now_ms()) {
             state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
             return;
         }
@@ -107,6 +107,12 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             }
         }
     });
+}
+
+/// A thought of the period still finding its thread. Only fresh ones count: one still unplaced after a
+/// minute failed placement and waits for a retry, and mustn't hold up every recap until it lands.
+fn placing(world: &World, since: u64, now: u64) -> bool {
+    world.thoughts.iter().any(|t| !t.placed && t.at_ms >= since && now.saturating_sub(t.at_ms) < 60_000)
 }
 
 fn state(core: &Core, speaker: &str, period: Period, loading: bool, message: &str, recap: Option<Recap>) {
@@ -364,6 +370,15 @@ mod tests {
         let text = serde_json::to_string(&source).unwrap();
         assert!(!text.contains("Point 0") && !text.contains("quiet"));
         assert_eq!(source.thought_count, 2);
+    }
+
+    #[test]
+    fn only_a_fresh_unplaced_thought_holds_up_the_recap() {
+        let mut world = sample(10_000_000);
+        world.thoughts.push(Thought { placed: false, ..thought(3, "T1", 10_000_000 - 2_000) });
+        assert!(placing(&world, 0, 10_000_000), "it's being placed: worth the wait");
+        assert!(!placing(&world, 10_000_000 - 1_000, 10_000_000), "before the period");
+        assert!(!placing(&world, 0, 10_000_000 + 60_000), "a minute on, it failed and waits for a retry");
     }
 
     #[test]

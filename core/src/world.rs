@@ -422,7 +422,15 @@ impl Journal {
         let mut world = World::default();
         if path.exists() {
             for (n, line) in BufReader::new(File::open(path)?).lines().enumerate() {
-                let line = line?;
+                let line = match line {
+                    Ok(line) => line,
+                    // A crash mid-write can cut a character in half: skip that line rather than refuse to start.
+                    Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                        tracing::warn!("skipping journal line {} that isn't valid text", n + 1);
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 if line.trim().is_empty() {
                     continue;
                 }
@@ -489,6 +497,20 @@ mod tests {
     fn a_partial_last_line_doesnt_swallow_the_next_change() {
         let path = std::env::temp_dir().join(format!("e2a2o-journal-{}.jsonl", std::process::id()));
         std::fs::write(&path, "{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"active_ch").unwrap();
+        let (mut journal, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T1"));
+        journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();
+        let (_, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T2"));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn a_character_cut_in_half_at_the_end_doesnt_stop_the_core() {
+        let path = std::env::temp_dir().join(format!("e2a2o-journal-utf8-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut bytes = b"{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"thread_renamed\",\"thread_id\":\"T1\",\"title\":\"caf".to_vec();
+        bytes.extend_from_slice(&"é".as_bytes()[..1]);
+        std::fs::write(&path, bytes).unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T1"));
         journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();

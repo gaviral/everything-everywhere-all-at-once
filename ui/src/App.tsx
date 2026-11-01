@@ -105,12 +105,14 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [core.notice, core.found, core.clearNotice]);
 
-  // Stop local audio when the service reports a stop or the connection drops.
+  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
+  // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   useEffect(() => {
     if (stopMic && !core.listening && core.voiceStatusRevision > voiceStartedAt.current) {
       stopMic();
       setStopMic(null);
+      core.listen(false);
     }
   }, [core.listening, core.voiceStatusRevision, stopMic]);
 
@@ -622,12 +624,18 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   );
 }
 
+// A real YYYY-MM-DD day, as the core checks it: "Saturday" or "2026-11-31" (which a Date rolls over to December 1) isn't one.
+function day(when: string): Date | null {
+  const [y, m, d] = when.split("-").map(Number);
+  const date = new Date(y, m - 1, d, 9);
+  return /^\d{4}-\d{2}-\d{2}$/.test(when) && y >= 2000 && y <= 2100 && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
+}
+
 function ActionRow({ action, on }: { action: Action; on: Handlers }) {
-  // Matches the core: an event without a date goes to Reminders.
-  const app = action.kind === "event" && action.when ? "Calendar" : "Reminders";
-  const when = action.when
-    ? new Date(`${action.when}T09:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-    : "";
+  // Matches the core: an event without a real date goes to Reminders.
+  const date = day(action.when);
+  const app = action.kind === "event" && date ? "Calendar" : "Reminders";
+  const when = date ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
   return (
     <motion.div layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
@@ -643,6 +651,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
           </button>
         </span>
       )}
+      {action.status === "kept" && <span className="when ai-actions">Adding to {app}…</span>}
       {action.status === "done" && action.done_ms != null && (
         <span className="when ai-actions">
           in {app} · {(action.done_ms / 1000).toFixed(1)} s

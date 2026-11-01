@@ -185,6 +185,8 @@ function apply(world: World, raw: Change): World {
     case "thread_renamed":
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
     case "thread_merged": {
+      // As the core: never into itself, or into a thread that isn't there (its thoughts would vanish).
+      if (c.from === c.into || !world.threads.some((t) => t.id === c.into)) return world;
       const move = (id: string | null) => (id === c.from ? c.into : id);
       return {
         ...world,

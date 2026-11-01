@@ -92,6 +92,22 @@ fn templates_expand_once_and_commands_leave_ordinary_speech_alone() {
 }
 
 #[test]
+fn spoken_app_requests_can_open_with_filler_and_ask_for_me() {
+    for (said, request) in [
+        ("Okay, make an app that notices repetition.", "notices repetition."),
+        ("Can you make me an app to remind me about rent?", "remind me about rent?"),
+        ("Um, so, hey, could you please create an app that... plays a tune", "plays a tune"),
+        ("Make an app, that pings me", "pings me"),
+        ("MAKE US AN APP TO SHOUT", "SHOUT"),
+    ] {
+        assert_eq!(command(said).as_deref(), Some(request), "{said}");
+    }
+    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps"] {
+        assert_eq!(command(said), None, "{said}");
+    }
+}
+
+#[test]
 fn volume_needs_continuous_readings_from_one_source() {
     let mut state = (1000, 1000);
     for now in (1000..4000).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
@@ -118,6 +134,17 @@ async fn keep_and_discard_are_explicit_and_idempotent() {
     decide(&fixture.core, "b", true);
     assert_eq!(fixture.core.snapshot().apps.len(), 1);
     assert!(fixture.core.snapshot().apps[0].enabled);
+}
+
+#[test]
+fn a_window_that_connects_sees_a_build_only_while_it_is_composing_or_waiting() {
+    let fixture = Fixture::new();
+    for (stage, sent) in [("searching", true), ("composing", true), ("validating", true), ("ready", true), ("matched", true),
+        ("kept", false), ("discarded", false), ("failed", false)] {
+        fixture.core.apps.state.lock().unwrap().build = Some(Build { id: "b".into(), request: "quiet".into(), stage: stage.into(),
+            steps: Vec::new(), draft: None, match_id: None, message: String::new() });
+        assert_eq!(unsettled_build(&fixture.core).is_some(), sent, "{stage}");
+    }
 }
 
 #[tokio::test]
@@ -186,6 +213,23 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     task.abort();
 }
 
+#[test]
+fn a_timer_with_a_prompt_waits_for_something_new_to_look_at() {
+    let said = |at_ms| Thought { id: format!("th-{at_ms}"), speaker: "you".into(), text: "rent is due".into(), point: "Rent is due".into(),
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
+        complete: true, at_ms, place_ms: None };
+    let mut timer = app();
+    timer.watcher = Watcher::Time { at_ms: 1, every_secs: 10 };
+    timer.last_run_ms = 1_000;
+    let mut world = World { thoughts: vec![said(500)], ..World::default() };
+    assert!(timer_due(&timer, &world, 20_000), "without a prompt it runs on time");
+    timer.prompt = Some(Prompt { system: "Notice when I drift.".into(), template: "{points}".into() });
+    assert!(!timer_due(&timer, &world, 20_000), "nothing new since it last ran");
+    world.thoughts.push(said(1_500));
+    assert!(timer_due(&timer, &world, 20_000));
+    assert!(!timer_due(&timer, &world, 5_000), "not time yet");
+}
+
 #[tokio::test]
 async fn one_composition_answer_becomes_a_reviewable_draft_then_a_journaled_app() {
     let fixture = Fixture::new();
@@ -215,6 +259,29 @@ async fn one_composition_answer_becomes_a_reviewable_draft_then_a_journaled_app(
 }
 
 #[tokio::test]
+async fn a_draft_that_doesnt_check_out_gets_one_more_try_told_why() {
+    let fixture = Fixture::new();
+    let spec = |template: &str| json!({"match_id":"", "app": {
+        "name":"Drift check", "purpose":"Notice when I drift from the topic.", "watcher":{"kind":"new_thought"},
+        "prompt":{"system":"Publish when the newest thought drifts from the topic.","template":template},
+        "publishers":[{"kind":"card","text":"{text}"}],"cooldown_secs":30
+    }});
+    let fresh = || Some(Build { id: "b".into(), request: "drift".into(), stage: "searching".into(), steps: Vec::new(), draft: None,
+        match_id: None, message: String::new() });
+    fixture.core.apps.state.lock().unwrap().build = fresh();
+    fixture.core.apps.answers.lock().unwrap().extend([spec("Thread: {thread}\nNewest: {thought}"), spec("Topic: {topic}\nNewest: {thought}")]);
+    compose_inner(&fixture.core, "b", "notice when I drift").await.unwrap();
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "no failure shows when the second try works");
+    assert_eq!(b.draft.unwrap().prompt.unwrap().template, "Topic: {topic}\nNewest: {thought}");
+    assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains("unknown template field {thread}"), "told what didn't check out");
+    // Two misses in a row still fail, as before.
+    fixture.core.apps.state.lock().unwrap().build = fresh();
+    fixture.core.apps.answers.lock().unwrap().extend([spec("{thread}"), spec("{thread}")]);
+    assert!(compose_inner(&fixture.core, "b", "notice when I drift").await.is_err());
+}
+
+#[tokio::test]
 async fn semantic_search_offers_a_disabled_app_before_any_composition() {
     let fixture = Fixture::new();
     seed(&fixture.core, false);
@@ -229,6 +296,24 @@ async fn semantic_search_offers_a_disabled_app_before_any_composition() {
     assert_eq!(fixture.core.snapshot().apps.len(), 3);
     decide(&fixture.core, &b.id, true);
     assert!(fixture.core.snapshot().apps.iter().find(|a| a.id == "app-volume").unwrap().enabled);
+}
+
+#[tokio::test]
+async fn search_first_can_be_offered_too() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, false);
+    let request = "check whether I already have an app before building a new one";
+    let fresh = || Some(Build { id: "b".into(), request: request.into(), stage: "searching".into(), steps: Vec::new(), draft: None,
+        match_id: None, message: String::new() });
+    // Off, the composer sees it among the existing apps; on, its own search pass does.
+    for (on, answer) in [(false, json!({"match_id":"app-search", "app": null})), (true, json!({"match_id":"app-search", "text":"It checks first."}))] {
+        toggle(&fixture.core, "app-search".into(), on);
+        fixture.core.apps.state.lock().unwrap().build = fresh();
+        fixture.core.apps.answers.lock().unwrap().push_back(answer);
+        compose_inner(&fixture.core, "b", request).await.unwrap();
+        assert_eq!(build(&fixture.core).unwrap().match_id.as_deref(), Some("app-search"));
+        assert!(fixture.core.apps.asked.lock().unwrap().pop().unwrap().contains("\"id\":\"app-search\""), "on: {on}");
+    }
 }
 
 #[tokio::test]
@@ -258,6 +343,22 @@ async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_
     execute(&fixture.core, &a, None).await.unwrap();
     assert_eq!(fixture.core.snapshot().suggestions.len(), 1);
     assert!(fixture.core.snapshot().suggestions[0].text.contains("repeating"));
+}
+
+#[tokio::test]
+async fn an_app_hears_the_newest_thought_once() {
+    let fixture = Fixture::new();
+    let resolver = seeds(true).remove(0);
+    let said = |id: &str, text: &str, at_ms| Thought { id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(),
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
+        complete: true, at_ms, place_ms: None };
+    fixture.core.commit(vec![Change::AppRegistered { app: resolver.clone() },
+        Change::ThoughtAdded { thought: said("a", "rent is due friday", 1) }, Change::ThoughtAdded { thought: said("b", "pay it from savings", 2) }]);
+    fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
+    execute(&fixture.core, &resolver, Some(("T1".into(), "b".into()))).await.unwrap();
+    let asked = fixture.core.apps.asked.lock().unwrap().pop().unwrap();
+    assert_eq!(asked.matches("pay it from savings").count(), 1, "{asked}");
+    assert!(asked.contains("rent is due friday\nNewest: pay it from savings"), "{asked}");
 }
 
 #[tokio::test]
