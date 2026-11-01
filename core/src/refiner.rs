@@ -83,20 +83,20 @@ pub async fn run(core: Arc<Core>) {
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     let mut failures = 0;
-    // A finished pass that came back while they were talking: it lands at the next pause instead.
-    let mut held: Option<Pass> = None;
+    // A finished pass that came back while they were talking, with the map it was sent: it lands at the next pause.
+    let mut held: Option<(Pass, Arc<World>)> = None;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
         let looked = core.take_looked();
-        if let Some(waiting) = held.take() {
+        if let Some((waiting, sent)) = held.take() {
             if core.quiet_ms() < 2_000 {
-                held = Some(waiting);
+                held = Some((waiting, sent));
                 continue;
             }
-            land(&core, waiting, "held back until this pause");
+            land(&core, waiting, &sent, "held back until this pause");
         }
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
@@ -118,9 +118,9 @@ pub async fn run(core: Arc<Core>) {
             // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
             Ok(answer) if core.quiet_ms() < 2_000 => {
                 tracing::info!("refiner pass in {took} ms: held back, talk resumed");
-                held = Some(answer);
+                held = Some((answer, world));
             }
-            Ok(answer) => land(&core, answer, &format!("in {took} ms")),
+            Ok(answer) => land(&core, answer, &world, &format!("in {took} ms")),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
@@ -130,14 +130,27 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
-/// Puts a pass on the map. Checked against the map as it is now, not as it was sent: an app's card or reminder
-/// may have landed while the model worked (a second idea on that thread would only repeat it), or a thread merged.
-fn land(core: &Core, answer: Pass, when: &str) {
-    let changes = changes(&core.snapshot(), answer);
+/// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
+/// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
+/// merged, or a thread heard more (see `drop_stale_titles`).
+fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
+    let world = core.snapshot();
+    drop_stale_titles(&mut answer, sent, &world);
+    let changes = changes(&world, answer);
     tracing::info!("refiner pass {when}: {} changes", changes.len());
     if !changes.is_empty() {
         core.commit(changes);
     }
+}
+
+/// Leaves out titles for threads that heard words the pass didn't see: placed there since it was sent, or still
+/// being placed (on the thread that was active when they were said). Those words may name the thread anew ("call
+/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them.
+fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
+    let seen: HashSet<&str> = sent.thoughts.iter().filter(|t| t.placed).map(|t| t.id.as_str()).collect();
+    let heard: HashSet<&str> =
+        now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
+    pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -514,7 +527,7 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, existing, named_at, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, drop_stale_titles, existing, named_at, rest_ms, Pass};
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
     /// A Sunday, as `chrono_today` writes it.
@@ -849,6 +862,27 @@ mod tests {
                 let expected = if allowed { vec!["T1 title Quick Launch"] } else { vec![] };
                 assert_eq!(rename(&world, "Quick Launch"), expected, "{said:?}, equal times: {equal_times}");
             }
+        }
+    }
+
+    #[test]
+    fn a_thread_that_heard_more_while_the_pass_was_out_keeps_its_title_until_the_next() {
+        // The pass went out after "call it Falcon" and came back after "actually, call it Eagle".
+        let sent = map(&[("T1", "Codename", &["Let's call it Falcon."]), ("T2", "Groceries", &["Buy oat milk."])]);
+        let titles = |now: &World| {
+            let mut pass: Pass = serde_json::from_value(serde_json::json!({
+                "titles": [{"thread_id": "T1", "title": "Falcon"}, {"thread_id": "T2", "title": "Grocery list"}]
+            }))
+            .unwrap();
+            drop_stale_titles(&mut pass, &sent, now);
+            shown(&changes_on(now, pass, TODAY))
+        };
+        assert_eq!(titles(&sent), ["T1 title Falcon", "T2 title Grocery list"], "nothing new: the pass stands");
+        // Placed since, or still being placed there: the next pass sees it.
+        for placed in [true, false] {
+            let mut now = sent.clone();
+            now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
+            assert_eq!(titles(&now), ["T2 title Grocery list"], "placed: {placed}");
         }
     }
 
