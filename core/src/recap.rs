@@ -329,7 +329,7 @@ mod tests {
     }
     fn thought(id: u64, thread_id: &str, at_ms: u64) -> Thought {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
-            thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(),
+            thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
             complete: true, at_ms, place_ms: None }
     }
     fn sample(now: u64) -> World {

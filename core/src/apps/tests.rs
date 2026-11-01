@@ -162,7 +162,7 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     a.cooldown_secs = 10;
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     let thought = Thought { id: "th-test".into(), speaker: "you".into(), text: "Record the demo before lunch".into(),
-        point: "Record the demo".into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(),
+        point: "Record the demo".into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
         complete: true, at_ms: now_ms(), place_ms: Some(10) };
     fixture.core.commit(vec![Change::ThoughtAdded { thought }]);
     on_thought(&fixture.core, "th-test");
