@@ -21,6 +21,20 @@ export default function App() {
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { world } = core;
+  const sessionCounts = useMemo(() => {
+    const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
+    let start = times.at(-1) ?? 0;
+    for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
+    const threads = new Set<string>();
+    let thoughts = 0;
+    for (const thought of world.thoughts) {
+      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now()) continue;
+      let id = thought.thread_id;
+      for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+      if (world.threads.some((thread) => thread.id === id)) { thoughts++; threads.add(id); }
+    }
+    return { thoughts, threads: threads.size };
+  }, [world.thoughts, world.threads, world.merged]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -313,6 +327,7 @@ export default function App() {
       <header>
         <div className="brand">
           E2A2O <small>threads</small>
+          {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
         <div className="header-actions">
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
@@ -557,8 +572,8 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
-          <span>fixed</span>
-          <span>heard “{thought.heard}” · undo</span>
+          <span><span aria-hidden="true">✦</span> fixed</span>
+          <span><span aria-hidden="true">✦</span> heard “{thought.heard}” · undo</span>
         </button>
       )}
       {thought.unclear && thought.guess ? (
