@@ -7,6 +7,8 @@ use crate::Core;
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -76,6 +78,7 @@ pub async fn run(core: Arc<Core>) {
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
+    drop(start);
     let mut failures = 0;
     loop {
         tokio::select! {
@@ -96,6 +99,7 @@ pub async fn run(core: Arc<Core>) {
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         let result = pass(&core, &world, since).await;
+        drop(world);
         failures = if result.is_ok() { 0 } else { failures + 1 };
         match result {
             // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
@@ -119,10 +123,23 @@ fn rest_ms(failures: u32) -> u64 {
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let body = request(world, since);
+    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
+    let status = response.status();
+    let value: serde_json::Value = response.json().await?;
+    if !status.is_success() {
+        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
+    }
+    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
+    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
+    Ok(changes(world, pass))
+}
+
+fn request(world: &World, since: u64) -> serde_json::Value {
     let map = describe(world, since);
     let existing = existing(world);
     let today = chrono_today();
-    let body = json!({
+    json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort": "low",
         "max_tokens": 6000,
@@ -142,16 +159,15 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
             },
             "required": ["titles", "merges", "suggestions", "actions", "tags"]
         }}}
-    });
-    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
-    let status = response.status();
-    let value: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
-    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    Ok(changes(world, pass))
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn perf(world: &World, since: u64) {
+    crate::perf::measure_bytes("refiner prompt (quiet)", || serde_json::to_vec(&request(world, since)).unwrap());
+    crate::perf::measure_bytes("refiner prompt (all busy)", || serde_json::to_vec(&request(world, 0)).unwrap());
+    crate::perf::measure("refiner placed count", || world.thoughts.iter().filter(|t| t.placed).count(), |_| 0);
+    crate::perf::measure("refiner empty answer", || changes(world, Pass::default()), |_| 0);
 }
 
 /// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
@@ -170,8 +186,12 @@ fn existing(world: &World) -> Vec<String> {
 /// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
 /// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
 fn describe(world: &World, since: u64) -> String {
-    let points = |t: &Thread| -> Vec<&Thought> {
-        world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
+    let mut by_thread: HashMap<&str, Vec<&Thought>> = HashMap::new();
+    for p in world.thoughts.iter().filter(|p| p.placed) {
+        if let Some(id) = p.thread_id.as_deref() { by_thread.entry(id).or_default().push(p); }
+    }
+    let points = |t: &Thread| -> &[&Thought] {
+        by_thread.get(t.id.as_str()).map(Vec::as_slice).unwrap_or_default()
     };
     let recent = |t: &Thread| {
         world.active.as_deref() == Some(t.id.as_str()) || t.touched_ms > since || points(t).iter().any(|p| p.at_ms > since)
@@ -212,12 +232,13 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     // Each merge is checked against the map the earlier ones leave: a chain (T3 into T1, then T5 into T3)
     // lands on the thread that's left, and a thread never goes into its own branch, which would make the
     // branch its own parent and drop it from the map.
-    let mut merged = world.clone();
+    // Most passes propose no merges; only copy the map when a merge needs simulation.
+    let mut merged = Cow::Borrowed(world);
     for m in pass.merges {
         let into = merged.resolve(&m.into);
         if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) {
             let change = Change::ThreadMerged { from: m.from, into };
-            merged.apply(&change);
+            merged.to_mut().apply(&change);
             out.push(change);
         }
     }

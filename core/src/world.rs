@@ -2,6 +2,7 @@
 //! appended to the journal on disk, and sent to every connected UI.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -210,8 +211,8 @@ impl World {
     }
 
     pub fn apply(&mut self, change: &Change) {
-        let change = &self.resolved(change);
-        match change {
+        let change = self.resolved(change);
+        match change.as_ref() {
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
                 self.recaps.push(recap.clone());
@@ -385,7 +386,26 @@ impl World {
     }
 
     /// The same change with thread ids followed through merges.
-    fn resolved(&self, change: &Change) -> Change {
+    fn resolved<'a>(&self, change: &'a Change) -> Cow<'a, Change> {
+        let id = match change {
+            Change::ThoughtPlaced { thread_id, .. }
+            | Change::ThreadTouched { thread_id, .. }
+            | Change::ThreadStatus { thread_id, .. }
+            | Change::ActiveChanged { thread_id, .. }
+            | Change::ThreadRenamed { thread_id, .. }
+            | Change::TagSuggested { thread_id, .. }
+            | Change::TagKept { thread_id, .. }
+            | Change::TagRemoved { thread_id, .. }
+            | Change::ThreadPicture { thread_id, .. } => Some(thread_id),
+            Change::SuggestionAdded { suggestion } => Some(&suggestion.thread_id),
+            Change::ActionProposed { action } => Some(&action.thread_id),
+            _ => None,
+        };
+        // Most changes don't name a merged thread. Apply those directly instead of copying
+        // every string (including full thoughts) just to discover there's nothing to resolve.
+        if !id.is_some_and(|id| self.merged.contains_key(id)) {
+            return Cow::Borrowed(change);
+        }
         let mut c = change.clone();
         match &mut c {
             Change::ThoughtPlaced { thread_id, .. }
@@ -401,7 +421,7 @@ impl World {
             Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
             _ => {}
         }
-        c
+        Cow::Owned(c)
     }
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
@@ -436,22 +456,33 @@ impl Journal {
         }
         let mut world = World::default();
         if path.exists() {
-            for (n, line) in BufReader::new(File::open(path)?).lines().enumerate() {
-                let line = match line {
-                    Ok(line) => line,
+            let mut reader = BufReader::new(File::open(path)?);
+            let mut line = String::new();
+            let mut n = 0usize;
+            loop {
+                line.clear();
+                n += 1;
+                match reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {}
                     // A crash mid-write can cut a character in half: skip that line rather than refuse to start.
                     Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                        tracing::warn!("skipping journal line {} that isn't valid text", n + 1);
+                        tracing::warn!("skipping journal line {} that isn't valid text", n);
                         continue;
                     }
                     Err(e) => return Err(e.into()),
-                };
+                }
+                // Match BufRead::lines, reusing its allocation instead of allocating for every change.
+                if line.ends_with('\n') {
+                    line.pop();
+                    if line.ends_with('\r') { line.pop(); }
+                }
                 if line.trim().is_empty() {
                     continue;
                 }
                 match serde_json::from_str::<Change>(&line) {
                     Ok(change) => world.apply(&change),
-                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n + 1),
+                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n),
                 }
             }
         }
@@ -537,6 +568,22 @@ mod tests {
         let (_, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T2"));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn replay_continues_after_bad_lines_and_reuses_the_buffer_for_shorter_lines() {
+        let path = std::env::temp_dir().join(format!("e2a2o-journal-lines-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut bytes = b" \r\n{bad json}\ninvalid UTF-8: \xff\n".to_vec();
+        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"a long thread id\"}\r\n\n");
+        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"T2\"}");
+        std::fs::write(&path, bytes).unwrap();
+        let (mut journal, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T2"));
+        journal.append(&Change::ActiveChanged { thread_id: "T3".into(), speaker: "Guest".into() }).unwrap();
+        let (_, replayed) = super::Journal::open(&path).unwrap();
+        assert_eq!(replayed.active_for("you").map(String::as_str), Some("T2"));
+        assert_eq!(replayed.active_for("Guest").map(String::as_str), Some("T3"));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -704,5 +751,36 @@ mod tests {
         assert_eq!(world.resolve("T1"), "T3");
         world.merged.insert("T3".into(), "T1".into());
         world.resolve("T1"); // returns instead of looping forever
+    }
+
+    #[test]
+    fn late_changes_follow_merge_chains_without_changing_the_journal_record() {
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3"] {
+            let change = serde_json::json!({"type":"thread_added", "thread":{
+                "id":id, "title":id, "parent_id":null, "status":"open", "last_point":"", "touched_ms":0
+            }});
+            world.apply(&serde_json::from_value(change).unwrap());
+        }
+        world.apply(&serde_json::from_str(r#"{"type":"thought_added","thought":{"id":"a","speaker":"Guest","text":"a point","point":"","thread_id":null,"placed":false,"unclear":"","at_ms":0,"place_ms":null}}"#).unwrap());
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T3".into() });
+        let late: Vec<Change> = serde_json::from_value(serde_json::json!([
+            {"type":"thought_placed", "thought_id":"a", "thread_id":"T1", "point":"a point", "unclear":"", "place_ms":5},
+            {"type":"thread_touched", "thread_id":"T2", "last_point":"a point", "at_ms":5},
+            {"type":"active_changed", "thread_id":"T1", "speaker":"Guest"},
+            {"type":"suggestion_added", "suggestion":{"id":"s", "thread_id":"T1", "text":"an idea", "status":"new"}},
+            {"type":"action_proposed", "action":{"id":"a", "thread_id":"T2", "kind":"reminder", "title":"a task", "when":"", "status":"new", "done_ms":null}},
+            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"}
+        ])).unwrap();
+        let records = serde_json::to_string(&late).unwrap();
+        for change in &late { world.apply(change); }
+        assert_eq!(serde_json::to_string(&late).unwrap(), records);
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T3"));
+        assert_eq!(world.active_for("Guest").map(String::as_str), Some("T3"));
+        assert_eq!(world.thread("T3").unwrap().last_point, "a point");
+        assert_eq!(world.thread("T3").unwrap().tags[0].name, "#late");
+        assert_eq!(world.suggestions[0].thread_id, "T3");
+        assert_eq!(world.actions[0].thread_id, "T3");
     }
 }

@@ -14,6 +14,8 @@ mod refiner;
 mod recap;
 mod protocol;
 mod world;
+#[cfg(test)]
+mod perf;
 
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -38,7 +40,7 @@ pub struct Core {
     find: find::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
-    world: Mutex<World>,
+    world: Mutex<Arc<World>>,
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
@@ -72,8 +74,8 @@ impl Core {
         self.looked.swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn snapshot(&self) -> World {
-        self.world.lock().unwrap().clone()
+    pub fn snapshot(&self) -> Arc<World> {
+        Arc::clone(&self.world.lock().unwrap())
     }
 
     /// Applies a batch of changes together, journals each one, then tells every UI.
@@ -82,7 +84,7 @@ impl Core {
             let mut world = self.world.lock().unwrap();
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
-                world.apply(change);
+                Arc::make_mut(&mut world).apply(change);
                 if let Err(e) = journal.append(change) {
                     tracing::error!("journal write failed: {e:#}");
                 }
@@ -112,6 +114,7 @@ impl Core {
         if thread.status == ThreadStatus::Dropped {
             changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
         }
+        drop(world);
         self.commit(changes);
     }
 
@@ -121,6 +124,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            drop(world);
             self.focus(speaker, &id);
         }
     }
@@ -135,7 +139,9 @@ impl Core {
         };
         if let Some(thread) = next {
             self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
-            self.focus(speaker, &thread.id.clone());
+            let id = thread.id.clone();
+            drop(world);
+            self.focus(speaker, &id);
         }
     }
 
@@ -352,7 +358,7 @@ async fn main() -> anyhow::Result<()> {
         find: find::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
-        world: Mutex::new(world),
+        world: Mutex::new(world.into()),
         journal: Mutex::new(journal),
         updates,
         placer_queue,
@@ -785,7 +791,7 @@ mod tests {
             recap: crate::recap::Runtime::default(),
             apps: crate::apps::Runtime::default(),
             imports: crate::import::Imports::default(),
-            world: Mutex::new(world),
+            world: Mutex::new(world.into()),
             journal: Mutex::new(journal),
             updates,
             placer_queue,

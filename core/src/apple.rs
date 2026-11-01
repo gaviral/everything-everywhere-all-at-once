@@ -40,7 +40,7 @@ pub async fn approve(core: Arc<Core>, action_id: String) {
 /// stops a second click, or another window, from adding it twice.
 fn claim(core: &Core, action_id: &str) -> Option<Action> {
     let _one_at_a_time = CLAIMING.lock().unwrap();
-    let action = core.snapshot().actions.into_iter().find(|a| a.id == action_id && a.status == ItemStatus::New)?;
+    let action = core.snapshot().actions.iter().find(|a| a.id == action_id && a.status == ItemStatus::New)?.clone();
     core.commit(vec![Change::ItemStatus { id: action.id.clone(), status: ItemStatus::Kept, done_ms: None }]);
     Some(action)
 }
@@ -48,8 +48,9 @@ fn claim(core: &Core, action_id: &str) -> Option<Action> {
 /// On start: an approval still being added when the core stopped (say, behind the permission prompt)
 /// never finished, so it's offered again rather than stuck without its buttons.
 pub fn recover(core: &Core) {
-    let unfinished = core.snapshot().actions.into_iter().filter(|a| a.status == ItemStatus::Kept);
-    core.commit(unfinished.map(|a| Change::ItemStatus { id: a.id, status: ItemStatus::New, done_ms: None }).collect());
+    let changes = core.snapshot().actions.iter().filter(|a| a.status == ItemStatus::Kept)
+        .map(|a| Change::ItemStatus { id: a.id.clone(), status: ItemStatus::New, done_ms: None }).collect();
+    core.commit(changes);
 }
 
 /// AppleScript text literal with quotes and backslashes escaped.
@@ -109,7 +110,7 @@ mod tests {
         let core = Core {
             find: crate::find::Runtime::default(),
             imports: crate::import::Imports::default(),
-            recap: Default::default(), apps: Default::default(), world: Mutex::new(world), journal: Mutex::new(journal),
+            recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
             updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
         };
