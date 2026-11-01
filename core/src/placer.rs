@@ -413,8 +413,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // Landing after the speaker moved on (newer words of theirs landed, or they moved while it retried), it
     // doesn't take them back to where they were.
     let now = now_ms();
-    let moves = !core.placing.stays(thought_id)
-        && !world.thoughts.iter().any(|t| t.placed && t.speaker == thought.speaker && t.said_at(now) > thought.said_at(now));
+    let moves = !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
     let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread, moves);
     drop(world);
     if new_thread {
@@ -427,6 +426,14 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
 /// The room a turn gets (see `ROOM`).
 fn room_for(text: &str) -> u32 {
     u32::try_from(2 * text.len()).unwrap_or(MAX_ROOM).clamp(ROOM, MAX_ROOM)
+}
+
+/// The thoughts placed that were said after `thought`: by when each was said, then by their place in the list, so
+/// two said in the same millisecond (a queue sent on reconnecting) or a turn's parts (which share its time) keep the
+/// order they were said in.
+fn said_since<'a>(world: &'a World, thought: &Thought, now: u64) -> impl Iterator<Item = &'a Thought> {
+    let at = (thought.said_at(now), world.thoughts.iter().position(|t| t.id == thought.id).unwrap_or(usize::MAX));
+    world.thoughts.iter().enumerate().filter(move |(i, t)| t.placed && (t.said_at(now), *i) > at).map(|(_, t)| t)
 }
 
 /// How long a later try may take: twice what filling its room takes. The 2,000 tokens that ran out took 9.7 s
@@ -751,8 +758,11 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         complete: p.complete,
         place_ms,
     });
-    changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
-    // Landing late, after the speaker moved on: on the map, but they stay where they are and leave nothing.
+    // Landing late, after the speaker moved on: on the map, but they stay where they are and leave nothing. Nor does
+    // it change a thread that has newer words: its last point and whether it was left unfinished stay theirs.
+    if moves || !said_since(world, thought, now).any(|t| t.thread_id.as_deref() == Some(thread_id.as_str())) {
+        changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
+    }
     if !moves {
         return changes;
     }
@@ -957,6 +967,47 @@ mod tests {
         let (changes, rest) = settle(&world, &turn("yeah, so anyway, the demo is on Tuesday"), lead, 0, false, true);
         assert!(rest.is_some());
         assert!(matches!(changes[..], [Change::ThoughtSplit { .. }, Change::ThoughtSkipped { .. }]), "{changes:?}");
+    }
+
+    #[test]
+    fn a_late_landing_leaves_a_thread_with_newer_words_as_they_left_it() {
+        // User said a about T1, and its try failed; then b on T1, trailing off, and c on T2, which left T1 unfinished.
+        let said = |id: &str, thread: Option<&str>, at_ms: u64, complete: bool| Thought { at_ms, point: format!("point {id}"), ..thought(id, "User", thread, complete) };
+        let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
+        world.thoughts = vec![said("a", None, 1, true), said("b", Some("T1"), 2, false), said("c", Some("T2"), 3, true)];
+        for change in [
+            Change::ThreadTouched { thread_id: "T1".into(), last_point: "point b".into(), at_ms: 2 },
+            Change::ThreadStatus { thread_id: "T1".into(), status: ThreadStatus::Dropped, speaker: "User".into() },
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+        ] {
+            world.apply(&change);
+        }
+        // a lands on T1 at last: on the map, but T1 still ends with b, unfinished, and User stays on T2.
+        let a = world.thoughts[0].clone();
+        let changes = decide(&world, &a, answer("continue", "T1", &["T2"]), 0, false, false);
+        assert!(matches!(changes[..], [Change::ThoughtPlaced { ref thread_id, .. }] if thread_id == "T1"), "{changes:?}");
+        for change in &changes {
+            world.apply(change);
+        }
+        let t1 = world.thread("T1").unwrap();
+        assert_eq!((t1.status, t1.dropped_by.as_str(), t1.last_point.as_str()), (ThreadStatus::Dropped, "User", "point b"));
+        assert_eq!(world.active_for("User").map(String::as_str), Some("T2"));
+        // A new thread has nothing newer: a late landing still gives it its point.
+        let changes = decide(&world, &a, answer("new", "", &[]), 0, false, false);
+        assert!(changes.iter().any(|c| matches!(c, Change::ThreadTouched { last_point, .. } if last_point == "User says a")), "{changes:?}");
+        assert!(!changes.iter().any(|c| matches!(c, Change::ActiveChanged { .. })), "{changes:?}");
+    }
+
+    #[test]
+    fn words_said_in_the_same_millisecond_keep_the_order_they_were_said_in() {
+        // a and b came in the same millisecond (a queue sent on reconnecting); a's try failed and b landed.
+        let at = |id: &str, thread: Option<&str>| Thought { at_ms: 5, ..thought(id, "User", thread, true) };
+        let world = World { threads: vec![thread("T2")], thoughts: vec![at("a", None), at("b", Some("T2"))], ..World::default() };
+        let now = crate::now_ms();
+        let since = |id: &str| super::said_since(&world, &world.thoughts.iter().find(|t| t.id == id).unwrap().clone(), now).map(|t| t.id.clone()).collect::<Vec<_>>();
+        // b counts as newer, so a landing late doesn't move User back; nothing is newer than b.
+        assert_eq!(since("a"), ["b"]);
+        assert!(since("b").is_empty());
     }
 
     #[test]
