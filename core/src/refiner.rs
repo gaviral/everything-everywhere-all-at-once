@@ -2,7 +2,7 @@
 //! better titles, merges of threads that are really one, one suggestion per branch,
 //! and the tasks or events the talk decided on. Results arrive as ordinary changes.
 
-use crate::world::{Action, Change, ItemStatus, Suggestion, World};
+use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
@@ -75,7 +75,7 @@ pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
-        (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), 0u64);
+        (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
@@ -92,8 +92,9 @@ pub async fn run(core: Arc<Core>) {
         if !due || core.key.is_none() {
             continue;
         }
+        let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
-        match pass(&core, &world).await {
+        match pass(&core, &world, since).await {
             // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
             Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
             Ok(changes) if !changes.is_empty() => core.commit(changes),
@@ -103,22 +104,9 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
-async fn pass(core: &Core, world: &World) -> anyhow::Result<Vec<Change>> {
+async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
-    let map = world
-        .threads
-        .iter()
-        .map(|t| {
-            let points: Vec<String> = world
-                .thoughts
-                .iter()
-                .filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str()))
-                .map(|p| format!("  - {}", p.text))
-                .collect();
-            format!("{}: {} (parent: {})\n{}", t.id, t.title, t.parent_id.as_deref().unwrap_or("none"), points.join("\n"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let map = describe(world, since);
     let existing: Vec<String> = world
         .suggestions
         .iter()
@@ -133,7 +121,7 @@ async fn pass(core: &Core, world: &World) -> anyhow::Result<Vec<Change>> {
         "prompt_cache_key": "e2a2o-refiner",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Today is {today}.\nThreads:\n{map}\nAlready on the map:\n{}", existing.join("\n"))},
+            {"role": "user", "content": format!("Today is {today}.\n{map}\nAlready on the map:\n{}", existing.join("\n"))},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Pass", "schema": {
             "type": "object",
@@ -156,6 +144,40 @@ async fn pass(core: &Core, world: &World) -> anyhow::Result<Vec<Change>> {
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     Ok(changes(world, pass))
+}
+
+/// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
+/// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
+/// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
+fn describe(world: &World, since: u64) -> String {
+    let points = |t: &Thread| -> Vec<&Thought> {
+        world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
+    };
+    let recent = |t: &Thread| {
+        world.active.as_deref() == Some(t.id.as_str()) || t.touched_ms > since || points(t).iter().any(|p| p.at_ms > since)
+    };
+    let parent = |t: &Thread| t.parent_id.clone().unwrap_or_else(|| "none".into());
+    let quiet: Vec<String> = world
+        .threads
+        .iter()
+        .filter(|t| !recent(t))
+        .map(|t| format!("{}: {} (parent: {}) last: {}", t.id, t.title, parent(t), t.last_point))
+        .collect();
+    let busy: Vec<String> = world
+        .threads
+        .iter()
+        .filter(|t| recent(t))
+        .map(|t| {
+            let all = points(t);
+            let latest: Vec<String> = all[all.len().saturating_sub(8)..].iter().map(|p| format!("  - {}", p.text)).collect();
+            format!("{}: {} (parent: {})\n{}", t.id, t.title, parent(t), latest.join("\n"))
+        })
+        .collect();
+    format!(
+        "Quiet threads (title, parent, last point):\n{}\nRecently active threads, with their latest points:\n{}",
+        quiet.join("\n"),
+        busy.join("\n")
+    )
 }
 
 fn changes(world: &World, pass: Pass) -> Vec<Change> {
@@ -223,4 +245,47 @@ fn chrono_today() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe;
+    use crate::world::{Thought, Thread, ThreadStatus, World};
+
+    #[test]
+    fn quiet_threads_shrink_to_one_line() {
+        let thread = |id: &str, touched_ms| Thread {
+            id: id.into(),
+            title: format!("Topic {id}"),
+            parent_id: None,
+            status: ThreadStatus::Open,
+            last_point: format!("last on {id}"),
+            touched_ms,
+            tags: Vec::new(),
+            picture: None,
+        };
+        let thought = |n: u64, thread: &str| Thought {
+            id: format!("th-{n}"),
+            speaker: "you".into(),
+            text: format!("thought {n}"),
+            point: String::new(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            complete: true,
+            at_ms: n,
+            place_ms: None,
+        };
+        let world = World {
+            threads: vec![thread("T1", 5), thread("T2", 100)],
+            thoughts: (1..=12).map(|n| thought(n, "T1")).chain([thought(101, "T2")]).collect(),
+            ..World::default()
+        };
+        let text = describe(&world, 50);
+        assert!(text.contains("T1: Topic T1 (parent: none) last: last on T1"));
+        assert!(!text.contains("thought 12\n") && text.contains("thought 101"));
+        let all = describe(&world, 0);
+        assert!(all.contains("thought 12") && !all.contains("thought 4\n"), "keeps only the latest 8");
+    }
 }
