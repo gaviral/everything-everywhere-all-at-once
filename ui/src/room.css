@@ -54,6 +54,7 @@
 .room-panel-title { margin-bottom: 12px; font-size: 15px; font-weight: 650; }
 .room-you, .room-panel ul { margin: 0; }
 .room-you span:last-child { color: var(--muted); }
+.room-guest { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font-size: 13px; line-height: 1.5; }
 .room-person-mark { display: inline-block; width: 18px; color: var(--muted); font-size: 10px; }
 .other-mark { color: var(--accent); }
 .room-panel-label { margin: 16px 0 7px; color: var(--muted); font-size: 12px; font-weight: 600; }

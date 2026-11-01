@@ -43,7 +43,7 @@ const modelName = (id: string) => id.split("-").map((word) => word.charAt(0).toU
 function summary(job: ImportStatus) {
   const places = [job.threads && plural(job.threads, "new thread"), job.extended && `${plural(job.extended, "thread")} you already had`].filter(Boolean);
   const extras = [job.questions && plural(job.questions, "open question"), job.actions && plural(job.actions, "task")].filter(Boolean);
-  return `Added ${plural(job.points, "point")} to ${places.join(" and ")}${extras.length ? `, with ${extras.join(" and ")}` : ""}.`;
+  return `Added ${plural(job.points, "point")}${places.length ? ` to ${places.join(" and ")}` : ""}${extras.length ? `, with ${extras.join(" and ")}` : ""}.`;
 }
 
 // Reading is most of the wait; grouping and adding are the last stretch.
@@ -164,6 +164,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   const body = job ? (
     running ? (
       <>
+        <div className="import-eyebrow"><span aria-hidden="true">✦</span> Making your map</div>
         <h2 id="import-title">Importing {job.file}</h2>
         <div className="import-bar" role="progressbar" aria-label="Import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress(job) * 100)}>
           <span style={{ width: `${progress(job) * 100}%` }} />
@@ -221,6 +222,8 @@ export function ImportChats({ core }: { core: ImportCore }) {
           To keep this quick, the import reads your latest {preview.messages.toLocaleString()} of {(preview.total - preview.already).toLocaleString()} messages, from {day(preview.from_ms)} on.
         </p>
       )}
+      <div className="import-privacy">
+      <h3><span aria-hidden="true">✦</span> Before you import</h3>
       <ul className="import-list">
         <li>
           Your {plural(preview.messages, "message")} (about {plural(preview.words, "word")}), with the first lines of each AI reply for context, go to
@@ -232,6 +235,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
         </li>
         <li>The file itself isn't kept. The points are saved with your map, on this computer.</li>
       </ul>
+      </div>
       {contributor && (
         <p className="import-warn">{modelName(contributor)} is in Contributor mode: Meta may keep what's sent to improve its products.</p>
       )}
