@@ -239,11 +239,17 @@ header {
 }
 
 .points li.other::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
   background: var(--accent);
+  opacity: .85;
+  transform: translateY(-2px) rotate(45deg);
 }
 
 .speaker {
-  flex: none;
+  flex: 0 1 auto;
+  overflow-wrap: anywhere;
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -288,6 +294,27 @@ header {
 .did-you-mean button.quiet {
   background: transparent;
   color: var(--ai);
+}
+
+.fixed {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fixed > span + span,
+.fixed:is(:hover, :focus-visible) > span:first-child {
+  display: none;
+}
+
+.fixed:is(:hover, :focus-visible) > span + span {
+  display: inline;
 }
 
 .speed {
@@ -501,25 +528,20 @@ header {
   }
 }
 
+/* Placed by Explain.tsx: above the phrase, inside the window. */
 .explain {
   position: fixed;
   z-index: 20;
-  max-width: 320px;
-  transform: translate(-50%, calc(-100% - 8px));
+  max-width: min(320px, calc(100vw - 16px));
 }
 
-.explain button,
-.explain-text {
-  border-radius: 12px;
-  background: var(--ink);
-  color: var(--bg);
-  box-shadow: var(--shadow);
-  font-size: 13px;
-}
-
-.explain button {
+.explain > button {
   padding: 7px 12px;
   border: 0;
+  border-radius: 12px;
+  background: var(--ai);
+  color: var(--ai-button-ink);
+  box-shadow: var(--shadow);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -527,9 +549,50 @@ header {
   cursor: pointer;
 }
 
-.explain-text {
+.explain-card {
   padding: 10px 12px;
-  line-height: 1.4;
+  border: 1px solid color-mix(in srgb, var(--ai) 35%, var(--line));
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.explain-wait {
+  color: var(--muted);
+  animation: explain-wait 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes explain-wait {
+  to {
+    opacity: 0.4;
+  }
+}
+
+.explain-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.explain-actions button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ai);
+  color: var(--ai-button-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.explain-actions button.quiet {
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .notice {
@@ -656,3 +719,36 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .map-change > span { color: var(--ai); }
 .map-change button { margin-left: auto; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 18px; cursor: pointer; }
 .branches .branches .branches { padding-left: 4px; }
+
+/* Keep the camera's secondary text and decisions legible without promoting them. */
+.map-tools button, .search input, .thread-count, .collapse, .keyboard-hint { font-size: 13px; }
+.chip, .tag, .speaker, .when { font-size: 12px; }
+.ai, .action { padding: 9px 12px; border-radius: 10px; line-height: 1.45; }
+.ai:not(.kept), .action:not(.done) { border-color: color-mix(in srgb, var(--ai) 40%, var(--line)); }
+.ai-actions button { min-height: 32px; font-size: 13px; }
+.ai-actions button.quiet { min-width: 32px; font-size: 16px; }
+.did-you-mean { gap: 6px; padding: 4px 5px 4px 10px; font-size: 13px; }
+.did-you-mean button { min-height: 30px; }
+.pullback-title { font-size: 15px; }
+.pullback-actions button { min-height: 40px; }
+.composer input::placeholder { color: var(--muted); opacity: 1; }
+
+/* The active thread is the map's anchor; session progress stays secondary. */
+.session-count { margin-left: 18px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
+.pullback { background: var(--card); border-color: color-mix(in srgb, var(--amber) 30%, var(--line)); }
+.pullback-actions button:not(.quiet) { background: var(--amber-soft); color: var(--amber); }
+.fixed { max-width: 100%; padding: 3px 8px; border-color: color-mix(in srgb, var(--ai) 30%, var(--line)); background: var(--ai-soft); color: var(--ai); font-size: 12px; line-height: 1.4; text-align: left; overflow-wrap: anywhere; }
+.fixed:hover, .fixed:focus-visible { border-color: var(--ai); }
+.did-you-mean { border: 1px solid color-mix(in srgb, var(--ai) 30%, var(--line)); }
+@media (max-width: 700px) {
+  .brand { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 4px; }
+  .brand small { margin-left: 0; }
+  .session-count { flex-basis: 100%; margin-left: 0; font-size: 11px; }
+  .map-tools { top: 62px; }
+}
+@media (max-width: 560px) {
+  .header-actions { gap: 8px; }
+  .recap-button { padding-inline: 9px; }
+  .status { font-size: 12px; }
+  .map-tools { top: 58px; }
+}

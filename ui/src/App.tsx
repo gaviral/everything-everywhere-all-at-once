@@ -10,18 +10,42 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
+import { Apps } from "./Apps";
+import { Explain } from "./Explain";
+import { Palace } from "./Palace";
+import { Recap } from "./Recap";
+import { leftBy, RoomControl, useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 export default function App() {
   const core = useCore();
+  const me = useMe();
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { world } = core;
+  const sessionCounts = useMemo(() => {
+    const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
+    let start = times.at(-1) ?? 0;
+    for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
+    const threads = new Set<string>();
+    let thoughts = 0;
+    for (const thought of world.thoughts) {
+      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now()) continue;
+      let id = thought.thread_id;
+      for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+      if (world.threads.some((thread) => thread.id === id)) { thoughts++; threads.add(id); }
+    }
+    return { thoughts, threads: threads.size };
+  }, [world.thoughts, world.threads, world.merged]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [view, setView] = useState<"map" | "palace">("map");
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -40,12 +64,12 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
-  }, [world.thoughts, world.threads, core.snapshotRevision]);
+  }, [world.thoughts, world.threads, core.snapshotRevision, me]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -104,7 +128,10 @@ export default function App() {
     }
     setStartingMic(true);
     try {
-      const stop = await startMic(core.sendAudio);
+      const stopAudio = await startMic(core.sendAudio);
+      let stopped = false;
+      const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
+      if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = core.voiceStatusRevision;
       setStopMic(() => stop);
       if (!core.listen(true)) {
@@ -113,11 +140,12 @@ export default function App() {
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
+      if (!mounted.current) return;
       core.listen(false);
       const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
       core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
     } finally {
-      setStartingMic(false);
+      if (mounted.current) setStartingMic(false);
     }
   };
 
@@ -129,7 +157,8 @@ export default function App() {
     }
   };
 
-  const pending = world.thoughts.filter((t) => !t.placed);
+  // Your own thoughts on their way; in a room the other person's land on the map with their name.
+  const pending = world.thoughts.filter((t) => !t.placed && t.speaker === me);
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
@@ -219,6 +248,7 @@ export default function App() {
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { event.preventDefault(); searchRef.current?.focus(); }
@@ -270,60 +300,37 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+  // Only threads you left: in a room, the other person's are theirs to pick up.
   const dropped = world.threads
-    .filter((t) => t.status === "dropped" && !dismissed.includes(dropKey(t)))
+    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
     : "";
 
-  // Select a word or phrase on the map to get it explained in its context.
-  const [selection, setSelection] = useState<{
-    id: string;
-    text: string;
-    context: string;
-    x: number;
-    y: number;
-    asked: boolean;
-  } | null>(null);
-  useEffect(() => {
-    const onUp = () => {
-      const picked = window.getSelection();
-      const text = picked?.toString().trim() ?? "";
-      if (!picked || !text || text.length > 80 || picked.rangeCount === 0) return;
-      const range = picked.getRangeAt(0);
-      const node = range.commonAncestorContainer;
-      const element = node instanceof Element ? node : node.parentElement;
-      if (!element?.closest(".map")) return;
-      const rect = range.getBoundingClientRect();
-      const context =
-        element.closest("li")?.getAttribute("title") || element.closest(".thread")?.textContent || text;
-      setSelection({ id: crypto.randomUUID(), text, context, x: rect.left + rect.width / 2, y: rect.top, asked: false });
-    };
-    const onDown = (event: MouseEvent) => {
-      if (!(event.target as Element).closest(".explain")) setSelection(null);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelection(null);
-      else if (event.key.startsWith("Arrow") && event.shiftKey) onUp();
-    };
-    document.addEventListener("keyup", onKey);
-    document.addEventListener("mouseup", onUp);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keyup", onKey);
-      document.removeEventListener("mouseup", onUp);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, []);
-
   const goBack = (thread: Thread) => {
+    setView("map");
+    setExpanded((state) => {
+      const next = { ...state };
+      let current: Thread | undefined = thread;
+      const visited = new Set<string>();
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        next[current.id] = false;
+        current = current.parent_id ? threadById.get(current.parent_id) : undefined;
+      }
+      return next;
+    });
     setQuery("");
     setFocusMode(false);
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
-    requestAnimationFrame(() => document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }));
+    requestAnimationFrame(() => {
+      const target = document.getElementById(`thread-${thread.id}`);
+      target?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+      target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
+    });
   };
 
   return (
@@ -332,11 +339,16 @@ export default function App() {
       <header>
         <div className="brand">
           E2A2O <small>threads</small>
+          {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
+        <div className="header-actions">
+        <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
+        <ImportChats core={core} />
         <div className="status">
-          <ImportChats core={core} />
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
+        </div>
         </div>
       </header>
 
@@ -358,34 +370,24 @@ export default function App() {
         <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
-      {selection && (
-        <div className="explain" style={{ left: selection.x, top: selection.y }}>
-          {selection.asked ? (
-            <div className="explain-text">{core.explanations[selection.id] ?? "…"}</div>
-          ) : (
-            <button
-              onClick={() => {
-                core.explain(selection.id, selection.text, selection.context);
-                setSelection({ ...selection, asked: true });
-              }}
-            >
-              Explain “{selection.text.length > 24 ? `${selection.text.slice(0, 24)}…` : selection.text}”
-            </button>
-          )}
-        </div>
-      )}
+      <Explain explanations={core.explanations} explain={core.explain} />
 
+      <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
-          <label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          <div className="palace-switch" role="group" aria-label="View">
+            <button aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
+            <button aria-pressed={view === "palace"} onClick={() => setView("palace")}>Palace</button>
+          </div>
+          {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
-          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details>
+          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details></>}
         </div>
-        {search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
+        {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      <main ref={mapRef} className="map" aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className="map" aria-label="Thread map">
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
@@ -409,7 +411,7 @@ export default function App() {
             />
           ))
         )}
-      </main>
+      </main>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className="dock" aria-label="Your thoughts">
@@ -470,6 +472,14 @@ export default function App() {
           </form>
         </div>
       </section>
+      <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+        const thread = world.threads.find((t) => t.id === id);
+        if (thread) goBack(thread);
+        requestAnimationFrame(() => {
+          const target = document.getElementById(`thread-${id}`)?.querySelector<HTMLButtonElement>(".thread-toggle");
+          target?.focus({ preventScroll: true });
+        });
+      }} />
     </div>
     </MotionConfig>
   );
@@ -487,7 +497,10 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
   const branches = childrenByParent.get(thread.id) ?? [];
   const active = world.active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
-  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
+  // Your own unfinished thread is flagged; someone else's tag just says whose it is.
+  const me = useMe();
+  const by = thread.status === "dropped" ? leftBy(thread, me) : "";
+  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : ""].join(" ");
 
   return (
     <motion.section
@@ -504,7 +517,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
         <div className="head-text">
           <div className="head-line">
             <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
-            {thread.status === "dropped" && <span className="chip dropped">left off</span>}
+            {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {active && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
@@ -525,7 +538,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: !collapsed }))} disabled={searching && matches.has(thread.id)}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={() => { if (!(searching && matches.has(thread.id))) setExpanded((state) => ({ ...state, [thread.id]: !collapsed })); }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -566,13 +579,21 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
 
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const other = thought.speaker !== "you";
+  const me = useMe();
+  const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
     <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
+      {thought.heard && thought.fixed && (
+        // Fixed without asking: quiet until you look, and one tap puts the words back.
+        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
+          <span><span aria-hidden="true">✦</span> fixed</span>
+          <span><span aria-hidden="true">✦</span> heard “{thought.heard}” · undo</span>
+        </button>
+      )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?

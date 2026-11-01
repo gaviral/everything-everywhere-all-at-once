@@ -1,13 +1,14 @@
 /* The import panel: calm, in the app's own tokens (styles.css). */
+/* Beside Recap in the header, in the same shape. */
 .import-open {
-  margin-right: 6px;
-  padding: 5px 10px;
+  min-height: 36px;
+  padding: 6px 13px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--card);
-  color: var(--muted);
+  color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
@@ -16,7 +17,6 @@
 .import-open:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--ink);
 }
 
 .import-dialog {
@@ -199,10 +199,20 @@
   pointer-events: none;
 }
 
+.import-short {
+  display: none;
+}
+
 @media (max-width: 560px) {
   .import-open {
-    margin-right: 2px;
-    padding-inline: 8px;
+    padding-inline: 9px;
+  }
+  .import-long {
+    display: none;
+  }
+  .import-short {
+    display: inline-flex;
+    align-items: center;
   }
   .import-body {
     padding: 18px 16px 16px;

@@ -2,13 +2,15 @@
 //! their own messages a part at a time and pulls out each idea; a stronger model groups the ideas
 //! into threads, open questions and dated tasks. Everything lands as ordinary changes, and every
 //! point keeps the time it was first said, so search, focus, pictures and the refiner just work.
+//! In a room, only the laptop running the core imports (the chats go out with its key), the points
+//! land as that window's speaker, and the progress goes only to them.
 
 use crate::protocol::ServerMsg;
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::Core;
 use anyhow::{anyhow, bail, Context};
 use axum::body::Bytes;
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -92,15 +94,25 @@ pub struct Status {
 #[derive(Default)]
 pub struct Imports {
     prepared: Mutex<Option<Prepared>>,
-    job: Mutex<Option<tokio::task::AbortHandle>>,
+    job: Mutex<Option<Job>>,
     status: Mutex<Option<Status>>,
 }
 
+/// The running import and whose it is: its points land as theirs, and only they see its progress.
+struct Job {
+    handle: tokio::task::AbortHandle,
+    speaker: String,
+}
+
 impl Imports {
-    /// The running import's status, for a window that connects mid-way; None when nothing runs.
-    pub fn live(&self) -> Option<Status> {
-        let running = self.job.lock().unwrap().as_ref().is_some_and(|job| !job.is_finished());
-        if running {
+    fn running(&self) -> bool {
+        self.job.lock().unwrap().as_ref().is_some_and(|job| !job.handle.is_finished())
+    }
+
+    /// The running import's status for a window that connects mid-way, when the import is its speaker's.
+    pub fn live_for(&self, speaker: &str) -> Option<Status> {
+        let theirs = self.job.lock().unwrap().as_ref().is_some_and(|job| !job.handle.is_finished() && job.speaker == speaker);
+        if theirs {
             self.status.lock().unwrap().clone()
         } else {
             None
@@ -145,16 +157,25 @@ pub struct FileName {
 
 /// POST /import: reads an export and says what an import would send to which model. Starts nothing;
 /// the window starts it with an import_start message once the person agrees.
-pub async fn prepare(State(core): State<Arc<Core>>, Query(query): Query<FileName>, body: Bytes) -> Response {
+pub async fn prepare(
+    State(core): State<Arc<Core>>,
+    ConnectInfo(link): ConnectInfo<crate::Link>,
+    Query(query): Query<FileName>,
+    body: Bytes,
+) -> Response {
     let refuse = |status: StatusCode, message: &str| (status, Json(json!({ "error": message }))).into_response();
+    if !link.here() {
+        return refuse(StatusCode::FORBIDDEN, ONLY_HERE);
+    }
     if core.key.is_none() {
         return refuse(StatusCode::SERVICE_UNAVAILABLE, "Importing needs the model key. Set MODEL_API_KEY in .env (see .env.example).");
     }
-    if core.imports.live().is_some() {
+    if core.imports.running() {
         return refuse(StatusCode::CONFLICT, "An import is already running. Stop it, or wait for it to finish.");
     }
-    // An imported point keeps its message's exact time, so a message seen before is one already on the map.
-    let known: HashSet<u64> = core.snapshot().thoughts.iter().filter(|t| t.speaker == "you").map(|t| t.at_ms).collect();
+    // An imported point keeps its message's exact time, so a message seen before is one already on the map
+    // (whatever name it went under).
+    let known: HashSet<u64> = core.snapshot().thoughts.iter().map(|t| t.at_ms).collect();
     let file: String = query.name.rsplit(['/', '\\']).next().unwrap_or_default().trim().chars().take(80).collect();
     let file = if file.is_empty() { "your file".to_string() } else { file };
     // A big export takes a moment to read; keep it off the threads that serve the map.
@@ -195,32 +216,44 @@ pub async fn prepare(State(core): State<Arc<Core>>, Query(query): Query<FileName
     Json(preview).into_response()
 }
 
-/// Starts the file read under this id; one import at a time.
-pub fn start(core: Arc<Core>, id: String) {
+/// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
+const ONLY_HERE: &str = "In a room, only the laptop running E2A2O can import chats.";
+
+/// Starts the file read under this id, as the speaker of the window that asked; one import at a time.
+pub fn start(core: Arc<Core>, id: String, speaker: String, here: bool) {
+    if !here {
+        return core.send_to(&speaker, ServerMsg::Notice { message: ONLY_HERE.into() });
+    }
     let mut job = core.imports.job.lock().unwrap();
-    if job.as_ref().is_some_and(|j| !j.is_finished()) {
-        return core.send(ServerMsg::Notice { message: "An import is already running.".into() });
+    if job.as_ref().is_some_and(|j| !j.handle.is_finished()) {
+        return core.send_to(&speaker, ServerMsg::Notice { message: "An import is already running.".into() });
     }
     let prepared = core.imports.prepared.lock().unwrap().take_if(|p| p.id == id);
     let Some(prepared) = prepared else {
-        return core.send(ServerMsg::Notice { message: "That file isn't ready any more. Choose it again to import.".into() });
+        return core.send_to(&speaker, ServerMsg::Notice { message: "That file isn't ready any more. Choose it again to import.".into() });
     };
-    *job = Some(tokio::spawn(run(core.clone(), prepared)).abort_handle());
+    let handle = tokio::spawn(run(core.clone(), prepared, speaker.clone())).abort_handle();
+    *job = Some(Job { handle, speaker });
 }
 
-/// Stops the running import. Threads that already landed stay; nothing more is added.
-pub fn cancel(core: &Core) {
-    *core.imports.prepared.lock().unwrap() = None;
-    let job = core.imports.job.lock().unwrap().take();
-    let Some(job) = job.filter(|j| !j.is_finished()) else { return };
-    job.abort();
+/// Stops the running import when it's this speaker's. Threads that already landed stay; nothing more is added.
+pub fn cancel(core: &Core, speaker: &str) {
+    let job = {
+        let mut job = core.imports.job.lock().unwrap();
+        if job.as_ref().is_none_or(|j| j.speaker != speaker) {
+            return;
+        }
+        job.take()
+    };
+    let Some(job) = job.filter(|j| !j.handle.is_finished()) else { return };
+    job.handle.abort();
     let mut status = core.imports.status.lock().unwrap().clone().unwrap_or_default();
     status.note = match status.state.as_str() {
         "adding" if status.points > 0 => "Stopped. What was already added stays on the map.".into(),
         _ => "Stopped. Nothing was added.".into(),
     };
     status.state = "stopped".into();
-    publish(core, &status);
+    publish(core, speaker, &status);
 }
 
 /// Models for each step. Never Contributor mode by default: these are someone's private chats,
@@ -230,16 +263,17 @@ fn models() -> (String, String) {
     (pick("IMPORT_EXTRACT_MODEL", "muse-spark-1.2"), pick("IMPORT_MERGE_MODEL", "muse-spark-1.3"))
 }
 
-fn publish(core: &Core, status: &Status) {
+/// Only to the person importing: in a room, the others see the threads land, not the progress.
+fn publish(core: &Core, speaker: &str, status: &Status) {
     *core.imports.status.lock().unwrap() = Some(status.clone());
-    core.send(ServerMsg::Import { status: status.clone() });
+    core.send_to(speaker, ServerMsg::Import { status: status.clone() });
 }
 
-async fn run(core: Arc<Core>, job: Prepared) {
+async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     let (extract_model, merge_model) = models();
     let offset = local_offset();
     let mut status = Status { id: job.id.clone(), file: job.file.clone(), state: "reading".into(), parts: job.parts.len(), ..Status::default() };
-    publish(&core, &status);
+    publish(&core, &speaker, &status);
 
     // A few parts at a time. A part that keeps failing is skipped; the others still count.
     let mut ideas: Vec<Idea> = Vec::new();
@@ -258,7 +292,7 @@ async fn run(core: Arc<Core>, job: Prepared) {
             }
         }
         (status.parts_done, status.ideas, status.threads) = (status.parts_done + 1, ideas.len(), topics_seen.len());
-        publish(&core, &status);
+        publish(&core, &speaker, &status);
     }
     drop(reads);
     let mut notes = Vec::new();
@@ -269,7 +303,7 @@ async fn run(core: Arc<Core>, job: Prepared) {
         } else {
             "Found no ideas in these messages, so nothing was added.".into()
         };
-        return finish(&core, &status);
+        return finish(&core, &speaker, &status);
     }
     if failed > 0 {
         notes.push(format!("{failed} of {} parts couldn't be read ({reason}); the rest were added.", job.parts.len()));
@@ -278,7 +312,7 @@ async fn run(core: Arc<Core>, job: Prepared) {
     ideas.sort_by_key(|idea| idea.at_ms);
     let topics = topics(&ideas);
     status.state = "grouping".into();
-    publish(&core, &status);
+    publish(&core, &speaker, &status);
     let world = core.snapshot();
     let groups = match group(&core, &merge_model, &topics, &ideas, &world, offset).await {
         Ok(groups) if groups.iter().any(|g| !g.ideas.is_empty()) => groups,
@@ -292,23 +326,23 @@ async fn run(core: Arc<Core>, job: Prepared) {
     };
 
     (status.state, status.threads) = ("adding".into(), 0);
-    publish(&core, &status);
-    land(&core, &groups, &ideas, &mut status).await;
+    publish(&core, &speaker, &status);
+    land(&core, &speaker, &groups, &ideas, &mut status).await;
     status.state = "done".into();
     status.note = notes.join(" ");
-    finish(&core, &status);
+    finish(&core, &speaker, &status);
 }
 
 /// The last status, and a short notice for a window where the panel is closed.
-fn finish(core: &Core, status: &Status) {
-    publish(core, status);
+fn finish(core: &Core, speaker: &str, status: &Status) {
+    publish(core, speaker, status);
     let count = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
     let message = match status.state.as_str() {
         "done" if status.threads > 0 => format!("Imported {} from {}.", count(status.threads, "thread"), status.file),
         "done" => format!("Imported {} from {}.", count(status.points, "point"), status.file),
         _ => format!("Import didn't finish: {}", status.note),
     };
-    core.send(ServerMsg::Notice { message });
+    core.send_to(speaker, ServerMsg::Notice { message });
 }
 
 // ---- Reading exports ----
@@ -1228,7 +1262,7 @@ fn order(groups: &[Group], ideas: &[Idea]) -> Vec<usize> {
 /// The changes for one group: its thread (when new), its points with their own times, its open
 /// question and tasks. A repeat of the same point in one thread lands once. `touched` is the time
 /// for a new thread with no points of its own (a parent whose branches hold them).
-fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], world: &World, touched: u64) -> Vec<Change> {
+fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], world: &World, touched: u64, speaker: &str) -> Vec<Change> {
     let mut sorted: Vec<&Idea> = group.ideas.iter().map(|&i| &ideas[i]).collect();
     sorted.sort_by_key(|i| i.at_ms);
     let mut seen = HashSet::new();
@@ -1247,6 +1281,7 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
                 touched_ms: points.last().map_or(touched, |i| i.at_ms),
                 tags: Vec::new(),
                 picture: None,
+                dropped_by: String::new(),
             },
         });
     }
@@ -1254,13 +1289,15 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
         changes.push(Change::ThoughtAdded {
             thought: Thought {
                 id: new_id("th"),
-                speaker: "you".into(),
+                speaker: speaker.into(),
                 text: idea.quote.clone(),
                 point: idea.point.clone(),
                 thread_id: Some(id.into()),
                 placed: true,
                 unclear: String::new(),
                 guess: String::new(),
+                heard: String::new(),
+                fixed: String::new(),
                 complete: true,
                 at_ms: idea.at_ms,
                 place_ms: None,
@@ -1297,7 +1334,7 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
 /// Puts the groups on the map one thread at a time, so the map visibly fills in. New threads get
 /// ids of their own (I1, I2, …): the placer names threads from a snapshot taken before its model
 /// call, so sharing its T numbers could hand two threads one id.
-async fn land(core: &Core, groups: &[Group], ideas: &[Idea], status: &mut Status) {
+async fn land(core: &Core, speaker: &str, groups: &[Group], ideas: &[Idea], status: &mut Status) {
     let world = core.snapshot();
     let base = world.threads.len() + world.merged.len();
     let mut ids: Vec<Option<String>> = vec![None; groups.len()];
@@ -1316,7 +1353,7 @@ async fn land(core: &Core, groups: &[Group], ideas: &[Idea], status: &mut Status
         ids[i] = Some(id.clone());
         let parent = group.parent.and_then(|p| ids[p].clone());
         let branch_time = groups.iter().filter(|g| g.parent == Some(i)).flat_map(|g| &g.ideas).map(|&n| ideas[n].at_ms).max();
-        let changes = changes_for(group, &id, parent, ideas, &world, branch_time.unwrap_or_else(crate::now_ms));
+        let changes = changes_for(group, &id, parent, ideas, &world, branch_time.unwrap_or_else(crate::now_ms), speaker);
         if changes.is_empty() {
             continue;
         }
@@ -1339,12 +1376,12 @@ async fn land(core: &Core, groups: &[Group], ideas: &[Idea], status: &mut Status
             status.extended += 1;
         }
         core.commit(changes);
-        publish(core, status);
+        publish(core, speaker, status);
         tokio::time::sleep(Duration::from_millis(80)).await;
     }
-    // On an empty map, open on the thread they were on most recently.
-    if let Some((_, id)) = newest.filter(|_| core.snapshot().active.is_none()) {
-        core.commit(vec![Change::ActiveChanged { thread_id: id }]);
+    // With no thread of their own yet, open on the one they were on most recently.
+    if let Some((_, id)) = newest.filter(|_| core.snapshot().active_for(speaker).is_none()) {
+        core.commit(vec![Change::ActiveChanged { thread_id: id, speaker: speaker.into() }]);
     }
 }
 
@@ -1476,7 +1513,17 @@ mod tests {
         let topics = topics(&ideas);
         assert_eq!(topics.len(), 4, "topic names match ignoring case and punctuation");
         let mut world = World::default();
-        world.threads.push(Thread { id: "T1".into(), title: "Sleep".into(), parent_id: None, status: ThreadStatus::Open, last_point: String::new(), touched_ms: 5, tags: Vec::new(), picture: None });
+        world.threads.push(Thread {
+            id: "T1".into(),
+            title: "Sleep".into(),
+            parent_id: None,
+            status: ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 5,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        });
         let merged: Merged = serde_json::from_value(json!({
             "threads": [
                 {"key": "flat", "title": "Flat hunt", "parent": "move", "existing": "", "topics": [2, 99]},
@@ -1505,11 +1552,80 @@ mod tests {
         assert!(landing.iter().position(|&i| i == 0) < landing.iter().position(|&i| i == 1), "parents land first");
     }
 
+    /// A core with an empty map in a temporary journal, and no key.
+    struct Fixture {
+        path: std::path::PathBuf,
+        core: Arc<Core>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("e2a2o-import-{}.jsonl", uuid::Uuid::new_v4()));
+            let (journal, world) = crate::world::Journal::open(&path).unwrap();
+            let (updates, _) = tokio::sync::broadcast::channel(64);
+            let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
+            let core = Arc::new(Core {
+                recap: crate::recap::Runtime::default(),
+                apps: crate::apps::Runtime::default(),
+                world: Mutex::new(world),
+                journal: Mutex::new(journal),
+                updates,
+                placer_queue,
+                room: Some("k7m2x9qp".into()),
+                key: None,
+                placer_model: "test".into(),
+                http: reqwest::Client::new(),
+                last_activity: std::sync::atomic::AtomicU64::new(0),
+                looked: std::sync::atomic::AtomicBool::new(false),
+                wake: tokio::sync::Notify::new(),
+                imports: Imports::default(),
+            });
+            Fixture { path, core }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    #[tokio::test]
+    async fn in_a_room_only_the_host_imports_and_only_they_see_it() {
+        let f = Fixture::new();
+        let mut out = f.core.updates.subscribe();
+        // Another laptop can't start one; it's told so, and no one else hears about it.
+        start(f.core.clone(), "im-1".into(), "Sam".into(), false);
+        let refused = out.recv().await.unwrap();
+        assert_eq!(refused.to.as_deref(), Some("Sam"));
+        assert!(matches!(refused.message, ServerMsg::Notice { ref message } if message == ONLY_HERE));
+        assert!(!f.core.imports.running());
+
+        // The host's import: its progress goes to the host only, also to a window that reconnects.
+        let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into() });
+        publish(&f.core, "User", &Status { state: "reading".into(), ..Status::default() });
+        let progress = out.recv().await.unwrap();
+        assert_eq!(progress.to.as_deref(), Some("User"));
+        assert!(matches!(progress.message, ServerMsg::Import { ref status } if status.state == "reading"));
+        assert_eq!(f.core.imports.live_for("User").map(|s| s.state), Some("reading".into()));
+        assert!(f.core.imports.live_for("Sam").is_none());
+
+        // Only the host can stop it.
+        cancel(&f.core, "Sam");
+        assert!(f.core.imports.running());
+        cancel(&f.core, "User");
+        let stopped = out.recv().await.unwrap();
+        assert_eq!(stopped.to.as_deref(), Some("User"));
+        assert!(matches!(stopped.message, ServerMsg::Import { ref status } if status.state == "stopped" && status.note.contains("Nothing was added")));
+    }
+
     #[test]
     fn imported_points_land_placed_with_their_own_times() {
         let ideas = vec![idea("Move", "Lease ends Nov 30", 2_000), idea("Move", "Move in January", 1_000), idea("Move", "move in january", 3_000)];
         let group = Group { title: "Moving".into(), ideas: vec![0, 1, 2], question: "Lisbon or Porto?".into(), actions: vec![Task { kind: "event".into(), title: "Give notice".into(), when: "2026-11-15".into() }], ..Group::default() };
-        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0);
+        // In a room the host's name, alone "you": whoever imported.
+        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0, "User");
         let mut world = World::default();
         for change in &changes {
             world.apply(change);
@@ -1518,11 +1634,11 @@ mod tests {
         assert_eq!((thread.title.as_str(), thread.last_point.as_str(), thread.touched_ms), ("Moving", "Lease ends Nov 30", 2_000));
         let points: Vec<(&str, u64)> = world.thoughts.iter().map(|t| (t.point.as_str(), t.at_ms)).collect();
         assert_eq!(points, [("Move in January", 1_000), ("Lease ends Nov 30", 2_000)], "in time order; a repeat lands once");
-        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "you" && t.thread_id.as_deref() == Some("I3")));
+        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "User" && t.thread_id.as_deref() == Some("I3")));
         assert_eq!(world.suggestions[0].text, "Lisbon or Porto?");
         assert_eq!(world.actions[0].when, "2026-11-15");
         // Points added to a thread already on the map leave it as it is unless they're newer.
-        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0);
+        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0, "User");
         assert!(older.iter().all(|c| matches!(c, Change::ThoughtAdded { .. })));
     }
 }

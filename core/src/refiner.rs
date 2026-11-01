@@ -99,7 +99,11 @@ pub async fn run(core: Arc<Core>) {
             Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
             Ok(changes) if !changes.is_empty() => core.commit(changes),
             Ok(_) => {}
-            Err(e) => tracing::warn!("refiner pass failed: {e:#}"),
+            // Redo it at the next pause rather than waiting for more talk.
+            Err(e) => {
+                tracing::warn!("refiner pass failed: {e:#}");
+                seen_thoughts = 0;
+            }
         }
     }
 }
@@ -263,6 +267,7 @@ mod tests {
             touched_ms,
             tags: Vec::new(),
             picture: None,
+            dropped_by: String::new(),
         };
         let thought = |n: u64, thread: &str| Thought {
             id: format!("th-{n}"),
@@ -273,6 +278,8 @@ mod tests {
             placed: true,
             unclear: String::new(),
             guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
             complete: true,
             at_ms: n,
             place_ms: None,

@@ -10,6 +10,11 @@ fn yes() -> bool {
     true
 }
 
+/// The speaker of changes from before rooms, when there was only one.
+fn you() -> String {
+    "you".into()
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ThreadStatus {
@@ -32,6 +37,9 @@ pub struct Thread {
     /// A Muse Image picture that anchors the thread in memory.
     #[serde(default)]
     pub picture: Option<String>,
+    /// While it's dropped: who left it unfinished, so only they are offered it back.
+    #[serde(default)]
+    pub dropped_by: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,6 +63,12 @@ pub struct Thought {
     /// What the unclear words most likely were, for "Did you mean …?"; empty when there's no good guess.
     #[serde(default)]
     pub guess: String,
+    /// Words the placer was sure it misheard and fixed without asking, as they were heard; empty when nothing was fixed.
+    #[serde(default)]
+    pub heard: String,
+    /// What those words became, so one tap can put them back.
+    #[serde(default)]
+    pub fixed: String,
     /// False when the thought trailed off unfinished.
     #[serde(default = "yes")]
     pub complete: bool,
@@ -99,7 +113,11 @@ pub struct Action {
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    /// Where the talk is now: the thread whoever moved last is on.
     pub active: Option<String>,
+    /// Each speaker's own active thread, so in a room placement and "where was I?" follow the person.
+    #[serde(default)]
+    pub active_by: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub suggestions: Vec<Suggestion>,
     #[serde(default)]
@@ -107,12 +125,25 @@ pub struct World {
     /// Merged thread id → the thread it became, so late changes still land.
     #[serde(default)]
     pub merged: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub apps: Vec<crate::apps::MiniApp>,
+    #[serde(default)]
+    pub apps_seeded: bool,
+    #[serde(default)]
+    pub recaps: Vec<crate::recap::Recap>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    RecapSaved { recap: crate::recap::Recap },
+    AppRegistered { app: crate::apps::MiniApp },
+    AppEnabled { id: String, enabled: bool },
+    AppRemoved { id: String },
+    AppRan { id: String, at_ms: u64 },
+    AppOutput { id: String, sound: bool },
+    AppsSeeded,
     ThoughtAdded { thought: Thought },
     ThreadAdded { thread: Thread },
     ThoughtPlaced {
@@ -122,13 +153,28 @@ pub enum Change {
         unclear: String,
         #[serde(default)]
         guess: String,
+        /// A fix the placer was sure of: these words in the text become `fixed` (the point already has them).
+        #[serde(default)]
+        heard: String,
+        #[serde(default)]
+        fixed: String,
         #[serde(default = "yes")]
         complete: bool,
         place_ms: u64,
     },
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
-    ThreadStatus { thread_id: String, status: ThreadStatus },
-    ActiveChanged { thread_id: String },
+    /// `speaker`: whose move it was; a thread is dropped for the person who left it.
+    ThreadStatus {
+        thread_id: String,
+        status: ThreadStatus,
+        #[serde(default = "you")]
+        speaker: String,
+    },
+    ActiveChanged {
+        thread_id: String,
+        #[serde(default = "you")]
+        speaker: String,
+    },
     ThreadRenamed { thread_id: String, title: String },
     ThreadMerged { from: String, into: String },
     SuggestionAdded { suggestion: Suggestion },
@@ -139,6 +185,7 @@ pub enum Change {
     TagRemoved { thread_id: String, tag: String },
     ThreadPicture { thread_id: String, path: String },
     /// "Did you mean …?" answered: yes swaps the unclear words for the guess, no keeps them; either way the question goes.
+    /// No to a fix made without asking puts the words back as heard.
     ThoughtCorrected { thought_id: String, accept: bool },
 }
 
@@ -159,6 +206,27 @@ impl World {
     pub fn apply(&mut self, change: &Change) {
         let change = &self.resolved(change);
         match change {
+            Change::RecapSaved { recap } => {
+                self.recaps.retain(|r| r.period != recap.period);
+                self.recaps.push(recap.clone());
+            }
+            Change::AppRegistered { app } => {
+                if !self.apps.iter().any(|a| a.id == app.id) { self.apps.push(app.clone()); }
+            }
+            Change::AppEnabled { id, enabled } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id) { a.enabled = *enabled; }
+            }
+            Change::AppRemoved { id } => self.apps.retain(|a| &a.id != id),
+            Change::AppRan { id, at_ms } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id) { a.last_run_ms = *at_ms; }
+            }
+            Change::AppOutput { id, sound } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id && matches!(a.watcher, crate::apps::Watcher::Volume { .. })) {
+                    a.publishers = if *sound { vec![crate::apps::Publisher::Sound {}] }
+                        else { vec![crate::apps::Publisher::Card { text: "Voices have been loud for a little while. A small pause might help.".into() }] };
+                }
+            }
+            Change::AppsSeeded => self.apps_seeded = true,
             Change::ThoughtAdded { thought } => {
                 if !self.thoughts.iter().any(|t| t.id == thought.id) {
                     self.thoughts.push(thought.clone());
@@ -169,12 +237,18 @@ impl World {
                     self.threads.push(thread.clone());
                 }
             }
-            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, complete, place_ms } => {
+            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, heard, fixed, complete, place_ms } => {
                 if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
                     t.thread_id = Some(thread_id.clone());
                     t.point = point.clone();
                     t.unclear = unclear.clone();
                     t.guess = guess.clone();
+                    // Only on first placing, so a repeated change can't fix the text twice.
+                    if !t.placed && !heard.is_empty() && !fixed.is_empty() {
+                        t.text = swap(&t.text, heard, fixed);
+                    }
+                    t.heard = heard.clone();
+                    t.fixed = fixed.clone();
                     t.complete = *complete;
                     t.placed = true;
                     t.place_ms = Some(*place_ms);
@@ -185,14 +259,19 @@ impl World {
                     th.last_point = last_point.clone();
                     th.touched_ms = *at_ms;
                     th.status = ThreadStatus::Open;
+                    th.dropped_by.clear();
                 }
             }
-            Change::ThreadStatus { thread_id, status } => {
+            Change::ThreadStatus { thread_id, status, speaker } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.status = *status;
+                    th.dropped_by = if *status == ThreadStatus::Dropped { speaker.clone() } else { String::new() };
                 }
             }
-            Change::ActiveChanged { thread_id } => self.active = Some(thread_id.clone()),
+            Change::ActiveChanged { thread_id, speaker } => {
+                self.active = Some(thread_id.clone());
+                self.active_by.insert(speaker.clone(), thread_id.clone());
+            }
             Change::ThreadRenamed { thread_id, title } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.title = title.clone();
@@ -217,6 +296,9 @@ impl World {
                 if self.active.as_deref() == Some(from.as_str()) {
                     self.active = Some(into.clone());
                 }
+                for id in self.active_by.values_mut().filter(|id| **id == *from) {
+                    *id = into.clone();
+                }
                 self.threads.retain(|t| &t.id != from);
                 self.merged.insert(from.clone(), into.clone());
             }
@@ -226,6 +308,12 @@ impl World {
                 if *accept && !t.unclear.is_empty() && !t.guess.is_empty() {
                     t.text = swap(&t.text, &t.unclear, &t.guess);
                     t.point = swap(&t.point, &t.unclear, &t.guess);
+                }
+                if !*accept && !t.heard.is_empty() && !t.fixed.is_empty() {
+                    t.text = swap(&t.text, &t.fixed, &t.heard);
+                    t.point = swap(&t.point, &t.fixed, &t.heard);
+                    t.heard.clear();
+                    t.fixed.clear();
                 }
                 t.unclear.clear();
                 t.guess.clear();
@@ -288,7 +376,7 @@ impl World {
             Change::ThoughtPlaced { thread_id, .. }
             | Change::ThreadTouched { thread_id, .. }
             | Change::ThreadStatus { thread_id, .. }
-            | Change::ActiveChanged { thread_id }
+            | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
@@ -303,6 +391,11 @@ impl World {
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
         self.threads.iter().find(|t| t.id == id)
+    }
+
+    /// Where a speaker is: their own active thread, else where the talk is now (they just joined).
+    pub fn active_for(&self, speaker: &str) -> Option<&String> {
+        self.active_by.get(speaker).or(self.active.as_ref())
     }
 
     fn thread_mut(&mut self, id: &str) -> Option<&mut Thread> {
@@ -362,16 +455,29 @@ impl Journal {
     }
 }
 
-/// Replaces the first match of `from` in `text` with `to`; unchanged when there's none. Ignores case
-/// when lowercasing keeps the byte length (so offsets still line up), else matches exactly.
-fn swap(text: &str, from: &str, to: &str) -> String {
-    let (lower, lower_from) = (text.to_lowercase(), from.to_lowercase());
-    let found = if lower.len() == text.len() && lower_from.len() == from.len() { lower.find(&lower_from) } else { text.find(from) };
-    match found {
-        Some(i) if text.is_char_boundary(i) && text.is_char_boundary(i + from.len()) => {
-            format!("{}{}{}", &text[..i], to, &text[i + from.len()..])
-        }
-        _ => text.to_string(),
+/// Where `words` first appear in `text` as whole words, so "pairs" can't land inside "repairs". Ignores
+/// case when lowercasing keeps the byte length (so offsets still line up), else matches exactly.
+pub fn find(text: &str, words: &str) -> Option<std::ops::Range<usize>> {
+    if words.is_empty() {
+        return None;
+    }
+    let (lower, lower_words) = (text.to_lowercase(), words.to_lowercase());
+    let (hay, needle) =
+        if lower.len() == text.len() && lower_words.len() == words.len() { (lower.as_str(), lower_words.as_str()) } else { (text, words) };
+    let whole = |r: &std::ops::Range<usize>| {
+        text.is_char_boundary(r.start)
+            && text.is_char_boundary(r.end)
+            && !text[..r.start].ends_with(|c: char| c.is_ascii_alphanumeric())
+            && !text[r.end..].starts_with(|c: char| c.is_ascii_alphanumeric())
+    };
+    hay.match_indices(needle).map(|(i, _)| i..i + words.len()).find(whole)
+}
+
+/// Replaces the first whole-word match of `from` in `text` with `to`; unchanged when there's none.
+pub fn swap(text: &str, from: &str, to: &str) -> String {
+    match find(text, from) {
+        Some(r) => format!("{}{}{}", &text[..r.start], to, &text[r.end..]),
+        None => text.to_string(),
     }
 }
 
@@ -385,10 +491,53 @@ mod tests {
         std::fs::write(&path, "{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"active_ch").unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T1"));
-        journal.append(&Change::ActiveChanged { thread_id: "T2".into() }).unwrap();
+        journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();
         let (_, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T2"));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn old_journals_load_as_one_speaker() {
+        // From before rooms: no speaker on a move or a drop, no dropped_by on a thread.
+        let lines = [
+            r#"{"type":"thread_added","thread":{"id":"T1","title":"Rent","parent_id":null,"status":"open","last_point":"","touched_ms":1}}"#,
+            r#"{"type":"active_changed","thread_id":"T1"}"#,
+            r#"{"type":"thread_status","thread_id":"T1","status":"dropped"}"#,
+        ];
+        let mut world = World::default();
+        for line in lines {
+            world.apply(&serde_json::from_str::<Change>(line).unwrap());
+        }
+        assert_eq!(world.active_by.get("you").map(String::as_str), Some("T1"));
+        assert_eq!(world.threads[0].dropped_by, "you");
+    }
+
+    #[test]
+    fn each_speaker_keeps_their_own_place() {
+        let thread = |id: &str| super::Thread {
+            id: id.into(),
+            title: id.into(),
+            parent_id: None,
+            status: super::ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 0,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        };
+        let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
+        assert_eq!(world.active.as_deref(), Some("T2"), "the talk is where the last move went");
+        assert_eq!(world.active_for("User").map(String::as_str), Some("T1"));
+        assert_eq!(world.active_for("Lee").map(String::as_str), Some("T2"), "someone new starts where the talk is");
+        world.apply(&Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() });
+        assert_eq!(world.threads[0].dropped_by, "User");
+        world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "back".into(), at_ms: 5 });
+        assert_eq!(world.threads[0].dropped_by, "", "picking it up again clears the drop");
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        assert_eq!(world.active_for("User").map(String::as_str), Some("T2"), "a merge moves everyone on it");
     }
 
     #[test]
@@ -402,6 +551,8 @@ mod tests {
             placed: true,
             unclear: "Muse Bark".into(),
             guess: "Muse Spark".into(),
+            heard: String::new(),
+            fixed: String::new(),
             complete: true,
             at_ms: 0,
             place_ms: None,
@@ -415,6 +566,49 @@ mod tests {
         assert!(world.thoughts.iter().all(|t| t.unclear.is_empty() && t.guess.is_empty()));
         // Letters whose lowercase is longer can't shift the cut.
         assert_eq!(super::swap("İstanbul moose", "moose", "Muse"), "İstanbul Muse");
+        // Whole words only.
+        assert_eq!(super::swap("book repairs, then pairs", "pairs", "pears"), "book repairs, then pears");
+        assert_eq!(super::swap("book repairs", "pairs", "pears"), "book repairs");
+    }
+
+    #[test]
+    fn a_sure_fix_lands_on_placing_and_no_puts_the_words_back() {
+        let mut world = World::default();
+        let lines = [
+            r#"{"type":"thread_added","thread":{"id":"T1","title":"Demo","parent_id":null,"status":"open","last_point":"","touched_ms":0}}"#,
+            r#"{"type":"thought_added","thought":{"id":"a","speaker":"you","text":"muse bark is fast","point":"","thread_id":null,"placed":false,"unclear":"","at_ms":0,"place_ms":null}}"#,
+            r#"{"type":"thought_placed","thought_id":"a","thread_id":"T1","point":"Muse Spark is fast","unclear":"","heard":"Muse Bark","fixed":"Muse Spark","place_ms":1}"#,
+            r#"{"type":"thread_touched","thread_id":"T1","last_point":"Muse Spark is fast","at_ms":1}"#,
+        ];
+        for line in lines {
+            world.apply(&serde_json::from_str(line).unwrap());
+        }
+        let placed = world.thoughts[0].clone();
+        assert_eq!((placed.text.as_str(), placed.heard.as_str()), ("Muse Spark is fast", "Muse Bark"));
+        assert!(placed.unclear.is_empty() && placed.guess.is_empty(), "nothing to ask");
+        // The same change again (a lagging window replays it) doesn't fix twice.
+        world.apply(&serde_json::from_str(lines[2]).unwrap());
+        assert_eq!(world.thoughts[0].text, "Muse Spark is fast");
+
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false });
+        let undone = &world.thoughts[0];
+        assert_eq!((undone.text.as_str(), undone.point.as_str()), ("Muse Bark is fast", "Muse Bark is fast"));
+        assert!(undone.heard.is_empty() && undone.fixed.is_empty());
+        assert_eq!(world.threads[0].last_point, "Muse Bark is fast");
+    }
+
+    #[test]
+    fn journals_from_before_sure_fixes_still_load() {
+        let mut world = World::default();
+        for line in [
+            r#"{"type":"thought_added","thought":{"id":"a","speaker":"you","text":"ask moose","point":"","thread_id":null,"placed":false,"unclear":"","at_ms":0,"place_ms":null}}"#,
+            r#"{"type":"thought_placed","thought_id":"a","thread_id":"T1","point":"Ask moose","unclear":"moose","guess":"Muse","complete":true,"place_ms":5}"#,
+        ] {
+            world.apply(&serde_json::from_str(line).unwrap());
+        }
+        let t = &world.thoughts[0];
+        assert!(t.placed && t.heard.is_empty() && t.fixed.is_empty());
+        assert_eq!((t.text.as_str(), t.guess.as_str()), ("ask moose", "Muse"));
     }
 
     #[test]

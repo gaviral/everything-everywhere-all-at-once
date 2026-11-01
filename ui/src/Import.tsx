@@ -29,6 +29,9 @@ type ImportCore = {
 
 // Matches MAX_BYTES in core/src/import.rs.
 const MAX_MB = 100;
+// Imports run on the laptop that runs the core (its key, its person's chats); another laptop in a room
+// gets no button, and the core refuses it anyway.
+const ON_THIS_MACHINE = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const RUNNING = new Set(["reading", "grouping", "adding"]);
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -124,6 +127,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
 
   // A file dropped anywhere opens the import, instead of the browser leaving the map to show the file.
   useEffect(() => {
+    if (!ON_THIS_MACHINE) return;
     const hasFile = (event: DragEvent) => !!event.dataTransfer?.types.includes("Files");
     const over = (event: DragEvent) => {
       if (!hasFile(event)) return;
@@ -269,10 +273,15 @@ export function ImportChats({ core }: { core: ImportCore }) {
     </>
   );
 
+  if (!ON_THIS_MACHINE) return null;
+  const percent = running && status ? `${Math.round(progress(status) * 100)}%` : "";
+  const label = percent ? `Importing ${percent}` : "Import chats";
   return (
     <>
-      <button className="import-open" onClick={() => setOpen(true)} aria-haspopup="dialog">
-        {running && status ? `Importing ${Math.round(progress(status) * 100)}%` : "Import chats"}
+      {/* On a phone the header has no room for words: an icon, or the percentage while importing. */}
+      <button className="import-open" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={label}>
+        <span className="import-long">{label}</span>
+        <span className="import-short">{percent || <ImportIcon />}</span>
       </button>
       {createPortal(
         <>
@@ -297,5 +306,13 @@ export function ImportChats({ core }: { core: ImportCore }) {
         document.body,
       )}
     </>
+  );
+}
+
+function ImportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3" />
+    </svg>
   );
 }

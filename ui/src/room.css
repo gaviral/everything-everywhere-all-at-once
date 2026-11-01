@@ -1,0 +1,68 @@
+/* A room begins in the same quiet space as the map. */
+.join {
+  min-height: 100vh;
+  padding: 24px;
+}
+.join-brand { font-weight: 650; letter-spacing: .02em; }
+.join-brand span { margin-left: 6px; color: var(--muted); font-weight: 500; letter-spacing: 0; }
+.join-loading { margin: 24vh auto 0; text-align: center; color: var(--muted); }
+.join-card {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 420px);
+  margin: clamp(48px, 12vh, 130px) auto 48px;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.join-kicker { color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.join-card h1 { margin: 8px 0 6px; font-size: 27px; line-height: 1.2; letter-spacing: -.025em; }
+.join-intro { margin: 0 0 26px; color: var(--muted); }
+.join-field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 600; }
+.join-field input {
+  width: 100%; min-height: 46px; padding: 10px 13px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink); font: inherit; font-size: 15px;
+}
+.join-field input::placeholder { color: var(--muted); opacity: 1; font-weight: 400; }
+.join-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.join-field small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.join-card > button {
+  min-height: 46px; padding: 10px 14px; border: 0; border-radius: 10px;
+  background: var(--accent); color: var(--accent-button-ink); font: inherit; font-weight: 650; cursor: pointer;
+}
+.join-card > button:disabled { opacity: .5; cursor: default; }
+.join-note { margin: 0 0 16px; padding: 10px 12px; border-radius: 9px; background: var(--amber-soft); color: var(--amber); font-size: 13px; }
+
+.room-menu { position: relative; flex: none; }
+.room-menu summary {
+  display: flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--card);
+  color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none;
+}
+.room-menu summary::-webkit-details-marker { display: none; }
+.room-menu summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.room-menu[open] summary { border-color: var(--accent); }
+.room-panel {
+  position: absolute; z-index: 12; top: calc(100% + 8px); right: 0;
+  width: min(290px, calc(100vw - 32px)); padding: 18px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow);
+  color: var(--ink); font-size: 14px; overflow-wrap: anywhere;
+}
+.room-panel-title { margin-bottom: 12px; font-size: 15px; font-weight: 650; }
+.room-you, .room-panel ul { margin: 0; }
+.room-you span:last-child { color: var(--muted); }
+.room-person-mark { display: inline-block; width: 18px; color: var(--muted); font-size: 10px; }
+.other-mark { color: var(--accent); }
+.room-panel-label { margin: 16px 0 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.room-panel ul { display: grid; gap: 6px; padding: 0; list-style: none; }
+.room-panel-hint { margin: 12px 0 16px; color: var(--muted); font-size: 12px; }
+.room-leave { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; text-align: center; cursor: pointer; }
+.room-leave:hover { border-color: var(--muted); }
+@media (max-width: 560px) {
+  .join { padding: 18px 16px; }
+  .join-card { margin-top: 48px; padding: 24px; }
+  .room-menu summary { padding-inline: 8px; }
+}
