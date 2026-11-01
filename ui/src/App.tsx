@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 
@@ -659,7 +659,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
     <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
-      <span>{thought.point}</span>
+      <span>{capitalized(thought.point)}</span>
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>

@@ -270,25 +270,23 @@ fn starts(text: &str) -> Vec<usize> {
     out
 }
 
-/// Where "where was I?" takes a speaker: the thread they most recently dropped, else the last other
-/// one they spoke on. Never the other person's: in a room each has their own way back.
+/// Where "where was I?" takes a speaker: where their last line trailed off, even the thread they're on (that's
+/// where they left off; moving them away would also keep it from being marked unfinished when they move on);
+/// else the thread they most recently dropped; else the last other one they spoke on. Never the other
+/// person's: in a room each has their own way back.
 fn way_back(world: &World, speaker: &str) -> Option<String> {
     let current = world.active_by.get(speaker);
-    let dropped = world
-        .threads
-        .iter()
-        .filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == speaker)
-        .max_by_key(|t| t.touched_ms)
-        .map(|t| t.id.clone());
-    dropped.or_else(|| {
+    let theirs = || world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker);
+    let trailed_off = theirs().next().filter(|t| !t.complete).and_then(|t| t.thread_id.clone());
+    let dropped = || {
         world
-            .thoughts
+            .threads
             .iter()
-            .rev()
-            .filter(|t| t.placed && t.speaker == speaker)
-            .filter_map(|t| t.thread_id.clone())
-            .find(|id| Some(id) != current)
-    })
+            .filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == speaker)
+            .max_by_key(|t| t.touched_ms)
+            .map(|t| t.id.clone())
+    };
+    trailed_off.or_else(dropped).or_else(|| theirs().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
 }
 
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
@@ -935,5 +933,13 @@ mod tests {
         assert_eq!(way_back(&world, "Sam").as_deref(), Some("T2"));
         // Nothing dropped: the last other thread Lee spoke on.
         assert_eq!(way_back(&world, "Lee").as_deref(), Some("T3"));
+        // Right after a line of theirs trailed off, it's where they said it, even the thread they're on and
+        // even with an older loose end; someone else's unfinished line doesn't count.
+        world.threads.push(thread("T5", 5, "Lee"));
+        world.thoughts.push(Thought { complete: false, ..said("d", "Sam", "T4") });
+        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T5"));
+        world.thoughts.push(Thought { complete: false, ..said("e", "Lee", "T4") });
+        assert_eq!(way_back(&world, "Lee").as_deref(), Some("T4"));
+        assert_eq!(way_back(&world, "Sam").as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
     }
 }

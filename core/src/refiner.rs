@@ -7,17 +7,22 @@ use crate::Core;
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
-const SYSTEM: &str = "You tidy a live map of someone's spoken thoughts. Given the threads and their points, return JSON with: \
-titles: better thread titles (up to 5 words), only where clearly better; \
+const SYSTEM: &str = "You tidy a live map of spoken thoughts, from one person or a few in a room (then each point says who said it). \
+Given the threads and their points, return JSON with: \
+titles: better thread titles (up to 5 words), only where clearly better; a thread several people spoke on keeps a title that fits all their points; \
 merges: threads that are really the same topic, merging the later id into the earlier; \
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
-tags: for each thread, up to 3 short lowercase hashtags naming its topic (for example #rent, #hackathon), reusing tags across threads when topics overlap. \
-Never repeat an existing suggestion or action. Use empty lists when nothing applies.";
+tags: short lowercase hashtags naming a thread's topic (for example #rent, #hackathon), only for threads with fewer than 3 (each thread lists the ones it has), \
+never one it has, reusing tags across threads when topics overlap. \
+Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
+/// Tags on one thread, counting the ones it has: a pass only fills the gap.
+const TAGS: usize = 3;
 
 #[derive(Deserialize, Default)]
 struct Pass {
@@ -151,7 +156,9 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
     }
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    Ok(changes(world, pass))
+    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
+    // while the model worked, and a second idea on that thread would only repeat it.
+    Ok(changes(&core.snapshot(), pass))
 }
 
 /// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
@@ -169,6 +176,7 @@ fn existing(world: &World) -> Vec<String> {
 /// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
 /// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
 /// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
+/// Each thread shows its tags, and with more than one speaker (a room) each thought says who said it.
 fn describe(world: &World, since: u64) -> String {
     let points = |t: &Thread| -> Vec<&Thought> {
         world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
@@ -177,11 +185,16 @@ fn describe(world: &World, since: u64) -> String {
         world.active.as_deref() == Some(t.id.as_str()) || t.touched_ms > since || points(t).iter().any(|p| p.at_ms > since)
     };
     let parent = |t: &Thread| t.parent_id.clone().unwrap_or_else(|| "none".into());
+    let tags = |t: &Thread| {
+        if t.tags.is_empty() { String::new() } else { format!(" tags: {}", t.tags.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(" ")) }
+    };
+    let named = world.thoughts.iter().map(|p| p.speaker.as_str()).collect::<HashSet<_>>().len() > 1;
+    let line = |p: &Thought| if named { format!("  - {}: {}", p.speaker, p.text) } else { format!("  - {}", p.text) };
     let quiet: Vec<String> = world
         .threads
         .iter()
         .filter(|t| !recent(t))
-        .map(|t| format!("{}: {} (parent: {}) last: {}", t.id, t.title, parent(t), t.last_point))
+        .map(|t| format!("{}: {} (parent: {}){} last: {}", t.id, t.title, parent(t), tags(t), t.last_point))
         .collect();
     let busy: Vec<String> = world
         .threads
@@ -189,8 +202,8 @@ fn describe(world: &World, since: u64) -> String {
         .filter(|t| recent(t))
         .map(|t| {
             let all = points(t);
-            let latest: Vec<String> = all[all.len().saturating_sub(8)..].iter().map(|p| format!("  - {}", p.text)).collect();
-            format!("{}: {} (parent: {})\n{}", t.id, t.title, parent(t), latest.join("\n"))
+            let latest: Vec<String> = all[all.len().saturating_sub(8)..].iter().map(|p| line(p)).collect();
+            format!("{}: {} (parent: {}){}\n{}", t.id, t.title, parent(t), tags(t), latest.join("\n"))
         })
         .collect();
     format!(
@@ -221,9 +234,11 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
             out.push(change);
         }
     }
+    // One idea per thread, an app's card included, and one per thread in a pass too.
+    let mut suggested = HashSet::new();
     for s in pass.suggestions {
         let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
-        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated {
+        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && suggested.insert(s.thread_id.clone()) {
             out.push(Change::SuggestionAdded {
                 suggestion: Suggestion { id: new_id("sg"), thread_id: s.thread_id, text: s.text.trim().into(), status: ItemStatus::New },
             });
@@ -248,14 +263,19 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
             });
         }
     }
+    // Each thread's tags so far, the ones it has and the ones this pass adds, so it never passes `TAGS`.
+    let mut tagged: HashMap<&str, Vec<String>> = HashMap::new();
     for group in pass.tags {
         let Some(thread) = world.thread(&group.thread_id) else { continue };
-        for raw in group.tags.into_iter().take(3) {
+        let names = tagged.entry(thread.id.as_str()).or_insert_with(|| thread.tags.iter().map(|t| t.name.clone()).collect());
+        for raw in group.tags {
             let word: String = raw.trim().trim_start_matches('#').to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '-').collect();
-            if word.is_empty() || thread.tags.iter().any(|t| t.name == format!("#{word}")) {
+            let tag = format!("#{word}");
+            if names.len() >= TAGS || word.is_empty() || names.contains(&tag) {
                 continue;
             }
-            out.push(Change::TagSuggested { thread_id: thread.id.clone(), tag: format!("#{word}") });
+            names.push(tag.clone());
+            out.push(Change::TagSuggested { thread_id: thread.id.clone(), tag });
         }
     }
     out
@@ -293,7 +313,7 @@ fn chrono_today() -> String {
 #[cfg(test)]
 mod tests {
     use super::{changes, describe, existing, rest_ms, Pass};
-    use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
+    use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
     #[test]
     fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
@@ -405,6 +425,74 @@ mod tests {
         assert_eq!(pairs(&merges(&[("T1", "T1"), ("T2", "T1"), ("T3", "T1"), ("T3", "T5")])), [to("T3", "T1")]);
         // A branch into a thread above it is fine.
         assert_eq!(pairs(&merges(&[("T9", "T5")])), [to("T9", "T5")]);
+    }
+
+    #[test]
+    fn one_idea_per_thread_counting_an_apps_card_and_no_more_than_three_tags() {
+        let mut world = World { threads: vec![thread("T1", None), thread("T2", None), thread("T3", None)], ..World::default() };
+        world.threads[0].tags = vec![Tag { name: "#demo".into(), kept: true }, Tag { name: "#hackathon".into(), kept: false }];
+        // An app's card that landed while the model worked: the pass is checked against the map as it is now.
+        let card = "Argument resolver · This repeats an earlier point.";
+        world.suggestions.push(Suggestion { id: "sg-app".into(), thread_id: "T3".into(), text: card.into(), status: ItemStatus::New });
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "suggestions": [
+                {"thread_id": "T2", "text": "Ask Sam about the budget"},
+                {"thread_id": "T2", "text": "A second idea for the same thread"},
+                {"thread_id": "T3", "text": "The same point as the app's card"},
+            ],
+            "tags": [
+                {"thread_id": "T1", "tags": ["#demo", "#Recording", "#video"]},
+                {"thread_id": "T1", "tags": ["#more"]},
+                {"thread_id": "T2", "tags": ["budget", "#money", "#plans", "#extra"]},
+            ],
+        }))
+        .unwrap();
+        let out = changes(&world, pass);
+        let ideas: Vec<&str> = out
+            .iter()
+            .filter_map(|c| match c {
+                Change::SuggestionAdded { suggestion } => Some(suggestion.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ideas, ["Ask Sam about the budget"]);
+        let tags: Vec<(&str, &str)> = out
+            .iter()
+            .filter_map(|c| match c {
+                Change::TagSuggested { thread_id, tag } => Some((thread_id.as_str(), tag.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tags, [("T1", "#recording"), ("T2", "#budget"), ("T2", "#money"), ("T2", "#plans")]);
+    }
+
+    #[test]
+    fn the_model_sees_each_threads_tags_and_in_a_room_who_said_what() {
+        let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], active: Some("T1".into()), ..World::default() };
+        world.threads[0].tags = vec![Tag { name: "#demo".into(), kept: true }];
+        world.threads[1].tags = vec![Tag { name: "#rent".into(), kept: false }, Tag { name: "#home".into(), kept: true }];
+        let said = |id: &str, speaker: &str| Thought {
+            id: id.into(),
+            speaker: speaker.into(),
+            text: format!("{id} said"),
+            point: String::new(),
+            thread_id: Some("T1".into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        world.thoughts.push(said("a", "you"));
+        let alone = describe(&world, 0);
+        assert!(alone.contains("T2: Topic T2 (parent: none) tags: #rent #home last: "), "{alone}");
+        assert!(alone.contains("T1: Topic T1 (parent: none) tags: #demo\n  - a said"), "{alone}");
+        world.thoughts.push(said("b", "Sam"));
+        let room = describe(&world, 0);
+        assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
     }
 
     #[test]

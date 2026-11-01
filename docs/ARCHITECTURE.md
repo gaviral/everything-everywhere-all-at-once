@@ -9,7 +9,7 @@ Browser, one page per window (ui/src)
   App.tsx        map, dock, header, unfinished-thought card
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
-  Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  room.tsx
+  Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  room.tsx  find.ts
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"
@@ -21,6 +21,7 @@ Core, one process (core/src: axum, tokio)
   pictures.rs    one picture per thread
   explain.rs     one sentence on a selected phrase
   recap.rs       a recap of today or this session
+  find.rs        "where did I talk about …?": Take me there
   apps.rs        watchers, prompts, publishers; the composer
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
@@ -39,8 +40,8 @@ Core, one process (core/src: axum, tokio)
 
 1. `mic.ts` sends each 80 ms frame up the WebSocket as binary. It also sends a loudness reading about every 320 ms, for volume watchers.
 2. `asr.rs`: when a window turns its mic on, the core opens `wss://api.meta.ai/v1/asr/realtime` for it (the key in the handshake; endpointing, English bias, keywords) and forwards frames. `transcript` events go back as live words to that speaker's windows; `speechComplete` calls `Core::add_thought`.
-3. `add_thought` checks whole-utterance commands first (recap, "make an app…", "where was I?", "next one"). Otherwise it commits a `Thought` (`th-<uuid>`, the speaker's active thread, `placed: false`) and queues its id.
-4. `placer.rs` takes one id at a time. The prompt puts the fixed instructions first (for the prompt cache), then each thread as `id: title [open|dropped] last: point`, the speaker's active thread and the thought. JSON schema answer, minimal reasoning, 20 s timeout, three tries.
+3. `add_thought` checks whole-utterance commands first (recap, "make an app…", "where was I?", "next one", "where did I talk about …?"). "Where was I?" goes to the thread where the speaker's last line trailed off, even the one they're on, else the one they dropped last, else the last other one they spoke on. Otherwise it commits a `Thought` (`th-<uuid>`, the speaker's active thread, `placed: false`) and queues its id.
+4. `placer.rs` takes one id at a time. The prompt puts the fixed instructions first (for the prompt cache), then each thread as `id: title [open|dropped] last: point`, the speaker's active thread and the thought. JSON schema answer, minimal reasoning, 20 s timeout, three tries; then the thought goes back in the queue 15 s later (doubling to 4 min), so an outage doesn't leave it unplaced until a restart.
 5. `decide` trusts only ids that exist. It builds `ThreadAdded` (for a new thread, with its parent if that exists), `ThoughtPlaced` (with a sure fix applied, or the question to ask), `ThreadTouched`, drops and `ActiveChanged`, and commits them together. Drops are the speaker's own: a thread they left whose last thought trailed off, or one the model names that they spoke on.
 6. In the UI the pending pill and the placed point share a Motion `layoutId`, so the thought moves from the dock to its thread.
 7. `apps.rs` sees the `ThoughtPlaced` broadcast and runs matching watchers; the refiner and pictures pick the thought up at the next pause.
@@ -49,9 +50,9 @@ Core, one process (core/src: axum, tokio)
 
 | Task | When | Bounds |
 |---|---|---|
-| Refiner | checked every 2 s, or at once when a window regains focus; runs with a key, a new placed thought, 10 s since the last pass, and either 4 s of quiet after two new thoughts or a new thread, or the window coming back | Quiet threads as one line each; recent ones with their last 8 thoughts. If talk resumed (under 2 s quiet) when the answer arrives, nothing is applied and the pass is redone at the next pause; a failed pass too |
-| Pictures | every 10 s, after 4 s of quiet; the first thread without a picture that has 3 thoughts, or 2 and 30 s since it was touched while not active | 3 tries per thread until the core restarts; a 128 px lossless WebP copy that keeps the image's XMP note; older pictures get copies on start |
-| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; `AppRan` is journaled before the call, so a restart can't loop a timer |
+| Refiner | checked every 2 s, or at once when a window regains focus; runs with a key, a new placed thought, 10 s since the last pass (doubling with each failed pass in a row, to about 5 min), and either 4 s of quiet after two new thoughts or a new thread, or the window coming back | Quiet threads as one line each; recent ones with their last 8 thoughts (with who said each, in a room); each thread's tags; the latest 30 suggestions and 30 actions. The answer is checked against the map as it is when it arrives: at most one suggestion per thread (an app's card counts) and three tags. If talk resumed (under 2 s quiet) by then, nothing is applied and the pass is redone at the next pause; a failed pass too |
+| Pictures | every second, once 2 s are quiet and every thought is placed: threads without a picture, 12 s after they were last touched, the longest settled first | 3 at a time; 3 tries per thread, 10 s apart, until the core restarts; a 128 px lossless WebP copy that keeps the image's XMP note; older pictures get copies on start |
+| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; a timer with a prompt runs only when a thought was placed since its last run; `AppRan` is journaled before the call, so a restart can't loop a timer |
 
 ## Model calls
 
@@ -60,11 +61,12 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Call | Model (setting) | Reasoning | Timeout | Tries | Cache key |
 |---|---|---|---|---|---|
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
-| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor` | minimal | 20 s | 3 | `e2a2o-placer` |
+| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor` | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
-| Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 120 s | at the next pause | `e2a2o-refiner` |
+| Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 120 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
-| Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s | 1 | |
+| Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s | 1; a composer draft that doesn't check out gets one more, told what was wrong | |
+| Take me there | `REFINER_MODEL` | low | 4 s | 1, only when the words match weakly | `e2a2o-find` |
 | Import: ideas | `IMPORT_EXTRACT_MODEL`, default `muse-spark-1.2` | minimal | 120 s | 3 | `e2a2o-import-ideas` |
 | Import: grouping | `IMPORT_MERGE_MODEL`, default `muse-spark-1.3` | low | 240 s | 2 | `e2a2o-import-map` |
 | Pictures | `muse-image-1.0` | | 120 s | 3 per thread | |
@@ -82,6 +84,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - `ROOM_CODE` binds the core to `0.0.0.0`; without it, to `127.0.0.1`.
 - Each outgoing message goes to every window or to one speaker's windows: live words, mic status, "Back to …" notes, Recap progress and import progress go only to their speaker.
 - Per speaker: the active thread (`active_by`), who dropped a thread (`dropped_by`), the way back, and what the placer sees as "active".
+- Another laptop that asks for no name, or for "you" (the host's own name), joins as "Guest" and is told so.
 
 ## Import
 
@@ -98,5 +101,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 ## Tests and checks
 
-- Unit tests sit beside the code (`cd core && cargo test`): journal replay and old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
+- Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.
