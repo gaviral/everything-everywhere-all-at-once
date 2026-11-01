@@ -226,11 +226,18 @@ pub async fn prepare(
     Json(preview).into_response()
 }
 
-/// The times of the messages not to read again. A point keeps its message's exact time, so a message with a
-/// point is one already on the map (whatever name it went under); an earlier import also remembers the ones
-/// that gave none ("thanks", pasted code), or importing the same file twice would read and pay for them again.
-fn known(world: &World) -> HashSet<u64> {
-    world.thoughts.iter().map(|t| t.at_ms).chain(world.read_ms.iter().copied()).collect()
+#[derive(Default)]
+struct Known {
+    times: HashSet<u64>,
+    keys: HashSet<String>,
+}
+
+/// Exact message hashes from new imports, including messages that gave no point ("thanks", pasted code).
+/// Times still count too: old records only have times, and a point keeps its message's exact time, so
+/// an import stopped after some points landed but before its record was written doesn't add them twice.
+fn known(world: &World) -> Known {
+    let times = world.thoughts.iter().map(|t| t.at_ms).chain(world.read_ms.iter().copied()).collect();
+    Known { times, keys: world.read_keys.clone() }
 }
 
 /// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
@@ -360,8 +367,8 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     publish(&core, &speaker, &status);
     land(&core, &speaker, &groups, &ideas, &mut status).await;
     // Everything in the parts that were read, once it all landed (a stop before then leaves the rest to read again).
-    let at_ms: Vec<u64> = read_parts.iter().flat_map(|&i| job.parts[i].iter().map(|s| s.at_ms)).collect();
-    core.commit(vec![Change::MessagesRead { at_ms }]);
+    let keys = read_parts.iter().flat_map(|&i| job.parts[i].iter().map(|s| s.key.clone())).collect();
+    core.commit(vec![Change::MessagesRead { at_ms: Vec::new(), keys }]);
     status.state = "done".into();
     status.note = notes.join(" ");
     finish(&core, &speaker, &status);
@@ -730,6 +737,7 @@ fn local_offset() -> i64 {
 /// One of the person's messages as the fast model sees it, with the start of the AI's reply.
 #[derive(Clone)]
 struct Said {
+    key: String,
     conversation: usize,
     title: String,
     at_ms: u64,
@@ -751,8 +759,19 @@ struct Chosen {
 
 /// The person's latest messages up to the size cap, each with a time: its own, else its neighbors'
 /// in the same chat, else (a list without times) a second apart in file order, ending now. Messages
-/// whose time is `known` (see `known`) were imported before and are left out.
-fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) -> Chosen {
+/// whose hash (or legacy time) is `known` (see `known`) were imported before and are left out.
+fn select(mut conversations: Vec<Conversation>, now: u64, known: &Known) -> Chosen {
+    // Use the original time and full text, before filling missing times or clipping for the model.
+    let keys: Vec<Vec<String>> = conversations.iter().enumerate().map(|(index, c)| {
+        c.turns.iter().map(|t| {
+            // FNV-1a over an unambiguous JSON tuple; only the 64-bit hex hash is kept or broadcast.
+            let input = json!([index, c.title, t.at_ms, t.text]).to_string();
+            let hash = input.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+            });
+            format!("{hash:016x}")
+        }).collect()
+    }).collect();
     for c in &mut conversations {
         let first = c.turns.iter().find_map(|t| t.at_ms);
         let mut last = first;
@@ -772,11 +791,11 @@ fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) 
     for (index, c) in conversations.iter().enumerate() {
         for (i, turn) in c.turns.iter().enumerate().filter(|(_, t)| t.mine) {
             let reply = c.turns[i + 1..].iter().take_while(|t| !t.mine).next().map(|t| clip(&t.text, REPLY_CONTEXT)).unwrap_or_default();
-            all.push(Said { conversation: index, title: c.title.clone(), at_ms: turn.at_ms.unwrap_or(now), text: clip(&turn.text, MAX_MESSAGE), reply });
+            all.push(Said { key: keys[index][i].clone(), conversation: index, title: c.title.clone(), at_ms: turn.at_ms.unwrap_or(now), text: clip(&turn.text, MAX_MESSAGE), reply });
         }
     }
     let total = all.len();
-    all.retain(|s| !known.contains(&s.at_ms));
+    all.retain(|s| !known.keys.contains(&s.key) && !known.times.contains(&s.at_ms));
     let already = total - all.len();
     // The newest first, until the cap.
     let mut newest: Vec<usize> = (0..all.len()).collect();
@@ -1503,7 +1522,7 @@ mod tests {
                 Turn { mine: true, text: format!("follow-up {n}"), at_ms: None },
             ],
         };
-        let chosen = select((1..=200).map(conversation).collect(), 5_000_000, &HashSet::new());
+        let chosen = select((1..=200).map(conversation).collect(), 5_000_000, &Known::default());
         assert_eq!(chosen.total, 400);
         assert!(chosen.said.len() < 400 && chosen.said.iter().map(|s| s.text.len()).sum::<usize>() <= MAX_CHARS);
         // The newest survive; the oldest go first.
@@ -1520,15 +1539,17 @@ mod tests {
             title: format!("c{n}"),
             turns: (0..messages as u64).map(|m| Turn { mine: true, text: format!("word {n} {m}"), at_ms: Some(n * 1_000 + m) }).collect(),
         };
-        let lines = select(vec![chatty(1, 30), chatty(2, 5), chatty(3, 5), chatty(4, 5)], 0, &HashSet::new());
+        let lines = select(vec![chatty(1, 30), chatty(2, 5), chatty(3, 5), chatty(4, 5)], 0, &Known::default());
         let parts = pack(lines.said);
         assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [12, 12, 11, 10], "30 split at 12; each small chat stays in one part");
         assert!(parts.iter().all(|part| part.len() <= PART_MESSAGES));
         // A small import still splits by conversation, so its parts read in parallel.
-        let small = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello ".repeat(150), at_ms: Some(n) }] }).collect(), 0, &HashSet::new());
+        let small = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello ".repeat(150), at_ms: Some(n) }] }).collect(), 0, &Known::default());
         assert_eq!(pack(small.said).len(), 3);
         // Importing the same chats again reads only what isn't on the map yet.
-        let again = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello".into(), at_ms: Some(n) }] }).collect(), 0, &HashSet::from([1, 2]));
+        let chats = || (1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello".into(), at_ms: Some(n) }] }).collect();
+        let known = Known { keys: select(chats(), 0, &Known::default()).said[..2].iter().map(|s| s.key.clone()).collect(), ..Known::default() };
+        let again = select(chats(), 0, &known);
         assert_eq!((again.total, again.already, again.said.len()), (3, 2, 1));
     }
 
@@ -1537,8 +1558,54 @@ mod tests {
         let chosen = select(vec![Conversation { title: String::new(), turns: vec![
             Turn { mine: true, text: "first".into(), at_ms: None },
             Turn { mine: true, text: "second".into(), at_ms: None },
-        ] }], 10_000, &HashSet::new());
+        ] }], 10_000, &Known::default());
         assert_eq!(chosen.said.iter().map(|s| (s.text.as_str(), s.at_ms)).collect::<Vec<_>>(), [("first", 9_000), ("second", 10_000)]);
+    }
+
+    #[test]
+    fn legacy_timestamp_records_keep_previously_imported_messages_skipped() {
+        let mut world = World::default();
+        let legacy: Change = serde_json::from_value(json!({ "type": "messages_read", "at_ms": [1_000] })).unwrap();
+        world.apply(&legacy);
+        let chosen = select(vec![Conversation { title: "Bills".into(), turns: vec![
+            Turn { mine: true, text: "Pay electric bill".into(), at_ms: Some(1_000) },
+            Turn { mine: true, text: "thanks!".into(), at_ms: Some(1_000) },
+        ] }], 2_000, &known(&world));
+        assert_eq!((chosen.already, chosen.said.len()), (2, 0), "old timestamp-only imports stay skipped, including messages that gave no point");
+    }
+
+    #[test]
+    fn message_keys_distinguish_shared_times_conversations_and_full_text() {
+        let turn = |text: String, at_ms| Turn { mine: true, text, at_ms };
+        let chats = || vec![
+            Conversation { title: "Bills".into(), turns: vec![
+                turn("Pay rent".into(), Some(1_000)),
+                turn("Pay electric bill".into(), Some(1_000)),
+                turn(format!("{}a", "x".repeat(MAX_MESSAGE)), Some(1_000)),
+                turn(format!("{}b", "x".repeat(MAX_MESSAGE)), Some(1_000)),
+            ] },
+            Conversation { title: "Bills".into(), turns: vec![turn("Pay rent".into(), Some(1_000))] },
+            Conversation { title: "Untimed".into(), turns: vec![turn("hello".into(), None)] },
+        ];
+        let first = select(chats(), 10_000, &Known::default());
+        assert_eq!(first.said.len(), 6);
+        let keys: HashSet<_> = first.said.iter().map(|s| s.key.clone()).collect();
+        assert_eq!(keys.len(), 6, "even equal times, titles or clipped text don't make messages identical");
+        assert!(keys.iter().all(|key| key.len() == 16 && key.bytes().all(|b| b.is_ascii_hexdigit())), "only 64-bit hex hashes are retained");
+        let key = |title: &str, at_ms| select(vec![Conversation {
+            title: title.into(), turns: vec![turn("Pay rent".into(), at_ms)],
+        }], 10_000, &Known::default()).said[0].key.clone();
+        assert_eq!(key("Bills", Some(1_000)), "aeaa06a5142a3107", "FNV-1a stays stable across Rust releases");
+        assert_ne!(key("Bills", Some(1_000)), key("Rent", Some(1_000)), "the original title is hashed");
+        assert_ne!(key("Bills", Some(1_000)), key("Bills", Some(2_000)), "the original time is hashed");
+        assert_ne!(key("Bills", Some(10_000)), key("Bills", None), "a fallback time is not the original time");
+        let mut world = World::default();
+        world.apply(&Change::MessagesRead { at_ms: Vec::new(), keys: vec![first.said[0].key.clone()] });
+        let rest = select(chats(), 20_000, &known(&world));
+        assert_eq!((rest.already, rest.said.len()), (1, 5), "only the exact message already read is skipped");
+        world.apply(&Change::MessagesRead { at_ms: Vec::new(), keys: keys.into_iter().collect() });
+        let again = select(chats(), 30_000, &known(&world));
+        assert_eq!((again.already, again.said.len()), (6, 0), "untimed messages keep their identity too");
     }
 
     fn idea(topic: &str, point: &str, at_ms: u64) -> Idea {
@@ -1692,7 +1759,7 @@ mod tests {
     async fn the_same_file_twice_is_skipped_even_for_messages_that_gave_no_point() {
         let f = Fixture::with_key(Some("test-key"));
         let file = r#"[{"role": "user", "content": "I want to move in January.", "timestamp": 1791000000},
-                       {"role": "user", "content": "thanks!", "timestamp": 1791000100}]"#;
+                       {"role": "user", "content": "thanks!", "timestamp": 1791000000}]"#;
         let upload = || async {
             let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
             let name = Query(FileName { name: "chats.json".into() });
@@ -1702,6 +1769,8 @@ mod tests {
         assert_eq!(first.status(), StatusCode::OK);
         let seen = axum::body::to_bytes(first.into_body(), 1 << 16).await.unwrap();
         assert_eq!(serde_json::from_slice::<Value>(&seen).unwrap()["messages"], 2);
+        let keys: Vec<_> = f.core.imports.prepared.lock().unwrap().as_ref().unwrap().parts.iter()
+            .flatten().map(|s| s.key.clone()).collect();
 
         // What `run` leaves when it lands: a point for the first message, and both remembered as read.
         let point = Thought {
@@ -1719,8 +1788,20 @@ mod tests {
             at_ms: 1_791_000_000_000,
             place_ms: None,
         };
-        f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000] }]);
-        assert_eq!(known(&f.core.snapshot()), HashSet::from([1_791_000_000_000, 1_791_000_100_000]));
+        let mut updates = f.core.updates.subscribe();
+        f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }));
+        let read = match updates.try_recv().unwrap().message {
+            ServerMsg::Change { change: Change::MessagesRead { at_ms, keys } } => Change::MessagesRead { at_ms, keys },
+            _ => panic!("expected broadcast of message hashes"),
+        };
+        let record = json!({ "type": "messages_read", "keys": keys });
+        assert_eq!(serde_json::to_value(read).unwrap(), record, "the broadcast contains only hashes, without message text or times");
+        let lines = std::fs::read_to_string(&f.path).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(lines.lines().last().unwrap()).unwrap(), record, "the journal also contains only hashes");
+        assert!(!lines.contains("thanks!"), "a message that gave no point must not gain journaled text");
+        assert!(serde_json::to_value(f.core.snapshot()).unwrap().get("read_keys").is_none(), "hashes stay out of snapshots");
+        assert_eq!(known(&f.core.snapshot()).keys, keys.iter().cloned().collect());
 
         let again = upload().await;
         assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -1729,7 +1810,31 @@ mod tests {
 
         // It survives a restart: the journal replays what was read.
         let (_, replayed) = crate::world::Journal::open(&f.path).unwrap();
-        assert_eq!(replayed.read_ms, HashSet::from([1_791_000_000_000, 1_791_000_100_000]));
+        assert_eq!(known(&replayed).keys, keys.into_iter().collect());
+        assert!(replayed.read_ms.is_empty(), "new records only persist hashes");
+    }
+
+    #[tokio::test]
+    async fn a_file_imported_with_timestamp_only_records_is_still_skipped() {
+        let f = Fixture::with_key(Some("test-key"));
+        let legacy: Change = serde_json::from_value(json!({
+            "type": "messages_read", "at_ms": [1_791_000_000_000_u64, 1_791_000_100_000_u64],
+        })).unwrap();
+        f.core.commit(vec![legacy]);
+        let (_, replayed) = crate::world::Journal::open(&f.path).unwrap();
+        *f.core.world.lock().unwrap() = Arc::new(replayed);
+        let file = r#"[{"role":"user","content":"Move in January","timestamp":1791000000},
+                       {"role":"user","content":"thanks!","timestamp":1791000100}]"#;
+        let response = prepare(
+            State(f.core.clone()),
+            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() }),
+            Query(FileName { name: "chats.json".into() }),
+            Request::new(axum::body::Body::from(file)),
+        ).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["error"], "Everything in this file was already imported.");
+        assert!(f.core.imports.prepared.lock().unwrap().is_none(), "no import is prepared after replaying old times");
     }
 
     #[test]

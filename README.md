@@ -224,7 +224,7 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s for Take
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
-- In a room, a name is the host's or a guest's, never both; two guests who pick the same name share notices and live words.
+- In a room, a name belongs to one laptop at a time, ignoring case; the host keeps theirs until the core stops.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
 - The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).

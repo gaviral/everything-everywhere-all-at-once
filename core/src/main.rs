@@ -31,7 +31,7 @@ use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, Outgoing, ServerMsg};
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -668,7 +668,7 @@ async fn room_info(
     let member = request.extensions().get::<Access>() == Some(&Access::Map);
     let taken = member
         && !join.name.trim().is_empty()
-        && core.room.as_ref().is_some_and(|room| room.names.lock().unwrap().taken(&speaker_name(&join.name, link.here()), link.here()));
+        && core.room.as_ref().is_some_and(|room| room.names.lock().unwrap().taken(&speaker_name(&join.name, link.here()), link));
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken }))
 }
 
@@ -684,23 +684,24 @@ impl From<&str> for Room {
     }
 }
 
-/// A name in a room is the host's or a guest's, never both, since what's private goes to every window with
+/// A name in a room is the host's or one connected guest's, since what's private goes to every window with
 /// that name: live words, the mic going on and off, notices, an import. This machine keeps a name it joined
 /// with until the core stops, so it stays the host's while their window reconnects; another laptop holds one
 /// while connected.
 #[derive(Default)]
 struct Names {
     host: HashSet<String>,
-    /// How many of another laptop's windows use each name.
-    guests: HashMap<String, usize>,
+    /// The address and number of windows holding each guest name.
+    guests: HashMap<String, (IpAddr, usize)>,
 }
 
 impl Names {
-    /// Held by the other side: a name this machine joined with, for another laptop; one another laptop
-    /// is using, for this machine. Case doesn't tell people apart.
-    fn taken(&self, name: &str, here: bool) -> bool {
+    /// Guest windows at one address share a name; the host and other addresses can't take it.
+    /// Case doesn't tell people apart.
+    fn taken(&self, name: &str, link: Link) -> bool {
         let name = name.to_lowercase();
-        if here { self.guests.contains_key(&name) } else { self.host.contains(&name) }
+        self.guests.get(&name).is_some_and(|(address, _)| link.here() || *address != link.from.ip())
+            || (!link.here() && self.host.contains(&name))
     }
 }
 
@@ -711,19 +712,19 @@ struct Seat {
 }
 
 impl Seat {
-    /// Takes the name for a window, or None when the other side holds it.
-    fn take(core: &Arc<Core>, name: &str, here: bool) -> Option<Seat> {
+    /// Takes the name for a window, or None when it is taken.
+    fn take(core: &Arc<Core>, name: &str, link: Link) -> Option<Seat> {
         let mut seat = Seat { core: core.clone(), guest: None };
         let Some(room) = &core.room else { return Some(seat) };
         let mut names = room.names.lock().unwrap();
-        if names.taken(name, here) {
+        if names.taken(name, link) {
             return None;
         }
         let name = name.to_lowercase();
-        if here {
+        if link.here() {
             names.host.insert(name);
         } else {
-            *names.guests.entry(name.clone()).or_default() += 1;
+            names.guests.entry(name.clone()).or_insert((link.from.ip(), 0)).1 += 1;
             seat.guest = Some(name);
         }
         drop(names);
@@ -735,7 +736,7 @@ impl Drop for Seat {
     fn drop(&mut self) {
         let (Some(room), Some(name)) = (&self.core.room, &self.guest) else { return };
         let mut names = room.names.lock().unwrap();
-        if let Some(windows) = names.guests.get_mut(name) {
+        if let Some((_, windows)) = names.guests.get_mut(name) {
             *windows -= 1;
             if *windows == 0 {
                 names.guests.remove(name);
@@ -770,7 +771,7 @@ async fn connect(
     let speaker = speaker_name(&join.name, link.here());
     let renamed = speaker != speaker_name(&join.name, true);
     // The page asks /room for another name when this happens.
-    let Some(seat) = Seat::take(&core, &speaker, link.here()) else {
+    let Some(seat) = Seat::take(&core, &speaker, link) else {
         return (StatusCode::CONFLICT, "That name is taken in this room.").into_response();
     };
     upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, seat))
@@ -1442,22 +1443,32 @@ mod tests {
     #[test]
     fn in_a_room_a_name_belongs_to_one_laptop() {
         let (core, _queue, path) = test_core(Some("k7m2x9qp"));
-        let taken = |name: &str, here: bool| core.room.as_ref().unwrap().names.lock().unwrap().taken(name, here);
+        let link = |from: &str| Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() };
+        let host = link("127.0.0.1:51000");
+        let guest = link("192.168.1.20:51001");
+        let other_window = link("192.168.1.20:51002");
+        let other_guest = link("192.168.1.21:51001");
+        let taken = |name: &str, link| core.room.as_ref().unwrap().names.lock().unwrap().taken(name, link);
         // The host joined as User: another laptop can't be User, in any case, even while the host's window reconnects.
-        drop(Seat::take(&core, "User", true).unwrap());
-        assert!(Seat::take(&core, "User", false).is_none() && taken("User", false));
-        assert!(Seat::take(&core, "User", true).is_some(), "the host's other windows share it");
-        // Sam's laptop joined first: the host can't be Sam while Sam has a window open.
-        let sam = Seat::take(&core, "Sam", false).unwrap();
-        let another_tab = Seat::take(&core, "Sam", false).unwrap();
-        assert!(Seat::take(&core, "sam", true).is_none());
+        drop(Seat::take(&core, "User", host).unwrap());
+        assert!(Seat::take(&core, "User", guest).is_none() && taken("User", guest));
+        assert!(Seat::take(&core, "User", host).is_some(), "the host's other windows share it");
+        // A second tab or overlapping reload shares Sam's name only from the same laptop's IP.
+        let sam = Seat::take(&core, "Sam", guest).unwrap();
+        let another_tab = Seat::take(&core, "sAM", other_window).unwrap();
+        assert!(!taken("SAM", other_window));
+        assert!(Seat::take(&core, "sam", other_guest).is_none() && taken("SAM", other_guest));
+        assert!(Seat::take(&core, "sam", host).is_none() && taken("SAM", host));
         drop(sam);
-        assert!(taken("Sam", true), "one window is still open");
+        assert!(taken("Sam", host) && taken("Sam", other_guest), "one window is still open");
+        assert!(Seat::take(&core, "sam", other_guest).is_none());
         drop(another_tab);
-        assert!(!taken("Sam", true));
+        assert!(!taken("Sam", host) && !taken("Sam", other_guest));
+        assert!(Seat::take(&core, "sAM", other_guest).is_some(), "the last window frees the name for another address");
+        assert!(Seat::take(&core, "Sam", host).is_some(), "the host can take the freed name too");
         // Alone, every window is this machine's.
         let (alone, _queue, alone_path) = test_core(None);
-        assert!(Seat::take(&alone, "you", true).is_some());
+        assert!(Seat::take(&alone, "you", host).is_some());
         for path in [path, alone_path] {
             let _ = std::fs::remove_file(path);
         }
