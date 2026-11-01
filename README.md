@@ -45,6 +45,19 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - To talk: `./run.sh` (its map is in `data/`), press the mic and allow it, then speak; or type and press Enter.
 - To start from your past chats: Import chats (top right), then choose `conversations.json` from a ChatGPT or Claude export, or press Try with a sample (`ui/public/sample-chats.json`: five made-up ChatGPT chats). You see what goes to which model, and a rough cost, before anything is sent.
 
+**Things to try (with a key):** With `./run.sh demo` running and its page open, say or type each line. Allow about 3 s after speech for a thought to land.
+
+1. `I need to plan the hackathon demo, the deadline is tomorrow at nine PM.` → a thought lands in about 3 s after you finish speaking.
+2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a tangent can branch from the active thread; allow about 3 s.
+3. `I'll order the cookbook tonight. And the electric bill, I should set up autopay before the due date.` → a turn can split across two threads; allow about 3 s per part.
+4. `Um, so, anyway.` → filler is set aside; nothing lands.
+5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
+6. Select a phrase on the map and press **Explain** → one sentence of context after the model call.
+7. `What did I decide today?` → a recap after the model call; it covers today's thoughts.
+8. In Apps, ask `Make an app that shows a card when I mention the demo.` Keep it, then say `demo` in a new thought → the app may take several seconds to build; the card appears when its phrase watcher fires.
+9. Switch away for 30 seconds after adding a thought, then return → a “While you were away” card if your thought landed.
+10. Click **Palace** → the thread pictures appear in a grid.
+
 **Two laptops, one map.**
 
 ```sh
@@ -109,8 +122,18 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
 ## Privacy and data
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
-- Sent to `api.meta.ai`, and nowhere else: mic audio while the mic is on; for placing, each new thought with every thread's title and last point; for the refiner, those plus each thread's tags, the last 8 thoughts of recently active threads (with who said them, in a room) and the suggestions and actions already there; for Take me there, only when no thread has all the words you asked about, your request and up to 48 likely threads' titles and latest 3 points; for Explain, the phrase, the words around it, its thread's points and the other thread titles; for Recap, the period's thoughts and their threads' actions; for a picture, the thread's title and first 6 points; for apps, your request and app list, and the recent thoughts an app reads when it runs; for an import, the messages and ideas described above.
-- Contributor mode: placing and Explain default to `muse-spark-1.2-contributor`, the cheaper and fastest-measured Spark, whose data Meta may keep to improve its products. That includes the titles and last points of imported threads, once they're on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`.
+- Model inputs go to `api.meta.ai`:
+  - **Speech:** while the mic is on, raw 24 kHz audio and setup data (session id, model, audio format, endpointing mode, English bias and keywords). The client sends no transcript as input.
+  - **Placing:** the full new thought; every thread's id, title, status and last point; the active thread id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text.
+  - **Refiner:** today's date; each thread's id, title, parent, tags and last point; the latest 8 full thoughts from recently active threads; the latest 30 suggestions and actions. In a room with multiple speakers, each recent thought includes its speaker name.
+  - **Take me there:** only if local word search finds no thread containing every query word, the query (up to 400 characters) and up to 48 thread titles (100 characters each) with their latest 3 points (320 characters each).
+  - **Explain:** the selected phrase (up to 200 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title and up to 40 other thread titles.
+  - **Recap:** up to 24 threads, with up to 16 thoughts per thread (each includes the speaker and up to 700 characters of text), plus up to 64 actions.
+  - **Pictures:** the thread's title and first 6 points.
+  - **App creation:** the request, local time and app catalog. If the Search-first app is enabled, it may first receive the request and catalog to look for an existing app.
+  - **When an app runs:** its prompt, newest thought, up to 8 earlier points, topic and time. In a room with multiple speakers, those thoughts include speaker names.
+  - **Chat import:** each selected message (up to 2,000 characters) with its date and conversation title, plus up to 240 characters of the next AI reply. A separate grouping call receives today's date, up to 80 existing thread ids and titles, topic counts and date ranges, up to 4 latest ideas per topic, and up to 150 dated open questions and 150 dated tasks. It does not receive the original messages.
+- Placing and Explain default to `muse-spark-1.2-contributor`, the cheaper Spark. Meta may keep Contributor data to improve its products. This can include imported words after they become thoughts on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`.
 - On disk: `data/<map>/journal.jsonl` (each thought's full text and speaker, and every change since) and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 - In a room, everyone with the code sees the whole map, and the other laptops' audio goes through the host's core and key.
 - No accounts, analytics or telemetry.
@@ -138,11 +161,14 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
 
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
 - Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
-- Set up for English: Voice Transcribe is biased to English. Its words also vary between identical runs (a builder measured about 11%); Did you mean catches some of it.
+- Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
+- From speech to the map is about 3 seconds, measured with `scripts/voice.mjs`.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, or undo the refiner's renames and merges.
-- A Voice Transcribe session ends after 60 minutes; press the mic again. A stalled speech stream leaves the mic looking on.
-- While the model is unreachable, a new thought waits at "Finding a thread" and is tried again 15 s later, then less often, up to every 4 min.
+- A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
+- With a key, failed placement waits at “Finding a thread”; after 5 seconds, its chip shows elapsed time. It retries after 15 seconds, then less often, up to every 4 minutes.
+- Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
+- If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
 - The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap's Today is empty for those dates unless today's date overlaps, and This session needs a key.
