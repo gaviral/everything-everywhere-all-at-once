@@ -441,8 +441,8 @@ const WEEK: [&str; 7] = ["thursday", "friday", "saturday", "sunday", "monday", "
 /// - a real day: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1;
 /// - never past: a past day is the model slipping the year (2025-11-10 when it's 2026), so it's the same day at its
 ///   nearest occurrence, unless that's the one that just went by, which is no day to remind anyone of;
-/// - the day they named: when their words name one ("Friday", "next Tuesday", "tomorrow"), the date is that day,
-///   a weekday within the next two weeks; a different date is dropped rather than shown wrong.
+/// - the day they named: when their words name one ("Friday", "next Tuesday", "tomorrow"), the date is on it;
+///   a different date is dropped rather than shown wrong.
 fn day(when: &str, said: &[&str], today: &str) -> String {
     let Some(mut date) = day_number(when) else { return String::new() };
     // Without today's date (no `date` command) there's nothing to check against.
@@ -468,7 +468,7 @@ fn day(when: &str, said: &[&str], today: &str) -> String {
             }
         }
     }
-    let named = days.contains(&date) || (weekdays.contains(&(date.rem_euclid(7) as usize)) && date - now < 14);
+    let named = days.contains(&date) || weekdays.contains(&(date.rem_euclid(7) as usize));
     if (days.is_empty() && weekdays.is_empty()) || named {
         let (y, m, d) = crate::import::civil_from_days(date);
         format!("{y:04}-{m:02}-{d:02}")
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(day("2026-11-03", &tuesday, TODAY), "2026-11-03");
         assert_eq!(day("2026-11-10", &tuesday, TODAY), "2026-11-10");
         assert_eq!(day("2026-11-04", &tuesday, TODAY), "", "a Wednesday isn't Tuesday");
-        assert_eq!(day("2026-11-17", &tuesday, TODAY), "", "nor is a Tuesday two weeks out");
+        assert_eq!(day("2026-11-20", &["Mom's birthday is Friday the twentieth."], TODAY), "2026-11-20");
         let tomorrow = ["The submission deadline is tomorrow at nine PM."];
         assert_eq!((day("2026-11-02", &tomorrow, TODAY), day("2026-11-03", &tomorrow, TODAY)), ("2026-11-02".into(), String::new()));
         // A slipped year moves to the nearest such day; a day that just went by is no day to remind anyone of.
