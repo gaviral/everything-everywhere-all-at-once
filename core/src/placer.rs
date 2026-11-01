@@ -6,7 +6,9 @@ use crate::{now_ms, protocol::ServerMsg, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
@@ -33,12 +35,12 @@ const SKIP_MAX_WORDS: usize = 8;
 /// Words that join two parts of a turn; left out where it's cut in two.
 const JOINS: [&str; 9] = ["and", "also", "plus", "but", "so", "oh", "then", "anyway", "or"];
 
-/// What the placer works through, in the order it was said: a thought to place, or a spoken command.
-/// A command waits behind the thoughts said before it, so their placements can't undo it.
+/// What the placer works through, in the order it was said: a thought to place, or a speaker's spoken
+/// command. A command waits behind the thoughts said before it, so their placements can't undo it.
 pub enum Job {
     Place(String),
-    Back,
-    Next,
+    Back(String),
+    Next(String),
 }
 
 #[derive(Deserialize)]
@@ -81,6 +83,8 @@ fn clean(text: &str) -> String {
 }
 
 pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
+    // Rounds of three failed tries so far, for each thought still waiting to be placed.
+    let mut rounds: HashMap<String, u32> = HashMap::new();
     // The rest of a turn cut in two goes next, before anything said after it.
     let mut rest: Option<String> = None;
     loop {
@@ -93,12 +97,12 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
         };
         let thought_id = match job {
             Job::Place(id) => id,
-            Job::Back => {
-                core.go_back();
+            Job::Back(speaker) => {
+                core.go_back(&speaker);
                 continue;
             }
-            Job::Next => {
-                core.go_next();
+            Job::Next(speaker) => {
+                core.go_next(&speaker);
                 continue;
             }
         };
@@ -106,6 +110,7 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
         for attempt in 1..=3u64 {
             match place(&core, &thought_id).await {
                 Ok(next) => {
+                    rounds.remove(&thought_id);
                     rest = next;
                     break;
                 }
@@ -115,11 +120,31 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                 }
                 Err(e) => {
                     tracing::warn!("placement failed: {e:#}");
-                    core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+                    let round = rounds.entry(thought_id.clone()).or_default();
+                    // Said once: its "Finding a thread" stays up while it waits.
+                    if *round == 0 {
+                        core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+                    }
+                    // A longer outage shouldn't leave it unplaced until a restart: it goes back in the queue
+                    // later. Without a key, nothing would change by then.
+                    if core.key.is_some() {
+                        let (core, id, wait) = (core.clone(), thought_id.clone(), retry_in(*round));
+                        *round += 1;
+                        tokio::spawn(async move {
+                            tokio::time::sleep(wait).await;
+                            let _ = core.placer_queue.send(Job::Place(id));
+                        });
+                    }
                 }
             }
         }
     }
+}
+
+/// How long a thought waits after a round of failed tries before the next: 15 s, doubling to 4 min,
+/// so it lands soon after a blip without calling the model every few seconds through an outage.
+fn retry_in(round: u32) -> Duration {
+    Duration::from_secs(15 << round.min(4))
 }
 
 /// Places one thought; when the turn moved on to another topic partway, returns the rest's id.
@@ -236,7 +261,7 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let active = world.active.clone().unwrap_or_else(|| "(none)".into());
+    let active = world.active_for(&thought.speaker).cloned().unwrap_or_else(|| "(none)".into());
     json!({
         "model": model,
         "reasoning_effort": "minimal",
@@ -266,13 +291,15 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
     })
 }
 
-/// Turns the model's answer into changes, trusting only ids that exist.
+/// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
+/// the speaker: in a room, one person changing topic never drops a thread for the other.
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<Change> {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
     if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS {
         return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
     }
     let now = now_ms();
+    let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();
     // A guess only counts when something looked misheard and the guess differs.
     let unclear = clean(&p.unclear);
@@ -291,7 +318,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     let target = match p.action.as_str() {
         "new" => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
-        _ => world.active.clone().filter(|a| exists(a)),
+        _ => world.active_for(speaker).cloned().filter(|a| exists(a)),
     };
     let thread_id = match target {
         Some(id) => id,
@@ -313,6 +340,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
                     touched_ms: now,
                     tags: Vec::new(),
                     picture: None,
+                    dropped_by: String::new(),
                 },
             });
             id
@@ -334,12 +362,15 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     });
     changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
 
-    // Leaving a thread whose last thought trailed off means it was dropped.
-    let mut dropped = p.dropped;
-    if let Some(previous) = world.active.clone().filter(|a| *a != thread_id) {
-        let last = world.thoughts.iter().rev().find(|t| t.placed && t.thread_id.as_deref() == Some(previous.as_str()));
-        if last.map(|t| !t.complete).unwrap_or(false) {
-            dropped.push(previous);
+    // Leaving a thread whose last thought trailed off means it was dropped. Only the speaker's own
+    // words count, so only threads they spoke on can be dropped, and only for them.
+    let their_last = |id: &str| {
+        world.thoughts.iter().rev().find(|t| t.placed && t.speaker == *speaker && t.thread_id.as_deref() == Some(id))
+    };
+    let mut dropped: Vec<String> = p.dropped.into_iter().filter(|d| their_last(d).is_some()).collect();
+    if let Some(previous) = world.active_by.get(speaker).filter(|a| **a != thread_id) {
+        if their_last(previous).is_some_and(|t| !t.complete) {
+            dropped.push(previous.clone());
         }
     }
     dropped.sort();
@@ -347,55 +378,90 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     for d in dropped {
         let open = world.thread(&d).map(|t| t.status == ThreadStatus::Open).unwrap_or(false);
         if d != thread_id && open {
-            changes.push(Change::ThreadStatus { thread_id: d, status: ThreadStatus::Dropped });
+            changes.push(Change::ThreadStatus { thread_id: d, status: ThreadStatus::Dropped, speaker: speaker.clone() });
         }
     }
-    if world.active.as_deref() != Some(thread_id.as_str()) {
-        changes.push(Change::ActiveChanged { thread_id });
+    // Alone these always agree; in a room the talk can be elsewhere while the speaker stays put.
+    if world.active.as_deref() != Some(thread_id.as_str()) || world.active_by.get(speaker) != Some(&thread_id) {
+        changes.push(Change::ActiveChanged { thread_id, speaker: speaker.clone() });
     }
     changes
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cut, decide, settle, Placement};
+    use super::{cut, decide, request, settle, Placement};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
     use serde_json::json;
 
-    fn thought(text: &str) -> Thought {
-        Thought {
-            id: "a".into(),
-            speaker: "you".into(),
-            text: text.into(),
-            point: String::new(),
-            thread_id: None,
-            placed: false,
-            unclear: String::new(),
-            guess: String::new(),
-            heard: String::new(),
-            fixed: String::new(),
-            complete: true,
-            at_ms: 7,
-            place_ms: None,
-        }
-    }
-
-    /// A map with "Pay rent" (T1, active) and "Hackathon demo" (T2).
-    fn map() -> World {
-        let thread = |id: &str, title: &str| Thread {
+    fn thread(id: &str) -> Thread {
+        Thread {
             id: id.into(),
-            title: title.into(),
+            title: format!("Topic {id}"),
             parent_id: None,
             status: ThreadStatus::Open,
             last_point: String::new(),
             touched_ms: 0,
             tags: Vec::new(),
             picture: None,
-        };
-        World { threads: vec![thread("T1", "Pay rent"), thread("T2", "Hackathon demo")], active: Some("T1".into()), ..World::default() }
+            dropped_by: String::new(),
+        }
     }
 
-    fn answer(value: serde_json::Value) -> Placement {
+    fn thought(id: &str, speaker: &str, thread: Option<&str>, complete: bool) -> Thought {
+        Thought {
+            id: id.into(),
+            speaker: speaker.into(),
+            text: format!("{speaker} says {id}"),
+            point: String::new(),
+            thread_id: thread.map(Into::into),
+            placed: thread.is_some(),
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete,
+            at_ms: 0,
+            place_ms: None,
+        }
+    }
+
+    fn answer(action: &str, thread_id: &str, dropped: &[&str]) -> Placement {
+        serde_json::from_value(serde_json::json!({"action": action, "thread_id": thread_id, "dropped": dropped})).unwrap()
+    }
+
+    fn drops(changes: &[Change]) -> Vec<(String, String)> {
+        changes
+            .iter()
+            .filter_map(|c| match c {
+                Change::ThreadStatus { thread_id, status: ThreadStatus::Dropped, speaker } => Some((thread_id.clone(), speaker.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// User trailed off on T1; Sam talks on T2.
+    fn room() -> World {
+        let mut world = World {
+            threads: vec![thread("T1"), thread("T2")],
+            thoughts: vec![thought("a", "User", Some("T1"), false), thought("b", "Sam", Some("T2"), true)],
+            ..World::default()
+        };
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
+        world
+    }
+
+    fn turn(text: &str) -> Thought {
+        Thought { text: text.into(), at_ms: 7, ..thought("a", "you", None, true) }
+    }
+
+    /// A map with T1 (active) and T2.
+    fn map() -> World {
+        World { threads: vec![thread("T1"), thread("T2")], active: Some("T1".into()), ..World::default() }
+    }
+
+    fn reply(value: serde_json::Value) -> Placement {
         serde_json::from_value(value).unwrap()
     }
 
@@ -420,10 +486,10 @@ mod tests {
     #[test]
     fn the_first_part_is_placed_and_the_rest_waits_its_turn() {
         let world = map();
-        let turn = thought("I need to pay rent before Friday — oh, the Muse Bark demo is on Tuesday");
-        let p = answer(json!({"split": "the Muse Bark demo is on Tuesday", "action": "continue", "thread_id": "T1",
+        let said = turn("I need to pay rent before Friday — oh, the Muse Bark demo is on Tuesday");
+        let p = reply(json!({"split": "the Muse Bark demo is on Tuesday", "action": "continue", "thread_id": "T1",
             "point": "Pay rent before Friday", "unclear": "Muse Bark", "guess": "Muse Spark", "sure": true}));
-        let (changes, rest) = settle(&world, &turn, p, 0);
+        let (changes, rest) = settle(&world, &said, p, 0);
         let Some(Change::ThoughtSplit { thought_id, text, rest: next }) = changes.first() else { panic!("{changes:?}") };
         assert_eq!((thought_id.as_str(), text.as_str()), ("a", "I need to pay rent before Friday"));
         assert_eq!(rest.as_deref(), Some(next.id.as_str()));
@@ -439,21 +505,48 @@ mod tests {
     #[test]
     fn a_skip_sets_aside_only_a_short_turn() {
         let world = map();
-        let skip = || answer(json!({"split": "", "action": "skip", "thread_id": "", "point": ""}));
-        assert!(matches!(decide(&world, &thought("oh wow"), skip(), 0)[..], [Change::ThoughtSkipped { .. }]));
+        let skip = || reply(json!({"split": "", "action": "skip", "thread_id": "", "point": ""}));
+        assert!(matches!(decide(&world, &turn("oh wow"), skip(), 0)[..], [Change::ThoughtSkipped { .. }]));
         // A long turn is placed whatever the model says: on the active thread.
-        let long = thought("so I was thinking we could rent a van and drive down on Friday");
+        let long = turn("so I was thinking we could rent a van and drive down on Friday");
         let changes = decide(&world, &long, skip(), 0);
         assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T1")), "{changes:?}");
         // A skip whose quote cuts nothing can't say which words were filler: placed too.
-        let unsure = answer(json!({"split": "the demo is on Tuesday", "action": "skip"}));
-        let (changes, rest) = settle(&world, &thought("the demo is on Tuesday"), unsure, 0);
+        let unsure = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
+        let (changes, rest) = settle(&world, &turn("the demo is on Tuesday"), unsure, 0);
         assert!(rest.is_none() && changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { .. })), "{changes:?}");
         // Filler before real words: the filler is set aside and the rest placed next.
-        let lead = answer(json!({"split": "the demo is on Tuesday", "action": "skip"}));
-        let (changes, rest) = settle(&world, &thought("yeah, so anyway, the demo is on Tuesday"), lead, 0);
+        let lead = reply(json!({"split": "the demo is on Tuesday", "action": "skip"}));
+        let (changes, rest) = settle(&world, &turn("yeah, so anyway, the demo is on Tuesday"), lead, 0);
         assert!(rest.is_some());
         assert!(matches!(changes[..], [Change::ThoughtSplit { .. }, Change::ThoughtSkipped { .. }]), "{changes:?}");
+    }
+
+    #[test]
+    fn one_person_moving_on_doesnt_drop_the_others_thread() {
+        let world = room();
+        // Sam keeps going on T2, and the model even calls T1 dropped: it isn't Sam's to drop.
+        let changes = decide(&world, &thought("c", "Sam", None, true), answer("continue", "T2", &["T1"]), 0);
+        assert!(drops(&changes).is_empty(), "{changes:?}");
+        // User moves to T2, leaving T1 unfinished: dropped, for User.
+        let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0);
+        assert_eq!(drops(&changes), [("T1".to_string(), "User".to_string())]);
+        assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "User")));
+    }
+
+    #[test]
+    fn a_thought_that_couldnt_be_placed_goes_back_in_the_queue_later_and_later() {
+        let waits: Vec<u64> = (0..7).map(|round| super::retry_in(round).as_secs()).collect();
+        assert_eq!(waits, [15, 30, 60, 120, 240, 240, 240]);
+    }
+
+    #[test]
+    fn the_placer_sees_the_speakers_own_thread() {
+        let world = room();
+        let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m")["messages"][1]["content"].to_string();
+        assert!(prompt("User").contains("Active thread: T1"));
+        assert!(prompt("Sam").contains("Active thread: T2"));
+        assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
     }
 
     /// Places `text` as a new thread, with the model's answer about the misheard words.

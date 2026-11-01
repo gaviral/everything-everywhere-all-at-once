@@ -1,0 +1,241 @@
+/* The import panel: calm, in the app's own tokens (styles.css). */
+/* Beside Recap in the header, in the same shape. */
+.import-open {
+  min-height: 36px;
+  padding: 6px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.import-open:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.import-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow), 0 18px 50px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.import-dialog::backdrop {
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.import-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px 28px 24px;
+}
+
+.import-body h2 {
+  margin: 0;
+  padding-right: 32px;
+  font-size: 23px;
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.import-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.import-close:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.import-lead,
+.import-help,
+.import-note,
+.import-line {
+  margin: 0;
+}
+
+.import-lead,
+.import-help,
+.import-note,
+.import-facts {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.import-help {
+  font-size: 13px;
+}
+
+.import-line {
+  font-size: 14px;
+}
+
+.import-file {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.import-eyebrow { color: var(--ai); font-size: 13px; font-weight: 650; }
+.import-eyebrow span, .import-privacy h3 span { color: var(--ai); margin-right: 5px; }
+.import-privacy { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.import-privacy h3 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
+
+.import-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 16px;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.import-drop.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-drop .import-actions {
+  justify-content: center;
+}
+
+.import-actions button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.import-actions button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.import-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-button-ink);
+}
+
+.import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.import-dialog :focus-visible, .import-open:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.import-warn {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 13px;
+}
+
+.import-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--line);
+}
+
+.import-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.import-drag {
+  position: fixed;
+  inset: 12px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: var(--ink);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.import-short {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .import-open {
+    padding-inline: 9px;
+  }
+  .import-long {
+    display: none;
+  }
+  .import-short {
+    display: inline-flex;
+    align-items: center;
+  }
+  .import-body {
+    padding: 24px 20px max(20px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-bar > span, .import-drop { transition: none; }
+}

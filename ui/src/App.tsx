@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
+import { ImportChats } from "./Import";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -13,14 +14,18 @@ import { Apps } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
+import { hasToured, Tour } from "./Tour";
+import { leftBy, RoomControl, useMe } from "./room";
+import { useFindJump } from "./find";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 export default function App() {
   const core = useCore();
+  const me = useMe();
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const { world } = core;
+  const world = useMemo(() => ({ ...core.world, active: core.world.active_by[me] ?? core.world.active }), [core.world, me]);
   const sessionCounts = useMemo(() => {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
     let start = times.at(-1) ?? 0;
@@ -36,10 +41,14 @@ export default function App() {
     return { thoughts, threads: threads.size };
   }, [world.thoughts, world.threads, world.merged]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
+  useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -48,6 +57,7 @@ export default function App() {
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [noticeFocused, setNoticeFocused] = useState(false);
   const seenThoughts = useRef<Set<string> | null>(null);
   const seenSnapshot = useRef(0);
   useEffect(() => {
@@ -58,12 +68,12 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
-  }, [world.thoughts, world.threads, core.snapshotRevision]);
+  }, [world.thoughts, world.threads, core.snapshotRevision, me]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -91,17 +101,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!core.notice || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
+    if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.clearNotice]);
+  }, [core.notice, core.found, core.clearNotice, noticeFocused]);
 
-  // Stop local audio when the service reports a stop or the connection drops.
+  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
+  // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   useEffect(() => {
     if (stopMic && !core.listening && core.voiceStatusRevision > voiceStartedAt.current) {
       stopMic();
       setStopMic(null);
+      core.listen(false);
     }
   }, [core.listening, core.voiceStatusRevision, stopMic]);
 
@@ -122,7 +134,10 @@ export default function App() {
     }
     setStartingMic(true);
     try {
-      const stop = await startMic(core.sendAudio);
+      const stopAudio = await startMic(core.sendAudio);
+      let stopped = false;
+      const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
+      if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = core.voiceStatusRevision;
       setStopMic(() => stop);
       if (!core.listen(true)) {
@@ -131,11 +146,12 @@ export default function App() {
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
+      if (!mounted.current) return;
       core.listen(false);
       const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
       core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
     } finally {
-      setStartingMic(false);
+      if (mounted.current) setStartingMic(false);
     }
   };
 
@@ -147,7 +163,8 @@ export default function App() {
     }
   };
 
-  const pending = world.thoughts.filter((t) => !t.placed);
+  // Your own thoughts on their way; in a room the other person's land on the map with their name.
+  const pending = world.thoughts.filter((t) => !t.placed && t.speaker === me);
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
@@ -174,6 +191,7 @@ export default function App() {
     const target = document.getElementById(`thread-${world.active}`);
     if (!target) return;
     positionedInitial.current = true;
+    if (!hasToured()) return;
     requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
   }, [core.snapshotRevision, world.active, world.threads]);
 
@@ -289,12 +307,13 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+  // Only threads you left: in a room, the other person's are theirs to pick up.
   const dropped = world.threads
-    .filter((t) => t.status === "dropped" && !dismissed.includes(dropKey(t)))
+    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
     : "";
 
   const goBack = (thread: Thread) => {
@@ -330,7 +349,9 @@ export default function App() {
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
         <div className="header-actions">
+        <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
+        <ImportChats core={core} />
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
@@ -342,6 +363,8 @@ export default function App() {
         {core.notice && (
           <motion.div
             className="notice" role="status"
+            onFocus={() => setNoticeFocused(true)}
+            onBlur={() => setNoticeFocused(false)}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -358,7 +381,9 @@ export default function App() {
 
       <Explain explanations={core.explanations} explain={core.explain} />
 
+      <div id="tour-tools" />
       <Apps core={core} />
+      <div id="tour-map" />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
@@ -438,6 +463,7 @@ export default function App() {
               </motion.span>
             ))}
           </div>
+          <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
             <input
               value={draft}
@@ -458,6 +484,7 @@ export default function App() {
           </form>
         </div>
       </section>
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
       <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
@@ -483,7 +510,10 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
   const branches = childrenByParent.get(thread.id) ?? [];
   const active = world.active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
-  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
+  // Your own unfinished thread is flagged; someone else's tag just says whose it is.
+  const me = useMe();
+  const by = thread.status === "dropped" ? leftBy(thread, me) : "";
+  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : ""].join(" ");
 
   return (
     <motion.section
@@ -500,7 +530,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
         <div className="head-text">
           <div className="head-line">
             <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
-            {thread.status === "dropped" && <span className="chip dropped">left off</span>}
+            {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {active && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
@@ -562,10 +592,11 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
 
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const other = thought.speaker !== "you";
+  const me = useMe();
+  const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
-    <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+    <motion.li id={`point-${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
@@ -596,12 +627,18 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   );
 }
 
+// A real YYYY-MM-DD day, as the core checks it: "Saturday" or "2026-11-31" (which a Date rolls over to December 1) isn't one.
+function day(when: string): Date | null {
+  const [y, m, d] = when.split("-").map(Number);
+  const date = new Date(y, m - 1, d, 9);
+  return /^\d{4}-\d{2}-\d{2}$/.test(when) && y >= 2000 && y <= 2100 && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
+}
+
 function ActionRow({ action, on }: { action: Action; on: Handlers }) {
-  // Matches the core: an event without a date goes to Reminders.
-  const app = action.kind === "event" && action.when ? "Calendar" : "Reminders";
-  const when = action.when
-    ? new Date(`${action.when}T09:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-    : "";
+  // Matches the core: an event without a real date goes to Reminders.
+  const date = day(action.when);
+  const app = action.kind === "event" && date ? "Calendar" : "Reminders";
+  const when = date ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
   return (
     <motion.div layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
@@ -617,6 +654,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
           </button>
         </span>
       )}
+      {action.status === "kept" && <span className="when ai-actions">Adding to {app}…</span>}
       {action.status === "done" && action.done_ms != null && (
         <span className="when ai-actions">
           in {app} · {(action.done_ms / 1000).toFixed(1)} s

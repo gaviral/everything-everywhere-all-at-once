@@ -70,12 +70,13 @@ struct Task {
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
 /// - right away when they come back to the window, so the map is tidy when they look;
-/// - at most every 10 s, and only when something changed.
+/// - at most every 10 s (longer after failed passes), and only when something changed.
 pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
+    let mut failures = 0;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
@@ -87,14 +88,16 @@ pub async fn run(core: Arc<Core>) {
         let new_thoughts = placed.saturating_sub(seen_thoughts);
         let new_threads = world.threads.len() > seen_threads;
         let quiet = core.quiet_ms() >= 4_000;
-        let rested = crate::now_ms().saturating_sub(last_pass) >= 10_000;
+        let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
         let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
         if !due || core.key.is_none() {
             continue;
         }
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
-        match pass(&core, &world, since).await {
+        let result = pass(&core, &world, since).await;
+        failures = if result.is_ok() { 0 } else { failures + 1 };
+        match result {
             // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
             Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
             Ok(changes) if !changes.is_empty() => core.commit(changes),
@@ -108,15 +111,16 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
+/// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
+/// so a pass that keeps failing doesn't resend the whole map every 10 s for good.
+fn rest_ms(failures: u32) -> u64 {
+    10_000 << failures.min(5)
+}
+
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let map = describe(world, since);
-    let existing: Vec<String> = world
-        .suggestions
-        .iter()
-        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
-        .chain(world.actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
-        .collect();
+    let existing = existing(world);
     let today = chrono_today();
     let body = json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
@@ -148,6 +152,18 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     Ok(changes(world, pass))
+}
+
+/// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
+/// (dismissed ones too, which the person said no to), so the prompt doesn't grow with every idea ever shown.
+fn existing(world: &World) -> Vec<String> {
+    let suggestions = &world.suggestions[world.suggestions.len().saturating_sub(30)..];
+    let actions = &world.actions[world.actions.len().saturating_sub(30)..];
+    suggestions
+        .iter()
+        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
+        .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
+        .collect()
 }
 
 /// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
@@ -193,9 +209,16 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
             out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
         }
     }
+    // Each merge is checked against the map the earlier ones leave: a chain (T3 into T1, then T5 into T3)
+    // lands on the thread that's left, and a thread never goes into its own branch, which would make the
+    // branch its own parent and drop it from the map.
+    let mut merged = world.clone();
     for m in pass.merges {
-        if m.from != m.into && exists(&m.from) && exists(&m.into) {
-            out.push(Change::ThreadMerged { from: m.from, into: m.into });
+        let into = merged.resolve(&m.into);
+        if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) {
+            let change = Change::ThreadMerged { from: m.from, into };
+            merged.apply(&change);
+            out.push(change);
         }
     }
     for s in pass.suggestions {
@@ -208,15 +231,17 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     }
     for a in pass.actions {
         let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
+        // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
+        let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
         if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated {
             out.push(Change::ActionProposed {
                 action: Action {
                     id: new_id("ac"),
                     thread_id: a.thread_id,
                     // An event needs a date; without one it's a reminder rather than an invented day.
-                    kind: if a.kind == "event" && !a.when.trim().is_empty() { "event".into() } else { "reminder".into() },
+                    kind: if a.kind == "event" && !when.is_empty() { "event".into() } else { "reminder".into() },
                     title: a.title.trim().into(),
-                    when: a.when.trim().into(),
+                    when: when.into(),
                     status: ItemStatus::New,
                     done_ms: None,
                 },
@@ -236,6 +261,20 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     out
 }
 
+/// True when `id` is `of`'s parent, or its parent's, and so on up.
+fn above(world: &World, id: &str, of: &str) -> bool {
+    let mut parent = world.thread(of).and_then(|t| t.parent_id.clone());
+    // At most one step per thread, so a corrupt journal with a cycle can't loop forever.
+    for _ in 0..world.threads.len() {
+        match parent {
+            Some(p) if p == id => return true,
+            Some(p) => parent = world.thread(&p).and_then(|t| t.parent_id.clone()),
+            None => return false,
+        }
+    }
+    false
+}
+
 fn new_id(prefix: &str) -> String {
     format!("{prefix}-{}", uuid::Uuid::new_v4().simple())
 }
@@ -253,8 +292,120 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::describe;
-    use crate::world::{Thought, Thread, ThreadStatus, World};
+    use super::{changes, describe, existing, rest_ms, Pass};
+    use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
+
+    #[test]
+    fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
+        let rests: Vec<u64> = (0..8).map(|failures| rest_ms(failures) / 1000).collect();
+        assert_eq!(rests, [10, 20, 40, 80, 160, 320, 320, 320]);
+        let mut world = World::default();
+        for n in 0..100 {
+            let status = if n % 2 == 0 { ItemStatus::Dismissed } else { ItemStatus::New };
+            world.suggestions.push(Suggestion { id: format!("s{n}"), thread_id: "T1".into(), text: format!("idea {n}"), status });
+            world.actions.push(Action {
+                id: format!("a{n}"),
+                thread_id: "T1".into(),
+                kind: "reminder".into(),
+                title: format!("task {n}"),
+                when: String::new(),
+                status,
+                done_ms: None,
+            });
+        }
+        let lines = existing(&world);
+        assert_eq!(lines.len(), 60);
+        assert!(lines.contains(&"suggestion on T1: idea 70".to_string()) && lines.contains(&"action on T1: reminder task 99".to_string()));
+        assert!(!lines.iter().any(|l| l.ends_with(" 69")), "only the latest");
+    }
+
+    fn thread(id: &str, parent: Option<&str>) -> Thread {
+        Thread {
+            id: id.into(),
+            title: format!("Topic {id}"),
+            parent_id: parent.map(Into::into),
+            status: ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms: 0,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        }
+    }
+
+    #[test]
+    fn actions_keep_only_real_dates() {
+        let world = World { threads: vec![thread("T1", None)], ..World::default() };
+        let pass: Pass = serde_json::from_value(serde_json::json!({ "actions": [
+            {"thread_id": "T1", "kind": "event", "title": "Demo day", "when": "2026-11-04"},
+            {"thread_id": "T1", "kind": "event", "title": "Picnic", "when": "Saturday"},
+            {"thread_id": "T1", "kind": "reminder", "title": "Pay rent", "when": "2026-11-31"},
+        ]}))
+        .unwrap();
+        let actions: Vec<[String; 3]> = changes(&world, pass)
+            .into_iter()
+            .filter_map(|c| match c {
+                Change::ActionProposed { action } => Some([action.title, action.kind, action.when]),
+                _ => None,
+            })
+            .collect();
+        let expected = [["Demo day", "event", "2026-11-04"], ["Picnic", "reminder", ""], ["Pay rent", "reminder", ""]];
+        assert_eq!(actions, expected.map(|a| a.map(String::from)), "an event without a real day is a reminder");
+    }
+
+    #[test]
+    fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
+        let thought = |id: &str, thread: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: id.into(),
+            point: id.into(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        // T7 branches from T5, and T9 from T7.
+        let world = World {
+            threads: vec![thread("T1", None), thread("T3", None), thread("T5", None), thread("T7", Some("T5")), thread("T9", Some("T7"))],
+            thoughts: ["T1", "T3", "T5", "T7", "T9"].iter().map(|t| thought(&format!("on {t}"), t)).collect(),
+            ..World::default()
+        };
+        let merges = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<_> = pairs.iter().map(|(from, into)| serde_json::json!({"from": from, "into": into})).collect();
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "merges": pairs })).unwrap();
+            changes(&world, pass)
+        };
+        let pairs = |changes: &[Change]| -> Vec<(String, String)> {
+            changes
+                .iter()
+                .filter_map(|c| match c {
+                    Change::ThreadMerged { from, into } => Some((from.clone(), into.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+        let to = |from: &str, into: &str| (from.to_string(), into.to_string());
+
+        // A chain lands on the thread that's left, and every thought stays on the map.
+        let chain = merges(&[("T3", "T1"), ("T5", "T3")]);
+        assert_eq!(pairs(&chain), [to("T3", "T1"), to("T5", "T1")]);
+        let mut after = world.clone();
+        chain.iter().for_each(|c| after.apply(c));
+        assert!(after.thoughts.iter().all(|t| after.thread(t.thread_id.as_deref().unwrap()).is_some()));
+        assert_eq!(after.thread("T7").unwrap().parent_id.as_deref(), Some("T1"));
+        // Never into its own branch, however far down.
+        assert!(pairs(&merges(&[("T5", "T7"), ("T5", "T9")])).is_empty());
+        // Nor into itself, nor from a thread that isn't there or was just merged away.
+        assert_eq!(pairs(&merges(&[("T1", "T1"), ("T2", "T1"), ("T3", "T1"), ("T3", "T5")])), [to("T3", "T1")]);
+        // A branch into a thread above it is fine.
+        assert_eq!(pairs(&merges(&[("T9", "T5")])), [to("T9", "T5")]);
+    }
 
     #[test]
     fn quiet_threads_shrink_to_one_line() {
@@ -267,6 +418,7 @@ mod tests {
             touched_ms,
             tags: Vec::new(),
             picture: None,
+            dropped_by: String::new(),
         };
         let thought = |n: u64, thread: &str| Thought {
             id: format!("th-{n}"),

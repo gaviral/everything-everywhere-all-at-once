@@ -1,4 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+// crypto.randomUUID needs a secure page; a guest laptop in a room loads plain http from the LAN.
+const newId = () => (window.isSecureContext && crypto.randomUUID ? crypto.randomUUID() : `x${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 import type { Explanation } from "./core";
 
 // A word, a phrase or a sentence; longer selections are usually for copying.
@@ -21,15 +24,19 @@ export function Explain({ explanations, explain }: {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [lost, setLost] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const previous = useRef<HTMLElement | null>(null);
+  const dismiss = useRef<HTMLButtonElement>(null);
   const current = useRef(picked);
   current.current = picked;
   // The selection last shown or dismissed, so it doesn't pop back on the next key.
   const seen = useRef<Range | null>(null);
 
   const ask = (target: Picked) => {
-    const id = crypto.randomUUID();
+    const id = newId();
+    const moveFocus = !!box.current?.contains(document.activeElement);
     setPicked({ ...target, id, asked: true });
     if (!explain(id, target.text, target.context, target.threadId)) setLost(id);
+    if (moveFocus) requestAnimationFrame(() => dismiss.current?.focus());
   };
   const asking = useRef(ask);
   asking.current = ask;
@@ -71,10 +78,11 @@ export function Explain({ explanations, explain }: {
       const last = seen.current;
       if (last && last.toString() === range.toString() && last.compareBoundaryPoints(Range.START_TO_START, range) === 0) return;
       seen.current = range.cloneRange();
+      previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const around = element.textContent ?? "";
       const context = element.closest("li")?.getAttribute("title") || (around.length < 300 ? around : text);
       const threadId = element.closest(".thread")?.id.replace(/^thread-/, "") || null;
-      setPicked({ id: crypto.randomUUID(), text, context, threadId, range: seen.current, touch, asked: false });
+      setPicked({ id: newId(), text, context, threadId, range: seen.current, touch, asked: false });
     };
     const outside = (event: Event) => !box.current?.contains(event.target as Node);
     const onPointerUp = (event: PointerEvent) => {
@@ -94,6 +102,7 @@ export function Explain({ explanations, explain }: {
       if (event.key === "Escape") {
         // This Escape is for the box only: don't also fold the map's quiet threads.
         if (!typing(event.target)) event.stopPropagation();
+        if (box.current?.contains(document.activeElement)) previous.current?.focus({ preventScroll: true });
         setPicked(null);
       } else if (event.key === "Enter" && !open.asked && !control(event.target)) {
         event.preventDefault();
@@ -133,14 +142,10 @@ export function Explain({ explanations, explain }: {
           Explain “{picked.text.length > 24 ? `${picked.text.slice(0, 24)}…` : picked.text}”
         </button>
       ) : (
-        <div className="explain-card" role="status">
-          {failed ? (
+        <div className="explain-card">
+          <div role="status">{failed ? (
             <>
               {answer?.failed ? answer.text : "Couldn't explain that just now."}
-              <span className="explain-actions">
-                <button onClick={() => ask(picked)}>Try again</button>
-                <button className="quiet" onClick={() => setPicked(null)} aria-label="Dismiss">×</button>
-              </span>
             </>
           ) : answer ? (
             <>
@@ -148,7 +153,11 @@ export function Explain({ explanations, explain }: {
             </>
           ) : (
             <span className="explain-wait">Explaining…</span>
-          )}
+          )}</div>
+          <span className="explain-actions">
+            {failed && <button onClick={() => ask(picked)}>Try again</button>}
+            <button ref={dismiss} className="quiet" onClick={() => { previous.current?.focus({ preventScroll: true }); setPicked(null); }} aria-label="Dismiss explanation">×</button>
+          </span>
         </div>
       )}
     </div>

@@ -1,10 +1,11 @@
-//! Pictures: once a thread has a couple of thoughts, Muse Image draws one vivid picture
-//! for it, a memory anchor in the spirit of a memory palace. One at a time, in the background.
+//! Pictures: once a thread has stayed quiet, Muse Image draws one vivid picture
+//! for it, a memory anchor in the spirit of a memory palace. A few at a time, in the background.
 //! The map shows a small copy; the full picture stays beside it on disk.
 
-use crate::world::{Change, Thread};
+use crate::world::{Change, Thread, World};
 use crate::Core;
 use anyhow::{anyhow, bail, Context};
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,7 @@ const URL: &str = "https://api.meta.ai/v1/images/generations";
 const STYLE: &str = "A memory-palace picture: turn the topic into one concrete, physical thing (an object or a creature) \
 doing something vivid and a little absurd, so it sticks in the mind: oversized, made of an unexpected material, \
 or in an odd situation, yet clearly about the topic. If the topic is serious or painful, make it gentle instead of absurd. \
+Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself. \
 Never a diagram, chart, flowchart, collage, set of icons or screen. \
 House style, the same for every picture: bold, simple 3D clay-style illustration, chunky rounded shapes, saturated colors, \
 soft studio light, the subject centered and filling most of the square, on a plain flat background with nothing else on it. \
@@ -34,39 +36,94 @@ const SMALL: u32 = 128;
 /// Attempts per thread, so a passing failure (a timeout, a rate limit) doesn't cost it its picture.
 const TRIES: u32 = 3;
 
+// A short topic gets an anchor too, but give the person time to add its next thought first.
+const SETTLE_MS: u64 = 12_000;
+// Placement shares the key: admit no new image calls mid-sentence or while thoughts await placement.
+const QUIET_MS: u64 = 2_000;
+const CONCURRENT: usize = 3;
+const POLL: Duration = Duration::from_secs(1);
+// Keep the old ten-second breathing room between failed attempts, without stalling other pictures.
+const RETRY_MS: u64 = 10_000;
+
+#[derive(Default)]
+struct Attempt {
+    count: u32,
+    in_flight: bool,
+    retry_after: u64,
+}
+
 pub async fn run(core: Arc<Core>, dir: PathBuf) {
     shrink_old(&core, &dir).await;
-    let mut tries: HashMap<String, u32> = HashMap::new();
+    let mut attempts: HashMap<String, Attempt> = HashMap::new();
+    let mut drawing = FuturesUnordered::new();
+    let mut poll = tokio::time::interval(POLL);
+    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::select! {
+            _ = poll.tick() => {}
+            Some(completed) = drawing.next(), if !drawing.is_empty() => {
+                let (id, result): (String, anyhow::Result<String>) = completed;
+                let attempt = attempts.get_mut(&id).expect("drawing has an attempt");
+                attempt.in_flight = false;
+                match result {
+                    Ok(path) => {
+                        // A merge or another completed draw mustn't have its picture overwritten.
+                        let world = core.snapshot();
+                        let id = world.resolve(&id);
+                        if world.thread(&id).is_some_and(|t| t.picture.is_none()) {
+                            core.commit(vec![Change::ThreadPicture { thread_id: id, path }]);
+                        }
+                    }
+                    Err(e) => {
+                        attempt.retry_after = crate::now_ms().saturating_add(RETRY_MS);
+                        tracing::warn!("picture for {id} failed: {e:#}");
+                    }
+                }
+            }
+        }
         if core.key.is_none() {
             continue;
         }
-        // Only while the person is quiet, and only for threads worth remembering:
-        // three or more thoughts, or two once the talk has moved on for half a minute.
-        if core.quiet_ms() < 4_000 {
-            continue;
-        }
         let world = core.snapshot();
-        let now = crate::now_ms();
-        let next = world.threads.iter().find(|t| {
-            let thoughts = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).count();
-            let moved_on = world.active.as_deref() != Some(t.id.as_str()) && now.saturating_sub(t.touched_ms) > 30_000;
-            t.picture.is_none() && tries.get(&t.id).is_none_or(|n| *n < TRIES) && (thoughts >= 3 || (thoughts >= 2 && moved_on))
-        });
-        let Some(thread) = next.cloned() else { continue };
-        *tries.entry(thread.id.clone()).or_default() += 1;
-        let points: Vec<String> = world
-            .thoughts
-            .iter()
-            .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
-            .map(|p| p.point.clone())
-            .collect();
-        match draw(&core, &dir, &thread, &points).await {
-            Ok(path) => core.commit(vec![Change::ThreadPicture { thread_id: thread.id, path }]),
-            Err(e) => tracing::warn!("picture for {} failed: {e:#}", thread.id),
+        for thread in ready(&world, &attempts, crate::now_ms(), core.quiet_ms()) {
+            let points: Vec<String> = world
+                .thoughts
+                .iter()
+                .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
+                .map(|p| p.point.clone())
+                .collect();
+            let attempt = attempts.entry(thread.id.clone()).or_default();
+            attempt.count += 1;
+            attempt.in_flight = true;
+            let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
+            drawing.push(async move {
+                let result = draw(&core, &dir, &thread, &points).await;
+                (thread.id, result)
+            });
         }
     }
+}
+
+/// Fill free slots, oldest quiet threads first; first pictures take priority over retries.
+/// Active threads use the same delay, so the last topic gets a picture after the talk ends too.
+fn ready<'a>(world: &'a World, attempts: &HashMap<String, Attempt>, now: u64, quiet_ms: u64) -> Vec<&'a Thread> {
+    if quiet_ms < QUIET_MS || world.thoughts.iter().any(|p| !p.placed) {
+        return Vec::new();
+    }
+    let slots = CONCURRENT.saturating_sub(attempts.values().filter(|a| a.in_flight).count());
+    let mut threads: Vec<_> = world
+        .threads
+        .iter()
+        .filter(|t| {
+            t.picture.is_none()
+                && now.saturating_sub(t.touched_ms) >= SETTLE_MS
+                && world.thoughts.iter().any(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str()))
+                && attempts.get(&t.id).is_none_or(|a| !a.in_flight && a.count < TRIES && now >= a.retry_after)
+        })
+        .collect();
+    threads.sort_by_key(|t| (attempts.get(&t.id).map_or(0, |a| a.count), t.touched_ms));
+    threads.truncate(slots);
+    threads
 }
 
 /// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
@@ -212,6 +269,133 @@ fn decode(text: &str) -> anyhow::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    fn topic(thoughts: usize) -> World {
+        World {
+            threads: vec![Thread {
+                id: "T1".into(),
+                title: "Laundry".into(),
+                parent_id: None,
+                status: crate::world::ThreadStatus::Open,
+                last_point: String::new(),
+                touched_ms: 1_000,
+                tags: vec![],
+                picture: None,
+                dropped_by: String::new(),
+            }],
+            thoughts: (0..thoughts)
+                .map(|i| crate::world::Thought {
+                    id: format!("p{i}"),
+                    speaker: "you".into(),
+                    text: "Fold it tonight".into(),
+                    point: "Fold it tonight".into(),
+                    thread_id: Some("T1".into()),
+                    placed: true,
+                    unclear: String::new(),
+                    guess: String::new(),
+                    heard: String::new(),
+                    fixed: String::new(),
+                    complete: true,
+                    at_ms: 1_000,
+                    place_ms: Some(0),
+                })
+                .collect(),
+            ..World::default()
+        }
+    }
+
+    #[test]
+    fn every_topic_settles_even_with_one_thought_or_still_active() {
+        for count in [1, 2, 3, 10] {
+            for active in [None, Some("T1".into()), Some("T2".into())] {
+                let mut world = topic(count);
+                world.active = active;
+                let due = world.threads[0].touched_ms + SETTLE_MS;
+                assert!(ready(&world, &HashMap::new(), due - 1, QUIET_MS).is_empty());
+                assert_eq!(ready(&world, &HashMap::new(), due, QUIET_MS).len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_new_touch_restarts_the_settling_delay() {
+        let mut world = topic(1);
+        let now = 50_000;
+        assert_eq!(ready(&world, &HashMap::new(), now, QUIET_MS).len(), 1);
+        world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "Hang it up".into(), at_ms: now });
+        assert!(ready(&world, &HashMap::new(), now + SETTLE_MS - 1, QUIET_MS).is_empty());
+        assert_eq!(ready(&world, &HashMap::new(), now + SETTLE_MS, QUIET_MS).len(), 1);
+        assert!(ready(&world, &HashMap::new(), now - 1, QUIET_MS).is_empty(), "a future timestamp is not settled");
+    }
+
+    #[test]
+    fn placement_and_the_persons_sentence_come_first() {
+        let mut world = topic(1);
+        let now = 50_000;
+        assert!(ready(&world, &HashMap::new(), now, QUIET_MS - 1).is_empty());
+        assert_eq!(ready(&world, &HashMap::new(), now, QUIET_MS).len(), 1);
+        // A pending thought may be about any thread, so leave the shared key to the placer.
+        let mut pending = world.thoughts[0].clone();
+        pending.id = "pending".into();
+        pending.thread_id = None;
+        pending.placed = false;
+        world.thoughts.push(pending);
+        assert!(ready(&world, &HashMap::new(), now, QUIET_MS).is_empty());
+        world.thoughts[1].placed = true;
+        assert_eq!(ready(&world, &HashMap::new(), now, QUIET_MS).len(), 1);
+    }
+
+    #[test]
+    fn empty_threads_and_existing_pictures_are_skipped() {
+        let mut world = topic(0);
+        assert!(ready(&world, &HashMap::new(), 50_000, QUIET_MS).is_empty());
+        world = topic(1);
+        world.threads[0].picture = Some("/images/kept-small.webp".into());
+        assert!(ready(&world, &HashMap::new(), 50_000, QUIET_MS).is_empty());
+    }
+
+    #[test]
+    fn no_duplicate_draws_and_retries_wait_then_stop_at_three() {
+        let world = topic(1);
+        let mut attempts = HashMap::new();
+        attempts.insert("T1".into(), Attempt { count: 1, in_flight: true, retry_after: 0 });
+        assert!(ready(&world, &attempts, 50_000, QUIET_MS).is_empty());
+        let attempt = attempts.get_mut("T1").unwrap();
+        attempt.in_flight = false;
+        attempt.retry_after = 50_000 + RETRY_MS;
+        assert!(ready(&world, &attempts, 50_000 + RETRY_MS - 1, QUIET_MS).is_empty());
+        for count in [1, 2, TRIES] {
+            attempts.get_mut("T1").unwrap().count = count;
+            assert_eq!(ready(&world, &attempts, 50_000 + RETRY_MS, QUIET_MS).len(), usize::from(count < TRIES));
+        }
+    }
+
+    #[test]
+    fn free_slots_go_to_first_pictures_then_oldest_threads() {
+        let mut world = World::default();
+        for i in 1..=6 {
+            let mut one = topic(1);
+            let id = format!("T{i}");
+            one.threads[0].id = id.clone();
+            one.threads[0].touched_ms = 10_000 - i * 1_000;
+            one.thoughts[0].id = format!("p{i}");
+            one.thoughts[0].thread_id = Some(id);
+            world.threads.extend(one.threads);
+            world.thoughts.extend(one.thoughts);
+        }
+        let mut attempts = HashMap::new();
+        let ids = |attempts: &HashMap<String, Attempt>| {
+            ready(&world, attempts, 50_000, QUIET_MS).iter().map(|t| t.id.as_str()).collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&attempts), ["T6", "T5", "T4"]);
+        attempts.insert("T6".into(), Attempt { count: 1, in_flight: true, retry_after: 0 });
+        attempts.insert("T5".into(), Attempt { count: 1, in_flight: false, retry_after: 0 });
+        assert_eq!(ids(&attempts), ["T4", "T3"], "one in flight leaves two slots; retries wait behind new pictures");
+        for id in ["T4", "T3"] {
+            attempts.insert(id.into(), Attempt { count: 1, in_flight: true, retry_after: 0 });
+        }
+        assert!(ids(&attempts).is_empty(), "three requests already in flight");
+    }
+
     #[test]
     fn small_copy_is_a_square_from_the_middle() {
         // 300 x 200: red on the left and right 50 px, blue in the middle 200 x 200.
@@ -243,9 +427,12 @@ mod tests {
             touched_ms: 0,
             tags: vec![],
             picture: None,
+            dropped_by: String::new(),
         };
         let points = vec!["Fold it tonight".to_string()];
         assert_ne!(prompt(&thread("T3"), &points), prompt(&thread("T4"), &points));
         assert!(prompt(&thread("T3"), &points).ends_with("Topic: Laundry. Details: Fold it tonight."));
+        assert!(prompt(&thread("T3"), &points)
+            .contains("Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself."));
     }
 }

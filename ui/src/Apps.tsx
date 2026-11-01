@@ -4,13 +4,20 @@ import type { MiniApp, Watcher } from "./apps-core";
 import { playTune, unlockTune } from "./apps-audio";
 import "./apps.css";
 
+// "every day", "every 2 hours", "every 15 minutes": the largest unit that divides it evenly.
+function every(secs: number): string {
+  const units: [number, string][] = [[604800, "week"], [86400, "day"], [3600, "hour"], [60, "minute"], [1, "second"]];
+  const [size, unit] = units.find(([size]) => secs % size === 0) ?? [1, "second"];
+  return secs === size ? `every ${unit}` : `every ${secs / size} ${unit}s`;
+}
+
 function watching(w: Watcher): string {
   switch (w.kind) {
     case "new_thought": return w.min_points && w.min_points > 1 ? `A new thought, after ${w.min_points} points` : "A new thought";
     case "phrase": return `Hearing “${w.phrase}”`;
     case "topic": return `Talking about ${w.topic}`;
     case "volume": return `Loud voices for ${w.seconds} seconds`;
-    case "time": return `${new Date(w.at_ms).toLocaleString()}${w.every_secs ? `, then every ${w.every_secs} seconds` : ""}`;
+    case "time": return `${new Date(w.at_ms).toLocaleString()}${w.every_secs ? `, then ${every(w.every_secs)}` : ""}`;
     case "app_request": return "An app request";
   }
 }
@@ -42,7 +49,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
   useEffect(() => {
     if (open && build && ["searching", "ready", "matched", "failed", "kept"].includes(build.stage)) {
       buildArea.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-      if (ready && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
+      if ((ready || build.stage === "failed") && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
         buildArea.current?.focus({ preventScroll: true });
       }
     }
@@ -75,7 +82,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
       <button onClick={core.apps.clearSound} aria-label="Dismiss tune">×</button>
     </div>}
     {open && <div id="apps-content">
-      {build && <div className={`apps-build ${build.stage}`} ref={buildArea} tabIndex={-1} aria-label="App being composed">
+      {build && <div className={`apps-build ${build.stage}`} ref={buildArea} tabIndex={-1} role="region" aria-label="App being composed">
         <p className="apps-request">“{build.request}”</p>
         <ol className="apps-progress" aria-live="polite" aria-relevant="additions text">
           {build.steps.map((step, i) => <li key={`${build.id}-${i}`} style={{ animationDelay: `${i * 70}ms` }}>

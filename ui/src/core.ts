@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { volumeReporter } from "./apps-audio";
 import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { openSocket } from "./room";
+import type { Found } from "./find";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -15,6 +17,8 @@ export interface Thread {
   touched_ms: number;
   tags: { name: string; kept: boolean }[];
   picture: string | null;
+  /** While dropped: who left it unfinished. */
+  dropped_by: string;
 }
 
 export interface Thought {
@@ -55,11 +59,29 @@ export interface Action {
   done_ms: number | null;
 }
 
+// How an import of past chats is going (core/src/import.rs).
+export interface ImportStatus {
+  id: string;
+  file: string;
+  state: "reading" | "grouping" | "adding" | "done" | "stopped" | "failed";
+  parts: number;
+  parts_done: number;
+  ideas: number;
+  threads: number;
+  extended: number;
+  points: number;
+  questions: number;
+  actions: number;
+  note: string;
+}
+
 export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
+  /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
+  active_by: Record<string, string>;
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
@@ -86,8 +108,8 @@ type Change =
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
-  | { type: "thread_status"; thread_id: string; status: ThreadStatus }
-  | { type: "active_changed"; thread_id: string }
+  | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
+  | { type: "active_changed"; thread_id: string; speaker: string }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | { type: "suggestion_added"; suggestion: Suggestion }
@@ -107,9 +129,11 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "explanation"; id: string; text: string; failed: boolean };
+  | { type: "found"; thread_id: string; thought_id: string | null; message: string }
+  | { type: "explanation"; id: string; text: string; failed: boolean }
+  | { type: "import"; status: ImportStatus };
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -163,6 +187,8 @@ function apply(world: World, raw: Change): World {
     case "thread_renamed":
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
     case "thread_merged": {
+      // As the core: never into itself, or into a thread that isn't there (its thoughts would vanish).
+      if (c.from === c.into || !world.threads.some((t) => t.id === c.into)) return world;
       const move = (id: string | null) => (id === c.from ? c.into : id);
       return {
         ...world,
@@ -171,6 +197,7 @@ function apply(world: World, raw: Change): World {
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: move(s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: move(a.thread_id)! })),
         active: move(world.active),
+        active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
       };
     }
@@ -230,13 +257,15 @@ function apply(world: World, raw: Change): World {
       return {
         ...world,
         threads: world.threads.map((t) =>
-          t.id === c.thread_id ? { ...t, last_point: c.last_point, touched_ms: c.at_ms, status: "open" } : t,
+          t.id === c.thread_id ? { ...t, last_point: c.last_point, touched_ms: c.at_ms, status: "open", dropped_by: "" } : t,
         ),
       };
-    case "thread_status":
-      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status } : t)) };
+    case "thread_status": {
+      const dropped_by = c.status === "dropped" ? c.speaker : "";
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status, dropped_by } : t)) };
+    }
     case "active_changed":
-      return { ...world, active: c.thread_id };
+      return { ...world, active: c.thread_id, active_by: { ...world.active_by, [c.speaker]: c.thread_id } };
     case "thought_corrected": {
       // Mirrors the core: yes swaps the unclear words for the guess, no keeps them;
       // no to a fix made without asking puts the words back as heard.
@@ -283,8 +312,10 @@ export function useCore() {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [found, setFound] = useState<Found | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -297,7 +328,7 @@ export function useCore() {
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${scheme}://${location.host}/ws`);
+      const ws = openSocket(`${scheme}://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
@@ -314,6 +345,7 @@ export function useCore() {
         if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
+            setFound(null);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -343,8 +375,15 @@ export function useCore() {
           case "notice":
             setNotice(msg.message);
             break;
+          case "found":
+            setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
+            setNotice(msg.message);
+            break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
+            break;
+          case "import":
+            setImportStatus(msg.status);
             break;
         }
       };
@@ -396,6 +435,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
@@ -417,5 +457,8 @@ export function useCore() {
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    importStatus,
+    startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
+    cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),
   };
 }

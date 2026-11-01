@@ -1,0 +1,1528 @@
+[
+ {
+  "title": "Moving to Lisbon",
+  "create_time": 1791312070.0,
+  "update_time": 1791312750.0,
+  "mapping": {
+   "e2ded0f8-6f0f-5015-928e-15fe6c758e0a": {
+    "id": "e2ded0f8-6f0f-5015-928e-15fe6c758e0a",
+    "message": null,
+    "parent": null,
+    "children": [
+     "cfdeac59-e325-532e-8beb-02e64b889c2b"
+    ]
+   },
+   "cfdeac59-e325-532e-8beb-02e64b889c2b": {
+    "id": "cfdeac59-e325-532e-8beb-02e64b889c2b",
+    "message": {
+     "id": "cfdeac59-e325-532e-8beb-02e64b889c2b",
+     "author": {
+      "role": "system",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e2ded0f8-6f0f-5015-928e-15fe6c758e0a",
+    "children": [
+     "10dfac5b-5087-53a1-bca4-23e0c2a84286"
+    ]
+   },
+   "10dfac5b-5087-53a1-bca4-23e0c2a84286": {
+    "id": "10dfac5b-5087-53a1-bca4-23e0c2a84286",
+    "message": {
+     "id": "10dfac5b-5087-53a1-bca4-23e0c2a84286",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "user_editable_context",
+      "user_profile": "I work remotely as a product designer.",
+      "user_instructions": "Keep answers short and practical."
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "cfdeac59-e325-532e-8beb-02e64b889c2b",
+    "children": [
+     "539b8b56-6e64-55d7-984e-bb7fceecb286"
+    ]
+   },
+   "539b8b56-6e64-55d7-984e-bb7fceecb286": {
+    "id": "539b8b56-6e64-55d7-984e-bb7fceecb286",
+    "message": {
+     "id": "539b8b56-6e64-55d7-984e-bb7fceecb286",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312070.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "I'm seriously thinking about moving to Lisbon in January. My lease here ends November 30 and I have to give notice by November 15. What should I sort out first?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "10dfac5b-5087-53a1-bca4-23e0c2a84286",
+    "children": [
+     "6d9b1650-23f6-5a5c-9177-06a848d90a52"
+    ]
+   },
+   "6d9b1650-23f6-5a5c-9177-06a848d90a52": {
+    "id": "6d9b1650-23f6-5a5c-9177-06a848d90a52",
+    "message": {
+     "id": "6d9b1650-23f6-5a5c-9177-06a848d90a52",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312100.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "January is very doable. A sensible order: settle on the city and neighborhood, pick a visa route, get a NIF (tax number), open a bank account, then look for a flat."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "539b8b56-6e64-55d7-984e-bb7fceecb286",
+    "children": [
+     "904fc0cc-47ec-5576-beea-862534c391d5"
+    ]
+   },
+   "904fc0cc-47ec-5576-beea-862534c391d5": {
+    "id": "904fc0cc-47ec-5576-beea-862534c391d5",
+    "message": {
+     "id": "904fc0cc-47ec-5576-beea-862534c391d5",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312242.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Honestly I'm torn between Lisbon and Porto. Porto is cheaper and calmer, but most of the people I know are in Lisbon."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "6d9b1650-23f6-5a5c-9177-06a848d90a52",
+    "children": [
+     "7cf059db-dfb9-53fc-a9d3-f18d756f9366"
+    ]
+   },
+   "7cf059db-dfb9-53fc-a9d3-f18d756f9366": {
+    "id": "7cf059db-dfb9-53fc-a9d3-f18d756f9366",
+    "message": {
+     "id": "7cf059db-dfb9-53fc-a9d3-f18d756f9366",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312270.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Both work well for remote workers. Rents in Porto run roughly 20 to 30 percent lower; Lisbon has the bigger community and more direct flights."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "904fc0cc-47ec-5576-beea-862534c391d5",
+    "children": [
+     "08383f25-5b26-53b1-8bf9-d07fe79967ba"
+    ]
+   },
+   "08383f25-5b26-53b1-8bf9-d07fe79967ba": {
+    "id": "08383f25-5b26-53b1-8bf9-d07fe79967ba",
+    "message": {
+     "id": "08383f25-5b26-53b1-8bf9-d07fe79967ba",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312435.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Ok, NIF first. Can I get one before I arrive?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "7cf059db-dfb9-53fc-a9d3-f18d756f9366",
+    "children": [
+     "4e3a3db3-6e5a-53ff-bcfe-92f19062e50a"
+    ]
+   },
+   "4e3a3db3-6e5a-53ff-bcfe-92f19062e50a": {
+    "id": "4e3a3db3-6e5a-53ff-bcfe-92f19062e50a",
+    "message": {
+     "id": "4e3a3db3-6e5a-53ff-bcfe-92f19062e50a",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312461.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Yes. Many people use an online fiscal representative service; it usually takes one to two weeks."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "08383f25-5b26-53b1-8bf9-d07fe79967ba",
+    "children": [
+     "ddeb0cc5-4972-5d53-90da-cfa6722a9b77"
+    ]
+   },
+   "ddeb0cc5-4972-5d53-90da-cfa6722a9b77": {
+    "id": "ddeb0cc5-4972-5d53-90da-cfa6722a9b77",
+    "message": {
+     "id": "ddeb0cc5-4972-5d53-90da-cfa6722a9b77",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312729.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Note to self: ask Ana whether her cousin still rents out that flat in Arroios."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "4e3a3db3-6e5a-53ff-bcfe-92f19062e50a",
+    "children": [
+     "8d7a1fc8-e4f2-5be9-8d5d-365d518f7a58"
+    ]
+   },
+   "8d7a1fc8-e4f2-5be9-8d5d-365d518f7a58": {
+    "id": "8d7a1fc8-e4f2-5be9-8d5d-365d518f7a58",
+    "message": {
+     "id": "8d7a1fc8-e4f2-5be9-8d5d-365d518f7a58",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791312750.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Good idea. Personal leads are often the fastest way to find a flat in Lisbon."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "ddeb0cc5-4972-5d53-90da-cfa6722a9b77",
+    "children": []
+   }
+  },
+  "moderation_results": [],
+  "current_node": "8d7a1fc8-e4f2-5be9-8d5d-365d518f7a58",
+  "plugin_ids": null,
+  "conversation_id": "4a18ac5e-6485-5596-b7a7-c97864ed9854",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "is_archived": false,
+  "safe_urls": [],
+  "default_model_slug": "auto",
+  "id": "4a18ac5e-6485-5596-b7a7-c97864ed9854"
+ },
+ {
+  "title": "Newsletter name ideas",
+  "create_time": 1791576300.0,
+  "update_time": 1793300441.0,
+  "mapping": {
+   "7f127a37-cc3b-58c9-bc22-4f65d3cc0b3c": {
+    "id": "7f127a37-cc3b-58c9-bc22-4f65d3cc0b3c",
+    "message": null,
+    "parent": null,
+    "children": [
+     "9f8768dc-3cf3-5456-8847-a6607613b792"
+    ]
+   },
+   "9f8768dc-3cf3-5456-8847-a6607613b792": {
+    "id": "9f8768dc-3cf3-5456-8847-a6607613b792",
+    "message": {
+     "id": "9f8768dc-3cf3-5456-8847-a6607613b792",
+     "author": {
+      "role": "system",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "7f127a37-cc3b-58c9-bc22-4f65d3cc0b3c",
+    "children": [
+     "7d656091-f662-514f-acd4-3473dcedd581"
+    ]
+   },
+   "7d656091-f662-514f-acd4-3473dcedd581": {
+    "id": "7d656091-f662-514f-acd4-3473dcedd581",
+    "message": {
+     "id": "7d656091-f662-514f-acd4-3473dcedd581",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576300.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "I want to start a small weekly newsletter about building things with AI, mostly notes from my own projects. Help me brainstorm names?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "9f8768dc-3cf3-5456-8847-a6607613b792",
+    "children": [
+     "6a2f53c3-a81e-504f-9562-357e3d7a6f20"
+    ]
+   },
+   "6a2f53c3-a81e-504f-9562-357e3d7a6f20": {
+    "id": "6a2f53c3-a81e-504f-9562-357e3d7a6f20",
+    "message": {
+     "id": "6a2f53c3-a81e-504f-9562-357e3d7a6f20",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576331.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "A few directions: Small Builds, Field Notes, Weekend Prototype, Notes from the Bench."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "7d656091-f662-514f-acd4-3473dcedd581",
+    "children": [
+     "7767f6aa-121b-5279-b393-f327d3e1d907"
+    ]
+   },
+   "7767f6aa-121b-5279-b393-f327d3e1d907": {
+    "id": "7767f6aa-121b-5279-b393-f327d3e1d907",
+    "message": {
+     "id": "7767f6aa-121b-5279-b393-f327d3e1d907",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576552.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Small Builds is the one. The first issue goes out November 10, so I have a real deadline."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "6a2f53c3-a81e-504f-9562-357e3d7a6f20",
+    "children": [
+     "af1eec74-c1cf-5419-8a4a-004e6df9f969"
+    ]
+   },
+   "af1eec74-c1cf-5419-8a4a-004e6df9f969": {
+    "id": "af1eec74-c1cf-5419-8a4a-004e6df9f969",
+    "message": {
+     "id": "af1eec74-c1cf-5419-8a4a-004e6df9f969",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576580.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Small Builds is clear and modest. For a November 10 launch: pick a platform this week and write two issues ahead."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "7767f6aa-121b-5279-b393-f327d3e1d907",
+    "children": [
+     "4e86b16d-b01e-5836-8e74-9bf7caa58c44"
+    ]
+   },
+   "4e86b16d-b01e-5836-8e74-9bf7caa58c44": {
+    "id": "4e86b16d-b01e-5836-8e74-9bf7caa58c44",
+    "message": {
+     "id": "4e86b16d-b01e-5836-8e74-9bf7caa58c44",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576873.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Should it be free, or paid from day one? I don't want to scare people off, but I'd like to know if anyone values it."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "af1eec74-c1cf-5419-8a4a-004e6df9f969",
+    "children": [
+     "95a28348-bee8-565c-ae7b-55ed87786346"
+    ]
+   },
+   "95a28348-bee8-565c-ae7b-55ed87786346": {
+    "id": "95a28348-bee8-565c-ae7b-55ed87786346",
+    "message": {
+     "id": "95a28348-bee8-565c-ae7b-55ed87786346",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791576902.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Many writers start free to build trust, then add a paid tier once a few hundred people read it."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "4e86b16d-b01e-5836-8e74-9bf7caa58c44",
+    "children": [
+     "e1d2026b-d3d8-5ebc-af9d-6a70d29157bb"
+    ]
+   },
+   "e1d2026b-d3d8-5ebc-af9d-6a70d29157bb": {
+    "id": "e1d2026b-d3d8-5ebc-af9d-6a70d29157bb",
+    "message": {
+     "id": "e1d2026b-d3d8-5ebc-af9d-6a70d29157bb",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791793845.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "If I do move, the newsletter could follow the move too. Building small things from a new city."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "95a28348-bee8-565c-ae7b-55ed87786346",
+    "children": [
+     "ce8331ea-2fb7-5ad3-9fdf-76bdf31549ad"
+    ]
+   },
+   "ce8331ea-2fb7-5ad3-9fdf-76bdf31549ad": {
+    "id": "ce8331ea-2fb7-5ad3-9fdf-76bdf31549ad",
+    "message": {
+     "id": "ce8331ea-2fb7-5ad3-9fdf-76bdf31549ad",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791793870.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "That's a nice through-line, and it gives readers a story to follow week to week."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e1d2026b-d3d8-5ebc-af9d-6a70d29157bb",
+    "children": [
+     "e58dabb7-9d77-5016-98eb-36d25d676452"
+    ]
+   },
+   "e58dabb7-9d77-5016-98eb-36d25d676452": {
+    "id": "e58dabb7-9d77-5016-98eb-36d25d676452",
+    "message": {
+     "id": "e58dabb7-9d77-5016-98eb-36d25d676452",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793300420.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Decided: Small Builds starts free. Maybe a paid tier in the spring."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "ce8331ea-2fb7-5ad3-9fdf-76bdf31549ad",
+    "children": [
+     "d0635249-38c2-56d3-97d3-8d0b44c395be"
+    ]
+   },
+   "d0635249-38c2-56d3-97d3-8d0b44c395be": {
+    "id": "d0635249-38c2-56d3-97d3-8d0b44c395be",
+    "message": {
+     "id": "d0635249-38c2-56d3-97d3-8d0b44c395be",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793300441.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Sounds right. Free lets you find your voice first."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e58dabb7-9d77-5016-98eb-36d25d676452",
+    "children": []
+   }
+  },
+  "moderation_results": [],
+  "current_node": "d0635249-38c2-56d3-97d3-8d0b44c395be",
+  "plugin_ids": null,
+  "conversation_id": "a1c07191-8c95-5934-b9d5-83dc13868ce0",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "is_archived": false,
+  "safe_urls": [],
+  "default_model_slug": "auto",
+  "id": "a1c07191-8c95-5934-b9d5-83dc13868ce0"
+ },
+ {
+  "title": "Waking up at 4am",
+  "create_time": 1791962405.0,
+  "update_time": 1791963140.0,
+  "mapping": {
+   "bac2813e-afd0-5511-ac1b-0ff2850ff265": {
+    "id": "bac2813e-afd0-5511-ac1b-0ff2850ff265",
+    "message": null,
+    "parent": null,
+    "children": [
+     "c37fbd21-6a42-5301-8f08-6c241cdcccb8"
+    ]
+   },
+   "c37fbd21-6a42-5301-8f08-6c241cdcccb8": {
+    "id": "c37fbd21-6a42-5301-8f08-6c241cdcccb8",
+    "message": {
+     "id": "c37fbd21-6a42-5301-8f08-6c241cdcccb8",
+     "author": {
+      "role": "system",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "bac2813e-afd0-5511-ac1b-0ff2850ff265",
+    "children": [
+     "77251100-8b25-5cdb-bdd4-69bf2ef2122c"
+    ]
+   },
+   "77251100-8b25-5cdb-bdd4-69bf2ef2122c": {
+    "id": "77251100-8b25-5cdb-bdd4-69bf2ef2122c",
+    "message": {
+     "id": "77251100-8b25-5cdb-bdd4-69bf2ef2122c",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791962405.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "I keep waking up at 4am and then scrolling my phone for an hour. How do I stop?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "c37fbd21-6a42-5301-8f08-6c241cdcccb8",
+    "children": [
+     "8b6bc48a-2a26-52f3-932a-550c6aedd5f8"
+    ]
+   },
+   "8b6bc48a-2a26-52f3-932a-550c6aedd5f8": {
+    "id": "8b6bc48a-2a26-52f3-932a-550c6aedd5f8",
+    "message": {
+     "id": "8b6bc48a-2a26-52f3-932a-550c6aedd5f8",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791962440.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "A few things help: keep the phone out of the bedroom, get daylight early, and keep the same wake time every day."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "77251100-8b25-5cdb-bdd4-69bf2ef2122c",
+    "children": [
+     "faba2691-6050-52bf-979e-12c56533dc47"
+    ]
+   },
+   "faba2691-6050-52bf-979e-12c56533dc47": {
+    "id": "faba2691-6050-52bf-979e-12c56533dc47",
+    "message": {
+     "id": "faba2691-6050-52bf-979e-12c56533dc47",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791962778.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Going to try: phone charges in the kitchen, no screens after 11, and the same wake time even on weekends."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "8b6bc48a-2a26-52f3-932a-550c6aedd5f8",
+    "children": [
+     "c31988dd-f9e7-5699-8a7b-f400231c19e4"
+    ]
+   },
+   "c31988dd-f9e7-5699-8a7b-f400231c19e4": {
+    "id": "c31988dd-f9e7-5699-8a7b-f400231c19e4",
+    "message": {
+     "id": "c31988dd-f9e7-5699-8a7b-f400231c19e4",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791962804.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "That's a solid plan. Give it two weeks before you judge it."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "faba2691-6050-52bf-979e-12c56533dc47",
+    "children": [
+     "6995ec1e-d61d-58f2-86b2-08ed75b53677"
+    ]
+   },
+   "6995ec1e-d61d-58f2-86b2-08ed75b53677": {
+    "id": "6995ec1e-d61d-58f2-86b2-08ed75b53677",
+    "message": {
+     "id": "6995ec1e-d61d-58f2-86b2-08ed75b53677",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791963112.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Maybe the 4am thing is stress about the move. I wake up running through lists in my head."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "c31988dd-f9e7-5699-8a7b-f400231c19e4",
+    "children": [
+     "274190da-f542-5bb4-9f6d-bb139005dccd"
+    ]
+   },
+   "274190da-f542-5bb4-9f6d-bb139005dccd": {
+    "id": "274190da-f542-5bb4-9f6d-bb139005dccd",
+    "message": {
+     "id": "274190da-f542-5bb4-9f6d-bb139005dccd",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1791963140.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "That's common. Writing tomorrow's list down before bed can quiet the loop."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "6995ec1e-d61d-58f2-86b2-08ed75b53677",
+    "children": []
+   }
+  },
+  "moderation_results": [],
+  "current_node": "274190da-f542-5bb4-9f6d-bb139005dccd",
+  "plugin_ids": null,
+  "conversation_id": "ca85ef86-fef9-561c-90f5-5feff434dc52",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "is_archived": false,
+  "safe_urls": [],
+  "default_model_slug": "auto",
+  "id": "ca85ef86-fef9-561c-90f5-5feff434dc52"
+ },
+ {
+  "title": "Mom's 60th birthday",
+  "create_time": 1792339350.0,
+  "update_time": 1792340158.0,
+  "mapping": {
+   "33891fe9-95ba-5506-b4eb-0354df30a302": {
+    "id": "33891fe9-95ba-5506-b4eb-0354df30a302",
+    "message": null,
+    "parent": null,
+    "children": [
+     "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c"
+    ]
+   },
+   "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c": {
+    "id": "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c",
+    "message": {
+     "id": "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c",
+     "author": {
+      "role": "system",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "33891fe9-95ba-5506-b4eb-0354df30a302",
+    "children": [
+     "10e06307-238b-5821-9ad0-3ddb06bb4c04",
+     "34e1b4f6-fc6f-52f9-a30d-270666abe493"
+    ]
+   },
+   "10e06307-238b-5821-9ad0-3ddb06bb4c04": {
+    "id": "10e06307-238b-5821-9ad0-3ddb06bb4c04",
+    "message": {
+     "id": "bd1f12c0-8c69-55be-b15b-eb1ee7983dc1",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339320.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "My mom turns 60 next month, what should I get her?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c",
+    "children": [
+     "66fc2a73-4333-5eca-b521-b880ee37486d"
+    ]
+   },
+   "66fc2a73-4333-5eca-b521-b880ee37486d": {
+    "id": "66fc2a73-4333-5eca-b521-b880ee37486d",
+    "message": {
+     "id": "9ef9a7ce-30ea-546b-800d-1c6b03869fb1",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339320.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Here are some ideas for a 60th birthday gift."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "10e06307-238b-5821-9ad0-3ddb06bb4c04",
+    "children": []
+   },
+   "34e1b4f6-fc6f-52f9-a30d-270666abe493": {
+    "id": "34e1b4f6-fc6f-52f9-a30d-270666abe493",
+    "message": {
+     "id": "34e1b4f6-fc6f-52f9-a30d-270666abe493",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339350.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "My mom turns 60 on November 22. I want to make her a photo book of our family trips. Which services ship in time?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e98adf0b-3d92-5bcc-81ad-bf5876dbbf8c",
+    "children": [
+     "0b437b66-fc24-5dc9-8f4f-9b1f2bf86e26"
+    ]
+   },
+   "0b437b66-fc24-5dc9-8f4f-9b1f2bf86e26": {
+    "id": "0b437b66-fc24-5dc9-8f4f-9b1f2bf86e26",
+    "message": {
+     "id": "0b437b66-fc24-5dc9-8f4f-9b1f2bf86e26",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339381.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Most photo book services take 7 to 10 days to print and ship, so order by mid-November to be safe."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "34e1b4f6-fc6f-52f9-a30d-270666abe493",
+    "children": [
+     "e086d3e6-e32d-58ab-b263-f5247e9c18cc"
+    ]
+   },
+   "e086d3e6-e32d-58ab-b263-f5247e9c18cc": {
+    "id": "e086d3e6-e32d-58ab-b263-f5247e9c18cc",
+    "message": {
+     "id": "e086d3e6-e32d-58ab-b263-f5247e9c18cc",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339604.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Then I need to order it by November 12. I still have to scan the old photos from the Algarve trip."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "0b437b66-fc24-5dc9-8f4f-9b1f2bf86e26",
+    "children": [
+     "eb884aac-8792-52b7-986f-41a1d1c95702"
+    ]
+   },
+   "eb884aac-8792-52b7-986f-41a1d1c95702": {
+    "id": "eb884aac-8792-52b7-986f-41a1d1c95702",
+    "message": {
+     "id": "eb884aac-8792-52b7-986f-41a1d1c95702",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339630.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Scan at 600 dpi and you'll have room to crop."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "e086d3e6-e32d-58ab-b263-f5247e9c18cc",
+    "children": [
+     "a35394d4-0f2f-551f-98e8-51382f7cb266"
+    ]
+   },
+   "a35394d4-0f2f-551f-98e8-51382f7cb266": {
+    "id": "a35394d4-0f2f-551f-98e8-51382f7cb266",
+    "message": {
+     "id": "a35394d4-0f2f-551f-98e8-51382f7cb266",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339805.0,
+     "update_time": null,
+     "content": {
+      "content_type": "multimodal_text",
+      "parts": [
+       {
+        "content_type": "image_asset_pointer",
+        "asset_pointer": "file-service://file-sample-photo",
+        "size_bytes": 482113,
+        "width": 1200,
+        "height": 800,
+        "fovea": null,
+        "metadata": null
+       },
+       "Is this one sharp enough to print?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "eb884aac-8792-52b7-986f-41a1d1c95702",
+    "children": [
+     "cd5047c1-f7c1-5668-be57-1f1027e60996"
+    ]
+   },
+   "cd5047c1-f7c1-5668-be57-1f1027e60996": {
+    "id": "cd5047c1-f7c1-5668-be57-1f1027e60996",
+    "message": {
+     "id": "cd5047c1-f7c1-5668-be57-1f1027e60996",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792339833.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "It's a little soft, but it will print fine at a small size."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "a35394d4-0f2f-551f-98e8-51382f7cb266",
+    "children": [
+     "22b7cf16-ecde-513d-be73-9fd920f7abe0"
+    ]
+   },
+   "22b7cf16-ecde-513d-be73-9fd920f7abe0": {
+    "id": "22b7cf16-ecde-513d-be73-9fd920f7abe0",
+    "message": {
+     "id": "22b7cf16-ecde-513d-be73-9fd920f7abe0",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792340127.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Also, should I fly back for the party or send the book and call? Flights are expensive that week."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "cd5047c1-f7c1-5668-be57-1f1027e60996",
+    "children": [
+     "3a5bbb7f-e23a-5ea9-a143-fe339d38d1f6"
+    ]
+   },
+   "3a5bbb7f-e23a-5ea9-a143-fe339d38d1f6": {
+    "id": "3a5bbb7f-e23a-5ea9-a143-fe339d38d1f6",
+    "message": {
+     "id": "3a5bbb7f-e23a-5ea9-a143-fe339d38d1f6",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1792340158.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "It depends on what matters most to her. Being there for a 60th often means a lot."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "22b7cf16-ecde-513d-be73-9fd920f7abe0",
+    "children": []
+   }
+  },
+  "moderation_results": [],
+  "current_node": "3a5bbb7f-e23a-5ea9-a143-fe339d38d1f6",
+  "plugin_ids": null,
+  "conversation_id": "0878a6fa-e1f2-5f14-bc20-9aeaf3ab83e0",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "is_archived": false,
+  "safe_urls": [],
+  "default_model_slug": "auto",
+  "id": "0878a6fa-e1f2-5f14-bc20-9aeaf3ab83e0"
+ },
+ {
+  "title": "Portuguese before the move",
+  "create_time": 1793125812.0,
+  "update_time": 1793126680.0,
+  "mapping": {
+   "a40ec84d-141b-5ee8-a2eb-becc0fcaf338": {
+    "id": "a40ec84d-141b-5ee8-a2eb-becc0fcaf338",
+    "message": null,
+    "parent": null,
+    "children": [
+     "cb9f44df-26d8-5f14-af31-50226e3d3491"
+    ]
+   },
+   "cb9f44df-26d8-5f14-af31-50226e3d3491": {
+    "id": "cb9f44df-26d8-5f14-af31-50226e3d3491",
+    "message": {
+     "id": "cb9f44df-26d8-5f14-af31-50226e3d3491",
+     "author": {
+      "role": "system",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": null,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 0.0,
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     },
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "a40ec84d-141b-5ee8-a2eb-becc0fcaf338",
+    "children": [
+     "08a980d0-3b47-50ad-b1ab-274e97c8f786"
+    ]
+   },
+   "08a980d0-3b47-50ad-b1ab-274e97c8f786": {
+    "id": "08a980d0-3b47-50ad-b1ab-274e97c8f786",
+    "message": {
+     "id": "08a980d0-3b47-50ad-b1ab-274e97c8f786",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793125812.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Is it worth taking Portuguese lessons before I move, or should I just learn once I'm there?"
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "cb9f44df-26d8-5f14-af31-50226e3d3491",
+    "children": [
+     "b93a00df-9cfb-540a-b78d-75d6ffc12209"
+    ]
+   },
+   "b93a00df-9cfb-540a-b78d-75d6ffc12209": {
+    "id": "b93a00df-9cfb-540a-b78d-75d6ffc12209",
+    "message": {
+     "id": "b93a00df-9cfb-540a-b78d-75d6ffc12209",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793125844.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Starting before helps a lot with paperwork and the first weeks."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "08a980d0-3b47-50ad-b1ab-274e97c8f786",
+    "children": [
+     "99672da2-63a5-54a9-abb9-0d5b1b06e1cb"
+    ]
+   },
+   "99672da2-63a5-54a9-abb9-0d5b1b06e1cb": {
+    "id": "99672da2-63a5-54a9-abb9-0d5b1b06e1cb",
+    "message": {
+     "id": "99672da2-63a5-54a9-abb9-0d5b1b06e1cb",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126090.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Found an evening class that starts November 9, Tuesdays and Thursdays. I'll sign up this week."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "b93a00df-9cfb-540a-b78d-75d6ffc12209",
+    "children": [
+     "3f2a6aa7-c155-5f88-8b60-da1c2bab905b"
+    ]
+   },
+   "3f2a6aa7-c155-5f88-8b60-da1c2bab905b": {
+    "id": "3f2a6aa7-c155-5f88-8b60-da1c2bab905b",
+    "message": {
+     "id": "3f2a6aa7-c155-5f88-8b60-da1c2bab905b",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126115.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Two evenings a week is a good pace."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "99672da2-63a5-54a9-abb9-0d5b1b06e1cb",
+    "children": [
+     "51ce843f-0de5-5001-bda9-470a54248b56"
+    ]
+   },
+   "51ce843f-0de5-5001-bda9-470a54248b56": {
+    "id": "51ce843f-0de5-5001-bda9-470a54248b56",
+    "message": {
+     "id": "51ce843f-0de5-5001-bda9-470a54248b56",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126431.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Told Ana about the move. She'll ask her cousin about the Arroios flat; I should follow up with her on Monday."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "3f2a6aa7-c155-5f88-8b60-da1c2bab905b",
+    "children": [
+     "b36155c4-a5f7-5dac-af0b-849105935144"
+    ]
+   },
+   "b36155c4-a5f7-5dac-af0b-849105935144": {
+    "id": "b36155c4-a5f7-5dac-af0b-849105935144",
+    "message": {
+     "id": "b36155c4-a5f7-5dac-af0b-849105935144",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126460.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "A friendly follow-up on Monday keeps it moving."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "51ce843f-0de5-5001-bda9-470a54248b56",
+    "children": [
+     "f7ecc40c-f978-5b77-a959-58c621a8f8a6"
+    ]
+   },
+   "f7ecc40c-f978-5b77-a959-58c621a8f8a6": {
+    "id": "f7ecc40c-f978-5b77-a959-58c621a8f8a6",
+    "message": {
+     "id": "f7ecc40c-f978-5b77-a959-58c621a8f8a6",
+     "author": {
+      "role": "user",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126650.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "I still haven't decided between Lisbon and Porto, though. Maybe a weekend in Porto first would settle it."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": null,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "b36155c4-a5f7-5dac-af0b-849105935144",
+    "children": [
+     "02fc8961-8341-5c41-9fc7-33bb9fcfaab8"
+    ]
+   },
+   "02fc8961-8341-5c41-9fc7-33bb9fcfaab8": {
+    "id": "02fc8961-8341-5c41-9fc7-33bb9fcfaab8",
+    "message": {
+     "id": "02fc8961-8341-5c41-9fc7-33bb9fcfaab8",
+     "author": {
+      "role": "assistant",
+      "name": null,
+      "metadata": {}
+     },
+     "create_time": 1793126680.0,
+     "update_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "A short visit is a good way to decide. Try to see a couple of neighborhoods on a weekday too."
+      ]
+     },
+     "status": "finished_successfully",
+     "end_turn": true,
+     "weight": 1.0,
+     "metadata": {},
+     "recipient": "all",
+     "channel": null
+    },
+    "parent": "f7ecc40c-f978-5b77-a959-58c621a8f8a6",
+    "children": []
+   }
+  },
+  "moderation_results": [],
+  "current_node": "02fc8961-8341-5c41-9fc7-33bb9fcfaab8",
+  "plugin_ids": null,
+  "conversation_id": "e7b44b7a-c961-5d25-ae13-7c4655bbd511",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "is_archived": false,
+  "safe_urls": [],
+  "default_model_slug": "auto",
+  "id": "e7b44b7a-c961-5d25-ae13-7c4655bbd511"
+ }
+]
