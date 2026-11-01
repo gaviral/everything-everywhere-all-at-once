@@ -18,6 +18,7 @@ impl Fixture {
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(), imports: crate::import::Imports::default(),
+            service: Default::default(),
         }) }
     }
 }
@@ -476,6 +477,20 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     toggle(&fixture.core, a.id.clone(), false);
     assert!(!fixture.core.apps.state.lock().unwrap().pending.contains_key(&a.id));
+}
+
+#[tokio::test]
+async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
+    let fixture = Fixture::new();
+    let asks = seeds(true).remove(0);
+    assert!(asks.prompt.is_some());
+    fixture.core.commit(vec![Change::AppRegistered { app: asks.clone() }]);
+    let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+    let mut updates = fixture.core.updates.subscribe();
+    for _ in 0..3 { launch(&fixture.core, asks.clone(), None); }
+    tokio::task::yield_now().await;
+    assert!(fixture.core.apps.asked.lock().unwrap().is_empty(), "no model call");
+    assert!(updates.try_recv().is_err(), "nothing run or said: the header already says why");
 }
 
 #[test]

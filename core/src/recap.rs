@@ -76,6 +76,17 @@ pub fn command(text: &str) -> Option<Period> {
     else { None }
 }
 
+/// A bare "recap" (no period named) asks for whatever there is to look back on: today, or, when
+/// nothing has landed since midnight, the last session (a new morning, or the dated sample maps).
+pub fn unqualified(text: &str) -> bool {
+    crate::is_command(text, &["recap", "give me a recap"], &[])
+}
+
+pub fn default_period(world: &World, now: u64) -> Period {
+    let placed = |since: u64| world.thoughts.iter().any(|t| t.placed && t.at_ms >= since && t.at_ms <= now);
+    if !placed(day_start(now)) && placed(0) { Period::Session } else { Period::Today }
+}
+
 /// The sheet's progress goes to whoever asked; the recap itself is saved to the shared map.
 pub fn request(core: Arc<Core>, speaker: String, period: Period) {
     tokio::spawn(async move {
@@ -83,13 +94,13 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         state(&core, &speaker, period, true, "", core.snapshot().recaps.iter().find(|r| r.period == period).cloned());
         let since = slice(&core.snapshot(), period, crate::now_ms()).since_ms;
         // Placement is already in progress; don't pay for a second placement call,
-        // or summarize a thought on the provisional branch it may soon leave.
+        // or summarize a thought on the provisional branch it may soon leave. On a refused key nothing is placing.
         for _ in 0..40 {
-            if !placing(&core.snapshot(), since, crate::now_ms()) { break; }
+            if core.key_refused() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         let world = core.snapshot();
-        if placing(&world, since, crate::now_ms()) {
+        if !core.key_refused() && placing(&world, since, crate::now_ms()) {
             state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
             return;
         }
@@ -109,7 +120,8 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             }
             Err(e) => {
                 tracing::warn!("recap failed: {e:#}");
-                state(&core, &speaker, period, false, "Couldn't make a recap just now. Your thoughts are still here. Try again.", None);
+                let message = if core.key_refused() { crate::model::REFUSED } else { "Couldn't make a recap just now. Your thoughts are still here. Try again." };
+                state(&core, &speaker, period, false, message, None);
             }
         }
     });
@@ -246,12 +258,13 @@ struct Answer {
 }
 
 async fn generate(core: &Core, source: &Source) -> anyhow::Result<Answer> {
-    let key = core.key.as_deref().context("MODEL_API_KEY is not set")?;
+    let key = core.key()?;
     let body = model_body(source)?;
     // One call, no automatic retries. A failure leaves the last saved recap intact.
     let response = core.http.post("https://api.meta.ai/v1/chat/completions")
         .timeout(Duration::from_secs(40)).bearer_auth(key).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     read_answer(status, value)
 }
@@ -374,6 +387,7 @@ mod tests {
                 key, placer_model: "test".into(), http: reqwest::Client::new(),
                 last_activity: AtomicU64::new(0), looked: AtomicBool::new(false), wake: tokio::sync::Notify::new(),
                 imports: crate::import::Imports::default(),
+                service: Default::default(),
             }) }
         }
     }
@@ -387,6 +401,20 @@ mod tests {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
             thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
             complete: true, at_ms, place_ms: None }
+    }
+    #[test]
+    fn a_bare_recap_looks_back_at_the_last_session_when_nothing_landed_today() {
+        let now = 1_793_800_000_000;
+        let midnight = day_start(now);
+        let mut world = World::default();
+        assert_eq!(default_period(&world, now), Period::Today, "an empty map stays on today");
+        world.thoughts.push(thought(1, "T1", midnight - 3_600_000));
+        assert_eq!(default_period(&world, now), Period::Session, "only yesterday: the last session");
+        world.thoughts.push(thought(2, "T1", now + 86_400_000));
+        assert_eq!(default_period(&world, now), Period::Session, "a thought dated ahead of the clock doesn't count");
+        world.thoughts.push(thought(3, "T1", midnight + 60_000));
+        assert_eq!(default_period(&world, now), Period::Today);
+        assert!(unqualified("Recap.") && unqualified("give me a recap") && !unqualified("recap today") && !unqualified("recap this session"));
     }
     fn sample(now: u64) -> World {
         World { threads: vec![thread("T1"), thread("T2"), thread("quiet")], thoughts: vec![thought(1, "T1", now - 1000), thought(2, "T2", now)], ..World::default() }
@@ -573,6 +601,19 @@ mod tests {
         assert!(message.contains("Couldn't make a recap"));
         assert!(recap.is_none());
         assert_eq!(fixture.core.snapshot().recaps.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refused_key_says_so_at_once_instead_of_waiting_for_a_thought_that_cant_place() {
+        let fixture = Fixture::new(Some("wrong".into()));
+        *fixture.core.world.lock().unwrap() = sample(crate::now_ms()).into();
+        let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+        fixture.core.add_thought("you", "ask Sam about the heater warranty");
+        let mut rx = fixture.core.updates.subscribe();
+        request(fixture.core.clone(), "you".into(), Period::Today);
+        let (message, recap) = ready(&mut rx).await;
+        assert_eq!(message, crate::model::REFUSED);
+        assert!(recap.is_none());
     }
 
     #[tokio::test]

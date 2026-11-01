@@ -78,6 +78,15 @@ pub struct Thought {
     pub place_ms: Option<u64>,
 }
 
+impl Thought {
+    /// When it was said, to tell which came last: imported points land last in the list with their old
+    /// times, so list order won't do. A time ahead of the clock (a sample map dated for the demo, a wrong
+    /// clock) counts as the earliest, so it can't hide what was just said.
+    pub fn said_at(&self, now: u64) -> u64 {
+        if self.at_ms > now { 0 } else { self.at_ms }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemStatus {
@@ -399,6 +408,10 @@ impl World {
             | Change::ThreadPicture { thread_id, .. } => Some(thread_id),
             Change::SuggestionAdded { suggestion } => Some(&suggestion.thread_id),
             Change::ActionProposed { action } => Some(&action.thread_id),
+            // Made from a snapshot taken before a slow step (an import's pauses, the placer's model call),
+            // so a merge may have moved their thread or parent meanwhile.
+            Change::ThoughtAdded { thought } => thought.thread_id.as_ref(),
+            Change::ThreadAdded { thread } => thread.parent_id.as_ref(),
             _ => None,
         };
         // Most changes don't name a merged thread. Apply those directly instead of copying
@@ -419,6 +432,8 @@ impl World {
             | Change::ThreadPicture { thread_id, .. } => *thread_id = self.resolve(thread_id),
             Change::SuggestionAdded { suggestion } => suggestion.thread_id = self.resolve(&suggestion.thread_id),
             Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
+            Change::ThoughtAdded { thought } => thought.thread_id = thought.thread_id.as_deref().map(|id| self.resolve(id)),
+            Change::ThreadAdded { thread } => thread.parent_id = thread.parent_id.as_deref().map(|id| self.resolve(id)),
             _ => {}
         }
         Cow::Owned(c)
@@ -771,11 +786,17 @@ mod tests {
             {"type":"active_changed", "thread_id":"T1", "speaker":"Guest"},
             {"type":"suggestion_added", "suggestion":{"id":"s", "thread_id":"T1", "text":"an idea", "status":"new"}},
             {"type":"action_proposed", "action":{"id":"a", "thread_id":"T2", "kind":"reminder", "title":"a task", "when":"", "status":"new", "done_ms":null}},
-            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"}
+            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"},
+            // An imported point, and a branch the placer started, both aimed at a thread merged meanwhile.
+            {"type":"thought_added", "thought":{"id":"b", "speaker":"you", "text":"imported", "point":"imported", "thread_id":"T1",
+                "placed":true, "unclear":"", "at_ms":1, "place_ms":null}},
+            {"type":"thread_added", "thread":{"id":"T4", "title":"T4", "parent_id":"T2", "status":"open", "last_point":"", "touched_ms":5}}
         ])).unwrap();
         let records = serde_json::to_string(&late).unwrap();
         for change in &late { world.apply(change); }
         assert_eq!(serde_json::to_string(&late).unwrap(), records);
+        assert_eq!(world.thoughts[1].thread_id.as_deref(), Some("T3"), "not on a thread that's gone");
+        assert_eq!(world.thread("T4").unwrap().parent_id.as_deref(), Some("T3"), "a branch, not a root");
         assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T3"));
         assert_eq!(world.active_for("Guest").map(String::as_str), Some("T3"));
         assert_eq!(world.thread("T3").unwrap().last_point, "a point");

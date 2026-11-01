@@ -1,5 +1,8 @@
 # E2A2O
 
+<!-- cover: stand-in, User to pick (three options in the design repo, docs/drafts/cover) -->
+![A microphone whose cable branches into colored tiles: speech in, a map of threads out](docs/cover.webp)
+
 <!-- pitch: draft, User to approve -->
 For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.
 
@@ -28,6 +31,7 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 - A prepared map of a student's week, dated Nov 3, 2026: 8 threads with branches, 30 thoughts, tags, two suggestions, two reminders, one thread left unfinished, and a picture for every thread (drawn once by the app's own picture pipeline and kept in `samples/images/`, so the Palace is full without a key). It starts fresh from `samples/` on each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.”
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, wait for the "You didn't finish …" card and press Finish it, open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
+- With a wrong or expired key, the first model call is refused and the app stops calling: the header says “AI key refused” and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart. If the service is busy (rate limited), it backs off and says so once.
 - A second map, a founder's day: `./run.sh sample founder`.
 
 **With a key: watch a map build itself.**
@@ -44,6 +48,19 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - `data/demo` keeps growing across runs; move it aside for an empty map.
 - To talk: `./run.sh` (its map is in `data/`), press the mic and allow it, then speak; or type and press Enter.
 - To start from your past chats: Import chats (top right), then choose `conversations.json` from a ChatGPT or Claude export, or press Try with a sample (`ui/public/sample-chats.json`: five made-up ChatGPT chats). You see what goes to which model, and a rough cost, before anything is sent.
+
+**Things to try (with a key):** With `./run.sh demo` running and its page open, say or type each line. Allow about 3 s after speech for a thought to land.
+
+1. `I need to plan the hackathon demo, the deadline is tomorrow at nine PM.` → a thought lands in about 3 s after you finish speaking.
+2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a tangent can branch from the active thread; allow about 3 s.
+3. `I'll order the cookbook tonight. And the electric bill, I should set up autopay before the due date.` → a turn can split across two threads; allow about 3 s per part.
+4. `Um, so, anyway.` → filler is set aside; nothing lands.
+5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
+6. Select a phrase on the map and press **Explain** → one sentence of context after the model call.
+7. `What did I decide today?` → a recap after the model call; it covers today's thoughts.
+8. In Apps, ask `Make an app that shows a card when I mention the demo.` Keep it, then say `demo` in a new thought → the app may take several seconds to build; the card appears when its phrase watcher fires.
+9. Switch away for 30 seconds after adding a thought, then return → a “While you were away” card if your thought landed.
+10. Click **Palace** → the thread pictures appear in a grid.
 
 **Two laptops, one map.**
 
@@ -67,7 +84,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - ✦ marks what the AI added or proposes: tags (faint until kept), one suggestion per thread, actions with "Add to Reminders" or "Add to Calendar", "Did you mean …?", a "fixed" tag, pictures, app cards, Recap, and notes such as "AI renamed … to …".
 - Header: "This session · 12 thoughts · 4 threads", Recap, a ? for keys and spoken commands, Import chats, and in a room, who has added thoughts.
 - Map tools: Map or Palace, search, Focus, Recent first; `?` lists keyboard and spoken commands.
-- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread.
+- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread, using what other threads say about the same name or term.
 - The Apps panel: your apps with on and off switches, and a box to make one.
 
 ## How it works
@@ -76,7 +93,7 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 
 **Placing.** Each finished turn of speech (Voice Transcribe's endpointing) or typed line is checked before it reaches the model: filler such as “um, so” is set aside, as are acknowledgements such as “yeah, okay” unless the last turn was a question. A turn that moves to another topic is split at the change; the joining words at the cut are left out, and the rest is placed next. The model can also set aside a short acknowledgement as filler, but a turn over 8 words is always placed. A queue sends thoughts to Muse Spark one at a time, with every thread's id, title and last point and your active thread, so each placement sees the map the last one left. The answer follows a JSON schema: continue the active thread, return to an earlier one, or start a new one (a branch when it names a parent), plus a point of at most 12 words, whether the thought trailed off, and words that look misheard. Only thread ids that exist are trusted. Each placement gets up to three tries; if all fail, the thought goes back in the queue 15 s later (doubling to 4 min). To see how long placing takes for you: `node scripts/latency.mjs data/journal.jsonl` (median, 90th percentile, slowest).
 
-**The unfinished-thought card and voice commands.** Leave a thread whose last thought trailed off ("I need to pay rent before…") and it's marked dropped, for you only. After 2.5 s without new words, the card offers the one you dropped last. “Where was I?” and “next one” work as a whole turn or at its end after a pause; words before the command are placed first, and the command waits for them. “Go back to the drawing board” stays a thought. “Where was I?” or “go back” returns to where your last line trailed off (even on the thread you're on), else your latest dropped thread, else the last other thread you spoke on; “next one” moves to the next thread in creation order, then wraps to the first; “where did I talk about …?” or “take me to …” (Take me there) jumps to the thread and highlights the point.
+**The unfinished-thought card and voice commands.** Leave a thread whose last thought trailed off ("I need to pay rent before…") and it's marked dropped, for you only. After 2.5 s without new words, the card offers the one you dropped last. “Where was I?” and “next one” work as a whole turn or at its end after a pause; words before the command are placed first, and the command waits for them. “Go back to the drawing board” stays a thought. “Where was I?” or “go back” returns to where your last line trailed off (even on the thread you're on), else your latest dropped thread, else the last other thread you spoke on; “next one” moves to the next thread in creation order, then wraps to the first; “where did I talk about …?” or “take me back to …” (Take me there) jumps to the thread and highlights the point, and if nothing matches, your words are kept as a thought. “Find …” and “take me to …” search only when they point at the map (“find where I said …”, “take me to the thread about …”); “Find a dentist near the office” is a thought.
 
 **Did you mean, and confident auto-fix.** With each placement the model names words that look misheard, its guess, and whether the context leaves no doubt (say, the right name is already on the map). If it's sure, and those words are really in what was said, the core swaps them and marks the point "✦ fixed": hover shows what was heard, and one click puts it back. Anything less is asked: "Did you mean "Muse Spark"? Yes / No".
 
@@ -104,13 +121,23 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 | `muse-spark-1.2`, then `muse-spark-1.3` (`IMPORT_EXTRACT_MODEL`, `IMPORT_MERGE_MODEL`) | same | Importing chats: pulling out ideas, then grouping them |
 | `muse-image-1.0` | `https://api.meta.ai/v1/images/generations` | Thread pictures |
 
-Every model request has a time limit: 20 s for placing and Explain, 4 s before Take me there falls back to plain search, and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet. Settings go in `.env`; see `.env.example`.
+Every model request has a time limit: 20 s for placing and Explain, 4 s for Take me there's model check (then your words are kept as a thought), and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet. Settings go in `.env`; see `.env.example`.
 
 ## Privacy and data
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
-- Sent to `api.meta.ai`, and nowhere else: mic audio while the mic is on; for placing, each new thought with every thread's title and last point; for the refiner, those plus each thread's tags, the last 8 thoughts of recently active threads (with who said them, in a room) and the suggestions and actions already there; for Take me there, only when no thread has all the words you asked about, your request and up to 48 likely threads' titles and latest 3 points; for Explain, the phrase, the words around it, its thread's points and the other thread titles; for Recap, the period's thoughts and their threads' actions; for a picture, the thread's title and first 6 points; for apps, your request and app list, and the recent thoughts an app reads when it runs; for an import, the messages and ideas described above.
-- Contributor mode: placing and Explain default to `muse-spark-1.2-contributor`, the cheaper and fastest-measured Spark, whose data Meta may keep to improve its products. That includes the titles and last points of imported threads, once they're on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`.
+- Model inputs go to `api.meta.ai`:
+  - **Speech:** while the mic is on, raw 24 kHz audio and setup data (session id, model, audio format, endpointing mode, English bias and keywords). The client sends no transcript as input.
+  - **Placing:** the full new thought; every thread's id, title, status and last point; the active thread id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text.
+  - **Refiner:** today's date; each thread's id, title, parent, tags and last point; the latest 8 full thoughts from recently active threads; the latest 30 suggestions and actions. In a room with multiple speakers, each recent thought includes its speaker name.
+  - **Take me there:** only if local word search finds no thread containing every query word, the query (up to 400 characters) and up to 48 thread titles (100 characters each) with their latest 3 points (320 characters each).
+  - **Explain:** the selected phrase (up to 200 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title, up to 40 other thread titles, and up to 8 thoughts from other threads that name the selected words.
+  - **Recap:** up to 24 threads, with up to 16 thoughts per thread (each includes the speaker and up to 700 characters of text), plus up to 64 actions.
+  - **Pictures:** the thread's title and first 6 points.
+  - **App creation:** the request, local time and app catalog. If the Search-first app is enabled, it may first receive the request and catalog to look for an existing app.
+  - **When an app runs:** its prompt, newest thought, up to 8 earlier points, topic and time. In a room with multiple speakers, those thoughts include speaker names.
+  - **Chat import:** each selected message (up to 2,000 characters) with its date and conversation title, plus up to 240 characters of the next AI reply. A separate grouping call receives today's date, up to 80 existing thread ids and titles, topic counts and date ranges, up to 4 latest ideas per topic, and up to 150 dated open questions and 150 dated tasks. It does not receive the original messages.
+- Placing and Explain default to `muse-spark-1.2-contributor`, the cheaper Spark. Meta may keep Contributor data to improve its products. This can include imported words after they become thoughts on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`.
 - On disk: `data/<map>/journal.jsonl` (each thought's full text and speaker, and every change since) and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 - In a room, everyone with the code sees the whole map, and the other laptops' audio goes through the host's core and key.
 - No accounts, analytics or telemetry.
@@ -138,11 +165,15 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
 
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
 - Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
-- Set up for English: Voice Transcribe is biased to English. Its words also vary between identical runs (a builder measured about 11%); Did you mean catches some of it.
+- Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
+- From speech to the map is about 3 seconds, measured with `scripts/voice.mjs`.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, or undo the refiner's renames and merges.
-- A Voice Transcribe session ends after 60 minutes; press the mic again. A stalled speech stream leaves the mic looking on.
-- While the model is unreachable, a new thought waits at "Finding a thread" and is tried again 15 s later, then less often, up to every 4 min.
+- A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
+- With a key, failed placement waits at “Finding a thread”; once it has waited more than 5 seconds, its chip shows the seconds. It retries after 15 seconds, then less often, up to every 4 minutes.
+- Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
+- In a room, a name is the host's or a guest's, never both; two guests who pick the same name share notices and live words.
+- If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
 - The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap's Today is empty for those dates unless today's date overlaps, and This session needs a key.

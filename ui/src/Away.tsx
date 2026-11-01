@@ -83,6 +83,14 @@ export function awayItems(before: World, after: World, me: string, observed: Map
     [row, ...items.filter((item) => item.kind === "proposal" && item.threadId === row.threadId).sort(newest)]);
 }
 
+/** Whether you spoke again after coming back, which dismisses the card: new speech arrives unplaced, said
+ * at a time of its own. The rest of a turn the placer split keeps that turn's time, and imported points
+ * arrive placed: neither is you speaking. */
+export function spokeAgain(through: World, now: World, me: string): boolean {
+  const said = new Set(through.thoughts.map((t) => t.at_ms));
+  return now.thoughts.some((t) => t.speaker === me && !t.placed && !said.has(t.at_ms));
+}
+
 type Absence = { before: World; since: number; observed: Map<string, number> };
 type Return = Absence & { through: World };
 
@@ -130,10 +138,7 @@ export function useAway(world: World, me: string, ready: boolean) {
       for (const thread of world.threads) if (thread.status === "dropped" && thread.dropped_by === me && !away.observed.has(`dropped:${thread.id}`)) away.observed.set(`dropped:${thread.id}`, now);
     }
     // Continuing to speak is an action too; don't dismiss for late placement of an existing turn.
-    if (returned) {
-      const known = new Set(returned.through.thoughts.map((t) => t.id));
-      if (world.thoughts.some((t) => t.speaker === me && !known.has(t.id))) dismiss();
-    }
+    if (returned && spokeAgain(returned.through, world, me)) dismiss();
   }, [world, me, returned, dismiss]);
 
   const items = useMemo(() => {
