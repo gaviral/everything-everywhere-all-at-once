@@ -17,7 +17,6 @@
 .apps-heading { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
 .apps-title { display: flex; flex: 1; align-items: center; gap: 10px; text-align: left; border: 0; background: none; min-height: 40px; }
 .apps-title span { font-size: 12px; color: var(--muted); }
-.apps-title span:last-child { margin-left: auto; font-size: 18px; }
 .apps-panel .apps-new { background: var(--accent-soft); color: var(--accent); border: 0; border-radius: 9px; padding: 8px 12px; min-height: 40px; font-size: 13px; }
 .apps-list { padding: 0 16px; }
 .apps-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); scroll-margin-top: 70px; }
@@ -57,3 +56,21 @@
 @media (max-width: 760px) { .apps-panel { margin: 8px 24px 16px; } }
 @media (max-width: 400px) { .apps-panel { margin-inline: 12px; } .apps-form > div { flex-wrap: wrap; } .apps-form input { flex-basis: 100%; } }
 @media (prefers-reduced-motion: reduce) { .apps-progress li { animation: none; } }
+
+/* The closed panel is a map tool; its contents only take space when requested. */
+.apps-panel { box-shadow: none; }
+.apps-panel:not(.is-open):not(.has-sound) { width: fit-content; max-width: calc(100% - 48px); margin: 8px auto 10px; background: transparent; }
+.apps-heading { padding: 4px 8px; }
+.apps-title { gap: 8px; padding: 0 8px; font-size: 13px; cursor: pointer; }
+.apps-title .apps-mark { color: var(--ai); font-size: 14px; }
+.apps-title .apps-toggle { margin-left: auto; padding-left: 14px; color: var(--muted); font-size: 12px; }
+.apps-title:hover .apps-toggle { color: var(--ink); }
+.apps-panel .apps-new { background: var(--accent-soft); }
+.apps-build { margin-top: 8px; }
+.apps-form { border-top: 1px solid var(--line); }
+.apps-form + .apps-list { border-top: 1px solid var(--line); }
+.apps-list-heading { margin: 14px 0 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+.apps-list-heading + .apps-row { border-top: 0; }
+.apps-decisions button, .apps-form button, .apps-sound button { color: var(--accent-button-ink); }
+.apps-panel summary, .apps-output, .apps-blocks li, .apps-panel .apps-prompt, .apps-panel .apps-remove, .apps-panel .apps-help { font-size: 13px; }
+.apps-blocks small { font-size: 11px; }
