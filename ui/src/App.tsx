@@ -10,6 +10,7 @@ type Handlers = {
 };
 import { startMic } from "./mic";
 import { Apps } from "./Apps";
+import { Palace } from "./Palace";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
@@ -22,6 +23,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [view, setView] = useState<"map" | "palace">("map");
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -319,11 +321,27 @@ export default function App() {
   }, []);
 
   const goBack = (thread: Thread) => {
+    setView("map");
+    setExpanded((state) => {
+      const next = { ...state };
+      let current: Thread | undefined = thread;
+      const visited = new Set<string>();
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        next[current.id] = false;
+        current = current.parent_id ? threadById.get(current.parent_id) : undefined;
+      }
+      return next;
+    });
     setQuery("");
     setFocusMode(false);
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
-    requestAnimationFrame(() => document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }));
+    requestAnimationFrame(() => {
+      const target = document.getElementById(`thread-${thread.id}`);
+      target?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+      target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
+    });
   };
 
   return (
@@ -377,15 +395,19 @@ export default function App() {
       <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
-          <label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          <div className="palace-switch" role="group" aria-label="View">
+            <button aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
+            <button aria-pressed={view === "palace"} onClick={() => setView("palace")}>Palace</button>
+          </div>
+          {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
-          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details>
+          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details></>}
         </div>
-        {search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
+        {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      <main ref={mapRef} className="map" aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className="map" aria-label="Thread map">
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
@@ -409,7 +431,7 @@ export default function App() {
             />
           ))
         )}
-      </main>
+      </main>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className="dock" aria-label="Your thoughts">
