@@ -464,11 +464,11 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         .map(|t| format!("Just asked: \"{}\"\n", t.text.trim()))
         .unwrap_or_default();
     // What the speaker said just before, word for word, and where it went: a thread's title and last point say
-    // what it's about, not what was just said, so "and then we have these cursor thingy as well" after a word
-    // on a coding tool's subscription went to the thread named for the UI cursor (2026-11-01 replay). Only a
-    // turn said moments before counts: his turns came a median 31 s apart (9 s at the quarter), and one said
-    // longer ago than `JUST_BEFORE_MS` is context the map's points already give. Left out when it's the question
-    // just asked, which is already there.
+    // what it's about, not what was just said, so a turn on "the cursor thing" right after one on a coding tool's
+    // subscription went to the thread named for the UI cursor (2026-11-01 replay). Only a turn said moments
+    // before counts: in a real session turns came a median 31 s apart (9 s at the quarter), and one said longer
+    // ago than `JUST_BEFORE_MS` is context the map's points already give. Left out when it's the question just
+    // asked, which is already there.
     let before = world
         .thoughts
         .iter()
@@ -1178,7 +1178,7 @@ mod tests {
         assert_eq!(same[2..], ["Muse Bark", "", "", ""]);
     }
 
-    /// His 08:24 case, in other words: one card selected, a thought about another card's topic. The model's
+    /// A real case, reworded: one card selected, a thought about another card's topic. The model's
     /// thread wins: selecting a card makes it the active one, a hint, never where the words must go.
     #[tokio::test]
     async fn content_wins_over_the_selected_card_and_the_trace_says_both() {
