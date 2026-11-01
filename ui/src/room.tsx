@@ -43,7 +43,7 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
           <p className="room-panel-label">Also on this map</p>
           <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
           <p className="room-panel-hint">Names appear here after someone adds a thought.</p>
-        </> : <p className="room-panel-hint">When someone adds a thought, their name will appear here.</p>}
+        </> : <p className="room-panel-hint">As people add thoughts, their names appear here.</p>}
         <button type="button" className="room-leave" onClick={actions.leave}>Leave room</button>
       </div>
     </details>
