@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
@@ -21,6 +21,8 @@ import { useFindJump } from "./find";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
+// `?level` adds a meter of the loudness readings the core receives, for tuning volume apps; without it, it isn't loaded.
+const LevelMeter = typeof location !== "undefined" && new URLSearchParams(location.search).has("level") ? lazy(() => import("./Level")) : null;
 
 export default function App() {
   const me = useMe();
@@ -707,7 +709,8 @@ export default function App() {
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+      {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {

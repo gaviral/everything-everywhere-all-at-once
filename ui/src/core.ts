@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
-import { volumeReporter } from "./apps-audio";
+import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
 import type { Found } from "./find";
@@ -174,7 +174,7 @@ function swap(text: string, from: string, to: string): string {
   return text;
 }
 
-function apply(world: World, raw: Change): World {
+export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
@@ -322,10 +322,38 @@ function apply(world: World, raw: Change): World {
   }
 }
 
+/**
+ * Picks out the messages that answer a move you asked for: a view said aloud, a search's jump, "where was I?",
+ * "next one" or "last one". An open Recap makes way for those, so you see where you went. Your own words landing
+ * on another thread move you too, but that's talk, not a request: the sheet stays while you read. `speaker` is
+ * you; each message comes with the map as it was before it.
+ */
+export function movesAsked(speaker?: string) {
+  // The thread your words just landed on, until the rest of that commit is in: the placer sends the landing, its
+  // ThreadTouched and any drops, then the move (placer.rs `decide`).
+  let landing: string | null = null;
+  return (world: World, msg: ServerMsg) => {
+    const change = msg.type === "change" ? msg.change : null;
+    const landed = landing;
+    if (change?.type !== "thread_touched" && change?.type !== "thread_status") landing = null;
+    if (msg.type === "found" || msg.type === "view") return true;
+    if (!speaker || !change) return false;
+    if (change.type === "thought_placed" && world.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
+      landing = change.thread_id;
+    }
+    // The placer decides the move on the map from before the model answered, so it comes even when you've gone
+    // there yourself meanwhile (a click): still talk. An import's end opens you on its newest thread when you had
+    // no place yet (import.rs `land`): not asked for either.
+    return change.type === "active_changed" && change.speaker === speaker && change.thread_id !== landed
+      && (world.active_by[speaker] ?? world.active) !== null;
+  };
+}
+
 export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
+  const closeRecap = recap.close;
   const apps = useApps();
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
@@ -359,6 +387,7 @@ export function useCore(speaker?: string) {
     let lastPartial = "";
     let awaitingThought = false;
     let handoffTimer: number | undefined;
+    const asked = movesAsked(speaker);
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -375,6 +404,8 @@ export function useCore(speaker?: string) {
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
+        if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         switch (msg.type) {
@@ -474,7 +505,7 @@ export function useCore(speaker?: string) {
       window.clearTimeout(handoffTimer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, speaker]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, closeRecap, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
@@ -490,7 +521,7 @@ export function useCore(speaker?: string) {
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
-  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
+  const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
   const noKey = keyNotice !== "";
   const requestRecap = (requested?: RecapPeriod) => {

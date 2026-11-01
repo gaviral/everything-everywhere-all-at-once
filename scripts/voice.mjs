@@ -25,8 +25,9 @@ const RATE = 24000;
 const FRAME = 1920; // 80 ms, as the browser sends
 const HOST_VOICE = "Samantha";
 const OTHER_VOICES = ["Daniel", "Karen", "Moira", "Tessa", "Rishi"];
-// Speech at a laptop mic's level, so a loud synthetic voice can't set off the volume watcher.
-const LEVEL = 0.05;
+// Speech at normal speech's level as the browser sends it (NORMAL_VOICE in core/src/apps.rs; a core test keeps them
+// equal), so a loud synthetic voice can't set off the volume watcher.
+const LEVEL = 0.075;
 // A person waits for "Listening…" before speaking.
 const LEAD_S = 1;
 // After the last line, the longest to wait for the map to settle.
@@ -144,7 +145,7 @@ function connect(speaker) {
     const query = params.toString();
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws${query ? `?${query}` : ""}`);
     // The core's name for this window: "you" alone or for the host, else the name joined with.
-    const peer = { speaker, name: speaker ? speaker.trim().split(/\s+/).join(" ").slice(0, 24) : "you", ws, lines: [], turn: null, last: null, listening: false, frames: 0, lowest: 1 };
+    const peer = { speaker, name: speaker ? speaker.trim().split(/\s+/).join(" ").slice(0, 24) : "you", ws, lines: [], turn: null, last: null, listening: false, frames: 0, sum: 0, count: 0 };
     ws.onerror = () => reject(new Error(`Couldn't reach the core on port ${port} as ${speaker || "the host"}. Start it with ./run.sh demo`));
     ws.onopen = () => resolve(peer);
     ws.onmessage = (event) => receive(peer, JSON.parse(event.data));
@@ -320,15 +321,13 @@ function frame(peer, k) {
   return samples;
 }
 
-// As ui/src/apps-audio.ts: the quietest of every four frames, for the volume watcher.
+// As ui/src/apps-audio.ts: the RMS of every four frames (320 ms), for the volume watcher.
 function volume(peer, samples) {
-  let sum = 0;
-  for (const s of samples) sum += (s / 32768) ** 2;
-  peer.lowest = Math.min(peer.lowest, Math.sqrt(sum / samples.length));
+  for (const s of samples) peer.sum += (s / 32768) ** 2;
+  peer.count += samples.length;
   if (++peer.frames >= 4) {
-    send(peer, { type: "app_volume", level: peer.lowest });
-    peer.frames = 0;
-    peer.lowest = 1;
+    send(peer, { type: "app_volume", level: Math.sqrt(peer.sum / peer.count) });
+    peer.frames = peer.sum = peer.count = 0;
   }
 }
 
