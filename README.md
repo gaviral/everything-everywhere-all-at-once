@@ -18,7 +18,7 @@ Tested on macOS. Needs Rust (stable, from rustup.rs) and Node.js 22.12 or newer.
 - A prepared map of a student's week: 8 threads with branches, 30 thoughts, tags, two suggestions, two reminders, two threads left unfinished. It starts fresh from `samples/` on each run.
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, wait for the "You didn't finish …" card and press Finish it, open the Palace and the Apps panel.
 - Without a key, everything that calls a model is off: new thoughts, the mic, Explain, Recap, making apps, pictures, importing. "Add to Reminders" still works, and really adds to your Reminders (macOS asks first).
-- A second map, a founder's day: `mkdir -p data/founder && cp samples/founder-day.jsonl data/founder/journal.jsonl && ./run.sh founder`.
+- A second map, a founder's day: `./run.sh sample founder`.
 
 **With a key: watch a map build itself.**
 
