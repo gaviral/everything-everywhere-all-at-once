@@ -110,9 +110,16 @@ impl Core {
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message });
     }
 
-    /// Makes a thread the speaker's active one; going back to a dropped thread reopens it.
+    /// Takes the speaker to a thread as a new move (a click, a search's answer): a search still looking stops.
     pub fn focus(&self, speaker: &str, thread_id: &str) {
         self.find.cancel(speaker);
+        self.move_to(speaker, thread_id);
+    }
+
+    /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?" and
+    /// "next one" move with this alone: saying one already stopped any search said before it (`add_thought`),
+    /// and one that waited its turn in the placer's queue must not stop a search said after it.
+    fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
         let Some(thread) = world.thread(thread_id) else { return };
         let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
@@ -130,7 +137,7 @@ impl Core {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
             drop(world);
-            self.focus(speaker, &id);
+            self.move_to(speaker, &id);
         }
     }
 
@@ -146,7 +153,7 @@ impl Core {
             self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
             let id = thread.id.clone();
             drop(world);
-            self.focus(speaker, &id);
+            self.move_to(speaker, &id);
         }
     }
 
@@ -1295,6 +1302,54 @@ mod tests {
         core.add_thought("User", "Where was I? The menu is final.");
         assert_eq!(jobs(), ["back", "place"]);
         assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"), "not yet");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Where was I?" after words still being placed waits its turn in the placer's queue; a search said after it
+    /// waits for those words too, and still happens when the command has acted.
+    #[tokio::test(start_paused = true)]
+    async fn a_command_that_waited_its_turn_doesnt_stop_a_search_said_after_it() {
+        let (core, mut queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        let now = super::now_ms();
+        let readme = Thought { point: "The README needs a quick start".into(), ..said("a", "you", "Docs", now - 120_000) };
+        core.commit(vec![
+            Change::ThreadAdded { thread: thread("Docs", 1, "") },
+            Change::ThreadAdded { thread: thread("Garden", 2, "") },
+            Change::ThreadAdded { thread: thread("Party", 3, "") },
+            Change::ThoughtAdded { thought: readme },
+            Change::ThoughtAdded { thought: said("b", "you", "Garden", now - 60_000) },
+            Change::ActiveChanged { thread_id: "Party".into(), speaker: "you".into() },
+        ]);
+        core.add_thought("you", "The caterer needs the head count by Friday, okay, where was I?");
+        core.add_thought("you", "Where did I talk about the README?");
+        // The placer's turn: the words land on Party, then "where was I?" goes back to Garden.
+        while let Ok(job) = queue.try_recv() {
+            match job {
+                Job::Place(thought_id) => core.commit(vec![Change::ThoughtPlaced {
+                    thought_id,
+                    thread_id: "Party".into(),
+                    point: "Caterer needs the head count by Friday".into(),
+                    unclear: String::new(),
+                    guess: String::new(),
+                    heard: String::new(),
+                    fixed: String::new(),
+                    complete: true,
+                    place_ms: 900,
+                }]),
+                Job::Back(speaker) => core.go_back(&speaker),
+                Job::Next(speaker) => core.go_next(&speaker),
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("Docs"));
+        let told: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                crate::protocol::ServerMsg::Notice { message } | crate::protocol::ServerMsg::Found { message, .. } => Some(message),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(told, ["Looking through your threads…", "Back to Garden", "Here: Docs — The README needs a quick start"]);
         let _ = std::fs::remove_file(&path);
     }
 
