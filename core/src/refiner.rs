@@ -75,19 +75,29 @@ struct Task {
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
 /// - right away when they come back to the window, so the map is tidy when they look;
-/// - at most every 10 s (longer after failed passes), and only when something changed.
+/// - at most every 10 s (longer after failed passes), and only when something changed;
+/// - a pass that comes back while they talk lands at the next pause (2 s quiet), not mid-sentence.
 pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     let mut failures = 0;
+    // A finished pass that came back while they were talking: it lands at the next pause instead.
+    let mut held: Option<Pass> = None;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
         let looked = core.take_looked();
+        if let Some(waiting) = held.take() {
+            if core.quiet_ms() < 2_000 {
+                held = Some(waiting);
+                continue;
+            }
+            land(&core, waiting, "held back until this pause");
+        }
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
         let new_thoughts = placed.saturating_sub(seen_thoughts);
@@ -104,16 +114,13 @@ pub async fn run(core: Arc<Core>) {
         let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
         match result {
-            // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
-            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => {
-                tracing::info!("refiner pass in {took} ms: {} changes held back, talk resumed", changes.len());
-                seen_thoughts = 0;
+            // Talking resumed while the model worked: move nothing under them; it lands at the next pause, a few
+            // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
+            Ok(answer) if core.quiet_ms() < 2_000 => {
+                tracing::info!("refiner pass in {took} ms: held back, talk resumed");
+                held = Some(answer);
             }
-            Ok(changes) if !changes.is_empty() => {
-                tracing::info!("refiner pass in {took} ms: {} changes", changes.len());
-                core.commit(changes);
-            }
-            Ok(_) => tracing::info!("refiner pass in {took} ms: nothing to change"),
+            Ok(answer) => land(&core, answer, &format!("in {took} ms")),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
@@ -123,13 +130,23 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
+/// Puts a pass on the map. Checked against the map as it is now, not as it was sent: an app's card or reminder
+/// may have landed while the model worked (a second idea on that thread would only repeat it), or a thread merged.
+fn land(core: &Core, answer: Pass, when: &str) {
+    let changes = changes(&core.snapshot(), answer);
+    tracing::info!("refiner pass {when}: {} changes", changes.len());
+    if !changes.is_empty() {
+        core.commit(changes);
+    }
+}
+
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
 /// so a pass that keeps failing doesn't resend the whole map every 10 s for good.
 fn rest_ms(failures: u32) -> u64 {
     10_000 << failures.min(5)
 }
 
-async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
+async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let map = describe(world, since);
     let existing = existing(world);
@@ -162,10 +179,7 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
     }
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
-    // while the model worked, and a second idea on that thread would only repeat it.
-    Ok(changes(&core.snapshot(), pass))
+    serde_json::from_str(content).context("answer wasn't the expected JSON")
 }
 
 /// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
