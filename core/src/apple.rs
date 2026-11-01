@@ -27,8 +27,8 @@ pub async fn approve(core: Arc<Core>, action_id: String) {
             // Not added: offer it again.
             core.commit(vec![Change::ItemStatus { id: action.id, status: ItemStatus::New, done_ms: None }]);
             let message = match failed {
-                Ok(o) => format!("{app} said no: {}", String::from_utf8_lossy(&o.stderr).trim()),
-                Err(e) => format!("Couldn't run AppleScript: {e}"),
+                Ok(_) => format!("Couldn't add to {app}. Check permission to control {app} in macOS settings, then try again."),
+                Err(_) => format!("Couldn't reach {app}. Check that it is available on this Mac, then try again."),
             };
             core.send(ServerMsg::Error { message });
         }

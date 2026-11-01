@@ -454,7 +454,7 @@ export function useCore() {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); return false; }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },

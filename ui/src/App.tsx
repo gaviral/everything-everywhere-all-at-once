@@ -396,7 +396,20 @@ export default function App() {
         </div>
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
-        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
+        <details className="shortcuts"><summary aria-label="Keyboard and voice commands">?</summary><div className="keyboard-hint">
+          <div>✦ added or suggested by AI</div>
+          <strong>Keyboard</strong>
+          <div>Map: / search · j / k move between threads · Enter show or hide · Esc fold quiet threads</div>
+          <div>Palace: arrow keys move · Enter open a thread</div>
+          <div>Esc clears search or closes the room menu when focused there</div>
+          <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
+          <strong>Say or type</strong>
+          <div>“Where was I?” or “Go back” · return to where you left off</div>
+          <div>“Next one” · next thread in creation order, then back to the first</div>
+          <div>“Find [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>Back and next can follow a thought after a pause; the thought is kept.</div>
+        </div></details>
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
@@ -415,7 +428,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            <span>{core.notice.includes("MODEL_API_KEY") ? "Set MODEL_API_KEY in .env to turn on listening and placement. See .env.example." : core.notice}</span>
+            <span>{core.notice.includes("MODEL_API_KEY") ? "The AI key isn't set up. Add MODEL_API_KEY to .env (see .env.example) to turn on listening and placement." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -440,7 +453,7 @@ export default function App() {
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
-          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details></>}
+          </>}
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
