@@ -42,6 +42,7 @@ cp .env.example .env                           # then open .env and paste your M
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- On a Mac, the key can live in the login Keychain instead of `.env`: `security add-generic-password -s e2a2o -a e2a2o -w` asks for it once, and `run.sh` reads it when there's no `.env`.
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
@@ -210,7 +211,6 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s for Take
 
 - Before the event: the idea and design notes. No code.
 - Written during the event (Oct 26 to Nov 4, 2026): everything in this repository; the first commit is from Oct 31. No code from the author's other projects; `scripts/precheck.sh` fails on their paths.
-- One link to an older project: with no `.env`, `run.sh` looks for the key in a macOS Keychain entry saved by the author's earlier app, Canvas. It's a key lookup only; on other Macs it finds nothing.
 
 ## Known limits
 
