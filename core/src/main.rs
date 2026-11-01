@@ -223,13 +223,6 @@ impl Core {
         self.send_to(speaker, ServerMsg::Notice { message: "New thread: your next thought starts it".into() });
     }
 
-    /// "New thread about the garden": `first` is that next thought, said in the same breath (spoken.rs).
-    fn new_thread_with(&self, speaker: &str, first: &str) {
-        self.new_threads.ask(speaker);
-        self.send_to(speaker, ServerMsg::Notice { message: format!("New thread: “{first}”") });
-        self.keep(speaker, first);
-    }
-
     /// Whether the speaker's window runs on this machine. Alone, only this machine's pages get in.
     fn is_host(&self, speaker: &str) -> bool {
         self.room.is_none() || self.hosts.lock().unwrap().contains(speaker)
@@ -1696,7 +1689,7 @@ mod tests {
             ("Collapse this", "fold"),
             ("Stop listening", "pause"),
             ("Add it to Reminders", "approve"),
-            ("Finish it", "back"),
+            ("Finish it", "finish"),
             ("Later", "later"),
             // The README.
             ("Put the receipt in the bills thread", "added"),
@@ -1726,6 +1719,12 @@ mod tests {
                 };
                 assert_eq!(did(world(true), &said).await, (vec![does.to_string()], kept), "{said}");
             }
+            // By rule: nothing goes to the placer, so nothing waits on the model, and without a key each still acts
+            // ("new thread about …" queued a placement before the review of 88ace4d).
+            let (core, mut queue, path) = keyless(world(true));
+            core.add_thought("you", phrase);
+            let _ = std::fs::remove_file(&path);
+            assert!(queue.try_recv().is_err(), "{phrase} asked the placer");
         }
         // Look-alikes: talk about these things, or a command only partway through a turn, is a thought.
         for said in [

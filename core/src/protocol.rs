@@ -36,8 +36,8 @@ pub enum ServerMsg {
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
 /// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
 /// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
-/// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), and the mic, off
-/// ("stop listening").
+/// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), its Finish it
+/// ("finish"), and the mic, off ("stop listening").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -48,6 +48,7 @@ pub enum View {
     Help,
     Later,
     Forget,
+    Finish,
     Pause,
 }
 

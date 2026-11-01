@@ -30,6 +30,9 @@ export default function App() {
   const core = useCore(me);
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Threads opened with all their branches ("expand …", Option-click): they stay open as you move about the map,
+  // where a card you opened with a plain click folds again once you've been there and left.
+  const keptOpen = useRef(new Set<string>());
   const world = useMemo(() => ({ ...core.world, active: core.world.active_by[me] ?? core.world.active }), [core.world, me]);
   const sessionCounts = useMemo(() => {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
@@ -98,7 +101,7 @@ export default function App() {
     if (!core.viewAsk) return;
     const asked = core.viewAsk.view;
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
-    if (asked === "later" || asked === "forget" || asked === "pause") return;
+    if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
@@ -392,7 +395,11 @@ export default function App() {
       const visited = new Set<string>();
       while (thread && !visited.has(thread.id)) {
         visited.add(thread.id);
-        delete next[thread.id];
+        // Opened with its branches: it stays open after you leave (review of 88ace4d).
+        if (!(keptOpen.current.has(thread.id) && next[thread.id] === false)) {
+          delete next[thread.id];
+          keptOpen.current.delete(thread.id);
+        }
         thread = world.threads.find((item) => item.id === thread?.parent_id);
       }
       return next;
@@ -481,12 +488,19 @@ export default function App() {
     setView("map");
     setQuery("");
     setFocusMode(false);
+    const kept = keptOpen.current;
     setExpanded((state) => {
       const next = { ...state };
-      for (const each of ids) next[each] = !ask.open;
+      for (const each of ids) {
+        next[each] = !ask.open;
+        if (ask.open) kept.add(each); else kept.delete(each);
+      }
       // Its own card shows only under open parents.
       const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
-      for (let parent = id ? byId.get(id)?.parent_id : null; ask.open && parent && next[parent] !== false; parent = byId.get(parent)?.parent_id) next[parent] = false;
+      for (let parent = id ? byId.get(id)?.parent_id : null; ask.open && parent && next[parent] !== false; parent = byId.get(parent)?.parent_id) {
+        next[parent] = false;
+        kept.add(parent);
+      }
       return next;
     });
     if (!id) return;
@@ -529,6 +543,7 @@ export default function App() {
       }
       if (event.key === "Escape") {
         if (hasAway) { away.dismiss(); return; }
+        keptOpen.current.clear();
         setExpanded(Object.fromEntries(world.threads.filter((thread) => !activePath.has(thread.id)).map((thread) => [thread.id, true])));
       }
     };
@@ -589,15 +604,22 @@ export default function App() {
     if (laterAt[key] !== undefined) setDismissed((d) => [...d, key]);
     else setLaterAt((previous) => ({ ...previous, [key]: Date.now() }));
   };
-  // Said aloud: "later" as the button; "forget it" sets the card aside as a second Later does, even while it's hidden
-  // for now. Your words stay on the map either way.
+  // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
+  // acts on the card you see (or would see at the next pause); with none, "forget it" takes the one hidden for now
+  // and "finish it" the newest you left. Your words stay on the map either way.
   useEffect(() => {
     const asked = core.viewAsk?.view;
-    if (asked !== "later" && asked !== "forget") return;
-    const yours = world.threads
-      .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
-      .sort((a, b) => b.touched_ms - a.touched_ms)[0];
-    const card = asked === "later" ? dropped : yours;
+    if (asked !== "later" && asked !== "forget" && asked !== "finish") return;
+    const mine = world.threads.filter((t) => t.status === "dropped" && t.dropped_by === me).sort((a, b) => b.touched_ms - a.touched_ms);
+    const yours = mine.find((t) => !dismissed.includes(dropKey(t)));
+    if (asked === "finish") {
+      const card = dropped ?? mine[0];
+      if (!card) { core.showNotice("Nothing unfinished to finish."); return; }
+      goBack(card);
+      core.showNotice(`Back to ${card.title}`);
+      return;
+    }
+    const card = asked === "later" ? dropped : dropped ?? yours;
     if (!card) { core.showNotice("Nothing unfinished to set aside."); return; }
     if (asked === "later") {
       later(card);
@@ -773,7 +795,7 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
-          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} on={on} />
+          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
         )}
       </main>}
 
@@ -991,6 +1013,7 @@ type MapProps = {
   ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
   matches: Set<string>; searching: boolean; expanded: Record<string, boolean>;
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  keptOpen: React.MutableRefObject<Set<string>>;
 };
 
 // The composer, live transcript and pull-back timer update independently of the map.
@@ -1000,7 +1023,7 @@ const MapCards = memo(function MapCards(props: MapProps) {
     : roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
 });
 
-function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
+function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
@@ -1059,6 +1082,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
           // Option-click opens or folds every branch under it too, as "expand …" does.
           const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
           const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
+          for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
           setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
         }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
@@ -1091,7 +1115,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
           ))}
         </div>
       )}

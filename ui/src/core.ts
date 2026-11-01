@@ -55,9 +55,9 @@ export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 export type Explanation = { text: string; failed: boolean };
 
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
-// say?"); also the unfinished card's Later ("later") and setting it aside ("forget it"), and the mic off ("stop
-// listening"). The revision makes the same one asked twice a new ask.
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "pause"; revision: number };
+// say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
+// mic off ("stop listening"). The revision makes the same one asked twice a new ask.
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };

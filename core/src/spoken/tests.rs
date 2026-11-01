@@ -107,14 +107,100 @@ fn filing_lands_at_once_with_what_to_add_as_its_point_and_every_word_kept() {
 }
 
 #[test]
+fn filing_never_takes_an_id_a_placement_on_its_way_could_make() {
+    // The placer counts from the map it asked the model with: here T2, the next "T" number when it asked.
+    let f = Fixture::new(map(vec![thread("T1", "Rent", 1)]));
+    assert!(act(&f.core, "you", "Add milk to the shopping list"));
+    let world = f.core.snapshot();
+    let shopping = world.threads.iter().find(|t| t.title == "Shopping list").unwrap();
+    assert!(!shopping.id.starts_with('T'), "{}", shopping.id);
+    assert_eq!(super::fresh_id(&world), "S3", "the next one skips past the number taken");
+    // The placement that was on its way lands as T2 of its own, not in the shopping list.
+    f.core.commit(vec![Change::ThreadAdded { thread: thread("T2", "Garden", 9) }]);
+    assert_eq!(f.core.snapshot().threads.len(), 3);
+}
+
+#[test]
+fn a_place_in_another_script_is_read_without_panicking() {
+    let world = map(vec![thread("T1", "日本語", 1)]);
+    for place in ["日本語", "日本語 list", "the 日本語", "é", "über"] {
+        let _ = destination(&world, place);
+    }
+    assert_eq!(destination(&world, "日本語"), Destination::Thread("T1".into()));
+    let f = Fixture::new(world);
+    assert!(act(&f.core, "you", "Add milk to 日本語"));
+    assert_eq!(f.core.snapshot().thoughts.last().unwrap().thread_id.as_deref(), Some("T1"));
+}
+
+#[test]
+fn new_thread_about_lands_at_once_with_no_model_call() {
+    let mut world = map(vec![thread("T1", "Rent", 1)]);
+    world.active_by.insert("you".into(), "T1".into());
+    world.active = Some("T1".into());
+    let f = Fixture::new(world);
+    let mut updates = f.core.updates.subscribe();
+    assert!(act(&f.core, "you", "New thread about the garden shed"));
+    let world = f.core.snapshot();
+    let shed = world.threads.iter().find(|t| t.title == "Garden shed").unwrap();
+    let thought = world.thoughts.last().unwrap();
+    assert_eq!((thought.text.as_str(), thought.point.as_str(), thought.placed), ("The garden shed", "The garden shed", true));
+    assert_eq!(thought.thread_id.as_ref(), Some(&shed.id));
+    assert_eq!(world.active_for("you"), Some(&shed.id));
+    let notices: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+        .filter_map(|out| if let ServerMsg::Notice { message } = out.message { Some(message) } else { None })
+        .collect();
+    assert_eq!(notices, ["New thread: “Garden shed”"]);
+    assert_eq!(title_for("Why the build is slow and what to do about it."), "Why the build is slow");
+    assert_eq!(title_for("Um, the lease"), "Lease");
+    assert_eq!(title_for("um"), "Um");
+}
+
+#[test]
+fn leaving_a_thought_unfinished_for_a_filing_offers_it_back() {
+    let mut world = map(vec![thread("T1", "Rent", 1), thread("T2", "Shopping list", 2)]);
+    world.active_by.insert("you".into(), "T1".into());
+    world.active = Some("T1".into());
+    world.thoughts.push(Thought {
+        id: "a".into(),
+        speaker: "you".into(),
+        text: "The rent is due on the".into(),
+        point: "Rent is due".into(),
+        thread_id: Some("T1".into()),
+        placed: true,
+        unclear: String::new(),
+        guess: String::new(),
+        heard: String::new(),
+        fixed: String::new(),
+        complete: false,
+        at_ms: 1,
+        place_ms: Some(0),
+    });
+    let f = Fixture::new(world);
+    assert!(act(&f.core, "you", "Add milk to the shopping list"));
+    let world = f.core.snapshot();
+    let rent = world.thread("T1").unwrap();
+    assert_eq!((rent.status, rent.dropped_by.as_str()), (ThreadStatus::Dropped, "you"));
+    // "Finish it" now goes to the window, which knows which card it shows.
+    let mut updates = f.core.updates.subscribe();
+    assert!(act(&f.core, "you", "Finish it"));
+    assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Finish })));
+    // Someone else's is theirs: no card, so "finish it" is talk.
+    assert!(!act(&f.core, "sam", "Finish it"));
+}
+
+#[test]
 fn new_thread_about_keeps_every_word_after_it() {
     assert_eq!(new_thread_about("New thread about the garden shed"), Some("The garden shed".into()));
     assert_eq!(new_thread_about("Okay, start a new thread about why the build is slow."), Some("Why the build is slow.".into()));
     assert_eq!(new_thread_about("Create a new one about Dana's party"), Some("Dana's party".into()));
     assert_eq!(new_thread_about("New thread on piano lessons"), Some("Piano lessons".into()));
     assert_eq!(new_thread_about("New thread. I want to learn piano."), Some("I want to learn piano.".into()));
-    assert_eq!(new_thread_about("Different topic, but I need to call Mom"), Some("I need to call Mom".into()));
+    assert_eq!(new_thread_about("Different topic, but I need to call Mom"), Some("But I need to call Mom".into()));
+    assert_eq!(title_for("But I need to call Mom"), "I need to call Mom");
     assert_eq!(new_thread_about("Change of topic: the lease"), Some("The lease".into()));
+    // Words that would lead into a request are the thought's own here.
+    assert_eq!(new_thread_about("New thread about can you review the contract?"), Some("Can you review the contract?".into()));
+    assert_eq!(new_thread_about("New thread. Okay so the tomatoes need stakes."), Some("Okay so the tomatoes need stakes.".into()));
     for none in [
         "New thread",
         "A new thread about the budget came up on Slack",
@@ -177,6 +263,12 @@ fn expand_opens_the_thread_with_its_branches_and_a_miss_said_plainly_is_answered
     assert_eq!(said("Expand everything in the garden"), (true, vec!["I couldn't find “the garden”. Try words from its title.".into()]));
     assert_eq!(said("Expand the business into Europe"), (false, vec![]));
     assert_eq!(said("Show Dana the photos"), (false, vec![]));
+    // "Show", "open" and "hide" need the whole title: a thread with more words in it isn't named.
+    f.core.commit(vec![Change::ThreadAdded { thread: thread("T5", "Dana photos from Japan", 5) }]);
+    assert_eq!(said("Show Dana the photos"), (false, vec![]));
+    assert_eq!(said("Hide the mic"), (false, vec![]));
+    assert_eq!(said("Show Dana photos from Japan"), (true, vec!["open T5".into(), "Opened Dana photos from Japan".into()]));
+    assert_eq!(said("Expand Dana photos"), (true, vec!["open T5".into(), "Opened Dana photos from Japan".into()]));
 }
 
 #[test]

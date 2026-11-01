@@ -19,12 +19,18 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         return true;
     }
     let world = core.snapshot();
-    if is_lost_thought(text) || (is_finish(text) && has_dropped(&world, speaker)) {
+    if is_lost_thought(text) {
         drop(world);
         core.run_command(speaker, placer::Job::Back);
         return true;
     }
-    // The window sets the card aside, or says there's none: it knows what it hid already.
+    // The card's buttons go to the window: it knows which card it shows, and which it hid for now (Later) or for
+    // good. "Where was I?" picks by the map alone, so "finish it" could open a card you snoozed instead of the one
+    // in front of you.
+    if is_finish(text) && has_dropped(&world, speaker) {
+        core.send_to(speaker, ServerMsg::View { view: View::Finish });
+        return true;
+    }
     if is_forget(text) {
         core.send_to(speaker, ServerMsg::View { view: View::Forget });
         return true;
@@ -44,8 +50,9 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         return true;
     }
     if let Some(first) = new_thread_about(text) {
-        drop(world);
-        core.new_thread_with(speaker, &first);
+        let title = title_for(&first);
+        land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
+        core.send_to(speaker, ServerMsg::Notice { message: format!("New thread: “{title}”") });
         return true;
     }
     if let Some(ask) = unfold(text) {
@@ -204,8 +211,10 @@ const NEW_THREAD: [&str; 13] = [
 fn new_thread_about(text: &str) -> Option<String> {
     let t = crate::lead_in(text).trim_start_matches(|c: char| !c.is_alphanumeric());
     let l = t.to_ascii_lowercase();
+    // Only the marks between the ask and the words come off: "New thread about can you review the contract?" keeps
+    // "Can you review the contract?" (review of 88ace4d), since nothing else keeps the turn.
     let first = |rest: &str| {
-        let rest = crate::lead_in(rest).trim_start_matches(|c: char| !c.is_alphanumeric()).trim_end();
+        let rest = rest.trim_start_matches(|c: char| !c.is_alphanumeric()).trim_end();
         rest.chars().any(char::is_alphanumeric).then(|| capital(rest))
     };
     for join in [" about ", " on "] {
@@ -305,15 +314,20 @@ fn name_words(name: &str) -> HashSet<String> {
 }
 
 /// The thread a spoken name means: every word of it in the title, the closest title first (same words), then the
-/// most recently touched. With `title_only` false, a thread whose title, tags or points hold all the words counts
-/// too (find.rs).
+/// most recently touched. With `title_only` ("show", "open", "hide"), only a title with exactly those words: "Show
+/// Dana the photos" is talk though a thread is titled "Dana photos from Japan". Otherwise a thread whose title, tags
+/// or points hold all the words counts too (find.rs).
 fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
     let wanted = name_words(name);
     if wanted.is_empty() {
         return None;
     }
     let titled = world.threads.iter()
-        .filter_map(|t| { let words = name_words(&t.title); wanted.is_subset(&words).then_some((t, words == wanted)) })
+        .filter_map(|t| {
+            let words = name_words(&t.title);
+            let same = words == wanted;
+            (same || (!title_only && wanted.is_subset(&words))).then_some((t, same))
+        })
         .max_by_key(|(t, same)| (*same, t.touched_ms))
         .map(|(t, _)| t.id.clone());
     if titled.is_some() || title_only { titled } else { find::thread_for(world, name) }
@@ -421,7 +435,8 @@ enum Destination {
 fn destination(world: &World, place: &str) -> Destination {
     let mut place = place.trim();
     for article in ["the ", "my ", "our ", "a ", "an "] {
-        if place.len() > article.len() && place[..article.len()].eq_ignore_ascii_case(article) {
+        // `get`: "日本語" has no char boundary at 4, where "the " would end.
+        if place.len() > article.len() && place.get(..article.len()).is_some_and(|p| p.eq_ignore_ascii_case(article)) {
             place = place[article.len()..].trim_start();
             break;
         }
@@ -449,22 +464,79 @@ fn destination(world: &World, place: &str) -> Destination {
 /// Files the words at once, with no model call: the turn as said is kept as the thought's words, and what to add is
 /// its point. The speaker moves there, as any landing moves them (placer.rs `decide`), so the map shows it.
 fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, destination: Destination) {
-    let now = now_ms();
-    let mut changes = Vec::new();
-    let (id, message) = match destination {
+    let (landing, message) = match destination {
         Destination::Thread(id) => {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
+            (Landing::Thread(id), format!("Added to {title}"))
+        }
+        Destination::New(title) => {
+            let message = format!("Added to a new thread: {title}");
+            (Landing::New(title), message)
+        }
+        Destination::Unsure => return,
+    };
+    land(core, speaker, world, said, what, landing);
+    core.send_to(speaker, ServerMsg::Notice { message });
+}
+
+/// Where a thought the pack places lands: a thread on the map, or a new one with this title.
+enum Landing {
+    Thread(String),
+    New(String),
+}
+
+/// A title for a thread "new thread about …" starts, until the refiner finds a better one: its words without the
+/// sounds that lead in and a leading "the", at most 5, as the placer's own fallback ("The garden shed" → "Garden
+/// shed").
+fn title_for(first: &str) -> String {
+    let words = crate::lead(first, false).trim_matches(|c: char| !c.is_alphanumeric());
+    let mut words: Vec<&str> = words.split_whitespace().collect();
+    if words.len() > 1 && ["the", "my", "our", "a", "an"].contains(&words[0].to_ascii_lowercase().as_str()) {
+        words.remove(0);
+    }
+    let title = words.into_iter().take(5).collect::<Vec<_>>().join(" ");
+    match title.trim_end_matches(|c: char| !c.is_alphanumeric()) {
+        // Only sounds ("New thread about, um, okay"): the words as said.
+        "" => capital(first.trim_end_matches(|c: char| !c.is_alphanumeric())),
+        title => capital(title),
+    }
+}
+
+/// An id for a thread the pack starts, apart from the placer's "T…": a placement still waiting on the model counts
+/// from the map it was asked with, so "T" + the next number could be the one it's about to make, and the thought it
+/// places would land in this thread (review of 88ace4d). Imports keep "I…" apart the same way.
+fn fresh_id(world: &World) -> String {
+    let mut n = world.threads.len() + world.merged.len() + 1;
+    loop {
+        let id = format!("S{n}");
+        if world.thread(&id).is_none() && !world.merged.contains_key(&id) {
+            return id;
+        }
+        n += 1;
+    }
+}
+
+/// Lands `said` with `point` at once, with no model call, as the placer's `decide` would: a new thread made, a
+/// dropped one picked up again, the thread touched, and the speaker moved there. Leaving a thread whose last words of
+/// theirs trailed off marks it unfinished, so the card can offer it, as any landing does.
+fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str, landing: Landing) {
+    // Somewhere chosen now: a "new thread" asked for before this ends here.
+    core.new_threads.cancel(speaker);
+    let now = now_ms();
+    let mut changes = Vec::new();
+    let id = match landing {
+        Landing::Thread(id) => {
             if world.thread(&id).is_some_and(|t| t.status == ThreadStatus::Dropped) {
                 changes.push(Change::ThreadStatus { thread_id: id.clone(), status: ThreadStatus::Open, speaker: speaker.into() });
             }
-            (id, format!("Added to {title}"))
+            id
         }
-        Destination::New(title) => {
-            let id = world.next_thread_id();
+        Landing::New(title) => {
+            let id = fresh_id(world);
             changes.push(Change::ThreadAdded {
                 thread: Thread {
                     id: id.clone(),
-                    title: title.clone(),
+                    title,
                     parent_id: None,
                     status: ThreadStatus::Open,
                     last_point: String::new(),
@@ -474,11 +546,10 @@ fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, 
                     dropped_by: String::new(),
                 },
             });
-            (id, format!("Added to a new thread: {title}"))
+            id
         }
-        Destination::Unsure => return,
     };
-    let point = capital(what);
+    let point = capital(point);
     let thought = Thought {
         id: format!("th-{}", uuid::Uuid::new_v4().simple()),
         speaker: speaker.into(),
@@ -508,11 +579,20 @@ fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, 
         place_ms: 0,
     });
     changes.push(Change::ThreadTouched { thread_id: id.clone(), last_point: point, at_ms: now });
+    // As placer.rs `decide`: only the speaker's own words, last by when they were said.
+    if let Some(previous) = world.active_by.get(speaker).filter(|a| **a != id) {
+        let trailed_off = world.thoughts.iter()
+            .filter(|t| t.placed && t.speaker == speaker && t.thread_id.as_deref() == Some(previous.as_str()))
+            .max_by_key(|t| t.said_at(now))
+            .is_some_and(|t| !t.complete);
+        if trailed_off && world.thread(previous).is_some_and(|t| t.status == ThreadStatus::Open) {
+            changes.push(Change::ThreadStatus { thread_id: previous.clone(), status: ThreadStatus::Dropped, speaker: speaker.into() });
+        }
+    }
     if world.active.as_deref() != Some(id.as_str()) || world.active_by.get(speaker) != Some(&id) {
         changes.push(Change::ActiveChanged { thread_id: id, speaker: speaker.into() });
     }
     core.commit(changes);
-    core.send_to(speaker, ServerMsg::Notice { message });
 }
 
 /// What "new thread about …" keeps as its first thought, for main.rs's table.
