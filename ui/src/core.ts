@@ -22,6 +22,7 @@ export interface Thought {
   thread_id: string | null;
   placed: boolean;
   unclear: string;
+  guess?: string;
   complete: boolean;
   at_ms: number;
   place_ms: number | null;
@@ -64,9 +65,11 @@ type Change =
       thread_id: string;
       point: string;
       unclear: string;
+      guess?: string;
       complete: boolean;
       place_ms: number;
     }
+  | { type: "thought_corrected"; thought_id: string; accept: boolean }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus }
   | { type: "active_changed"; thread_id: string }
@@ -168,6 +171,7 @@ function apply(world: World, raw: Change): World {
                 thread_id: c.thread_id,
                 point: c.point,
                 unclear: c.unclear,
+                guess: c.guess ?? "",
                 complete: c.complete,
                 placed: true,
                 place_ms: c.place_ms,
@@ -186,6 +190,23 @@ function apply(world: World, raw: Change): World {
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status } : t)) };
     case "active_changed":
       return { ...world, active: c.thread_id };
+    case "thought_corrected": {
+      // Mirrors the core: yes swaps the unclear words for the guess, no keeps them.
+      const t = world.thoughts.find((x) => x.id === c.thought_id);
+      if (!t) return world;
+      const swap = (text: string) => {
+        const i = c.accept && t.unclear && t.guess ? text.toLowerCase().indexOf(t.unclear.toLowerCase()) : -1;
+        return i < 0 ? text : text.slice(0, i) + t.guess + text.slice(i + t.unclear.length);
+      };
+      const fixed = { ...t, text: swap(t.text), point: swap(t.point), unclear: "", guess: "" };
+      return {
+        ...world,
+        thoughts: world.thoughts.map((x) => (x.id === t.id ? fixed : x)),
+        threads: world.threads.map((th) =>
+          th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: fixed.point } : th,
+        ),
+      };
+    }
   }
 }
 
@@ -275,6 +296,7 @@ export function useCore() {
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
     setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
     approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
+    correct: (thought_id: string, accept: boolean) => send(JSON.stringify({ type: "correct", thought_id, accept })),
     tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
     visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,

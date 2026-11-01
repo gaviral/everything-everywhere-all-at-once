@@ -52,6 +52,9 @@ pub struct Thought {
     pub thread_id: Option<String>,
     pub placed: bool,
     pub unclear: String,
+    /// What the unclear words most likely were, for "Did you mean …?"; empty when there's no good guess.
+    #[serde(default)]
+    pub guess: String,
     /// False when the thought trailed off unfinished.
     #[serde(default = "yes")]
     pub complete: bool,
@@ -116,6 +119,8 @@ pub enum Change {
         thread_id: String,
         point: String,
         unclear: String,
+        #[serde(default)]
+        guess: String,
         #[serde(default = "yes")]
         complete: bool,
         place_ms: u64,
@@ -132,6 +137,8 @@ pub enum Change {
     TagKept { thread_id: String, tag: String },
     TagRemoved { thread_id: String, tag: String },
     ThreadPicture { thread_id: String, path: String },
+    /// "Did you mean …?" answered: yes swaps the unclear words for the guess, no keeps them; either way the question goes.
+    ThoughtCorrected { thought_id: String, accept: bool },
 }
 
 impl World {
@@ -161,11 +168,12 @@ impl World {
                     self.threads.push(thread.clone());
                 }
             }
-            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, complete, place_ms } => {
+            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, complete, place_ms } => {
                 if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
                     t.thread_id = Some(thread_id.clone());
                     t.point = point.clone();
                     t.unclear = unclear.clone();
+                    t.guess = guess.clone();
                     t.complete = *complete;
                     t.placed = true;
                     t.place_ms = Some(*place_ms);
@@ -210,6 +218,23 @@ impl World {
                 }
                 self.threads.retain(|t| &t.id != from);
                 self.merged.insert(from.clone(), into.clone());
+            }
+            Change::ThoughtCorrected { thought_id, accept } => {
+                let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) else { return };
+                let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
+                if *accept && !t.unclear.is_empty() && !t.guess.is_empty() {
+                    t.text = swap(&t.text, &t.unclear, &t.guess);
+                    t.point = swap(&t.point, &t.unclear, &t.guess);
+                }
+                t.unclear.clear();
+                t.guess.clear();
+                let point = t.point.clone();
+                // The thread's last point is a copy; keep it in step.
+                if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
+                    if th.last_point == old_point {
+                        th.last_point = point;
+                    }
+                }
             }
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
@@ -326,9 +351,43 @@ impl Journal {
     }
 }
 
+/// Replaces the first match of `from` in `text` (ignoring case) with `to`; unchanged when there's none.
+fn swap(text: &str, from: &str, to: &str) -> String {
+    match text.to_lowercase().find(&from.to_lowercase()) {
+        Some(i) if text.is_char_boundary(i) && text.is_char_boundary(i + from.len()) => {
+            format!("{}{}{}", &text[..i], to, &text[i + from.len()..])
+        }
+        _ => text.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::World;
+    use super::{Change, Thought, World};
+
+    #[test]
+    fn did_you_mean_swaps_the_words_or_keeps_them() {
+        let thought = |id: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: "ask muse bark about it".into(),
+            point: "Ask Muse Bark".into(),
+            thread_id: None,
+            placed: true,
+            unclear: "Muse Bark".into(),
+            guess: "Muse Spark".into(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        let mut world = World { thoughts: vec![thought("a"), thought("b")], ..World::default() };
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true });
+        world.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: false });
+        assert_eq!(world.thoughts[0].text, "ask Muse Spark about it");
+        assert_eq!(world.thoughts[0].point, "Ask Muse Spark");
+        assert_eq!(world.thoughts[1].text, "ask muse bark about it");
+        assert!(world.thoughts.iter().all(|t| t.unclear.is_empty() && t.guess.is_empty()));
+    }
 
     #[test]
     fn resolve_follows_merges_and_survives_a_cycle() {

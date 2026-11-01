@@ -251,6 +251,34 @@ header {
   cursor: help;
 }
 
+.did-you-mean {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 99px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.did-you-mean button {
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--amber);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.did-you-mean button.quiet {
+  background: transparent;
+  color: var(--amber);
+}
+
 .speed {
   margin-left: auto;
   color: var(--muted);

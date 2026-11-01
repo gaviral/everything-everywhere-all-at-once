@@ -19,7 +19,8 @@ thread_id: the existing thread for continue or return. title: up to 5 words, for
 point: the thought in at most 12 words, in the speaker's own voice. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
-unclear: words that look mistranscribed, else an empty string. Answer with JSON only.";
+unclear: words that look mistranscribed, else an empty string. \
+guess: what those words most likely were, judging by the context, else an empty string. Answer with JSON only.";
 
 #[derive(Deserialize)]
 struct Placement {
@@ -38,6 +39,8 @@ struct Placement {
     dropped: Vec<String>,
     #[serde(default)]
     unclear: String,
+    #[serde(default)]
+    guess: String,
 }
 
 fn yes() -> bool {
@@ -141,9 +144,10 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
                 "point": {"type": "string"},
                 "complete": {"type": "boolean"},
                 "dropped": {"type": "array", "items": {"type": "string"}},
-                "unclear": {"type": "string"}
+                "unclear": {"type": "string"},
+                "guess": {"type": "string"}
             },
-            "required": ["action", "thread_id", "title", "parent_id", "point", "complete", "dropped", "unclear"]
+            "required": ["action", "thread_id", "title", "parent_id", "point", "complete", "dropped", "unclear", "guess"]
         }}}
     })
 }
@@ -191,6 +195,11 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
         thread_id: thread_id.clone(),
         point: point.clone(),
         unclear: clean(&p.unclear),
+        // Only worth asking when something looked misheard and the guess differs.
+        guess: match (clean(&p.unclear), clean(&p.guess)) {
+            (unclear, guess) if unclear.is_empty() || guess.eq_ignore_ascii_case(&unclear) => String::new(),
+            (_, guess) => guess,
+        },
         complete: p.complete,
         place_ms,
     });

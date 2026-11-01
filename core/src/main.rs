@@ -150,6 +150,7 @@ impl Core {
             thread_id: active,
             placed: false,
             unclear: String::new(),
+            guess: String::new(),
             complete: true,
             at_ms: now_ms(),
             place_ms: None,
@@ -343,6 +344,9 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                 Ok(ClientMsg::Tag { thread_id, tag, keep }) => {
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
                     core.commit(vec![change]);
+                }
+                Ok(ClientMsg::Correct { thought_id, accept }) => {
+                    core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),

@@ -6,6 +6,7 @@ type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
   approve: (id: string) => void;
   tag: (threadId: string, tag: string, keep: boolean) => void;
+  correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
 
@@ -197,7 +198,7 @@ export default function App() {
               key={t.id}
               thread={t}
               world={world}
-              on={{ setItem: core.setItem, approve: core.approve, tag: core.tag }}
+              on={{ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }}
             />
           ))
         )}
@@ -307,7 +308,7 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
       </div>
       <ul className="points">
         {thoughts.map((t) => (
-          <Point key={t.id} thought={t} />
+          <Point key={t.id} thought={t} on={on} />
         ))}
       </ul>
       {ideas.map((s) => (
@@ -338,17 +339,27 @@ function ThreadCard({ thread, world, on }: { thread: Thread; world: World; on: H
   );
 }
 
-function Point({ thought }: { thought: Thought }) {
+function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
   const other = thought.speaker !== "you";
   return (
     <motion.li layoutId={thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       <span>{thought.point}</span>
-      {thought.unclear && (
-        <span className="unclear" title={`Did I hear this right? ${thought.unclear}`}>
-          ?
+      {thought.unclear && thought.guess ? (
+        <span className="did-you-mean">
+          Did you mean “{thought.guess}”?
+          <button onClick={() => on.correct(thought.id, true)}>Yes</button>
+          <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
+            No
+          </button>
         </span>
+      ) : (
+        thought.unclear && (
+          <span className="unclear" title={`Did I hear this right? ${thought.unclear}`}>
+            ?
+          </span>
+        )
       )}
       {thought.place_ms != null && <span className="speed">{(thought.place_ms / 1000).toFixed(1)} s</span>}
     </motion.li>
