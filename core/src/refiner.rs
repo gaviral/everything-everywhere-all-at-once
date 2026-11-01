@@ -273,6 +273,8 @@ mod tests {
             placed: true,
             unclear: String::new(),
             guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
             complete: true,
             at_ms: n,
             place_ms: None,

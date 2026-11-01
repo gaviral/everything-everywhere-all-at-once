@@ -346,6 +346,13 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
     <motion.li layoutId={thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       <span>{thought.point}</span>
+      {thought.heard && thought.fixed && (
+        // Fixed without asking: quiet until you look, and one tap puts the words back.
+        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
+          <span>fixed</span>
+          <span>heard “{thought.heard}” · undo</span>
+        </button>
+      )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           Did you mean “{thought.guess}”?

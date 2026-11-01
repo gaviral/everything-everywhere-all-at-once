@@ -151,6 +151,8 @@ impl Core {
             placed: false,
             unclear: String::new(),
             guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
             complete: true,
             at_ms: now_ms(),
             place_ms: None,

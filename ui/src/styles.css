@@ -279,6 +279,27 @@ header {
   color: var(--amber);
 }
 
+.fixed {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fixed span + span,
+.fixed:is(:hover, :focus-visible) span:first-child {
+  display: none;
+}
+
+.fixed:is(:hover, :focus-visible) span + span {
+  display: inline;
+}
+
 .speed {
   margin-left: auto;
   color: var(--muted);
