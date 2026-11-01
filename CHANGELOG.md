@@ -5,7 +5,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 ## 2026-10-31: first version
 
 ### The map
-- Speak or type; each finished thought lands on a thread of a live map, usually 2 to 4 s later (hover a point for its time).
+- Speak or type; each finished thought lands on a thread of a live map, usually 2 to 4 s later in our tests (hover a point for its time).
 - A tangent, or a part of a topic with its own detail, can become a branch of its thread.
 - At pauses, the refiner renames threads and merges duplicates (the app says so), adds at most one suggestion per thread, and proposes actions and up to three tags per thread.
 - Approved actions go to Apple Reminders (a list named E2A2O) or Calendar (dated events, all-day, on a calendar named E2A2O), with Apple's time shown; the list and the calendar are made if missing.
@@ -21,7 +21,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - Select words on the map, then Explain: one plain sentence on what they mean in that thread.
 
 ### Pictures and the Palace
-- Muse Image draws one picture per thread once it has settled for 12 s, during pauses, up to 3 at a time and 3 tries each; no cultural stereotypes.
+- Muse Image draws one picture per thread once it has settled for 12 s, during pauses, up to 3 at a time and 3 tries each; its prompt asks it to avoid cultural stereotypes.
 - The map shows 128 px copies; full pictures stay on disk.
 - Palace view: threads as picture tiles grouped into rooms; arrow keys and Enter.
 

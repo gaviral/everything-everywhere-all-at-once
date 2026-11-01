@@ -68,7 +68,7 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 
 **Did you mean, and confident auto-fix.** With each placement the model names words that look misheard, its guess, and whether the context leaves no doubt (say, the right name is already on the map). If it's sure, and those words are really in what was said, the core swaps them and marks the point "✦ fixed": hover shows what was heard, and one click puts it back. Anything less is asked: "Did you mean "Muse Spark"? Yes / No".
 
-**The refiner.** At a pause (4 s quiet) after two new thoughts or a new thread, or when you come back to the window, at most every 10 s (longer after failed passes), Muse Spark 1.3 reads the map: quiet threads as one line, recent ones with their last 8 thoughts, and each thread's tags. It renames threads and merges duplicates (the app says so), adds at most one suggestion per thread, proposes actions (a reminder, or an event when a date is stated) and suggests up to three tags per thread. If you start talking while it works, it drops the pass and redoes it at the next pause. Approving an action runs AppleScript on the host laptop: reminders go to their own "E2A2O" list, dated events become all-day events in their own "E2A2O" calendar, and the app shows how long Apple took.
+**The refiner.** At a pause (4 s quiet) after two new thoughts or a new thread, or when you come back to the window, with at least 10 s between passes (longer after failed ones), Muse Spark 1.3 reads the map: quiet threads as one line, recent ones with their last 8 thoughts, and each thread's tags. It renames threads and merges duplicates (the app says so), adds at most one suggestion per thread, proposes actions (a reminder, or an event when a date is stated) and suggests up to three tags per thread. If you start talking while it works, it drops the pass and redoes it at the next pause. Approving an action runs AppleScript on the host laptop: reminders go to their own "E2A2O" list, dated events become all-day events in their own "E2A2O" calendar, and the app shows how long Apple took.
 
 **Pictures and the Palace.** During pauses, once a thread has settled for 12 s, Muse Image draws one picture for it (up to three at a time): one concrete, slightly absurd object in a fixed clay style, on the thread's own background color, with image search, web search and shell off. Up to three tries per thread. The core keeps the full WebP and serves a 128 px copy that keeps Muse Image's note that AI made it. The Palace shows threads as picture tiles grouped into rooms (a thread and its branches); arrow keys move, Enter opens the thread on the map.
 
@@ -92,7 +92,7 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 | `muse-spark-1.2`, then `muse-spark-1.3` (`IMPORT_EXTRACT_MODEL`, `IMPORT_MERGE_MODEL`) | same | Importing chats: pulling out ideas, then grouping them |
 | `muse-image-1.0` | `https://api.meta.ai/v1/images/generations` | Thread pictures |
 
-Requests time out (20 s for placing and Explain, 40 s to 4 minutes for the rest); the speech stream has no read timeout yet. Settings go in `.env`; see `.env.example`.
+Every model request has a time limit: 20 s for placing and Explain, 4 s before Take me there falls back to plain search, and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet. Settings go in `.env`; see `.env.example`.
 
 ## Privacy and data
 
