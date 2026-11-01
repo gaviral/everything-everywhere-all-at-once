@@ -44,6 +44,10 @@ const CONCURRENT: usize = 3;
 const POLL: Duration = Duration::from_secs(1);
 // Ten seconds between failed attempts at one picture, without stalling the others.
 const RETRY_MS: u64 = 10_000;
+/// How long Muse Image gets, its whole answer included. The 7 normal draws in the 2026-11-01 log took 11–27 s (the
+/// slowest with three drawing at once), so a request still out at twice that, 55 s, is hung: it fails then and the
+/// picture is drawn again (`RETRY_MS`, `TRIES`), instead of holding one of the three slots for two minutes.
+const PATIENCE: Duration = Duration::from_secs(55);
 
 #[derive(Default)]
 struct Attempt {
@@ -99,7 +103,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
             drawing.push(async move {
                 let started = crate::now_ms();
                 let result = draw(&core, &dir, &thread, &points).await;
-                tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
+                if result.is_ok() {
+                    tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
+                }
                 (thread.id, result)
             });
         }
@@ -163,8 +169,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
         // A picture needs no searching or code, and the person's thoughts stay out of web searches.
         "tool_enablement": {"enable_image_search": false, "enable_web_search": false, "enable_shell": false},
     });
-    // Drawn in the background, so it can wait: two minutes is far past any real picture.
-    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
+    let value = core.call_model(URL, &body, PATIENCE).await?;
     let encoded = value["data"][0]["b64_json"].as_str().context("no image in the answer")?;
     let bytes = decode(encoded)?;
     // Muse Image returns WebP ("RIFF" header); fall back to PNG's extension otherwise.

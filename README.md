@@ -172,7 +172,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 
 Chat models use `https://api.meta.ai/v1/chat/completions`; speech uses `wss://api.meta.ai/v1/asr/realtime`; pictures use `https://api.meta.ai/v1/images/generations`. Settings go in `.env`; see `.env.example`.
 
-Every model request has a time limit: 20 s for placing and Explain, 4 s for Take me there's model check (then your words are kept as a thought), and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet.
+Every model request has a time limit: 20 s for placing (more for a turn over 1,000 characters) and Explain, 4 s for Take me there's model check (then your words are kept as a thought), and 30 s to 4 minutes for the rest; the speech stream has no read timeout yet.
 
 ## Privacy and data
 

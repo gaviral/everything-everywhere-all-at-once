@@ -20,6 +20,7 @@ import { leftBy, RoomControl, useMe } from "./room";
 import { useFindJump } from "./find";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
+const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
 
 export default function App() {
   const me = useMe();
@@ -191,6 +192,17 @@ export default function App() {
     const observer = new ResizeObserver(update);
     observer.observe(dock);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
+  }, []);
+  // The map's tools stick right under the header, whatever height it wraps to.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty("--header-height", `${header.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--header-height"); };
   }, []);
 
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
@@ -509,7 +521,7 @@ export default function App() {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
-      <header>
+      <header ref={headerRef}>
         <div className="brand">
           E2A2O <small>threads</small>
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
@@ -534,6 +546,7 @@ export default function App() {
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"} />
           <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"}</span>
+          {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
       </header>
@@ -632,7 +645,7 @@ export default function App() {
           </AnimatePresence>
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className="live">{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
+          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
@@ -894,4 +907,20 @@ function PendingThought({ thought, noKey, refused, reducedMotion }: { thought: T
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className="pending-label">{refused ? "Waiting for a working key" : noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
   </motion.span>;
+}
+
+// A recording's clock: it starts with the first word heard or typed and never stops, so a cut would show as a jump.
+function TakeClock({ running }: { running: boolean }) {
+  const [start, setStart] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (running && start == null) setStart(Date.now());
+  }, [running, start]);
+  useEffect(() => {
+    if (start == null) return;
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [start]);
+  const seconds = start == null ? 0 : Math.max(0, Math.floor((now - start) / 1000));
+  return <span className="take-clock" aria-hidden="true">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>;
 }
