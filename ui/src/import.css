@@ -20,14 +20,16 @@
 }
 
 .import-dialog {
-  width: min(480px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--card);
   color: var(--ink);
   box-shadow: var(--shadow), 0 18px 50px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .import-dialog::backdrop {
@@ -39,14 +41,16 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 22px 22px 20px;
+  gap: 16px;
+  padding: 28px 28px 24px;
 }
 
 .import-body h2 {
   margin: 0;
   padding-right: 32px;
-  font-size: 18px;
+  font-size: 23px;
+  line-height: 1.2;
+  letter-spacing: -.025em;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
@@ -55,8 +59,8 @@
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -85,10 +89,11 @@
 .import-facts {
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.55;
 }
 
 .import-help {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .import-line {
@@ -99,6 +104,11 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+.import-eyebrow { color: var(--ai); font-size: 13px; font-weight: 650; }
+.import-eyebrow span, .import-privacy h3 span { color: var(--ai); margin-right: 5px; }
+.import-privacy { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.import-privacy h3 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
 
 .import-drop {
   display: flex;
@@ -130,6 +140,7 @@
 }
 
 .import-actions button {
+  min-height: 40px;
   padding: 8px 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -155,10 +166,16 @@
 .import-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   margin: 0;
   padding-left: 18px;
   font-size: 14px;
+  line-height: 1.5;
+}
+
+.import-dialog :focus-visible, .import-open:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .import-warn {
@@ -215,6 +232,10 @@
     align-items: center;
   }
   .import-body {
-    padding: 18px 16px 16px;
+    padding: 24px 20px max(20px, env(safe-area-inset-bottom));
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-bar > span, .import-drop { transition: none; }
 }

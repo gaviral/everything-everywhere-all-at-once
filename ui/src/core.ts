@@ -37,6 +37,13 @@ export interface Thought {
   place_ms: number | null;
 }
 
+/** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
+ * has a capital inside ("iPhone", "eBay") is a name, and stays as it is. */
+export function capitalized(point: string): string {
+  return point.replace(/^([\s"'\p{Ps}\p{Pi}]*)(\p{Ll})(\S*)/u, (word: string, lead: string, first: string, rest: string) =>
+    /\p{Lu}/u.test(rest) ? word : lead + first.toUpperCase() + rest);
+}
+
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
@@ -105,6 +112,8 @@ type Change =
       place_ms: number;
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
+  | { type: "thought_skipped"; thought_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
@@ -215,6 +224,16 @@ function apply(world: World, raw: Change): World {
       return world.thoughts.some((t) => t.id === c.thought.id)
         ? world
         : { ...world, thoughts: [...world.thoughts, c.thought] };
+    case "thought_split": {
+      // Mirrors the core: the thought keeps the words before, and the rest follows it, to be placed next.
+      const i = world.thoughts.findIndex((t) => t.id === c.thought_id);
+      if (i < 0) return world;
+      const thoughts = world.thoughts.map((t) => (t.id === c.thought_id ? { ...t, text: c.text } : t));
+      if (!thoughts.some((t) => t.id === c.rest.id)) thoughts.splice(i + 1, 0, c.rest);
+      return { ...world, thoughts };
+    }
+    case "thought_skipped":
+      return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
@@ -301,6 +320,8 @@ export function useCore() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
+  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
+  const [noKey, setNoKey] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -334,6 +355,7 @@ export function useCore() {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
+            setNoKey(false);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -361,6 +383,7 @@ export function useCore() {
             break;
           case "error":
           case "notice":
+            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
             setNotice(msg.message);
             break;
           case "found":
@@ -396,11 +419,15 @@ export function useCore() {
     socket.current.send(data);
     return true;
   }, []);
-  const sendOrWarn = (data: string) => {
+  const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
     return false;
-  };
+  }, [send]);
+  const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
+  const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
+  const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
@@ -423,6 +450,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    noKey,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
@@ -431,17 +459,14 @@ export function useCore() {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); return false; }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem: (id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })),
-    approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
-    correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
-    tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
-    visible: () => send(JSON.stringify({ type: "visible" })),
+    setItem, approve, correct, tag,
+    visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),

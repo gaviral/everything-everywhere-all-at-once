@@ -14,7 +14,7 @@ image-webp = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 # Room certificates and a TLS adapter for axum's existing Listener API.
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }

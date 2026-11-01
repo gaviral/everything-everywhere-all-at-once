@@ -19,9 +19,9 @@ type Step = { slot: string; title: string; text: string };
 export function Tour({ populated }: { populated: boolean }) {
   // The initial snapshot determines the path, even if the map changes during the tour.
   const [steps] = useState<Step[]>(() => {
-    const composer = { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter." };
-    const map = { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show on a thread to explore its thoughts and branches." : "As thoughts are placed, they find a thread here. Tangents can branch off." };
-    const tools = { slot: "tour-tools", title: "Try these", text: "Apps above the map watch and react. Use Palace in the map toolbar for another view, or Recap in the header for a summary." };
+    const composer = { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" };
+    const map = { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." };
+    const tools = { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary." };
     return populated ? [map, composer, tools] : [composer, map, tools];
   });
   const [step, setStep] = useState(() => hasToured() ? -1 : 0);

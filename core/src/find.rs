@@ -139,6 +139,7 @@ fn points(world: &World) -> HashMap<&str, Vec<&Thought>> {
 fn rank(world: &World, query: &str) -> Vec<Ranked> {
     let query_words = words(query);
     if query_words.is_empty() { return Vec::new(); }
+    let lower_query = query.to_lowercase();
     let points = points(world);
     let mut ranked = Vec::new();
     for thread in &world.threads {
@@ -158,7 +159,7 @@ fn rank(world: &World, query: &str) -> Vec<Ranked> {
                 point: query_words.iter().filter(|w| has(&point_words, w)).count(),
                 title: query_words.iter().filter(|w| has(&title, w)).count(),
                 tags: query_words.iter().filter(|w| has(&tags, w)).count(),
-                phrase: point.to_lowercase().contains(&query.to_lowercase()),
+                phrase: point.to_lowercase().contains(&lower_query),
             };
             ranked.push(Ranked {
                 found: Found { thread_id: thread.id.clone(), thought_id: thought.map(|p| p.id.clone()), point: point.into() },
@@ -171,16 +172,23 @@ fn rank(world: &World, query: &str) -> Vec<Ranked> {
     ranked
 }
 
-fn deterministic(world: &World, query: &str) -> Option<Found> {
-    let best = rank(world, query).into_iter().next()?;
+fn best(ranked: &[Ranked], query: &str) -> Option<Found> {
+    let best = ranked.first()?;
     // Partial overlap is a clue for the model, never enough to move someone on its own.
-    (best.rank.words == words(query).len()).then_some(best.found)
+    (best.rank.words == words(query).len()).then(|| best.found.clone())
+}
+
+#[cfg(test)]
+fn deterministic(world: &World, query: &str) -> Option<Found> {
+    best(&rank(world, query), query)
 }
 
 pub fn request(core: Arc<Core>, speaker: String, query: String) {
     let request = core.find.cancel(&speaker);
     let world = core.snapshot();
-    if let Some(found) = deterministic(&world, &query) {
+    let ranked = rank(&world, &query);
+    if let Some(found) = best(&ranked, &query) {
+        drop(world);
         return show(&core, &speaker, found);
     }
     if core.key.is_none() || world.threads.is_empty() || words(&query).is_empty() {
@@ -189,7 +197,7 @@ pub fn request(core: Arc<Core>, speaker: String, query: String) {
     core.send_to(&speaker, ServerMsg::Notice { message: "Looking through your threads…".into() });
     tokio::spawn(async move {
         // Includes reading and parsing the response; no retries or second model call.
-        let answer = tokio::time::timeout(Duration::from_secs(4), model_match(&core, &world, &query)).await;
+        let answer = tokio::time::timeout(Duration::from_secs(4), model_match(&core, &world, &query, &ranked)).await;
         if !core.find.current(&speaker, request) { return; }
         match answer {
             Ok(Ok(Some(found))) => show(&core, &speaker, found),
@@ -220,6 +228,7 @@ fn show(core: &Core, speaker: &str, found: Found) {
         None => return missing(core, speaker),
     };
     let message = if point.is_empty() { format!("Here: {}", thread.title) } else { format!("Here: {} — {point}", thread.title) };
+    drop(world);
     core.focus(speaker, &id);
     core.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id: found.thought_id, message });
 }
@@ -237,8 +246,7 @@ struct SourcePoint {
     point: String,
 }
 
-fn source(world: &World, query: &str) -> Vec<SourceThread> {
-    let ranked = rank(world, query);
+fn source(world: &World, ranked: &[Ranked]) -> Vec<SourceThread> {
     let points = points(world);
     let mut seen = HashSet::new();
     ranked.iter().filter(|r| seen.insert(r.found.thread_id.as_str())).take(48).filter_map(|r| {
@@ -276,10 +284,20 @@ fn checked(world: &World, source: &[SourceThread], choice: Choice) -> Option<Fou
     Some(Found { thread_id: choice.thread_id, thought_id: (!choice.thought_id.is_empty()).then_some(choice.thought_id), point: actual })
 }
 
-async fn model_match(core: &Core, world: &World, query: &str) -> anyhow::Result<Option<Found>> {
+async fn model_match(core: &Core, world: &World, query: &str, ranked: &[Ranked]) -> anyhow::Result<Option<Found>> {
     let key = core.key.as_deref().context("MODEL_API_KEY is not set")?;
-    let source = source(world, query);
-    let body = json!({
+    let source = source(world, ranked);
+    let body = model_body(&source, query)?;
+    let response = core.http.post("https://api.meta.ai/v1/chat/completions").bearer_auth(key).json(&body).send().await?;
+    if !response.status().is_success() { bail!("model returned {}", response.status()); }
+    let value: serde_json::Value = response.json().await?;
+    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
+    let choice = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
+    Ok(checked(world, &source, choice))
+}
+
+fn model_body(source: &[SourceThread], query: &str) -> anyhow::Result<serde_json::Value> {
+    Ok(json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort": "low",
         "max_tokens": 180,
@@ -293,13 +311,18 @@ async fn model_match(core: &Core, world: &World, query: &str) -> anyhow::Result<
             "properties": {"thread_id": {"type": "string"}, "thought_id": {"type": "string"}, "evidence": {"type": "string"}},
             "required": ["thread_id", "thought_id", "evidence"]
         }}}
+    }))
+}
+
+#[cfg(test)]
+pub(crate) fn perf(world: &World) {
+    crate::perf::measure("find deterministic query", || deterministic(world, "garden tomatoes seedlings"), |_| 0);
+    crate::perf::measure_bytes("find fallback + prompt", || {
+        let query = "garden tomatoes seedlings";
+        let ranked = rank(world, query);
+        assert!(best(&ranked, query).is_none());
+        serde_json::to_vec(&model_body(&source(world, &ranked), query).unwrap()).unwrap()
     });
-    let response = core.http.post("https://api.meta.ai/v1/chat/completions").bearer_auth(key).json(&body).send().await?;
-    if !response.status().is_success() { bail!("model returned {}", response.status()); }
-    let value: serde_json::Value = response.json().await?;
-    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let choice = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    Ok(checked(world, &source, choice))
 }
 
 #[cfg(test)]
