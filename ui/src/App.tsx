@@ -316,7 +316,7 @@ export default function App() {
     if (!target) return;
     positionedInitial.current = true;
     if (!hasToured()) return;
-    requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
+    requestAnimationFrame(() => scrollCardToTop(target, true));
   }, [core.snapshotRevision, world.active, world.threads]);
 
   useEffect(() => {
@@ -407,7 +407,8 @@ export default function App() {
     setQuery("");
     setFocusMode(false);
     if (world.active) requestAnimationFrame(() => {
-      document.getElementById(`thread-${world.active}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+      const card = document.getElementById(`thread-${world.active}`);
+      if (card) scrollCardToTop(card, !!reducedMotion);
     });
   };
   useEffect(() => {
@@ -537,7 +538,7 @@ export default function App() {
     setDismissed((d) => [...d, dropKey(thread)]);
     requestAnimationFrame(() => {
       const target = document.getElementById(`thread-${thread.id}`);
-      target?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+      if (target) scrollCardToTop(target, !!reducedMotion);
       target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
     });
   };
@@ -731,6 +732,16 @@ function settledRect(element: HTMLElement) {
   let y = 0;
   for (let at: HTMLElement | null = element; at; at = at.offsetParent as HTMLElement | null) y += at.offsetTop;
   return { top: y - window.scrollY, bottom: y - window.scrollY + element.offsetHeight };
+}
+
+/** Brings a card to the top of the map, its scroll margin under the header and tools, aiming at where it will
+ *  settle: it can still be sliding into place when this runs, and scrollIntoView aimed at where it was. A card
+ *  opened from a Palace tile mounts 8 px low and stopped 4 px under the tools, not 12 (on first load too, with
+ *  motion on); with motion on, Back to active from Focus stopped it 294 px down, still sliding to its place as the
+ *  other cards came back. */
+function scrollCardToTop(card: HTMLElement, instant: boolean) {
+  const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
+  window.scrollBy({ top: settledRect(card).top - margin, behavior: instant ? "instant" : "smooth" });
 }
 
 /** A thread's own part of its card, its title and points: the card also holds its branches, below them. */
