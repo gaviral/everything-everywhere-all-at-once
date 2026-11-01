@@ -70,6 +70,21 @@ export default function App() {
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [helpOpen]);
+  // The map keeps its place while you look at the Palace, as a tab does: Map (the button or "map") brings you back
+  // where you were. Opening a thread from the Palace, a search or "where was I?" goes to that thread instead.
+  const mapScroll = useRef<number | null>(null);
+  const restoreMap = useRef(false);
+  const showView = (next: "map" | "palace") => {
+    if (next === view) return;
+    if (next === "palace") mapScroll.current = window.scrollY;
+    else restoreMap.current = true;
+    setView(next);
+  };
+  useLayoutEffect(() => {
+    if (view !== "map" || !restoreMap.current) return;
+    restoreMap.current = false;
+    if (mapScroll.current !== null) window.scrollTo({ top: mapScroll.current, behavior: "instant" });
+  }, [view]);
   // A view said aloud works as its button: Map or Palace, Focus on (with a thread to focus on), or off ("show all");
   // and the "?" list, on an empty map too, where "What can I say?" is most likely.
   useEffect(() => {
@@ -77,7 +92,8 @@ export default function App() {
     const asked = core.viewAsk.view;
     if (asked === "help") { setHelpOpen(true); return; }
     if (!world.threads.length) return;
-    setView(asked === "palace" ? "palace" : "map");
+    if (asked === "palace" || asked === "map") showView(asked);
+    else setView("map");
     if (asked === "all" || (asked === "focus" && world.active)) {
       setFocusMode(asked === "focus");
       setQuery("");
@@ -271,6 +287,11 @@ export default function App() {
       stopMic();
       setStopMic(null);
       core.listen(false);
+      return;
+    }
+    // Without a key the core can't listen: say so, without asking the browser for the microphone first.
+    if (core.noKey) {
+      core.showNotice(core.keyNotice);
       return;
     }
     setStartingMic(true);
@@ -644,8 +665,8 @@ export default function App() {
       {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
-            <button aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
-            <button aria-pressed={view === "palace"} onClick={() => setView("palace")}>Palace</button>
+            <button aria-pressed={view === "map"} onClick={() => showView("map")}>Map</button>
+            <button aria-pressed={view === "palace"} onClick={() => showView("palace")}>Palace</button>
           </div>
           {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
@@ -737,7 +758,7 @@ export default function App() {
           </form>
         </div>
       </section>
-      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
