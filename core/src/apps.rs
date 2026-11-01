@@ -140,14 +140,26 @@ fn id(prefix: &str) -> String { format!("{prefix}-{}", uuid::Uuid::new_v4().simp
 
 pub fn seed(core: &Core, demo: bool) {
     let world = core.snapshot();
+    let mut changes = Vec::new();
+    // A Volume watcher seeded by an earlier build keeps that build's level (0.15 before the scale above): it moves to
+    // this build's, still on or off and playing what it did. An app changes only by being registered again.
+    let (level, seconds) = loud_voices();
+    if let Some(old) = world.apps.iter().find(|a| a.id == "app-volume") {
+        // Levels are kept to 3 decimals (`between`); one read back from the journal can be a last bit off.
+        if matches!(old.watcher, Watcher::Volume { level: was, seconds: held } if (was - level).abs() >= 0.0005 || held != seconds) {
+            changes.push(Change::AppRemoved { id: old.id.clone() });
+            changes.push(Change::AppRegistered { app: MiniApp { watcher: Watcher::Volume { level, seconds }, ..old.clone() } });
+        }
+    }
     // The marker survives deletion too, so a discarded seed stays gone after restart.
-    if world.apps_seeded { return; }
-    let mut changes: Vec<Change> = seeds(demo).into_iter()
-        .filter(|a| !world.apps.iter().any(|old| old.id == a.id))
-        .map(|app| Change::AppRegistered { app }).collect();
-    changes.push(Change::AppsSeeded);
+    if !world.apps_seeded {
+        changes.extend(seeds(demo).into_iter()
+            .filter(|a| !world.apps.iter().any(|old| old.id == a.id))
+            .map(|app| Change::AppRegistered { app }));
+        changes.push(Change::AppsSeeded);
+    }
     drop(world);
-    core.commit(changes);
+    if !changes.is_empty() { core.commit(changes); }
 }
 
 /// The Volume watcher's level and seconds: loud voices, between normal speech and a raised voice, for long enough to

@@ -58,6 +58,29 @@ fn seed_defaults_are_journaled_once_and_removal_survives_restart() {
 }
 
 #[test]
+fn an_earlier_builds_volume_watcher_moves_to_this_scale_and_keeps_its_choices() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    // As a build before the measured scale left it, switched off and set to the card alone.
+    let mut old = seeds(true).remove(1);
+    old.watcher = Watcher::Volume { level: 0.15, seconds: 3 };
+    fixture.core.commit(vec![Change::AppRemoved { id: old.id.clone() }, Change::AppRegistered { app: old },
+        Change::AppEnabled { id: "app-volume".into(), enabled: false }, Change::AppOutput { id: "app-volume".into(), sound: false }]);
+    seed(&fixture.core, true);
+    let (_, loaded) = Journal::open(&fixture.path).unwrap();
+    let app = loaded.apps.iter().find(|a| a.id == "app-volume").unwrap();
+    let (loud, held) = loud_voices();
+    assert!(matches!(app.watcher, Watcher::Volume { level, seconds } if (level - loud).abs() < 1e-9 && seconds == held), "{:?}", app.watcher);
+    assert!(!app.enabled && !app.purpose.contains("tune"), "still off, still the card alone");
+    assert_eq!(loaded.apps.len(), 3);
+    // After a restart, read back from the journal, it has nothing more to move.
+    let lines = std::fs::read_to_string(&fixture.path).unwrap().lines().count();
+    *fixture.core.world.lock().unwrap() = loaded.into();
+    seed(&fixture.core, true);
+    assert_eq!(std::fs::read_to_string(&fixture.path).unwrap().lines().count(), lines);
+}
+
+#[test]
 fn loud_voices_are_held_long_enough_that_normal_speech_cant_set_them_off() {
     let held = |level: f64, seconds: u64| {
         let answer = json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
