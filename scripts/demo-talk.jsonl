@@ -1,0 +1,16 @@
+{"at": 0.0, "text": "What should I build for this hackathon?"}
+{"at": 4.5, "text": "My notes are a mess. I've tried every app and they all give me a list. Lists don't work for me because my brain doesn't go in a line."}
+{"at": 12.0, "text": "What if the app just listened and figured out the structure? Like, I talk, and it sorts what I'm saying into topics."}
+{"at": 19.0, "text": "That's the idea. A thread map. Each topic is a thread, tangents branch off, and it tracks where I left off."}
+{"at": 26.0, "text": "Oh speaking of which I also need to email Professor Chen about the extension before Friday."}
+{"at": 32.0, "text": "And the laundry. I keep forgetting. The dryer has been sitting there since\u2014"}
+{"at": 38.0, "text": "Anyway for the hackathon, the placement needs to be fast. Like under three seconds. Otherwise it feels broken."}
+{"at": 45.0, "text": "I should use the Muse Spark model. It supports JSON schema so I can get structured placement without parsing."}
+{"at": 52.0, "text": "Wait, what was I saying? About the laundry?"}
+{"at": 58.0, "text": "Right, the dryer. I need to fold that tonight before it wrinkles. Done."}
+{"at": 64.0, "text": "For the refiner, I want it to tidy things up in the background. Better titles, merge duplicate threads, pull out action items."}
+{"at": 72.0, "text": "And it should work with Apple Reminders. If I say I need to do something by a date, one tap sends it to the real app."}
+{"at": 79.0, "text": "I need to submit the project by November third. That's the deadline."}
+{"at": 85.0, "text": "Maybe memory palace pictures too. Each thread gets a little illustration so I can find it by sight instead of reading every title."}
+{"at": 92.0, "text": "Okay, so the stack is Rust for the backend, React for the UI, WebSocket for real-time, and four Muse models: Transcribe, Spark for placement, Spark for refining, and Image for the pictures."}
+{"at": 102.0, "text": "The whole point is that I can think out loud and the app does the organizing. I don't have to stop and file things. I just talk."}
