@@ -19,10 +19,11 @@ For each NEW THOUGHT decide: \"continue\" if it says more about the active threa
 \"return\" if it says more about an earlier thread's, \
 or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
 (set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
-\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip an answer, even a bare \"yes\" or \"no\". \
-split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string. \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
+split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
+never between two sentences about one thing, such as a deadline and what is due by then. \
 thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
-point: the thought in at most 12 words, in the speaker's own voice. \
+point: the thought in at most 12 words, in the speaker's own voice; a question they ask stays a question, one they quote keeps who asked. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
 unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
