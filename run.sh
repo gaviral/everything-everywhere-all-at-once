@@ -9,6 +9,10 @@ if [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>
   MODEL_API_KEY="$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${e2a2o}" -w 2>/dev/null || true)"
   export MODEL_API_KEY
 fi
+# `./run.sh sample` opens a ready-made map to explore without a key or a mic; it starts fresh from samples/ each time.
+if [ "$1" = "sample" ]; then
+  mkdir -p data/sample && cp samples/student-week.jsonl data/sample/journal.jsonl
+fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
