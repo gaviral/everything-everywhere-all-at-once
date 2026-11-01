@@ -668,7 +668,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         match ended {
                             Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
                             Err(e) => {
-                                core.send_to(&speaker, ServerMsg::Error { message: format!("{e}") });
+                                core.send_to(&speaker, ServerMsg::Error { message: format!("Speech service error: {e}") });
                                 core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
                             }
                         }

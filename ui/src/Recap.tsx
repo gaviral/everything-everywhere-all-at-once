@@ -110,7 +110,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
         {recap && <span className="recap-meta">{recap.thought_count} {recap.thought_count === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "thread" : "threads"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
       </div>
       <div className="recap-feedback" role="status" aria-live="polite">
-        {view.loading ? <p className="recap-loading">✦ Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
+        {view.loading ? <p className="recap-loading">Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>
