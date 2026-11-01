@@ -184,7 +184,7 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
   - **Take me there:** only if local word search finds no thread containing every query word, the query (up to 400 characters) and up to 48 thread titles (100 characters each) with their latest 3 points (320 characters each).
   - **Explain:** the selected phrase (up to 160 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title, up to 40 other thread titles, and up to 8 thoughts from other threads that name the selected words.
   - **Recap:** up to 24 threads, with up to 16 thoughts per thread (each includes the speaker and up to 700 characters of text), plus up to 64 actions.
-  - **Pictures:** the thread's title, its first point, and up to 18 other thread titles (so two threads don't get the same object).
+  - **Pictures:** the thread's title, its first point, and up to 18 other thread titles (so two threads don't get the same object); nothing with `PICTURES=off` in `.env`.
   - **App creation:** the request, local time and app catalog. If the Search-first app is enabled, it may first receive the request and catalog to look for an existing app.
   - **When an app runs:** its prompt, newest thought, up to 8 earlier points, topic and time. In a room with multiple speakers, those thoughts include speaker names.
   - **Chat import:** each selected message (up to 2,000 characters) with its date and conversation title, plus up to 240 characters of the next AI reply. A separate grouping call receives today's date, up to 80 existing thread ids and titles, topic counts and date ranges, up to 4 latest ideas per topic, and up to 150 dated open questions and 150 dated tasks. It does not receive the original messages.

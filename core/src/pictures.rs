@@ -64,6 +64,12 @@ struct Attempt {
 }
 
 pub async fn run(core: Arc<Core>, dir: PathBuf) {
+    // `PICTURES=off` draws none, for a test that isn't about pictures or anyone who doesn't want them (pictures were
+    // a third of the API spend in a night of tests); threads keep their letter tiles.
+    if std::env::var("PICTURES").is_ok_and(|value| value.eq_ignore_ascii_case("off")) {
+        tracing::info!("pictures are off (PICTURES=off)");
+        return;
+    }
     shrink_old(&core, &dir).await;
     let mut attempts: HashMap<String, Attempt> = HashMap::new();
     let mut drawing = FuturesUnordered::new();
