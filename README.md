@@ -91,7 +91,7 @@ A misheard word is fixed when the context is clear; hover the “fixed” tag to
 
 Leave a thread mid-sentence and it is marked “left off”; at the next pause a card offers to take you back.
 
-![The Palace: one picture tile per thread, grouped into a room](docs/screens/palace.webp)
+![The Palace: a room of six threads under its heading, then three threads on their own, each picture with its title and last thought](docs/screens/palace.webp)
 
 The Palace: one picture per thread, drawn by Muse Image during pauses.
 
