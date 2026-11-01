@@ -22,8 +22,8 @@ import { useFindJump } from "./find";
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 export default function App() {
-  const core = useCore();
   const me = useMe();
+  const core = useCore(me);
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const world = useMemo(() => ({ ...core.world, active: core.world.active_by[me] ?? core.world.active }), [core.world, me]);
@@ -155,13 +155,15 @@ export default function App() {
   // Stop local audio when the service reports a stop or the connection drops, and tell the core,
   // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
+  const voiceErrorStartedAt = useRef(0);
   useEffect(() => {
-    if (stopMic && !core.listening && core.voiceStatusRevision > voiceStartedAt.current) {
+    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
       stopMic();
       setStopMic(null);
       core.listen(false);
+      core.showNotice("The mic stopped. Tap it to keep talking.");
     }
-  }, [core.listening, core.voiceStatusRevision, stopMic]);
+  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
 
   useEffect(() => {
     if (stopMic && core.notice.includes("MODEL_API_KEY")) {
@@ -185,6 +187,7 @@ export default function App() {
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = core.voiceStatusRevision;
+      voiceErrorStartedAt.current = core.voiceErrorRevision;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();
@@ -459,7 +462,7 @@ export default function App() {
           <div>“Where did I talk about [topic]?” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>Back and next can follow a thought after a pause; the thought is kept.</div>
         </div></details>
-        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"} />
@@ -558,12 +561,10 @@ export default function App() {
           </AnimatePresence>
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
-          {(core.partial || core.listening || startingMic) && <div className="live">{core.partial || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
+          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className="live">{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
-              <motion.span key={t.id} layoutId={reducedMotion ? undefined : t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={spring} className="pill">
-                <span className="pending-label">{core.noKey ? "Needs the AI key" : "Finding a thread"}</span> {t.text}
-              </motion.span>
+              <PendingThought key={t.id} thought={t} noKey={core.noKey} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -589,7 +590,7 @@ export default function App() {
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
-      <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -796,4 +797,21 @@ function MicIcon() {
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </svg>
   );
+}
+
+function PendingThought({ thought, noKey, reducedMotion }: { thought: Thought; noKey: boolean; reducedMotion: boolean }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (noKey) return;
+    const started = Date.now();
+    let interval: number | undefined;
+    const timeout = window.setTimeout(() => {
+      setElapsed(Math.floor((Date.now() - started) / 1000));
+      interval = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    }, 6000);
+    return () => { window.clearTimeout(timeout); window.clearInterval(interval); };
+  }, [noKey]);
+  return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
+    <span className="pending-label">{noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
+  </motion.span>;
 }

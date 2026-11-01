@@ -160,6 +160,7 @@ impl Core {
         }
         self.find.cancel(speaker);
         if let Some(period) = recap::command(text) {
+            let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
             return recap::request(self.clone(), speaker.into(), period);
         }
         if let Some(request) = apps::command(text) {

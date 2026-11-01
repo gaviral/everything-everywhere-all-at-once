@@ -66,6 +66,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - Speech errors release the audio channel so the next microphone tap can start a new session.
 - An unnamed room guest, or one who asks to join as “you”, joins as “Guest”.
 - Calendar events and reminders use the app's own E2A2O calendar and list; invalid dates are rejected, and an event without a real date becomes a reminder.
+- Explain also reads what other threads say about the selected name or term (up to 8 thoughts), so “Jordan” on a to-do list is explained from the hiring thread; acronyms are spelled out, and it is told never to give medical or health advice.
 - “Where was I?” goes by when things were said, so imported chats don't count as your latest words, and it acts at once unless your own words are still being placed.
 - “While you were away” stays up when your last turn is split in two or an import lands; the import panel no longer sticks on “Importing” after a restart.
 

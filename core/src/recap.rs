@@ -76,6 +76,17 @@ pub fn command(text: &str) -> Option<Period> {
     else { None }
 }
 
+/// A bare "recap" (no period named) asks for whatever there is to look back on: today, or, when
+/// nothing has landed since midnight, the last session (a new morning, or the dated sample maps).
+pub fn unqualified(text: &str) -> bool {
+    crate::is_command(text, &["recap", "give me a recap"], &[])
+}
+
+pub fn default_period(world: &World, now: u64) -> Period {
+    let placed = |since: u64| world.thoughts.iter().any(|t| t.placed && t.at_ms >= since && t.at_ms <= now);
+    if !placed(day_start(now)) && placed(0) { Period::Session } else { Period::Today }
+}
+
 /// The sheet's progress goes to whoever asked; the recap itself is saved to the shared map.
 pub fn request(core: Arc<Core>, speaker: String, period: Period) {
     tokio::spawn(async move {
@@ -387,6 +398,20 @@ mod tests {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
             thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
             complete: true, at_ms, place_ms: None }
+    }
+    #[test]
+    fn a_bare_recap_looks_back_at_the_last_session_when_nothing_landed_today() {
+        let now = 1_793_800_000_000;
+        let midnight = day_start(now);
+        let mut world = World::default();
+        assert_eq!(default_period(&world, now), Period::Today, "an empty map stays on today");
+        world.thoughts.push(thought(1, "T1", midnight - 3_600_000));
+        assert_eq!(default_period(&world, now), Period::Session, "only yesterday: the last session");
+        world.thoughts.push(thought(2, "T1", now + 86_400_000));
+        assert_eq!(default_period(&world, now), Period::Session, "a thought dated ahead of the clock doesn't count");
+        world.thoughts.push(thought(3, "T1", midnight + 60_000));
+        assert_eq!(default_period(&world, now), Period::Today);
+        assert!(unqualified("Recap.") && unqualified("give me a recap") && !unqualified("recap today") && !unqualified("recap this session"));
     }
     fn sample(now: u64) -> World {
         World { threads: vec![thread("T1"), thread("T2"), thread("quiet")], thoughts: vec![thought(1, "T1", now - 1000), thought(2, "T2", now)], ..World::default() }
