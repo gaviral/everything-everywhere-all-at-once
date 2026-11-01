@@ -56,6 +56,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - Time apps keep the local time you asked for on days the clocks change: “play a tune at 5 PM”, made early on Nov 1, started at 4 PM before (2 of 2 runs) and at 5 PM now (2 of 2), and an app repeating every day keeps its hour, even after a run that came late.
 - Filler such as “um, so” is set aside before placement; “yeah, okay” is set aside unless the last turn was a question.
 - A turn that moves to another topic is split at the change, with joining words removed; a short filler turn can be skipped, but turns over 8 words are placed.
+- A question stays a question on the map, so it doesn't read as a decision (14 test questions, 6 runs: 28 of 84 points kept the “?” before, 84 of 84 now), and a quoted question keeps who asked; a bare “yes” or “no” is always placed; two sentences about one thing (“November 4th, that's the deadline. I need the video done by then.”) are cut in two less often.
+- Spoken turns start with a capital letter, and speech recognition is told to expect “Llama” and “Muse Image”.
 - When your thoughts land during an absence of at least 30 seconds, “While you were away” lists those threads and their new proposals; each row opens its thread.
 - If a window falls too far behind, it receives the current map and its unfinished app build and import status.
 - With no AI key, the header says “No AI key”; you can browse the map, and typed thoughts wait with “Needs the AI key”.

@@ -29,7 +29,7 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         "partialMode": "CUMULATIVE",
         "emitAudioProgress": false,
         "languageBias": ["English"],
-        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer"]
+        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image"]
     });
     sink.send(Message::Text(handshake.to_string().into())).await?;
     let first = match stream.next().await {
@@ -85,7 +85,7 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {
-            let words = event["transcript"].as_str().unwrap_or_default().trim().to_string();
+            let words = sentence_case(event["transcript"].as_str().unwrap_or_default().trim());
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);
@@ -99,5 +99,30 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
             core.send_to(speaker, ServerMsg::Error { message: format!("Voice Transcribe: {message}") });
         }
         _ => {}
+    }
+}
+
+/// A finished turn reads as a sentence: the transcriber sometimes starts one in lowercase ("oh and the
+/// dentist…"). A first word with capitals of its own ("iPhone", "eBay") stays as said.
+fn sentence_case(text: &str) -> String {
+    let first = text.split_whitespace().next().unwrap_or_default();
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) if c.is_lowercase() && !first.chars().any(char::is_uppercase) => c.to_uppercase().chain(chars).collect(),
+        _ => text.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sentence_case;
+
+    #[test]
+    fn a_finished_turn_starts_with_a_capital() {
+        assert_eq!(sentence_case("oh and the dentist moved my cleaning"), "Oh and the dentist moved my cleaning");
+        assert_eq!(sentence_case("éclair or cake"), "Éclair or cake");
+        for same in ["Muse Spark places it", "iPhone battery is low", "eBay listing", "3 things to do", "", "\"quoted\" words"] {
+            assert_eq!(sentence_case(same), same);
+        }
     }
 }
