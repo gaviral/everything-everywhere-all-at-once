@@ -97,8 +97,9 @@ export default function App() {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
-        // A landing gets one chance to follow; never catch up later while someone is reading.
-        if (view === "map" && !query.trim() && !core.recap.view && thought.thread_id) {
+        // A landing gets one chance to follow; never catch up later while someone is reading. In a room only
+        // your own words move your view, and a scroll already under way isn't interrupted by the next landing.
+        if (thought.speaker === me && !following.current && view === "map" && !query.trim() && !core.recap.view && thought.thread_id) {
           const threadId = thought.thread_id;
           requestAnimationFrame(() => {
             if (Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
@@ -151,7 +152,7 @@ export default function App() {
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
-    if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
+    if (!core.notice || noticeFocused || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
   }, [core.notice, core.found, core.clearNotice, noticeFocused]);
