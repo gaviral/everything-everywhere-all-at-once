@@ -388,6 +388,7 @@ export default function App() {
   const [lastActivity, setLastActivity] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const [laterAt, setLaterAt] = useState<Record<string, number>>({});
   useEffect(() => setLastActivity(Date.now()), [core.partial, world.thoughts.length]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 400);
@@ -402,7 +403,8 @@ export default function App() {
   }, [away.items, world.threads, me]);
   // Only threads you left: in a room, the other person's are theirs to pick up.
   const dropped = world.threads
-    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
+    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)) &&
+      (laterAt[dropKey(t)] === undefined || now - laterAt[dropKey(t)] >= 5 * 60 * 1000))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   // Your last words there by when you said them, as the core's Thought::said_at: imported points land last in
@@ -561,7 +563,11 @@ export default function App() {
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => goBack(pullBack)}>Finish it</button>
-                  <button className="quiet" onClick={() => setDismissed((d) => [...d, dropKey(pullBack)])}>
+                  <button className="quiet" onClick={() => {
+                    const key = dropKey(pullBack);
+                    if (laterAt[key] !== undefined) setDismissed((d) => [...d, key]);
+                    else setLaterAt((previous) => ({ ...previous, [key]: Date.now() }));
+                  }}>
                     Later
                   </button>
                 </div>
