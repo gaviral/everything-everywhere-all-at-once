@@ -65,11 +65,13 @@ export function useRecap() {
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, noKey, onRequest, onClose, onFocus }: {
+export function Recap({ view, world, connected, noKey, listening, onRequest, onClose, onFocus }: {
   view: View | null;
   world: World;
   connected: boolean;
   noKey: boolean;
+  /** The mic is on, so a spoken command reaches the core. */
+  listening: boolean;
   onRequest: (period: RecapPeriod) => void;
   onClose: () => void;
   onFocus: (id: string) => void;
@@ -142,17 +144,18 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
       {recap?.limited && <p className="recap-limit">A long stretch: showing up to 24 recent threads, 16 recent points per thread, and 64 actions. Long points are shortened.</p>}
     </div>
     {recap && <div className="recap-content" aria-busy={view.loading}>
+      {/* The answer to "what did I decide?" comes first, and says so when there is none. */}
+      <div className="recap-columns">
+        <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{recap.decisions.length ? rows(recap.decisions) : <p className="recap-empty">None yet</p>}</section>
+        {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
+        {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
+      </div>
       <section className="recap-work" aria-labelledby="recap-work-title">
         <h2 id="recap-work-title">What you worked on <span>Newest first</span></h2>
         {recap.worked_on.length ? <ol>{recap.worked_on.map((item) => <li key={item.thread_id}>
           {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p>{item.text}</p>
         </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
       </section>
-      {(recap.decisions.length > 0 || plans.length > 0 || recap.questions.length > 0) && <div className="recap-columns">
-        {recap.decisions.length > 0 && <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{rows(recap.decisions)}</section>}
-        {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
-        {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
-      </div>}
       {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
         <h2 id="recap-unfinished-title">Room to return</h2>
         <ul>{recap.unfinished.map((item) => {
@@ -171,7 +174,8 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
       </section>}
     </div>}
     <footer className="recap-footer">
-      <span>{recap?.thought_count ? "Pick up any thread when you're ready." : "Your thoughts will be here."}</span>
+      {/* Saying "map" works only while the mic listens: the composer sits behind the sheet. */}
+      <span>{listening ? "Say “map” to close, or press Esc" : "Press Esc to close"}</span>
       <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
     </footer>
   </dialog>;
