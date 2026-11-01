@@ -74,6 +74,11 @@ pub struct Build {
     pub message: String,
 }
 
+impl Build {
+    /// Kept, discarded or failed: nothing left to watch or decide.
+    fn settled(&self) -> bool { matches!(self.stage.as_str(), "kept" | "discarded" | "failed") }
+}
+
 #[derive(Default)]
 pub struct Runtime {
     state: Mutex<RuntimeState>,
@@ -126,6 +131,10 @@ fn seeds(enabled: bool) -> Vec<MiniApp> {
 
 pub fn build(core: &Core) -> Option<Build> { core.apps.state.lock().unwrap().build.clone() }
 
+/// For a window that just connected: the build still composing or waiting for Keep or Discard. A settled
+/// one isn't news, and sending it would reopen the Apps panel on every page load.
+pub fn unsettled_build(core: &Core) -> Option<Build> { build(core).filter(|b| !b.settled()) }
+
 fn progress(core: &Core, build_id: &str, stage: &str, step: &str, draft: Option<MiniApp>, matched: Option<String>) {
     let next = {
         let mut state = core.apps.state.lock().unwrap();
@@ -149,7 +158,7 @@ pub fn compose(core: Arc<Core>, request: String) {
         steps: vec!["Checking existing apps".into()], draft: None, match_id: None, message: String::new() };
     {
         let mut state = core.apps.state.lock().unwrap();
-        if state.build.as_ref().is_some_and(|b| !matches!(b.stage.as_str(), "kept" | "discarded" | "failed")) {
+        if state.build.as_ref().is_some_and(|b| !b.settled()) {
             drop(state);
             return notice(&core, "Keep or discard the current app first.");
         }

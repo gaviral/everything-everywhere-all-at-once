@@ -135,6 +135,17 @@ async fn keep_and_discard_are_explicit_and_idempotent() {
     assert!(fixture.core.snapshot().apps[0].enabled);
 }
 
+#[test]
+fn a_window_that_connects_sees_a_build_only_while_it_is_composing_or_waiting() {
+    let fixture = Fixture::new();
+    for (stage, sent) in [("searching", true), ("composing", true), ("validating", true), ("ready", true), ("matched", true),
+        ("kept", false), ("discarded", false), ("failed", false)] {
+        fixture.core.apps.state.lock().unwrap().build = Some(Build { id: "b".into(), request: "quiet".into(), stage: stage.into(),
+            steps: Vec::new(), draft: None, match_id: None, message: String::new() });
+        assert_eq!(unsettled_build(&fixture.core).is_some(), sent, "{stage}");
+    }
+}
+
 #[tokio::test]
 async fn search_offers_an_existing_app_without_a_model_and_failures_are_gentle() {
     let fixture = Fixture::new();

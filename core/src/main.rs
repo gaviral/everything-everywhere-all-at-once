@@ -491,7 +491,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
     }
-    if let Some(build) = apps::build(&core) {
+    if let Some(build) = apps::unsettled_build(&core) {
         let message = ServerMsg::AppsBuild { build };
         if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
     }
