@@ -294,6 +294,7 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
     }
+    let source = core.clone();
     let forward = tokio::spawn(async move {
         loop {
             match updates.recv().await {
@@ -303,7 +304,13 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
                         break;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                // Fell too far behind to replay the missed changes: send the whole world again.
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let snapshot = ServerMsg::Snapshot { world: source.snapshot() };
+                    if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
+                        break;
+                    }
+                }
                 Err(_) => break,
             }
         }
@@ -314,7 +321,8 @@ async fn session(socket: WebSocket, core: Arc<Core>) {
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
                 Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_thought("you", text.trim()),
-                Ok(ClientMsg::Listen { on: true }) if audio.is_none() => {
+                // A listener whose voice service ended has a closed channel; start a fresh one.
+                Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     let (tx, rx) = mpsc::channel(256);
                     audio = Some(tx);
                     let core = core.clone();
