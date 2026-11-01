@@ -225,6 +225,12 @@ impl Core {
     /// one the turn opens with goes ahead of the words after it, one it ends with waits behind the words before
     /// it. A search keeps the words said after its question (see `find::request`).
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
+        self.add_turn(speaker, text, true);
+    }
+
+    /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
+    /// held, which were said before what stopped it (see `find::stop`).
+    fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
         self.touch();
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
@@ -251,6 +257,9 @@ impl Core {
         // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
         if first.is_none() {
             if let Some(ask) = find::command(text) {
+                if !search {
+                    return find::dropped(self, speaker, ask, text);
+                }
                 return find::request(self.clone(), speaker.into(), ask, text.into());
             }
         }
@@ -336,29 +345,38 @@ const ACKS: [&str; 15] =
 fn filler(text: &str, asked: bool) -> bool {
     let acks: &[&str] = if asked { &[] } else { &ACKS };
     let words = words(text);
-    skipped(&words, SOUNDS.iter().chain(acks)) == words.len()
+    skipped(&words, SOUNDS.iter().chain(acks), |_, _| true) == words.len()
 }
 
-/// How many of the first `words` are these phrases, one after another. Longest first, so "uh huh" isn't read
-/// as "uh" and then a stray "huh".
-fn skipped<'a>(words: &[impl AsRef<str>], phrases: impl Iterator<Item = &'a &'a str>) -> usize {
+/// How many of the first `words` are these phrases, one after another, each where `fits` lets it end (that many
+/// words in). Longest first, so "uh huh" isn't read as "uh" and then a stray "huh".
+fn skipped<'a>(words: &[impl AsRef<str>], phrases: impl Iterator<Item = &'a &'a str>, fits: impl Fn(&[&str], usize) -> bool) -> usize {
     let mut phrases: Vec<Vec<&str>> = phrases.map(|p| p.split(' ').collect()).collect();
     phrases.sort_by_key(|p| std::cmp::Reverse(p.len()));
     let mut at = 0;
-    while let Some(p) = phrases.iter().find(|p| words.len() - at >= p.len() && words[at..].iter().zip(p.iter()).all(|(w, p)| w.as_ref() == *p)) {
+    while let Some(p) = phrases.iter().find(|p| {
+        words.len() - at >= p.len() && words[at..].iter().zip(p.iter()).all(|(w, p)| w.as_ref() == *p) && fits(p, at + p.len())
+    }) {
         at += p.len();
     }
     at
 }
 
+/// The marks the transcriber writes at a pause.
+const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
+
 /// Words that ask the app for something ("Can you recap?"). They lead into a request only when it's the whole turn:
 /// partway through one they ask someone ("I loved Japan. Would you go back?").
 const ASKING: [&str; 4] = ["can you", "could you", "would you", "will you"];
 
+/// Filler that makes a sentence of the words right after it ("I see the palace", "I mean the map", "You know the
+/// palace?"), so it leads into a request only across a pause: "I see. Go to the palace.", "I mean, the map", "Like, help".
+const TALK: [&str; 4] = ["i see", "i mean", "you know", "like"];
+
 /// `text` after the words that lead into a request, so every request takes the same ones: whatever `filler` sets
-/// aside ("Okay, so, um", "Well, all right", "Cool"), "now", "hey", "please", and the words that ask (`ASKING`).
-/// Never at the end of an unpunctuated turn (`is_lost_place`), where the word before the request ends a sentence
-/// ("The demo went well where was I").
+/// aside ("Okay, so, um", "Well, all right", "Cool"; `TALK` only before a pause mark), "now", "hey", "please", and
+/// the words that ask (`ASKING`). Never at the end of an unpunctuated turn (`is_lost_place`), where the word before
+/// the request ends a sentence ("The demo went well where was I").
 pub fn lead_in(text: &str) -> &str {
     lead(text, true)
 }
@@ -380,7 +398,9 @@ fn lead(text: &str, asking: bool) -> &str {
     }
     let said: Vec<&str> = spans.iter().map(|(w, _)| w.as_str()).collect();
     let extra: &[&str] = if asking { &ASKING } else { &[] };
-    match skipped(&said, SOUNDS.iter().chain(&ACKS).chain(&["now", "hey", "please"]).chain(extra)) {
+    let paused = |end: usize| text[spans[end - 1].1..].trim_start().starts_with(PAUSE);
+    let leads = SOUNDS.iter().chain(&ACKS).chain(&["now", "hey", "please"]).chain(extra);
+    match skipped(&said, leads, |p, end| !TALK.contains(&p.join(" ").as_str()) || paused(end)) {
         0 => text,
         n => &text[spans[n - 1].1..],
     }
@@ -480,7 +500,6 @@ fn opening(text: &str) -> Option<(Command, &str)> {
 /// mark, or a word that turns the talk ("okay", "anyway"). So "fly there and go back" and "that song would
 /// take me back" stay thoughts.
 fn starts(text: &str) -> Vec<usize> {
-    const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
     const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
     let mut out = Vec::new();
     let mut in_word = false;
@@ -1420,6 +1439,8 @@ mod tests {
             ("Cool, palace.", View::Palace),
             ("Can you show me the palace?", View::Palace),
             ("Please focus.", View::Focus),
+            ("I see. Go to the palace.", View::Palace),
+            ("I mean, the map", View::Map),
         ] {
             assert_eq!(view(text), Some(asked), "{text}");
         }
@@ -1427,7 +1448,7 @@ mod tests {
             "Let's go to the palace of Versailles", "The palace was beautiful", "map out the week", "I can't focus today",
             "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
             "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
-            "What can I do?", "Please focus on the budget.",
+            "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1597,6 +1618,11 @@ mod tests {
             "Go back to the beginning of the song, it's the best part",
             "I loved Japan. Would you go back?",
             "The one about Oaxacan food.",
+            // With no pause, these make a sentence of what follows (`TALK`).
+            "I see the palace",
+            "I mean the map",
+            "You know the palace?",
+            "Like the map",
         ] {
             assert_eq!(did(world(), said).await, (vec![], vec![said.to_string()]), "{said}");
         }

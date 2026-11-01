@@ -68,19 +68,28 @@ impl Runtime {
 }
 
 /// Newer words or a move stop the speaker's search: the words it held go ahead of them, and `LOOKING` comes down.
+/// A search those words ask stops as it's asked ("…? Where did I talk about rent?"): it was asked before what
+/// stopped this one, so its answer would undo it.
 pub fn stop(core: &Arc<Core>, speaker: &str) {
     let (_, stopped) = core.find.next(speaker, String::new(), String::new());
     if stopped.looking {
         core.send_to(speaker, ServerMsg::Notice { message: String::new() });
     }
-    held(core, speaker, stopped.unanswered());
+    held(core, speaker, stopped.unanswered(), false);
+}
+
+/// A search asked in the words a stopped search held: it stops as it's asked (see `stop`), keeping what a stopped
+/// search keeps.
+pub fn dropped(core: &Arc<Core>, speaker: &str, ask: Ask, said: &str) {
+    let said = if ask.saying { said.to_string() } else { String::new() };
+    held(core, speaker, Search { rest: ask.rest, said, ..Search::default() }.unanswered(), false);
 }
 
 /// A search's words, once it's over: what was said after the question goes in as a turn of its own (a thought,
-/// or a request), and a saying it kept as a whole as a thought.
-fn held(core: &Arc<Core>, speaker: &str, (rest, said): (String, String)) {
+/// or a request; a search only when `search`, see `stop`), and a saying it kept as a whole as a thought.
+fn held(core: &Arc<Core>, speaker: &str, (rest, said): (String, String), search: bool) {
     if !rest.is_empty() {
-        core.add_thought(speaker, &rest);
+        core.add_turn(speaker, &rest, search);
     }
     if !said.is_empty() {
         core.keep(speaker, &said);
@@ -97,8 +106,8 @@ pub struct Ask {
     /// Words after the question's first sentence break ("Where did I talk about the lease? It's due Friday."): kept
     /// whatever the search finds.
     pub rest: String,
-    /// "Take me back to …" without a pointer may be a saying ("Take me back to Paris"): when nothing is found, the
-    /// turn is a thought. A question that can only mean the map isn't: asked again, it would be filed twice.
+    /// "Take me back to …" without a pointer or a tag may be a saying ("Take me back to Paris"): when nothing is
+    /// found, the turn is a thought. A question that can only mean the map isn't: asked again, it would be filed twice.
     pub saying: bool,
 }
 
@@ -128,9 +137,10 @@ fn clean(text: &str) -> String {
 }
 
 /// The first sentence and what follows it. A sentence ends at ".", "?", "!" or "…" before a space, but not at the
-/// dot of a title or an initial ("Dr. Patel", "St. Louis", "the U.S. visa").
+/// dot of a title or an initial ("Dr. Patel", "St. Louis", "the U.S. visa", "e.g."). A name or number with a dot
+/// in it does end one ("example.com.", "v2.1."), and so does a digit ("step 2.").
 fn first_sentence(text: &str) -> (&str, &str) {
-    const SHORT: [&str; 10] = ["dr", "mr", "mrs", "ms", "mt", "st", "jr", "sr", "prof", "vs"];
+    const SHORT: [&str; 11] = ["dr", "mr", "mrs", "ms", "mt", "st", "jr", "sr", "prof", "vs", "ph.d"];
     let mut word = 0;
     for (i, c) in text.char_indices() {
         if c.is_whitespace() {
@@ -141,8 +151,10 @@ fn first_sentence(text: &str) -> (&str, &str) {
         if !matches!(c, '.' | '?' | '!' | '…') || !text[end..].starts_with(char::is_whitespace) {
             continue;
         }
-        let before = text[word..i].trim_end_matches('.').to_lowercase();
-        if c == '.' && (before.chars().count() == 1 || before.contains('.') || SHORT.contains(&before.as_str())) {
+        let before = text[word..i].trim_start_matches(|c: char| !c.is_alphanumeric()).trim_end_matches('.').to_lowercase();
+        // Initials: one letter, or single letters between dots ("u.s", "e.g").
+        let initials = before.split('.').all(|part| part.chars().count() == 1 && part.chars().all(char::is_alphabetic));
+        if c == '.' && (initials || SHORT.contains(&before.as_str())) {
             continue;
         }
         return (&text[..end], text[end..].trim_start());
@@ -194,7 +206,8 @@ fn query(question: &str) -> Option<(String, bool)> {
     let pointed = the_one(query)
         .or_else(|| POINTERS.iter().find_map(|p| query.strip_prefix(&format!("{p} "))))
         .or_else(|| query.strip_suffix(" thread"));
-    let saying = ask == "take me back to" && pointed.is_none();
+    // A tag ("#paris") points at the map as a pointer does.
+    let saying = ask == "take me back to" && pointed.is_none() && !query.starts_with('#');
     let query = match pointed {
         Some(topic) => topic.trim(),
         None if matches!(ask, "" | "find" | "take me to" | "go back to" | "go to") && !query.starts_with('#') => return None,
@@ -343,7 +356,7 @@ pub fn request(core: Arc<Core>, speaker: String, ask: Ask, said: String) {
     let said = if ask.saying { said } else { String::new() };
     let (request, stopped) = core.find.next(&speaker, ask.rest, said);
     // `add_thought` stops any search before this one; one it didn't keeps its words ahead of this question.
-    held(&core, &speaker, stopped.unanswered());
+    held(&core, &speaker, stopped.unanswered(), false);
     let asked = crate::now_ms();
     // A thought said just before is still finding its thread, and landing makes that thread the speaker's:
     // it would take them away from the answer a moment after the jump. Like "where was I?", this waits its turn.
@@ -436,7 +449,7 @@ fn missed(core: &Arc<Core>, speaker: &str, request: u64, why: Miss, topic: &str)
         (Miss::NotFound, true) => format!("I couldn't find “{topic}”. Try a few words you used."),
     };
     core.send_to(speaker, ServerMsg::Notice { message });
-    held(core, speaker, search.unanswered());
+    held(core, speaker, search.unanswered(), true);
 }
 
 fn show(core: &Arc<Core>, speaker: &str, request: u64, found: Found, topic: &str) {
@@ -458,7 +471,7 @@ fn show(core: &Arc<Core>, speaker: &str, request: u64, found: Found, topic: &str
     core.focus(speaker, &id);
     core.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id: found.thought_id, message });
     // Said after the question, they go on where it landed.
-    held(core, speaker, (search.rest, String::new()));
+    held(core, speaker, (search.rest, String::new()), true);
 }
 
 #[derive(Serialize)]

@@ -49,7 +49,7 @@ fn accepts_whole_requests_with_filler_and_polite_words() {
         "Find where I talked about rent", "find where we said something about rent", "Take me to my thoughts on rent",
         // The words that lead into any request (main.rs `lead_in`).
         "Hey, where did I talk about rent?", "Well, all right, where did I talk about rent?", "Cool. Where did I talk about rent?",
-        "Let's see, where did I talk about rent?", "Will you take me to the thread about rent?",
+        "Let's see, where did I talk about rent?", "Will you take me to the thread about rent?", "I see. Where did I talk about rent?",
     ] {
         assert_eq!(asked(ask).as_deref(), Some(if ask.contains('#') { "#rent" } else if ask.contains("the rent") { "the rent" } else { "rent" }), "{ask}");
     }
@@ -69,15 +69,23 @@ fn the_question_is_the_first_sentence_and_the_words_after_it_are_kept() {
         // A title or an initial doesn't end the question.
         ("Where did I talk about Dr. Patel?", ask("dr patel", "Dr. Patel", "", false)),
         ("Where did I talk about the U.S. visa?", ask("the u s visa", "the U.S. visa", "", false)),
+        ("Where did I talk about my Ph.D. applications?", ask("my ph d applications", "my Ph.D. applications", "", false)),
+        // A name or a number with a dot in it does, and so does a digit.
+        ("Where did I talk about v2.1. It ships Friday.", ask("v2 1", "v2.1", "It ships Friday.", false)),
+        ("Where did I talk about step 2. It was hard.", ask("step 2", "step 2", "It was hard.", false)),
         // The topic as it was said, for "I couldn't find …".
         ("Where did I talk about Dana's party?", ask("danas party", "Dana's party", "", false)),
         // "Take me back to …" with nothing pointing at the map may be a saying.
         ("Take me back to Paris.", ask("paris", "Paris", "", true)),
         ("Take me back to Paris. It was lovely.", ask("paris", "Paris", "It was lovely.", true)),
         ("Take me back to the thread about Paris", ask("paris", "Paris", "", false)),
+        // A tag points at the map, as a pointer does.
+        ("Take me back to #paris", ask("#paris", "#paris", "", false)),
     ] {
         assert_eq!(command(text), expected, "{text}");
     }
+    // Initials in brackets don't end it either.
+    assert_eq!(first_sentence("Where did I talk about bills (e.g. rent)? It's due."), ("Where did I talk about bills (e.g. rent)?", "It's due."));
 }
 
 #[test]
@@ -302,6 +310,7 @@ fn a_question_that_finds_nothing_says_why_and_files_nothing() {
         (vec![thread("T1", "Rent", 1)], "Where did I talk about the spaceship?", "I couldn't find “the spaceship”. Searching by meaning needs the AI key."),
         (vec![thread("T1", "Rent", 1)], "Where did I talk about rent spaceships?", "I couldn't find “rent spaceships”. Searching by meaning needs the AI key."),
         (vec![thread("T1", "Rent", 1)], "Where did I talk about it?", "I couldn't find “it”. Try a few words you used."),
+        (vec![thread("T1", "Rent", 1)], "Take me back to #spaceship", "I couldn't find “#spaceship”. Searching by meaning needs the AI key."),
         (vec![], "Where did I talk about the spaceship?", "Nothing on the map yet: say a thought first"),
     ] {
         let fixture = Fixture::new(World { threads: map, active: Some("T1".into()), ..World::default() });
@@ -331,6 +340,12 @@ fn words_after_the_question_and_a_saying_are_kept() {
         (
             "Where did I talk about the spaceship? It flew over the house.",
             vec!["notice: I couldn't find “the spaceship”. Searching by meaning needs the AI key.", "thought: It flew over the house."],
+            "T2",
+        ),
+        // The dot of a web address ends the question too.
+        (
+            "Find the thread about example.com. The renewal is due Friday.",
+            vec!["notice: I couldn't find “example.com”. Searching by meaning needs the AI key.", "thought: The renewal is due Friday."],
             "T2",
         ),
         ("Take me back to Paris.", vec!["notice: I couldn't find “Paris”, so I kept it as a thought.", "thought: Take me back to Paris."], "T2"),
@@ -373,6 +388,40 @@ async fn newer_words_stop_a_search_and_take_down_its_notice() {
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "the stopped search never jumps");
     assert!(told(&mut updates).is_empty());
+}
+
+/// Two questions in one turn answer one after the other. A click while the first waits stops both: the second was
+/// asked before the click too, and its answer would undo it. The words after them are kept either way.
+#[tokio::test]
+async fn a_click_stops_a_search_and_any_search_its_words_ask() {
+    let said = "Where did I talk about the lease? Where did I talk about rent? It's due on the first.";
+    let world = || World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2), thread("T3", "Bills", 3)],
+        thoughts: vec![point("lease", "T1", "The lease ends in June", 1), point("rent", "T3", "Rent is due on the first", 2)],
+        active_by: HashMap::from([("you".into(), "T1".into())]),
+        ..World::default()
+    };
+    let fixture = Fixture::new(world());
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", said);
+    let both = ["found: Here: Home — The lease ends in June", "found: Here: Bills — Rent is due on the first", "thought: It's due on the first."];
+    assert_eq!(told(&mut updates), both);
+    assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T3"));
+    // The first waits for a thought still placing (a working key, so it can land), and Work is clicked meanwhile.
+    let mut busy = world();
+    busy.thoughts.push(Thought { placed: false, ..point("pending", "T1", "Paint the kitchen", crate::now_ms()) });
+    let mut fixture = Fixture::new(busy);
+    Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", said);
+    fixture.core.focus("you", "T2");
+    fixture.core.commit(vec![Change::ThoughtPlaced {
+        thought_id: "pending".into(), thread_id: "T1".into(), point: "Paint the kitchen".into(), unclear: String::new(),
+        guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+    }]);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T2"), "nothing asked before the click moves you after it");
+    assert_eq!(told(&mut updates), ["notice: Looking through your threads…", "notice: ", "thought: It's due on the first."]);
 }
 
 #[test]
