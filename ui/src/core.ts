@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
+import { volumeReporter } from "./apps-audio";
+import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -49,7 +52,8 @@ export interface Action {
   done_ms: number | null;
 }
 
-export interface World {
+export interface World extends AppsWorld {
+  recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
   active: string | null;
@@ -59,6 +63,8 @@ export interface World {
 }
 
 type Change =
+  | { type: "recap_saved"; recap: RecapData }
+  | AppChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
   | {
@@ -88,6 +94,8 @@ type Change =
   | { type: "thread_picture"; thread_id: string; path: string };
 
 type ServerMsg =
+  | RecapServerMsg
+  | AppsServerMsg
   | { type: "snapshot"; world: World }
   | { type: "change"; change: Change }
   | { type: "partial"; text: string }
@@ -96,7 +104,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string };
 
-const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -120,6 +128,7 @@ function swap(text: string, from: string, to: string): string {
 }
 
 function apply(world: World, raw: Change): World {
+  if (isAppChange(raw)) return applyAppChange(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -134,6 +143,8 @@ function apply(world: World, raw: Change): World {
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "recap_saved":
+      return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
     case "tag_suggested":
       return onThread(c.thread_id, (t) =>
         t.tags.some((x) => x.name === c.tag) ? t : { ...t, tags: [...t.tags, { name: c.tag, kept: false }] },
@@ -243,11 +254,21 @@ function apply(world: World, raw: Change): World {
 }
 
 export function useCore() {
+  const recap = useRecap();
+  const receiveRecap = recap.receive;
+  const recapDisconnected = recap.disconnected;
+  const apps = useApps();
+  const receiveApps = apps.receive;
+  const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
   const [partial, setPartial] = useState("");
   const [listening, setListening] = useState(false);
+  const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
@@ -256,6 +277,8 @@ export function useCore() {
     let closed = false;
     let retry = 500;
     let timer: number | undefined;
+    let currentWorld = EMPTY;
+    let changeId = 0;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -263,25 +286,43 @@ export function useCore() {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        resetApps();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        setQueuedCount(0);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        if (receiveRecap(msg)) return;
+        if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
-            setWorld({ ...EMPTY, ...msg.world });
+            currentWorld = { ...EMPTY, ...msg.world };
+            setWorld(currentWorld);
+            setSnapshotRevision((revision) => revision + 1);
             break;
-          case "change":
-            setWorld((w) => apply(w, msg.change));
+          case "change": {
+            const change = msg.change;
+            if (change.type === "thread_renamed") {
+              const old = currentWorld.threads.find((thread) => thread.id === resolve(currentWorld, change.thread_id));
+              if (old && old.title !== change.title) setMapChange({ id: ++changeId, text: `AI renamed “${old.title}” to “${change.title}”` });
+            } else if (change.type === "thread_merged") {
+              const from = currentWorld.threads.find((thread) => thread.id === change.from);
+              const into = currentWorld.threads.find((thread) => thread.id === change.into);
+              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+            }
+            currentWorld = apply(currentWorld, change);
+            setWorld(currentWorld);
             break;
+          }
           case "partial":
             setPartial(msg.text);
             break;
           case "status":
             setListening(msg.listening);
+            setVoiceStatusRevision((revision) => revision + 1);
             break;
           case "error":
           case "notice":
@@ -293,8 +334,10 @@ export function useCore() {
         }
       };
       ws.onclose = () => {
+        recapDisconnected();
         setConnected(false);
         setListening(false);
+        setVoiceStatusRevision((revision) => revision + 1);
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
@@ -304,32 +347,57 @@ export function useCore() {
       window.clearTimeout(timer);
       socket.current?.close();
     };
-  }, []);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
-    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(data);
+    if (socket.current?.readyState !== WebSocket.OPEN) return false;
+    socket.current.send(data);
+    return true;
   }, []);
+  const sendOrWarn = (data: string) => {
+    if (send(data)) return true;
+    setNotice("Not connected — try again when connected.");
+    return false;
+  };
+  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
+    recap,
+    requestRecap: (period: RecapPeriod) => {
+      const sent = send(JSON.stringify({ type: "recap", period }));
+      recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent);
+    },
+    apps,
+    composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
+    decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),
+    toggleApp: (id: string, enabled: boolean) => send(JSON.stringify({ type: "toggle_app", id, enabled })),
+    removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
+    appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    snapshotRevision,
+    mapChange,
     partial,
     listening,
+    voiceStatusRevision,
     connected,
     notice,
-    clearNotice: () => setNotice(""),
+    queuedCount,
+    clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
-      else if (outbox.current.length < 50) outbox.current.push(message);
+      else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
+      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      return true;
     },
-    sendAudio: (frame: ArrayBuffer) => send(frame),
-    listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
-    focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
-    setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
-    approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
-    correct: (thought_id: string, accept: boolean) => send(JSON.stringify({ type: "correct", thought_id, accept })),
-    tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
+    sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
+    listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
+    focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    setItem: (id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })),
+    approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
+    correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
+    tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
     visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,
     explain: (id: string, text: string, context: string) =>
