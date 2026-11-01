@@ -97,6 +97,8 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
         .http
         .post(URL)
         .bearer_auth(key)
+        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+        .timeout(std::time::Duration::from_secs(20))
         .json(&request(&world, &thought, &core.placer_model))
         .send()
         .await?;
