@@ -1,17 +1,16 @@
 //! Apple connector: after you approve an action, adds it to Reminders or Calendar with
 //! AppleScript, and times it, so the app can show how long Apple's side took.
 
-use crate::world::{Change, ItemStatus};
+use crate::world::{Action, Change, ItemStatus};
 use crate::{protocol::ServerMsg, Core};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+/// Held while an approval is claimed, so two at once can't both find the action new.
+static CLAIMING: Mutex<()> = Mutex::new(());
+
 pub async fn approve(core: Arc<Core>, action_id: String) {
-    let world = core.snapshot();
-    let Some(action) = world.actions.iter().find(|a| a.id == action_id).cloned() else { return };
-    if action.status == ItemStatus::Done {
-        return;
-    }
+    let Some(action) = claim(&core, &action_id) else { return };
     // An event without a usable date goes to Reminders instead of an invented day.
     let is_event = action.kind == "event" && date_lines(&action.when).is_some();
     let script = if is_event { event(&action.title, &action.when) } else { reminder(&action.title, &action.when) };
@@ -24,12 +23,33 @@ pub async fn approve(core: Arc<Core>, action_id: String) {
             core.commit(vec![Change::ItemStatus { id: action.id, status: ItemStatus::Done, done_ms: Some(ms) }]);
             core.send(ServerMsg::Notice { message: format!("Added to {app} in {:.1} s", ms as f64 / 1000.0) });
         }
-        Ok(o) => {
-            let reason = String::from_utf8_lossy(&o.stderr).trim().to_string();
-            core.send(ServerMsg::Error { message: format!("{app} said no: {reason}") });
+        failed => {
+            // Not added: offer it again.
+            core.commit(vec![Change::ItemStatus { id: action.id, status: ItemStatus::New, done_ms: None }]);
+            let message = match failed {
+                Ok(o) => format!("{app} said no: {}", String::from_utf8_lossy(&o.stderr).trim()),
+                Err(e) => format!("Couldn't run AppleScript: {e}"),
+            };
+            core.send(ServerMsg::Error { message });
         }
-        Err(e) => core.send(ServerMsg::Error { message: format!("Couldn't run AppleScript: {e}") }),
     }
+}
+
+/// Marks a new action as being added (kept) and returns it; none when it isn't new: added, being added,
+/// or dismissed. AppleScript takes 1–3 s, longer behind macOS's first permission prompt, so this is what
+/// stops a second click, or another window, from adding it twice.
+fn claim(core: &Core, action_id: &str) -> Option<Action> {
+    let _one_at_a_time = CLAIMING.lock().unwrap();
+    let action = core.snapshot().actions.into_iter().find(|a| a.id == action_id && a.status == ItemStatus::New)?;
+    core.commit(vec![Change::ItemStatus { id: action.id.clone(), status: ItemStatus::Kept, done_ms: None }]);
+    Some(action)
+}
+
+/// On start: an approval still being added when the core stopped (say, behind the permission prompt)
+/// never finished, so it's offered again rather than stuck without its buttons.
+pub fn recover(core: &Core) {
+    let unfinished = core.snapshot().actions.into_iter().filter(|a| a.status == ItemStatus::Kept);
+    core.commit(unfinished.map(|a| Change::ItemStatus { id: a.id, status: ItemStatus::New, done_ms: None }).collect());
 }
 
 /// AppleScript text literal with quotes and backslashes escaped.
@@ -73,7 +93,41 @@ fn event(title: &str, when: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{date_lines, event, reminder};
+    use super::{claim, date_lines, event, recover, reminder};
+    use crate::world::{Action, Change, ItemStatus, Journal};
+    use crate::Core;
+    use std::sync::Mutex;
+
+    #[test]
+    fn an_action_is_added_once_and_offered_again_if_adding_never_finished() {
+        let path = std::env::temp_dir().join(format!("e2a2o-apple-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let (updates, _) = tokio::sync::broadcast::channel(16);
+        let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
+        let core = Core {
+            recap: Default::default(), apps: Default::default(), world: Mutex::new(world), journal: Mutex::new(journal),
+            updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
+            last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
+        };
+        let status = |core: &Core| core.snapshot().actions[0].status;
+        core.commit(vec![Change::ActionProposed { action: Action { id: "a".into(), thread_id: "T1".into(), kind: "reminder".into(),
+            title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } }]);
+        // Two clicks at once (or two windows): one of them adds it.
+        let claimed = std::thread::scope(|s| {
+            [s.spawn(|| claim(&core, "a").is_some()), s.spawn(|| claim(&core, "a").is_some())].map(|click| click.join().unwrap())
+        });
+        assert_eq!(claimed.iter().filter(|c| **c).count(), 1);
+        assert_eq!(status(&core), ItemStatus::Kept, "being added: its buttons go");
+        assert!(claim(&core, "a").is_none(), "a later click while Apple's side runs");
+        // The core stopped before Apple's side answered: offered again on start.
+        recover(&core);
+        assert_eq!(status(&core), ItemStatus::New);
+        core.commit(vec![Change::ItemStatus { id: "a".into(), status: ItemStatus::Done, done_ms: Some(900) }]);
+        assert!(claim(&core, "a").is_none() && claim(&core, "missing").is_none());
+        recover(&core);
+        assert_eq!(status(&core), ItemStatus::Done, "an added one stays added");
+        std::fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn dates_are_all_day_and_checked() {

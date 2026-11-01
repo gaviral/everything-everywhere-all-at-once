@@ -626,6 +626,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
           </button>
         </span>
       )}
+      {action.status === "kept" && <span className="when ai-actions">Adding to {app}…</span>}
       {action.status === "done" && action.done_ms != null && (
         <span className="when ai-actions">
           in {app} · {(action.done_ms / 1000).toFixed(1)} s

@@ -267,6 +267,7 @@ async fn main() -> anyhow::Result<()> {
         wake: tokio::sync::Notify::new(),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
+    apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
