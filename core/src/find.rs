@@ -185,6 +185,30 @@ fn deterministic(world: &World, query: &str) -> Option<Found> {
 
 pub fn request(core: Arc<Core>, speaker: String, query: String) {
     let request = core.find.cancel(&speaker);
+    let asked = crate::now_ms();
+    // A thought said just before is still finding its thread, and landing makes that thread the speaker's:
+    // it would take them away from the answer a moment after the jump. Like "where was I?", this waits its turn.
+    if placing(&core.snapshot(), &speaker, asked) {
+        core.send_to(&speaker, ServerMsg::Notice { message: "Looking through your threads…".into() });
+        tokio::spawn(async move {
+            for _ in 0..40 {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                if !placing(&core.snapshot(), &speaker, asked) { break; }
+            }
+            if core.find.current(&speaker, request) { search(core, speaker, query, request); }
+        });
+        return;
+    }
+    search(core, speaker, query, request);
+}
+
+/// A thought the speaker said before `asked` that is still being placed. One still unplaced after a minute
+/// failed placement and waits for a retry, so it doesn't hold the jump up.
+fn placing(world: &World, speaker: &str, asked: u64) -> bool {
+    world.thoughts.iter().any(|t| !t.placed && t.speaker == speaker && t.at_ms <= asked && asked - t.at_ms < 60_000)
+}
+
+fn search(core: Arc<Core>, speaker: String, query: String, request: u64) {
     let world = core.snapshot();
     let ranked = rank(&world, &query);
     if let Some(found) = best(&ranked, &query) {

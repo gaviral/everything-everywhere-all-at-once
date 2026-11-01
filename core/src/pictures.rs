@@ -97,7 +97,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
             attempt.in_flight = true;
             let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
             drawing.push(async move {
+                let started = crate::now_ms();
                 let result = draw(&core, &dir, &thread, &points).await;
+                tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
                 (thread.id, result)
             });
         }
