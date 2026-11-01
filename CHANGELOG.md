@@ -92,6 +92,11 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - A long turn gets more room to be placed: a turn over 1,000 characters is allowed two tokens a character (up to 12,000, with a time limit that grows with it) instead of 2,000, and an answer the model cut off at its limit is asked once more with twice the room, not again with the same. A 1,672-character part of a turn once ran out of 2,000.
 - A picture that hangs gives up after 55 s and a refiner pass after 52 s, not 2 minutes (a picture: twice the slowest normal one in a log, 27 s; a pass: twice what filling its answer room takes), so the redraw or the next pass starts sooner.
 
+- Pictures show the one object you'd name for the topic, different from the map's other topics, so they read at 38 px: in a blind test on the sample, 30 to 32 of 32 thumbnails were matched to the right title, against 12 to 16 for the earlier clay scenes.
+- Each room has one color, shared by its pictures, its branch rail and its Palace heading, chosen away from the blue, amber and purple that carry meaning.
+- The Palace shows a 512 px copy of each picture; it used to stretch the map's 128 px copy about 3 times.
+- An action's date says Today, Tomorrow or Overdue, in amber's shades: later dates stay quiet.
+
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
 - `scripts/precheck.sh`: static checks, `cargo test` and live probes; the merge gate runs it.
