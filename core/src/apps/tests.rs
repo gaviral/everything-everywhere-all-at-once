@@ -201,6 +201,23 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     task.abort();
 }
 
+#[test]
+fn a_timer_with_a_prompt_waits_for_something_new_to_look_at() {
+    let said = |at_ms| Thought { id: format!("th-{at_ms}"), speaker: "you".into(), text: "rent is due".into(), point: "Rent is due".into(),
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
+        complete: true, at_ms, place_ms: None };
+    let mut timer = app();
+    timer.watcher = Watcher::Time { at_ms: 1, every_secs: 10 };
+    timer.last_run_ms = 1_000;
+    let mut world = World { thoughts: vec![said(500)], ..World::default() };
+    assert!(timer_due(&timer, &world, 20_000), "without a prompt it runs on time");
+    timer.prompt = Some(Prompt { system: "Notice when I drift.".into(), template: "{points}".into() });
+    assert!(!timer_due(&timer, &world, 20_000), "nothing new since it last ran");
+    world.thoughts.push(said(1_500));
+    assert!(timer_due(&timer, &world, 20_000));
+    assert!(!timer_due(&timer, &world, 5_000), "not time yet");
+}
+
 #[tokio::test]
 async fn one_composition_answer_becomes_a_reviewable_draft_then_a_journaled_app() {
     let fixture = Fixture::new();

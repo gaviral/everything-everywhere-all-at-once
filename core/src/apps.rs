@@ -1,6 +1,6 @@
 //! Small apps: a watcher, an optional model prompt, and publishers on the map.
 
-use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus};
+use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::{now_ms, protocol::{Outgoing, ServerMsg}, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
@@ -338,18 +338,23 @@ pub async fn run(core: Arc<Core>) {
                 _ => {}
             },
             _ = tick.tick() => {
-                let now = now_ms();
-                for app in core.snapshot().apps.into_iter().filter(|a| a.enabled) {
+                let (now, world) = (now_ms(), core.snapshot());
+                for app in world.apps.iter().filter(|a| a.enabled) {
                     let pending = core.apps.state.lock().unwrap().pending.get(&app.id).cloned();
                     if let Some(target) = pending { launch(&core, app.clone(), target); }
-                    if let Watcher::Time { at_ms, every_secs } = app.watcher {
-                        let due = now >= at_ms && (app.last_run_ms == 0 || (every_secs > 0 && now.saturating_sub(app.last_run_ms) >= every_secs.saturating_mul(1000)));
-                        if due { launch(&core, app, None); }
-                    }
+                    if timer_due(app, &world, now) { launch(&core, app.clone(), None); }
                 }
             }
         }
     }
+}
+
+/// A time watcher's turn. With a prompt it also waits for something new to look at, a thought placed since
+/// it last ran, so a short timer can't ask the model about the same points every few seconds all night.
+fn timer_due(app: &MiniApp, world: &World, now: u64) -> bool {
+    let Watcher::Time { at_ms, every_secs } = app.watcher else { return false };
+    let due = now >= at_ms && (app.last_run_ms == 0 || (every_secs > 0 && now.saturating_sub(app.last_run_ms) >= every_secs.saturating_mul(1000)));
+    due && (app.prompt.is_none() || world.thoughts.iter().any(|t| t.placed && t.at_ms > app.last_run_ms))
 }
 
 fn on_thought(core: &Arc<Core>, thought_id: &str) {
