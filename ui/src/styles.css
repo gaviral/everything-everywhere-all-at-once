@@ -2,12 +2,17 @@
   --bg: #f6f6f3;
   --card: #ffffff;
   --ink: #1d1d1f;
-  --muted: #8a8a8e;
+  --muted: #696970;
   --line: #e7e6e1;
-  --accent: #2f7bf6;
+  --accent: #245fbd;
   --accent-soft: #e8f0fe;
-  --amber: #d9861f;
+  --amber: #95600f;
   --amber-soft: #fdf1df;
+  --ai: #7041b5;
+  --ai-soft: #f4effb;
+  --ai-button-ink: #fff;
+  --accent-button-ink: #fff;
+  --amber-button-ink: #fff;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
   color-scheme: light;
 }
@@ -17,13 +22,18 @@
     --bg: #161618;
     --card: #1f1f22;
     --ink: #f2f2f2;
-    --muted: #8e8e93;
+    --muted: #aaaab0;
     --line: #2d2d31;
-    --accent: #4a8dff;
+    --accent: #83b0ff;
     --accent-soft: #1c2840;
-    --amber: #f0a64a;
+    --amber: #f0b65d;
     --amber-soft: #33281a;
-    --shadow: none;
+    --ai: #c4a5ff;
+    --ai-soft: #2b2239;
+    --ai-button-ink: #20152f;
+    --accent-button-ink: #102344;
+    --amber-button-ink: #30200b;
+    --shadow: 0 2px 12px rgba(0, 0, 0, .24);
     color-scheme: dark;
   }
 }
@@ -164,10 +174,10 @@ header {
 
 .tag {
   padding: 1px 8px;
-  border: 1px dashed var(--line);
+  border: 1px dashed color-mix(in srgb, var(--ai) 65%, var(--line));
   border-radius: 99px;
-  background: transparent;
-  color: var(--muted);
+  background: var(--ai-soft);
+  color: var(--ai);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -177,6 +187,7 @@ header {
   border-style: solid;
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .title {
@@ -258,8 +269,8 @@ header {
   gap: 4px;
   padding: 1px 4px 1px 8px;
   border-radius: 99px;
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--ai-soft);
+  color: var(--ink);
   font-size: 12px;
 }
 
@@ -267,8 +278,8 @@ header {
   padding: 1px 8px;
   border: 0;
   border-radius: 99px;
-  background: var(--amber);
-  color: #fff;
+  background: var(--ai);
+  color: var(--ai-button-ink);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -276,7 +287,7 @@ header {
 
 .did-you-mean button.quiet {
   background: transparent;
-  color: var(--amber);
+  color: var(--ai);
 }
 
 .speed {
@@ -304,26 +315,14 @@ header {
 }
 
 .ai {
-  background: var(--accent-soft);
-  opacity: 0.8;
+  background: var(--ai-soft);
+  border: 1px dashed color-mix(in srgb, var(--ai) 55%, var(--line));
 }
 
-.ai.kept {
-  opacity: 1;
-}
-
-.ai-mark,
-.action-icon {
-  color: var(--accent);
-}
-
-.action {
-  border: 1px solid var(--line);
-}
-
-.action.done {
-  opacity: 0.75;
-}
+.ai.kept { background: var(--card); border: 1px solid var(--line); }
+.ai-mark, .action-icon { color: var(--ai); }
+.action { border: 1px dashed color-mix(in srgb, var(--ai) 55%, var(--line)); background: var(--ai-soft); }
+.action.done { border: 1px solid var(--line); background: var(--card); }
 
 .when {
   color: var(--muted);
@@ -340,8 +339,8 @@ header {
   padding: 4px 10px;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--ai);
+  color: var(--ai-button-ink);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -420,7 +419,7 @@ header {
   border: 0;
   border-radius: 10px;
   background: var(--amber);
-  color: #fff;
+  color: var(--amber-button-ink);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -489,7 +488,7 @@ header {
 
 .mic.on {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-button-ink);
   animation: pulse 1.6s infinite;
 }
 
@@ -555,10 +554,6 @@ header {
 }
 
 /* Keep the map readable as content and controls grow. */
-:root { --muted: #696970; --amber: #95600f; }
-@media (prefers-color-scheme: dark) {
-  :root { --muted: #aaaab0; --amber: #f0b65d; --shadow: 0 2px 12px rgba(0, 0, 0, .24); }
-}
 .map { scroll-padding-block: 70px 240px; }
 .thread { scroll-margin-block: 76px 240px; min-width: 0; }
 .thread.active { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
@@ -570,7 +565,7 @@ header {
 .points { gap: 7px; margin-top: 12px; }
 .points li { min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
 .points li > span:nth-child(2) { min-width: 0; }
-.speed { opacity: 1; }
+.points li:focus-within .speed { opacity: 1; }
 .ai, .action { align-items: flex-start; opacity: 1; overflow-wrap: anywhere; }
 .ai > span:nth-child(2), .action > span:nth-child(2) { min-width: 0; }
 .ai-actions { flex: none; align-items: center; }
@@ -647,6 +642,17 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .thread { scroll-margin-top: 180px; }
   .branches { padding-left: 6px; }
 }
-.keyboard-hint { max-width: 712px; margin: 3px auto 0; color: var(--muted); font-size: 11px; }
+.shortcuts { position: relative; flex: none; }
+.shortcuts summary { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--muted); cursor: pointer; list-style: none; font-size: 13px; }
+.shortcuts summary::-webkit-details-marker { display: none; }
+.shortcuts summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.keyboard-hint { position: absolute; z-index: 8; right: 0; top: calc(100% + 6px); width: min(310px, 80vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 12px; }
+.keyboard-hint div + div { margin-top: 6px; color: var(--muted); }
+.picture-wrap { position: relative; flex: none; display: flex; }
+.picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
+.point-mark { font-size: 11px; }
+.map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
+.notice ~ .map-change { top: 120px; }
+.map-change > span { color: var(--ai); }
+.map-change button { margin-left: auto; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 18px; cursor: pointer; }
 .branches .branches .branches { padding-left: 4px; }
-@media (max-width: 560px) { .keyboard-hint { display: none; } }
