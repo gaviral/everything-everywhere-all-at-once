@@ -67,7 +67,6 @@ export default function App() {
   const [noticeFocused, setNoticeFocused] = useState(false);
   const lastNavigation = useRef(0);
   const following = useRef(false);
-  const followDone = useRef(() => {});
   useEffect(() => {
     const navigate = () => { lastNavigation.current = Date.now(); };
     const scroll = () => { if (!following.current) navigate(); };
@@ -117,40 +116,39 @@ export default function App() {
     // Where you are goes first: your thought landing on another thread means "…, where was I?" moved you on in the
     // same breath (your place can end where it started, so it doesn't count as moving).
     const elsewhere = !!world.active && (moved || (!!landing?.mine && landing.thread !== world.active));
-    // A landing gets one chance to follow; never catch up later while someone is reading.
-    if ((!landing && !elsewhere) || view !== "map" || query.trim() || core.recap.view) return;
-    followTarget.current = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing;
+    // A landing gets one chance to follow; never catch up later while someone is reading. In a room only your own
+    // words move your view.
+    const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
+    if (!follow || view !== "map" || query.trim() || core.recap.view) return;
+    followTarget.current = follow;
     // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
     window.clearTimeout(followTimer.current);
     followTimer.current = window.setTimeout(() => requestAnimationFrame(() => {
       const target = followTarget.current;
       followTarget.current = null;
-      if (!target || Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
+      // A scroll already under way isn't interrupted by the next landing.
+      if (!target || following.current || Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
           document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
       const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
       const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
       if (bottom <= top) return;
-      // The thought itself has to be in view (a thread's latest, when you moved back to it), not just its thread's
-      // edge: a thread at the foot of the map shows its head while the thought lands under the composer.
-      const thread = settledRect(card);
+      // The thought itself (a thread's latest, when you moved back to it), where it will settle: a landing point
+      // starts out where its pending pill was, in the dock.
       const point = target.thought ? document.getElementById(`point-${target.thought}`)
         : card.querySelector<HTMLElement>(":scope > div > .points > li:last-child");
-      const shown = point ? settledRect(point) : thread;
-      if (shown.top >= top && shown.bottom <= bottom) return;
-      // Just far enough: up from under the composer; down to it with its thread's head too, when both fit.
-      const delta = shown.bottom > bottom ? shown.bottom - bottom + 12
-        : shown.bottom - (thread.top - top - 12) <= bottom ? thread.top - top - 12 : shown.top - top - 12;
+      const rect = settledRect(point ?? card);
+      // A point stays clear of the pull-back card, which grows the dock at the next pause.
+      if (point ? rect.top >= top && rect.bottom <= bottom - 100 : rect.bottom > top && rect.top < bottom) return;
+      const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       // The map's own scrolling isn't you moving around, until it ends: smooth scrolling can outlast a fixed second
       // when frames are slow, and a late scroll event then held the next landing back for 5 s.
-      followDone.current();
       following.current = true;
       const ends = "onscrollend" in document;
       const done = () => { following.current = false; document.removeEventListener("scrollend", done); window.clearTimeout(cap); };
-      const cap = window.setTimeout(done, ends ? 3000 : reducedMotion ? 100 : 1000);
+      const cap = window.setTimeout(done, ends ? 2000 : reducedMotion ? 100 : 1000);
       if (ends) document.addEventListener("scrollend", done);
-      followDone.current = done;
       window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
     }), 120);
   }, [world.thoughts, world.threads, world.active, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
@@ -180,9 +178,10 @@ export default function App() {
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
   }, []);
 
+  useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
-    if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
+    if (!core.notice || noticeFocused || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
   }, [core.notice, core.found, core.clearNotice, noticeFocused]);
@@ -191,6 +190,8 @@ export default function App() {
   // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   const voiceErrorStartedAt = useRef(0);
+  const voiceRevisions = useRef({ status: 0, error: 0 });
+  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
   useEffect(() => {
     if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
       stopMic();
@@ -221,8 +222,8 @@ export default function App() {
       let stopped = false;
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
-      voiceStartedAt.current = core.voiceStatusRevision;
-      voiceErrorStartedAt.current = core.voiceErrorRevision;
+      voiceStartedAt.current = voiceRevisions.current.status;
+      voiceErrorStartedAt.current = voiceRevisions.current.error;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();
