@@ -75,6 +75,9 @@ pub enum ClientMsg {
         #[serde(default)]
         thread_id: Option<String>,
     },
+    /// Mark an AI answer as off, or take the mark back: `kind` is "explain" (the request's id) or "recap"
+    /// (its period and when it was made, as "today-1793547629176").
+    Mark { kind: String, id: String, off: bool },
     /// Keep or dismiss a suggestion, or dismiss an action.
     Item { id: String, status: crate::world::ItemStatus },
     /// Approve an action: add it to Reminders or Calendar.

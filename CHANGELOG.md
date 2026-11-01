@@ -117,6 +117,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 
 - `PICTURES=off` in `.env` draws no thread pictures (no Muse Image calls); threads keep their letter tiles.
 - Recap answers first, then gets out of the way: decisions, plans and open questions come before what you worked on, and "Decisions made" says "None yet" when there are none. Saying “map” or “palace”, a search that jumps, “where was I?”, “next one” or “last one” while it's open closes it and shows the result; each used to happen behind the sheet, so nothing seemed to change. A thought said while it's open doesn't close it, even one that lands on a thread you clicked while it was being placed, and neither does an import finishing. While the mic is on, the footer says you can say “map” to close it, or press Esc. `scripts/recap-check.mjs` checks which messages close it.
+- The core makes at most 400 model calls an hour (`MODEL_CALLS_PER_HOUR`; twice the busiest hour measured on a real map), so a runaway app or loop stops within the hour: past it, AI features pause with one notice ("AI paused up to 12 min …") while the mic and your saved words carry on. Explain answers are kept in the journal, and Explain and Recap each have an "Off?" toggle that marks an answer as missing the point, for improving their prompts later.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.

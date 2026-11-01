@@ -174,15 +174,17 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                 // Nothing can place it until a restart with a working key, and every window was told: it waits,
                 // saved, and is placed after that restart.
                 Err(_) if core.key_refused() => break,
-                Err(e) if attempt < 3 => {
+                // The hour's cap lasts minutes, not a blip: straight to the later retry.
+                Err(e) if attempt < 3 && Verdict::of(&e) != Some(Verdict::Capped) => {
                     tracing::warn!("placement failed (try {attempt}): {e:#}");
                     tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
                 }
                 Err(e) => {
                     tracing::warn!("placement failed: {e:#}");
                     let round = rounds.entry(thought_id.clone()).or_default();
-                    // Said once: its "Finding a thread" stays up while it waits. A busy service was already said.
-                    if *round == 0 && Verdict::of(&e) != Some(Verdict::Busy) {
+                    // Said once: its "Finding a thread" stays up while it waits. A busy service or the hour's cap
+                    // was already said.
+                    if *round == 0 && !matches!(Verdict::of(&e), Some(Verdict::Busy | Verdict::Capped)) {
                         core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
                     }
                     // A longer outage shouldn't leave it unplaced until a restart: it goes back in the queue

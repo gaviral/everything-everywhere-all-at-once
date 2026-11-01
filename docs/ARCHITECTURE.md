@@ -24,7 +24,7 @@ Core, one process (core/src: axum, tokio)
   find.rs        "where did I talk about …?": Take me there
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
-  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it
+  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it; the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
 ```
@@ -33,6 +33,7 @@ Core, one process (core/src: axum, tokio)
 
 - `World`: threads, thoughts, `active` (where the talk is), `active_by` (each speaker's thread), suggestions, actions, `merged` (old thread id to its successor), apps, recaps.
 - Every change goes through `Core::commit`: under the world and journal locks, each `Change` is applied to the `World` and appended to `data/<map>/journal.jsonl` as one JSON line (`#[serde(tag = "type")]`); then each is broadcast as `ServerMsg::Change`. Nothing else changes the `World`.
+- `Core::record` appends a change that only the journal keeps (`ExplainAnswered`, `AnswerMarked`): the `World` ignores it and no window is sent it. These are labels for judging Explain and Recap prompts later.
 - On start, `Journal::open` replays the file. A line it can't parse is skipped with a warning; a missing final newline (a crash mid-write) is added, so the next change starts on its own line. Fields added later carry `#[serde(default)]`, so old journals keep loading.
 - A merge moves thoughts, branches, suggestions, actions and each speaker's place, and records `from → into`; later changes aimed at `from` follow it, with a hop limit so a cycle can't loop.
 - Each window keeps its own copy: a snapshot on connect, then every `Change`. If a window falls too far behind the broadcast queue, it gets a fresh snapshot plus the current app build and its own import status, so it catches up with the current world.
@@ -109,4 +110,4 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 - Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
 - `node scripts/away-check.mjs` and `node scripts/recap-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, and which messages close an open Recap.
-- `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.
+- `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. It runs `scripts/model-guards.py`: only Meta's models and API in the app's code (`meta-only`), and every model call counted by the hourly cap (`counted`: only `call_model` and `ask_model` send the key, and both spend first). The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.
