@@ -320,6 +320,8 @@ export function useCore() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
+  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
+  const [noKey, setNoKey] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -353,6 +355,7 @@ export function useCore() {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
+            setNoKey(false);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -380,6 +383,7 @@ export function useCore() {
             break;
           case "error":
           case "notice":
+            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
             setNotice(msg.message);
             break;
           case "found":
@@ -446,6 +450,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    noKey,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),

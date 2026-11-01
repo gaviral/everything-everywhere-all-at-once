@@ -598,6 +598,9 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    if core.key.is_none() {
+        messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
+    }
     messages
 }
 

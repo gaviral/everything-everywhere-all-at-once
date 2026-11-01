@@ -97,6 +97,10 @@ header {
   background: #34c759;
 }
 
+.dot.warn {
+  background: var(--amber);
+}
+
 .map {
   display: flex;
   flex-direction: column;

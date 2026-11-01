@@ -412,8 +412,8 @@ export default function App() {
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
-          <span className={core.connected ? "dot ok" : "dot"} />
-          {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} />
+          {!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"}
         </div>
         </div>
       </header>
@@ -428,7 +428,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            <span>{core.notice.includes("MODEL_API_KEY") ? "The AI key isn't set up. Add MODEL_API_KEY to .env (see .env.example) to turn on listening and placement." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
+            <span>{core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -510,7 +510,7 @@ export default function App() {
           <div className="pending">
             {pending.map((t) => (
               <motion.span key={t.id} layoutId={reducedMotion ? undefined : t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={spring} className="pill">
-                <span className="pending-label">Finding a thread</span> {t.text}
+                <span className="pending-label">{core.noKey ? "Needs the AI key" : "Finding a thread"}</span> {t.text}
               </motion.span>
             ))}
           </div>
