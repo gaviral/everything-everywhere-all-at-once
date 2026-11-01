@@ -70,12 +70,13 @@ struct Task {
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
 /// - right away when they come back to the window, so the map is tidy when they look;
-/// - at most every 10 s, and only when something changed.
+/// - at most every 10 s (longer after failed passes), and only when something changed.
 pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
+    let mut failures = 0;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
@@ -87,14 +88,16 @@ pub async fn run(core: Arc<Core>) {
         let new_thoughts = placed.saturating_sub(seen_thoughts);
         let new_threads = world.threads.len() > seen_threads;
         let quiet = core.quiet_ms() >= 4_000;
-        let rested = crate::now_ms().saturating_sub(last_pass) >= 10_000;
+        let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
         let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
         if !due || core.key.is_none() {
             continue;
         }
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
-        match pass(&core, &world, since).await {
+        let result = pass(&core, &world, since).await;
+        failures = if result.is_ok() { 0 } else { failures + 1 };
+        match result {
             // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
             Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
             Ok(changes) if !changes.is_empty() => core.commit(changes),
@@ -108,15 +111,16 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
+/// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
+/// so a pass that keeps failing doesn't resend the whole map every 10 s for good.
+fn rest_ms(failures: u32) -> u64 {
+    10_000 << failures.min(5)
+}
+
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let map = describe(world, since);
-    let existing: Vec<String> = world
-        .suggestions
-        .iter()
-        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
-        .chain(world.actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
-        .collect();
+    let existing = existing(world);
     let today = chrono_today();
     let body = json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
@@ -148,6 +152,18 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     Ok(changes(world, pass))
+}
+
+/// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
+/// (dismissed ones too, which the person said no to), so the prompt doesn't grow with every idea ever shown.
+fn existing(world: &World) -> Vec<String> {
+    let suggestions = &world.suggestions[world.suggestions.len().saturating_sub(30)..];
+    let actions = &world.actions[world.actions.len().saturating_sub(30)..];
+    suggestions
+        .iter()
+        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
+        .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
+        .collect()
 }
 
 /// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
@@ -274,8 +290,32 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, describe, Pass};
-    use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+    use super::{changes, describe, existing, rest_ms, Pass};
+    use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
+
+    #[test]
+    fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
+        let rests: Vec<u64> = (0..8).map(|failures| rest_ms(failures) / 1000).collect();
+        assert_eq!(rests, [10, 20, 40, 80, 160, 320, 320, 320]);
+        let mut world = World::default();
+        for n in 0..100 {
+            let status = if n % 2 == 0 { ItemStatus::Dismissed } else { ItemStatus::New };
+            world.suggestions.push(Suggestion { id: format!("s{n}"), thread_id: "T1".into(), text: format!("idea {n}"), status });
+            world.actions.push(Action {
+                id: format!("a{n}"),
+                thread_id: "T1".into(),
+                kind: "reminder".into(),
+                title: format!("task {n}"),
+                when: String::new(),
+                status,
+                done_ms: None,
+            });
+        }
+        let lines = existing(&world);
+        assert_eq!(lines.len(), 60);
+        assert!(lines.contains(&"suggestion on T1: idea 70".to_string()) && lines.contains(&"action on T1: reminder task 99".to_string()));
+        assert!(!lines.iter().any(|l| l.ends_with(" 69")), "only the latest");
+    }
 
     #[test]
     fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
