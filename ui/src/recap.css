@@ -36,18 +36,22 @@
 .recap-work ol { display: grid; gap: 13px; }
 .recap-work li { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; align-items: baseline; gap: 20px; }
 .recap-thread { color: var(--ink); font-size: 14px; font-weight: 550; }
+.recap-work .recap-thread { color: var(--accent); }
 .recap-work li p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .recap-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
+.recap-columns > :only-child { grid-column: 1 / -1; }
 .recap-items, .recap-actions { display: grid; gap: 13px; }
 .recap-item-link { color: var(--ink); font-size: 14px; line-height: 1.55; }
 .recap-source { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .recap-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .recap-content .recap-unfinished { padding: 18px 20px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--amber) 25%, var(--line)); border-radius: 12px; background: var(--amber-soft); }
+.recap-unfinished li + li { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
 .recap-unfinished h2 { color: var(--amber); }
 .recap-unfinished li { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .recap-unfinished li + li { margin-top: 12px; }
 .recap-unfinished small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 .recap-finish { display: flex; flex: none; align-items: center; min-height: 44px; padding: 6px 0 6px 8px; color: var(--amber); font-size: 13px; font-weight: 600; }
+.recap-unfinished .recap-thread { color: var(--ink); }
 .recap-content .recap-action-section { padding-top: 20px; }
 .recap-action-section h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .recap-action-section h3 > span:last-child { margin-left: 2px; font-variant-numeric: tabular-nums; }
@@ -56,6 +60,7 @@
 .recap-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 32px 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .recap-refresh { flex: none; min-height: 40px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--bg); font-size: 12px !important; }
 .recap-refresh:hover:not(:disabled) { background: var(--ai-soft); border-color: var(--ai); }
+@media (prefers-reduced-motion: reduce) { .recap-sheet[open] { animation: none; } }
 @media (max-width: 560px) {
   .header-actions { gap: 10px; }
   .recap-sheet { width: calc(100% - 16px); max-height: calc(100dvh - 24px); border-radius: 16px; }
