@@ -298,6 +298,24 @@ async fn semantic_search_offers_a_disabled_app_before_any_composition() {
 }
 
 #[tokio::test]
+async fn search_first_can_be_offered_too() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, false);
+    let request = "check whether I already have an app before building a new one";
+    let fresh = || Some(Build { id: "b".into(), request: request.into(), stage: "searching".into(), steps: Vec::new(), draft: None,
+        match_id: None, message: String::new() });
+    // Off, the composer sees it among the existing apps; on, its own search pass does.
+    for (on, answer) in [(false, json!({"match_id":"app-search", "app": null})), (true, json!({"match_id":"app-search", "text":"It checks first."}))] {
+        toggle(&fixture.core, "app-search".into(), on);
+        fixture.core.apps.state.lock().unwrap().build = fresh();
+        fixture.core.apps.answers.lock().unwrap().push_back(answer);
+        compose_inner(&fixture.core, "b", request).await.unwrap();
+        assert_eq!(build(&fixture.core).unwrap().match_id.as_deref(), Some("app-search"));
+        assert!(fixture.core.apps.asked.lock().unwrap().pop().unwrap().contains("\"id\":\"app-search\""), "on: {on}");
+    }
+}
+
+#[tokio::test]
 async fn an_unknown_model_block_fails_without_registering_anything() {
     let fixture = Fixture::new();
     fixture.core.apps.answers.lock().unwrap().push_back(json!({"match_id":"", "app": {

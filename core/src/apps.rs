@@ -183,7 +183,8 @@ struct Match { match_id: String, text: String }
 async fn compose_inner(core: &Core, build_id: &str, request: &str) -> anyhow::Result<()> {
     let world = core.snapshot();
     let mut matched = world.apps.iter().find(|a| same_request(a, request)).map(|a| a.id.clone());
-    let catalog: Vec<Value> = world.apps.iter().filter(|a| !matches!(a.watcher, Watcher::AppRequest {}))
+    // Search-first is in it too, so asking for an app that checks before making one finds it.
+    let catalog: Vec<Value> = world.apps.iter()
         .map(|a| json!({"id": a.id, "name": a.name, "purpose": a.purpose, "watcher": a.watcher, "publishers": a.publishers})).collect();
     // Search-first's switch controls the semantic search pass. Exact names and requests always work.
     if matched.is_none() && !catalog.is_empty() {
