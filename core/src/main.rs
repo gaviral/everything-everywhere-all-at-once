@@ -29,7 +29,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
-use protocol::{ClientMsg, Outgoing, ServerMsg};
+use protocol::{ClientMsg, Outgoing, ServerMsg, View};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
@@ -47,6 +47,8 @@ pub struct Core {
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
+    /// Who said "new thread", and the thought that starts each one.
+    new_threads: placer::NewThreads,
     /// Set when a room is open.
     room: Option<Room>,
     pub key: Option<String>,
@@ -111,15 +113,17 @@ impl Core {
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message });
     }
 
-    /// Takes the speaker to a thread as a new move (a click, a search's answer): a search still looking stops.
-    pub fn focus(&self, speaker: &str, thread_id: &str) {
-        self.find.cancel(speaker);
+    /// Takes the speaker to a thread as a new move (a click, a search's answer): a search still looking stops,
+    /// and so does a "new thread" asked for before it, since the speaker is somewhere again.
+    pub fn focus(self: &Arc<Self>, speaker: &str, thread_id: &str) {
+        find::stop(self, speaker);
+        self.new_threads.cancel(speaker);
         self.move_to(speaker, thread_id);
     }
 
-    /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?" and
-    /// "next one" move with this alone: saying one already stopped any search said before it (`add_thought`),
-    /// and one that waited its turn in the placer's queue must not stop a search said after it.
+    /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?",
+    /// "next one" and "last one" move with this alone: saying one already stopped any search said before it
+    /// (`add_thought`), and one that waited its turn in the placer's queue must not stop a search said after it.
     fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
         let Some(thread) = world.thread(thread_id) else { return };
@@ -131,7 +135,9 @@ impl Core {
         self.commit(changes);
     }
 
-    /// "Where was I?": see `way_back`.
+    /// "Where was I?": see `way_back`. With nowhere to go back to it still answers, as every request does (the
+    /// tour teaches it on an empty map): where the speaker is, shown as Take me there shows a point, or why
+    /// there's nothing yet.
     fn go_back(&self, speaker: &str) {
         let world = self.snapshot();
         if let Some(id) = way_back(&world, speaker, now_ms()) {
@@ -139,30 +145,92 @@ impl Core {
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
             drop(world);
             self.move_to(speaker, &id);
+            return;
+        }
+        // Nothing else to go back to: every point of theirs is on the thread they're on. Their latest, by when it
+        // was said (a split turn's rest, said at the same time, comes later in the list).
+        let now = now_ms();
+        let latest = world.thoughts.iter().filter(|t| t.placed && t.speaker == speaker).max_by_key(|t| t.said_at(now));
+        match latest.and_then(|t| Some((t, world.thread(&world.resolve(t.thread_id.as_deref()?))?))) {
+            Some((thought, thread)) => self.send_to(
+                speaker,
+                ServerMsg::Found {
+                    thread_id: thread.id.clone(),
+                    thought_id: Some(thought.id.clone()),
+                    message: match thought.point.trim() {
+                        "" => format!("You're on {}", thread.title),
+                        point => format!("You're on {}: “{point}”", thread.title),
+                    },
+                },
+            ),
+            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
         }
     }
 
     /// "Next one": the thread after the speaker's, in the order they were started.
     fn go_next(&self, speaker: &str) {
         let world = self.snapshot();
-        let position = world.active_for(speaker).and_then(|a| world.threads.iter().position(|t| &t.id == a));
+        let active = world.active_for(speaker);
+        let position = active.and_then(|a| world.threads.iter().position(|t| &t.id == a));
         let next = match position {
             Some(i) => world.threads.get(i + 1).or_else(|| world.threads.first()),
             None => world.threads.first(),
         };
-        if let Some(thread) = next {
-            self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
-            let id = thread.id.clone();
-            drop(world);
-            self.move_to(speaker, &id);
+        match next {
+            Some(thread) if Some(&thread.id) == active => self.only_one(speaker, &thread.title),
+            Some(thread) => {
+                self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
+                let id = thread.id.clone();
+                drop(world);
+                self.move_to(speaker, &id);
+            }
+            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
         }
     }
 
+    /// "Last one": the thread before the speaker's, in the order "next one" goes, from the first round to the last.
+    fn go_previous(&self, speaker: &str) {
+        let world = self.snapshot();
+        let active = world.active_for(speaker);
+        let position = active.and_then(|a| world.threads.iter().position(|t| &t.id == a));
+        let previous = match position.and_then(|i| i.checked_sub(1)) {
+            Some(i) => world.threads.get(i),
+            None => world.threads.last(),
+        };
+        match previous {
+            Some(thread) if Some(&thread.id) == active => self.only_one(speaker, &thread.title),
+            Some(thread) => {
+                self.send_to(speaker, ServerMsg::Notice { message: format!("Previous: {}", thread.title) });
+                let id = thread.id.clone();
+                drop(world);
+                self.move_to(speaker, &id);
+            }
+            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
+        }
+    }
+
+    /// "Next one" or "last one" on the only thread: no move, but an answer.
+    fn only_one(&self, speaker: &str, title: &str) {
+        self.send_to(speaker, ServerMsg::Notice { message: format!("{title} is the only thread so far") });
+    }
+
+    /// "New thread": nothing to place, and the speaker's next thought starts one (placer.rs `NewThreads`).
+    fn new_thread(&self, speaker: &str) {
+        self.new_threads.ask(speaker);
+        self.send_to(speaker, ServerMsg::Notice { message: "New thread: your next thought starts it".into() });
+    }
+
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
-    /// never becomes a thought, and a spoken command keeps its place among the words: one the turn opens
-    /// with goes ahead of the words after it, one it ends with waits behind the words before it. A search
-    /// that ends without a jump keeps its words as a thought too (see `find::request`).
+    /// never becomes a thought, a request is never one, and a spoken command keeps its place among the words:
+    /// one the turn opens with goes ahead of the words after it, one it ends with waits behind the words before
+    /// it. A search keeps the words said after its question (see `find::request`).
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
+        self.add_turn(speaker, text, true);
+    }
+
+    /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
+    /// held, which were said before what stopped it (see `find::stop`).
+    fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
         self.touch();
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
@@ -171,7 +239,7 @@ impl Core {
         if filler(text, asked) {
             return;
         }
-        self.find.cancel(speaker);
+        find::stop(self, speaker);
         if let Some(period) = recap::command(text) {
             let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
             return recap::request(self.clone(), speaker.into(), period);
@@ -179,11 +247,20 @@ impl Core {
         if let Some(request) = apps::command(text) {
             return apps::compose(self.clone(), request);
         }
+        if let Some(view) = view(text) {
+            return self.send_to(speaker, ServerMsg::View { view });
+        }
+        if is_new_thread(text) {
+            return self.new_thread(speaker);
+        }
         let (first, said, then) = turn(text);
         // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
         if first.is_none() {
-            if let Some(query) = find::command(text) {
-                return find::request(self.clone(), speaker.into(), query, text.into());
+            if let Some(ask) = find::command(text) {
+                if !search {
+                    return find::dropped(self, speaker, ask, text);
+                }
+                return find::request(self.clone(), speaker.into(), ask, text.into());
             }
         }
         if let Some(job) = first {
@@ -215,15 +292,19 @@ impl Core {
             place_ms: None,
         };
         let id = thought.id.clone();
+        // Before it's queued, so the placer knows when it's the first after "new thread".
+        self.new_threads.said(speaker, &id);
         self.commit(vec![Change::ThoughtAdded { thought }]);
         let _ = self.placer_queue.send(placer::Job::Place(id));
     }
 
-    /// "Where was I?" or "next one" acts at once, unless words the speaker said before it are still being
-    /// placed: landing moves them to its thread and would undo it, so then it waits behind them in the
+    /// "Where was I?", "next one" or "last one" acts at once, unless words the speaker said before it are still
+    /// being placed: landing moves them to its thread and would undo it, so then it waits behind them in the
     /// placer's queue. Always waiting would put it behind every placement queued, the other person's and
-    /// retries included, each up to a minute when the model is slow.
+    /// retries included, each up to a minute when the model is slow. A "new thread" said before it ends as it's
+    /// said: the speaker chose a thread to be on.
     fn run_command(&self, speaker: &str, job: Command) {
+        self.new_threads.cancel(speaker);
         let now = now_ms();
         // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`). Without a working
         // key none lands, so there's nothing to wait for.
@@ -232,6 +313,7 @@ impl Core {
         match job(speaker.into()) {
             placer::Job::Back(speaker) if !waiting => self.go_back(&speaker),
             placer::Job::Next(speaker) if !waiting => self.go_next(&speaker),
+            placer::Job::Previous(speaker) if !waiting => self.go_previous(&speaker),
             job => {
                 let _ = self.placer_queue.send(job);
             }
@@ -262,31 +344,86 @@ const ACKS: [&str; 15] =
 /// time never is; whatever this lets through, the placer can still set aside in context.
 fn filler(text: &str, asked: bool) -> bool {
     let acks: &[&str] = if asked { &[] } else { &ACKS };
-    // Longest first, so "uh huh" isn't read as "uh" and then a stray "huh".
-    let mut phrases: Vec<Vec<&str>> = SOUNDS.iter().chain(acks).map(|p| p.split(' ').collect()).collect();
-    phrases.sort_by_key(|p| std::cmp::Reverse(p.len()));
     let words = words(text);
-    let mut rest = words.as_slice();
-    while !rest.is_empty() {
-        match phrases.iter().find(|p| rest.len() >= p.len() && rest.iter().zip(p.iter()).all(|(w, p)| w == p)) {
-            Some(p) => rest = &rest[p.len()..],
-            None => return false,
-        }
-    }
-    true
+    skipped(&words, SOUNDS.iter().chain(acks), |_, _| true) == words.len()
 }
 
-/// A spoken "where was I?" or "next one", as the placer job it makes for a speaker.
+/// How many of the first `words` are these phrases, one after another, each where `fits` lets it end (that many
+/// words in). Longest first, so "uh huh" isn't read as "uh" and then a stray "huh".
+fn skipped<'a>(words: &[impl AsRef<str>], phrases: impl Iterator<Item = &'a &'a str>, fits: impl Fn(&[&str], usize) -> bool) -> usize {
+    let mut phrases: Vec<Vec<&str>> = phrases.map(|p| p.split(' ').collect()).collect();
+    phrases.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    let mut at = 0;
+    while let Some(p) = phrases.iter().find(|p| {
+        words.len() - at >= p.len() && words[at..].iter().zip(p.iter()).all(|(w, p)| w.as_ref() == *p) && fits(p, at + p.len())
+    }) {
+        at += p.len();
+    }
+    at
+}
+
+/// The marks the transcriber writes at a pause.
+const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
+
+/// Words that ask the app for something ("Can you recap?"). They lead into a request only when it's the whole turn:
+/// partway through one they ask someone ("I loved Japan. Would you go back?").
+const ASKING: [&str; 4] = ["can you", "could you", "would you", "will you"];
+
+/// Filler that makes a sentence of the words right after it ("I see the palace", "I mean the map", "You know the
+/// palace?"), so it leads into a request only across a pause: "I see. Go to the palace.", "I mean, the map", "Like, help".
+const TALK: [&str; 4] = ["i see", "i mean", "you know", "like"];
+
+/// `text` after the words that lead into a request, so every request takes the same ones: whatever `filler` sets
+/// aside ("Okay, so, um", "Well, all right", "Cool"; `TALK` only before a pause mark), "now", "hey", "please", and
+/// the words that ask (`ASKING`). Never at the end of an unpunctuated turn (`is_lost_place`), where the word before
+/// the request ends a sentence ("The demo went well where was I").
+pub fn lead_in(text: &str) -> &str {
+    lead(text, true)
+}
+
+/// `lead_in`, with or without the words that ask.
+fn lead(text: &str, asking: bool) -> &str {
+    // Each word as `words` splits them (a run of letters and digits), and where it ends.
+    let mut spans: Vec<(String, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
+        match (c.is_alphanumeric(), start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                spans.push((text[s..i].to_lowercase(), i));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    let said: Vec<&str> = spans.iter().map(|(w, _)| w.as_str()).collect();
+    let extra: &[&str] = if asking { &ASKING } else { &[] };
+    let paused = |end: usize| text[spans[end - 1].1..].trim_start().starts_with(PAUSE);
+    let leads = SOUNDS.iter().chain(&ACKS).chain(&["now", "hey", "please"]).chain(extra);
+    match skipped(&said, leads, |p, end| !TALK.contains(&p.join(" ").as_str()) || paused(end)) {
+        0 => text,
+        n => &text[spans[n - 1].1..],
+    }
+}
+
+/// True when words that ask lead into `text`: partway through a turn, that's a question to someone.
+fn asks_someone(text: &str) -> bool {
+    lead(text, true).len() < lead(text, false).len()
+}
+
+/// A spoken "where was I?", "next one" or "last one", as the placer job it makes for a speaker.
 type Command = fn(String) -> placer::Job;
 
-/// A spoken "where was I?" or "next one": the whole turn, or its end after a pause in it ("…it starts
-/// at two, okay, where was I?"), with the words said before it, which are still a thought.
+/// A spoken "where was I?", "next one" or "last one": the whole turn, or its end after a pause in it ("…it
+/// starts at two, okay, where was I?"), with the words said before it, which are still a thought.
 fn command(text: &str) -> Option<(&str, Command)> {
     let job = |t: &str| -> Option<Command> {
         if is_go_back(t) {
             Some(placer::Job::Back)
         } else if is_go_next(t) {
             Some(placer::Job::Next)
+        } else if is_go_previous(t) {
+            Some(placer::Job::Previous)
         } else {
             None
         }
@@ -295,7 +432,8 @@ fn command(text: &str) -> Option<(&str, Command)> {
         return Some(("", job));
     }
     let before = |i: usize| text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end();
-    starts(text).into_iter().find_map(|i| job(&text[i..]).map(|job| (before(i), job))).or_else(|| {
+    let after = |i: usize| if asks_someone(&text[i..]) { None } else { job(&text[i..]) };
+    starts(text).into_iter().find_map(|i| after(i).map(|job| (before(i), job))).or_else(|| {
         // The transcriber sometimes writes a whole turn without punctuation ("…at three where was I").
         let back: Command = placer::Job::Back;
         word_starts(text).find(|&i| is_lost_place(&text[i..])).map(|i| (before(i), back))
@@ -308,9 +446,10 @@ fn word_starts(text: &str) -> impl Iterator<Item = usize> + '_ {
 }
 
 /// "Where was I?" and its kin, which no sentence has partway through ("where I was" is how one would),
-/// so they end a turn as a command even with no pause marked before them.
+/// so they end a turn as a command even with no pause marked before them. Nothing leads into one here: the
+/// word before it ends the sentence ("We turned right where was I").
 fn is_lost_place(text: &str) -> bool {
-    is_command(text, &["where was i", "where were we", "what was i saying", "what was i talking about"], &["going with this", "going with that", "again"])
+    is_ask(text, &["where was i", "where were we", "what was i saying", "what was i talking about"], &["going with this", "going with that", "again"])
 }
 
 /// What a turn asks for, in the order said: a command it opens with (see `opening`), the words to place,
@@ -332,18 +471,24 @@ fn turn(text: &str) -> (Option<Command>, &str, Option<Command>) {
 /// The words before a pause mark or a turning word must be exactly a command, with the same strict asks
 /// and tails as a whole-turn one. Anything less stays as it was: "Go back to the beginning of the song,
 /// it's the best part" (more words before the pause) and "Next one up is the dentist" (no pause) are
-/// thoughts. So are a bare "next", which at the start lists things ("Next, I'll call Mom"), and a command
-/// ending in "there", "to that" or "to it", which points at the words after the pause ("Go back there,
-/// it was lovely"; "Take me back to that, the budget thing" is still a search).
+/// thoughts. So are a bare "next" or "previous" and a "last one", which at the start list things ("Next,
+/// I'll call Mom"; "Last one, the dentist"), a command ending in "there", "to that" or "to it", which
+/// points at the words after the pause ("Go back there, it was lovely"; "Take me back to that, the budget
+/// thing" is still a search), and one asked of someone ("Would you go back? I loved it there").
 fn opening(text: &str) -> Option<(Command, &str)> {
     starts(text).into_iter().find_map(|i| {
         let (head, rest) = text.split_at(i);
+        if asks_someone(head) {
+            return None;
+        }
         let said = format!(" {}", words(head).join(" "));
         let points_on = [" there", " to that", " to it"].iter().any(|end| said.ends_with(end));
         let job: Command = if is_go_back(head) && !points_on {
             placer::Job::Back
         } else if is_go_next(head) && !is_command(head, &["next"], &[]) {
             placer::Job::Next
+        } else if is_go_previous(head) && !is_command(head, &["previous", "last one", "last thread", "last topic"], &[]) {
+            placer::Job::Previous
         } else {
             return None;
         };
@@ -355,7 +500,6 @@ fn opening(text: &str) -> Option<(Command, &str)> {
 /// mark, or a word that turns the talk ("okay", "anyway"). So "fly there and go back" and "that song would
 /// take me back" stay thoughts.
 fn starts(text: &str) -> Vec<usize> {
-    const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
     const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
     let mut out = Vec::new();
     let mut in_word = false;
@@ -396,6 +540,12 @@ fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
     trailed_off.or_else(dropped).or_else(|| theirs.iter().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
 }
 
+/// Why "where was I?", "next one" or "last one" has nowhere to go: an empty map, or nothing of the speaker's on it
+/// yet (a guest in a room who hasn't spoken).
+fn nothing_yet(world: &World) -> String {
+    if world.threads.is_empty() { "Nothing on the map yet: say a thought first" } else { "Nothing to go back to yet: say a thought first" }.into()
+}
+
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
 /// like "go back to the drawing board" stay thoughts.
 fn is_go_back(text: &str) -> bool {
@@ -408,21 +558,87 @@ fn is_go_back(text: &str) -> bool {
 
 /// "Go to the next one" style requests.
 fn is_go_next(text: &str) -> bool {
-    is_command(text, &["go to the next one", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
+    is_command(text, &["go to the next", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
 }
 
-/// Words a spoken command may open with ("Okay, where was I?", "Anyway, next one").
-const FILLER: [&str; 14] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now", "anyway", "anyways", "alright", "oh", "right"];
+/// "Go to the last one" style requests, the other way from "next one". "Go back" alone stays "where was I?",
+/// and "the last one" is left out: said alone it's more often an answer ("Which slide? The last one").
+fn is_go_previous(text: &str) -> bool {
+    is_command(
+        text,
+        &[
+            "go to the last", "go to the previous", "go back to the last", "go back to the previous", "go back one", "back one", "last one",
+            "last thread", "last topic", "previous",
+        ],
+        &["one", "thread", "topic"],
+    )
+}
 
-/// True when the whole utterance is one of the asks, after words that lead into it and before a short allowed tail.
+/// "New thread" style requests. Only the whole turn: "create a new one for the kitchen" is a thought, and
+/// so is a bare "new", which is far more often an answer.
+fn is_new_thread(text: &str) -> bool {
+    is_command(
+        text,
+        &[
+            "new thread", "new topic", "a new thread", "a new topic", "start a new one", "start a new thread", "start a new topic",
+            "create a new one", "create a new thread", "make a new one", "make a new thread", "open a new thread", "let s start a new one",
+            "let s start a new thread", "let s start a new topic", "change of topic", "different topic",
+        ],
+        &[],
+    )
+}
+
+/// A view asked for by voice, as its button sets it: "palace", "show the map", "let's focus", "show all"; or the
+/// "?" list of what you can say ("What can I say?", "help"). Only the whole turn, so "let's go to the palace of
+/// Versailles", "I can't focus today" and "help me move the couch on Saturday" are thoughts.
+fn view(text: &str) -> Option<View> {
+    // As Dragon's "What can I say?" and Voice Control's "Show commands". Not "what can I do?", which people ask
+    // themselves.
+    let help = [
+        "help", "help me", "what can i say", "what can you do", "what are the commands", "what are my commands", "show commands",
+        "show the commands", "show me the commands", "show me what i can say",
+    ];
+    let palace = [
+        "palace", "the palace", "go to the palace", "go back to the palace", "back to the palace", "show the palace", "show me the palace",
+        "open the palace", "switch to the palace", "take me to the palace", "let s go to the palace", "let s see the palace",
+    ];
+    let map = [
+        "map", "the map", "go to the map", "go back to the map", "back to the map", "show the map", "show me the map", "open the map",
+        "switch to the map", "take me back to the map", "let s go back to the map", "let s see the map",
+    ];
+    let focus = ["focus", "let s focus", "focus on this", "focus on this thread", "focus on this one", "turn on focus"];
+    let all =
+        ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
+    if is_command(text, &help, &["here", "now"]) {
+        Some(View::Help)
+    } else if is_command(text, &palace, &["view"]) {
+        Some(View::Palace)
+    } else if is_command(text, &map, &["view"]) {
+        Some(View::Map)
+    } else if is_command(text, &focus, &["mode"]) {
+        Some(View::Focus)
+    } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
+        Some(View::All)
+    } else {
+        None
+    }
+}
+
+/// True when the whole utterance is one of the asks, after words that lead into it (`lead_in`: "Okay, where was
+/// I?", "Can you recap?") and before a short allowed tail; a "please" may end either ("go to the last thread, please").
 fn is_command(text: &str, asks: &[&str], tails: &[&str]) -> bool {
-    let words = words(text);
-    let rest = words.iter().skip_while(|w| FILLER.contains(&w.as_str())).cloned().collect::<Vec<_>>().join(" ");
+    is_ask(lead_in(text), asks, tails)
+}
+
+/// `is_command` with nothing before the ask.
+fn is_ask(text: &str, asks: &[&str], tails: &[&str]) -> bool {
+    let rest = words(text).join(" ");
     asks.iter().any(|ask| {
         rest.strip_prefix(ask)
             .map(|tail| {
                 let tail = tail.trim();
-                tail.is_empty() || tail == "please" || tails.contains(&tail)
+                let tail = tail.strip_suffix("please").unwrap_or(tail).trim_end();
+                tail.is_empty() || tails.contains(&tail)
             })
             .unwrap_or(false)
     })
@@ -461,6 +677,7 @@ async fn main() -> anyhow::Result<()> {
         journal: Mutex::new(journal),
         updates,
         placer_queue,
+        new_threads: placer::NewThreads::default(),
         room: room.as_deref().map(Room::from),
         key,
         // A key that can't use Contributor mode gets muse-spark-1.2 instead, unless PLACER_MODEL is set (model.rs).
@@ -959,10 +1176,15 @@ impl Core {
             journal: Mutex::new(journal),
             updates: broadcast::channel(1024).0,
             placer_queue: mpsc::unbounded_channel().0,
+            new_threads: Default::default(),
             room: None,
             key: None,
             placer_model: "test".into(),
-            http: reqwest::Client::new(),
+            // One for every test core: making one reads the system's certificates, and a test may make thousands.
+            http: {
+                static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+                HTTP.get_or_init(reqwest::Client::new).clone()
+            },
             last_activity: Default::default(),
             looked: Default::default(),
             wake: Default::default(),
@@ -975,9 +1197,11 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
-    use crate::protocol::ServerMsg;
+    use super::{is_go_back, is_go_next, is_go_previous, is_new_thread, view, ACKS, ASKING, SOUNDS};
+    use crate::protocol::{ServerMsg, View};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
     use futures_util::{SinkExt, StreamExt};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
@@ -989,6 +1213,14 @@ mod tests {
         let (placer_queue, queue) = mpsc::unbounded_channel();
         let core = Arc::new(Core { placer_queue, room: room.map(Room::from), key: Some("test".into()), ..Core::test(journal, world) });
         (core, queue, path)
+    }
+
+    /// A core on `world` with no key, so nothing calls a model, with the placer's queue to watch.
+    fn keyless(world: World) -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::Journal::open(&path).unwrap();
+        let (placer_queue, queue) = mpsc::unbounded_channel();
+        (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
     }
 
     fn thread(id: &str, touched_ms: u64, dropped_by: &str) -> Thread {
@@ -1095,6 +1327,9 @@ mod tests {
             ("It starts at two in the afternoon, okay, where was I?", None, "It starts at two in the afternoon", back),
             ("I'll pay it on Thursday. Anyway, next one.", None, "I'll pay it on Thursday.", next),
             ("Where was I? The rent, okay, next one.", back, "The rent", next),
+            // Any word that leads into a request, except one that asks someone (below).
+            ("Hey, where was I? The rent is due Friday.", back, "The rent is due Friday.", None),
+            ("The rent is due Friday. Well, where was I?", None, "The rent is due Friday.", back),
             // The whole turn.
             ("Where was I?", back, "", None),
             ("Okay, next one", next, "", None),
@@ -1117,9 +1352,289 @@ mod tests {
             "Where was I when the power went out? At the store.",
             "that song would take me back, honestly",
             "Anyway back to the hackathon. The placement needs to be under three seconds.",
+            // Asked of someone, at the start or the end.
+            "Would you go back? I loved it there.",
+            "I loved Japan. Would you go back?",
         ] {
             let (f, w, t) = turn(text);
             assert_eq!((f.map(name), w, t.map(name)), (None, text, None), "{text}");
+        }
+    }
+
+    #[test]
+    fn last_one_is_next_one_the_other_way_and_only_the_whole_command() {
+        for text in [
+            "Go to the last one.", "last one", "Okay, previous one", "go to the previous one", "Previous thread.", "previous",
+            "Go back one.", "go back to the last one", "Go to the last thread, please.", "LAST ONE!", "Anyway, go to the previous topic",
+        ] {
+            assert!(is_go_previous(text), "{text}");
+        }
+        for text in [
+            "go to the last one of the meetings", "That was the last one.", "the last one", "last", "go back",
+            "go back to the drawing board", "the previous owner left it", "last one to leave turns off the lights", "go to the next one",
+        ] {
+            assert!(!is_go_previous(text), "{text}");
+        }
+        // "Go back" alone is still "where was I?"; "next one" takes "thread" as "last one" does.
+        assert!(is_go_back("Go back.") && !is_go_back("Go back one."));
+        assert!(is_go_next("go to the next thread") && is_go_next("Go to the next one, please."));
+        assert!(!is_go_next("go to the next one of the meetings"));
+        // As "next one", at the end of a turn after a pause, or at its start; but a "last one" or a bare "previous"
+        // opening a turn lists things, so it stays a thought.
+        let name = |job: fn(String) -> Job| match job("you".into()) {
+            Job::Back(_) => "back",
+            Job::Next(_) => "next",
+            Job::Previous(_) => "previous",
+            Job::Place(_) => "place",
+        };
+        let previous = Some("previous");
+        for (text, first, words, then) in [
+            ("I'll pay it on Thursday. Anyway, last one.", None, "I'll pay it on Thursday.", previous),
+            ("Go to the previous one. The kitchen needs paint.", previous, "The kitchen needs paint.", None),
+            ("Last one, call the dentist.", None, "Last one, call the dentist.", None),
+            ("Previous, I said the rent was late.", None, "Previous, I said the rent was late.", None),
+        ] {
+            let (f, w, t) = turn(text);
+            assert_eq!((f.map(name), w, t.map(name)), (first, words, then), "{text}");
+        }
+    }
+
+    #[test]
+    fn new_thread_is_only_the_whole_turn() {
+        for text in [
+            "Create a new one.", "new thread", "New topic!", "Okay, start a new thread.", "start a new one", "Make a new thread, please",
+            "Let's start a new thread.", "So, change of topic.",
+        ] {
+            assert!(is_new_thread(text), "{text}");
+        }
+        for text in [
+            "create a new one for the kitchen", "Let's start a new thread about the trip", "new", "New one.",
+            "the new thread is about rent", "I want to start a new job", "Make an app that plays a tune at five",
+        ] {
+            assert!(!is_new_thread(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_view_by_voice_is_only_the_whole_turn() {
+        for (text, asked) in [
+            ("Palace", View::Palace),
+            ("go to the palace", View::Palace),
+            ("Let's go to the palace!", View::Palace),
+            ("Show the palace view.", View::Palace),
+            ("Map.", View::Map),
+            ("Okay, back to the map", View::Map),
+            ("show me the map, please", View::Map),
+            ("Let's focus.", View::Focus),
+            ("focus mode", View::Focus),
+            ("Show all", View::All),
+            ("show all the threads", View::All),
+            ("unfocus", View::All),
+            ("Help.", View::Help),
+            ("What can I say?", View::Help),
+            ("Okay, so what can you do?", View::Help),
+            ("what are the commands, please", View::Help),
+            ("What can I say here?", View::Help),
+            ("Hey, can you help me?", View::Help),
+            ("Cool, palace.", View::Palace),
+            ("Can you show me the palace?", View::Palace),
+            ("Please focus.", View::Focus),
+            ("I see. Go to the palace.", View::Palace),
+            ("I mean, the map", View::Map),
+        ] {
+            assert_eq!(view(text), Some(asked), "{text}");
+        }
+        for text in [
+            "Let's go to the palace of Versailles", "The palace was beautiful", "map out the week", "I can't focus today",
+            "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
+            "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
+            "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
+        ] {
+            assert_eq!(view(text), None, "{text}");
+        }
+    }
+
+    /// "Where was I?", "next one" and "last one" always answer, even with nowhere to go: on an empty map (the tour
+    /// teaches "where was I?" there), on the only thread, and for a guest who hasn't spoken. Nothing is kept.
+    #[test]
+    fn with_nowhere_to_go_a_command_still_answers() {
+        let now = super::now_ms();
+        let tomatoes = Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 5_000) };
+        let one = World {
+            threads: vec![thread("Garden", 1, "")],
+            thoughts: vec![tomatoes],
+            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            ..World::default()
+        };
+        let empty = "Nothing on the map yet: say a thought first";
+        for (map, speaker, said, answer) in [
+            (World::default(), "you", "Where was I?", empty.to_string()),
+            (World::default(), "you", "Next one", empty.into()),
+            (World::default(), "you", "Last one", empty.into()),
+            // On the only thread, with the last line finished: where they are, shown as Take me there shows it.
+            (one.clone(), "you", "Where was I?", "Garden a You're on Garden: “Plant the tomatoes”".into()),
+            (one.clone(), "you", "Next one", "Garden is the only thread so far".into()),
+            (one.clone(), "you", "Last one", "Garden is the only thread so far".into()),
+            (one.clone(), "Sam", "Where was I?", "Nothing to go back to yet: say a thought first".into()),
+            // A guest with no thread of their own yet starts at the first.
+            (one.clone(), "Sam", "Next one", "On to Garden".into()),
+        ] {
+            let (core, mut queue, path) = keyless(map);
+            let mut updates = core.updates.subscribe();
+            core.add_thought(speaker, said);
+            let told: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|out| match out.message {
+                    ServerMsg::Notice { message } => Some((out.to, message)),
+                    ServerMsg::Found { thread_id, thought_id, message } => {
+                        Some((out.to, format!("{thread_id} {} {message}", thought_id.unwrap_or_default())))
+                    }
+                    _ => None,
+                })
+                .map(|(to, message)| {
+                    assert_eq!(to.as_deref(), Some(speaker), "{said}");
+                    message
+                })
+                .collect();
+            assert_eq!(told, [answer], "{speaker}: {said}");
+            assert!(core.snapshot().thoughts.iter().all(|t| t.placed) && queue.try_recv().is_err(), "nothing kept: {said}");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    /// What one turn did: the requests it answered (see `answered`) and the thoughts it kept, in order.
+    async fn did(world: World, said: &str) -> (Vec<String>, Vec<String>) {
+        let (core, _queue, path) = keyless(world);
+        let mut updates = core.updates.subscribe();
+        core.add_thought("you", said);
+        // A recap answers from a task of its own.
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        let (mut answers, mut thoughts) = (Vec::new(), Vec::new());
+        while let Ok(out) = updates.try_recv() {
+            match out.message {
+                ServerMsg::Change { change: Change::ThoughtAdded { thought } } => thoughts.push(thought.text),
+                message => answers.extend(answered(&message)),
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+        // A request may answer more than once (a recap loading then done, an app's build failing without a key).
+        answers.dedup();
+        (answers, thoughts)
+    }
+
+    /// The kind of answer a message is to a request, if it is one.
+    fn answered(message: &ServerMsg) -> Option<String> {
+        Some(match message {
+            ServerMsg::Notice { message } if message.starts_with("Back to ") => "back".into(),
+            ServerMsg::Notice { message } if message.starts_with("On to ") => "next".into(),
+            ServerMsg::Notice { message } if message.starts_with("Previous: ") => "previous".into(),
+            ServerMsg::Notice { message } if message.starts_with("New thread: ") => "new thread".into(),
+            ServerMsg::Found { message, .. } if message.starts_with("Here: ") => "found".into(),
+            ServerMsg::View { view } => format!("{view:?}").to_lowercase(),
+            ServerMsg::RecapState { period, .. } => format!("recap {period:?}").to_lowercase(),
+            ServerMsg::AppsBuild { .. } => "app".into(),
+            _ => return None,
+        })
+    }
+
+    /// Every request the README and the "?" list teach acts through `add_thought`, said alone and after each word
+    /// that may lead into it, and none of it is kept as a thought; the look-alikes stay thoughts.
+    #[tokio::test]
+    async fn every_documented_request_acts_alone_and_after_each_lead_in() {
+        let now = super::now_ms();
+        // Two threads you spoke on, you on the first; one point to find.
+        let world = || World {
+            threads: vec![thread("Garden", 1, ""), thread("Bills", 2, "")],
+            thoughts: vec![
+                Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 120_000) },
+                Thought { point: "The electric bill is due Friday".into(), ..said("b", "you", "Bills", now - 60_000) },
+            ],
+            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            ..World::default()
+        };
+        // A recap that names no period covers today, or the last session when nothing landed today.
+        let bare = format!("recap {:?}", crate::recap::default_period(&world(), now)).to_lowercase();
+        let documented = [
+            // The "?" list.
+            ("What can I say?", "help"),
+            ("Help", "help"),
+            ("Where was I?", "back"),
+            ("Go back", "back"),
+            ("Next one", "next"),
+            ("Last one", "previous"),
+            ("New thread", "new thread"),
+            ("Create a new one", "new thread"),
+            ("Palace", "palace"),
+            ("Map", "map"),
+            ("Focus", "focus"),
+            ("Show all", "all"),
+            ("Where did I talk about the electric bill?", "found"),
+            ("Go to the one about the electric bill", "found"),
+            ("Recap", &bare),
+            ("Recap this session", "recap session"),
+            ("Make an app that pings me about bills", "app"),
+            // The README.
+            ("What can you do?", "help"),
+            ("Take me back to where I was", "back"),
+            ("Previous one", "previous"),
+            ("Go back one", "previous"),
+            ("New topic", "new thread"),
+            ("Go to the palace", "palace"),
+            ("Let's focus", "focus"),
+            ("Take me back to the electric bill", "found"),
+            ("Find where I said the electric bill", "found"),
+            ("What did I decide today?", "recap today"),
+            ("What did I decide?", &bare),
+            ("What did we decide?", &bare),
+            ("Let's recap", &bare),
+            ("Make an app that shows a card when I mention the demo.", "app"),
+            ("Can you make me an app to remind me about rent?", "app"),
+            ("Build an app that plays a tune when we get loud", "app"),
+            ("Make a new app that counts my tangents", "app"),
+        ];
+        let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
+        for (phrase, does) in documented {
+            for lead in &leads {
+                let said = if lead.is_empty() { phrase.to_string() } else { format!("{lead}, {phrase}") };
+                assert_eq!(did(world(), &said).await, (vec![does.to_string()], vec![]), "{said}");
+            }
+        }
+        // Look-alikes: talk about these things, or a request asked of someone, is a thought.
+        for said in [
+            "Can you go back to the drawing board?",
+            "Yeah, recap the book.",
+            "Please focus on the budget.",
+            "Well, I might make an app that plays a tune",
+            "Can you recap the book for me?",
+            "Let's make an app that helps students find housing",
+            "Let's go to the palace of Versailles",
+            "Create a new one for the kitchen",
+            "Help me move the couch on Saturday",
+            "What can I say to Dana?",
+            "What did I decide about the venue?",
+            "Find a dentist near the office",
+            "Take me to the airport Friday",
+            "Go back to the beginning of the song, it's the best part",
+            "I loved Japan. Would you go back?",
+            "The one about Oaxacan food.",
+            // With no pause, these make a sentence of what follows (`TALK`).
+            "I see the palace",
+            "I mean the map",
+            "You know the palace?",
+            "Like the map",
+        ] {
+            assert_eq!(did(world(), said).await, (vec![], vec![said.to_string()]), "{said}");
+        }
+        // At the end of a turn the words before keep every word of theirs ("well", "right"), then it acts.
+        for (said, kept, does) in [
+            ("The demo went well where was I", "The demo went well", "back"),
+            ("We turned right where was I", "We turned right", "back"),
+            ("It starts at two, okay, where was I?", "It starts at two", "back"),
+            ("The rent is due Friday, next one", "The rent is due Friday", "next"),
+            ("I'll pay it on Thursday. Anyway, last one.", "I'll pay it on Thursday.", "previous"),
+        ] {
+            assert_eq!(did(world(), said).await, (vec![does.to_string()], vec![kept.to_string()]), "{said}");
         }
     }
 
@@ -1134,6 +1649,7 @@ mod tests {
                     Job::Place(_) => "place",
                     Job::Back(_) => "back",
                     Job::Next(_) => "next",
+                    Job::Previous(_) => "previous",
                 });
             }
             out
@@ -1342,6 +1858,7 @@ mod tests {
             Job::Place(_) => "place",
             Job::Back(_) => "back",
             Job::Next(_) => "next",
+            Job::Previous(_) => "previous",
         }).collect::<Vec<_>>();
         let unplaced = |id: &str, speaker: &str, at_ms| Thought { placed: false, thread_id: None, ..said(id, speaker, "", at_ms) };
         let now = super::now_ms();
@@ -1392,6 +1909,106 @@ mod tests {
         }
     }
 
+    /// "Last one" goes to the thread before yours, from the first round to the last, and waits behind your words
+    /// still being placed, as "next one" does. With more words it's a thought.
+    #[test]
+    fn last_one_goes_to_the_thread_before_yours() {
+        let (core, mut queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        core.commit(vec![
+            Change::ThreadAdded { thread: thread("Garden", 1, "") },
+            Change::ThreadAdded { thread: thread("Party", 2, "") },
+            Change::ThreadAdded { thread: thread("Rent", 3, "") },
+            Change::ActiveChanged { thread_id: "Party".into(), speaker: "you".into() },
+        ]);
+        let active = |core: &Core| core.snapshot().active_for("you").cloned();
+        core.add_thought("you", "Go to the last one.");
+        assert_eq!(active(&core).as_deref(), Some("Garden"));
+        core.add_thought("you", "previous one");
+        assert_eq!(active(&core).as_deref(), Some("Rent"), "from the first, round to the last");
+        core.add_thought("you", "Okay, next one");
+        assert_eq!(active(&core).as_deref(), Some("Garden"), "and back the other way");
+        let told: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::Notice { message } => Some(message),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(told, ["Previous: Garden", "Previous: Rent", "On to Garden"]);
+        assert!(queue.try_recv().is_err(), "nothing to place");
+        core.add_thought("you", "The caterer needs the head count by Friday, okay, last one.");
+        core.add_thought("you", "Go to the last one of the meetings");
+        let jobs: Vec<&str> = std::iter::from_fn(|| queue.try_recv().ok())
+            .map(|job| match job {
+                Job::Place(_) => "place",
+                Job::Previous(_) => "previous",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(jobs, ["place", "previous", "place"]);
+        assert_eq!(core.snapshot().thoughts[1].text, "Go to the last one of the meetings");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "New thread" places nothing and tells only the speaker; the next thought they say starts one (placer.rs
+    /// `decide`), unless they move to a thread before saying it. With more words it's a thought.
+    #[test]
+    fn new_thread_places_nothing_and_the_next_thought_starts_one() {
+        let (core, mut queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        core.commit(vec![
+            Change::ThreadAdded { thread: thread("Rent", 1, "") },
+            Change::ThreadAdded { thread: thread("Party", 2, "") },
+            Change::ActiveChanged { thread_id: "Rent".into(), speaker: "User".into() },
+        ]);
+        core.add_thought("User", "Create a new one.");
+        assert!(core.snapshot().thoughts.is_empty() && queue.try_recv().is_err(), "nothing to place");
+        let told: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::Notice { message } => Some((out.to, message)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(told, [(Some("User".into()), "New thread: your next thought starts it".into())]);
+        // Sam's thought is Sam's; User's next one starts the thread, and only that one.
+        core.add_thought("Sam", "The DJ wants a deposit");
+        core.add_thought("User", "The kitchen needs paint");
+        core.add_thought("User", "Blue, I think");
+        let starts = |core: &Core| core.snapshot().thoughts.iter().map(|t| core.new_threads.starts(&t.id)).collect::<Vec<_>>();
+        assert_eq!(starts(&core), [false, true, false]);
+        // Moving to a thread first, by voice or by a click, ends it: the next thought goes where User went.
+        core.add_thought("User", "New topic");
+        core.add_thought("User", "Where was I?");
+        core.add_thought("User", "The landlord called");
+        core.add_thought("User", "New thread");
+        core.focus("User", "Party");
+        core.add_thought("User", "The cake is ordered");
+        core.add_thought("User", "create a new one for the kitchen");
+        assert_eq!(starts(&core), [false, true, false, false, false, false]);
+        assert_eq!(core.snapshot().thoughts[5].text, "create a new one for the kitchen");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought.
+    #[test]
+    fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
+        let (core, _queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        core.add_thought("Sam", "Let's go to the palace!");
+        core.add_thought("Sam", "Okay, focus.");
+        let views: Vec<(Option<String>, View)> = std::iter::from_fn(|| updates.try_recv().ok())
+            .map(|out| match out.message {
+                ServerMsg::View { view } => (out.to, view),
+                _ => panic!("only views"),
+            })
+            .collect();
+        assert_eq!(views, [(Some("Sam".into()), View::Palace), (Some("Sam".into()), View::Focus)]);
+        assert!(core.snapshot().thoughts.is_empty());
+        core.add_thought("Sam", "Let's go to the palace of Versailles");
+        assert_eq!(core.snapshot().thoughts.len(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// "Where was I?" after words still being placed waits its turn in the placer's queue; a search said after it
     /// waits for those words too, and still happens when the command has acted.
     #[tokio::test(start_paused = true)]
@@ -1426,6 +2043,7 @@ mod tests {
                 }]),
                 Job::Back(speaker) => core.go_back(&speaker),
                 Job::Next(speaker) => core.go_next(&speaker),
+                Job::Previous(speaker) => core.go_previous(&speaker),
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;

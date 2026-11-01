@@ -17,14 +17,30 @@ pub enum ServerMsg {
     Partial { text: String },
     Status { listening: bool, note: String },
     Error { message: String },
-    /// A gentle note, e.g. "Back to Pay rent".
+    /// A gentle note, e.g. "Back to Pay rent". An empty one takes down a search's "Looking through your threads…",
+    /// which stays until its answer: something newer stopped the search.
     Notice { message: String },
     /// A private jump to an existing answer; not replayed when a journal opens.
     Found { thread_id: String, thought_id: Option<String>, message: String },
+    /// A view asked for by voice ("palace", "show the map", "let's focus", "what can I say?"); only to the speaker's windows.
+    View { view: View },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
     Import { status: crate::import::Status },
+}
+
+/// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
+/// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
+/// can say (Help), which opens on any map, an empty one too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum View {
+    Map,
+    Palace,
+    Focus,
+    All,
+    Help,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
