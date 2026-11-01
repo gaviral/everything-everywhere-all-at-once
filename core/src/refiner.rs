@@ -24,10 +24,11 @@ Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. 
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
-/// How long a pass gets, its whole answer included. The 8 normal passes in the 2026-11-01 log took 5–13 s: twice the
-/// slowest is 26 s, rounded up to 30. A pass still out then is hung: it fails and is redone at the next pause
-/// (`run`), not two minutes on.
-const PATIENCE: Duration = Duration::from_secs(30);
+/// How long a pass gets, its whole answer included: twice what filling its 6,000-token room takes, by the placer's rule
+/// (4 s and 8 ms a token), so a big first pass over an imported map still finishes. The 8 normal passes in the
+/// 2026-11-01 log took 5–13 s; a pass still out at 52 s is hung: it fails and is redone at the next pause (`run`),
+/// not two minutes on.
+const PATIENCE: Duration = Duration::from_secs(52);
 
 #[derive(Deserialize, Default)]
 struct Pass {

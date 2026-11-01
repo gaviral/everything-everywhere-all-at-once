@@ -66,7 +66,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
 | Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor`, or `muse-spark-1.2` once the key can't use it (401, 403 or 404 on the default only) | minimal | 20 s, more for a long turn | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
-| Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 30 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
+| Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 52 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
 | Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s | 1, and 1 more when a reply has no answer in it; a composer draft that doesn't check out gets one more, told what was wrong | |
 | Take me there | `REFINER_MODEL` | minimal | 4 s | 1, only when the words match weakly | `e2a2o-find` |
