@@ -1,6 +1,6 @@
-import { memo, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 
@@ -56,7 +56,7 @@ export default function App() {
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
-  // A view said aloud works as its button: Map or Palace, Focus (with a thread to focus on), Show all.
+  // A view said aloud works as its button: Map or Palace, Focus on (with a thread to focus on), or off ("show all").
   useEffect(() => {
     if (!core.viewAsk || !world.threads.length) return;
     const asked = core.viewAsk.view;
@@ -66,7 +66,6 @@ export default function App() {
       setQuery("");
     }
   }, [core.viewAsk]);
-  const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
@@ -119,7 +118,15 @@ export default function App() {
   const seenActive = useRef<string | null>(null);
   // What the map shows next: the newest landing, or your own place when it moves without one ("where was I?").
   const followTarget = useRef<{ thread: string; thought?: string } | null>(null);
+  // Your newest landing since the map last looked. The core sends a turn's changes one by one, so a new topic can
+  // arrive as a landing and then your place moving to it.
+  const followLanding = useRef<{ thread: string; thought: string } | null>(null);
   const followTimer = useRef<number | undefined>(undefined);
+  // The landing the map last showed you, and when: the unfinished card keeps clear of it.
+  const shownLanding = useRef<{ thought: string; at: number } | null>(null);
+  // The map holds still while something else has your eyes: a search, or a panel, menu or dialog over it.
+  const lookingElsewhere = () => document.activeElement === searchRef.current || !!searchRef.current?.value.trim() ||
+    !!document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
   useEffect(() => () => window.clearTimeout(followTimer.current), []);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
@@ -147,35 +154,38 @@ export default function App() {
     const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
     if (!follow || view !== "map" || query.trim() || core.recap.view) return;
     followTarget.current = follow;
+    if (landing?.mine) followLanding.current = landing;
     // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
     window.clearTimeout(followTimer.current);
     followTimer.current = window.setTimeout(() => requestAnimationFrame(() => {
       const target = followTarget.current;
+      const landed = followLanding.current;
       followTarget.current = null;
+      followLanding.current = null;
       // A scroll already under way isn't interrupted by the next landing.
-      if (!target || following.current || Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
-          document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
+      if (!target || following.current || lookingElsewhere()) return;
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
       const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
       const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
       if (bottom <= top) return;
+      // Your words landing, also when your place moved with them to a new topic. Your place moving on its own
+      // ("where was I?", "next one") is what you asked for, so it's never held back.
+      const thought = target.thought ?? (landed?.thread === target.thread ? landed.thought : undefined);
+      // Moving the map holds a landing back only when its thread's title and points are out of view: you went to
+      // read elsewhere. A nudge or a key press that leaves them on screen doesn't. The 5 s is the old guess at
+      // reading, kept until a rule without a timer replaces it.
+      const own = ownRect(card);
+      if (thought && Date.now() - lastNavigation.current < 5000 && (own.bottom <= top || own.top >= bottom)) return;
       // The thought itself (a thread's latest, when you moved back to it), where it will settle: a landing point
       // starts out where its pending pill was, in the dock.
-      const point = target.thought ? document.getElementById(`point-${target.thought}`)
+      const point = thought ? document.getElementById(`point-${thought}`)
         : card.querySelector<HTMLElement>(":scope > div > .points > li:last-child");
       const rect = settledRect(point ?? card);
-      // A point stays clear of the pull-back card, which grows the dock at the next pause.
-      if (point ? rect.top >= top && rect.bottom <= bottom - 100 : rect.bottom > top && rect.top < bottom) return;
+      shownLanding.current = thought && point ? { thought, at: Date.now() } : null;
+      if (point ? rect.top >= top && rect.bottom <= bottom : rect.bottom > top && rect.top < bottom) return;
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
-      // The map's own scrolling isn't you moving around, until it ends: smooth scrolling can outlast a fixed second
-      // when frames are slow, and a late scroll event then held the next landing back for 5 s.
-      following.current = true;
-      const ends = "onscrollend" in document;
-      const done = () => { following.current = false; document.removeEventListener("scrollend", done); window.clearTimeout(cap); };
-      const cap = window.setTimeout(done, ends ? 2000 : reducedMotion ? 100 : 1000);
-      if (ends) document.addEventListener("scrollend", done);
-      window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
+      scrollForMap(following, delta, !!reducedMotion);
     }), 120);
   }, [world.thoughts, world.threads, world.active, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
 
@@ -194,26 +204,13 @@ export default function App() {
   }, [visible]);
 
   // Keep the end of the map reachable even when pending thoughts or the card grow.
-  useEffect(() => {
-    const dock = dockRef.current;
-    if (!dock) return;
-    const update = () => document.documentElement.style.setProperty("--dock-height", `${dock.offsetHeight}px`);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(dock);
-    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
-  }, []);
-  // The map's tools stick right under the header, whatever height it wraps to.
+  useHeightVar(dockRef, "--dock-height");
+  // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
+  // (Back to active, Finish it, a Palace tile) stops under both.
   const headerRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const header = headerRef.current;
-    if (!header) return;
-    const update = () => document.documentElement.style.setProperty("--header-height", `${header.offsetHeight}px`);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(header);
-    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--header-height"); };
-  }, []);
+  const toolsRef = useRef<HTMLElement>(null);
+  useHeightVar(headerRef, "--header-height");
+  useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
@@ -395,9 +392,8 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
-    if (recentFirst) grouped.forEach((group) => group.sort((a, b) => b.touched_ms - a.touched_ms));
     return grouped;
-  }, [world.threads, world.active, threadById, search, matches, focusMode, recentFirst]);
+  }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
   const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }), [core.setItem, core.approve, core.tag, core.correct]);
@@ -485,6 +481,30 @@ export default function App() {
       (laterAt[dropKey(t)] === undefined || now - laterAt[dropKey(t)] >= 5 * 60 * 1000))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
+  // The card grows the dock upward as it rises; the thought the map just showed you moves clear of it, once. Under
+  // 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its words, the card after 2.5 s of
+  // quiet) the newest landing is younger than that when the card rises. Not once you've moved the map yourself.
+  const pullKey = !hasAway && pullBack ? dropKey(pullBack) : "";
+  useEffect(() => {
+    if (!pullKey || view !== "map") return;
+    let frame = 0;
+    const keepClear = () => {
+      const shown = shownLanding.current;
+      if (!shown || Date.now() - shown.at > 10000 || lastNavigation.current > shown.at || lookingElsewhere()) return;
+      // After the map's own scroll, when the card rises while it still runs.
+      if (following.current) { frame = requestAnimationFrame(keepClear); return; }
+      const point = document.getElementById(`point-${shown.thought}`);
+      const dockTop = dockRef.current?.getBoundingClientRect().top;
+      if (!point || dockTop === undefined) return;
+      const rect = settledRect(point);
+      // The 12 px the follow leaves between a card and the dock.
+      const overlap = rect.bottom + 12 - dockTop;
+      if (overlap > 0 && rect.top < window.innerHeight) scrollForMap(following, overlap, !!reducedMotion);
+    };
+    // The map's end has already grown with the dock: its height is published as the card renders (useHeightVar).
+    keepClear();
+    return () => cancelAnimationFrame(frame);
+  }, [pullKey, view, reducedMotion]);
   // Your last words there by when you said them, as the core's Thought::said_at: imported points land last in
   // the list with their old times, and a time ahead of the clock (a sample map) counts as the earliest.
   const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
@@ -549,7 +569,7 @@ export default function App() {
           <div>“Where was I?” or “Go back” · return to where you left off</div>
           <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
           <div>“New thread” or “Create a new one” · your next thought starts one</div>
-          <div>“Palace”, “Map”, “Focus” or “Show all” · switch the view, as the buttons do</div>
+          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>Back, next and last can follow a thought after a pause; the thought is kept.</div>
         </div></details>
@@ -590,16 +610,17 @@ export default function App() {
       <div id="tour-tools" />
       <Apps core={core} />
       <div id="tour-map" />
-      {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
+      {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
             <button aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
             <button aria-pressed={view === "palace"} onClick={() => setView("palace")}>Palace</button>
           </div>
           {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
-          <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
-          <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
-          {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
+          {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
+              while on: pressed is its state, as a toggle button's is. */}
+          {world.threads.length > 1 && <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>Focus</button>}
+          {world.threads.length > 1 && world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
           </>}
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
@@ -635,7 +656,7 @@ export default function App() {
                 exit={{ opacity: 0, y: 8 }}
                 transition={spring}
               >
-                {pullBack.picture && <img className="picture" src={pullBack.picture} alt="" />}
+                <ThreadPicture thread={pullBack} />
                 <div className="pullback-text">
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
@@ -707,6 +728,42 @@ function settledRect(element: HTMLElement) {
   return { top: y - window.scrollY, bottom: y - window.scrollY + element.offsetHeight };
 }
 
+/** A thread's own part of its card, its title and points: the card also holds its branches, below them. */
+function ownRect(card: HTMLElement) {
+  const rect = settledRect(card);
+  const branches = card.querySelector<HTMLElement>(":scope > .branches");
+  return branches ? { top: rect.top, bottom: settledRect(branches).top } : rect;
+}
+
+/** Scrolls the page for the map itself. That isn't you moving around, until it ends: smooth scrolling can outlast a
+ *  fixed second when frames are slow, and a late scroll event then held the next landing back for 5 s. */
+function scrollForMap(following: { current: boolean }, top: number, instant: boolean) {
+  following.current = true;
+  const ends = "onscrollend" in document;
+  const done = () => { following.current = false; document.removeEventListener("scrollend", done); window.clearTimeout(cap); };
+  const cap = window.setTimeout(done, ends ? 2000 : instant ? 100 : 1000);
+  if (ends) document.addEventListener("scrollend", done);
+  window.scrollBy({ top, behavior: instant ? "instant" : "smooth" });
+}
+
+/** Publishes an element's height as a CSS variable while it's on the page, so styles use what is measured: on any
+ *  resize, and at once after each render, since a scroll can read it in the next frame, before the resize is
+ *  observed (a Palace tile opens the map, whose tools are three rows on a phone, not one). */
+function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present = true) {
+  const publish = (element: HTMLElement) => {
+    const height = `${element.offsetHeight}px`;
+    if (document.documentElement.style.getPropertyValue(name) !== height) document.documentElement.style.setProperty(name, height);
+  };
+  useLayoutEffect(() => { if (ref.current) publish(ref.current); });
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => publish(element));
+    observer.observe(element);
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
+  }, [present]);
+}
+
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
   const grouped = new Map<string, T[]>();
   for (const item of items) if (item.status !== "dismissed") {
@@ -756,7 +813,7 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
       transition={spring}
     >
       <div className="thread-head">
-        {thread.picture && <span className="picture-wrap"><img className="picture" src={thread.picture} alt="" /><span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span></span>}
+        <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
             <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
@@ -818,6 +875,21 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
         </div>
       )}
     </motion.section>
+  );
+}
+
+/** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
+ *  arrives later fades in over it and moves nothing. A card used to grow 5–19 px when its picture came, its title
+ *  sliding right. ✦ marks a picture only once one shows. */
+function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const shown = !!thread.picture && loaded === thread.picture;
+  return (
+    <span className="picture-wrap">
+      <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
+      {thread.picture && <img key={thread.picture} className={shown ? "picture is-shown" : "picture"} src={thread.picture} alt="" onLoad={() => setLoaded(thread.picture)} />}
+      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
+    </span>
   );
 }
 

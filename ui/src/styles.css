@@ -639,8 +639,7 @@ header {
 }
 
 /* Keep the map readable as content and controls grow. */
-.map { scroll-padding-block: 70px 240px; }
-.thread { scroll-margin-block: 76px 240px; min-width: 0; }
+.thread { min-width: 0; }
 .thread.active { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
 .thread.active.dropped { box-shadow: 0 0 0 3px var(--accent-soft); }
 .head-text { flex: 1; }
@@ -693,7 +692,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */
 .map { padding-bottom: calc(var(--dock-height, 150px) + 32px); }
-.thread { scroll-margin-top: 145px; scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
+/* A card brought to the top stops under the header and tools, as measured, one card gap (12px) below them. */
+.thread { scroll-margin-top: calc(var(--header-height, 64px) + var(--tools-height, 50px) + 12px); scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
 .thread.collapsed { padding-block: 10px; }
 .thread.collapsed .picture { width: 38px; height: 38px; border-radius: 9px; }
 .thread-count { color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -725,7 +725,6 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .map-tools { padding-inline: 16px; }
   .map-tools-inner { flex-wrap: wrap; }
   .search { flex-basis: 100%; }
-  .thread { scroll-margin-top: 240px; }
   .branches { padding-left: 6px; }
 }
 .shortcuts { position: relative; flex: none; }
@@ -736,7 +735,13 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .keyboard-hint div + div { margin-top: 6px; color: var(--muted); }
 .keyboard-hint strong { display: block; margin-top: 10px; }
 .keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
-.picture-wrap { position: relative; flex: none; display: flex; }
+/* The picture slot: the thread's first letter, quiet (color is for meaning), until the picture fades in over it. */
+.picture-wrap { position: relative; flex: none; display: grid; }
+.picture-wrap > .picture { grid-area: 1 / 1; }
+.picture-letter { display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 20px/1 Georgia, serif; }
+.thread.collapsed .picture-letter { font-size: 16px; }
+.picture-wrap > img.picture { opacity: 0; transition: opacity .2s ease-out; }
+.picture-wrap > img.picture.is-shown { opacity: 1; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
 .point-mark { font-size: 11px; }
 .map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
@@ -818,7 +823,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .dock { max-height: 50dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .pullback { flex-wrap: nowrap; gap: 4px; padding: 2px 4px 2px 10px; }
-  .pullback .picture { display: none; }
+  .pullback .picture-wrap { display: none; }
   .pullback-title { font-size: 13px; line-height: 18px; }
   .pullback-quote { margin-top: 0; font-size: 12px; line-height: 18px; }
   .pullback-actions { margin-left: 0; gap: 0; }
