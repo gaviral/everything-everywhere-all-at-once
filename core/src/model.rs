@@ -184,20 +184,26 @@ impl Service {
         if self.limit == 0 {
             return None;
         }
-        let mut calls = self.calls.lock().unwrap();
+        self.wait(&mut self.calls.lock().unwrap(), now)
+    }
+
+    /// `capped_for` on calls already locked: drops the calls an hour old, then the wait if the rest fill the cap.
+    fn wait(&self, calls: &mut VecDeque<u64>, now: u64) -> Option<u64> {
         while calls.front().is_some_and(|&at| now.saturating_sub(at) >= HOUR_MS) {
             calls.pop_front();
         }
         (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
     }
 
-    /// Counts a call about to be sent at `now`, or says how long until one may be.
+    /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
+    /// step under one lock, so two features asking at once with one call left can't both take it.
     fn spend(&self, now: u64) -> Result<(), u64> {
-        if let Some(wait) = self.capped_for(now) {
-            return Err(wait);
-        }
         if self.limit > 0 {
-            self.calls.lock().unwrap().push_back(now);
+            let mut calls = self.calls.lock().unwrap();
+            if let Some(wait) = self.wait(&mut calls, now) {
+                return Err(wait);
+            }
+            calls.push_back(now);
         }
         self.capped_said.store(false, Ordering::Relaxed);
         Ok(())
@@ -509,6 +515,23 @@ mod tests {
         let off = super::Service::with_limit(0);
         assert!((0..1000).all(|at| off.spend(at).is_ok()), "0 is no cap");
         assert_eq!(super::Service::default().limit, super::CALLS_PER_HOUR);
+    }
+
+    #[test]
+    fn features_asking_at_once_never_take_more_than_the_cap() {
+        let service = super::Service::with_limit(100);
+        let start = std::sync::Barrier::new(16);
+        let took: usize = std::thread::scope(|s| {
+            let threads: Vec<_> = (0..16)
+                .map(|_| s.spawn(|| {
+                    start.wait();
+                    (0..100).filter(|_| service.spend(1_000).is_ok()).count()
+                }))
+                .collect();
+            threads.into_iter().map(|t| t.join().unwrap()).sum()
+        });
+        assert_eq!(took, 100, "1600 asks at once, 100 calls allowed");
+        assert_eq!(service.calls.lock().unwrap().len(), 100);
     }
 
     #[tokio::test]
