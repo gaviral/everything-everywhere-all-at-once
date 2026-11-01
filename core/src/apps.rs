@@ -480,7 +480,8 @@ fn local_time() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok()).map(|s| s.trim().to_string()).unwrap_or_default()
 }
 
-fn valid_date(text: &str) -> bool {
+/// A real day as YYYY-MM-DD, between 2000 and 2100: "2026-11-31" or "Saturday" isn't one.
+pub fn valid_date(text: &str) -> bool {
     let bytes = text.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-'
         || !bytes.iter().enumerate().all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit()) { return false; }

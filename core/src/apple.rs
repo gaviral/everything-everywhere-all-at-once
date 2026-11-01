@@ -60,11 +60,12 @@ fn quoted(text: &str) -> String {
 /// Builds `d` at the start of a YYYY-MM-DD day without relying on locale date formats.
 /// The talk only ever gives a date, so items are all-day rather than at an invented hour.
 fn date_lines(when: &str) -> Option<String> {
-    let mut parts = when.trim().split('-').map(|p| p.parse::<u32>());
-    let (Some(Ok(y)), Some(Ok(m)), Some(Ok(d))) = (parts.next(), parts.next(), parts.next()) else { return None };
-    if !(2000..=2100).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+    // A real day only: AppleScript would quietly roll "2026-11-31" over to December 1.
+    if !crate::apps::valid_date(when.trim()) {
         return None;
     }
+    let mut parts = when.trim().split('-').map(|p| p.parse::<u32>());
+    let (Some(Ok(y)), Some(Ok(m)), Some(Ok(d))) = (parts.next(), parts.next(), parts.next()) else { return None };
     Some(format!(
         "set d to current date\nset day of d to 1\nset year of d to {y}\nset month of d to {m}\nset day of d to {d}\nset time of d to 0"
     ))
@@ -132,7 +133,7 @@ mod tests {
     #[test]
     fn dates_are_all_day_and_checked() {
         assert!(date_lines("2026-11-03").is_some_and(|d| d.ends_with("set time of d to 0")));
-        for bad in ["", "tomorrow", "2026-13-01", "2026-11-00", "1999-01-01", "2026-11"] {
+        for bad in ["", "tomorrow", "Saturday", "2026-13-01", "2026-11-00", "2026-11-31", "2026-02-29", "1999-01-01", "2026-11"] {
             assert!(date_lines(bad).is_none(), "{bad}");
         }
         assert!(event("Freeze", "2026-11-03").contains("allday event:true"));

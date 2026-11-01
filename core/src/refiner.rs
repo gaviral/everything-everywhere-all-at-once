@@ -231,15 +231,17 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     }
     for a in pass.actions {
         let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
+        // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
+        let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
         if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated {
             out.push(Change::ActionProposed {
                 action: Action {
                     id: new_id("ac"),
                     thread_id: a.thread_id,
                     // An event needs a date; without one it's a reminder rather than an invented day.
-                    kind: if a.kind == "event" && !a.when.trim().is_empty() { "event".into() } else { "reminder".into() },
+                    kind: if a.kind == "event" && !when.is_empty() { "event".into() } else { "reminder".into() },
                     title: a.title.trim().into(),
-                    when: a.when.trim().into(),
+                    when: when.into(),
                     status: ItemStatus::New,
                     done_ms: None,
                 },
@@ -317,9 +319,8 @@ mod tests {
         assert!(!lines.iter().any(|l| l.ends_with(" 69")), "only the latest");
     }
 
-    #[test]
-    fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
-        let thread = |id: &str, parent: Option<&str>| Thread {
+    fn thread(id: &str, parent: Option<&str>) -> Thread {
+        Thread {
             id: id.into(),
             title: format!("Topic {id}"),
             parent_id: parent.map(Into::into),
@@ -329,7 +330,31 @@ mod tests {
             tags: Vec::new(),
             picture: None,
             dropped_by: String::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn actions_keep_only_real_dates() {
+        let world = World { threads: vec![thread("T1", None)], ..World::default() };
+        let pass: Pass = serde_json::from_value(serde_json::json!({ "actions": [
+            {"thread_id": "T1", "kind": "event", "title": "Demo day", "when": "2026-11-04"},
+            {"thread_id": "T1", "kind": "event", "title": "Picnic", "when": "Saturday"},
+            {"thread_id": "T1", "kind": "reminder", "title": "Pay rent", "when": "2026-11-31"},
+        ]}))
+        .unwrap();
+        let actions: Vec<[String; 3]> = changes(&world, pass)
+            .into_iter()
+            .filter_map(|c| match c {
+                Change::ActionProposed { action } => Some([action.title, action.kind, action.when]),
+                _ => None,
+            })
+            .collect();
+        let expected = [["Demo day", "event", "2026-11-04"], ["Picnic", "reminder", ""], ["Pay rent", "reminder", ""]];
+        assert_eq!(actions, expected.map(|a| a.map(String::from)), "an event without a real day is a reminder");
+    }
+
+    #[test]
+    fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
         let thought = |id: &str, thread: &str| Thought {
             id: id.into(),
             speaker: "you".into(),
