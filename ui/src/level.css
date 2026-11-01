@@ -1,0 +1,36 @@
+/* ?level (Level.tsx): a developer's meter, just above the dock on the left, near the mic it measures. */
+.level-meter {
+  position: fixed;
+  left: 16px;
+  bottom: calc(var(--dock-height, 120px) + 8px);
+  z-index: 7;
+  width: 248px;
+  padding: 12px 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 12px;
+}
+.level-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.level-head strong { color: var(--ink); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.level-now { margin: 2px 0 8px; color: var(--ink); font-size: 48px; font-weight: 600; line-height: 1.05; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.level-now.loud, .level-stretches .current span { color: var(--accent); }
+.level-chart { position: relative; display: flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 72px; border-bottom: 1px solid var(--line); }
+.level-chart i { flex: 0 0 calc((100% - (var(--shown) - 1) * 2px) / var(--shown)); border-radius: 2px 2px 0 0; background: var(--muted); opacity: .35; }
+.level-chart i.loud { background: var(--accent); opacity: 1; }
+.level-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--ink); pointer-events: none; }
+.level-line.off { opacity: .4; }
+.level-line span { position: absolute; left: 0; bottom: 2px; padding-right: 4px; background: var(--card); color: var(--ink); font-size: 11px; white-space: nowrap; }
+.level-stretches { margin: 8px 0 0; padding: 0; list-style: none; }
+.level-stretches li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.level-stretches span { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.level-help { margin: 8px 0 0; line-height: 1.35; }
+
+@media (max-width: 720px) {
+  .level-meter { right: 8px; left: 8px; width: auto; padding: 10px 12px 8px; }
+  .level-now { font-size: 36px; margin-bottom: 6px; }
+  .level-chart { height: 48px; }
+  .level-help { display: none; }
+}
