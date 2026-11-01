@@ -95,7 +95,7 @@ Leave a thread mid-sentence and it is marked “left off”; at the next pause a
 
 The Palace: one picture per thread, drawn by Muse Image during pauses.
 
-![A Recap sheet with a summary, what you worked on, decisions and plans](docs/screens/recap.webp)
+![A Recap sheet with a summary, then the decisions made and plans, with what you worked on below](docs/screens/recap.webp)
 
 Recap: what you decided and planned, then what you worked on, each line linking back to its thread.
 
