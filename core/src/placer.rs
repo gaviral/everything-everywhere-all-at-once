@@ -3,7 +3,7 @@
 
 use crate::world::{find, matches, swap, Change, Thought, Thread, ThreadStatus, World};
 use crate::{model::Verdict, now_ms, protocol::ServerMsg, Core};
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -176,11 +176,7 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
                 .send()
         })
         .await?;
-    let status = response.status();
-    let body: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", body["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    let body = crate::model::answer(response).await?;
     let content = body["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let placement: Placement = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     // From when the thought arrived, so time waiting in the queue counts too.
