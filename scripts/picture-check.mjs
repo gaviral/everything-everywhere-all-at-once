@@ -7,7 +7,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { start, source, decoded, failed, wait, retried, back, RETRY_MS } = await server.ssrLoadModule("/src/pictures.ts");
+  const { start, resume, source, decoded, failed, wait, retried, back, RETRY_MS } = await server.ssrLoadModule("/src/pictures.ts");
 
   // No picture yet (queued or being drawn): nothing to fetch, the tile shows, and nothing waits or retries.
   const none = start([]);
@@ -61,6 +61,27 @@ try {
   map = failed(map);
   assert.equal(map.state, "waiting");
   assert.equal(source(retried(map)), "/images/T3-small.webp?fetch=1");
+  // A map that kept only its full picture has no Palace copy, so the Palace names the same address twice: it is tried
+  // once, and a failure waits for a new fetch instead of "trying" the same address again (no request, no answer, stuck).
+  let full = start(["/images/T4-abc.png", "/images/T4-abc.png"]);
+  assert.deepEqual(full.sources, ["/images/T4-abc.png"], "a copy named twice is tried once");
+  full = failed(full);
+  assert.equal(full.state, "waiting", "its failure waits for a new fetch");
+  assert.equal(source(retried(full)), "/images/T4-abc.png?fetch=1", "and the new fetch has a new address");
+  assert.deepEqual(start(["/b", "/a", "/b"]).sources, ["/b", "/a"], "order kept");
+
+  // A slot mounting again (a card back from the Palace) asks for the address its picture last showed from, which the
+  // browser still holds, not the copy that failed before it.
+  const again = resume(["/images/T5-small.webp"], { index: 0, fetch: 1 });
+  assert.equal(source(again), "/images/T5-small.webp?fetch=1", "the fetch that showed");
+  assert.equal(again.state, "loading", "still shown only once it is in the browser and decoded");
+  assert.equal(again.timed, 0, "with its timed fetches unused");
+  const palace = resume(["/images/T6-palace.webp", "/images/T6-small.webp"], { index: 1, fetch: 0 });
+  assert.equal(source(palace), "/images/T6-small.webp", "the copy that showed (a map with no Palace copy)");
+  assert.equal(source(retried(failed(palace))), "/images/T6-palace.webp?fetch=1", "if it fails now, every copy again");
+  assert.deepEqual(resume(["/images/T7-small.webp"], { index: 3, fetch: 2 }), start(["/images/T7-small.webp"]),
+    "a remembered copy that no longer exists starts over");
+  assert.deepEqual(resume(["/images/T8-small.webp"]), start(["/images/T8-small.webp"]), "nothing remembered: the start");
   console.log("picture-check: all passed");
 } finally {
   await server.close();

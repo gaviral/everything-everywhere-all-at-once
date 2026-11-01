@@ -25,8 +25,21 @@ export type Slot = {
   state: "loading" | "shown" | "waiting" | "gave-up";
 };
 
+/** A copy named twice (a map that kept only its full picture, which has no Palace copy) is tried once: trying the
+ *  same address again would make no new request, so no answer would ever come and the slot would wait forever. */
 export function start(sources: string[]): Slot {
-  return { sources, index: 0, timed: 0, fetch: 0, state: sources.length ? "loading" : "gave-up" };
+  const unique = [...new Set(sources)];
+  return { sources: unique, index: 0, timed: 0, fetch: 0, state: unique.length ? "loading" : "gave-up" };
+}
+
+/** Where a picture last showed from: which copy, and which fetch of it. */
+export type Shown = { index: number; fetch: number };
+
+/** A slot that mounts again starts from the address its picture last showed from, which the browser still holds,
+ *  instead of a copy that failed before (that one would load afresh and fade in a second time). */
+export function resume(sources: string[], shown?: Shown): Slot {
+  const slot = start(sources);
+  return shown && shown.index < slot.sources.length ? { ...slot, index: shown.index, fetch: shown.fetch } : slot;
 }
 
 /** The address of the copy being tried; a fetch after a failure carries a count the core ignores. */
@@ -65,6 +78,19 @@ export function back(slot: Slot): Slot {
   return { ...slot, index: 0, fetch: slot.fetch + 1, state: "loading" };
 }
 
+/** Each picture's last shown address, by its copies (the key usePicture uses), for slots that mount again. A map holds
+ *  tens to a few hundred pictures; the oldest are forgotten past SHOWN_MAX, which only costs a fade. */
+const shownFrom = new Map<string, Shown & { src: string }>();
+const SHOWN_MAX = 2_000;
+
+function remember(key: string, slot: Slot) {
+  const src = source(slot);
+  if (slot.state !== "shown" || !src) return;
+  shownFrom.delete(key);
+  shownFrom.set(key, { index: slot.index, fetch: slot.fetch, src });
+  if (shownFrom.size > SHOWN_MAX) shownFrom.delete(shownFrom.keys().next().value!);
+}
+
 const backListeners = new Set<() => void>();
 
 /** Called by the connection when the core answers again after a disconnect. */
@@ -73,14 +99,14 @@ export function coreBack() {
 }
 
 /** A picture slot's state and the props of its <img>; `shown` is true once the picture has decoded. The image
- *  is never visible before that (`is-shown` fades it in); one already decoded when it mounts (a card back from
- *  the Palace) shows at once, with no second fade (`data-instant`). Give the <img> `key={img.src}`, so each fetch is a
- *  new element. */
+ *  is never visible before that (`is-shown` fades it in); one this page already showed, still in the browser's memory
+ *  when it mounts again (a card back from the Palace), shows at once with no second fade (`data-instant`), decoded
+ *  before it is painted (`decoding="sync"`). Give the <img> `key={img.src}`, so each fetch is a new element. */
 export function usePicture(sources: string[]) {
   const key = sources.join("\n");
-  const [state, setState] = useState(() => ({ key, slot: start(sources), instant: false }));
+  const [state, setState] = useState(() => ({ key, slot: resume(sources, shownFrom.get(key)), instant: false }));
   // A new picture (or none) starts over, in this same render.
-  const current = state.key === key ? state : { key, slot: start(sources), instant: false };
+  const current = state.key === key ? state : { key, slot: resume(sources, shownFrom.get(key)), instant: false };
   if (current !== state) setState(current);
   const { slot, instant } = current;
   const src = source(slot);
@@ -92,11 +118,14 @@ export function usePicture(sources: string[]) {
       ? { ...was, slot: change(was.slot), instant: was.instant || instant } : was));
   }, [key]);
 
-  // Already in the browser's memory: no fade, it was on screen a moment ago.
+  // Shown before from this very address and still in the browser's memory: no fade, it was on screen a moment ago.
+  // Anything else waits for onLoad, which fires for a cached image too, and its decode.
   useLayoutEffect(() => {
     const el = img.current;
-    if (src && el?.complete && el.naturalWidth > 0) update(src, decoded, true);
-  }, [src, update]);
+    if (src && shownFrom.get(key)?.src === src && el?.complete && el.naturalWidth > 0) update(src, decoded, true);
+  }, [key, src, update]);
+
+  useEffect(() => remember(key, slot), [key, slot]);
 
   useEffect(() => {
     const ms = wait(slot);
@@ -127,7 +156,7 @@ export function usePicture(sources: string[]) {
   return {
     shown,
     img: src
-      ? { ref: img, src, alt: "", onLoad, onError, decoding: "async" as const, "data-instant": instant ? "" : undefined,
+      ? { ref: img, src, alt: "", onLoad, onError, decoding: instant ? "sync" as const : "async" as const, "data-instant": instant ? "" : undefined,
           className: shown ? "slot-picture is-shown" : "slot-picture" }
       : null,
   };
