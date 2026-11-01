@@ -20,6 +20,7 @@ suggestions: at most one per thread and only when genuinely useful: a next step,
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
 tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
 #hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
+Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
@@ -181,7 +182,7 @@ fn existing(world: &World) -> Vec<String> {
 
 /// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on it.
 fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
-    let map = describe(world, since);
+    let map = describe(world, since, today);
     let existing = existing(world);
     json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
@@ -210,7 +211,8 @@ fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
 /// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
 /// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
 /// Each thread shows its tags, and with more than one speaker (a room) each thought says who said it.
-fn describe(world: &World, since: u64) -> String {
+/// Older points carry their local said date, including the last point in a quiet line.
+fn describe(world: &World, since: u64, today: &str) -> String {
     let points = |t: &Thread| -> Vec<&Thought> {
         world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
     };
@@ -222,12 +224,23 @@ fn describe(world: &World, since: u64) -> String {
         if t.tags.is_empty() { String::new() } else { format!(" tags: {}", t.tags.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(" ")) }
     };
     let named = world.thoughts.iter().map(|p| p.speaker.as_str()).collect::<HashSet<_>>().len() > 1;
-    let line = |p: &Thought| if named { format!("  - {}: {}", p.speaker, p.text) } else { format!("  - {}", p.text) };
+    let dated = |p: &Thought| {
+        said_on(p).filter(|day| today.get(..10).is_some_and(|now| day.as_str() < now))
+            .map(|day| format!(" (said {day})")).unwrap_or_default()
+    };
+    let line = |p: &Thought| {
+        let who = if named { format!("{}: ", p.speaker) } else { String::new() };
+        format!("  - {who}{}{}", p.text, dated(p))
+    };
     let quiet: Vec<String> = world
         .threads
         .iter()
         .filter(|t| !recent(t))
-        .map(|t| format!("{}: {} (parent: {}){} last: {}", t.id, t.title, parent(t), tags(t), t.last_point))
+        .map(|t| {
+            let said = points(t).into_iter().rev().find(|p| p.point == t.last_point || p.text == t.last_point)
+                .map(dated).unwrap_or_default();
+            format!("{}: {} (parent: {}){} last: {}{said}", t.id, t.title, parent(t), tags(t), t.last_point)
+        })
         .collect();
     let busy: Vec<String> = world
         .threads
@@ -304,7 +317,9 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     }
     for mut a in pass.actions {
         // Never a past day, and the day they named for it; see `day`.
-        a.when = day(a.when.trim(), &about(world, &a.thread_id, &a.title), today);
+        let (said, point) = about(world, &a.thread_id, &a.title);
+        let said_on = point.and_then(said_on);
+        a.when = day(a.when.trim(), &said, today, said_on.as_deref().unwrap_or(today));
         let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
         // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
         let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
@@ -394,13 +409,26 @@ fn vocabulary(world: &World, id: &str) -> HashSet<String> {
 }
 
 /// What was said about an action: its title, and the sentences on its thread with the most of its words
-/// ("the water bill is due on the fifteenth", not "I paid the gas bill last Friday").
-fn about<'a>(world: &'a World, thread: &'a str, title: &'a str) -> Vec<&'a str> {
+/// ("the water bill is due on the fifteenth", not "I paid the gas bill last Friday"), with their source point.
+fn about<'a>(world: &'a World, thread: &'a str, title: &'a str) -> (Vec<&'a str>, Option<&'a Thought>) {
     let words = content(title);
-    let sentences: Vec<(&str, usize)> =
-        said_in(world, thread).flat_map(|text| text.split(['.', '!', '?', ';'])).map(|s| (s, content(s).intersection(&words).count())).collect();
-    let most = sentences.iter().map(|(_, n)| *n).max().unwrap_or(0);
-    std::iter::once(title).chain(sentences.into_iter().filter(|(_, n)| most > 0 && *n == most).map(|(s, _)| s)).collect()
+    let sentences: Vec<(&str, usize, &Thought)> = world.thoughts.iter()
+        .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread))
+        .flat_map(|p| {
+            let words = &words;
+            p.text.split(['.', '!', '?', ';']).map(move |s| (s, content(s).intersection(words).count(), p))
+        })
+        .collect();
+    let most = sentences.iter().map(|(_, n, _)| *n).max().unwrap_or(0);
+    let point = sentences.iter().find(|(_, n, _)| most > 0 && *n == most).map(|(_, _, p)| *p);
+    let said = std::iter::once(title).chain(sentences.into_iter().filter(|(_, n, _)| most > 0 && *n == most).map(|(s, _, _)| s)).collect();
+    (said, point)
+}
+
+/// The thought's local calendar day; a missing timestamp leaves the old today-based behavior in place.
+fn said_on(point: &Thought) -> Option<String> {
+    if point.at_ms == 0 { return None; }
+    crate::clock::local(point.at_ms).map(|local| local[..10].to_string())
 }
 
 /// Lowercase words without punctuation: "Mom's birthday!" is mom, s, birthday.
@@ -469,11 +497,12 @@ const WEEK: [&str; 7] = ["thursday", "friday", "saturday", "sunday", "monday", "
 /// - never past: a past day is the model slipping the year (2025-11-10 when it's 2026), so it's the same day at its
 ///   nearest occurrence, unless that's the one that just went by, which is no day to remind anyone of;
 /// - the day they named: when their words name one ("Friday", "next Tuesday", "tomorrow"), the date is on it;
-///   a different date is dropped rather than shown wrong.
-fn day(when: &str, said: &[&str], today: &str) -> String {
+///   relative to `said_on`, not the import day. A different date is dropped rather than shown wrong.
+fn day(when: &str, said: &[&str], today: &str, said_on: &str) -> String {
     let Some(mut date) = day_number(when) else { return String::new() };
     // Without today's date (no `date` command) there's nothing to check against.
     let Some(now) = today.get(..10).and_then(day_number) else { return when.into() };
+    let said_day = said_on.get(..10).and_then(day_number).unwrap_or(now);
     if date < now {
         let year = |days: i64| crate::import::civil_from_days(days).0;
         let nearest = (-1..=1).filter_map(|y| day_number(&format!("{:04}{}", year(now) + y, &when[4..]))).min_by_key(|d| (d - now).abs());
@@ -487,10 +516,21 @@ fn day(when: &str, said: &[&str], today: &str) -> String {
         let words = words(text);
         for (i, word) in words.iter().enumerate() {
             match word.as_str() {
-                "today" | "tonight" => days.push(now),
-                "tomorrow" => days.push(now + 1),
+                "today" | "tonight" => days.push(said_day),
+                "tomorrow" => days.push(said_day + 1),
                 // "last Friday" is gone; it names no day ahead.
-                w if i == 0 || words[i - 1] != "last" => weekdays.extend(WEEK.iter().position(|d| *d == w)),
+                w if i == 0 || words[i - 1] != "last" => {
+                    if let Some(weekday) = WEEK.iter().position(|d| *d == w) {
+                        if said_day < now {
+                            // An imported Friday belongs to the week it was said, not the next one now.
+                            let offset = (weekday as i64 - said_day).rem_euclid(7);
+                            let offset = if offset == 0 && i > 0 && words[i - 1] == "next" { 7 } else { offset };
+                            days.push(said_day + offset);
+                        } else {
+                            weekdays.push(weekday);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -735,11 +775,11 @@ mod tests {
             place_ms: None,
         };
         world.thoughts.push(said("a", "you"));
-        let alone = describe(&world, 0);
+        let alone = describe(&world, 0, TODAY);
         assert!(alone.contains("T2: Topic T2 (parent: none) tags: #rent #home last: "), "{alone}");
         assert!(alone.contains("T1: Topic T1 (parent: none) tags: #demo\n  - a said"), "{alone}");
         world.thoughts.push(said("b", "Sam"));
-        let room = describe(&world, 0);
+        let room = describe(&world, 0, TODAY);
         assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
     }
 
@@ -776,16 +816,70 @@ mod tests {
             thoughts: (1..=12).map(|n| thought(n, "T1")).chain([thought(101, "T2")]).collect(),
             ..World::default()
         };
-        let text = describe(&world, 50);
+        let text = describe(&world, 50, TODAY);
         assert!(text.contains("T1: Topic T1 (parent: none) last: last on T1"));
         assert!(!text.contains("thought 12\n") && text.contains("thought 101"));
-        let all = describe(&world, 0);
-        assert!(all.contains("thought 12") && !all.contains("thought 4\n"), "keeps only the latest 8");
+        let all = describe(&world, 0, TODAY);
+        assert!(all.contains("thought 12") && !all.contains("  - thought 4"), "keeps only the latest 8");
+    }
+
+    #[test]
+    fn older_points_show_their_local_said_day_without_changing_the_cached_order() {
+        let mut world = map(&[
+            ("T1", "Quiet", &["Call the electrician tomorrow."]),
+            ("T2", "Active", &["Pay rent Friday.", "Buy milk tomorrow."]),
+        ]);
+        world.active = Some("T2".into());
+        world.thoughts[0].at_ms = crate::clock::ms("2026-10-29 23:30").unwrap();
+        world.thoughts[1].at_ms = crate::clock::ms("2026-10-22 00:30").unwrap();
+        world.thoughts[2].at_ms = crate::clock::ms("2026-11-01 00:30").unwrap();
+        world.threads[0].last_point = world.thoughts[0].text.clone();
+        for room in [false, true] {
+            if room { world.thoughts[1].speaker = "Sam".into(); }
+            let text = describe(&world, u64::MAX, TODAY);
+            assert!(text.contains("last: Call the electrician tomorrow. (said 2026-10-29)"), "{text}");
+            assert!(text.contains("Pay rent Friday. (said 2026-10-22)"), "{text}");
+            assert!(text.ends_with("Buy milk tomorrow."), "today stays unmarked: {text}");
+            assert!(text.find("T1: Quiet").unwrap() < text.find("T2: Active").unwrap(), "quiet prefix first");
+        }
+    }
+
+    #[test]
+    fn imported_relative_dates_use_the_best_matching_points_day() {
+        for (said_on, text, title, when, today, expected) in [
+            ("2026-10-29", "Call the electrician tomorrow.", "Call electrician", "2026-11-02", TODAY, ""),
+            ("2026-10-29", "Call the electrician tomorrow.", "Call electrician", "2026-10-30", TODAY, ""),
+            ("2026-11-01", "Call the electrician tomorrow.", "Call electrician", "2026-11-02", TODAY, "2026-11-02"),
+            ("2026-11-01", "Call the electrician tomorrow.", "Call electrician", "2026-11-03", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-11-06", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-23", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-23", "2026-10-23 (Friday)", "2026-10-23"),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-30", "2026-10-23 (Friday)", ""),
+            ("2026-10-29", "Call the dentist next Tuesday.", "Call dentist", "2026-11-03", TODAY, "2026-11-03"),
+            ("2026-10-29", "Call the dentist next Tuesday.", "Call dentist", "2026-11-10", TODAY, ""),
+        ] {
+            // A newer point on the same thread must not supply this action's day.
+            let mut world = map(&[("T1", "Errands", &[text, "Buy milk tomorrow."])]);
+            world.thoughts[0].at_ms = crate::clock::ms(&format!("{said_on} 23:30")).unwrap();
+            let pass = || serde_json::from_value::<Pass>(serde_json::json!({ "actions": [
+                {"thread_id": "T1", "kind": "event", "title": title, "when": when}
+            ]})).unwrap();
+            let kind = if expected.is_empty() { "reminder" } else { "event" };
+            for _ in 0..2 {
+                let changes = changes_on(&world, pass(), today);
+                assert_eq!(shown(&changes), [format!("T1 {kind} {title} {expected}")], "{said_on}: {text} -> {when}");
+                let mut landed = world.clone();
+                for change in changes { landed.apply(&change); }
+                assert!(changes_on(&landed, pass(), today).is_empty(), "an existing action stays deduplicated");
+                world.thoughts.reverse();
+            }
+        }
     }
 
     /// A map of (id, title, what was said) rows.
     fn map(rows: &[(&str, &str, &[&str])]) -> World {
         let mut world = World::default();
+        let at_ms = crate::clock::ms("2026-11-01 12:00").unwrap();
         for (id, title, said) in rows {
             world.threads.push(Thread { title: title.to_string(), ..thread(id, None) });
             for text in *said {
@@ -802,7 +896,7 @@ mod tests {
                     heard: String::new(),
                     fixed: String::new(),
                     complete: true,
-                    at_ms: n as u64,
+                    at_ms,
                     place_ms: None,
                 });
             }
@@ -1000,19 +1094,19 @@ mod tests {
     fn action_dates_are_never_past_and_fall_on_the_day_said() {
         // Sunday 1 November; the 3rd and the 10th are Tuesdays.
         let tuesday = ["I have to call the dentist next Tuesday."];
-        assert_eq!(day("2026-11-03", &tuesday, TODAY), "2026-11-03");
-        assert_eq!(day("2026-11-10", &tuesday, TODAY), "2026-11-10");
-        assert_eq!(day("2026-11-04", &tuesday, TODAY), "", "a Wednesday isn't Tuesday");
-        assert_eq!(day("2026-11-20", &["Mom's birthday is Friday the twentieth."], TODAY), "2026-11-20");
+        assert_eq!(day("2026-11-03", &tuesday, TODAY, TODAY), "2026-11-03");
+        assert_eq!(day("2026-11-10", &tuesday, TODAY, TODAY), "2026-11-10");
+        assert_eq!(day("2026-11-04", &tuesday, TODAY, TODAY), "", "a Wednesday isn't Tuesday");
+        assert_eq!(day("2026-11-20", &["Mom's birthday is Friday the twentieth."], TODAY, TODAY), "2026-11-20");
         let tomorrow = ["The submission deadline is tomorrow at nine PM."];
-        assert_eq!((day("2026-11-02", &tomorrow, TODAY), day("2026-11-03", &tomorrow, TODAY)), ("2026-11-02".into(), String::new()));
+        assert_eq!((day("2026-11-02", &tomorrow, TODAY, TODAY), day("2026-11-03", &tomorrow, TODAY, TODAY)), ("2026-11-02".into(), String::new()));
         // A slipped year moves to the nearest such day; a day that just went by is no day to remind anyone of.
-        assert_eq!(day("2025-11-10", &[], TODAY), "2026-11-10");
-        assert_eq!(day("2026-10-30", &[], TODAY), "");
-        assert_eq!(day("2026-01-05", &[], "2026-12-20 (Sunday)"), "2027-01-05");
+        assert_eq!(day("2025-11-10", &[], TODAY, TODAY), "2026-11-10");
+        assert_eq!(day("2026-10-30", &[], TODAY, TODAY), "");
+        assert_eq!(day("2026-01-05", &[], "2026-12-20 (Sunday)", "2026-12-20 (Sunday)"), "2027-01-05");
         // Not a real day; and without today's date, a real one stays as it is.
-        assert_eq!((day("Saturday", &[], TODAY), day("2026-11-31", &[], TODAY)), (String::new(), String::new()));
-        assert_eq!(day("2025-11-10", &[], ""), "2025-11-10");
+        assert_eq!((day("Saturday", &[], TODAY, TODAY), day("2026-11-31", &[], TODAY, TODAY)), (String::new(), String::new()));
+        assert_eq!(day("2025-11-10", &[], "", ""), "2025-11-10");
 
         // The day said for an action is in the sentences most about it, not anywhere on its thread.
         let world = map(&[
@@ -1038,8 +1132,8 @@ mod tests {
                 "T3 reminder Pay water bill 2026-11-15",
             ]
         );
-        assert_eq!(day("2026-11-06", &["I paid it last Friday, the next one is Friday"], TODAY), "2026-11-06");
-        assert_eq!(day("2026-11-07", &["I paid it last Friday"], TODAY), "2026-11-07", "a day gone names nothing ahead");
+        assert_eq!(day("2026-11-06", &["I paid it last Friday, the next one is Friday"], TODAY, TODAY), "2026-11-06");
+        assert_eq!(day("2026-11-07", &["I paid it last Friday"], TODAY, TODAY), "2026-11-07", "a day gone names nothing ahead");
     }
 }
 
