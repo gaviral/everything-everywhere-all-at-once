@@ -236,10 +236,12 @@ fn describe(world: &World, since: u64) -> String {
 
 fn changes(world: &World, pass: Pass) -> Vec<Change> {
     let exists = |id: &str| world.thread(id).is_some();
+    // Ids are the map's internals: an idea, task or title that names one ("before recording T3 setup") is left out.
+    let names_an_id = |text: &str| text.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && world.thread(&world.resolve(w)).is_some());
     let mut out = Vec::new();
     for t in pass.titles {
         let current = world.thread(&t.thread_id).map(|th| th.title.as_str());
-        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) {
+        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) && !names_an_id(&t.title) {
             out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
         }
     }
@@ -259,7 +261,7 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     let mut suggested = HashSet::new();
     for s in pass.suggestions {
         let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
-        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && suggested.insert(s.thread_id.clone()) {
+        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && !names_an_id(&s.text) && suggested.insert(s.thread_id.clone()) {
             out.push(Change::SuggestionAdded {
                 suggestion: Suggestion { id: new_id("sg"), thread_id: s.thread_id, text: s.text.trim().into(), status: ItemStatus::New },
             });
@@ -269,7 +271,7 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
         let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
         // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
         let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
-        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated {
+        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated && !names_an_id(&a.title) {
             out.push(Change::ActionProposed {
                 action: Action {
                     id: new_id("ac"),
@@ -485,6 +487,33 @@ mod tests {
             })
             .collect();
         assert_eq!(tags, [("T1", "#recording"), ("T2", "#budget"), ("T2", "#money"), ("T2", "#plans")]);
+    }
+
+    #[test]
+    fn ideas_tasks_and_titles_that_name_a_thread_id_are_left_out() {
+        let world = World { threads: vec![thread("T2", None), thread("T3", None)], ..World::default() };
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [{"thread_id": "T2", "title": "Notes for T3"}, {"thread_id": "T3", "title": "Recording setup"}],
+            "suggestions": [
+                {"thread_id": "T2", "text": "Draft README before recording T3 setup?"},
+                {"thread_id": "T3", "text": "Test the dark background before recording"},
+            ],
+            "actions": [
+                {"thread_id": "T2", "kind": "reminder", "title": "Finish T2", "when": ""},
+                {"thread_id": "T2", "kind": "reminder", "title": "Write the README", "when": ""},
+            ],
+        }))
+        .unwrap();
+        let texts: Vec<String> = changes(&world, pass)
+            .into_iter()
+            .map(|c| match c {
+                Change::ThreadRenamed { title, .. } => title,
+                Change::SuggestionAdded { suggestion } => suggestion.text,
+                Change::ActionProposed { action } => action.title,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(texts, ["Recording setup", "Test the dark background before recording", "Write the README"]);
     }
 
     #[test]
