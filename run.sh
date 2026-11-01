@@ -37,7 +37,7 @@ fi
 # own picture pipeline, and the sample's journal names them: they go where the core serves /images from
 # (pictures left from the other sample are never named, so they do no harm).
 if [ "$1" = "sample" ]; then
-  case "${2:-}" in founder) map=founder-day ;; *) map=student-week ;; esac
+  case "${2:-}" in founder) map=founder-day ;; "") map=student-week ;; *) echo "Unknown sample: $2 (try ./run.sh sample founder)" >&2; exit 2 ;; esac
   mkdir -p data/sample/images
   cp "samples/$map.jsonl" data/sample/journal.jsonl
   cp "samples/images/$map"/* data/sample/images/
@@ -55,5 +55,8 @@ port="${PORT:-4321}"
 case "${1:-}" in
   demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
   room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
+  ""|sample) ;;
+  # Any other name is a map of its own; say so, or a mistyped `sample` just looks like an empty sample.
+  *) [ -d "data/$1" ] || echo "New empty map \"$1\" (kept in data/$1). For the ready-made sample map: ./run.sh sample" ;;
 esac
 cd core && exec cargo run --release

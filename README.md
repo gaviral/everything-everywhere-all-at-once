@@ -18,9 +18,9 @@ Get the code and step into its folder:
 git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ```
 
-The first run compiles the Rust core, which takes a few minutes. When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it. If first-time `npm install` warns about `fsevents` install scripts, that warning is harmless.
+The first run compiles the Rust core, which takes a few minutes. When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
 
-If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk script below, also pass `--port 4400`.
+If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**
 
@@ -28,7 +28,7 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 ./run.sh sample
 ```
 
-- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.”
+- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.” Recap has nothing to cover on it unless today's date overlaps: it covers today or this session.
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, try the unfinished card (see [How it works](#how-it-works)), open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
 - With a wrong or expired key, the first model call is refused and the app stops calling: the header says “AI key refused” and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart. If the service is busy (rate limited), it backs off and says so once.
@@ -53,7 +53,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 **Things to try (with a key):** With `./run.sh demo` running and its page open, say or type each line. Allow about 3 s after speech for a thought to land.
 
 1. `I need to plan the hackathon demo, the deadline is tomorrow at nine PM.` → a thought lands in about 3 s after you finish speaking.
-2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a tangent can branch from the active thread; allow about 3 s.
+2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a new topic gets a thread of its own, next to the first (an aside that belongs to a thread branches off it instead); allow about 3 s.
 3. `I'll order the cookbook tonight. And the electric bill, I should set up autopay before the due date.` → a turn can split across two threads; allow about 3 s per part.
 4. `Um, so, anyway.` → filler is set aside; nothing lands.
 5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
@@ -72,7 +72,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - Needs a key, like everything that calls a model. There's no sample room.
 - The core prints a link with a fresh room code, `http://<this laptop's address>:4321/?room=<code>`. Open it on a second laptop on the same network; the host uses http://localhost:4321. Each person joins with a name.
 - One map for both; each thought carries its speaker's name, and each person has their own place, unfinished card and "where was I?".
-- One laptop is enough to see it: with a key, `node scripts/demo.mjs scripts/room-talk.jsonl --room <code>` adds a second speaker, Sam.
+- One laptop is enough to see it: with a key, `node scripts/demo.mjs scripts/room-talk.jsonl --room <code>` plays two speakers, User and Sam, next to your own window.
 - The second laptop loads the page over plain http from a network address, which browsers don't treat as secure: its mic doesn't work, but typing and Explain do. To use its mic in Chrome, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` on that laptop, add the link's address (for example `http://192.168.1.20:4321`), set the flag to Enabled and relaunch Chrome. If macOS asks whether the host may accept incoming connections, choose Allow.
 
 ## What you'll see
@@ -106,7 +106,7 @@ Recap: what you worked on, decided and planned, each line linking back to its th
 - “While you were away” appears if thoughts land while you are away for at least 30 seconds. It lists their threads and proposals; each row opens its thread.
 - ✦ marks what the AI added or proposes: tags (faint until kept), one suggestion per thread, actions with "Add to Reminders" or "Add to Calendar", "Did you mean …?", a "fixed" tag, pictures, app cards, Recap, and notes such as "AI renamed … to …".
 - Header: "This session · 12 thoughts · 4 threads", Recap, a ? for keys and spoken commands, Import chats, and in a room, who has added thoughts.
-- Map tools: Map or Palace, search, Focus, Recent first; `?` lists keyboard and spoken commands.
+- Map tools: Map or Palace, search, Focus, Map order (press it for Recent first), Back to active; `?` lists keyboard and spoken commands.
 - Select a few words on the map, then Explain: one plain sentence on what they mean in that thread, using what other threads say about the same name or term.
 - The Apps panel: your apps with on and off switches, and a box to make one.
 
