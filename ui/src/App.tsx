@@ -146,6 +146,7 @@ export default function App() {
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
   }, []);
 
+  // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
     if (!core.notice || noticeFocused || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
@@ -436,6 +437,14 @@ export default function App() {
     });
   };
 
+  const friendlyNotice = core.notice && (
+    !core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)."
+    : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
+    : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again."
+    : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again."
+    : core.notice
+  );
+
   return (
     <MotionConfig reducedMotion="user">
     <div className="app" onClickCapture={(event) => {
@@ -471,7 +480,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="sr-only" role="status">{core.notice && (!core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice)}</div>
+      <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       <AnimatePresence>
         {core.notice && (
@@ -483,7 +492,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            <span>{!core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
+            <span>{friendlyNotice}</span>
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
