@@ -14,7 +14,7 @@ impl Fixture {
         Self { path, core: Arc::new(Core {
             find: crate::find::Runtime::default(),
             recap: crate::recap::Runtime::default(),
-            apps: Runtime::default(), world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
+            apps: Runtime::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(), imports: crate::import::Imports::default(),
@@ -57,7 +57,7 @@ fn seed_defaults_are_journaled_once_and_removal_survives_restart() {
         assert!(fixture.core.snapshot().apps.iter().all(|a| a.enabled == demo));
         fixture.core.commit(vec![Change::AppRemoved { id: "app-volume".into() }]);
         let (_, loaded) = Journal::open(&fixture.path).unwrap();
-        *fixture.core.world.lock().unwrap() = loaded;
+        *fixture.core.world.lock().unwrap() = loaded.into();
         seed(&fixture.core, demo);
         assert_eq!(fixture.core.snapshot().apps.len(), 2);
     }
