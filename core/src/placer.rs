@@ -6,7 +6,9 @@ use crate::{now_ms, protocol::ServerMsg, Core};
 use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
@@ -62,22 +64,47 @@ fn clean(text: &str) -> String {
 }
 
 pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<String>) {
+    // Rounds of three failed tries so far, for each thought still waiting to be placed.
+    let mut rounds: HashMap<String, u32> = HashMap::new();
     while let Some(thought_id) = queue.recv().await {
         // A blip (rate limit, timeout) shouldn't lose a thought: three tries, then say so.
         for attempt in 1..=3u64 {
             match place(&core, &thought_id).await {
-                Ok(()) => break,
+                Ok(()) => {
+                    rounds.remove(&thought_id);
+                    break;
+                }
                 Err(e) if attempt < 3 => {
                     tracing::warn!("placement failed (try {attempt}): {e:#}");
                     tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
                 }
                 Err(e) => {
                     tracing::warn!("placement failed: {e:#}");
-                    core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+                    let round = rounds.entry(thought_id.clone()).or_default();
+                    // Said once: its "Finding a thread" stays up while it waits.
+                    if *round == 0 {
+                        core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+                    }
+                    // A longer outage shouldn't leave it unplaced until a restart: it goes back in the queue
+                    // later. Without a key, nothing would change by then.
+                    if core.key.is_some() {
+                        let (core, id, wait) = (core.clone(), thought_id.clone(), retry_in(*round));
+                        *round += 1;
+                        tokio::spawn(async move {
+                            tokio::time::sleep(wait).await;
+                            let _ = core.placer_queue.send(id);
+                        });
+                    }
                 }
             }
         }
     }
+}
+
+/// How long a thought waits after a round of failed tries before the next: 15 s, doubling to 4 min,
+/// so it lands soon after a blip without calling the model every few seconds through an outage.
+fn retry_in(round: u32) -> Duration {
+    Duration::from_secs(15 << round.min(4))
 }
 
 async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
@@ -327,6 +354,12 @@ mod tests {
         let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0);
         assert_eq!(drops(&changes), [("T1".to_string(), "User".to_string())]);
         assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "User")));
+    }
+
+    #[test]
+    fn a_thought_that_couldnt_be_placed_goes_back_in_the_queue_later_and_later() {
+        let waits: Vec<u64> = (0..7).map(|round| super::retry_in(round).as_secs()).collect();
+        assert_eq!(waits, [15, 30, 60, 120, 240, 240, 240]);
     }
 
     #[test]
