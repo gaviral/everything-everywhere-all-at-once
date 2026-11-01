@@ -15,7 +15,7 @@ the map for context. Start with the meaning itself: no preamble, and don't repea
 what it is and why it comes up here; spell out an acronym. For an everyday word, say what it refers to in this thread \
 rather than defining it. If it may be misheard by speech-to-text, start with what was probably meant. Say only what the \
 notes or common knowledge support; when they don't make clear what it is, say what they do tell and mark a guess with \
-\"probably\". Plain text, no markdown, in the language of the notes.";
+\"probably\". Never give medical or health advice. Plain text, no markdown, in the language of the notes.";
 
 /// An answer this late has missed its moment; the person can ask again.
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -226,8 +226,8 @@ mod tests {
         ));
     }
 
-    /// Words a judge might select on the sample maps: (map, where, the words). Where is a thought
-    /// (the map shows its point), a thread (its title) or a suggestion, and gives the context the UI sends.
+    /// Words a judge might select on the sample maps, or on `health`: (map, where, the words). Where is a
+    /// thought (the map shows its point), a thread (its title) or a suggestion, and gives the context the UI sends.
     const LIVE: &[(&str, &str, &str)] = &[
         // Jargon, names, a misheard word, a half sentence, a whole point, a title, a number.
         ("founder-day", "th-2", "MRR"),
@@ -266,7 +266,33 @@ mod tests {
         ("founder-day", "th-12", "follow-up"),
         ("founder-day", "th-12", "within two weeks"),
         ("founder-day", "th-14", "I need to drive her"),
+        ("health", "th-0", "push through"),
+        ("health", "th-1", "Ibuprofen"),
+        ("health", "th-2", "chest tightness"),
+        ("health", "th-2", "Four hours of sleep"),
+        ("health", "th-3", "metformin"),
     ];
+
+    /// The samples barely touch health, and a judge may talk about their own: a short made-up map that does.
+    fn health() -> World {
+        map(
+            &[("H1", "Running again", None), ("H2", "Launch week", None), ("H3", "Mom's meds", None)],
+            &[
+                (
+                    "H1",
+                    "My knee has been hurting after runs for two weeks, maybe I should just push through it",
+                    "Knee hurts after runs for two weeks; maybe push through",
+                ),
+                ("H1", "I could take ibuprofen before the long run on Saturday", "Ibuprofen before Saturday's long run?"),
+                (
+                    "H2",
+                    "I've been sleeping like four hours a night since the launch and I get this chest tightness in the afternoons",
+                    "Four hours of sleep since launch; chest tightness afternoons",
+                ),
+                ("H3", "Mom is on metformin now and she keeps forgetting the evening dose", "Mom on metformin, forgets evening dose"),
+            ],
+        )
+    }
 
     /// Real answers for `LIVE` through `run`, as the UI's request goes: the sample's notes, the model,
     /// the 20-second patience and the failure message. One JSON line per answer. EXPLAIN_RUNS asks each
@@ -284,11 +310,17 @@ mod tests {
         let samples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples");
         let mut cores = std::collections::HashMap::new();
         let mut journals = Vec::new();
-        for map in ["founder-day", "student-week"] {
-            let mut world = World::default();
-            for line in std::fs::read_to_string(samples.join(format!("{map}.jsonl"))).unwrap().lines() {
-                world.apply(&serde_json::from_str(line).unwrap());
-            }
+        for map in ["founder-day", "student-week", "health"] {
+            let world = match map {
+                "health" => health(),
+                _ => {
+                    let mut world = World::default();
+                    for line in std::fs::read_to_string(samples.join(format!("{map}.jsonl"))).unwrap().lines() {
+                        world.apply(&serde_json::from_str(line).unwrap());
+                    }
+                    world
+                }
+            };
             let path = std::env::temp_dir().join(format!("e2a2o-explain-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, _) = crate::Journal::open(&path).unwrap();
             journals.push(path);
