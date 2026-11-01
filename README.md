@@ -77,6 +77,28 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 
 ## What you'll see
 
+Real screenshots from one run of the demo talk (`scripts/demo-talk-v4.jsonl`, typed in; the unfinished-thread card needed two extra typed lines). They are only cropped and resized.
+
+![The map a few thoughts in: threads and branches, a proposed reminder, and a thought waiting at “Finding a thread”](docs/screens/map.webp)
+
+A few thoughts in: threads and branches, a proposed reminder, and the newest thought waiting at “Finding a thread.”
+
+![A point where “Muse Bark” was fixed to “Muse Spark”, with the hover text “heard Muse Bark, undo”](docs/screens/did-you-mean.webp)
+
+A misheard word is fixed when the context is clear; hover the “fixed” tag to see what was heard, or undo it.
+
+![A thread marked “left off”, and the card “You didn't finish Electric Bill Autopay” with Finish it and Later](docs/screens/unfinished.webp)
+
+Leave a thread mid-sentence and it is marked “left off”; at the next pause a card offers to take you back.
+
+![The Palace: one picture tile per thread, grouped into a room](docs/screens/palace.webp)
+
+The Palace: one picture per thread, drawn by Muse Image during pauses.
+
+![A Recap sheet with a summary, what you worked on, decisions and plans](docs/screens/recap.webp)
+
+Recap: what you worked on, decided and planned, each line linking back to its thread.
+
 - The first time, a three-step tour (Skip tour ends it).
 - Your words appear live at the bottom; each finished thought waits there (“Finding a thread,” or “Needs the AI key” without a key), then moves onto the map when placement is available. Hover a point for its original words and how long placing took.
 - Threads and their branches; the active one is marked; a thread you left mid-sentence says "left off".
