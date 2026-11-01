@@ -187,6 +187,23 @@ async fn keep_and_discard_are_explicit_and_idempotent() {
     assert!(fixture.core.snapshot().apps[0].enabled);
 }
 
+/// "Keep it" and "discard it" are the build's buttons by voice, only while it waits for one; otherwise they're talk.
+#[tokio::test]
+async fn keep_it_said_aloud_keeps_the_app_waiting_and_is_a_thought_otherwise() {
+    let fixture = Fixture::new();
+    let thoughts = |core: &Core| core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect::<Vec<_>>();
+    fixture.core.add_thought("you", "Keep it");
+    assert_eq!(thoughts(&fixture.core), ["Keep it"]);
+    let ready = || Some(Build { id: "b".into(), request: "quiet".into(), stage: "ready".into(), steps: Vec::new(), draft: Some(app()), match_id: None, ..Build::default() });
+    fixture.core.apps.state.lock().unwrap().build = ready();
+    fixture.core.add_thought("you", "Okay, discard it.");
+    assert!(fixture.core.snapshot().apps.is_empty() && waiting(&fixture.core).is_none());
+    fixture.core.apps.state.lock().unwrap().build = ready();
+    fixture.core.add_thought("you", "Yes, keep it");
+    assert_eq!(fixture.core.snapshot().apps.len(), 1);
+    assert_eq!(thoughts(&fixture.core), ["Keep it"]);
+}
+
 #[test]
 fn a_window_that_connects_sees_a_build_only_while_it_is_composing_or_waiting() {
     let fixture = Fixture::new();

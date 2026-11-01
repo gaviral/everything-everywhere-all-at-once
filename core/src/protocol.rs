@@ -24,6 +24,9 @@ pub enum ServerMsg {
     Found { thread_id: String, thought_id: Option<String>, message: String },
     /// A view asked for by voice ("palace", "show the map", "let's focus", "what can I say?"); only to the speaker's windows.
     View { view: View },
+    /// Open or fold a thread and every branch under it ("expand the garden", "collapse this"), or every thread when
+    /// `thread_id` is none; only to the speaker's windows, and it stays so until changed (spoken.rs).
+    Unfold { thread_id: Option<String>, open: bool },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
@@ -32,7 +35,9 @@ pub enum ServerMsg {
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
 /// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
-/// can say (Help), which opens on any map, an empty one too.
+/// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
+/// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), and the mic, off
+/// ("stop listening").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -41,6 +46,9 @@ pub enum View {
     Focus,
     All,
     Help,
+    Later,
+    Forget,
+    Pause,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
