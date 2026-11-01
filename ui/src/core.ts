@@ -217,8 +217,10 @@ export function useCore() {
   const [world, setWorld] = useState<World>(EMPTY);
   const [partial, setPartial] = useState("");
   const [listening, setListening] = useState(false);
+  const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
@@ -238,6 +240,7 @@ export function useCore() {
         retry = 500;
         // Thoughts typed while the connection was down go out now.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        setQueuedCount(0);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -253,6 +256,7 @@ export function useCore() {
             break;
           case "status":
             setListening(msg.listening);
+            setVoiceStatusRevision((revision) => revision + 1);
             break;
           case "error":
           case "notice":
@@ -266,6 +270,7 @@ export function useCore() {
       ws.onclose = () => {
         setConnected(false);
         setListening(false);
+        setVoiceStatusRevision((revision) => revision + 1);
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
@@ -278,21 +283,27 @@ export function useCore() {
   }, []);
 
   const send = useCallback((data: string | ArrayBuffer) => {
-    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(data);
+    if (socket.current?.readyState !== WebSocket.OPEN) return false;
+    socket.current.send(data);
+    return true;
   }, []);
 
   return {
     world,
     partial,
     listening,
+    voiceStatusRevision,
     connected,
     notice,
-    clearNotice: () => setNotice(""),
+    queuedCount,
+    clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
-      else if (outbox.current.length < 50) outbox.current.push(message);
+      else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
+      else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
+      return true;
     },
     sendAudio: (frame: ArrayBuffer) => send(frame),
     listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
