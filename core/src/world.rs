@@ -165,6 +165,12 @@ pub enum Change {
     /// "Did you mean …?" answered: yes swaps the unclear words for the guess, no keeps them; either way the question goes.
     /// No to a fix made without asking puts the words back as heard.
     ThoughtCorrected { thought_id: String, accept: bool },
+    /// A turn that moved on to another topic partway: the thought keeps the words before (`text`),
+    /// and `rest`, placed next, takes the others.
+    ThoughtSplit { thought_id: String, text: String, rest: Thought },
+    /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
+    /// and the world; this journal keeps its words.
+    ThoughtSkipped { thought_id: String },
 }
 
 impl World {
@@ -210,6 +216,15 @@ impl World {
                     self.thoughts.push(thought.clone());
                 }
             }
+            Change::ThoughtSplit { thought_id, text, rest } => {
+                let Some(i) = self.thoughts.iter().position(|t| &t.id == thought_id) else { return };
+                self.thoughts[i].text = text.clone();
+                // Right after its first part, so points stay in the order they were said.
+                if !self.thoughts.iter().any(|t| t.id == rest.id) {
+                    self.thoughts.insert(i + 1, rest.clone());
+                }
+            }
+            Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
             Change::ThreadAdded { thread } => {
                 if self.thread(&thread.id).is_none() {
                     self.threads.push(thread.clone());
@@ -420,11 +435,16 @@ impl Journal {
     }
 }
 
-/// Where `words` first appear in `text` as whole words, so "pairs" can't land inside "repairs". Ignores
-/// case when lowercasing keeps the byte length (so offsets still line up), else matches exactly.
+/// Where `words` first appear in `text` as whole words, so "pairs" can't land inside "repairs".
 pub fn find(text: &str, words: &str) -> Option<std::ops::Range<usize>> {
+    matches(text, words).into_iter().next()
+}
+
+/// Everywhere `words` appear in `text` as whole words, in order. Ignores case when lowercasing keeps
+/// the byte length (so offsets still line up), else matches exactly.
+pub fn matches(text: &str, words: &str) -> Vec<std::ops::Range<usize>> {
     if words.is_empty() {
-        return None;
+        return Vec::new();
     }
     let (lower, lower_words) = (text.to_lowercase(), words.to_lowercase());
     let (hay, needle) =
@@ -435,7 +455,7 @@ pub fn find(text: &str, words: &str) -> Option<std::ops::Range<usize>> {
             && !text[..r.start].ends_with(|c: char| c.is_ascii_alphanumeric())
             && !text[r.end..].starts_with(|c: char| c.is_ascii_alphanumeric())
     };
-    hay.match_indices(needle).map(|(i, _)| i..i + words.len()).find(whole)
+    hay.match_indices(needle).map(|(i, _)| i..i + words.len()).filter(whole).collect()
 }
 
 /// Replaces the first whole-word match of `from` in `text` with `to`; unchanged when there's none.
@@ -531,6 +551,49 @@ mod tests {
         let t = &world.thoughts[0];
         assert!(t.placed && t.heard.is_empty() && t.fixed.is_empty());
         assert_eq!((t.text.as_str(), t.guess.as_str()), ("ask moose", "Muse"));
+    }
+
+    #[test]
+    fn a_split_keeps_the_order_said_and_a_skip_leaves_only_the_journal() {
+        let thought = |id: &str, text: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: text.into(),
+            point: String::new(),
+            thread_id: None,
+            placed: false,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        let path = std::env::temp_dir().join(format!("e2a2o-split-{}.jsonl", std::process::id()));
+        let (mut journal, mut world) = super::Journal::open(&path).unwrap();
+        let split = Change::ThoughtSplit {
+            thought_id: "a".into(),
+            text: "I need to pay rent".into(),
+            rest: thought("b", "the demo is on Tuesday"),
+        };
+        for change in [
+            Change::ThoughtAdded { thought: thought("a", "I need to pay rent and also the demo is on Tuesday") },
+            Change::ThoughtAdded { thought: thought("c", "said after") },
+            split.clone(),
+            split,
+            Change::ThoughtAdded { thought: thought("d", "yeah") },
+            Change::ThoughtSkipped { thought_id: "d".into() },
+        ] {
+            world.apply(&change);
+            journal.append(&change).unwrap();
+        }
+        let texts: Vec<&str> = world.thoughts.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["I need to pay rent", "the demo is on Tuesday", "said after"]);
+        let (_, replayed) = super::Journal::open(&path).unwrap();
+        assert_eq!(replayed.thoughts.len(), 3);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("\"yeah\""), "the journal keeps what was set aside");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

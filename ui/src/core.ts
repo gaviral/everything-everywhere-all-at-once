@@ -83,6 +83,8 @@ type Change =
       place_ms: number;
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
+  | { type: "thought_skipped"; thought_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus }
   | { type: "active_changed"; thread_id: string }
@@ -188,6 +190,16 @@ function apply(world: World, raw: Change): World {
       return world.thoughts.some((t) => t.id === c.thought.id)
         ? world
         : { ...world, thoughts: [...world.thoughts, c.thought] };
+    case "thought_split": {
+      // Mirrors the core: the thought keeps the words before, and the rest follows it, to be placed next.
+      const i = world.thoughts.findIndex((t) => t.id === c.thought_id);
+      if (i < 0) return world;
+      const thoughts = world.thoughts.map((t) => (t.id === c.thought_id ? { ...t, text: c.text } : t));
+      if (!thoughts.some((t) => t.id === c.rest.id)) thoughts.splice(i + 1, 0, c.rest);
+      return { ...world, thoughts };
+    }
+    case "thought_skipped":
+      return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
