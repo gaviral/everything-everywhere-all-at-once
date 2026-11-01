@@ -70,35 +70,48 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     best?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
+  const tile = (thread: Thread, root: Thread) => {
+    const isActive = active === thread.id;
+    const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
+    // The room's heading already names its root, so only a branch of a branch says where it hangs.
+    const under = parent && parent.id !== root.id ? parent : undefined;
+    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
+      <span className="palace-art">
+        {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
+        <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
+        <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
+      </span>
+      <span className="palace-title">{thread.title}</span>
+      {/* Under the title, never over the picture; read as the tile's description, not its name. */}
+      {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true">{capitalized(thread.last_point)}</span>}
+      {under && <span className="palace-parent">Branch of {under.title}</span>}
+    </button>;
+  };
+  // Rooms with branches come first; threads on their own share one grid under their own heading after them,
+  // so a lone tile never reads as one more place in the room above it.
+  const branched = rooms.filter((room) => room.members.length > 1);
+  const alone = rooms.filter((room) => room.members.length === 1);
+
   return (
     <main className="palace" ref={container} aria-label="Palace of threads">
       <div className="palace-intro">
-        <div><span className="palace-eyebrow">A place for every thought</span><h1>Your palace</h1></div>
-        <p>Explore by picture. Open a place to return to its thread.</p>
+        <div><span className="palace-eyebrow">A picture for every thread</span><h1>Your palace</h1></div>
+        <p>Open a picture to return to its thread.</p>
       </div>
       <div className="palace-rooms">
-        {rooms.map(({ root, members }) => (
+        {branched.map(({ root, members }) => (
           <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`}>
-            {/* A room of one place is just its tile: the heading would repeat the tile's title. */}
-            {members.length > 1 && <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} places</span></div>}
-            <div className="palace-grid">
-              {members.map((thread) => {
-                const isActive = active === thread.id;
-                const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
-                return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
-                  <span className="palace-art">
-                    {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
-                    <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
-                    <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
-                    {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{capitalized(thread.last_point)}</span>}
-                  </span>
-                  <span className="palace-title">{thread.title}</span>
-                  <span className="palace-parent">{parent ? `Branch of ${parent.title}` : "Room"}</span>
-                </button>;
-              })}
-            </div>
+            <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} threads</span></div>
+            <div className="palace-grid">{members.map((thread) => tile(thread, root))}</div>
           </section>
         ))}
+        {alone.length > 0 && (
+          <section className="palace-room" aria-label="Threads on their own">
+            {/* The heading sets them apart from the rooms above; with no rooms, it would say nothing. */}
+            {branched.length > 0 && <div className="palace-room-heading"><span>On their own</span><span className="palace-room-rule" /><span>{alone.length} {alone.length === 1 ? "thread" : "threads"}</span></div>}
+            <div className="palace-grid">{alone.map(({ root }) => tile(root, root))}</div>
+          </section>
+        )}
       </div>
     </main>
   );
