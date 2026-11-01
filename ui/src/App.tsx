@@ -14,6 +14,7 @@ import { Apps } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
+import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -185,6 +186,7 @@ export default function App() {
     const target = document.getElementById(`thread-${world.active}`);
     if (!target) return;
     positionedInitial.current = true;
+    if (!hasToured()) return;
     requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
   }, [core.snapshotRevision, world.active, world.threads]);
 
@@ -372,7 +374,9 @@ export default function App() {
 
       <Explain explanations={core.explanations} explain={core.explain} />
 
+      <div id="tour-tools" />
       <Apps core={core} />
+      <div id="tour-map" />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
@@ -452,6 +456,7 @@ export default function App() {
               </motion.span>
             ))}
           </div>
+          <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
             <input
               value={draft}
@@ -472,6 +477,7 @@ export default function App() {
           </form>
         </div>
       </section>
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
       <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
