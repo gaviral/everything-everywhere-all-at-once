@@ -1,0 +1,36 @@
+{"id":1,"request":"show a card when I say deadline","expect":["build"],"watcher":["phrase","topic","new_thought"],"words":["deadline"],"publishers":["card"]}
+{"id":2,"request":"remind me when I mention something due","expect":["build"],"watcher":["new_thought","topic","phrase"],"words":["due","deadline"],"publishers":["reminder","card"]}
+{"id":3,"request":"play a sound every 30 minutes","expect":["build"],"watcher":["time"],"every":[1800],"publishers":["sound"],"repeats":true}
+{"id":4,"request":"alert me when voices get loud","expect":["match:app-volume","build"],"watcher":["volume"]}
+{"id":5,"request":"show a card when I talk about money","expect":["build"],"watcher":["topic","phrase","new_thought"],"words":["money"],"publishers":["card"]}
+{"id":6,"request":"notice when I keep repeating myself","expect":["match:app-argument","build"],"watcher":["new_thought"],"prompt":true,"publishers":["card","sound"]}
+{"id":7,"request":"remind me about tasks I mention","expect":["build"],"watcher":["new_thought"],"prompt":true,"publishers":["reminder"]}
+{"id":8,"request":"show a card when I mention the word focus","expect":["build"],"watcher":["phrase","topic"],"words":["focus"],"publishers":["card"]}
+{"id":9,"request":"play a tune at 5 PM","expect":["build"],"watcher":["time"],"hour":17,"publishers":["sound"]}
+{"id":10,"request":"show a card when I drift off topic","expect":["build"],"watcher":["new_thought"],"prompt":true,"publishers":["card"]}
+{"id":11,"request":"summarize my thoughts every hour","expect":["build"],"watcher":["time"],"every":[3600],"prompt":true,"publishers":["card"],"repeats":true}
+{"id":12,"request":"track how many threads I have","expect":["refuse"],"words":["thread","count","number"]}
+{"id":13,"request":"remind me to drink water every 45 minutes","expect":["build"],"watcher":["time"],"every":[2700],"publishers":["card","sound","reminder"],"repeats":true}
+{"id":14,"request":"book me a flight to New York","expect":["refuse"],"words":["flight","book"]}
+{"id":15,"request":"search the web for news about AI","expect":["refuse"],"words":["web","search","internet","online","news"]}
+{"id":16,"request":"send me an email when I mention rent","expect":["refuse"],"words":["email","e-mail"]}
+{"id":17,"request":"make it so the map changes color based on mood","expect":["refuse"],"words":["color","colour","map","look"]}
+{"id":18,"request":"transcribe a YouTube video","expect":["refuse"],"words":["youtube","video"]}
+{"id":19,"request":"watch my screen and suggest improvements","expect":["refuse"],"words":["screen"]}
+{"id":20,"request":"hi","expect":["refuse","notice"]}
+{"id":21,"request":"remnd me to stertch evry hour","expect":["build"],"watcher":["time"],"every":[3600],"publishers":["card","sound","reminder"],"repeats":true}
+{"id":22,"request":"show a crad wehn I say budjet","expect":["build"],"watcher":["phrase","topic","new_thought"],"words":["budget"],"publishers":["card"]}
+{"id":23,"request":"remind me","expect":["refuse","build"],"publishers":["reminder","card"]}
+{"id":24,"request":"pomodoro","expect":["build"],"watcher":["time"],"every":[1500],"publishers":["sound","card"],"repeats":true}
+{"id":25,"request":"can you make an app that tells me when I say um too much?","expect":["build"],"watcher":["phrase","new_thought"],"words":["um"],"publishers":["card","sound"]}
+{"id":26,"request":"could you make me an app that pings me when someone sounds upset?","expect":["build"],"watcher":["new_thought"],"prompt":true,"publishers":["card","sound"]}
+{"id":27,"request":"is it possible to make an app that warns me if I talk about work after 6pm?","expect":["build"],"watcher":["topic","phrase","new_thought"],"words":["work"],"prompt":true,"publishers":["card","sound"]}
+{"id":28,"request":"order pizza when I say I'm hungry","expect":["refuse"],"words":["order","pizza"]}
+{"id":29,"request":"text my mom when I mention her","expect":["refuse"],"words":["text","message","send"]}
+{"id":30,"request":"turn off the lights at 10 pm","expect":["refuse"],"words":["light"]}
+{"id":31,"request":"Make an app that reminds me about deadlines when I mention a date.","set":"montage","expect":["build"],"watcher":["new_thought","topic","phrase"],"prompt":true,"publishers":["reminder","card"]}
+{"id":32,"request":"Make an app that notices when I'm going in circles or using a logical fallacy.","set":"montage","expect":["match:app-argument","build"],"watcher":["new_thought"],"prompt":true}
+{"id":33,"request":"Make an app that notices when my last three thoughts have drifted off-topic and shows a card.","set":"montage","expect":["build"],"watcher":["new_thought"],"prompt":true,"publishers":["card"]}
+{"id":34,"request":"Make an app that checks if I already have one before building a new one.","set":"montage","expect":["match:app-search"]}
+{"id":35,"request":"Make an app that tells me to take a pause when voices get loud.","set":"montage","expect":["match:app-volume","build"],"watcher":["volume"]}
+{"id":36,"request":"Make an app that shows a card every evening to remind me about a recap.","set":"montage","expect":["build"],"watcher":["time"],"every":[86400],"hour":[17,18,19,20,21],"publishers":["card"],"repeats":true}

@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 pub enum ServerMsg {
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
-    AppsSound { name: String },
+    /// An app's tune: `playful` for loud voices, else the calm one.
+    AppsSound { name: String, playful: bool },
     Snapshot { world: std::sync::Arc<World> },
     Change { change: Change },
     /// Draft words of the turn being spoken; replaces the previous draft.

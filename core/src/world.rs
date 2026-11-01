@@ -238,8 +238,8 @@ impl World {
             }
             Change::AppOutput { id, sound } => {
                 if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id && matches!(a.watcher, crate::apps::Watcher::Volume { .. })) {
-                    a.publishers = if *sound { vec![crate::apps::Publisher::Sound {}] }
-                        else { vec![crate::apps::Publisher::Card { text: "Voices have been loud for a little while. A small pause might help.".into() }] };
+                    let (purpose, publishers) = crate::apps::volume_choice(*sound);
+                    (a.purpose, a.publishers) = (purpose.into(), publishers);
                 }
             }
             Change::AppsSeeded => self.apps_seeded = true,
@@ -1015,7 +1015,8 @@ mod tests {
         assert_eq!((w.suggestions[0].thread_id.as_str(), w.actions[0].thread_id.as_str()), ("T3", "T3"));
         assert_eq!((w.actions[0].status, w.actions[0].done_ms), (super::ItemStatus::Done, Some(300)));
         assert_eq!(w.apps.len(), 1);
-        assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}]) && !w.apps[0].enabled);
+        assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}, crate::apps::Publisher::Card { .. }]) && !w.apps[0].enabled);
+        assert!(w.apps[0].purpose.contains("tune"), "the purpose says what it does");
         assert_eq!(w.recaps[0].plans[0].text, "Show the Palace view at the end.");
     }
 
