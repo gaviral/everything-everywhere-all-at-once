@@ -244,3 +244,38 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
     }
     assert!(seen);
 }
+
+#[tokio::test]
+async fn a_jump_waits_for_the_thought_said_just_before_it() {
+    // User said something a moment ago; it's still finding its thread when User asks where the rent deposit came up.
+    let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+    let fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    });
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "nothing moves while it's placed");
+    // It lands on Work and makes Work User's thread; only then the jump, which User keeps.
+    fixture.core.commit(vec![
+        Change::ThoughtPlaced {
+            thought_id: "pending".into(), thread_id: "T2".into(), point: "Paint the kitchen".into(), unclear: String::new(),
+            guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+        },
+        Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+    ]);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    let mut said = Vec::new();
+    while let Ok(out) = updates.try_recv() {
+        match out.message {
+            ServerMsg::Notice { message } => said.push(message),
+            ServerMsg::Found { message, .. } => said.push(message),
+            _ => {}
+        }
+    }
+    assert_eq!(said, ["Looking through your threads…", "Here: Home — Rent deposit comes back in June"]);
+}
