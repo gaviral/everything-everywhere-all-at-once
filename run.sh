@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the UI and serves everything from the core at http://localhost:4321.
+# Builds the UI and serves everything from the core at http://localhost:4321 (PORT=4400 ./run.sh ... uses another port).
 # `./run.sh demo` keeps a separate journal (data/demo) so real work stays clean.
 # `./run.sh room` opens a room on its own journal (data/room): a second laptop on the same
 # network joins the same map at the address the core prints. ROOM_CODE sets the code; else it's new each run.
@@ -7,6 +7,22 @@
 # the login Keychain item the e2a2o app saved.
 set -e
 cd "$(dirname "$0")"
+case "${1:-}" in -h|--help|help)
+  echo "Usage: ./run.sh [sample [founder] | demo | room | NAME]"
+  echo "  sample [founder]  a ready-made map, no key needed"
+  echo "  demo              a map for the scripted talk (needs a key)"
+  echo "  room              a map shared with a second laptop (needs a key)"
+  echo "  NAME              your own map, kept in data/NAME (no name: data/)"
+  echo "  PORT=4400 ./run.sh ...   uses another port (default 4321)"
+  exit 0 ;;
+esac
+case "${1:-}" in
+  -*) echo "Unknown option: $1 (try ./run.sh --help)" >&2; exit 2 ;;
+esac
+command -v node >/dev/null 2>&1 || { echo "Node.js 22.12 or newer is needed: https://nodejs.org" >&2; exit 1; }
+node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 12) ? 0 : 1)' ||
+  { echo "Node.js 22.12 or newer is needed; this is $(node -v)." >&2; exit 1; }
+command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
 if [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>&1; then
   MODEL_API_KEY="$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${e2a2o}" -w 2>/dev/null || true)"
   export MODEL_API_KEY
@@ -30,5 +46,14 @@ if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
 [ -d ui/node_modules ] || (cd ui && npm install)
-(cd ui && npm run build >/dev/null)
+if ! out="$(cd ui && npm run build 2>&1)"; then
+  echo "$out" >&2
+  echo "The UI build failed (see above)." >&2
+  exit 1
+fi
+port="${PORT:-4321}"
+case "${1:-}" in
+  demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
+  room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
+esac
 cd core && exec cargo run --release
