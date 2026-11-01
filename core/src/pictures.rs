@@ -143,7 +143,9 @@ pub(crate) fn perf(world: &World, now: u64) {
 
 /// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
 fn prompt(thread: &Thread, points: &[String]) -> String {
-    let number: usize = thread.id.trim_start_matches('T').parse().unwrap_or(0);
+    // Numbered threads take turns through the colors; others (imported ones) get one picked from their id.
+    let number: usize = thread.id.trim_start_matches('T').parse()
+        .unwrap_or_else(|_| thread.id.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)));
     let color = COLORS[number % COLORS.len()];
     // The first few points say what the thread is; more only makes the prompt longer.
     let details = points.iter().take(6).map(String::as_str).collect::<Vec<_>>().join("; ");
