@@ -26,7 +26,7 @@ pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, t
         Ok(text) => ServerMsg::Explanation { id, text, failed: false },
         Err(e) => {
             tracing::warn!("explain failed: {e:#}");
-            let text = if core.key.is_none() { "Explaining needs MODEL_API_KEY in .env." } else { "Couldn't explain that just now." };
+            let text = if core.key.is_none() { "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart." } else { "Couldn't explain that just now." };
             ServerMsg::Explanation { id, text: text.into(), failed: true }
         }
     };
