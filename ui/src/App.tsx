@@ -19,6 +19,15 @@ export default function App() {
   const { world } = core;
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const [draft, setDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [focusMode, setFocusMode] = useState(false);
+  const [recentFirst, setRecentFirst] = useState(false);
+  const [startingMic, setStartingMic] = useState(false);
+  const [firstHint, setFirstHint] = useState(false);
+  const startedEmpty = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const seenThoughts = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -48,57 +57,74 @@ export default function App() {
     };
   }, [visible]);
 
-  // Notices fade on their own.
+  // Keep the end of the map reachable even when pending thoughts or the card grow.
   useEffect(() => {
-    if (!core.notice) return;
-    const timer = window.setTimeout(core.clearNotice, 3500);
+    const dock = dockRef.current;
+    if (!dock) return;
+    const update = () => document.documentElement.style.setProperty("--dock-height", `${dock.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(dock);
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
+  }, []);
+
+  useEffect(() => {
+    if (!core.notice || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
+    const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
   }, [core.notice, core.clearNotice]);
 
-  // The camera follows the conversation; threads themselves never move.
+  // Stop local audio when the service reports a stop or the connection drops.
+  const voiceStartedAt = useRef(0);
   useEffect(() => {
-    if (world.active) {
-      document.getElementById(`thread-${world.active}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "nearest" });
-    }
-  }, [world.active, reducedMotion]);
-
-  // True once the voice service confirms it's listening; if it then stops (an error, a dropped
-  // connection), the mic turns off too instead of pulsing at nothing.
-  const heard = useRef(false);
-  useEffect(() => {
-    if (core.listening) heard.current = true;
-    else if (heard.current && stopMic) {
-      heard.current = false;
+    if (stopMic && !core.listening && core.voiceStatusRevision > voiceStartedAt.current) {
       stopMic();
       setStopMic(null);
     }
-  }, [core.listening]);
+  }, [core.listening, core.voiceStatusRevision, stopMic]);
+
+  useEffect(() => {
+    if (stopMic && core.notice.includes("MODEL_API_KEY")) {
+      stopMic();
+      setStopMic(null);
+    }
+  }, [core.notice, stopMic]);
 
   const toggleMic = async () => {
-    heard.current = false;
+    if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
     if (stopMic) {
       stopMic();
       setStopMic(null);
       core.listen(false);
       return;
     }
+    setStartingMic(true);
     try {
-      core.listen(true);
       const stop = await startMic(core.sendAudio);
+      voiceStartedAt.current = core.voiceStatusRevision;
       setStopMic(() => stop);
+      if (!core.listen(true)) {
+        stop();
+        setStopMic(null);
+        core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
+      }
     } catch (err) {
       core.listen(false);
-      core.showNotice(`Couldn't start the mic: ${err instanceof Error ? err.message : "no access"}`);
+      const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+      core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
+    } finally {
+      setStartingMic(false);
     }
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (draft.trim()) core.sendText(draft.trim());
-    setDraft("");
+    if (draft.trim()) {
+      if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
+      if (core.sendText(draft.trim())) setDraft("");
+    }
   };
 
-  const roots = world.threads.filter((t) => !t.parent_id);
   const pending = world.thoughts.filter((t) => !t.placed);
   const activePath = new Set<string>();
   let current = world.threads.find((t) => t.id === world.active);
@@ -106,6 +132,99 @@ export default function App() {
     activePath.add(current.id);
     current = world.threads.find((t) => t.id === current?.parent_id);
   }
+
+  useEffect(() => {
+    if (!world.active) return;
+    setExpanded((state) => {
+      const next = { ...state };
+      let thread = world.threads.find((item) => item.id === world.active);
+      const visited = new Set<string>();
+      while (thread && !visited.has(thread.id)) {
+        visited.add(thread.id);
+        delete next[thread.id];
+        thread = world.threads.find((item) => item.id === thread?.parent_id);
+      }
+      return next;
+    });
+  }, [world.active]);
+
+  const threadById = useMemo(() => new Map(world.threads.map((thread) => [thread.id, thread])), [world.threads]);
+  const thoughtsByThread = useMemo(() => {
+    const grouped = new Map<string, Thought[]>();
+    for (const thought of world.thoughts) if (thought.placed && thought.thread_id) {
+      const group = grouped.get(thought.thread_id) ?? [];
+      group.push(thought);
+      grouped.set(thought.thread_id, group);
+    }
+    return grouped;
+  }, [world.thoughts]);
+  const search = query.trim().toLocaleLowerCase();
+  const matches = new Set(world.threads.filter((thread) => search && [thread.title, ...(thread.tags ?? []).map((tag) => tag.name), ...(thoughtsByThread.get(thread.id) ?? []).flatMap((thought) => [thought.text, thought.point])].some((text) => text.toLocaleLowerCase().includes(search))).map((thread) => thread.id));
+  const visibleIds = new Set<string>();
+  const addWithParents = (id: string) => {
+    let thread = threadById.get(id);
+    while (thread && !visibleIds.has(thread.id)) {
+      visibleIds.add(thread.id);
+      thread = thread.parent_id ? threadById.get(thread.parent_id) : undefined;
+    }
+  };
+  if (search) matches.forEach(addWithParents);
+  else if (focusMode && world.active && threadById.has(world.active)) {
+    addWithParents(world.active);
+    world.threads.filter((thread) => thread.parent_id === world.active).forEach((thread) => visibleIds.add(thread.id));
+  } else world.threads.forEach((thread) => visibleIds.add(thread.id));
+  const children = new Map<string | null, Thread[]>();
+  for (const thread of world.threads) {
+    if (!visibleIds.has(thread.id)) continue;
+    const parent = thread.parent_id && threadById.has(thread.parent_id) ? thread.parent_id : null;
+    const group = children.get(parent) ?? [];
+    group.push(thread);
+    children.set(parent, group);
+  }
+  if (recentFirst) children.forEach((group) => group.sort((a, b) => b.touched_ms - a.touched_ms));
+  const roots = children.get(null) ?? [];
+
+  const jumpToActive = () => {
+    setQuery("");
+    setFocusMode(false);
+    if (world.active) requestAnimationFrame(() => {
+      document.getElementById(`thread-${world.active}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+    });
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (event.key === "/") { event.preventDefault(); searchRef.current?.focus(); }
+      if ((event.key === "j" || event.key === "k") && !event.repeat) {
+        const buttons = Array.from(mapRef.current?.querySelectorAll<HTMLButtonElement>(".thread-toggle:not(:disabled)") ?? []);
+        if (!buttons.length) return;
+        event.preventDefault();
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = index < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, index + (event.key === "j" ? 1 : -1)));
+        buttons[next].focus();
+        buttons[next].scrollIntoView({ block: "nearest" });
+      }
+      if (event.key === "Escape") {
+        setExpanded(Object.fromEntries(world.threads.filter((thread) => !activePath.has(thread.id)).map((thread) => [thread.id, true])));
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [world.threads, world.active]);
+
+  const previousPlaced = useRef<number | null>(null);
+  useEffect(() => {
+    const count = world.thoughts.filter((thought) => thought.placed).length;
+    if (startedEmpty.current && previousPlaced.current === 0 && count === 1 && world.threads.length === 1) setFirstHint(true);
+    if (count > 1 || world.threads.length > 1 || core.partial) setFirstHint(false);
+    previousPlaced.current = count;
+  }, [world.thoughts, world.threads.length, core.partial]);
+  useEffect(() => {
+    if (!firstHint) return;
+    const timer = window.setTimeout(() => setFirstHint(false), 10000);
+    return () => window.clearTimeout(timer);
+  }, [firstHint]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -166,9 +285,11 @@ export default function App() {
   }, []);
 
   const goBack = (thread: Thread) => {
+    setQuery("");
+    setFocusMode(false);
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
-    document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
+    requestAnimationFrame(() => document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }));
   };
 
   return (
@@ -191,9 +312,9 @@ export default function App() {
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            onClick={core.clearNotice}
           >
-            {core.notice}
+            <span>{core.notice.includes("MODEL_API_KEY") ? "Set MODEL_API_KEY in .env to turn on listening and placement. See .env.example." : core.notice}</span>
+            <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -215,20 +336,34 @@ export default function App() {
         </div>
       )}
 
-      <main className="map" aria-label="Thread map">
-        {roots.length === 0 && pending.length === 0 ? (
+      {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
+        <div className="map-tools-inner">
+          <label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
+          <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
+          {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
+        </div>
+        <div className="keyboard-hint">/ search · j / k move · Enter show or hide · Esc fold quiet threads</div>
+        {search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
+      </nav>}
+      <main ref={mapRef} className="map" aria-label="Thread map">
+        {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
-            <p>Speak or type a thought to start your map.</p>
-            <p className="empty-hint">Use the mic below, or type and press Enter.</p>
+            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? "Finding a place for your thought…" : "Start with whatever is on your mind."}</p>
+            {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
-          roots.map((t) => (
+          roots.length === 0 ? <p className="no-results">No threads match. Try another search.</p> : roots.map((t) => (
             <ThreadCard
               key={t.id}
               thread={t}
               world={world}
               activePath={activePath}
+              childrenByParent={children}
+              thoughtsByThread={thoughtsByThread}
+              matches={matches}
+              searching={!!search}
               expanded={expanded}
               setExpanded={setExpanded}
               on={{ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }}
@@ -238,7 +373,7 @@ export default function App() {
       </main>
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-      <section className="dock" aria-label="Your thoughts">
+      <section ref={dockRef} className="dock" aria-label="Your thoughts">
         <div className="dock-inner">
           <AnimatePresence>
             {pullBack && (
@@ -266,11 +401,13 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-          <div className="live">{core.partial}</div>
+          {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
+          {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
+          {(core.partial || core.listening || startingMic) && <div className="live">{core.partial || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
               <motion.span key={t.id} layoutId={reducedMotion ? undefined : t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={spring} className="pill">
-                {t.text}
+                <span className="pending-label">Finding a thread</span> {t.text}
               </motion.span>
             ))}
           </div>
@@ -278,13 +415,14 @@ export default function App() {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={core.listening ? "Listening… or type" : "Type a thought, or tap the mic"}
+              placeholder={core.listening ? "Listening… or type" : core.connected ? "Type a thought, or tap the mic" : "Type a thought — it will send when connected"}
               aria-label="Type a thought"
             />
             <button
               type="button"
               className={stopMic ? "mic on" : "mic"}
               onClick={toggleMic}
+              disabled={startingMic || (!core.connected && !stopMic)}
               aria-label={stopMic ? "Stop listening" : "Start listening"}
               aria-pressed={!!stopMic}
             >
@@ -298,21 +436,19 @@ export default function App() {
   );
 }
 
-function ThreadCard({ thread, world, on, activePath, expanded, setExpanded, depth = 2 }: {
+function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsByThread, matches, searching, expanded, setExpanded, depth = 2 }: {
   thread: Thread; world: World; on: Handlers; activePath: Set<string>;
+  childrenByParent: Map<string | null, Thread[]>; thoughtsByThread: Map<string, Thought[]>; matches: Set<string>; searching: boolean;
   expanded: Record<string, boolean>; setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; depth?: number;
 }) {
   const reducedMotion = useReducedMotion();
-  const thoughts = useMemo(
-    () => world.thoughts.filter((t) => t.placed && t.thread_id === thread.id),
-    [world.thoughts, thread.id],
-  );
+  const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = world.suggestions.filter((s) => s.thread_id === thread.id && s.status !== "dismissed");
   const actions = world.actions.filter((a) => a.thread_id === thread.id && a.status !== "dismissed");
-  const branches = world.threads.filter((t) => t.parent_id === thread.id);
+  const branches = childrenByParent.get(thread.id) ?? [];
   const active = world.active === thread.id;
-  const collapsed = !activePath.has(thread.id) && (expanded[thread.id] === false || (expanded[thread.id] === undefined && world.threads.length >= 60));
-  const classes = ["thread", active ? "active" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
+  const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
+  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
 
   return (
     <motion.section
@@ -330,8 +466,9 @@ function ThreadCard({ thread, world, on, activePath, expanded, setExpanded, dept
             <div className="title" role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
             {thread.status === "dropped" && <span className="chip dropped">left off</span>}
             {active && <span className="chip now">active</span>}
+            <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
-          {(thread.tags ?? []).length > 0 && (
+          {!collapsed && (thread.tags ?? []).length > 0 && (
             <div className="tags">
               {thread.tags.map((t) => (
                 <button
@@ -347,7 +484,7 @@ function ThreadCard({ thread, world, on, activePath, expanded, setExpanded, dept
             </div>
           )}
         </div>
-        {!activePath.has(thread.id) && <button className="collapse" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: collapsed }))}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>}
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: !collapsed }))} disabled={searching && matches.has(thread.id)}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       {!collapsed && <>
       <ul className="points">
@@ -372,14 +509,14 @@ function ThreadCard({ thread, world, on, activePath, expanded, setExpanded, dept
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
+      </>}
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} world={world} on={on} activePath={activePath} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} world={world} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
           ))}
         </div>
       )}
-      </>}
     </motion.section>
   );
 }
