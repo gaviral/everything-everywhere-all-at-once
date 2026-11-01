@@ -215,6 +215,8 @@ function apply(world: World, raw: Change): World {
 
 export function useCore() {
   const [world, setWorld] = useState<World>(EMPTY);
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
   const [partial, setPartial] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
@@ -229,6 +231,8 @@ export function useCore() {
     let closed = false;
     let retry = 500;
     let timer: number | undefined;
+    let currentWorld = EMPTY;
+    let changeId = 0;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -246,11 +250,24 @@ export function useCore() {
         const msg = JSON.parse(event.data as string) as ServerMsg;
         switch (msg.type) {
           case "snapshot":
-            setWorld({ ...EMPTY, ...msg.world });
+            currentWorld = { ...EMPTY, ...msg.world };
+            setWorld(currentWorld);
+            setSnapshotRevision((revision) => revision + 1);
             break;
-          case "change":
-            setWorld((w) => apply(w, msg.change));
+          case "change": {
+            const change = msg.change;
+            if (change.type === "thread_renamed") {
+              const old = currentWorld.threads.find((thread) => thread.id === resolve(currentWorld, change.thread_id));
+              if (old && old.title !== change.title) setMapChange({ id: ++changeId, text: `AI renamed “${old.title}” to “${change.title}”` });
+            } else if (change.type === "thread_merged") {
+              const from = currentWorld.threads.find((thread) => thread.id === change.from);
+              const into = currentWorld.threads.find((thread) => thread.id === change.into);
+              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+            }
+            currentWorld = apply(currentWorld, change);
+            setWorld(currentWorld);
             break;
+          }
           case "partial":
             setPartial(msg.text);
             break;
@@ -290,6 +307,8 @@ export function useCore() {
 
   return {
     world,
+    snapshotRevision,
+    mapChange,
     partial,
     listening,
     voiceStatusRevision,

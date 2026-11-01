@@ -30,9 +30,11 @@ export default function App() {
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const seenThoughts = useRef<Set<string> | null>(null);
+  const seenSnapshot = useRef(0);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
-    if (seenThoughts.current) {
+    if (!core.snapshotRevision) return;
+    if (seenThoughts.current && seenSnapshot.current === core.snapshotRevision) {
       const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
       if (added.length) {
         const thought = added[added.length - 1];
@@ -41,7 +43,8 @@ export default function App() {
       }
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
-  }, [world.thoughts, world.threads]);
+    seenSnapshot.current = core.snapshotRevision;
+  }, [world.thoughts, world.threads, core.snapshotRevision]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -126,12 +129,34 @@ export default function App() {
   };
 
   const pending = world.thoughts.filter((t) => !t.placed);
-  const activePath = new Set<string>();
-  let current = world.threads.find((t) => t.id === world.active);
-  while (current && !activePath.has(current.id)) {
-    activePath.add(current.id);
-    current = world.threads.find((t) => t.id === current?.parent_id);
-  }
+  const activePath = useMemo(() => {
+    const path = new Set<string>();
+    const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
+    let current = world.active ? byId.get(world.active) : undefined;
+    while (current && !path.has(current.id)) {
+      path.add(current.id);
+      current = current.parent_id ? byId.get(current.parent_id) : undefined;
+    }
+    return path;
+  }, [world.threads, world.active]);
+
+  useEffect(() => {
+    const ids = new Set(world.threads.map((thread) => thread.id));
+    setExpanded((state) => {
+      if (Object.keys(state).every((id) => ids.has(id))) return state;
+      return Object.fromEntries(Object.entries(state).filter(([id]) => ids.has(id)));
+    });
+  }, [world.threads]);
+
+  // Position the initial snapshot once; later activity must not interrupt reading.
+  const positionedInitial = useRef(false);
+  useEffect(() => {
+    if (positionedInitial.current || !core.snapshotRevision || !world.active) return;
+    const target = document.getElementById(`thread-${world.active}`);
+    if (!target) return;
+    positionedInitial.current = true;
+    requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
+  }, [core.snapshotRevision, world.active, world.threads]);
 
   useEffect(() => {
     if (!world.active) return;
@@ -211,7 +236,7 @@ export default function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [world.threads, world.active]);
+  }, [world.threads, activePath]);
 
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
@@ -225,6 +250,14 @@ export default function App() {
     const timer = window.setTimeout(() => setFirstHint(false), 10000);
     return () => window.clearTimeout(timer);
   }, [firstHint]);
+
+  const [mapChangeVisible, setMapChangeVisible] = useState(false);
+  useEffect(() => {
+    if (!core.mapChange) return;
+    setMapChangeVisible(true);
+    const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
+    return () => window.clearTimeout(timer);
+  }, [core.mapChange]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -319,6 +352,10 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {core.mapChange && mapChangeVisible && (
+        <div className="map-change" role="status"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+      )}
+
       {selection && (
         <div className="explain" style={{ left: selection.x, top: selection.y }}>
           {selection.asked ? (
@@ -342,8 +379,8 @@ export default function App() {
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
+          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details>
         </div>
-        <div className="keyboard-hint">/ search · j / k move · Enter show or hide · Esc fold quiet threads</div>
         {search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       <main ref={mapRef} className="map" aria-label="Thread map">
@@ -454,16 +491,17 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
     <motion.section
       layout={reducedMotion ? false : true}
       id={`thread-${thread.id}`}
+      aria-labelledby={`title-${thread.id}`}
       className={classes}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
     >
       <div className="thread-head">
-        {thread.picture && <img className="picture" src={thread.picture} alt="" />}
+        {thread.picture && <span className="picture-wrap"><img className="picture" src={thread.picture} alt="" /><span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span></span>}
         <div className="head-text">
           <div className="head-line">
-            <div className="title" role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
+            <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
             {thread.status === "dropped" && <span className="chip dropped">left off</span>}
             {active && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
@@ -474,11 +512,12 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
                 <button
                   key={t.name}
                   className={t.kept ? "tag kept" : "tag"}
+                  aria-label={`${t.kept ? "Kept tag" : "AI-suggested tag"}: ${t.name}`}
                   aria-pressed={t.kept}
                   title={t.kept ? "Remove tag" : "Keep this tag"}
                   onClick={() => on.tag(thread.id, t.name, !t.kept)}
                 >
-                  {t.name}
+                  {!t.kept && <span aria-hidden="true">✦ </span>}{t.name}
                 </button>
               ))}
             </div>
@@ -486,7 +525,8 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
         </div>
         <button className="collapse thread-toggle" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: !collapsed }))} disabled={searching && matches.has(thread.id)}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
-      {!collapsed && <>
+      <AnimatePresence initial={false}>
+      {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
       <ul className="points">
         {thoughts.map((t) => (
           <Point key={t.id} thought={t} on={on} />
@@ -494,7 +534,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
       </ul>
       {ideas.map((s) => (
         <motion.div key={s.id} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <span className="ai-mark">✦</span>
+          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
             <span className="ai-actions">
@@ -509,7 +549,8 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
-      </>}
+      </motion.div>}
+      </AnimatePresence>
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
@@ -528,10 +569,11 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   return (
     <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
+      {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
-          Did you mean “{thought.guess}”?
+          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?
           <button onClick={() => on.correct(thought.id, true)}>Yes</button>
           <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
             No
@@ -557,7 +599,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
     : "";
   return (
     <motion.div layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <span className="action-icon">{action.status === "done" ? "✓" : action.kind === "event" ? "◷" : "○"}</span>
+      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
         {when && <span className="when"> · {when}</span>}
