@@ -247,7 +247,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   ) : (
     <>
       <h2 id="import-title">Import your chats</h2>
-      <p className="import-lead">Your past AI chats become threads, open questions and deadlines on this map. Only your own messages become points.</p>
+      <p className="import-lead">Turn your ChatGPT or Claude conversations into threads, questions and tasks on this map. Only your own messages become points.</p>
       {step === "error" && (
         <p className="import-warn" role="alert">
           {error}
