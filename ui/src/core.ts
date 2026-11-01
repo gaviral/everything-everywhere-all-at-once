@@ -44,6 +44,11 @@ export function capitalized(point: string): string {
     /\p{Lu}/u.test(rest) ? word : lead + first.toUpperCase() + rest);
 }
 
+/** What stands in for a thread's picture until it has one, on the map and in the Palace. */
+export function firstLetter(title: string): string {
+  return Array.from(title.trim())[0]?.toLocaleUpperCase() || "?";
+}
+
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
