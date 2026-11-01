@@ -6,6 +6,7 @@ mod apple;
 mod apps;
 mod asr;
 mod explain;
+mod find;
 mod import;
 mod pictures;
 mod placer;
@@ -34,6 +35,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    find: find::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
     world: Mutex<World>,
@@ -103,6 +105,7 @@ impl Core {
 
     /// Makes a thread the speaker's active one; going back to a dropped thread reopens it.
     pub fn focus(&self, speaker: &str, thread_id: &str) {
+        self.find.cancel(speaker);
         let world = self.snapshot();
         let Some(thread) = world.thread(thread_id) else { return };
         let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
@@ -139,6 +142,7 @@ impl Core {
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed.
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
+        self.find.cancel(speaker);
         if let Some(period) = recap::command(text) {
             return recap::request(self.clone(), speaker.into(), period);
         }
@@ -150,6 +154,9 @@ impl Core {
         }
         if is_go_next(text) {
             return self.go_next(speaker);
+        }
+        if let Some(query) = find::command(text) {
+            return find::request(self.clone(), speaker.into(), query);
         }
         let active = self.world.lock().unwrap().active_for(speaker).cloned();
         let thought = Thought {
@@ -251,6 +258,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        find: find::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
         world: Mutex::new(world),

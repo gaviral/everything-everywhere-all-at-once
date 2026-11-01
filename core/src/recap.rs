@@ -315,6 +315,7 @@ mod tests {
             let (updates, _) = broadcast::channel(128);
             let (placer_queue, _) = mpsc::unbounded_channel();
             Self { path, core: Arc::new(Core {
+                find: crate::find::Runtime::default(),
                 recap: Runtime::default(), apps: crate::apps::Runtime::default(),
                 world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
                 key, placer_model: "test".into(), http: reqwest::Client::new(),

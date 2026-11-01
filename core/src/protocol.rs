@@ -18,6 +18,8 @@ pub enum ServerMsg {
     Error { message: String },
     /// A gentle note, e.g. "Back to Pay rent".
     Notice { message: String },
+    /// A private jump to an existing answer; not replayed when a journal opens.
+    Found { thread_id: String, thought_id: Option<String>, message: String },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.

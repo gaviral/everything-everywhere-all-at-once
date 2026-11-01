@@ -1565,6 +1565,7 @@ mod tests {
             let (updates, _) = tokio::sync::broadcast::channel(64);
             let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
             let core = Arc::new(Core {
+                find: crate::find::Runtime::default(),
                 recap: crate::recap::Runtime::default(),
                 apps: crate::apps::Runtime::default(),
                 world: Mutex::new(world),
