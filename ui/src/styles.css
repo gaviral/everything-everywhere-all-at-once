@@ -843,6 +843,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 /* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
    ink, so color stays scarce enough to mean something. */
 .branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
+/* A folded thread's proposals still waiting for you: amber, as everything that needs you. */
+.chip.waiting { color: var(--amber); background: var(--amber-soft); }
 /* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
 .when.due { color: var(--amber); }
 .when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }

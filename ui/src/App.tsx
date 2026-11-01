@@ -739,6 +739,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
   const actions = actionsByThread.get(thread.id) ?? [];
+  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length;
   const branches = childrenByParent.get(thread.id) ?? [];
   const isActive = active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
@@ -766,6 +767,8 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
+            {/* Folding a thread mustn't hide what waits for you there: the AI's proposals still to keep or dismiss. */}
+            {collapsed && waiting > 0 && <span className="chip waiting">{waiting} to review</span>}
           </div>
           {/* A suggested tag waits until the thread has said enough (3 thoughts) for it to add anything; kept tags always show. */}
           {!collapsed && (thread.tags ?? []).some((t) => t.kept || thoughts.length >= 3) && (
