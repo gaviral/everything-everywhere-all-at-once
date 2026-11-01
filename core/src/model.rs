@@ -1,12 +1,16 @@
-//! What every model call shares: whether the key still works, and what an answer's status means for the
-//! calls after it. A refused key (401 or 403) won't fix itself, so it stops every model call until a
+//! What every model call shares: the call itself (`call_model`, or `ask_model` for a feature's own model
+//! setting), how its answer is read, whether the key still works, and what an answer's status means for
+//! the calls after it. A refused key (401 or 403) won't fix itself, so it stops every model call until a
 //! restart and every window is told; a busy service (429) is tried again on each caller's own schedule,
 //! and said once a spell. A default model in Contributor mode that the key can't use gives way to the
 //! same model without it, for the rest of the session.
 
 use crate::{protocol::ServerMsg, Core};
+use anyhow::bail;
 use reqwest::StatusCode;
+use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 /// What every window is told when the service refuses the key, then and on connecting after.
 /// The UI knows it by "MODEL_API_KEY" and "refused".
@@ -28,7 +32,7 @@ pub enum Verdict {
     Refused,
     /// 429: too many calls for now; worth trying again later.
     Busy,
-    /// Anything else, such as a 500: maybe a blip; the caller decides, as before.
+    /// Anything else, such as a 500: maybe a blip; the caller decides.
     Other,
 }
 
@@ -141,7 +145,7 @@ impl Core {
 
     /// Reads a model answer's status before its body, which may not be JSON. A refused key stops every model
     /// call from here on and tells every window; a busy service is said once a spell. Both end the call with
-    /// their verdict as the error. Any other failure is the caller's to report, as before.
+    /// their verdict as the error. Any other failure is the caller's to report (`answer` does it for a model call).
     pub fn check(&self, status: StatusCode) -> anyhow::Result<()> {
         match verdict(status) {
             Verdict::Refused => {
@@ -166,10 +170,20 @@ impl Core {
         }
     }
 
+    /// One model call: posts `body` to `url` with the key and waits at most `patience` for the whole answer,
+    /// its body included. The answer's status goes through `check`, then its JSON through `answer`.
+    pub async fn call_model(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
+        let key = self.key()?;
+        let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
+        self.check(response.status())?;
+        answer(response).await
+    }
+
     /// Asks a feature's model: `send` posts the request for one model name, and the answer's status is read as
-    /// `check` reads it. When the key can't use a default model in Contributor mode (401, 403 or 404), the same
-    /// request goes once to the model without it; if that one works, the feature keeps it until a restart, said
-    /// once. The key counts as refused only if that model refuses it too.
+    /// `check` reads it; the caller reads the rest with `answer`. When the key can't use a default model in
+    /// Contributor mode (401, 403 or 404), the same request goes once to the model without it; if that one
+    /// works, the feature keeps it until a restart, said once. The key counts as refused only if that model
+    /// refuses it too.
     pub async fn ask_model<F, R>(&self, setting: &Setting, send: F) -> anyhow::Result<reqwest::Response>
     where
         F: Fn(&str) -> R,
@@ -191,9 +205,20 @@ impl Core {
     }
 }
 
+/// The JSON of a model's answer, once `check` has read its status. Any other failure ends the call with the
+/// service's own words, such as "400 Bad Request: …".
+pub async fn answer(response: reqwest::Response) -> anyhow::Result<Value> {
+    let status = response.status();
+    let value: Value = response.json().await?;
+    if !status.is_success() {
+        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{status_of, verdict, Setting, Verdict, REFUSED};
+    use super::{answer, status_of, verdict, Setting, Verdict, REFUSED};
     use crate::placer::{self, Job};
     use crate::protocol::{Outgoing, ServerMsg};
     use crate::world::Journal;
@@ -212,26 +237,8 @@ mod tests {
         fn new(key: Option<&str>) -> Self {
             let path = std::env::temp_dir().join(format!("e2a2o-model-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, world) = Journal::open(&path).unwrap();
-            let (updates, _) = broadcast::channel(64);
             let (placer_queue, queue) = mpsc::unbounded_channel();
-            let core = Arc::new(Core {
-                find: Default::default(),
-                recap: Default::default(),
-                apps: Default::default(),
-                imports: Default::default(),
-                world: Mutex::new(world.into()),
-                journal: Mutex::new(journal),
-                updates,
-                placer_queue,
-                room: None,
-                key: key.map(Into::into),
-                placer_model: "test".into(),
-                http: reqwest::Client::new(),
-                last_activity: Default::default(),
-                looked: Default::default(),
-                wake: Default::default(),
-                service: Default::default(),
-            });
+            let core = Arc::new(Core { placer_queue, key: key.map(Into::into), ..Core::test(journal, world) });
             Fixture { core, queue: Some(queue), path }
         }
     }
@@ -268,6 +275,57 @@ mod tests {
         }
         assert_eq!(status_of("authentication_error"), Some(StatusCode::UNAUTHORIZED), "what Voice Transcribe sends for a wrong key");
         assert_eq!(status_of("invalid_request_error"), None);
+    }
+
+    /// A stand-in for the model service on this machine: each call answers with the `status` and `answer`
+    /// its body asks for, after `wait_ms`. `keys` records the key each call came with.
+    async fn stand_in() -> (String, Arc<Mutex<Vec<String>>>) {
+        let keys = Arc::new(Mutex::new(Vec::new()));
+        let seen = keys.clone();
+        let service = move |headers: axum::http::HeaderMap, axum::Json(body): axum::Json<serde_json::Value>| async move {
+            seen.lock().unwrap().push(headers["authorization"].to_str().unwrap().to_string());
+            tokio::time::sleep(std::time::Duration::from_millis(body["wait_ms"].as_u64().unwrap_or(0))).await;
+            (StatusCode::from_u16(body["status"].as_u64().unwrap() as u16).unwrap(), body["answer"].to_string())
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        let routes = axum::Router::new().route("/v1/chat/completions", axum::routing::post(service));
+        tokio::spawn(async move { axum::serve(listener, routes).await });
+        (url, keys)
+    }
+
+    /// One call to the stand-in, with half a second's patience.
+    async fn call(core: &Core, url: &str, status: u16, answer: serde_json::Value, wait_ms: u64) -> anyhow::Result<serde_json::Value> {
+        let body = serde_json::json!({"status": status, "answer": answer, "wait_ms": wait_ms});
+        core.call_model(url, &body, std::time::Duration::from_millis(500)).await
+    }
+
+    /// Every model call but placing and Explain goes through `call_model`, so this is how they all behave.
+    #[tokio::test]
+    async fn a_model_call_sends_the_key_reads_the_answer_and_gives_up_on_time() {
+        use serde_json::json;
+        let (url, keys) = stand_in().await;
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let reply = json!({"choices": [{"message": {"content": "hi"}}]});
+        assert_eq!(call(core, &url, 200, reply.clone(), 0).await.unwrap(), reply);
+        assert_eq!(*keys.lock().unwrap(), ["Bearer good"]);
+        // Any other failure, in the service's own words, even with a body that looks like an answer.
+        let failed = call(core, &url, 400, json!({"error": {"message": "bad schema"}}), 0).await.unwrap_err();
+        assert_eq!(failed.to_string(), "400 Bad Request: bad schema");
+        assert_eq!(call(core, &url, 503, reply.clone(), 0).await.unwrap_err().to_string(), "503 Service Unavailable: no message");
+        let not_json = reqwest::Response::from(axum::http::Response::builder().status(502).body("<html>Bad gateway</html>".to_string()).unwrap());
+        assert!(answer(not_json).await.is_err());
+        // Too slow: cut off at the call's patience, reading the answer included.
+        let started = std::time::Instant::now();
+        let slow = call(core, &url, 200, reply.clone(), 3_000).await.unwrap_err();
+        assert!(slow.downcast_ref::<reqwest::Error>().is_some_and(|e| e.is_timeout()), "{slow:#}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // A refused key stops this call and every one after it, which isn't even sent.
+        assert_eq!(Verdict::of(&call(core, &url, 401, json!({}), 0).await.unwrap_err()), Some(Verdict::Refused));
+        let sent = keys.lock().unwrap().len();
+        assert_eq!(Verdict::of(&call(core, &url, 200, reply, 0).await.unwrap_err()), Some(Verdict::Refused));
+        assert_eq!(keys.lock().unwrap().len(), sent);
     }
 
     #[test]

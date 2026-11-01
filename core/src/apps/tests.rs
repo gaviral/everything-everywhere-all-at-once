@@ -1,7 +1,10 @@
+//! Tests for small apps (apps.rs): asking for one, the composer's draft and its checks, watchers and
+//! publishers on the map, and journals from before apps that still load. The model's answers are canned
+//! (`Runtime::answers`), so nothing here calls it.
+
 use super::*;
 use crate::world::{Journal, Thought, World};
 use std::path::PathBuf;
-use tokio::sync::{broadcast, mpsc};
 
 struct Fixture { core: Arc<Core>, path: PathBuf }
 
@@ -9,17 +12,7 @@ impl Fixture {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("e2a2o-apps-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(1024);
-        let (placer_queue, _) = mpsc::unbounded_channel();
-        Self { path, core: Arc::new(Core {
-            find: crate::find::Runtime::default(),
-            recap: crate::recap::Runtime::default(),
-            apps: Runtime::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
-            key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
-            wake: tokio::sync::Notify::new(), imports: crate::import::Imports::default(),
-            service: Default::default(),
-        }) }
+        Self { path, core: Arc::new(Core::test(journal, world)) }
     }
 }
 
@@ -297,7 +290,7 @@ async fn a_draft_that_doesnt_check_out_gets_one_more_try_told_why() {
     assert_eq!(b.stage, "ready", "no failure shows when the second try works");
     assert_eq!(b.draft.unwrap().prompt.unwrap().template, "Topic: {topic}\nNewest: {thought}");
     assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains("unknown template field {thread}"), "told what didn't check out");
-    // Two misses in a row still fail, as before.
+    // Two misses in a row fail.
     fixture.core.apps.state.lock().unwrap().build = fresh();
     fixture.core.apps.answers.lock().unwrap().extend([spec("{thread}"), spec("{thread}")]);
     assert!(compose_inner(&fixture.core, "b", "notice when I drift").await.is_err());
@@ -402,6 +395,9 @@ async fn a_missing_app_or_a_reminder_that_cant_repeat_gets_the_retry_told_why() 
     }
     // Once, a reminder is fine; so is one whose title the prompt writes each time.
     assert!(draft(&timed("2026-11-03 09:00", 0, json!([{"kind":"reminder","title":"Drink water","when":""}]))).is_ok());
+    let mut written = timer(json!([{"kind":"reminder","title":"{text}","when":""}]));
+    written["app"]["prompt"] = json!({"system": "Suggest something to drink.", "template": "{time}"});
+    assert!(draft(&written).is_ok());
 }
 
 #[tokio::test]

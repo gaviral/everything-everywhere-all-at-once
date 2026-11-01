@@ -139,11 +139,7 @@ async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
             core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send()
         })
         .await?;
-    let status = response.status();
-    let value: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    let value = crate::model::answer(response).await?;
     let text = value["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
     if text.is_empty() {
         bail!("no answer ({})", value["choices"][0]["finish_reason"].as_str().unwrap_or("no reason given"));
@@ -311,7 +307,7 @@ mod tests {
     #[ignore = "live model calls: MODEL_API_KEY=… EXPLAIN_RUNS=3 cargo test explain_live -- --ignored --nocapture"]
     async fn explain_live() {
         use crate::{protocol::ServerMsg, Core};
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let key = std::env::var("MODEL_API_KEY").expect("MODEL_API_KEY");
         let runs: usize = std::env::var("EXPLAIN_RUNS").ok().and_then(|n| n.parse().ok()).unwrap_or(1);
@@ -334,26 +330,12 @@ mod tests {
             let path = std::env::temp_dir().join(format!("e2a2o-explain-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, _) = crate::Journal::open(&path).unwrap();
             journals.push(path);
-            let (updates, _) = tokio::sync::broadcast::channel(1024);
-            let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
             cores.insert(map, Arc::new(Core {
-                find: crate::find::Runtime::default(),
-                recap: crate::recap::Runtime::default(),
-                apps: crate::apps::Runtime::default(),
-                imports: crate::import::Imports::default(),
-                world: Mutex::new(world.into()),
-                journal: Mutex::new(journal),
-                updates,
-                placer_queue,
-                room: None,
                 key: Some(key.clone()),
                 // As main.rs.
                 placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
                 http: reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build().unwrap(),
-                last_activity: std::sync::atomic::AtomicU64::new(0),
-                looked: std::sync::atomic::AtomicBool::new(false),
-                wake: tokio::sync::Notify::new(),
-                service: Default::default(),
+                ..Core::test(journal, world)
             }));
         }
         // A few at a time, as one person clicking around would never send dozens at once.

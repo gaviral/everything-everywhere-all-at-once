@@ -12,6 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+const URL: &str = "https://api.meta.ai/v1/chat/completions";
 const GAP_MS: u64 = 30 * 60 * 1000;
 const MAX_THREADS: usize = 24;
 const MAX_POINTS: usize = 16;
@@ -172,7 +173,7 @@ struct SourceThread {
 /// A projection of the journal's ThoughtAdded/Placed/Corrected changes, using
 /// their original timestamps. Quiet branches and points outside the period never
 /// enter the prompt. Actions are explicitly scoped to these threads, not claimed
-/// to have been created during the period (old action lines have no timestamp).
+/// to have been created during the period (an action has no time of its own).
 fn slice(world: &World, period: Period, through_ms: u64) -> Source {
     let since_ms = match period {
         Period::Today => day_start(through_ms),
@@ -258,15 +259,9 @@ struct Answer {
 }
 
 async fn generate(core: &Core, source: &Source) -> anyhow::Result<Answer> {
-    let key = core.key()?;
-    let body = model_body(source)?;
     // One call, no automatic retries. A failure leaves the last saved recap intact.
-    let response = core.http.post("https://api.meta.ai/v1/chat/completions")
-        .timeout(Duration::from_secs(40)).bearer_auth(key).json(&body).send().await?;
-    let status = response.status();
-    core.check(status)?;
-    let value: serde_json::Value = response.json().await?;
-    read_answer(status, value)
+    let value = core.call_model(URL, &model_body(source)?, Duration::from_secs(40)).await?;
+    read_answer(value)
 }
 
 fn model_body(source: &Source) -> anyhow::Result<serde_json::Value> {
@@ -297,8 +292,7 @@ pub(crate) fn perf(world: &World, now: u64) {
     });
 }
 
-fn read_answer(status: reqwest::StatusCode, value: serde_json::Value) -> anyhow::Result<Answer> {
-    if !status.is_success() { bail!("recap model returned {status}"); }
+fn read_answer(value: serde_json::Value) -> anyhow::Result<Answer> {
     let content = value["choices"][0]["message"]["content"].as_str().context("no recap answer")?;
     let answer: Answer = serde_json::from_str(content).context("recap wasn't the expected JSON")?;
     if answer.summary.trim().is_empty() || answer.worked_on.is_empty() { bail!("recap answer was empty"); }
@@ -359,6 +353,8 @@ fn main_threads(source: &Source) -> String {
     short(&format!("You spent time on {named}."), 280)
 }
 
+/// One line of at most `limit` characters, with … where it was cut. Unlike import's `clip`, it keeps a space
+/// before the …: saved recaps are found by a hash of these strings (`Source::key`), so changing it would redo them.
 fn short(text: &str, limit: usize) -> String {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.chars().count() <= limit { text } else { format!("{}…", text.chars().take(limit).collect::<String>()) }
@@ -369,26 +365,14 @@ mod tests {
     use super::*;
     use crate::world::{Journal, Thought, Thread};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, AtomicU64};
-    use std::sync::Mutex;
-    use tokio::sync::{broadcast, mpsc};
+    use tokio::sync::broadcast;
 
     struct Fixture { core: Arc<Core>, path: PathBuf }
     impl Fixture {
         fn new(key: Option<String>) -> Self {
             let path = std::env::temp_dir().join(format!("e2a2o-recap-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, world) = Journal::open(&path).unwrap();
-            let (updates, _) = broadcast::channel(128);
-            let (placer_queue, _) = mpsc::unbounded_channel();
-            Self { path, core: Arc::new(Core {
-                find: crate::find::Runtime::default(),
-                recap: Runtime::default(), apps: crate::apps::Runtime::default(),
-                world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
-                key, placer_model: "test".into(), http: reqwest::Client::new(),
-                last_activity: AtomicU64::new(0), looked: AtomicBool::new(false), wake: tokio::sync::Notify::new(),
-                imports: crate::import::Imports::default(),
-                service: Default::default(),
-            }) }
+            Self { path, core: Arc::new(Core { key, ..Core::test(journal, world) }) }
         }
     }
     impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); } }
@@ -638,10 +622,10 @@ mod tests {
         assert!(body["response_format"]["json_schema"]["schema"]["required"].as_array().unwrap().contains(&json!("plans")));
         assert!(!body["messages"][1]["content"].as_str().unwrap().contains("quiet"));
         let response = json!({"choices":[{"message":{"content":r#"{"summary":"You narrowed the demo.","worked_on":[{"thread_id":"T1","text":"Kept it simple."}],"decisions":[],"questions":[]}"#}}]});
-        assert!(read_answer(reqwest::StatusCode::OK, response.clone()).is_ok());
-        assert!(read_answer(reqwest::StatusCode::SERVICE_UNAVAILABLE, response).is_err());
+        assert!(read_answer(response).is_ok());
+        // A failure status is `answer`'s to catch (model.rs).
         for content in ["not json", "{}", r#"{"summary":"", "worked_on":[]}"#] {
-            assert!(read_answer(reqwest::StatusCode::OK, json!({"choices":[{"message":{"content":content}}]})).is_err());
+            assert!(read_answer(json!({"choices":[{"message":{"content":content}}]})).is_err());
         }
     }
 }

@@ -27,6 +27,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, Outgoing, ServerMsg};
 use std::collections::{HashMap, HashSet};
@@ -215,7 +216,7 @@ impl Core {
     /// placed: landing moves them to its thread and would undo it, so then it waits behind them in the
     /// placer's queue. Always waiting would put it behind every placement queued, the other person's and
     /// retries included, each up to a minute when the model is slow.
-    fn run_command(&self, speaker: &str, job: fn(String) -> placer::Job) {
+    fn run_command(&self, speaker: &str, job: Command) {
         let now = now_ms();
         // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`).
         let waiting = self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
@@ -266,10 +267,13 @@ fn filler(text: &str, asked: bool) -> bool {
     true
 }
 
+/// A spoken "where was I?" or "next one", as the placer job it makes for a speaker.
+type Command = fn(String) -> placer::Job;
+
 /// A spoken "where was I?" or "next one": the whole turn, or its end after a pause in it ("…it starts
 /// at two, okay, where was I?"), with the words said before it, which are still a thought.
-fn command(text: &str) -> Option<(&str, fn(String) -> placer::Job)> {
-    let job = |t: &str| -> Option<fn(String) -> placer::Job> {
+fn command(text: &str) -> Option<(&str, Command)> {
+    let job = |t: &str| -> Option<Command> {
         if is_go_back(t) {
             Some(placer::Job::Back)
         } else if is_go_next(t) {
@@ -284,7 +288,7 @@ fn command(text: &str) -> Option<(&str, fn(String) -> placer::Job)> {
     let before = |i: usize| text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end();
     starts(text).into_iter().find_map(|i| job(&text[i..]).map(|job| (before(i), job))).or_else(|| {
         // The transcriber sometimes writes a whole turn without punctuation ("…at three where was I").
-        let back: fn(String) -> placer::Job = placer::Job::Back;
+        let back: Command = placer::Job::Back;
         word_starts(text).find(|&i| is_lost_place(&text[i..])).map(|i| (before(i), back))
     })
 }
@@ -303,7 +307,7 @@ fn is_lost_place(text: &str) -> bool {
 /// What a turn asks for, in the order said: a command it opens with (see `opening`), the words to place,
 /// and a command it ends with (see `command`); a turn that is only a command opens with it. Commands said
 /// back to back count once, the last: "where was I, where was I… oh right" goes back once.
-fn turn(text: &str) -> (Option<fn(String) -> placer::Job>, &str, Option<fn(String) -> placer::Job>) {
+fn turn(text: &str) -> (Option<Command>, &str, Option<Command>) {
     let (mut first, mut rest) = (None, text);
     while let Some((job, after)) = opening(rest) {
         (first, rest) = (Some(job), after);
@@ -322,12 +326,12 @@ fn turn(text: &str) -> (Option<fn(String) -> placer::Job>, &str, Option<fn(Strin
 /// thoughts. So are a bare "next", which at the start lists things ("Next, I'll call Mom"), and a command
 /// ending in "there", "to that" or "to it", which points at the words after the pause ("Go back there,
 /// it was lovely"; "Take me back to that, the budget thing" is still a search).
-fn opening(text: &str) -> Option<(fn(String) -> placer::Job, &str)> {
+fn opening(text: &str) -> Option<(Command, &str)> {
     starts(text).into_iter().find_map(|i| {
         let (head, rest) = text.split_at(i);
         let said = format!(" {}", words(head).join(" "));
         let points_on = [" there", " to that", " to it"].iter().any(|end| said.ends_with(end));
-        let job: fn(String) -> placer::Job = if is_go_back(head) && !points_on {
+        let job: Command = if is_go_back(head) && !points_on {
             placer::Job::Back
         } else if is_go_next(head) && !is_command(head, &["next"], &[]) {
             placer::Job::Next
@@ -795,38 +799,15 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
     }
-    let mut updates = core.updates.subscribe();
+    let updates = core.updates.subscribe();
     for message in catch_up(&core, &speaker) {
-        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
+        if write(&mut out, &message).await.is_err() { return; }
     }
     if renamed {
         let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
-        if out.send(Message::Text(serde_json::to_string(&notice).unwrap().into())).await.is_err() { return; }
+        if write(&mut out, &notice).await.is_err() { return; }
     }
-    let (source, reader) = (core.clone(), speaker.clone());
-    let forward = tokio::spawn(async move {
-        'forward: loop {
-            match updates.recv().await {
-                // Someone else's live words, mic and notices.
-                Ok(Outgoing { to: Some(to), .. }) if to != reader => {}
-                Ok(Outgoing { message, .. }) => {
-                    let text = serde_json::to_string(&message).unwrap();
-                    if out.send(Message::Text(text.into())).await.is_err() {
-                        break;
-                    }
-                }
-                // Fell too far behind to replay the missed changes: catch up as if just connected.
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    for message in catch_up(&source, &reader) {
-                        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() {
-                            break 'forward;
-                        }
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone()));
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
     // This window's listening sessions, counted, so only the latest one says listening stopped: after a
@@ -846,26 +827,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_thought(&speaker, text.trim()),
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
-                    let (tx, rx) = mpsc::channel(256);
-                    audio = Some(tx);
-                    let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                    let (core, speaker, listens) = (core.clone(), speaker.clone(), listens.clone());
-                    tokio::spawn(async move {
-                        let ended = asr::run(core.clone(), speaker.clone(), rx).await;
-                        if let Err(e) = &ended {
-                            tracing::warn!("listening stopped: {e:#}");
-                        }
-                        if listens.load(std::sync::atomic::Ordering::Relaxed) != n {
-                            return;
-                        }
-                        match ended {
-                            Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
-                            Err(e) => {
-                                core.send_to(&speaker, ServerMsg::Error { message: format!("Speech service error: {e}") });
-                                core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
-                            }
-                        }
-                    });
+                    audio = Some(start_listening(&core, &speaker, &listens));
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
@@ -906,44 +868,109 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
             _ => {}
         }
     }
-    forward.abort();
+    forwarding.abort();
     apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
         tracing::info!("{speaker} left the room");
     }
 }
 
+/// Sends a window every change and whatever is meant for its speaker, until the window is gone.
+async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String) {
+    loop {
+        match updates.recv().await {
+            // Someone else's live words, mic and notices.
+            Ok(Outgoing { to: Some(to), .. }) if to != speaker => {}
+            Ok(Outgoing { message, .. }) => {
+                if write(&mut out, &message).await.is_err() {
+                    return;
+                }
+            }
+            // Fell too far behind to replay the missed changes: catch up as if just connected.
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                for message in catch_up(&core, &speaker) {
+                    if write(&mut out, &message).await.is_err() {
+                        return;
+                    }
+                }
+            }
+            Err(_) => return,
+        }
+    }
+}
+
+/// One message to a window, as JSON; an error means the window is gone.
+async fn write(out: &mut SplitSink<WebSocket, Message>, message: &ServerMsg) -> Result<(), axum::Error> {
+    out.send(Message::Text(serde_json::to_string(message).unwrap().into())).await
+}
+
+/// Relays a window's microphone to Voice Transcribe until the window stops it or the service ends, then says
+/// listening stopped, unless the window has started listening again since (`listens` counts its sessions).
+/// Returns where the window's audio goes.
+fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::atomic::AtomicU64>) -> mpsc::Sender<Vec<u8>> {
+    let (tx, rx) = mpsc::channel(256);
+    let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let (core, speaker, listens) = (core.clone(), speaker.to_string(), listens.clone());
+    tokio::spawn(async move {
+        let ended = asr::run(core.clone(), speaker.clone(), rx).await;
+        if let Err(e) = &ended {
+            tracing::warn!("listening stopped: {e:#}");
+        }
+        if listens.load(std::sync::atomic::Ordering::Relaxed) != n {
+            return;
+        }
+        match ended {
+            Ok(()) => core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Stopped listening".into() }),
+            Err(e) => {
+                core.send_to(&speaker, ServerMsg::Error { message: format!("Speech service error: {e}") });
+                core.send_to(&speaker, ServerMsg::Status { listening: false, note: "Not listening".into() });
+            }
+        }
+    });
+    tx
+}
+
+/// A core for tests on `world`, journaling to `journal`: alone (no room), no key, and a placer queue no one reads.
+/// A test sets what it needs on top, e.g. `Core { key: Some("good".into()), ..Core::test(journal, world) }`.
+#[cfg(test)]
+impl Core {
+    pub(crate) fn test(journal: Journal, world: World) -> Core {
+        Core {
+            find: Default::default(),
+            recap: Default::default(),
+            apps: Default::default(),
+            world: Mutex::new(world.into()),
+            journal: Mutex::new(journal),
+            updates: broadcast::channel(1024).0,
+            placer_queue: mpsc::unbounded_channel().0,
+            room: None,
+            key: None,
+            placer_model: "test".into(),
+            http: reqwest::Client::new(),
+            last_activity: Default::default(),
+            looked: Default::default(),
+            wake: Default::default(),
+            imports: Default::default(),
+            service: Default::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
+    use crate::protocol::ServerMsg;
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
-    use std::sync::{Arc, Mutex};
-    use tokio::sync::{broadcast, mpsc};
+    use futures_util::{SinkExt, StreamExt};
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
 
     /// A core on an empty map, with the placer's queue to watch.
     fn test_core(room: Option<&str>) -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
         let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(64);
         let (placer_queue, queue) = mpsc::unbounded_channel();
-        let core = Arc::new(Core {
-            find: crate::find::Runtime::default(),
-            recap: crate::recap::Runtime::default(),
-            apps: crate::apps::Runtime::default(),
-            imports: crate::import::Imports::default(),
-            world: Mutex::new(world.into()),
-            journal: Mutex::new(journal),
-            updates,
-            placer_queue,
-            room: room.map(Room::from),
-            key: None,
-            placer_model: "test".into(),
-            http: reqwest::Client::new(),
-            last_activity: std::sync::atomic::AtomicU64::new(0),
-            looked: std::sync::atomic::AtomicBool::new(false),
-            wake: tokio::sync::Notify::new(),
-            service: Default::default(),
-        });
+        let core = Arc::new(Core { placer_queue, room: room.map(Room::from), ..Core::test(journal, world) });
         (core, queue, path)
     }
 
@@ -1082,28 +1109,7 @@ mod tests {
     // A search said while a thought is still placing waits on a task, so this runs inside a runtime like the app.
     #[tokio::test]
     async fn filler_never_becomes_a_thought_and_commands_keep_their_place_among_the_words() {
-        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
-        let (journal, world) = crate::Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(64);
-        let (placer_queue, mut queue) = mpsc::unbounded_channel();
-        let core = Arc::new(Core {
-            find: crate::find::Runtime::default(),
-            recap: crate::recap::Runtime::default(),
-            apps: crate::apps::Runtime::default(),
-            imports: crate::import::Imports::default(),
-            world: Mutex::new(world.into()),
-            journal: Mutex::new(journal),
-            updates,
-            placer_queue,
-            room: None,
-            key: None,
-            placer_model: "test".into(),
-            http: reqwest::Client::new(),
-            last_activity: std::sync::atomic::AtomicU64::new(0),
-            looked: std::sync::atomic::AtomicBool::new(false),
-            wake: tokio::sync::Notify::new(),
-            service: Default::default(),
-        });
+        let (core, mut queue, path) = test_core(None);
         let mut jobs = || {
             let mut out = Vec::new();
             while let Ok(job) = queue.try_recv() {
@@ -1147,6 +1153,50 @@ mod tests {
             texts(&core)[3..],
             ["Oh right, the rent is due Friday.", "The landlord wants it by Friday.", "The rent", "Go back to the beginning of the song, it's the best part"]
         );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The next message a window gets, as JSON.
+    async fn received(window: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>) -> serde_json::Value {
+        loop {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), window.next()).await.expect("a message within 5 s");
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = frame.unwrap().unwrap() {
+                return serde_json::from_str(text.as_str()).unwrap();
+            }
+        }
+    }
+
+    /// One window over a real WebSocket, as the page connects: the world first, then what's meant for it and
+    /// never another speaker's own; a typed thought lands; a mic that can't start says why, then that it stopped.
+    #[tokio::test]
+    async fn a_window_gets_the_world_then_its_own_messages_and_can_type_and_listen() {
+        use tokio_tungstenite::tungstenite::Message;
+        let (core, _queue, path) = test_core(None);
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(super::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        assert_eq!(received(&mut window).await["type"], "snapshot");
+        assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
+        // Alone, this window is "you".
+        core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
+        core.send(ServerMsg::Notice { message: "for everyone".into() });
+        core.send_to("you", ServerMsg::Notice { message: "for you".into() });
+        assert_eq!(received(&mut window).await["message"], "for everyone");
+        assert_eq!(received(&mut window).await["message"], "for you");
+        window.send(Message::Text(r#"{"type":"text","text":"the rent is due Friday"}"#.into())).await.unwrap();
+        let change = received(&mut window).await;
+        assert_eq!((change["type"].as_str(), change["change"]["type"].as_str()), (Some("change"), Some("thought_added")));
+        assert_eq!(core.snapshot().thoughts[0].text, "the rent is due Friday");
+        window.send(Message::Text(r#"{"type":"listen","on":true}"#.into())).await.unwrap();
+        assert_eq!(received(&mut window).await["message"], "Speech service error: MODEL_API_KEY is not set");
+        let status = received(&mut window).await;
+        assert_eq!((status["listening"].as_bool(), status["note"].as_str()), (Some(false), Some("Not listening")));
+        window.close(None).await.unwrap();
         let _ = std::fs::remove_file(&path);
     }
 

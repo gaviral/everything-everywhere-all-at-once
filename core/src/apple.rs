@@ -110,22 +110,12 @@ mod tests {
     use super::{claim, date_lines, event, recover, reminder};
     use crate::world::{Action, Change, ItemStatus, Journal};
     use crate::Core;
-    use std::sync::Mutex;
 
     #[test]
     fn an_action_is_added_once_and_offered_again_if_adding_never_finished() {
         let path = std::env::temp_dir().join(format!("e2a2o-apple-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = tokio::sync::broadcast::channel(16);
-        let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
-        let core = Core {
-            find: crate::find::Runtime::default(),
-            imports: crate::import::Imports::default(),
-            recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
-            updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
-            service: Default::default(),
-        };
+        let core = Core::test(journal, world);
         let status = |core: &Core| core.snapshot().actions[0].status;
         core.commit(vec![Change::ActionProposed { action: Action { id: "a".into(), thread_id: "T1".into(), kind: "reminder".into(),
             title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } }]);
@@ -150,16 +140,7 @@ mod tests {
     fn a_window_only_keeps_or_dismisses_and_adding_stays_with_approve() {
         let path = std::env::temp_dir().join(format!("e2a2o-apple-item-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = tokio::sync::broadcast::channel(16);
-        let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
-        let core = Core {
-            find: crate::find::Runtime::default(),
-            imports: crate::import::Imports::default(),
-            recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
-            updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
-            service: Default::default(),
-        };
+        let core = Core::test(journal, world);
         let action = |id: &str| Change::ActionProposed { action: Action { id: id.into(), thread_id: "T1".into(), kind: "reminder".into(),
             title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } };
         let suggestion = Change::SuggestionAdded { suggestion: crate::world::Suggestion {
