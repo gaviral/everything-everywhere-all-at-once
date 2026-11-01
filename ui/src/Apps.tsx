@@ -42,7 +42,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
   useEffect(() => {
     if (open && build && ["searching", "ready", "matched", "failed", "kept"].includes(build.stage)) {
       buildArea.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-      if (ready && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
+      if ((ready || build.stage === "failed") && (document.activeElement === document.body || document.activeElement?.closest(".apps-form"))) {
         buildArea.current?.focus({ preventScroll: true });
       }
     }
@@ -75,7 +75,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
       <button onClick={core.apps.clearSound} aria-label="Dismiss tune">×</button>
     </div>}
     {open && <div id="apps-content">
-      {build && <div className={`apps-build ${build.stage}`} ref={buildArea} tabIndex={-1} aria-label="App being composed">
+      {build && <div className={`apps-build ${build.stage}`} ref={buildArea} tabIndex={-1} role="region" aria-label="App being composed">
         <p className="apps-request">“{build.request}”</p>
         <ol className="apps-progress" aria-live="polite" aria-relevant="additions text">
           {build.steps.map((step, i) => <li key={`${build.id}-${i}`} style={{ animationDelay: `${i * 70}ms` }}>
