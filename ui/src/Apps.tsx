@@ -17,7 +17,8 @@ function watching(w: Watcher): string {
     case "phrase": return `Hearing “${w.phrase}”`;
     case "topic": return `Talking about ${w.topic}`;
     case "volume": return `Loud voices for ${w.seconds} seconds`;
-    case "time": return `${new Date(w.at_ms).toLocaleString()}${w.every_secs ? `, then ${every(w.every_secs)}` : ""}`;
+    // "Fri, Nov 6, 7:00 PM", not "11/6/2026, 7:00:00 PM".
+    case "time": return `${new Date(w.at_ms).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${w.every_secs ? `, then ${every(w.every_secs)}` : ""}`;
     case "app_request": return "An app request";
   }
 }
@@ -50,7 +51,8 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
   useEffect(() => {
     window.clearTimeout(closeTimer.current);
     if (build) {
-      panelBuild.current = panelRequest.current === build.request ? build.id : null;
+      // The core drops a leading "Make an app that…", so what was typed here ends with the build's request.
+      panelBuild.current = panelRequest.current?.trimEnd().endsWith(build.request) ? build.id : null;
       panelRequest.current = null;
       setOpen(true);
     }

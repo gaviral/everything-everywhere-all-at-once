@@ -77,6 +77,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - Explain also reads what other threads say about the selected name or term (up to 8 thoughts), so “Jordan” on a to-do list is explained from the hiring thread; acronyms are spelled out, and it is told never to give medical or health advice.
 - “Where was I?” goes by when things were said, so imported chats don't count as your latest words, and it acts at once unless your own words are still being placed.
 - “While you were away” stays up when your last turn is split in two or an import lands; the import panel no longer sticks on “Importing” after a restart.
+- Your new thought scrolls into view when it lands under the composer (its thread's title showing above the composer used to count as in view), and “…, where was I?” brings the thread it goes back to into view; the other person's thoughts in a room don't move your view, and nothing moves while you scroll or read (typing in a field doesn't count as scrolling).
+- A request typed into the Apps panel as “Make an app that…” keeps the panel open after Keep or Discard, as other typed requests do (it closed after 2 s, so a montage of typed requests had to reopen it); app times read “Fri, Nov 6, 7:00 PM”, not “11/6/2026, 7:00:00 PM”.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
