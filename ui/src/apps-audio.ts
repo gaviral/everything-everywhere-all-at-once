@@ -1,22 +1,33 @@
-// Keep the microphone level local; send only a small normalized reading to watchers.
+// Keep the microphone level local; send only a small normalized reading to watchers: the RMS of every four
+// 80 ms frames (320 ms). The quietest of the four, sent before, fell between syllables: about half the voice's
+// level in 24 synthesized clips, so only a shout kept every reading above a watcher's level.
 export function volumeReporter(report: (level: number) => void) {
   let frames = 0;
-  let lowest = 1;
+  let sum = 0;
+  let count = 0;
   return {
     feed(frame: ArrayBuffer) {
       const samples = new Int16Array(frame);
       if (!samples.length) return;
-      let sum = 0;
       for (const sample of samples) sum += (sample / 32768) ** 2;
-      lowest = Math.min(lowest, Math.sqrt(sum / samples.length));
+      count += samples.length;
       if (++frames >= 4) {
-        report(lowest);
-        frames = 0;
-        lowest = 1;
+        report(Math.sqrt(sum / count));
+        frames = sum = count = 0;
       }
     },
-    reset() { frames = 0; lowest = 1; },
+    reset() { frames = sum = count = 0; },
   };
+}
+
+const readings = new Set<(level: number) => void>();
+
+/** Each reading the core received, for the `?level` meter (Level.tsx); without it nothing listens. */
+export function received(level: number) { readings.forEach((listener) => listener(level)); }
+
+export function onReading(listener: (level: number) => void) {
+  readings.add(listener);
+  return () => { readings.delete(listener); };
 }
 
 let sound: AudioContext | undefined;
