@@ -1,8 +1,8 @@
 //! What every model call shares: whether the key still works, and what an answer's status means for the
 //! calls after it. A refused key (401 or 403) won't fix itself, so it stops every model call until a
-//! restart and every window is told; a busy service (429) is tried again on each caller's own schedule,
-//! and said once a spell. A default model in Contributor mode that the key can't use gives way to the
-//! same model without it, for the rest of the session.
+//! restart and every window is told; a busy service (429) is said once a spell, and a caller that tries
+//! again does so on its own schedule. A default model in Contributor mode that the key can't use gives
+//! way to the same model without it, for the rest of the session.
 
 use crate::{protocol::ServerMsg, Core};
 use reqwest::StatusCode;
@@ -12,8 +12,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// The UI knows it by "MODEL_API_KEY" and "refused".
 pub const REFUSED: &str = "The AI key was refused. Check MODEL_API_KEY in .env, then restart.";
 
-/// Said when the service is busy: gently, since every caller already tries again.
-const BUSY: &str = "The AI service is busy right now. Retrying shortly.";
+/// Said when the service is busy. Thoughts are placed again on their own (placer.rs); a Recap, Explain or search
+/// asks once, so the person asks again.
+const BUSY: &str = "The AI service is busy. Thoughts retry on their own; try anything else again shortly.";
 
 /// A busy spell is said once. It lasts as long as callers back off from it, and the longest wait between
 /// tries is the refiner's 5 minutes (`refiner::rest_ms`), so one spell's own retries never say it twice.
@@ -307,6 +308,17 @@ mod tests {
         assert!(said[0].contains("busy") && !said[0].contains("MODEL_API_KEY"), "{said:?}");
         assert!(!core.key_refused());
         assert_eq!(core.key().unwrap(), "good");
+    }
+
+    #[test]
+    fn the_busy_notice_promises_a_retry_only_for_thoughts() {
+        // Placing tries a busy thought again on its own (placer.rs); a Recap, Explain or search asks once.
+        let fixture = Fixture::new(Some("good"));
+        let mut updates = fixture.core.updates.subscribe();
+        let _ = fixture.core.check(StatusCode::TOO_MANY_REQUESTS);
+        let said = notices(&mut updates).join("\n");
+        assert!(said.contains("Thoughts retry on their own") && said.contains("try anything else again"), "{said}");
+        assert!(said.split_whitespace().count() <= 15, "short enough to read in the 5 s a notice shows (App.tsx): {said}");
     }
 
     /// The default for placing and Explain (main.rs), and the same model without Contributor mode.
