@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 fn yes() -> bool {
@@ -109,6 +109,7 @@ pub struct World {
     pub merged: std::collections::HashMap<String, String>,
 }
 
+/// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
@@ -327,18 +328,28 @@ impl Journal {
         }
         let mut world = World::default();
         if path.exists() {
-            for line in BufReader::new(File::open(path)?).lines() {
+            for (n, line) in BufReader::new(File::open(path)?).lines().enumerate() {
                 let line = line?;
                 if line.trim().is_empty() {
                     continue;
                 }
                 match serde_json::from_str::<Change>(&line) {
                     Ok(change) => world.apply(&change),
-                    Err(e) => tracing::warn!("skipping a journal line I can't read: {e}"),
+                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n + 1),
                 }
             }
         }
-        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        let mut file = OpenOptions::new().create(true).read(true).append(true).open(path)?;
+        // A crash mid-write can leave a partial last line; start the next change on a fresh one.
+        let len = file.metadata()?.len();
+        if len > 0 {
+            let mut last = [0u8];
+            file.seek(SeekFrom::Start(len - 1))?;
+            file.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                file.write_all(b"\n")?;
+            }
+        }
         Ok((Journal { file }, world))
     }
 
@@ -364,6 +375,18 @@ fn swap(text: &str, from: &str, to: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Change, Thought, World};
+
+    #[test]
+    fn a_partial_last_line_doesnt_swallow_the_next_change() {
+        let path = std::env::temp_dir().join(format!("e2a2o-journal-{}.jsonl", std::process::id()));
+        std::fs::write(&path, "{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"active_ch").unwrap();
+        let (mut journal, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T1"));
+        journal.append(&Change::ActiveChanged { thread_id: "T2".into() }).unwrap();
+        let (_, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active.as_deref(), Some("T2"));
+        std::fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn did_you_mean_swaps_the_words_or_keeps_them() {
