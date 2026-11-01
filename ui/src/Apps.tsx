@@ -4,13 +4,20 @@ import type { MiniApp, Watcher } from "./apps-core";
 import { playTune, unlockTune } from "./apps-audio";
 import "./apps.css";
 
+// "every day", "every 2 hours", "every 15 minutes": the largest unit that divides it evenly.
+function every(secs: number): string {
+  const units: [number, string][] = [[604800, "week"], [86400, "day"], [3600, "hour"], [60, "minute"], [1, "second"]];
+  const [size, unit] = units.find(([size]) => secs % size === 0) ?? [1, "second"];
+  return secs === size ? `every ${unit}` : `every ${secs / size} ${unit}s`;
+}
+
 function watching(w: Watcher): string {
   switch (w.kind) {
     case "new_thought": return w.min_points && w.min_points > 1 ? `A new thought, after ${w.min_points} points` : "A new thought";
     case "phrase": return `Hearing “${w.phrase}”`;
     case "topic": return `Talking about ${w.topic}`;
     case "volume": return `Loud voices for ${w.seconds} seconds`;
-    case "time": return `${new Date(w.at_ms).toLocaleString()}${w.every_secs ? `, then every ${w.every_secs} seconds` : ""}`;
+    case "time": return `${new Date(w.at_ms).toLocaleString()}${w.every_secs ? `, then ${every(w.every_secs)}` : ""}`;
     case "app_request": return "An app request";
   }
 }
