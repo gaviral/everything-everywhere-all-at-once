@@ -396,11 +396,15 @@ export function useCore() {
     socket.current.send(data);
     return true;
   }, []);
-  const sendOrWarn = (data: string) => {
+  const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
     return false;
-  };
+  }, [send]);
+  const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
+  const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
+  const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
@@ -437,10 +441,7 @@ export function useCore() {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem: (id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })),
-    approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
-    correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
-    tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
+    setItem, approve, correct, tag,
     visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>

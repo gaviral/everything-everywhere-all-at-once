@@ -66,7 +66,7 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
     unlockTune();
     window.setTimeout(() => {
       if (playTune()) core.apps.clearSound();
-      else core.showNotice("Sound is unavailable here. You can choose a card instead.");
+      else core.showNotice("Sound isn't available right now. You can choose a card instead.");
     }, 50);
   };
   const enabledCount = core.world.apps.filter((a) => a.enabled).length;
