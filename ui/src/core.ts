@@ -304,7 +304,7 @@ function apply(world: World, raw: Change): World {
   }
 }
 
-export function useCore() {
+export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
@@ -315,6 +315,8 @@ export function useCore() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
   const [partial, setPartial] = useState("");
+  const [handoff, setHandoff] = useState("");
+  const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
   const [listening, setListening] = useState(false);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -334,6 +336,9 @@ export function useCore() {
     let timer: number | undefined;
     let currentWorld = EMPTY;
     let changeId = 0;
+    let lastPartial = "";
+    let awaitingThought = false;
+    let handoffTimer: number | undefined;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -370,11 +375,27 @@ export function useCore() {
               const into = currentWorld.threads.find((thread) => thread.id === change.into);
               if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
             }
+            if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
+              window.clearTimeout(handoffTimer);
+              lastPartial = "";
+              awaitingThought = false;
+              setHandoff("");
+            }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
             break;
           }
           case "partial":
+            window.clearTimeout(handoffTimer);
+            if (msg.text) {
+              lastPartial = msg.text;
+              awaitingThought = false;
+              setHandoff("");
+            } else if (lastPartial) {
+              awaitingThought = true;
+              setHandoff(lastPartial);
+              handoffTimer = window.setTimeout(() => { lastPartial = ""; awaitingThought = false; setHandoff(""); }, 1500);
+            }
             setPartial(msg.text);
             break;
           case "status":
@@ -382,6 +403,11 @@ export function useCore() {
             setVoiceStatusRevision((revision) => revision + 1);
             break;
           case "error":
+            if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
+              setVoiceErrorRevision((revision) => revision + 1);
+              break;
+            }
+          // Other errors and notices use the same notice area.
           case "notice":
             if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
             setNotice(msg.message);
@@ -410,9 +436,10 @@ export function useCore() {
     return () => {
       closed = true;
       window.clearTimeout(timer);
+      window.clearTimeout(handoffTimer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps, receiveRecap, recapDisconnected]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
@@ -446,6 +473,8 @@ export function useCore() {
     snapshotRevision,
     mapChange,
     partial,
+    handoff,
+    voiceErrorRevision,
     listening,
     voiceStatusRevision,
     connected,
