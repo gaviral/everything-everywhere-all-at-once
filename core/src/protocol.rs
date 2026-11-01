@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    AppsBuild { build: crate::apps::Build },
+    AppsSound { name: String },
     Snapshot { world: World },
     Change { change: Change },
     /// Draft words of the turn being spoken; replaces the previous draft.
@@ -22,6 +24,12 @@ pub enum ServerMsg {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    ComposeApp { request: String },
+    DecideApp { build_id: String, keep: bool },
+    ToggleApp { id: String, enabled: bool },
+    RemoveApp { id: String },
+    AppVolume { level: f64 },
+    AppOutput { id: String, sound: bool },
     /// A typed thought.
     Text { text: String },
     /// Start or stop listening to the microphone.

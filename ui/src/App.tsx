@@ -9,6 +9,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
+import { Apps } from "./Apps";
 
 const spring = { type: "spring", stiffness: 380, damping: 34 } as const;
 
@@ -186,6 +187,7 @@ export default function App() {
         </div>
       )}
 
+      <Apps core={core} />
       <main className="map">
         {roots.length === 0 && pending.length === 0 ? (
           <div className="empty">

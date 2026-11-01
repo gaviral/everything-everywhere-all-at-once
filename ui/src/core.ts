@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
+import { volumeReporter } from "./apps-audio";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -47,7 +49,7 @@ export interface Action {
   done_ms: number | null;
 }
 
-export interface World {
+export interface World extends AppsWorld {
   threads: Thread[];
   thoughts: Thought[];
   active: string | null;
@@ -57,6 +59,7 @@ export interface World {
 }
 
 type Change =
+  | AppChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
   | {
@@ -84,6 +87,7 @@ type Change =
   | { type: "thread_picture"; thread_id: string; path: string };
 
 type ServerMsg =
+  | AppsServerMsg
   | { type: "snapshot"; world: World }
   | { type: "change"; change: Change }
   | { type: "partial"; text: string }
@@ -92,7 +96,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string };
 
-const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
+const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -103,6 +107,7 @@ function resolve(world: World, id: string): string {
 }
 
 function apply(world: World, raw: Change): World {
+  if (isAppChange(raw)) return applyAppChange(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -214,6 +219,9 @@ function apply(world: World, raw: Change): World {
 }
 
 export function useCore() {
+  const apps = useApps();
+  const receiveApps = apps.receive;
+  const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [partial, setPartial] = useState("");
   const [listening, setListening] = useState(false);
@@ -234,6 +242,7 @@ export function useCore() {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        resetApps();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now.
@@ -241,6 +250,7 @@ export function useCore() {
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setWorld({ ...EMPTY, ...msg.world });
@@ -275,13 +285,20 @@ export function useCore() {
       window.clearTimeout(timer);
       socket.current?.close();
     };
-  }, []);
+  }, [receiveApps, resetApps]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(data);
   }, []);
+  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
+    apps,
+    composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
+    decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),
+    toggleApp: (id: string, enabled: boolean) => send(JSON.stringify({ type: "toggle_app", id, enabled })),
+    removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
+    appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
     partial,
     listening,
@@ -294,8 +311,8 @@ export function useCore() {
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) outbox.current.push(message);
     },
-    sendAudio: (frame: ArrayBuffer) => send(frame),
-    listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
+    sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
+    listen: (on: boolean) => { volume.reset(); send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
     setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
     approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
