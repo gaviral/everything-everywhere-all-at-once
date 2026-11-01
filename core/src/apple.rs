@@ -45,6 +45,17 @@ fn claim(core: &Core, action_id: &str) -> Option<Action> {
     Some(action)
 }
 
+/// A window keeps or dismisses a suggestion, or dismisses an action still waiting. The rest of an action's
+/// life (kept while it's being added, then done, or new again when that fails) is Approve's, on the host:
+/// any window setting it could make it run twice, or hide it mid-way.
+pub fn item(core: &Core, id: String, status: ItemStatus) {
+    let _one_at_a_time = CLAIMING.lock().unwrap();
+    let action = core.snapshot().actions.iter().find(|a| a.id == id).map(|a| a.status);
+    if action.is_none_or(|was| was == ItemStatus::New && status == ItemStatus::Dismissed) {
+        core.commit(vec![Change::ItemStatus { id, status, done_ms: None }]);
+    }
+}
+
 /// On start: an approval still being added when the core stopped (say, behind the permission prompt)
 /// never finished, so it's offered again rather than stuck without its buttons.
 pub fn recover(core: &Core) {
@@ -99,21 +110,12 @@ mod tests {
     use super::{claim, date_lines, event, recover, reminder};
     use crate::world::{Action, Change, ItemStatus, Journal};
     use crate::Core;
-    use std::sync::Mutex;
 
     #[test]
     fn an_action_is_added_once_and_offered_again_if_adding_never_finished() {
         let path = std::env::temp_dir().join(format!("e2a2o-apple-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = tokio::sync::broadcast::channel(16);
-        let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
-        let core = Core {
-            find: crate::find::Runtime::default(),
-            imports: crate::import::Imports::default(),
-            recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
-            updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
-        };
+        let core = Core::test(journal, world);
         let status = |core: &Core| core.snapshot().actions[0].status;
         core.commit(vec![Change::ActionProposed { action: Action { id: "a".into(), thread_id: "T1".into(), kind: "reminder".into(),
             title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } }]);
@@ -131,6 +133,35 @@ mod tests {
         assert!(claim(&core, "a").is_none() && claim(&core, "missing").is_none());
         recover(&core);
         assert_eq!(status(&core), ItemStatus::Done, "an added one stays added");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn a_window_only_keeps_or_dismisses_and_adding_stays_with_approve() {
+        let path = std::env::temp_dir().join(format!("e2a2o-apple-item-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        let action = |id: &str| Change::ActionProposed { action: Action { id: id.into(), thread_id: "T1".into(), kind: "reminder".into(),
+            title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } };
+        let suggestion = Change::SuggestionAdded { suggestion: crate::world::Suggestion {
+            id: "s".into(), thread_id: "T1".into(), text: "Ask about the deposit?".into(), status: ItemStatus::New } };
+        core.commit(vec![action("a"), action("b"), suggestion]);
+        let status = |id: &str| core.snapshot().actions.iter().find(|a| a.id == id).map(|a| a.status);
+        // A crafted message can't mark one added (hidden), being added (stuck), or new again mid-add (added twice).
+        for wrong in [ItemStatus::Done, ItemStatus::Kept] {
+            super::item(&core, "a".into(), wrong);
+            assert_eq!(status("a"), Some(ItemStatus::New), "{wrong:?}");
+        }
+        assert!(claim(&core, "b").is_some());
+        for wrong in [ItemStatus::New, ItemStatus::Dismissed] {
+            super::item(&core, "b".into(), wrong);
+            assert_eq!(status("b"), Some(ItemStatus::Kept), "while it's added: {wrong:?}");
+        }
+        // What the buttons send still works: dismiss a waiting action, keep or dismiss a suggestion.
+        super::item(&core, "a".into(), ItemStatus::Dismissed);
+        assert_eq!(status("a"), Some(ItemStatus::Dismissed));
+        super::item(&core, "s".into(), ItemStatus::Kept);
+        assert_eq!(core.snapshot().suggestions[0].status, ItemStatus::Kept);
         std::fs::remove_file(&path).unwrap();
     }
 

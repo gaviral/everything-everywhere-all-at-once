@@ -7,9 +7,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::hint::black_box;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, mpsc};
 
 // Count requested heap bytes on this test's thread, in a separate, untimed sample.
 // This is cumulative allocation (including reallocations), not peak/live memory.
@@ -98,26 +97,13 @@ impl Fixture {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("e2a2o-perf-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(1024);
-        let (placer_queue, _) = mpsc::unbounded_channel();
         Self {
             path,
             core: Arc::new(Core {
-                find: crate::find::Runtime::default(),
-                recap: crate::recap::Runtime::default(),
-                apps: crate::apps::Runtime::default(),
-                imports: crate::import::Imports::default(),
-                world: Mutex::new(world.into()),
-                journal: Mutex::new(journal),
-                updates,
-                placer_queue,
                 room: Some("perf-room".into()),
-                key: None,
                 placer_model: "perf-model".into(),
                 http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap(),
-                last_activity: std::sync::atomic::AtomicU64::new(0),
-                looked: std::sync::atomic::AtomicBool::new(false),
-                wake: tokio::sync::Notify::new(),
+                ..Core::test(journal, world)
             }),
         }
     }

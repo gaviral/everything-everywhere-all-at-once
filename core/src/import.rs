@@ -8,9 +8,8 @@
 use crate::protocol::ServerMsg;
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thought, Thread, ThreadStatus, World};
 use crate::Core;
-use anyhow::{anyhow, bail, Context};
-use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Query, State};
+use anyhow::Context;
+use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -35,6 +34,10 @@ const REPLY_CONTEXT: usize = 240;
 const PART: usize = 8_000;
 /// Parts read at once.
 const PARALLEL: usize = 6;
+/// The most messages one part holds. Past about a dozen the fast model starts skipping messages, late ones first
+/// (in our 147-message test export it left out 30, among them "booked the flights" and "take-home on October 21");
+/// at 12 it left out 20 and 7 in two runs, and most of what's left out is "thanks" and pasted code.
+const PART_MESSAGES: usize = 12;
 
 // Stable text first, so the API's prompt cache can reuse it.
 const EXTRACT: &str = "You read part of someone's past chats with an AI assistant and pull out what the person was thinking: \
@@ -69,7 +72,7 @@ happens on a date (a launch, a birthday, a class), \"reminder\" for something to
 else empty. Skip tasks that later ideas show are done, and dates already past. \
 Use empty lists when nothing applies. Answer with JSON only.";
 
-/// Where an import stands, sent to every window on each step.
+/// Where an import stands, sent to the importing person's windows on each step.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Status {
     pub id: String,
@@ -102,6 +105,8 @@ pub struct Imports {
 struct Job {
     handle: tokio::task::AbortHandle,
     speaker: String,
+    /// The import's id, as in its status.
+    id: String,
 }
 
 impl Imports {
@@ -134,7 +139,7 @@ struct Preview {
     file: String,
     format: &'static str,
     conversations: usize,
-    /// All of the person's messages in the file, those already on the map (skipped), and how many
+    /// All of the person's messages in the file, those imported before (skipped), and how many
     /// this import reads: the latest of the rest, up to the cap.
     total: usize,
     already: usize,
@@ -161,7 +166,7 @@ pub async fn prepare(
     State(core): State<Arc<Core>>,
     ConnectInfo(link): ConnectInfo<crate::Link>,
     Query(query): Query<FileName>,
-    body: Bytes,
+    request: Request,
 ) -> Response {
     let refuse = |status: StatusCode, message: &str| (status, Json(json!({ "error": message }))).into_response();
     if !link.here() {
@@ -170,12 +175,17 @@ pub async fn prepare(
     if core.key.is_none() {
         return refuse(StatusCode::SERVICE_UNAVAILABLE, "Importing needs the model key. Set MODEL_API_KEY in .env (see .env.example).");
     }
+    if core.key_refused() {
+        return refuse(StatusCode::SERVICE_UNAVAILABLE, crate::model::REFUSED);
+    }
     if core.imports.running() {
         return refuse(StatusCode::CONFLICT, "An import is already running. Stop it, or wait for it to finish.");
     }
-    // An imported point keeps its message's exact time, so a message seen before is one already on the map
-    // (whatever name it went under).
-    let known: HashSet<u64> = core.snapshot().thoughts.iter().map(|t| t.at_ms).collect();
+    // Read only after the checks: a caller who'd be refused can't make the core hold a 100 MB file first.
+    let Ok(body) = axum::body::to_bytes(request.into_body(), MAX_BYTES).await else {
+        return refuse(StatusCode::PAYLOAD_TOO_LARGE, "That file is over the 100 MB limit.");
+    };
+    let known = known(&core.snapshot());
     let file: String = query.name.rsplit(['/', '\\']).next().unwrap_or_default().trim().chars().take(80).collect();
     let file = if file.is_empty() { "your file".to_string() } else { file };
     // A big export takes a moment to read; keep it off the threads that serve the map.
@@ -188,7 +198,7 @@ pub async fn prepare(
     };
     if chosen.said.is_empty() {
         let message = if chosen.already > 0 {
-            "Everything in this file is already on your map."
+            "Everything in this file was already imported."
         } else {
             "There are no messages of yours in this file, so there's nothing to import."
         };
@@ -216,6 +226,20 @@ pub async fn prepare(
     Json(preview).into_response()
 }
 
+#[derive(Default)]
+struct Known {
+    times: HashSet<u64>,
+    keys: HashSet<String>,
+}
+
+/// Exact message hashes from new imports, including messages that gave no point ("thanks", pasted code).
+/// Times still count too: old records only have times, and a point keeps its message's exact time, so
+/// an import stopped after some points landed but before its record was written doesn't add them twice.
+fn known(world: &World) -> Known {
+    let times = world.thoughts.iter().map(|t| t.at_ms).chain(world.read_ms.iter().copied()).collect();
+    Known { times, keys: world.read_keys.clone() }
+}
+
 /// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
 const ONLY_HERE: &str = "In a room, only the laptop running E2A2O can import chats.";
 
@@ -232,8 +256,9 @@ pub fn start(core: Arc<Core>, id: String, speaker: String, here: bool) {
     let Some(prepared) = prepared else {
         return core.send_to(&speaker, ServerMsg::Notice { message: "That file isn't ready any more. Choose it again to import.".into() });
     };
+    let id = prepared.id.clone();
     let handle = tokio::spawn(run(core.clone(), prepared, speaker.clone())).abort_handle();
-    *job = Some(Job { handle, speaker });
+    *job = Some(Job { handle, speaker, id });
 }
 
 /// Stops the running import when it's this speaker's. Threads that already landed stay; nothing more is added.
@@ -265,6 +290,12 @@ fn models() -> (String, String) {
 
 /// Only to the person importing: in a room, the others see the threads land, not the progress.
 fn publish(core: &Core, speaker: &str, status: &Status) {
+    // Held while sending, so Stop (which takes the job) can't slip between the check and the send.
+    let job = core.imports.job.lock().unwrap();
+    // A step that was mid-way when Stop took the job mustn't say the import is still going after "stopped".
+    if status.state != "stopped" && job.as_ref().is_none_or(|j| j.id != status.id) {
+        return;
+    }
     *core.imports.status.lock().unwrap() = Some(status.clone());
     core.send_to(speaker, ServerMsg::Import { status: status.clone() });
 }
@@ -279,10 +310,17 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     let mut ideas: Vec<Idea> = Vec::new();
     let (mut failed, mut reason) = (0, String::new());
     let mut topics_seen = HashSet::new();
-    let mut reads = futures_util::stream::iter(0..job.parts.len()).map(|i| extract(&core, &extract_model, &job.parts[i], offset)).buffer_unordered(PARALLEL);
-    while let Some(result) = reads.next().await {
+    let mut read_parts = Vec::new();
+    let mut reads = futures_util::stream::iter(0..job.parts.len())
+        .map(|i| {
+            let (core, model, part) = (&core, &extract_model, &job.parts[i]);
+            async move { (i, extract(core, model, part, offset).await) }
+        })
+        .buffer_unordered(PARALLEL);
+    while let Some((i, result)) = reads.next().await {
         match result {
             Ok(found) => {
+                read_parts.push(i);
                 topics_seen.extend(found.iter().map(|idea| topic_key(&idea.topic)));
                 ideas.extend(found);
             }
@@ -328,6 +366,9 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     (status.state, status.threads) = ("adding".into(), 0);
     publish(&core, &speaker, &status);
     land(&core, &speaker, &groups, &ideas, &mut status).await;
+    // Everything in the parts that were read, once it all landed (a stop before then leaves the rest to read again).
+    let keys = read_parts.iter().flat_map(|&i| job.parts[i].iter().map(|s| s.key.clone())).collect();
+    core.commit(vec![Change::MessagesRead { at_ms: Vec::new(), keys }]);
     status.state = "done".into();
     status.note = notes.join(" ");
     finish(&core, &speaker, &status);
@@ -649,7 +690,7 @@ fn parse_time(s: &str) -> Option<u64> {
 }
 
 /// Days since 1970-01-01 for a calendar date (Howard Hinnant's algorithm).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -659,7 +700,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 
 /// The calendar date of a day number from days_from_civil.
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -696,6 +737,7 @@ fn local_offset() -> i64 {
 /// One of the person's messages as the fast model sees it, with the start of the AI's reply.
 #[derive(Clone)]
 struct Said {
+    key: String,
     conversation: usize,
     title: String,
     at_ms: u64,
@@ -717,8 +759,19 @@ struct Chosen {
 
 /// The person's latest messages up to the size cap, each with a time: its own, else its neighbors'
 /// in the same chat, else (a list without times) a second apart in file order, ending now. Messages
-/// whose time is `known` are already on the map and are left out.
-fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) -> Chosen {
+/// whose hash (or legacy time) is `known` (see `known`) were imported before and are left out.
+fn select(mut conversations: Vec<Conversation>, now: u64, known: &Known) -> Chosen {
+    // Use the original time and full text, before filling missing times or clipping for the model.
+    let keys: Vec<Vec<String>> = conversations.iter().enumerate().map(|(index, c)| {
+        c.turns.iter().map(|t| {
+            // FNV-1a over an unambiguous JSON tuple; only the 64-bit hex hash is kept or broadcast.
+            let input = json!([index, c.title, t.at_ms, t.text]).to_string();
+            let hash = input.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+            });
+            format!("{hash:016x}")
+        }).collect()
+    }).collect();
     for c in &mut conversations {
         let first = c.turns.iter().find_map(|t| t.at_ms);
         let mut last = first;
@@ -738,11 +791,11 @@ fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) 
     for (index, c) in conversations.iter().enumerate() {
         for (i, turn) in c.turns.iter().enumerate().filter(|(_, t)| t.mine) {
             let reply = c.turns[i + 1..].iter().take_while(|t| !t.mine).next().map(|t| clip(&t.text, REPLY_CONTEXT)).unwrap_or_default();
-            all.push(Said { conversation: index, title: c.title.clone(), at_ms: turn.at_ms.unwrap_or(now), text: clip(&turn.text, MAX_MESSAGE), reply });
+            all.push(Said { key: keys[index][i].clone(), conversation: index, title: c.title.clone(), at_ms: turn.at_ms.unwrap_or(now), text: clip(&turn.text, MAX_MESSAGE), reply });
         }
     }
     let total = all.len();
-    all.retain(|s| !known.contains(&s.at_ms));
+    all.retain(|s| !known.keys.contains(&s.key) && !known.times.contains(&s.at_ms));
     let already = total - all.len();
     // The newest first, until the cap.
     let mut newest: Vec<usize> = (0..all.len()).collect();
@@ -776,6 +829,7 @@ fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) 
 
 /// Splits the reading into parts for the fast model: whole conversations where they fit, and small
 /// enough that even a short import reads in parallel (a long conversation splits between messages).
+/// A part holds at most `PART` characters and `PART_MESSAGES` messages.
 fn pack(said: Vec<Said>) -> Vec<Vec<Said>> {
     let size = |s: &Said| s.text.len() + s.reply.len() + 60;
     let budget = (said.iter().map(size).sum::<usize>() / 4).clamp(1_500, PART);
@@ -786,12 +840,12 @@ fn pack(said: Vec<Said>) -> Vec<Vec<Said>> {
         let conversation = said[i].conversation;
         let end = said[i..].iter().position(|s| s.conversation != conversation).map_or(said.len(), |n| i + n);
         // A conversation that won't fit starts a fresh part.
-        if !current.is_empty() && used + said[i..end].iter().map(size).sum::<usize>() > budget {
+        if !current.is_empty() && (used + said[i..end].iter().map(size).sum::<usize>() > budget || current.len() + (end - i) > PART_MESSAGES) {
             parts.push(std::mem::take(&mut current));
             used = 0;
         }
         for s in &said[i..end] {
-            if !current.is_empty() && used + size(s) > PART {
+            if !current.is_empty() && (used + size(s) > PART || current.len() >= PART_MESSAGES) {
                 parts.push(std::mem::take(&mut current));
                 used = 0;
             }
@@ -936,7 +990,6 @@ async fn ask(
     schema: &Value,
     wait: Duration,
 ) -> anyhow::Result<String> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let body = json!({
         "model": model,
         "reasoning_effort": effort,
@@ -948,16 +1001,11 @@ async fn ask(
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
     });
-    let response = core.http.post(URL).bearer_auth(key).timeout(wait).json(&body).send().await?;
-    let status = response.status();
-    let value: Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    let value = core.call_model(URL, &body, wait).await?;
     Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
-/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between.
+/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't one.
 async fn retry<T, F, Fut>(tries: u64, mut call: F) -> anyhow::Result<T>
 where
     F: FnMut() -> Fut,
@@ -967,7 +1015,7 @@ where
     loop {
         match call().await {
             Ok(value) => return Ok(value),
-            Err(e) if attempt < tries => {
+            Err(e) if attempt < tries && crate::model::Verdict::of(&e) != Some(crate::model::Verdict::Refused) => {
                 tracing::warn!("import call failed (try {attempt}): {e:#}");
                 tokio::time::sleep(Duration::from_millis(800 * attempt)).await;
                 attempt += 1;
@@ -1219,7 +1267,7 @@ fn to_do(idea: &Idea) -> bool {
     if idea.kind == "task" { idea.open } else { !idea.when.is_empty() }
 }
 
-/// When grouping fails: one thread per topic, with its latest open question and its dated tasks.
+/// When grouping fails: one thread per topic, with its latest open question and up to two of its dated tasks.
 fn by_topic(topics: &[Topic], ideas: &[Idea]) -> Vec<Group> {
     topics
         .iter()
@@ -1474,7 +1522,7 @@ mod tests {
                 Turn { mine: true, text: format!("follow-up {n}"), at_ms: None },
             ],
         };
-        let chosen = select((1..=200).map(conversation).collect(), 5_000_000, &HashSet::new());
+        let chosen = select((1..=200).map(conversation).collect(), 5_000_000, &Known::default());
         assert_eq!(chosen.total, 400);
         assert!(chosen.said.len() < 400 && chosen.said.iter().map(|s| s.text.len()).sum::<usize>() <= MAX_CHARS);
         // The newest survive; the oldest go first.
@@ -1486,11 +1534,22 @@ mod tests {
         for part in &parts {
             assert!(part.iter().map(|s| s.text.len() + s.reply.len() + 60).sum::<usize>() <= PART);
         }
+        // Short messages fill a part by count before they fill it by size, and a conversation that fits in a part stays whole.
+        let chatty = |n: u64, messages: usize| Conversation {
+            title: format!("c{n}"),
+            turns: (0..messages as u64).map(|m| Turn { mine: true, text: format!("word {n} {m}"), at_ms: Some(n * 1_000 + m) }).collect(),
+        };
+        let lines = select(vec![chatty(1, 30), chatty(2, 5), chatty(3, 5), chatty(4, 5)], 0, &Known::default());
+        let parts = pack(lines.said);
+        assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [12, 12, 11, 10], "30 split at 12; each small chat stays in one part");
+        assert!(parts.iter().all(|part| part.len() <= PART_MESSAGES));
         // A small import still splits by conversation, so its parts read in parallel.
-        let small = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello ".repeat(150), at_ms: Some(n) }] }).collect(), 0, &HashSet::new());
+        let small = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello ".repeat(150), at_ms: Some(n) }] }).collect(), 0, &Known::default());
         assert_eq!(pack(small.said).len(), 3);
         // Importing the same chats again reads only what isn't on the map yet.
-        let again = select((1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello".into(), at_ms: Some(n) }] }).collect(), 0, &HashSet::from([1, 2]));
+        let chats = || (1..=3).map(|n| Conversation { title: format!("c{n}"), turns: vec![Turn { mine: true, text: "hello".into(), at_ms: Some(n) }] }).collect();
+        let known = Known { keys: select(chats(), 0, &Known::default()).said[..2].iter().map(|s| s.key.clone()).collect(), ..Known::default() };
+        let again = select(chats(), 0, &known);
         assert_eq!((again.total, again.already, again.said.len()), (3, 2, 1));
     }
 
@@ -1499,8 +1558,54 @@ mod tests {
         let chosen = select(vec![Conversation { title: String::new(), turns: vec![
             Turn { mine: true, text: "first".into(), at_ms: None },
             Turn { mine: true, text: "second".into(), at_ms: None },
-        ] }], 10_000, &HashSet::new());
+        ] }], 10_000, &Known::default());
         assert_eq!(chosen.said.iter().map(|s| (s.text.as_str(), s.at_ms)).collect::<Vec<_>>(), [("first", 9_000), ("second", 10_000)]);
+    }
+
+    #[test]
+    fn legacy_timestamp_records_keep_previously_imported_messages_skipped() {
+        let mut world = World::default();
+        let legacy: Change = serde_json::from_value(json!({ "type": "messages_read", "at_ms": [1_000] })).unwrap();
+        world.apply(&legacy);
+        let chosen = select(vec![Conversation { title: "Bills".into(), turns: vec![
+            Turn { mine: true, text: "Pay electric bill".into(), at_ms: Some(1_000) },
+            Turn { mine: true, text: "thanks!".into(), at_ms: Some(1_000) },
+        ] }], 2_000, &known(&world));
+        assert_eq!((chosen.already, chosen.said.len()), (2, 0), "old timestamp-only imports stay skipped, including messages that gave no point");
+    }
+
+    #[test]
+    fn message_keys_distinguish_shared_times_conversations_and_full_text() {
+        let turn = |text: String, at_ms| Turn { mine: true, text, at_ms };
+        let chats = || vec![
+            Conversation { title: "Bills".into(), turns: vec![
+                turn("Pay rent".into(), Some(1_000)),
+                turn("Pay electric bill".into(), Some(1_000)),
+                turn(format!("{}a", "x".repeat(MAX_MESSAGE)), Some(1_000)),
+                turn(format!("{}b", "x".repeat(MAX_MESSAGE)), Some(1_000)),
+            ] },
+            Conversation { title: "Bills".into(), turns: vec![turn("Pay rent".into(), Some(1_000))] },
+            Conversation { title: "Untimed".into(), turns: vec![turn("hello".into(), None)] },
+        ];
+        let first = select(chats(), 10_000, &Known::default());
+        assert_eq!(first.said.len(), 6);
+        let keys: HashSet<_> = first.said.iter().map(|s| s.key.clone()).collect();
+        assert_eq!(keys.len(), 6, "even equal times, titles or clipped text don't make messages identical");
+        assert!(keys.iter().all(|key| key.len() == 16 && key.bytes().all(|b| b.is_ascii_hexdigit())), "only 64-bit hex hashes are retained");
+        let key = |title: &str, at_ms| select(vec![Conversation {
+            title: title.into(), turns: vec![turn("Pay rent".into(), at_ms)],
+        }], 10_000, &Known::default()).said[0].key.clone();
+        assert_eq!(key("Bills", Some(1_000)), "aeaa06a5142a3107", "FNV-1a stays stable across Rust releases");
+        assert_ne!(key("Bills", Some(1_000)), key("Rent", Some(1_000)), "the original title is hashed");
+        assert_ne!(key("Bills", Some(1_000)), key("Bills", Some(2_000)), "the original time is hashed");
+        assert_ne!(key("Bills", Some(10_000)), key("Bills", None), "a fallback time is not the original time");
+        let mut world = World::default();
+        world.apply(&Change::MessagesRead { at_ms: Vec::new(), keys: vec![first.said[0].key.clone()] });
+        let rest = select(chats(), 20_000, &known(&world));
+        assert_eq!((rest.already, rest.said.len()), (1, 5), "only the exact message already read is skipped");
+        world.apply(&Change::MessagesRead { at_ms: Vec::new(), keys: keys.into_iter().collect() });
+        let again = select(chats(), 30_000, &known(&world));
+        assert_eq!((again.already, again.said.len()), (6, 0), "untimed messages keep their identity too");
     }
 
     fn idea(topic: &str, point: &str, at_ms: u64) -> Idea {
@@ -1560,27 +1665,13 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
+            Self::with_key(None)
+        }
+
+        fn with_key(key: Option<&str>) -> Self {
             let path = std::env::temp_dir().join(format!("e2a2o-import-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, world) = crate::world::Journal::open(&path).unwrap();
-            let (updates, _) = tokio::sync::broadcast::channel(64);
-            let (placer_queue, _) = tokio::sync::mpsc::unbounded_channel();
-            let core = Arc::new(Core {
-                find: crate::find::Runtime::default(),
-                recap: crate::recap::Runtime::default(),
-                apps: crate::apps::Runtime::default(),
-                world: Mutex::new(world.into()),
-                journal: Mutex::new(journal),
-                updates,
-                placer_queue,
-                room: Some("k7m2x9qp".into()),
-                key: None,
-                placer_model: "test".into(),
-                http: reqwest::Client::new(),
-                last_activity: std::sync::atomic::AtomicU64::new(0),
-                looked: std::sync::atomic::AtomicBool::new(false),
-                wake: tokio::sync::Notify::new(),
-                imports: Imports::default(),
-            });
+            let core = Arc::new(Core { room: Some("k7m2x9qp".into()), key: key.map(Into::into), ..Core::test(journal, world) });
             Fixture { path, core }
         }
     }
@@ -1604,8 +1695,8 @@ mod tests {
 
         // The host's import: its progress goes to the host only, also to a window that reconnects.
         let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
-        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into() });
-        publish(&f.core, "User", &Status { state: "reading".into(), ..Status::default() });
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into(), id: "im-1".into() });
+        publish(&f.core, "User", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
         let progress = out.recv().await.unwrap();
         assert_eq!(progress.to.as_deref(), Some("User"));
         assert!(matches!(progress.message, ServerMsg::Import { ref status } if status.state == "reading"));
@@ -1619,6 +1710,131 @@ mod tests {
         let stopped = out.recv().await.unwrap();
         assert_eq!(stopped.to.as_deref(), Some("User"));
         assert!(matches!(stopped.message, ServerMsg::Import { ref status } if status.state == "stopped" && status.note.contains("Nothing was added")));
+    }
+
+    #[tokio::test]
+    async fn a_step_mid_way_when_stop_lands_never_says_the_import_is_still_going() {
+        let f = Fixture::new();
+        let mut out = f.core.updates.subscribe();
+        let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "you".into(), id: "im-1".into() });
+        let adding = Status { id: "im-1".into(), state: "adding".into(), points: 3, ..Status::default() };
+        publish(&f.core, "you", &adding);
+        cancel(&f.core, "you");
+        // The task was between two awaits when Stop aborted it: its next step still runs once.
+        publish(&f.core, "you", &adding);
+        let mut states = Vec::new();
+        while let Ok(sent) = out.try_recv() {
+            if let ServerMsg::Import { status } = sent.message {
+                states.push(status.state);
+            }
+        }
+        assert_eq!(states, ["adding", "stopped"]);
+        assert_eq!(f.core.imports.status.lock().unwrap().as_ref().map(|s| s.state.as_str()), Some("stopped"));
+        // Nor does an old import's late step speak for a new one.
+        let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "you".into(), id: "im-2".into() });
+        publish(&f.core, "you", &adding);
+        assert!(out.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn an_upload_from_another_laptop_is_refused_before_it_is_read() {
+        let f = Fixture::new();
+        // A body that fails if anything reads it: refusing must not need it.
+        let unread = || {
+            let failing = futures_util::stream::once(async { Err::<axum::body::Bytes, std::io::Error>(std::io::Error::other("read")) });
+            Request::new(axum::body::Body::from_stream(failing))
+        };
+        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
+        let name = || Query(FileName { name: "conversations.json".into() });
+        let guest = prepare(State(f.core.clone()), link("192.168.1.9:51000"), name(), unread()).await;
+        assert_eq!(guest.status(), StatusCode::FORBIDDEN);
+        // The host gets past that check (here, to the missing key) without the body either.
+        let host = prepare(State(f.core.clone()), link("127.0.0.1:51000"), name(), unread()).await;
+        assert_eq!(host.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn the_same_file_twice_is_skipped_even_for_messages_that_gave_no_point() {
+        let f = Fixture::with_key(Some("test-key"));
+        let file = r#"[{"role": "user", "content": "I want to move in January.", "timestamp": 1791000000},
+                       {"role": "user", "content": "thanks!", "timestamp": 1791000000}]"#;
+        let upload = || async {
+            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
+            let name = Query(FileName { name: "chats.json".into() });
+            prepare(State(f.core.clone()), link, name, Request::new(axum::body::Body::from(file))).await
+        };
+        let first = upload().await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let seen = axum::body::to_bytes(first.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&seen).unwrap()["messages"], 2);
+        let keys: Vec<_> = f.core.imports.prepared.lock().unwrap().as_ref().unwrap().parts.iter()
+            .flatten().map(|s| s.key.clone()).collect();
+
+        // What `run` leaves when it lands: a point for the first message, and both remembered as read.
+        let point = Thought {
+            id: "th-1".into(),
+            speaker: "you".into(),
+            text: "I want to move in January.".into(),
+            point: "Move in January".into(),
+            thread_id: None,
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 1_791_000_000_000,
+            place_ms: None,
+        };
+        let mut updates = f.core.updates.subscribe();
+        f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }));
+        let read = match updates.try_recv().unwrap().message {
+            ServerMsg::Change { change: Change::MessagesRead { at_ms, keys } } => Change::MessagesRead { at_ms, keys },
+            _ => panic!("expected broadcast of message hashes"),
+        };
+        let record = json!({ "type": "messages_read", "keys": keys });
+        assert_eq!(serde_json::to_value(read).unwrap(), record, "the broadcast contains only hashes, without message text or times");
+        let lines = std::fs::read_to_string(&f.path).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(lines.lines().last().unwrap()).unwrap(), record, "the journal also contains only hashes");
+        assert!(!lines.contains("thanks!"), "a message that gave no point must not gain journaled text");
+        assert!(serde_json::to_value(f.core.snapshot()).unwrap().get("read_keys").is_none(), "hashes stay out of snapshots");
+        assert_eq!(known(&f.core.snapshot()).keys, keys.iter().cloned().collect());
+
+        let again = upload().await;
+        assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let said = axum::body::to_bytes(again.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&said).unwrap()["error"], "Everything in this file was already imported.");
+
+        // It survives a restart: the journal replays what was read.
+        let (_, replayed) = crate::world::Journal::open(&f.path).unwrap();
+        assert_eq!(known(&replayed).keys, keys.into_iter().collect());
+        assert!(replayed.read_ms.is_empty(), "new records only persist hashes");
+    }
+
+    #[tokio::test]
+    async fn a_file_imported_with_timestamp_only_records_is_still_skipped() {
+        let f = Fixture::with_key(Some("test-key"));
+        let legacy: Change = serde_json::from_value(json!({
+            "type": "messages_read", "at_ms": [1_791_000_000_000_u64, 1_791_000_100_000_u64],
+        })).unwrap();
+        f.core.commit(vec![legacy]);
+        let (_, replayed) = crate::world::Journal::open(&f.path).unwrap();
+        *f.core.world.lock().unwrap() = Arc::new(replayed);
+        let file = r#"[{"role":"user","content":"Move in January","timestamp":1791000000},
+                       {"role":"user","content":"thanks!","timestamp":1791000100}]"#;
+        let response = prepare(
+            State(f.core.clone()),
+            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false }),
+            Query(FileName { name: "chats.json".into() }),
+            Request::new(axum::body::Body::from(file)),
+        ).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["error"], "Everything in this file was already imported.");
+        assert!(f.core.imports.prepared.lock().unwrap().is_none(), "no import is prepared after replaying old times");
     }
 
     #[test]

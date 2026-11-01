@@ -23,6 +23,8 @@ Core, one process (core/src: axum, tokio)
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
   apps.rs        watchers, prompts, publishers; the composer
+  clock.rs       local wall-clock time from the system's date, so timers keep their hour
+  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
 ```
@@ -40,7 +42,7 @@ Core, one process (core/src: axum, tokio)
 
 1. `mic.ts` sends each 80 ms frame up the WebSocket as binary. It also sends a loudness reading about every 320 ms, for volume watchers.
 2. `asr.rs`: when a window turns its mic on, the core opens `wss://api.meta.ai/v1/asr/realtime` for it (the key in the handshake; endpointing, English bias, keywords) and forwards frames. `transcript` events go back as live words to that speaker's windows; `speechComplete` calls `Core::add_thought`.
-3. `add_thought` checks whole-turn commands first (recap, "make an app…", and "where did I talk about …?"). "Where was I?" and "next one" can also appear at the end after a pause; words before them are kept as a thought, and the command is queued behind its placement. "Where was I?" goes to the thread where the speaker's last line trailed off, even the one they're on, else the one they dropped last, else the last other one they spoke on. Before creating a thought, it sets aside filler such as "um, so" and acknowledgements such as "yeah, okay" unless the latest thought ended with a question mark. Otherwise it commits a `Thought` (`th-<uuid>`, the speaker's active thread, `placed: false`) and queues its id.
+3. `add_thought` checks whole-turn commands first (recap, "make an app…", and "where did I talk about …?"; "find" and "take me to" only when they point at the map, since they also start to-dos). A search that ends without a jump keeps its words as a thought. "Where was I?" and "next one" can also appear at the end after a pause; words before them are kept as a thought, and the command is queued behind their placement. A command acts at once when none of the speaker's words are still being placed. "Where was I?" goes to the thread where the speaker's last line trailed off, even the one they're on, else the one they dropped last, else the last other one they spoke on. Before creating a thought, it sets aside filler such as "um, so" and acknowledgements such as "yeah, okay" unless the latest thought ended with a question mark. Otherwise it commits a `Thought` (`th-<uuid>`, the speaker's active thread, `placed: false`) and queues its id.
 4. `placer.rs` takes one id at a time. The prompt puts the fixed instructions first (for the prompt cache), then each thread as `id: title [open|dropped] last: point`, the speaker's active thread and the thought. If a turn moves to another topic, the answer quotes where it starts; the core cuts there, removes joining words at the cut, and queues the rest after the first part. The model can skip short filler turns (up to 8 words); longer turns are placed. JSON schema answer, minimal reasoning, 20 s timeout, three tries; then the thought goes back in the queue 15 s later (doubling to 4 min), so an outage doesn't leave it unplaced until a restart.
 5. `decide` trusts only ids that exist. It builds `ThreadAdded` (for a new thread, with its parent if that exists), `ThoughtPlaced` (with a sure fix applied, or the question to ask), `ThreadTouched`, drops and `ActiveChanged`, and commits them together. Drops are the speaker's own: a thread they left whose last thought trailed off, or one the model names that they spoke on.
 6. In the UI the pending pill and the placed point share a Motion `layoutId`, so the thought moves from the dock to its thread.
@@ -51,9 +53,9 @@ Core, one process (core/src: axum, tokio)
 
 | Task | When | Bounds |
 |---|---|---|
-| Refiner | checked every 2 s, or at once when a window regains focus; runs with a key, a new placed thought, 10 s since the last pass (doubling with each failed pass in a row, to about 5 min), and either 4 s of quiet after two new thoughts or a new thread, or the window coming back | Quiet threads as one line each; recent ones with their last 8 thoughts (with who said each, in a room); each thread's tags; the latest 30 suggestions and 30 actions. The answer is checked against the map as it is when it arrives: at most one suggestion per thread (an app's card counts) and three tags. If talk resumed (under 2 s quiet) by then, nothing is applied and the pass is redone at the next pause; a failed pass too |
+| Refiner | checked every 2 s, or at once when a window regains focus; runs with a key, a new placed thought, 10 s since the last pass (doubling with each failed pass in a row, to about 5 min), and either 4 s of quiet after two new thoughts or a new thread, or the window coming back | Quiet threads as one line each; recent ones with their last 8 thoughts (with who said each, in a room); each thread's tags; the latest 30 suggestions and 30 actions. The answer is checked against the map as it is when it arrives: at most one suggestion per thread (an app's card counts) and three tags. If talk resumed (under 2 s quiet) by then, the answer is held and applied at the next pause, against the map as it is then (renames of threads that got new thoughts in the meantime are dropped); a failed pass is redone |
 | Pictures | every second, once 2 s are quiet and every thought is placed: threads without a picture, 12 s after they were last touched, the longest settled first | 3 at a time; 3 tries per thread, 10 s apart, until the core restarts; a 128 px lossless WebP copy that keeps the image's XMP note; older pictures get copies on start |
-| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; a timer with a prompt runs only when a thought was placed since its last run; `AppRan` is journaled before the call, so a restart can't loop a timer |
+| Apps | each `ThoughtPlaced` (new thought, phrase, topic watchers); a 1 s tick (time watchers, waiting runs); each loudness reading (volume) | Cooldown per app (10 to 3,600 s); one run per app at a time, keeping the latest matching thought for later; a timer with a prompt runs only when a thought was placed since its last run; a timer repeating whole days keeps its start's local time of day (`clock.rs`); `AppRan` is journaled before the call, so a restart can't loop a timer |
 
 ## Model calls
 
@@ -62,12 +64,12 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Call | Model (setting) | Reasoning | Timeout | Tries | Cache key |
 |---|---|---|---|---|---|
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
-| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor` | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
+| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor`, or `muse-spark-1.2` once the key can't use it (401, 403 or 404 on the default only) | minimal | 20 s | 3, then again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
 | Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 120 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
-| Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s | 1; a composer draft that doesn't check out gets one more, told what was wrong | |
-| Take me there | `REFINER_MODEL` | low | 4 s | 1, only when the words match weakly | `e2a2o-find` |
+| Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s | 1, and 1 more when a reply has no answer in it; a composer draft that doesn't check out gets one more, told what was wrong | |
+| Take me there | `REFINER_MODEL` | minimal | 4 s | 1, only when the words match weakly | `e2a2o-find` |
 | Import: ideas | `IMPORT_EXTRACT_MODEL`, default `muse-spark-1.2` | minimal | 120 s | 3 | `e2a2o-import-ideas` |
 | Import: grouping | `IMPORT_MERGE_MODEL`, default `muse-spark-1.3` | low | 240 s | 2 | `e2a2o-import-map` |
 | Pictures | `muse-image-1.0` | | 120 s | 3 per thread | |
@@ -88,13 +90,14 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - Each outgoing message goes to every window or to one speaker's windows: live words, mic status, "Back to …" notes, Recap progress and import progress go only to their speaker.
 - Per speaker: the active thread (`active_by`), who dropped a thread (`dropped_by`), the way back, and what the placer sees as "active".
 - Another laptop that asks for no name, or for "you" (the host's own name), joins as "Guest" and is told so.
+- A name is the host's or a guest's, never both: another laptop can't take a name this machine's windows joined with (until the core stops), and this machine can't take one another laptop's window is using. `/room?name=` says so (`taken`), the WebSocket is refused (409), and the page asks for another name. Only the host stops an import.
 
 ## Import
 
-1. `POST /import` (host only, needs a key, one at a time, up to 100 MB) parses a ChatGPT export (in each chat, the branch the person saw last), a Claude export, or a plain list or JSON Lines of messages. It keeps the person's latest messages up to 300,000 characters (each cut at 2,000, with 240 characters of the AI's reply as context), skips messages whose time is already on the map, packs them into parts of up to 8,000 characters, and returns a preview with the models and a cost estimate. Nothing is sent yet.
+1. `POST /import` (host only, needs a key, one at a time, up to 100 MB) parses a ChatGPT export (in each chat, the branch the person saw last), a Claude export, or a plain list or JSON Lines of messages. It keeps the person's latest messages up to 300,000 characters (each cut at 2,000, with 240 characters of the AI's reply as context), skips messages whose time is already on the map or in `MessagesRead` (what an import finished reading, including messages that gave no point, so the same file twice adds nothing), packs them into parts of up to 8,000 characters and 12 messages (bigger parts lose messages: see `PART_MESSAGES`), and returns a preview with the models and a cost estimate. Nothing is sent yet.
 2. `import_start`: the ideas model reads six parts at a time; each idea is a topic, a point, the person's own words, a kind and maybe a date. Ideas are grouped by topic name.
 3. The grouping model sees the topics with their latest points, the open questions, the tasks and the map's thread titles, never the messages. It returns threads (one level of branches, or an existing thread), at most one question per thread, and tasks. Only topics and threads that exist are trusted; a topic it leaves out becomes its own thread; if grouping fails, every topic does.
-4. Threads land one at a time as `ThreadAdded`, `ThoughtAdded` (already placed, with the message's own time), `SuggestionAdded` and `ActionProposed`. `import_cancel` stops it; what landed stays.
+4. Threads land one at a time as `ThreadAdded`, `ThoughtAdded` (already placed, with the message's own time), `SuggestionAdded` and `ActionProposed`, then `MessagesRead`. `import_cancel` stops it; what landed stays.
 
 ## Adding an app block
 

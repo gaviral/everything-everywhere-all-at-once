@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { volumeReporter } from "./apps-audio";
-import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 
@@ -125,7 +125,9 @@ type Change =
   | { type: "tag_suggested"; thread_id: string; tag: string }
   | { type: "tag_kept"; thread_id: string; tag: string }
   | { type: "tag_removed"; thread_id: string; tag: string }
-  | { type: "thread_picture"; thread_id: string; path: string };
+  | { type: "thread_picture"; thread_id: string; path: string }
+  // An import's record of the messages it read; only the core uses it.
+  | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
   | RecapServerMsg
@@ -171,9 +173,14 @@ function apply(world: World, raw: Change): World {
       ? { ...raw, suggestion: { ...raw.suggestion, thread_id: r(raw.suggestion.thread_id) } }
       : raw.type === "action_proposed"
         ? { ...raw, action: { ...raw.action, thread_id: r(raw.action.thread_id) } }
-        : "thread_id" in raw
-          ? { ...raw, thread_id: r(raw.thread_id) }
-          : raw;
+        // An import's points and a new branch can name a thread merged while they were being made.
+        : raw.type === "thought_added" && raw.thought.thread_id
+          ? { ...raw, thought: { ...raw.thought, thread_id: r(raw.thought.thread_id) } }
+          : raw.type === "thread_added" && raw.thread.parent_id
+            ? { ...raw, thread: { ...raw.thread, parent_id: r(raw.thread.parent_id) } }
+            : "thread_id" in raw
+              ? { ...raw, thread_id: r(raw.thread_id) }
+              : raw;
   const onThread = (id: string, edit: (t: Thread) => Thread): World => ({
     ...world,
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
@@ -191,6 +198,8 @@ function apply(world: World, raw: Change): World {
       return onThread(c.thread_id, (t) => ({ ...t, tags: t.tags.filter((x) => x.name !== c.tag) }));
     case "thread_picture":
       return onThread(c.thread_id, (t) => ({ ...t, picture: c.path }));
+    case "messages_read":
+      return world;
     case "thread_renamed":
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
     case "thread_merged": {
@@ -304,7 +313,7 @@ function apply(world: World, raw: Change): World {
   }
 }
 
-export function useCore() {
+export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
@@ -315,13 +324,16 @@ export function useCore() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
   const [partial, setPartial] = useState("");
+  const [handoff, setHandoff] = useState("");
+  const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
   const [listening, setListening] = useState(false);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
-  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
-  const [noKey, setNoKey] = useState(false);
+  // The core says so on connect when it has no model key, or once the service refused it: the map can be
+  // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
+  const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -334,6 +346,9 @@ export function useCore() {
     let timer: number | undefined;
     let currentWorld = EMPTY;
     let changeId = 0;
+    let lastPartial = "";
+    let awaitingThought = false;
+    let handoffTimer: number | undefined;
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -355,7 +370,12 @@ export function useCore() {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
-            setNoKey(false);
+            // A word about the key is the core's to repeat: it does, right after this, while it still holds.
+            setKeyNotice("");
+            setNotice((shown) => (shown.includes("MODEL_API_KEY") ? "" : shown));
+            // The core sends a running import's status right after the snapshot; one it doesn't has ended
+            // (it finished while this window was away, or the core restarted).
+            setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -370,11 +390,27 @@ export function useCore() {
               const into = currentWorld.threads.find((thread) => thread.id === change.into);
               if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
             }
+            if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
+              window.clearTimeout(handoffTimer);
+              lastPartial = "";
+              awaitingThought = false;
+              setHandoff("");
+            }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
             break;
           }
           case "partial":
+            window.clearTimeout(handoffTimer);
+            if (msg.text) {
+              lastPartial = msg.text;
+              awaitingThought = false;
+              setHandoff("");
+            } else if (lastPartial) {
+              awaitingThought = true;
+              setHandoff(lastPartial);
+              handoffTimer = window.setTimeout(() => { lastPartial = ""; awaitingThought = false; setHandoff(""); }, 1500);
+            }
             setPartial(msg.text);
             break;
           case "status":
@@ -382,8 +418,13 @@ export function useCore() {
             setVoiceStatusRevision((revision) => revision + 1);
             break;
           case "error":
+            if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
+              setVoiceErrorRevision((revision) => revision + 1);
+              break;
+            }
+          // Other errors and notices use the same notice area.
           case "notice":
-            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
+            if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice(msg.message);
             break;
           case "found":
@@ -399,6 +440,11 @@ export function useCore() {
         }
       };
       ws.onclose = () => {
+        window.clearTimeout(handoffTimer);
+        lastPartial = "";
+        awaitingThought = false;
+        setPartial("");
+        setHandoff("");
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -410,9 +456,10 @@ export function useCore() {
     return () => {
       closed = true;
       window.clearTimeout(timer);
+      window.clearTimeout(handoffTimer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps, receiveRecap, recapDisconnected]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
@@ -430,12 +477,17 @@ export function useCore() {
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
+  const noKey = keyNotice !== "";
+  const requestRecap = (requested?: RecapPeriod) => {
+    const since = requested === undefined ? recapFallback(world) : undefined;
+    const period = since !== undefined ? "session" : requested ?? "today";
+    const sent = !noKey && send(JSON.stringify({ type: "recap", period }));
+    recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent, since);
+  };
+
   return {
     recap,
-    requestRecap: (period: RecapPeriod) => {
-      const sent = send(JSON.stringify({ type: "recap", period }));
-      recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent);
-    },
+    requestRecap,
     apps,
     composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
     decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),
@@ -446,16 +498,21 @@ export function useCore() {
     snapshotRevision,
     mapChange,
     partial,
+    handoff,
+    voiceErrorRevision,
     listening,
     voiceStatusRevision,
     connected,
     notice,
     noKey,
+    keyRefused: keyNotice.includes("refused"),
+    keyNotice,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
+      if (isDefaultRecap(text)) { requestRecap(); return true; }
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }

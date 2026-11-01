@@ -4,7 +4,7 @@
 
 use crate::world::{Change, Thread, World};
 use crate::Core;
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, Context};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -42,7 +42,7 @@ const SETTLE_MS: u64 = 12_000;
 const QUIET_MS: u64 = 2_000;
 const CONCURRENT: usize = 3;
 const POLL: Duration = Duration::from_secs(1);
-// Keep the old ten-second breathing room between failed attempts, without stalling other pictures.
+// Ten seconds between failed attempts at one picture, without stalling the others.
 const RETRY_MS: u64 = 10_000;
 
 #[derive(Default)]
@@ -81,7 +81,7 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                 }
             }
         }
-        if core.key.is_none() {
+        if core.key().is_err() {
             continue;
         }
         let world = core.snapshot();
@@ -97,7 +97,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
             attempt.in_flight = true;
             let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
             drawing.push(async move {
+                let started = crate::now_ms();
                 let result = draw(&core, &dir, &thread, &points).await;
+                tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
                 (thread.id, result)
             });
         }
@@ -107,7 +109,9 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
 /// Fill free slots, oldest quiet threads first; first pictures take priority over retries.
 /// Active threads use the same delay, so the last topic gets a picture after the talk ends too.
 fn ready<'a>(world: &'a World, attempts: &HashMap<String, Attempt>, now: u64, quiet_ms: u64) -> Vec<&'a Thread> {
-    if quiet_ms < QUIET_MS || world.thoughts.iter().any(|p| !p.placed) {
+    // Only fresh ones: a thought still unplaced after a minute failed and waits for a retry (as recap.rs `placing`),
+    // and one that keeps failing mustn't stop pictures for the whole map.
+    if quiet_ms < QUIET_MS || world.thoughts.iter().any(|p| !p.placed && now.saturating_sub(p.at_ms) < 60_000) {
         return Vec::new();
     }
     let slots = CONCURRENT.saturating_sub(attempts.values().filter(|a| a.in_flight).count());
@@ -139,7 +143,9 @@ pub(crate) fn perf(world: &World, now: u64) {
 
 /// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
 fn prompt(thread: &Thread, points: &[String]) -> String {
-    let number: usize = thread.id.trim_start_matches('T').parse().unwrap_or(0);
+    // Numbered threads take turns through the colors; others (imported ones) get one picked from their id.
+    let number: usize = thread.id.trim_start_matches('T').parse()
+        .unwrap_or_else(|_| thread.id.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)));
     let color = COLORS[number % COLORS.len()];
     // The first few points say what the thread is; more only makes the prompt longer.
     let details = points.iter().take(6).map(String::as_str).collect::<Vec<_>>().join("; ");
@@ -147,7 +153,6 @@ fn prompt(thread: &Thread, points: &[String]) -> String {
 }
 
 async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> anyhow::Result<String> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
     let body = serde_json::json!({
         "model": "muse-image-1.0",
         "prompt": prompt(thread, points),
@@ -158,12 +163,8 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
         // A picture needs no searching or code, and the person's thoughts stay out of web searches.
         "tool_enablement": {"enable_image_search": false, "enable_web_search": false, "enable_shell": false},
     });
-    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
-    let status = response.status();
-    let value: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    // Drawn in the background, so it can wait: two minutes is far past any real picture.
+    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
     let encoded = value["data"][0]["b64_json"].as_str().context("no image in the answer")?;
     let bytes = decode(encoded)?;
     // Muse Image returns WebP ("RIFF" header); fall back to PNG's extension otherwise.
@@ -351,6 +352,8 @@ mod tests {
         pending.placed = false;
         world.thoughts.push(pending);
         assert!(ready(&world, &HashMap::new(), now, QUIET_MS).is_empty());
+        // Still unplaced a minute after it was said: it failed and waits for a retry, so pictures go on.
+        assert_eq!(ready(&world, &HashMap::new(), world.thoughts[1].at_ms + 60_000, QUIET_MS).len(), 1);
         world.thoughts[1].placed = true;
         assert_eq!(ready(&world, &HashMap::new(), now, QUIET_MS).len(), 1);
     }

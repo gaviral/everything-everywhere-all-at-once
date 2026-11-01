@@ -1,7 +1,10 @@
+//! Tests for small apps (apps.rs): asking for one, the composer's draft and its checks, watchers and
+//! publishers on the map, and journals from before apps that still load. The model's answers are canned
+//! (`Runtime::answers`), so nothing here calls it.
+
 use super::*;
 use crate::world::{Journal, Thought, World};
 use std::path::PathBuf;
-use tokio::sync::{broadcast, mpsc};
 
 struct Fixture { core: Arc<Core>, path: PathBuf }
 
@@ -9,16 +12,7 @@ impl Fixture {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("e2a2o-apps-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let (updates, _) = broadcast::channel(1024);
-        let (placer_queue, _) = mpsc::unbounded_channel();
-        Self { path, core: Arc::new(Core {
-            find: crate::find::Runtime::default(),
-            recap: crate::recap::Runtime::default(),
-            apps: Runtime::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal), updates, placer_queue, room: None,
-            key: None, placer_model: "test".into(), http: reqwest::Client::new(),
-            last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
-            wake: tokio::sync::Notify::new(), imports: crate::import::Imports::default(),
-        }) }
+        Self { path, core: Arc::new(Core::test(journal, world)) }
     }
 }
 
@@ -122,7 +116,7 @@ fn volume_needs_continuous_readings_from_one_source() {
 async fn keep_and_discard_are_explicit_and_idempotent() {
     let fixture = Fixture::new();
     fixture.core.apps.state.lock().unwrap().build = Some(Build { id: "b".into(), request: "quiet".into(), stage: "ready".into(),
-        steps: Vec::new(), draft: Some(app()), match_id: None, message: String::new() });
+        steps: Vec::new(), draft: Some(app()), match_id: None, ..Build::default() });
     assert!(fixture.core.snapshot().apps.is_empty());
     decide(&fixture.core, "wrong-id", true);
     assert!(fixture.core.snapshot().apps.is_empty());
@@ -142,7 +136,7 @@ fn a_window_that_connects_sees_a_build_only_while_it_is_composing_or_waiting() {
     for (stage, sent) in [("searching", true), ("composing", true), ("validating", true), ("ready", true), ("matched", true),
         ("kept", false), ("discarded", false), ("failed", false)] {
         fixture.core.apps.state.lock().unwrap().build = Some(Build { id: "b".into(), request: "quiet".into(), stage: stage.into(),
-            steps: Vec::new(), draft: None, match_id: None, message: String::new() });
+            steps: Vec::new(), draft: None, match_id: None, ..Build::default() });
         assert_eq!(unsettled_build(&fixture.core).is_some(), sent, "{stage}");
     }
 }
@@ -152,7 +146,7 @@ async fn search_offers_an_existing_app_without_a_model_and_failures_are_gentle()
     let fixture = Fixture::new();
     seed(&fixture.core, false);
     fixture.core.apps.state.lock().unwrap().build = Some(Build { id: "b".into(), request: "".into(), stage: "searching".into(),
-        steps: Vec::new(), draft: None, match_id: None, message: String::new() });
+        steps: Vec::new(), draft: None, match_id: None, ..Build::default() });
     compose_inner(&fixture.core, "b", "Argument resolver").await.unwrap();
     assert_eq!(build(&fixture.core).unwrap().stage, "matched");
     assert_eq!(build(&fixture.core).unwrap().match_id.as_deref(), Some("app-argument"));
@@ -222,12 +216,33 @@ fn a_timer_with_a_prompt_waits_for_something_new_to_look_at() {
     timer.watcher = Watcher::Time { at_ms: 1, every_secs: 10 };
     timer.last_run_ms = 1_000;
     let mut world = World { thoughts: vec![said(500)], ..World::default() };
-    assert!(timer_due(&timer, &world, 20_000), "without a prompt it runs on time");
+    let apps = Runtime::default();
+    assert!(timer_due(&apps, &timer, &world, 20_000), "without a prompt it runs on time");
     timer.prompt = Some(Prompt { system: "Notice when I drift.".into(), template: "{points}".into() });
-    assert!(!timer_due(&timer, &world, 20_000), "nothing new since it last ran");
+    assert!(!timer_due(&apps, &timer, &world, 20_000), "nothing new since it last ran");
     world.thoughts.push(said(1_500));
-    assert!(timer_due(&timer, &world, 20_000));
-    assert!(!timer_due(&timer, &world, 5_000), "not time yet");
+    assert!(timer_due(&apps, &timer, &world, 20_000));
+    assert!(!timer_due(&apps, &timer, &world, 5_000), "not time yet");
+}
+
+/// On this machine's clock; in Los Angeles, Nov 1, 2026 is 25 hours long, and 24 hours after 5 PM the day
+/// before was 4 PM, when a daily 5 PM app used to fire.
+#[test]
+fn a_daily_timer_keeps_its_hour_when_the_clocks_change() {
+    let at = |local: &str| crate::clock::ms(local).unwrap();
+    let mut timer = app();
+    timer.watcher = Watcher::Time { at_ms: at("2026-10-31 17:00"), every_secs: 86_400 };
+    timer.last_run_ms = at("2026-10-31 17:00");
+    // The composer sees it in the local time it writes.
+    assert_eq!(shown(&timer.watcher), json!({"kind": "time", "at": "2026-10-31 17:00", "every_secs": 86_400}));
+    let (apps, world) = (Runtime::default(), World::default());
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-01 16:00")));
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-01 16:59")));
+    assert!(timer_due(&apps, &timer, &world, at("2026-11-01 17:00")));
+    // It ran late, at 9 PM, after the laptop slept through 5 PM: the next is still 5 PM.
+    timer.last_run_ms = at("2026-11-02 21:00");
+    assert!(!timer_due(&apps, &timer, &world, at("2026-11-03 16:59")));
+    assert!(timer_due(&apps, &timer, &world, at("2026-11-03 17:00")));
 }
 
 #[tokio::test]
@@ -267,7 +282,7 @@ async fn a_draft_that_doesnt_check_out_gets_one_more_try_told_why() {
         "publishers":[{"kind":"card","text":"{text}"}],"cooldown_secs":30
     }});
     let fresh = || Some(Build { id: "b".into(), request: "drift".into(), stage: "searching".into(), steps: Vec::new(), draft: None,
-        match_id: None, message: String::new() });
+        match_id: None, ..Build::default() });
     fixture.core.apps.state.lock().unwrap().build = fresh();
     fixture.core.apps.answers.lock().unwrap().extend([spec("Thread: {thread}\nNewest: {thought}"), spec("Topic: {topic}\nNewest: {thought}")]);
     compose_inner(&fixture.core, "b", "notice when I drift").await.unwrap();
@@ -275,7 +290,7 @@ async fn a_draft_that_doesnt_check_out_gets_one_more_try_told_why() {
     assert_eq!(b.stage, "ready", "no failure shows when the second try works");
     assert_eq!(b.draft.unwrap().prompt.unwrap().template, "Topic: {topic}\nNewest: {thought}");
     assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains("unknown template field {thread}"), "told what didn't check out");
-    // Two misses in a row still fail, as before.
+    // Two misses in a row fail.
     fixture.core.apps.state.lock().unwrap().build = fresh();
     fixture.core.apps.answers.lock().unwrap().extend([spec("{thread}"), spec("{thread}")]);
     assert!(compose_inner(&fixture.core, "b", "notice when I drift").await.is_err());
@@ -304,7 +319,7 @@ async fn search_first_can_be_offered_too() {
     seed(&fixture.core, false);
     let request = "check whether I already have an app before building a new one";
     let fresh = || Some(Build { id: "b".into(), request: request.into(), stage: "searching".into(), steps: Vec::new(), draft: None,
-        match_id: None, message: String::new() });
+        match_id: None, ..Build::default() });
     // Off, the composer sees it among the existing apps; on, its own search pass does.
     for (on, answer) in [(false, json!({"match_id":"app-search", "app": null})), (true, json!({"match_id":"app-search", "text":"It checks first."}))] {
         toggle(&fixture.core, "app-search".into(), on);
@@ -327,6 +342,84 @@ async fn an_unknown_model_block_fails_without_registering_anything() {
     tokio::task::yield_now().await;
     assert_eq!(build(&fixture.core).unwrap().stage, "failed");
     assert!(fixture.core.snapshot().apps.is_empty());
+}
+
+#[tokio::test]
+async fn what_apps_cant_do_is_declined_with_a_reason_and_the_closest_app() {
+    let fixture = Fixture::new();
+    let stand_in = json!({"name":"Rent note", "purpose":"Show a card when rent comes up.", "watcher":{"kind":"phrase","phrase":"rent"},
+        "prompt":null, "publishers":[{"kind":"card","text":"Rent came up."}], "cooldown_secs":30});
+    // A reason wins over any app sent with it, and the closest app reads as a request, not a command.
+    fixture.core.apps.answers.lock().unwrap().push_back(json!({"match_id":"", "app": stand_in, "cannot":"  Apps can't send\nemail. ",
+        "instead":"Make an app that shows a card when I mention rent"}));
+    compose(fixture.core.clone(), "send me an email when I mention rent".into());
+    tokio::task::yield_now().await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!((b.stage.as_str(), b.message.as_str(), b.instead.as_str()), ("declined", "Apps can't send email.", "shows a card when I mention rent"));
+    assert!(b.draft.is_none() && fixture.core.snapshot().apps.is_empty());
+    assert!(unsettled_build(&fixture.core).is_none(), "nothing to keep, so the next request can start");
+    decide(&fixture.core, &b.id, true);
+    assert!(fixture.core.snapshot().apps.is_empty());
+    // An "instead" that only repeats the request is no help; a reason too long for a card is cut at a word.
+    let long = format!("Apps can't {}", "flights ".repeat(40));
+    fixture.core.apps.answers.lock().unwrap().push_back(json!({"match_id":"", "app": null, "cannot": long, "instead":"book me a flight"}));
+    compose(fixture.core.clone(), "book me a flight".into());
+    tokio::task::yield_now().await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!((b.stage.as_str(), b.instead.as_str()), ("declined", ""));
+    assert!(b.message.ends_with("flights…") && b.message.chars().count() <= 201, "{}", b.message);
+}
+
+#[tokio::test]
+async fn a_missing_app_or_a_reminder_that_cant_repeat_gets_the_retry_told_why() {
+    let fixture = Fixture::new();
+    let timed = |at: &str, every: u64, publishers: Value| json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Water",
+        "purpose":"Drink water now and then.", "watcher":{"kind":"time","at":at,"every_secs":every}, "prompt":null,
+        "publishers":publishers, "cooldown_secs":60}});
+    let timer = |publishers: Value| timed("2026-11-03 09:00", 2700, publishers);
+    let fresh = || Some(Build { id: "b".into(), request: "water".into(), stage: "searching".into(), ..Build::default() });
+    for (first, told) in [
+        (json!({"match_id":"", "app": null, "cannot":"", "instead":""}), "say in cannot why"),
+        (timer(json!([{"kind":"reminder","title":"Drink water","when":""}])), "a repeating timer needs a card or a sound"),
+        (timed("9 AM", 2700, json!([{"kind":"card","text":"Water."}])), "isn't a local date and time as YYYY-MM-DD HH:MM"),
+    ] {
+        fixture.core.apps.state.lock().unwrap().build = fresh();
+        fixture.core.apps.answers.lock().unwrap().extend([first, timer(json!([{"kind":"card","text":"Time for some water."}]))]);
+        compose_inner(&fixture.core, "b", "remind me to drink water every 45 minutes").await.unwrap();
+        let b = build(&fixture.core).unwrap();
+        assert_eq!(b.stage, "ready");
+        assert!(fixture.core.apps.asked.lock().unwrap().last().unwrap().contains(told), "{told}");
+        // The model says when in local time; the core works out the instant, by this machine's clock rules.
+        let at_ms = crate::clock::ms("2026-11-03 09:00").unwrap();
+        assert!(matches!(b.draft.unwrap().watcher, Watcher::Time { at_ms: a, every_secs: 2700 } if a == at_ms));
+    }
+    // Once, a reminder is fine; so is one whose title the prompt writes each time.
+    assert!(draft(&timed("2026-11-03 09:00", 0, json!([{"kind":"reminder","title":"Drink water","when":""}]))).is_ok());
+    let mut written = timer(json!([{"kind":"reminder","title":"{text}","when":""}]));
+    written["app"]["prompt"] = json!({"system": "Suggest something to drink.", "template": "{time}"});
+    assert!(draft(&written).is_ok());
+}
+
+#[tokio::test]
+async fn without_a_key_a_failed_build_says_so_instead_of_try_again() {
+    let fixture = Fixture::new();
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::task::yield_now().await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "failed");
+    assert!(b.message.contains("MODEL_API_KEY"), "{}", b.message);
+}
+
+#[test]
+fn phrases_and_topics_match_whole_words() {
+    for (text, words) in [("The deadline moved", "deadline"), ("two deadlines this week", "deadline"), ("Ask Meta's team", "meta"),
+        ("um, I think", "um"), ("Is AI ready?", "AI"), ("remind me to call", "Remind me"), ("C++ talk", "c++"), ("明天开会", "开会")] {
+        assert!(mentions(text, words), "{words} in {text}");
+    }
+    for (text, words) in [("I said again", "ai"), ("a number of humans", "um"), ("this one", "hi"), ("metadata", "meta"), ("anything", ""),
+        ("the demonstration", "demo")] {
+        assert!(!mentions(text, words), "{words} in {text}");
+    }
 }
 
 #[tokio::test]
@@ -366,6 +459,12 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
     let fixture = Fixture::new();
     seed(&fixture.core, false);
     toggle(&fixture.core, "app-volume".into(), true);
+    let mut messages = fixture.core.updates.subscribe();
+    let mut playful = move || {
+        let mut tune = None;
+        while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsSound { playful, .. } = message.message { tune = Some(playful); } }
+        tune
+    };
     let now = now_ms();
     fixture.core.apps.state.lock().unwrap().volume.insert(("mic-a".into(), "app-volume".into()), (now - 4000, now));
     volume(&fixture.core, "mic-b", 0.2);
@@ -373,19 +472,18 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
     assert!(fixture.core.snapshot().suggestions.is_empty(), "another tab cannot complete this mic's loud streak");
     volume(&fixture.core, "mic-a", 0.2);
     tokio::task::yield_now().await;
-    assert_eq!(fixture.core.snapshot().suggestions.len(), 1);
+    assert_eq!(playful(), Some(true), "by default loud voices get the silly tune");
+    assert_eq!(fixture.core.snapshot().suggestions.len(), 1, "and a light card that says why");
     disconnect(&fixture.core, "mic-a");
     assert!(!fixture.core.apps.state.lock().unwrap().volume.keys().any(|(s, _)| s == "mic-a"));
-    volume_output(&fixture.core, "app-volume".into(), true);
+    volume_output(&fixture.core, "app-volume".into(), false);
+    assert!(!fixture.core.snapshot().apps.iter().find(|a| a.id == "app-volume").unwrap().purpose.contains("tune"), "the purpose says what it does");
     fixture.core.commit(vec![Change::AppRan { id: "app-volume".into(), at_ms: 0 }]);
     fixture.core.apps.state.lock().unwrap().volume.insert(("mic-b".into(), "app-volume".into()), (now - 4000, now));
-    let mut messages = fixture.core.updates.subscribe();
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
-    let mut sounded = false;
-    while let Ok(message) = messages.try_recv() { if matches!(message.message, ServerMsg::AppsSound { .. }) { sounded = true; } }
-    assert!(sounded);
-    assert_eq!(fixture.core.snapshot().suggestions.len(), 1, "choosing sound replaces the card");
+    assert_eq!(playful(), None, "the card alone is quiet");
+    assert_eq!(fixture.core.snapshot().suggestions.len(), 2);
 }
 
 #[tokio::test]
@@ -401,6 +499,20 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     toggle(&fixture.core, a.id.clone(), false);
     assert!(!fixture.core.apps.state.lock().unwrap().pending.contains_key(&a.id));
+}
+
+#[tokio::test]
+async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
+    let fixture = Fixture::new();
+    let asks = seeds(true).remove(0);
+    assert!(asks.prompt.is_some());
+    fixture.core.commit(vec![Change::AppRegistered { app: asks.clone() }]);
+    let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+    let mut updates = fixture.core.updates.subscribe();
+    for _ in 0..3 { launch(&fixture.core, asks.clone(), None); }
+    tokio::task::yield_now().await;
+    assert!(fixture.core.apps.asked.lock().unwrap().is_empty(), "no model call");
+    assert!(updates.try_recv().is_err(), "nothing run or said: the header already says why");
 }
 
 #[test]

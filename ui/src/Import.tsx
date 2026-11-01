@@ -64,6 +64,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   const [started, setStarted] = useState("");
   const [dragging, setDragging] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const status = core.importStatus;
   const running = !!status && RUNNING.has(status.state);
@@ -72,8 +73,14 @@ export function ImportChats({ core }: { core: ImportCore }) {
 
   useEffect(() => {
     const element = dialog.current;
-    if (open && element && !element.open) element.showModal();
-    if (!open && element?.open) element.close();
+    if (open && element && !element.open) {
+      previousFocus.current = document.activeElement as HTMLElement | null;
+      element.showModal();
+    }
+    if (!open && element?.open) {
+      element.close();
+      previousFocus.current?.focus({ preventScroll: true });
+    }
   }, [open]);
 
   const reset = () => {
@@ -215,7 +222,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
         </div>
       </div>
       {preview.already > 0 && (
-        <p className="import-note">{plural(preview.already, "message")} of yours from this file {preview.already === 1 ? "is" : "are"} already on the map, so {preview.already === 1 ? "it's" : "they're"} skipped.</p>
+        <p className="import-note">{plural(preview.already, "message")} of yours from this file {preview.already === 1 ? "was" : "were"} imported before, so {preview.already === 1 ? "it's" : "they're"} skipped.</p>
       )}
       {preview.total - preview.already > preview.messages && (
         <p className="import-note">
@@ -293,6 +300,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
             ref={dialog}
             className="import-dialog"
             aria-labelledby="import-title"
+            onCancel={(event) => { event.preventDefault(); close(); }}
             onClose={close}
             onClick={(event) => {
               if (event.target === event.currentTarget) close();

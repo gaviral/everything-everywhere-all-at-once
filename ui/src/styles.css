@@ -633,6 +633,7 @@ header {
 .points li { min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
 .points li > span:nth-child(2) { min-width: 0; }
 .points li:focus-within .speed { opacity: 1; }
+.points li:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ai, .action { align-items: flex-start; opacity: 1; overflow-wrap: anywhere; }
 .ai > span:nth-child(2), .action > span:nth-child(2) { min-width: 0; }
 .ai-actions { flex: none; align-items: center; }
@@ -706,7 +707,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .map-tools { top: 44px; padding-inline: 16px; }
   .map-tools-inner { flex-wrap: wrap; }
   .search { flex-basis: 100%; }
-  .thread { scroll-margin-top: 180px; }
+  .thread { scroll-margin-top: 240px; }
   .branches { padding-left: 6px; }
 }
 .shortcuts { position: relative; flex: none; }
@@ -749,7 +750,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 700px) {
   .brand { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 4px; }
   .brand small { margin-left: 0; }
-  .session-count { flex-basis: 100%; margin-left: 0; font-size: 11px; }
+  .session-count { flex-basis: 100%; margin-left: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+  .brand, .session-count { min-width: 0; }
   .map-tools { top: 62px; }
 }
 @media (max-width: 560px) {
@@ -792,15 +794,17 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 560px) {
   /* Notices participate in the page flow so they cannot obscure the tour. */
+  /* Sticky below the header: they stay in view while scrolling, without covering the tour. */
   .notice, .map-change, .notice ~ .map-change {
-    position: relative; top: auto; left: auto; translate: none;
+    position: sticky; top: 64px; z-index: 6; left: auto; translate: none;
     width: auto; max-width: none; margin: 8px 16px;
   }
   .dock { max-height: 50dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .pullback { flex-wrap: nowrap; gap: 4px; padding: 2px 4px 2px 10px; }
-  .pullback .picture, .pullback-quote { display: none; }
-  .pullback-title { font-size: 13px; }
+  .pullback .picture { display: none; }
+  .pullback-title { font-size: 13px; line-height: 18px; }
+  .pullback-quote { margin-top: 0; font-size: 12px; line-height: 18px; }
   .pullback-actions { margin-left: 0; gap: 0; }
   .pullback-actions button { padding-inline: 8px; }
   .pending { display: flex; flex-direction: column; flex-wrap: nowrap; max-height: min(96px, 12dvh); }

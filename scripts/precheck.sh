@@ -15,6 +15,10 @@ tracked() { git ls-files -z | xargs -0 grep -IlE "$1" -- 2>/dev/null | grep -v '
 check ".gitignore covers .env and data/" "grep -qx '.env' .gitignore && grep -qx 'data/' .gitignore"
 check "no .env, journal or data files tracked" "! git ls-files | grep -qE '(^|/)\.env$|journal|^data/'"
 check "no key-like strings tracked" "[ -z \"\$(tracked '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}')\" ]"
+check "no key-like strings anywhere in git history" "! git log --all -p 2>/dev/null | grep -qE '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}'"
+check "run.sh parses" "sh -n run.sh"
+if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"; else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
+[ -f LICENSE ] || warn "no LICENSE file yet (User's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "no code or paths from the author's other projects (hackathon rule: new work only)" "[ -z \"\$(tracked '/code/(e2a2o|e2a2o|canvas)|e2a2o-memory|e2a2o|e2a2o (codex|muse|cursor)')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"
@@ -23,6 +27,17 @@ check "a room keeps the map behind its code (tested)" "grep -q 'fn a_room_lets_t
 check "model calls have a timeout (test fixtures aside)" "python3 -c 'import glob, sys; sys.exit(any(\"reqwest::Client::new()\" in open(f).read().split(\"#[cfg(test)]\")[0] for f in glob.glob(\"core/src/**/*.rs\", recursive=True) if not f.endswith(\"tests.rs\")))'"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
+# A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.
+samples_have_pictures() {
+  for journal in samples/*.jsonl; do
+    map=$(basename "$journal" .jsonl)
+    [ "$(grep -c '"type":"thread_added"' "$journal")" = "$(grep -c '"type":"thread_picture"' "$journal")" ] || return 1
+    for name in $(grep -o '"type":"thread_picture"[^}]*' "$journal" | sed 's|.*"path":"/images/||; s|"$||'); do
+      [ -f "samples/images/$map/$name" ] || return 1
+    done
+  done
+}
+check "samples: every thread has its picture shipped (no blank Palace without a key)" samples_have_pictures
 
 port=${PORT:-4321}
 if curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
@@ -50,6 +65,8 @@ fi
 
 grep -q 'contributor' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
 grep -q 'e2a2o' run.sh && warn "run.sh names the developer's Keychain item"
+# Placeholders the owner still has to decide on (pitch, cover, ...) must not ship unnoticed.
+for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do warn "README still has a $marker placeholder for User to decide"; done
 grep -q 'timeout' core/src/asr.rs || warn "speech stream has no read timeout"
 [ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
 exit $failed

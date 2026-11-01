@@ -2,11 +2,11 @@
 //! so every placement sees the map the previous one left.
 
 use crate::world::{find, matches, swap, Change, Thought, Thread, ThreadStatus, World};
-use crate::{now_ms, protocol::ServerMsg, Core};
-use anyhow::{anyhow, bail, Context};
+use crate::{model::Verdict, now_ms, protocol::ServerMsg, Core};
+use anyhow::Context;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -19,10 +19,11 @@ For each NEW THOUGHT decide: \"continue\" if it says more about the active threa
 \"return\" if it says more about an earlier thread's, \
 or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
 (set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
-\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip an answer, even a bare \"yes\" or \"no\". \
-split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string. \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
+split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
+never between two sentences about one thing, such as a deadline and what is due by then. \
 thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
-point: the thought in at most 12 words, in the speaker's own voice. \
+point: the thought in at most 12 words, in the speaker's own voice; a question they ask stays a question, one they quote keeps who asked. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
 unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
@@ -114,6 +115,9 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                     rest = next;
                     break;
                 }
+                // Nothing can place it until a restart with a working key, and every window was told: it waits,
+                // saved, and is placed after that restart.
+                Err(_) if core.key_refused() => break,
                 Err(e) if attempt < 3 => {
                     tracing::warn!("placement failed (try {attempt}): {e:#}");
                     tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
@@ -121,8 +125,8 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                 Err(e) => {
                     tracing::warn!("placement failed: {e:#}");
                     let round = rounds.entry(thought_id.clone()).or_default();
-                    // Said once: its "Finding a thread" stays up while it waits.
-                    if *round == 0 {
+                    // Said once: its "Finding a thread" stays up while it waits. A busy service was already said.
+                    if *round == 0 && Verdict::of(&e) != Some(Verdict::Busy) {
                         core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
                     }
                     // A longer outage shouldn't leave it unplaced until a restart: it goes back in the queue
@@ -149,7 +153,7 @@ fn retry_in(round: u32) -> Duration {
 
 /// Places one thought; when the turn moved on to another topic partway, returns the rest's id.
 async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let world = core.snapshot();
     let thought = world
         .thoughts
@@ -162,19 +166,17 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<Option<String>> 
     }
 
     let response = core
-        .http
-        .post(URL)
-        .bearer_auth(key)
-        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-        .timeout(std::time::Duration::from_secs(20))
-        .json(&request(&world, &thought, &core.placer_model))
-        .send()
+        .ask_model(&core.placer_model, |model| {
+            core.http
+                .post(URL)
+                .bearer_auth(key)
+                // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+                .timeout(std::time::Duration::from_secs(20))
+                .json(&request(&world, &thought, model))
+                .send()
+        })
         .await?;
-    let status = response.status();
-    let body: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", body["error"]["message"].as_str().unwrap_or("no message"));
-    }
+    let body = crate::model::answer(response).await?;
     let content = body["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let placement: Placement = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
     // From when the thought arrived, so time waiting in the queue counts too.
@@ -287,6 +289,20 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             .join("\n")
     };
     let active = world.active_for(&thought.speaker).cloned().unwrap_or_else(|| "(none)".into());
+    // A short turn right after a question may answer it ("Yeah."). The points above often drop the
+    // "?", so the question goes in as said; without it the model sets the answer aside as filler.
+    // The latest said before it, by time: imported points land last in the list, with their old times.
+    let asked = world
+        .thoughts
+        .iter()
+        .take_while(|t| t.id != thought.id)
+        .filter(|t| t.at_ms <= thought.at_ms)
+        .max_by_key(|t| t.at_ms)
+        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
+        .map(|t| format!("Just asked: \"{}\"\n", t.text.trim()))
+        .unwrap_or_default();
+    let names = names(world);
+    let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     json!({
         "model": model,
         "reasoning_effort": "minimal",
@@ -294,7 +310,7 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\nNEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -314,6 +330,80 @@ fn request(world: &World, thought: &Thought, model: &str) -> serde_json::Value {
             "required": ["action", "thread_id", "title", "parent_id", "point", "split", "complete", "dropped", "unclear", "guess", "sure"]
         }}}
     })
+}
+
+/// Names in the prompt, at most: the latest ones.
+const NAMES: usize = 30;
+
+/// Names said so far, the latest first: runs of capitalized words ("Muse Spark", "Main Street", "Dana") in the
+/// words as said. Points are summaries and often drop the name, and then a near miss of it ("Muse Bark") has
+/// nothing on the map to be a near miss of. Words still asked about ("Did you mean …?") don't count.
+fn names(world: &World) -> Vec<String> {
+    // Newest first by when it was said (see `Thought::said_at`): an import lands last in the list, with old times.
+    // Reversed first, so the stable sort keeps a split turn's rest (same time) ahead of its first part.
+    let now = now_ms();
+    let mut said: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed).collect();
+    said.sort_by_key(|t| std::cmp::Reverse(t.said_at(now)));
+    let mut seen = HashSet::new();
+    said.into_iter()
+        .flat_map(|t| {
+            let text = if t.unclear.is_empty() { t.text.clone() } else { t.text.replace(t.unclear.as_str(), " ") };
+            capitalized(&text).into_iter().rev()
+        })
+        .filter(|name| seen.insert(name.to_lowercase()))
+        .take(NAMES)
+        .collect()
+}
+
+/// The runs of capitalized words in one turn. A lone one opening a sentence is an ordinary word ("Okay",
+/// "The"), as is "I"; a run opening a sentence loses a leading "The" or "And" ("The README" is "README").
+fn capitalized(text: &str) -> Vec<String> {
+    const OPENERS: [&str; 19] =
+        ["the", "a", "an", "and", "but", "so", "oh", "okay", "ok", "yeah", "well", "then", "also", "anyway", "back", "hey", "my", "this", "that"];
+    const ENDS: [char; 8] = ['.', '!', '?', ':', ';', '…', '—', '–'];
+    let finish = |run: &mut Vec<&str>, opens: bool, out: &mut Vec<String>| {
+        let mut words = &run[..];
+        if opens && words.len() == 1 {
+            words = &[];
+        } else if opens && words.first().is_some_and(|w| OPENERS.contains(&w.to_lowercase().as_str())) {
+            words = &words[1..];
+        }
+        if !words.is_empty() {
+            out.push(words.join(" "));
+        }
+        run.clear();
+    };
+    let mut out = Vec::new();
+    let (mut run, mut opens, mut end) = (Vec::new(), false, 0);
+    let mut start = None;
+    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
+        let inside = c.is_alphanumeric() || (start.is_some() && matches!(c, '\'' | '’' | '-'));
+        match (inside, start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                start = None;
+                let raw = text[s..i].trim_end_matches(['\'', '’', '-']);
+                let word = raw.strip_suffix("'s").or_else(|| raw.strip_suffix("’s")).unwrap_or(raw);
+                let before = text[..s].trim_end();
+                let capital = word.chars().next().is_some_and(char::is_uppercase)
+                    && !(word == "I" || word.starts_with("I'") || word.starts_with("I’"));
+                // A pause between two words ends a run: "Main Street, I think" is "Main Street".
+                if !capital || text[end..s].contains([',', '.', '!', '?', ':', ';', '…', '—', '–', '(', ')', '"']) {
+                    finish(&mut run, opens, &mut out);
+                }
+                if capital {
+                    if run.is_empty() {
+                        opens = before.is_empty() || before.ends_with(ENDS);
+                    }
+                    run.push(word);
+                }
+                end = i;
+            }
+            _ => {}
+        }
+    }
+    finish(&mut run, opens, &mut out);
+    out
 }
 
 /// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
@@ -388,9 +478,10 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64) -> Vec<
     changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
 
     // Leaving a thread whose last thought trailed off means it was dropped. Only the speaker's own
-    // words count, so only threads they spoke on can be dropped, and only for them.
+    // words count, so only threads they spoke on can be dropped, and only for them. Last by when it was
+    // said (see `Thought::said_at`).
     let their_last = |id: &str| {
-        world.thoughts.iter().rev().find(|t| t.placed && t.speaker == *speaker && t.thread_id.as_deref() == Some(id))
+        world.thoughts.iter().filter(|t| t.placed && t.speaker == *speaker && t.thread_id.as_deref() == Some(id)).max_by_key(|t| t.said_at(now))
     };
     let mut dropped: Vec<String> = p.dropped.into_iter().filter(|d| their_last(d).is_some()).collect();
     if let Some(previous) = world.active_by.get(speaker).filter(|a| **a != thread_id) {
@@ -491,6 +582,42 @@ mod tests {
     }
 
     #[test]
+    fn names_said_reach_the_placer_even_when_points_drop_them() {
+        let said = |id: &str, text: &str| Thought { text: text.into(), ..thought(id, "you", Some("T1"), true) };
+        let mut world = map();
+        world.thoughts = vec![
+            said("a", "Okay so I need to plan the hackathon demo. The submission deadline is tomorrow at nine PM."),
+            said("b", "Decided: we open with the mic turning on. Muse Spark places it in about two seconds. That's the hook."),
+            said("c", "Oh wait, Mom's birthday is Friday. I'm booking that cooking class she mentioned."),
+            said("d", "The one on Main Street, I think it's like sixty bucks."),
+            said("e", "The README should explain how to run it."),
+            // Still asked about: not a name yet.
+            Thought { unclear: "Dana".into(), ..said("f", "Ask Dana about it") },
+            Thought { placed: false, ..said("g", "Waiting on Priya") },
+        ];
+        assert_eq!(super::names(&world), ["README", "Main Street", "Friday", "Mom", "Muse Spark", "PM"]);
+        let prompt = |world: &World| request(world, &turn("The placement uses Muse Bark"), "m")["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt(&world).contains("Active thread: T1\nNames said: README, Main Street, Friday, Mom, Muse Spark, PM\nNEW THOUGHT"), "{}", prompt(&world));
+        assert!(prompt(&map()).contains("Active thread: T1\nNEW THOUGHT"), "no names yet, no line");
+    }
+
+    #[test]
+    fn names_said_go_by_when_they_were_said_not_by_an_import_landing_last() {
+        let now = crate::now_ms();
+        let said = |id: &str, text: &str, at_ms: u64| Thought { text: text.into(), at_ms, ..thought(id, "you", Some("T1"), true) };
+        // Said a minute ago; then an import of last year's chats landed after it in the list, with 40 names.
+        let mut world = map();
+        world.thoughts.push(said("live", "The placement uses Muse Spark.", now - 60_000));
+        for n in 0..40 {
+            world.thoughts.push(said(&format!("old{n}"), &format!("I met with Contact{n} about it."), now - 365 * 86_400_000));
+        }
+        let names = super::names(&world);
+        assert_eq!((names.len(), names[0].as_str(), names[1].as_str()), (super::NAMES, "Muse Spark", "Contact39"));
+        let prompt = request(&world, &turn("The placement uses Muse Bark"), "m")["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt.contains("Names said: Muse Spark, Contact39, "), "{prompt}");
+    }
+
+    #[test]
     fn a_turn_is_cut_where_it_moves_on() {
         let text = "I need to pay rent and also the hackathon demo is on Tuesday";
         let expected = Some(("I need to pay rent".to_string(), "the hackathon demo is on Tuesday".to_string()));
@@ -573,6 +700,21 @@ mod tests {
         assert!(prompt("User").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
+    }
+
+    #[test]
+    fn a_short_reply_to_a_question_comes_with_the_question() {
+        let asked = Thought { text: "Should we say it runs on Meta's models?".into(), ..thought("q", "you", Some("T1"), true) };
+        let told = Thought { text: "It runs on Meta's models.".into(), ..thought("s", "you", Some("T1"), true) };
+        let prompt = |before: &Thought, text: &str| {
+            let reply = Thought { text: text.into(), ..thought("r", "you", None, true) };
+            let world = World { thoughts: vec![before.clone(), reply.clone()], ..map() };
+            request(&world, &reply, "m")["messages"][1]["content"].as_str().unwrap().to_string()
+        };
+        assert!(prompt(&asked, "Yeah.").ends_with("Just asked: \"Should we say it runs on Meta's models?\"\nNEW THOUGHT: \"Yeah.\""));
+        // Nothing was asked, or the turn is long enough to stand on its own.
+        assert!(!prompt(&told, "Yeah.").contains("Just asked"));
+        assert!(!prompt(&asked, "Yeah, and the intro should be shorter before we record it again.").contains("Just asked"));
     }
 
     /// Places `text` as a new thread, with the model's answer about the misheard words.

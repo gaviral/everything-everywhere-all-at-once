@@ -78,6 +78,15 @@ pub struct Thought {
     pub place_ms: Option<u64>,
 }
 
+impl Thought {
+    /// When it was said, to tell which came last: imported points land last in the list with their old
+    /// times, so list order won't do. A time ahead of the clock (a sample map dated for the demo, a wrong
+    /// clock) counts as the earliest, so it can't hide what was just said.
+    pub fn said_at(&self, now: u64) -> u64 {
+        if self.at_ms > now { 0 } else { self.at_ms }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemStatus {
@@ -132,6 +141,12 @@ pub struct World {
     pub apps_seeded: bool,
     #[serde(default)]
     pub recaps: Vec<crate::recap::Recap>,
+    /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
+    #[serde(default, skip_serializing)]
+    pub read_ms: std::collections::HashSet<u64>,
+    /// Stable hashes of messages an import has read, including those that gave no point.
+    #[serde(default, skip_serializing)]
+    pub read_keys: std::collections::HashSet<String>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -194,6 +209,13 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// An import finished reading these messages; old journal entries only recorded their times.
+    MessagesRead {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        at_ms: Vec<u64>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        keys: Vec<String>,
+    },
 }
 
 impl World {
@@ -229,8 +251,8 @@ impl World {
             }
             Change::AppOutput { id, sound } => {
                 if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id && matches!(a.watcher, crate::apps::Watcher::Volume { .. })) {
-                    a.publishers = if *sound { vec![crate::apps::Publisher::Sound {}] }
-                        else { vec![crate::apps::Publisher::Card { text: "Voices have been loud for a little while. A small pause might help.".into() }] };
+                    let (purpose, publishers) = crate::apps::volume_choice(*sound);
+                    (a.purpose, a.publishers) = (purpose.into(), publishers);
                 }
             }
             Change::AppsSeeded => self.apps_seeded = true,
@@ -248,6 +270,10 @@ impl World {
                 }
             }
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::MessagesRead { at_ms, keys } => {
+                self.read_ms.extend(at_ms);
+                self.read_keys.extend(keys.iter().cloned());
+            }
             Change::ThreadAdded { thread } => {
                 if self.thread(&thread.id).is_none() {
                     self.threads.push(thread.clone());
@@ -293,54 +319,8 @@ impl World {
                     th.title = title.clone();
                 }
             }
-            Change::ThreadMerged { from, into } => {
-                if from == into || self.thread(into).is_none() {
-                    return;
-                }
-                for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from.as_str())) {
-                    t.thread_id = Some(into.clone());
-                }
-                for th in self.threads.iter_mut().filter(|t| t.parent_id.as_deref() == Some(from.as_str())) {
-                    th.parent_id = Some(into.clone());
-                }
-                for s in self.suggestions.iter_mut().filter(|s| &s.thread_id == from) {
-                    s.thread_id = into.clone();
-                }
-                for a in self.actions.iter_mut().filter(|a| &a.thread_id == from) {
-                    a.thread_id = into.clone();
-                }
-                if self.active.as_deref() == Some(from.as_str()) {
-                    self.active = Some(into.clone());
-                }
-                for id in self.active_by.values_mut().filter(|id| **id == *from) {
-                    *id = into.clone();
-                }
-                self.threads.retain(|t| &t.id != from);
-                self.merged.insert(from.clone(), into.clone());
-            }
-            Change::ThoughtCorrected { thought_id, accept } => {
-                let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) else { return };
-                let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
-                if *accept && !t.unclear.is_empty() && !t.guess.is_empty() {
-                    t.text = swap(&t.text, &t.unclear, &t.guess);
-                    t.point = swap(&t.point, &t.unclear, &t.guess);
-                }
-                if !*accept && !t.heard.is_empty() && !t.fixed.is_empty() {
-                    t.text = swap(&t.text, &t.fixed, &t.heard);
-                    t.point = swap(&t.point, &t.fixed, &t.heard);
-                    t.heard.clear();
-                    t.fixed.clear();
-                }
-                t.unclear.clear();
-                t.guess.clear();
-                let point = t.point.clone();
-                // The thread's last point is a copy; keep it in step.
-                if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
-                    if th.last_point == old_point {
-                        th.last_point = point;
-                    }
-                }
-            }
+            Change::ThreadMerged { from, into } => self.merge(from, into),
+            Change::ThoughtCorrected { thought_id, accept } => self.correct(thought_id, *accept),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
                     self.suggestions.push(suggestion.clone());
@@ -385,6 +365,60 @@ impl World {
         }
     }
 
+    /// Folds thread `from` into `into`: its thoughts, branches, ideas and tasks, and everyone on it, move over,
+    /// and a change still aimed at `from` lands on `into` (see `resolve`). Nothing happens when `into` is
+    /// `from` or doesn't exist.
+    fn merge(&mut self, from: &str, into: &str) {
+        if from == into || self.thread(into).is_none() {
+            return;
+        }
+        for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from)) {
+            t.thread_id = Some(into.into());
+        }
+        for th in self.threads.iter_mut().filter(|t| t.parent_id.as_deref() == Some(from)) {
+            th.parent_id = Some(into.into());
+        }
+        for s in self.suggestions.iter_mut().filter(|s| s.thread_id == from) {
+            s.thread_id = into.into();
+        }
+        for a in self.actions.iter_mut().filter(|a| a.thread_id == from) {
+            a.thread_id = into.into();
+        }
+        if self.active.as_deref() == Some(from) {
+            self.active = Some(into.into());
+        }
+        for id in self.active_by.values_mut().filter(|id| **id == from) {
+            *id = into.into();
+        }
+        self.threads.retain(|t| t.id != from);
+        self.merged.insert(from.into(), into.into());
+    }
+
+    /// A "Did you mean …?" answered: see `Change::ThoughtCorrected`.
+    fn correct(&mut self, thought_id: &str, accept: bool) {
+        let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
+        let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
+        if accept && !t.unclear.is_empty() && !t.guess.is_empty() {
+            t.text = swap(&t.text, &t.unclear, &t.guess);
+            t.point = swap(&t.point, &t.unclear, &t.guess);
+        }
+        if !accept && !t.heard.is_empty() && !t.fixed.is_empty() {
+            t.text = swap(&t.text, &t.fixed, &t.heard);
+            t.point = swap(&t.point, &t.fixed, &t.heard);
+            t.heard.clear();
+            t.fixed.clear();
+        }
+        t.unclear.clear();
+        t.guess.clear();
+        let point = t.point.clone();
+        // The thread's last point is a copy; keep it in step.
+        if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
+            if th.last_point == old_point {
+                th.last_point = point;
+            }
+        }
+    }
+
     /// The same change with thread ids followed through merges.
     fn resolved<'a>(&self, change: &'a Change) -> Cow<'a, Change> {
         let id = match change {
@@ -399,6 +433,10 @@ impl World {
             | Change::ThreadPicture { thread_id, .. } => Some(thread_id),
             Change::SuggestionAdded { suggestion } => Some(&suggestion.thread_id),
             Change::ActionProposed { action } => Some(&action.thread_id),
+            // Made from a snapshot taken before a slow step (an import's pauses, the placer's model call),
+            // so a merge may have moved their thread or parent meanwhile.
+            Change::ThoughtAdded { thought } => thought.thread_id.as_ref(),
+            Change::ThreadAdded { thread } => thread.parent_id.as_ref(),
             _ => None,
         };
         // Most changes don't name a merged thread. Apply those directly instead of copying
@@ -419,6 +457,8 @@ impl World {
             | Change::ThreadPicture { thread_id, .. } => *thread_id = self.resolve(thread_id),
             Change::SuggestionAdded { suggestion } => suggestion.thread_id = self.resolve(&suggestion.thread_id),
             Change::ActionProposed { action } => action.thread_id = self.resolve(&action.thread_id),
+            Change::ThoughtAdded { thought } => thought.thread_id = thought.thread_id.as_deref().map(|id| self.resolve(id)),
+            Change::ThreadAdded { thread } => thread.parent_id = thread.parent_id.as_deref().map(|id| self.resolve(id)),
             _ => {}
         }
         Cow::Owned(c)
@@ -744,6 +784,35 @@ mod tests {
     }
 
     #[test]
+    fn a_merge_moves_everything_on_the_thread_and_later_changes_follow() {
+        let mut world = World::default();
+        for (id, parent) in [("T1", None), ("T2", None), ("T3", Some("T1"))] {
+            world.apply(&Change::ThreadAdded { thread: test_thread(id, parent) });
+        }
+        let new = super::ItemStatus::New;
+        world.apply(&Change::ThoughtAdded { thought: test_thought("a", "User", "T1") });
+        world.apply(&Change::SuggestionAdded {
+            suggestion: super::Suggestion { id: "s".into(), thread_id: "T1".into(), text: "Ask Sam".into(), status: new },
+        });
+        world.apply(&Change::ActionProposed {
+            action: super::Action { id: "x".into(), thread_id: "T1".into(), kind: "reminder".into(), title: "Pay".into(), when: String::new(), status: new, done_ms: None },
+        });
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        // Never into itself, or into a thread that isn't there.
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T1".into() });
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T9".into() });
+        assert!(world.thread("T1").is_some() && world.merged.is_empty());
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        assert!(world.thread("T1").is_none());
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T2"));
+        assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "its branch");
+        assert_eq!((world.suggestions[0].thread_id.as_str(), world.actions[0].thread_id.as_str()), ("T2", "T2"));
+        assert_eq!((world.active.as_deref(), world.active_for("User").map(String::as_str)), (Some("T2"), Some("T2")));
+        world.apply(&Change::ThreadRenamed { thread_id: "T1".into(), title: "Rent".into() });
+        assert_eq!(world.thread("T2").unwrap().title, "Rent", "a late change follows the merge");
+    }
+
+    #[test]
     fn resolve_follows_merges_and_survives_a_cycle() {
         let mut world = World::default();
         world.merged.insert("T1".into(), "T2".into());
@@ -771,11 +840,17 @@ mod tests {
             {"type":"active_changed", "thread_id":"T1", "speaker":"Guest"},
             {"type":"suggestion_added", "suggestion":{"id":"s", "thread_id":"T1", "text":"an idea", "status":"new"}},
             {"type":"action_proposed", "action":{"id":"a", "thread_id":"T2", "kind":"reminder", "title":"a task", "when":"", "status":"new", "done_ms":null}},
-            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"}
+            {"type":"tag_suggested", "thread_id":"T1", "tag":"#late"},
+            // An imported point, and a branch the placer started, both aimed at a thread merged meanwhile.
+            {"type":"thought_added", "thought":{"id":"b", "speaker":"you", "text":"imported", "point":"imported", "thread_id":"T1",
+                "placed":true, "unclear":"", "at_ms":1, "place_ms":null}},
+            {"type":"thread_added", "thread":{"id":"T4", "title":"T4", "parent_id":"T2", "status":"open", "last_point":"", "touched_ms":5}}
         ])).unwrap();
         let records = serde_json::to_string(&late).unwrap();
         for change in &late { world.apply(change); }
         assert_eq!(serde_json::to_string(&late).unwrap(), records);
+        assert_eq!(world.thoughts[1].thread_id.as_deref(), Some("T3"), "not on a thread that's gone");
+        assert_eq!(world.thread("T4").unwrap().parent_id.as_deref(), Some("T3"), "a branch, not a root");
         assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T3"));
         assert_eq!(world.active_for("Guest").map(String::as_str), Some("T3"));
         assert_eq!(world.thread("T3").unwrap().last_point, "a point");
@@ -893,6 +968,7 @@ mod tests {
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
             // Aimed at the merged thread, so it follows the merge on replay too.
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget and demo".into() },
@@ -943,7 +1019,8 @@ mod tests {
                 | Change::ThreadPicture { .. }
                 | Change::ThoughtCorrected { .. }
                 | Change::ThoughtSplit { .. }
-                | Change::ThoughtSkipped { .. } => {}
+                | Change::ThoughtSkipped { .. }
+                | Change::MessagesRead { .. } => {}
             }
         }
         changes
@@ -954,7 +1031,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 25, "one of each kind of change");
+        assert_eq!(kinds.len(), 26, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -994,7 +1071,8 @@ mod tests {
         assert_eq!((w.suggestions[0].thread_id.as_str(), w.actions[0].thread_id.as_str()), ("T3", "T3"));
         assert_eq!((w.actions[0].status, w.actions[0].done_ms), (super::ItemStatus::Done, Some(300)));
         assert_eq!(w.apps.len(), 1);
-        assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}]) && !w.apps[0].enabled);
+        assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}, crate::apps::Publisher::Card { .. }]) && !w.apps[0].enabled);
+        assert!(w.apps[0].purpose.contains("tune"), "the purpose says what it does");
         assert_eq!(w.recaps[0].plans[0].text, "Show the Palace view at the end.");
     }
 

@@ -4,7 +4,7 @@
 
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
-use anyhow::{anyhow, bail, Context};
+use anyhow::Context;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -18,8 +18,9 @@ titles: better thread titles (up to 5 words), only where clearly better; a threa
 merges: threads that are really the same topic, merging the later id into the earlier; \
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
-tags: short lowercase hashtags naming a thread's topic (for example #rent, #hackathon), only for threads with fewer than 3 (each thread lists the ones it has), \
-never one it has, reusing tags across threads when topics overlap. \
+tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
+#hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
+Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
@@ -75,19 +76,29 @@ struct Task {
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
 /// - right away when they come back to the window, so the map is tidy when they look;
-/// - at most every 10 s (longer after failed passes), and only when something changed.
+/// - at most every 10 s (longer after failed passes), and only when something changed;
+/// - a pass that comes back while they talk lands at the next pause (2 s quiet), not mid-sentence.
 pub async fn run(core: Arc<Core>) {
     // Start from what the journal already holds, so a restart doesn't re-tidy the whole map.
     let start = core.snapshot();
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     let mut failures = 0;
+    // A finished pass that came back while they were talking, with the map it was sent: it lands at the next pause.
+    let mut held: Option<(Pass, Arc<World>)> = None;
     loop {
         tokio::select! {
             _ = core.wake.notified() => {}
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
         let looked = core.take_looked();
+        if let Some((waiting, sent)) = held.take() {
+            if core.quiet_ms() < 2_000 {
+                held = Some((waiting, sent));
+                continue;
+            }
+            land(&core, waiting, &sent, "held back until this pause");
+        }
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
         let new_thoughts = placed.saturating_sub(seen_thoughts);
@@ -95,18 +106,22 @@ pub async fn run(core: Arc<Core>) {
         let quiet = core.quiet_ms() >= 4_000;
         let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
         let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
-        if !due || core.key.is_none() {
+        if !due || core.key().is_err() {
             continue;
         }
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         let result = pass(&core, &world, since).await;
+        let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
         match result {
-            // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
-            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
-            Ok(changes) if !changes.is_empty() => core.commit(changes),
-            Ok(_) => {}
+            // Talking resumed while the model worked: move nothing under them; it lands at the next pause, a few
+            // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
+            Ok(answer) if core.quiet_ms() < 2_000 => {
+                tracing::info!("refiner pass in {took} ms: held back, talk resumed");
+                held = Some((answer, world));
+            }
+            Ok(answer) => land(&core, answer, &world, &format!("in {took} ms")),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
@@ -116,18 +131,60 @@ pub async fn run(core: Arc<Core>) {
     }
 }
 
+/// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
+/// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
+/// merged, or a thread heard more (see `drop_stale_titles`).
+fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
+    let world = core.snapshot();
+    drop_stale_titles(&mut answer, sent, &world);
+    let changes = changes(&world, answer);
+    tracing::info!("refiner pass {when}: {} changes", changes.len());
+    if !changes.is_empty() {
+        core.commit(changes);
+    }
+}
+
+/// Leaves out titles for threads that heard words the pass didn't see: placed there since it was sent, or still
+/// being placed (on the thread that was active when they were said). Those words may name the thread anew ("call
+/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them.
+fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
+    let seen: HashSet<&str> = sent.thoughts.iter().filter(|t| t.placed).map(|t| t.id.as_str()).collect();
+    let heard: HashSet<&str> =
+        now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
+    pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
+}
+
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
 /// so a pass that keeps failing doesn't resend the whole map every 10 s for good.
 fn rest_ms(failures: u32) -> u64 {
     10_000 << failures.min(5)
 }
 
-async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Change>> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
-    let map = describe(world, since);
+async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
+    let body = request(world, since, &chrono_today());
+    // A pass runs in the background, so it can wait: two minutes is far past any real answer.
+    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
+    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
+    serde_json::from_str(content).context("answer wasn't the expected JSON")
+}
+
+/// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
+/// (dismissed ones too, which the person said no to), so the prompt doesn't grow with every idea ever shown.
+fn existing(world: &World) -> Vec<String> {
+    let suggestions = &world.suggestions[world.suggestions.len().saturating_sub(30)..];
+    let actions = &world.actions[world.actions.len().saturating_sub(30)..];
+    suggestions
+        .iter()
+        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
+        .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
+        .collect()
+}
+
+/// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on it.
+fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
+    let map = describe(world, since, today);
     let existing = existing(world);
-    let today = chrono_today();
-    let body = json!({
+    json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort": "low",
         "max_tokens": 6000,
@@ -147,37 +204,15 @@ async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Vec<Chan
             },
             "required": ["titles", "merges", "suggestions", "actions", "tags"]
         }}}
-    });
-    let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
-    let status = response.status();
-    let value: serde_json::Value = response.json().await?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
-    }
-    let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
-    let pass: Pass = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    // Checked against the map as it is now, not as it was sent: an app's card or reminder may have landed
-    // while the model worked, and a second idea on that thread would only repeat it.
-    Ok(changes(&core.snapshot(), pass))
-}
-
-/// The suggestions and actions already on the map, so the model doesn't repeat them: the latest 30 of each
-/// (dismissed ones too, which the person said no to), so the prompt doesn't grow with every idea ever shown.
-fn existing(world: &World) -> Vec<String> {
-    let suggestions = &world.suggestions[world.suggestions.len().saturating_sub(30)..];
-    let actions = &world.actions[world.actions.len().saturating_sub(30)..];
-    suggestions
-        .iter()
-        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
-        .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
-        .collect()
+    })
 }
 
 /// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
 /// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
 /// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
 /// Each thread shows its tags, and with more than one speaker (a room) each thought says who said it.
-fn describe(world: &World, since: u64) -> String {
+/// Older points carry their local said date, including the last point in a quiet line.
+fn describe(world: &World, since: u64, today: &str) -> String {
     let points = |t: &Thread| -> Vec<&Thought> {
         world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
     };
@@ -189,12 +224,23 @@ fn describe(world: &World, since: u64) -> String {
         if t.tags.is_empty() { String::new() } else { format!(" tags: {}", t.tags.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(" ")) }
     };
     let named = world.thoughts.iter().map(|p| p.speaker.as_str()).collect::<HashSet<_>>().len() > 1;
-    let line = |p: &Thought| if named { format!("  - {}: {}", p.speaker, p.text) } else { format!("  - {}", p.text) };
+    let dated = |p: &Thought| {
+        said_on(p).filter(|day| today.get(..10).is_some_and(|now| day.as_str() < now))
+            .map(|day| format!(" (said {day})")).unwrap_or_default()
+    };
+    let line = |p: &Thought| {
+        let who = if named { format!("{}: ", p.speaker) } else { String::new() };
+        format!("  - {who}{}{}", p.text, dated(p))
+    };
     let quiet: Vec<String> = world
         .threads
         .iter()
         .filter(|t| !recent(t))
-        .map(|t| format!("{}: {} (parent: {}){} last: {}", t.id, t.title, parent(t), tags(t), t.last_point))
+        .map(|t| {
+            let said = points(t).into_iter().rev().find(|p| p.point == t.last_point || p.text == t.last_point)
+                .map(dated).unwrap_or_default();
+            format!("{}: {} (parent: {}){} last: {}{said}", t.id, t.title, parent(t), tags(t), t.last_point)
+        })
         .collect();
     let busy: Vec<String> = world
         .threads
@@ -214,21 +260,42 @@ fn describe(world: &World, since: u64) -> String {
 }
 
 fn changes(world: &World, pass: Pass) -> Vec<Change> {
+    changes_on(world, pass, &chrono_today())
+}
+
+/// The answer as changes, keeping only what a person wouldn't undo; `today` is "YYYY-MM-DD (Weekday)".
+fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     let exists = |id: &str| world.thread(id).is_some();
+    // Ids are the map's internals: an idea, task or title that names one ("before recording T3 setup") is left out.
+    let names_an_id = |text: &str| text.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && world.thread(&world.resolve(w)).is_some());
     let mut out = Vec::new();
     for t in pass.titles {
+        // A new title is short and more than a change of case, and a name the person gave stays theirs
+        // ("we're calling this Project Falcon"), unless they later gave it the proposed name.
+        let keep = |th: &Thread| {
+            // Said order, including cues within a thought; split thoughts can share a timestamp.
+            let last_named = |title: &str| {
+                said_in(world, &th.id).enumerate().filter_map(|(i, text)| named_at(title, text).map(|at| (i, at))).last()
+            };
+            words(&t.title) == words(&th.title)
+                || last_named(&th.title).is_some_and(|old| !last_named(&t.title).is_some_and(|new| new > old))
+        };
+        if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) {
+            continue;
+        }
         let current = world.thread(&t.thread_id).map(|th| th.title.as_str());
-        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) {
+        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) && !names_an_id(&t.title) {
             out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
         }
     }
     // Each merge is checked against the map the earlier ones leave: a chain (T3 into T1, then T5 into T3)
     // lands on the thread that's left, and a thread never goes into its own branch, which would make the
-    // branch its own parent and drop it from the map.
+    // branch its own parent and drop it from the map. Two threads with no word in common aren't one topic.
     let mut merged = world.clone();
     for m in pass.merges {
         let into = merged.resolve(&m.into);
-        if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) {
+        let shared = || !vocabulary(&merged, &m.from).is_disjoint(&vocabulary(&merged, &into));
+        if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) && shared() {
             let change = Change::ThreadMerged { from: m.from, into };
             merged.apply(&change);
             out.push(change);
@@ -237,18 +304,37 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     // One idea per thread, an app's card included, and one per thread in a pass too.
     let mut suggested = HashSet::new();
     for s in pass.suggestions {
+        // Never an idea that only says again what the person said on that thread.
+        if said_in(world, &s.thread_id).any(|text| repeats(&s.text, text)) {
+            continue;
+        }
         let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
-        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && suggested.insert(s.thread_id.clone()) {
+        if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && !names_an_id(&s.text) && suggested.insert(s.thread_id.clone()) {
             out.push(Change::SuggestionAdded {
                 suggestion: Suggestion { id: new_id("sg"), thread_id: s.thread_id, text: s.text.trim().into(), status: ItemStatus::New },
             });
         }
     }
-    for a in pass.actions {
-        let repeated = world.actions.iter().any(|x| x.title.eq_ignore_ascii_case(a.title.trim()));
+    for mut a in pass.actions {
+        // Never a past day, and the day they named for it; see `day`.
+        let (said, point) = about(world, &a.thread_id, &a.title);
+        let said_on = point.and_then(said_on);
+        a.when = day(a.when.trim(), &said, today, said_on.as_deref().unwrap_or(today));
         // A real day only: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1.
         let when = Some(a.when.trim()).filter(|w| crate::apps::valid_date(w)).unwrap_or_default();
-        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated {
+        // The map and earlier actions in this pass share one guard, across reminders and events.
+        let normalized = |text: &str| words(&text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>());
+        let title = normalized(&a.title);
+        let repeated = world.actions.iter().chain(out.iter().filter_map(|c| match c {
+            Change::ActionProposed { action } => Some(action),
+            _ => None,
+        })).any(|x| {
+            let other = normalized(&x.title);
+            x.thread_id == a.thread_id && !title.is_empty() && !other.is_empty()
+                && (title == other || (!when.is_empty() && x.when == when
+                    && (title.iter().all(|w| other.contains(w)) || other.iter().all(|w| title.contains(w)))))
+        });
+        if exists(&a.thread_id) && !a.title.trim().is_empty() && !repeated && !names_an_id(&a.title) {
             out.push(Change::ActionProposed {
                 action: Action {
                     id: new_id("ac"),
@@ -268,10 +354,17 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
     for group in pass.tags {
         let Some(thread) = world.thread(&group.thread_id) else { continue };
         let names = tagged.entry(thread.id.as_str()).or_insert_with(|| thread.tags.iter().map(|t| t.name.clone()).collect());
+        // Its title and any this pass gives it: a tag of only their words (#demo on "Demo Opening Hook") adds nothing.
+        let titles: Vec<String> = std::iter::once(thread.title.clone())
+            .chain(out.iter().filter_map(|c| match c {
+                Change::ThreadRenamed { thread_id, title } if *thread_id == thread.id => Some(title.clone()),
+                _ => None,
+            }))
+            .collect();
         for raw in group.tags {
             let word: String = raw.trim().trim_start_matches('#').to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '-').collect();
             let tag = format!("#{word}");
-            if names.len() >= TAGS || word.is_empty() || names.contains(&tag) {
+            if names.len() >= TAGS || word.is_empty() || names.contains(&tag) || titles.iter().any(|t| in_title(&word, t)) {
                 continue;
             }
             names.push(tag.clone());
@@ -295,11 +388,178 @@ fn above(world: &World, id: &str, of: &str) -> bool {
     false
 }
 
+/// What the person said on a thread, in order.
+fn said_in<'a>(world: &'a World, id: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    world.thoughts.iter().filter(move |p| p.placed && p.thread_id.as_deref() == Some(id)).map(|p| p.text.as_str())
+}
+
+/// The last cue for a name they gave in so many words: "we're calling this Project Falcon", "call it Garden Project",
+/// "it's called Falcon"; not just words they used ("I need to file the quarterly taxes").
+fn named_at(title: &str, text: &str) -> Option<usize> {
+    const CUES: [&str; 7] = ["call", "calling", "called", "name", "named", "title", "titled"];
+    let (title, text) = (words(title), words(text));
+    if title.is_empty() {
+        return None;
+    }
+    text.windows(title.len()).enumerate().rev().find_map(|(i, w)| {
+        if w != title.as_slice() {
+            return None;
+        }
+        let start = i.saturating_sub(2);
+        let cue = text[start..i].iter().rposition(|c| CUES.contains(&c.as_str())).map(|at| start + at)?;
+        // "Don't call it X" or "never name it X" turns a name down instead of giving it.
+        const NOT: [&str; 6] = ["don", "dont", "not", "never", "stop", "shouldn"];
+        let refused = text[cue.saturating_sub(2)..cue].iter().any(|w| NOT.contains(&w.as_str()));
+        (!refused).then_some(cue)
+    })
+}
+
+/// The words that carry a thread's meaning (see `content`): its title's and what was said on it.
+fn vocabulary(world: &World, id: &str) -> HashSet<String> {
+    world.thread(id).map(|t| t.title.as_str()).into_iter().chain(said_in(world, id)).flat_map(content).collect()
+}
+
+/// What was said about an action: its title, and the sentences on its thread with the most of its words
+/// ("the water bill is due on the fifteenth", not "I paid the gas bill last Friday"), with their source point.
+fn about<'a>(world: &'a World, thread: &'a str, title: &'a str) -> (Vec<&'a str>, Option<&'a Thought>) {
+    let words = content(title);
+    let sentences: Vec<(&str, usize, &Thought)> = world.thoughts.iter()
+        .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread))
+        .flat_map(|p| {
+            let words = &words;
+            p.text.split(['.', '!', '?', ';']).map(move |s| (s, content(s).intersection(words).count(), p))
+        })
+        .collect();
+    let most = sentences.iter().map(|(_, n, _)| *n).max().unwrap_or(0);
+    let point = sentences.iter().find(|(_, n, _)| most > 0 && *n == most).map(|(_, _, p)| *p);
+    let said = std::iter::once(title).chain(sentences.into_iter().filter(|(_, n, _)| most > 0 && *n == most).map(|(s, _, _)| s)).collect();
+    (said, point)
+}
+
+/// The thought's local calendar day; a missing timestamp leaves the old today-based behavior in place.
+fn said_on(point: &Thought) -> Option<String> {
+    if point.at_ms == 0 { return None; }
+    crate::clock::local(point.at_ms).map(|local| local[..10].to_string())
+}
+
+/// Lowercase words without punctuation: "Mom's birthday!" is mom, s, birthday.
+fn words(text: &str) -> Vec<String> {
+    text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(String::from).collect()
+}
+
+/// A word without its ending, so "bills", "recording" and "organizes" meet "bill", "record" and "organizing".
+fn stem(word: &str) -> String {
+    let mut w = word.to_string();
+    if let Some(end) = ["ing", "ed", "es", "s"].iter().find(|end| w.len() >= end.len() + 3 && w.ends_with(*end) && !w.ends_with("ss")) {
+        w.truncate(w.len() - end.len());
+    }
+    // planning → plann → plan, organize → organiz
+    let b = w.as_bytes();
+    if b.len() >= 4 && b[b.len() - 1] == b[b.len() - 2] {
+        w.pop();
+    }
+    if w.len() >= 4 && w.ends_with('e') {
+        w.pop();
+    }
+    w
+}
+
+/// Words too common to tell two things apart.
+const COMMON: [&str; 44] = [
+    "a", "an", "the", "to", "of", "for", "and", "or", "but", "in", "on", "at", "by", "with", "about", "from", "is", "are", "be", "it",
+    "its", "this", "that", "i", "you", "we", "my", "your", "our", "me", "need", "should", "will", "can", "so", "if", "do", "get", "just",
+    "also", "up", "s", "ll", "oh",
+];
+
+/// The words of a text that carry its meaning, stemmed.
+fn content(text: &str) -> HashSet<String> {
+    words(text).iter().filter(|w| !COMMON.contains(&w.as_str())).map(|w| stem(w)).collect()
+}
+
+/// An idea that mostly says again what was said: at least two of its words, and 60% of them, in one point.
+fn repeats(idea: &str, said: &str) -> bool {
+    let (idea, said) = (content(idea), content(said));
+    let shared = idea.intersection(&said).count();
+    shared >= 2 && shared * 10 >= idea.len() * 6
+}
+
+/// A tag word that's a word of the title, or a few of them run together (#electricbill on "Electric bill").
+fn in_title(tag: &str, title: &str) -> bool {
+    let title: Vec<String> = words(title).iter().map(|w| stem(w)).collect();
+    let parts: Vec<String> = tag.split('-').filter(|p| !p.is_empty()).map(stem).collect();
+    let joined = stem(&tag.replace('-', ""));
+    (!parts.is_empty() && parts.iter().all(|p| title.contains(p))) || (2..=title.len()).any(|n| title.windows(n).any(|w| stem(&w.concat()) == joined))
+}
+
+/// Days since 1970-01-01 for a real YYYY-MM-DD day.
+fn day_number(date: &str) -> Option<i64> {
+    if !crate::apps::valid_date(date) {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| date[r].parse::<i64>().ok();
+    Some(crate::import::days_from_civil(n(0..4)?, n(5..7)?, n(8..10)?))
+}
+
+/// Day 0, 1970-01-01, was a Thursday.
+const WEEK: [&str; 7] = ["thursday", "friday", "saturday", "sunday", "monday", "tuesday", "wednesday"];
+
+/// An action's day as the person would keep it, else none (`said`: the action's title and what they said about it):
+/// - a real day: "Saturday" would show as an invalid date, and "2026-11-31" would become December 1;
+/// - never past: a past day is the model slipping the year (2025-11-10 when it's 2026), so it's the same day at its
+///   nearest occurrence, unless that's the one that just went by, which is no day to remind anyone of;
+/// - the day they named: when their words name one ("Friday", "next Tuesday", "tomorrow"), the date is on it;
+///   relative to `said_on`, not the import day. A different date is dropped rather than shown wrong.
+fn day(when: &str, said: &[&str], today: &str, said_on: &str) -> String {
+    let Some(mut date) = day_number(when) else { return String::new() };
+    // Without today's date (no `date` command) there's nothing to check against.
+    let Some(now) = today.get(..10).and_then(day_number) else { return when.into() };
+    let said_day = said_on.get(..10).and_then(day_number).unwrap_or(now);
+    if date < now {
+        let year = |days: i64| crate::import::civil_from_days(days).0;
+        let nearest = (-1..=1).filter_map(|y| day_number(&format!("{:04}{}", year(now) + y, &when[4..]))).min_by_key(|d| (d - now).abs());
+        match nearest {
+            Some(d) if d >= now => date = d,
+            _ => return String::new(),
+        }
+    }
+    let (mut days, mut weekdays) = (Vec::new(), Vec::new());
+    for text in said {
+        let words = words(text);
+        for (i, word) in words.iter().enumerate() {
+            match word.as_str() {
+                "today" | "tonight" => days.push(said_day),
+                "tomorrow" => days.push(said_day + 1),
+                // "last Friday" is gone; it names no day ahead.
+                w if i == 0 || words[i - 1] != "last" => {
+                    if let Some(weekday) = WEEK.iter().position(|d| *d == w) {
+                        if said_day < now {
+                            // An imported Friday belongs to the week it was said, not the next one now.
+                            let offset = (weekday as i64 - said_day).rem_euclid(7);
+                            let offset = if offset == 0 && i > 0 && words[i - 1] == "next" { 7 } else { offset };
+                            days.push(said_day + offset);
+                        } else {
+                            weekdays.push(weekday);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let named = days.contains(&date) || weekdays.contains(&(date.rem_euclid(7) as usize));
+    if (days.is_empty() && weekdays.is_empty()) || named {
+        let (y, m, d) = crate::import::civil_from_days(date);
+        format!("{y:04}-{m:02}-{d:02}")
+    } else {
+        String::new()
+    }
+}
+
 fn new_id(prefix: &str) -> String {
     format!("{prefix}-{}", uuid::Uuid::new_v4().simple())
 }
 
-/// Today's date as YYYY-MM-DD in local time, from the system's `date` (no extra crate).
+/// Today's date in local time, as "2026-11-01 (Sunday)", from the system's `date` (no extra crate).
 fn chrono_today() -> String {
     std::process::Command::new("date")
         .arg("+%Y-%m-%d (%A)")
@@ -312,9 +572,21 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, describe, existing, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, drop_stale_titles, existing, named_at, rest_ms, Pass};
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
+    /// A Sunday, as `chrono_today` writes it.
+    const TODAY: &str = "2026-11-01 (Sunday)";
+
+    #[test]
+    fn a_name_turned_down_is_not_a_name_given() {
+        assert_eq!(named_at("Project Falcon", "Call it Project Falcon"), Some(0));
+        assert_eq!(named_at("Project Falcon", "Don't call it Project Falcon"), None);
+        assert_eq!(named_at("Falcon", "We shouldn't name it Falcon"), None);
+        assert_eq!(named_at("Falcon", "I'd never call it Falcon"), None);
+        // An earlier real naming still counts when a later mention turns it down.
+        assert_eq!(named_at("Falcon", "Call it Falcon. Don't call it Falcon"), Some(0));
+    }
     #[test]
     fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
         let rests: Vec<u64> = (0..8).map(|failures| rest_ms(failures) / 1000).collect();
@@ -362,7 +634,7 @@ mod tests {
             {"thread_id": "T1", "kind": "reminder", "title": "Pay rent", "when": "2026-11-31"},
         ]}))
         .unwrap();
-        let actions: Vec<[String; 3]> = changes(&world, pass)
+        let actions: Vec<[String; 3]> = changes_on(&world, pass, TODAY)
             .into_iter()
             .filter_map(|c| match c {
                 Change::ActionProposed { action } => Some([action.title, action.kind, action.when]),
@@ -371,6 +643,41 @@ mod tests {
             .collect();
         let expected = [["Demo day", "event", "2026-11-04"], ["Picnic", "reminder", ""], ["Pay rent", "reminder", ""]];
         assert_eq!(actions, expected.map(|a| a.map(String::from)), "an event without a real day is a reminder");
+    }
+
+    #[test]
+    fn equivalent_actions_on_one_thread_are_only_proposed_once() {
+        let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], ..World::default() };
+        let pass = |actions| serde_json::from_value::<Pass>(serde_json::json!({ "actions": actions })).unwrap();
+        let task = |thread: &str, title: &str, kind: &str, when: &str| serde_json::json!({
+            "thread_id": thread, "title": title, "kind": kind, "when": when
+        });
+        let first = changes_on(&world, pass(vec![
+            task("T1", "Pay rent", "reminder", "2026-11-04"),
+            task("T1", "PAY RENT!", "event", "2026-11-04"),
+            task("T1", "P.a.y rent!", "event", "2026-11-04"),
+            task("T1", "Pay November rent", "event", "2026-11-04"),
+            task("T1", "Pay electric bill", "reminder", "2026-11-04"),
+            task("T2", "Pay rent", "reminder", "2026-11-04"),
+        ]), TODAY);
+        let titles: Vec<_> = first.iter().filter_map(|c| match c {
+            Change::ActionProposed { action } => Some((action.thread_id.as_str(), action.title.as_str())),
+            _ => None,
+        }).collect();
+        assert_eq!(titles, [("T1", "Pay rent"), ("T1", "Pay electric bill"), ("T2", "Pay rent")]);
+        for change in first { world.apply(&change); }
+        assert!(changes_on(&world, pass(vec![
+            task("T1", "Pay rent!", "event", "2026-11-05"),
+            task("T1", "Pa.y rent", "event", "2026-11-05"),
+            task("T1", "Pay November rent", "event", "2026-11-04"),
+            task("T1", "Electric bill", "event", "2026-11-04"),
+        ]), TODAY).is_empty(), "existing actions use the same guard in both containment directions");
+        let distinct = changes_on(&world, pass(vec![
+            task("T1", "Pay December rent", "event", "2026-12-04"),
+            task("T1", "Rent", "reminder", ""),
+            task("T1", "Pay water bill", "reminder", "2026-11-04"),
+        ]), TODAY);
+        assert_eq!(distinct.len(), 3, "containment needs a real matching date; shared words alone aren't duplicates");
     }
 
     #[test]
@@ -467,6 +774,33 @@ mod tests {
     }
 
     #[test]
+    fn ideas_tasks_and_titles_that_name_a_thread_id_are_left_out() {
+        let world = World { threads: vec![thread("T2", None), thread("T3", None)], ..World::default() };
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [{"thread_id": "T2", "title": "Notes for T3"}, {"thread_id": "T3", "title": "Recording setup"}],
+            "suggestions": [
+                {"thread_id": "T2", "text": "Draft README before recording T3 setup?"},
+                {"thread_id": "T3", "text": "Test the dark background before recording"},
+            ],
+            "actions": [
+                {"thread_id": "T2", "kind": "reminder", "title": "Finish T2", "when": ""},
+                {"thread_id": "T2", "kind": "reminder", "title": "Write the README", "when": ""},
+            ],
+        }))
+        .unwrap();
+        let texts: Vec<String> = changes(&world, pass)
+            .into_iter()
+            .map(|c| match c {
+                Change::ThreadRenamed { title, .. } => title,
+                Change::SuggestionAdded { suggestion } => suggestion.text,
+                Change::ActionProposed { action } => action.title,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(texts, ["Recording setup", "Test the dark background before recording", "Write the README"]);
+    }
+
+    #[test]
     fn the_model_sees_each_threads_tags_and_in_a_room_who_said_what() {
         let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], active: Some("T1".into()), ..World::default() };
         world.threads[0].tags = vec![Tag { name: "#demo".into(), kept: true }];
@@ -487,11 +821,11 @@ mod tests {
             place_ms: None,
         };
         world.thoughts.push(said("a", "you"));
-        let alone = describe(&world, 0);
+        let alone = describe(&world, 0, TODAY);
         assert!(alone.contains("T2: Topic T2 (parent: none) tags: #rent #home last: "), "{alone}");
         assert!(alone.contains("T1: Topic T1 (parent: none) tags: #demo\n  - a said"), "{alone}");
         world.thoughts.push(said("b", "Sam"));
-        let room = describe(&world, 0);
+        let room = describe(&world, 0, TODAY);
         assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
     }
 
@@ -528,10 +862,328 @@ mod tests {
             thoughts: (1..=12).map(|n| thought(n, "T1")).chain([thought(101, "T2")]).collect(),
             ..World::default()
         };
-        let text = describe(&world, 50);
+        let text = describe(&world, 50, TODAY);
         assert!(text.contains("T1: Topic T1 (parent: none) last: last on T1"));
         assert!(!text.contains("thought 12\n") && text.contains("thought 101"));
-        let all = describe(&world, 0);
-        assert!(all.contains("thought 12") && !all.contains("thought 4\n"), "keeps only the latest 8");
+        let all = describe(&world, 0, TODAY);
+        assert!(all.contains("thought 12") && !all.contains("  - thought 4"), "keeps only the latest 8");
+    }
+
+    #[test]
+    fn older_points_show_their_local_said_day_without_changing_the_cached_order() {
+        let mut world = map(&[
+            ("T1", "Quiet", &["Call the electrician tomorrow."]),
+            ("T2", "Active", &["Pay rent Friday.", "Buy milk tomorrow."]),
+        ]);
+        world.active = Some("T2".into());
+        world.thoughts[0].at_ms = crate::clock::ms("2026-10-29 23:30").unwrap();
+        world.thoughts[1].at_ms = crate::clock::ms("2026-10-22 00:30").unwrap();
+        world.thoughts[2].at_ms = crate::clock::ms("2026-11-01 00:30").unwrap();
+        world.threads[0].last_point = world.thoughts[0].text.clone();
+        for room in [false, true] {
+            if room { world.thoughts[1].speaker = "Sam".into(); }
+            let text = describe(&world, u64::MAX, TODAY);
+            assert!(text.contains("last: Call the electrician tomorrow. (said 2026-10-29)"), "{text}");
+            assert!(text.contains("Pay rent Friday. (said 2026-10-22)"), "{text}");
+            assert!(text.ends_with("Buy milk tomorrow."), "today stays unmarked: {text}");
+            assert!(text.find("T1: Quiet").unwrap() < text.find("T2: Active").unwrap(), "quiet prefix first");
+        }
+    }
+
+    #[test]
+    fn imported_relative_dates_use_the_best_matching_points_day() {
+        for (said_on, text, title, when, today, expected) in [
+            ("2026-10-29", "Call the electrician tomorrow.", "Call electrician", "2026-11-02", TODAY, ""),
+            ("2026-10-29", "Call the electrician tomorrow.", "Call electrician", "2026-10-30", TODAY, ""),
+            ("2026-11-01", "Call the electrician tomorrow.", "Call electrician", "2026-11-02", TODAY, "2026-11-02"),
+            ("2026-11-01", "Call the electrician tomorrow.", "Call electrician", "2026-11-03", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-11-06", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-23", TODAY, ""),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-23", "2026-10-23 (Friday)", "2026-10-23"),
+            ("2026-10-22", "Pay rent Friday.", "Pay rent", "2026-10-30", "2026-10-23 (Friday)", ""),
+            ("2026-10-29", "Call the dentist next Tuesday.", "Call dentist", "2026-11-03", TODAY, "2026-11-03"),
+            ("2026-10-29", "Call the dentist next Tuesday.", "Call dentist", "2026-11-10", TODAY, ""),
+        ] {
+            // A newer point on the same thread must not supply this action's day.
+            let mut world = map(&[("T1", "Errands", &[text, "Buy milk tomorrow."])]);
+            world.thoughts[0].at_ms = crate::clock::ms(&format!("{said_on} 23:30")).unwrap();
+            let pass = || serde_json::from_value::<Pass>(serde_json::json!({ "actions": [
+                {"thread_id": "T1", "kind": "event", "title": title, "when": when}
+            ]})).unwrap();
+            let kind = if expected.is_empty() { "reminder" } else { "event" };
+            for _ in 0..2 {
+                let changes = changes_on(&world, pass(), today);
+                assert_eq!(shown(&changes), [format!("T1 {kind} {title} {expected}")], "{said_on}: {text} -> {when}");
+                let mut landed = world.clone();
+                for change in changes { landed.apply(&change); }
+                assert!(changes_on(&landed, pass(), today).is_empty(), "an existing action stays deduplicated");
+                world.thoughts.reverse();
+            }
+        }
+    }
+
+    /// A map of (id, title, what was said) rows.
+    fn map(rows: &[(&str, &str, &[&str])]) -> World {
+        let mut world = World::default();
+        let at_ms = crate::clock::ms("2026-11-01 12:00").unwrap();
+        for (id, title, said) in rows {
+            world.threads.push(Thread { title: title.to_string(), ..thread(id, None) });
+            for text in *said {
+                let n = world.thoughts.len();
+                world.thoughts.push(Thought {
+                    id: format!("th-{n}"),
+                    speaker: "you".into(),
+                    text: text.to_string(),
+                    point: String::new(),
+                    thread_id: Some(id.to_string()),
+                    placed: true,
+                    unclear: String::new(),
+                    guess: String::new(),
+                    heard: String::new(),
+                    fixed: String::new(),
+                    complete: true,
+                    at_ms,
+                    place_ms: None,
+                });
+            }
+        }
+        world
+    }
+
+    fn shown(out: &[Change]) -> Vec<String> {
+        out.iter()
+            .filter_map(|c| match c {
+                Change::ThreadRenamed { thread_id, title } => Some(format!("{thread_id} title {title}")),
+                Change::ThreadMerged { from, into } => Some(format!("{from} into {into}")),
+                Change::SuggestionAdded { suggestion: s } => Some(format!("{} idea {}", s.thread_id, s.text)),
+                Change::ActionProposed { action: a } => Some(format!("{} {} {} {}", a.thread_id, a.kind, a.title, a.when)),
+                Change::TagSuggested { thread_id, tag } => Some(format!("{thread_id} {tag}")),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn rename(world: &World, title: &str) -> Vec<String> {
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [{"thread_id": "T1", "title": title}]
+        }))
+        .unwrap();
+        shown(&changes_on(world, pass, TODAY))
+    }
+
+    #[test]
+    fn the_latest_naming_wins_in_said_order_not_timestamp_order() {
+        let old = "We're calling this Project Falcon.";
+        let new = "Actually, let's call it Quick Launch.";
+        for (said, allowed) in [
+            (vec![old, new], true),
+            (vec![new, old], false),
+            (vec![old, new, old], false),
+            (vec![old, new, old, new], true),
+            (vec![old], false),
+            (vec![old, "Quick Launch would look good on the landing page."], false),
+            (vec!["This is named Project Falcon.", "The project is titled Quick Launch."], true),
+            (vec!["It's called Project Falcon.", "Let's name it Quick Launch."], true),
+            (vec!["The title is Project Falcon.", new], true),
+        ] {
+            // Split thoughts can share a timestamp; imported or split thoughts need not have increasing times.
+            for equal_times in [true, false] {
+                let mut world = map(&[("T1", "Project Falcon", &said)]);
+                let count = world.thoughts.len();
+                for (i, thought) in world.thoughts.iter_mut().enumerate() {
+                    thought.at_ms = if equal_times { 1000 } else { (count - i) as u64 * 1000 };
+                }
+                let expected = if allowed { vec!["T1 title Quick Launch"] } else { vec![] };
+                assert_eq!(rename(&world, "Quick Launch"), expected, "{said:?}, equal times: {equal_times}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_thread_that_heard_more_while_the_pass_was_out_keeps_its_title_until_the_next() {
+        // The pass went out after "call it Falcon" and came back after "actually, call it Eagle".
+        let sent = map(&[("T1", "Codename", &["Let's call it Falcon."]), ("T2", "Groceries", &["Buy oat milk."])]);
+        let titles = |now: &World| {
+            let mut pass: Pass = serde_json::from_value(serde_json::json!({
+                "titles": [{"thread_id": "T1", "title": "Falcon"}, {"thread_id": "T2", "title": "Grocery list"}]
+            }))
+            .unwrap();
+            drop_stale_titles(&mut pass, &sent, now);
+            shown(&changes_on(now, pass, TODAY))
+        };
+        assert_eq!(titles(&sent), ["T1 title Falcon", "T2 title Grocery list"], "nothing new: the pass stands");
+        // Placed since, or still being placed there: the next pass sees it.
+        for placed in [true, false] {
+            let mut now = sent.clone();
+            now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
+            assert_eq!(titles(&now), ["T2 title Grocery list"], "placed: {placed}");
+        }
+    }
+
+    #[test]
+    fn a_later_speaker_in_a_room_can_rename_a_person_named_title() {
+        let mut world = map(&[("T1", "Project Falcon", &["Calling this Project Falcon.", "Let's call it Quick Launch actually."])]);
+        world.thoughts[0].speaker = "User".into();
+        world.thoughts[1].speaker = "Sam".into();
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+        assert!(rename(&world, "Launch plan").is_empty(), "a model-invented title still has no cue");
+        world.thoughts.reverse();
+        assert!(rename(&world, "Quick Launch").is_empty(), "said order applies across speakers too");
+    }
+
+    #[test]
+    fn naming_ignores_case_and_punctuation() {
+        let world = map(&[("T1", "Project Falcon", &["Let's call it 'PROJECT—FALCON', okay?", "No wait, CALL it quick—launch!"])]);
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+    }
+
+    #[test]
+    fn naming_cues_are_ordered_within_a_thought_too() {
+        for (said, allowed) in [
+            ("Call it Project Falcon; actually, let's call it Quick Launch.", true),
+            ("Call it Quick Launch; actually, let's call it Project Falcon.", false),
+            ("Call it Project Falcon; call it Quick Launch; call it Project Falcon.", false),
+            ("Call it Project Falcon; call it Quick Launch; call it Project Falcon; call it Quick Launch.", true),
+        ] {
+            let world = map(&[("T1", "Project Falcon", &[said])]);
+            let expected = if allowed { vec!["T1 title Quick Launch"] } else { vec![] };
+            assert_eq!(rename(&world, "Quick Launch"), expected, "{said}");
+        }
+        for (current, proposed) in [("Project Falcon", "Falcon"), ("Falcon", "Project Falcon")] {
+            let world = map(&[("T1", current, &["Call Project Falcon."])]);
+            assert!(rename(&world, proposed).is_empty(), "two matches of the same cue are not a later naming");
+        }
+    }
+
+    #[test]
+    fn only_placed_naming_on_the_same_thread_can_supersede_a_name() {
+        let mut world = map(&[
+            ("T1", "Project Falcon", &["Call it Project Falcon."]),
+            ("T2", "Other project", &["Call it Quick Launch."]),
+        ]);
+        assert!(rename(&world, "Quick Launch").is_empty(), "another thread's cue doesn't count");
+        world.thoughts[1].thread_id = Some("T1".into());
+        world.thoughts[1].placed = false;
+        assert!(rename(&world, "Quick Launch").is_empty(), "an unplaced cue doesn't count");
+        world.thoughts[1].placed = true;
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+    }
+
+    #[test]
+    fn a_later_naming_does_not_bypass_other_title_guards() {
+        for (current, proposed, cue) in [
+            ("Project Falcon", "project—FALCON!", "Call it project—FALCON!"),
+            ("Project Falcon", "A new title with six words", "Call it A new title with six words."),
+            ("Project Falcon", "Notes for T2", "Call it Notes for T2."),
+        ] {
+            let world = map(&[("T1", current, &["Call it Project Falcon.", cue]), ("T2", "Other project", &[])]);
+            assert!(rename(&world, proposed).is_empty(), "{proposed}");
+        }
+        let world = map(&[("T1", "Project Falcon", &["We're discussing Project Falcon."])]);
+        assert_eq!(rename(&world, "Launch plan"), ["T1 title Launch plan"], "unnamed titles still allow model improvements");
+        assert!(rename(&world, "   ").is_empty());
+        assert!(rename(&World::default(), "Quick Launch").is_empty(), "a missing thread is still rejected");
+    }
+
+    #[test]
+    fn nothing_a_person_would_undo_titles_tags_ideas_and_merges() {
+        let world = map(&[
+            ("T1", "Project Falcon", &["Okay, we're calling this Project Falcon.", "And someone has to own the landing page."]),
+            ("T2", "Demo Opening Hook", &["We open with the mic turning on."]),
+            ("T3", "Electric Bill Autopay", &["I keep forgetting about the electric bill."]),
+            ("T4", "Landlord Lease Email", &["I should email the landlord about the lease."]),
+            ("T5", "Money stuff", &["Oh wait, Mom's birthday is Friday. I need to book that cooking class.", "The one on Main Street."]),
+            ("T8", "Quarterly taxes", &["I need to file the quarterly taxes by January.", "And renew the car registration."]),
+            ("T6", "Pay rent", &["I need to pay rent by the fifth."]),
+            ("T7", "Rent payment", &["For the rent, I'll send the landlord an e-transfer."]),
+        ]);
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [
+                {"thread_id": "T1", "title": "Falcon prototype tests"},
+                {"thread_id": "T2", "title": "Demo opening hook"},
+                {"thread_id": "T3", "title": "Electric bill autopay before the due date"},
+                {"thread_id": "T5", "title": "Mom's birthday class"},
+                {"thread_id": "T8", "title": "Taxes and car registration"},
+            ],
+            "merges": [{"from": "T4", "into": "T3"}, {"from": "T7", "into": "T6"}],
+            "suggestions": [
+                {"thread_id": "T1", "text": "Who will own the landing page?"},
+                {"thread_id": "T2", "text": "Open with the mic turning on"},
+                {"thread_id": "T5", "text": "Check Main Street class availability for Friday?"},
+            ],
+            "tags": [
+                {"thread_id": "T2", "tags": ["#demo", "#hooks", "#hackathon"]},
+                {"thread_id": "T3", "tags": ["#bills", "#electricbill", "#electric-bill", "#money"]},
+                {"thread_id": "T5", "tags": ["#birthday", "#moms-birthday", "#family"]},
+            ],
+        }))
+        .unwrap();
+        assert_eq!(
+            shown(&changes_on(&world, pass, TODAY)),
+            [
+                // Not the name the person gave, a change of case, or over five words; words they only used are fine.
+                "T5 title Mom's birthday class",
+                "T8 title Taxes and car registration",
+                // Lease and electric bill share no word; the rent threads do.
+                "T7 into T6",
+                // Not a point said again; a next step that reuses some words is fine.
+                "T5 idea Check Main Street class availability for Friday?",
+                // Not the title's words, nor those of the title this pass gives it.
+                "T2 #hackathon",
+                "T3 #money",
+                "T5 #family",
+            ]
+        );
+    }
+
+    #[test]
+    fn action_dates_are_never_past_and_fall_on_the_day_said() {
+        // Sunday 1 November; the 3rd and the 10th are Tuesdays.
+        let tuesday = ["I have to call the dentist next Tuesday."];
+        assert_eq!(day("2026-11-03", &tuesday, TODAY, TODAY), "2026-11-03");
+        assert_eq!(day("2026-11-10", &tuesday, TODAY, TODAY), "2026-11-10");
+        assert_eq!(day("2026-11-04", &tuesday, TODAY, TODAY), "", "a Wednesday isn't Tuesday");
+        assert_eq!(day("2026-11-20", &["Mom's birthday is Friday the twentieth."], TODAY, TODAY), "2026-11-20");
+        let tomorrow = ["The submission deadline is tomorrow at nine PM."];
+        assert_eq!((day("2026-11-02", &tomorrow, TODAY, TODAY), day("2026-11-03", &tomorrow, TODAY, TODAY)), ("2026-11-02".into(), String::new()));
+        // A slipped year moves to the nearest such day; a day that just went by is no day to remind anyone of.
+        assert_eq!(day("2025-11-10", &[], TODAY, TODAY), "2026-11-10");
+        assert_eq!(day("2026-10-30", &[], TODAY, TODAY), "");
+        assert_eq!(day("2026-01-05", &[], "2026-12-20 (Sunday)", "2026-12-20 (Sunday)"), "2027-01-05");
+        // Not a real day; and without today's date, a real one stays as it is.
+        assert_eq!((day("Saturday", &[], TODAY, TODAY), day("2026-11-31", &[], TODAY, TODAY)), (String::new(), String::new()));
+        assert_eq!(day("2025-11-10", &[], "", ""), "2025-11-10");
+
+        // The day said for an action is in the sentences most about it, not anywhere on its thread.
+        let world = map(&[
+            ("T1", "Hackathon demo", &["I need to plan the hackathon demo. The deadline is tomorrow."]),
+            ("T2", "Rent", &["Pay rent by Friday.", "I'll transfer the money Thursday."]),
+            ("T3", "Bills", &["I already paid the gas bill last Friday, so that's done.", "The water bill is due on the fifteenth."]),
+        ]);
+        let pass: Pass = serde_json::from_value(serde_json::json!({ "actions": [
+            {"thread_id": "T1", "kind": "event", "title": "Demo deadline", "when": "2026-11-02"},
+            {"thread_id": "T1", "kind": "reminder", "title": "Plan the hackathon demo", "when": "2026-11-03"},
+            {"thread_id": "T2", "kind": "reminder", "title": "Transfer the money", "when": "2026-11-06"},
+            {"thread_id": "T2", "kind": "event", "title": "Rent due", "when": "2026-11-06"},
+            {"thread_id": "T3", "kind": "reminder", "title": "Pay water bill", "when": "2026-11-15"},
+        ]}))
+        .unwrap();
+        assert_eq!(
+            shown(&changes_on(&world, pass, TODAY)),
+            [
+                "T1 event Demo deadline 2026-11-02",
+                "T1 reminder Plan the hackathon demo 2026-11-03",
+                "T2 reminder Transfer the money ",
+                "T2 event Rent due 2026-11-06",
+                "T3 reminder Pay water bill 2026-11-15",
+            ]
+        );
+        assert_eq!(day("2026-11-06", &["I paid it last Friday, the next one is Friday"], TODAY, TODAY), "2026-11-06");
+        assert_eq!(day("2026-11-07", &["I paid it last Friday"], TODAY, TODAY), "2026-11-07", "a day gone names nothing ahead");
     }
 }
+
+/// Live checks against the real model (ignored unless asked for; see the file).
+#[cfg(test)]
+#[path = "refiner_live.rs"]
+mod live;

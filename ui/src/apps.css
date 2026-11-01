@@ -52,6 +52,8 @@
 .apps-panel .apps-help { color: var(--muted); margin: 8px 0 0; font-size: 12px; }
 .apps-sound { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 16px 12px; font-size: 13px; }
 .apps-build > p[role="status"] { font-size: 13px; margin: 10px 0 0; }
+.apps-instead { margin-top: 12px; }
+.apps-instead p { margin: 0; font-size: 13px; }
 @keyframes apps-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 760px) { .apps-panel { margin: 8px 24px 16px; } }
 @media (max-width: 400px) { .apps-panel { margin-inline: 12px; } .apps-form > div { flex-wrap: wrap; } .apps-form input { flex-basis: 100%; } }

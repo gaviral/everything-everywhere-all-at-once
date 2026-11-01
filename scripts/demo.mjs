@@ -4,14 +4,16 @@
 // and picture is a real model call; nothing is faked.
 //   mv data/demo data/demo.$(date +%s)   # optional: start from an empty map (keeps the old one)
 //   ./run.sh demo                         # the core, with the demo journal (data/demo)
-//   node scripts/demo.mjs scripts/demo-talk.jsonl [--speed 2] [--port 4321]
+//   node scripts/demo.mjs scripts/demo-talk.jsonl [--speed 2] [--port 4321] [--room CODE]
 // Each line of the talk: {"at": seconds from the start, "text": "what is said"}.
-// In a room (--room CODE), a line may add "speaker": "Name": a second socket joins as that person.
+// In a room (--room CODE), a line may add "speaker": "Name": a second socket joins as that person. Give the
+// host's lines the name the host's window joined with too: a line without one is typed as "you", which no
+// window in a room is, so it shows with no name and the host's window follows the other person's moves.
 import { readFileSync } from "node:fs";
 
 const [file, ...flags] = process.argv.slice(2);
 if (!file) {
-  console.error("usage: node scripts/demo.mjs TALK.jsonl [--speed N] [--port N]");
+  console.error("usage: node scripts/demo.mjs TALK.jsonl [--speed N] [--port N] [--room CODE]");
   process.exit(2);
 }
 const flag = (name, fallback) => {
@@ -42,7 +44,7 @@ function socketFor(speaker) {
     }
     const query = params.toString();
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws${query ? `?${query}` : ""}`);
-    ws.onerror = () => reject(new Error(`Couldn't reach the core on port ${port} as ${speaker || "the host"}. Start it with ./run.sh demo`));
+    ws.onerror = () => reject(new Error(`Couldn't reach the core on port ${port} as ${speaker || "the host"}. Start it with ${port === 4321 ? "" : `PORT=${port} `}./run.sh ${room ? "room" : "demo"}`));
     ws.onopen = () => {
       sockets.set(speaker, ws);
       resolve(ws);
