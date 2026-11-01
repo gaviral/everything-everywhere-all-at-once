@@ -879,8 +879,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn filler_never_becomes_a_thought_and_commands_keep_their_place_among_the_words() {
+    // A search said while a thought is still placing waits on a task, so this runs inside a runtime like the app.
+    #[tokio::test]
+    async fn filler_never_becomes_a_thought_and_commands_keep_their_place_among_the_words() {
         let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
         let (updates, _) = broadcast::channel(64);
