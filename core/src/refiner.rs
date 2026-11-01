@@ -372,7 +372,11 @@ fn named_at(title: &str, text: &str) -> Option<usize> {
             return None;
         }
         let start = i.saturating_sub(2);
-        text[start..i].iter().rposition(|c| CUES.contains(&c.as_str())).map(|at| start + at)
+        let cue = text[start..i].iter().rposition(|c| CUES.contains(&c.as_str())).map(|at| start + at)?;
+        // "Don't call it X" or "never name it X" turns a name down instead of giving it.
+        const NOT: [&str; 6] = ["don", "dont", "not", "never", "stop", "shouldn"];
+        let refused = text[cue.saturating_sub(2)..cue].iter().any(|w| NOT.contains(&w.as_str()));
+        (!refused).then_some(cue)
     })
 }
 
@@ -509,12 +513,21 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, existing, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, existing, named_at, rest_ms, Pass};
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
     /// A Sunday, as `chrono_today` writes it.
     const TODAY: &str = "2026-11-01 (Sunday)";
 
+    #[test]
+    fn a_name_turned_down_is_not_a_name_given() {
+        assert_eq!(named_at("Project Falcon", "Call it Project Falcon"), Some(0));
+        assert_eq!(named_at("Project Falcon", "Don't call it Project Falcon"), None);
+        assert_eq!(named_at("Falcon", "We shouldn't name it Falcon"), None);
+        assert_eq!(named_at("Falcon", "I'd never call it Falcon"), None);
+        // An earlier real naming still counts when a later mention turns it down.
+        assert_eq!(named_at("Falcon", "Call it Falcon. Don't call it Falcon"), Some(0));
+    }
     #[test]
     fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
         let rests: Vec<u64> = (0..8).map(|failures| rest_ms(failures) / 1000).collect();
