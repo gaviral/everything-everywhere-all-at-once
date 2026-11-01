@@ -14,6 +14,7 @@ import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 import { leftBy, RoomControl, useMe } from "./room";
+import { useFindJump } from "./find";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
@@ -22,7 +23,7 @@ export default function App() {
   const me = useMe();
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const { world } = core;
+  const world = useMemo(() => ({ ...core.world, active: core.world.active_by[me] ?? core.world.active }), [core.world, me]);
   const sessionCounts = useMemo(() => {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
     let start = times.at(-1) ?? 0;
@@ -45,6 +46,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
+  useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -99,7 +101,7 @@ export default function App() {
     if (!core.notice || /MODEL_API_KEY|mic|microphone/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.clearNotice]);
+  }, [core.notice, core.found, core.clearNotice]);
 
   // Stop local audio when the service reports a stop or the connection drops.
   const voiceStartedAt = useRef(0);
@@ -581,7 +583,7 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
   return (
-    <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
+    <motion.li id={`point-${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>

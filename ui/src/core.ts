@@ -3,6 +3,7 @@ import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMs
 import { volumeReporter } from "./apps-audio";
 import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { openSocket } from "./room";
+import type { Found } from "./find";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -110,6 +111,7 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
+  | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "explanation"; id: string; text: string; failed: boolean };
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
@@ -279,6 +281,7 @@ export function useCore() {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  const [found, setFound] = useState<Found | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const socket = useRef<WebSocket | null>(null);
@@ -310,6 +313,7 @@ export function useCore() {
         if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
+            setFound(null);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -337,6 +341,10 @@ export function useCore() {
             break;
           case "error":
           case "notice":
+            setNotice(msg.message);
+            break;
+          case "found":
+            setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
             break;
           case "explanation":
@@ -392,6 +400,7 @@ export function useCore() {
     voiceStatusRevision,
     connected,
     notice,
+    found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
