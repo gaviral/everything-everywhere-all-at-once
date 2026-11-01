@@ -1,5 +1,8 @@
 # E2A2O
 
+<!-- cover: stand-in, User to pick (three options in the design repo, docs/drafts/cover) -->
+![A microphone whose cable branches into colored tiles: speech in, a map of threads out](docs/cover.webp)
+
 <!-- pitch: draft, User to approve -->
 For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.
 
@@ -80,7 +83,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - ✦ marks what the AI added or proposes: tags (faint until kept), one suggestion per thread, actions with "Add to Reminders" or "Add to Calendar", "Did you mean …?", a "fixed" tag, pictures, app cards, Recap, and notes such as "AI renamed … to …".
 - Header: "This session · 12 thoughts · 4 threads", Recap, a ? for keys and spoken commands, Import chats, and in a room, who has added thoughts.
 - Map tools: Map or Palace, search, Focus, Recent first; `?` lists keyboard and spoken commands.
-- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread.
+- Select a few words on the map, then Explain: one plain sentence on what they mean in that thread, using what other threads say about the same name or term.
 - The Apps panel: your apps with on and off switches, and a box to make one.
 
 ## How it works
@@ -127,7 +130,7 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
   - **Placing:** the full new thought; every thread's id, title, status and last point; the active thread id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text.
   - **Refiner:** today's date; each thread's id, title, parent, tags and last point; the latest 8 full thoughts from recently active threads; the latest 30 suggestions and actions. In a room with multiple speakers, each recent thought includes its speaker name.
   - **Take me there:** only if local word search finds no thread containing every query word, the query (up to 400 characters) and up to 48 thread titles (100 characters each) with their latest 3 points (320 characters each).
-  - **Explain:** the selected phrase (up to 200 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title and up to 40 other thread titles.
+  - **Explain:** the selected phrase (up to 200 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title, up to 40 other thread titles, and up to 8 thoughts from other threads that name the selected words.
   - **Recap:** up to 24 threads, with up to 16 thoughts per thread (each includes the speaker and up to 700 characters of text), plus up to 64 actions.
   - **Pictures:** the thread's title and first 6 points.
   - **App creation:** the request, local time and app catalog. If the Search-first app is enabled, it may first receive the request and catalog to look for an existing app.
