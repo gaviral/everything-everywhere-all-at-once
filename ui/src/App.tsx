@@ -192,6 +192,17 @@ export default function App() {
     observer.observe(dock);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--dock-height"); };
   }, []);
+  // The map's tools stick right under the header, whatever height it wraps to.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty("--header-height", `${header.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--header-height"); };
+  }, []);
 
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
@@ -509,7 +520,7 @@ export default function App() {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
-      <header>
+      <header ref={headerRef}>
         <div className="brand">
           E2A2O <small>threads</small>
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
