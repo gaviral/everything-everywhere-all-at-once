@@ -202,9 +202,11 @@ fn is_go_next(text: &str) -> bool {
     is_command(text, &["go to the next one", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
 }
 
+/// Words a spoken command may open with.
+const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
+
 /// True when the whole utterance is one of the asks, after filler words and before a short allowed tail.
 fn is_command(text: &str, asks: &[&str], tails: &[&str]) -> bool {
-    const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
     let clean: String = text
         .to_lowercase()
         .chars()

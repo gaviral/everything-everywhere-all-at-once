@@ -260,13 +260,36 @@ pub fn volume_output(core: &Core, id: String, sound: bool) {
     }
 }
 
+/// A spoken or typed "make an app that …", returning what the app should do in the person's own words.
+/// As with main.rs `is_command`, punctuation and filler before it don't count ("Okay, make an app that …",
+/// "Can you make me an app to …"), but it must open what was said: "I might make an app that …" stays a thought.
 pub fn command(text: &str) -> Option<String> {
-    let text = text.trim();
-    let lower = text.to_lowercase();
-    for prefix in ["make an app that ", "make an app to ", "create an app that ", "create an app to "] {
-        if lower.starts_with(prefix) { return Some(text[prefix.len()..].trim().into()); }
+    // Each word, lowercased, with where it ends in the text.
+    let mut words: Vec<(String, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
+        match (c.is_alphanumeric(), start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => { words.push((text[s..i].to_lowercase(), i)); start = None; }
+            _ => {}
+        }
     }
-    None
+    let said: Vec<&str> = words.iter().map(|(w, _)| w.as_str()).collect();
+    let mut at = 0;
+    loop {
+        match &said[at..] {
+            [w, ..] if crate::FILLER.contains(w) || matches!(*w, "hey" | "please") => at += 1,
+            ["can" | "could" | "would" | "will", "you", ..] => at += 2,
+            _ => break,
+        }
+    }
+    let ask = match &said[at..] {
+        ["make" | "create", "an", "app", "that" | "to", ..] => 4,
+        ["make" | "create", "me" | "us", "an", "app", "that" | "to", ..] => 5,
+        _ => return None,
+    };
+    let rest = &text[words[at + ask - 1].1..];
+    Some(rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '.' | '…' | ':' | ';' | '-' | '—')).trim_end().into())
 }
 
 pub fn volume(core: &Arc<Core>, source: &str, level: f64) {

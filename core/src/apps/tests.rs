@@ -91,6 +91,22 @@ fn templates_expand_once_and_commands_leave_ordinary_speech_alone() {
 }
 
 #[test]
+fn spoken_app_requests_can_open_with_filler_and_ask_for_me() {
+    for (said, request) in [
+        ("Okay, make an app that notices repetition.", "notices repetition."),
+        ("Can you make me an app to remind me about rent?", "remind me about rent?"),
+        ("Um, so, hey, could you please create an app that... plays a tune", "plays a tune"),
+        ("Make an app, that pings me", "pings me"),
+        ("MAKE US AN APP TO SHOUT", "SHOUT"),
+    ] {
+        assert_eq!(command(said).as_deref(), Some(request), "{said}");
+    }
+    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps"] {
+        assert_eq!(command(said), None, "{said}");
+    }
+}
+
+#[test]
 fn volume_needs_continuous_readings_from_one_source() {
     let mut state = (1000, 1000);
     for now in (1000..4000).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
