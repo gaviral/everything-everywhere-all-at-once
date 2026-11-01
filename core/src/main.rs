@@ -41,7 +41,7 @@ pub struct Core {
     world: Mutex<World>,
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
-    placer_queue: mpsc::UnboundedSender<String>,
+    placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Set when a room is open: the code another laptop needs (see `gate`).
     room: Option<String>,
     pub key: Option<String>,
@@ -139,7 +139,8 @@ impl Core {
         }
     }
 
-    /// A new thought lands in the speaker's active thread at once; the placer moves it if needed.
+    /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
+    /// never becomes a thought, and a spoken command waits behind the thoughts said before it.
     pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
         self.find.cancel(speaker);
@@ -149,35 +150,124 @@ impl Core {
         if let Some(request) = apps::command(text) {
             return apps::compose(self.clone(), request);
         }
-        if is_go_back(text) {
-            return self.go_back(speaker);
+        let said = command(text);
+        // "Take me back to where I was" is a command, not a search: only a whole-turn command comes first.
+        if !said.as_ref().is_some_and(|(before, _)| before.is_empty()) {
+            if let Some(query) = find::command(text) {
+                return find::request(self.clone(), speaker.into(), query);
+            }
         }
-        if is_go_next(text) {
-            return self.go_next(speaker);
-        }
-        if let Some(query) = find::command(text) {
-            return find::request(self.clone(), speaker.into(), query);
-        }
-        let active = self.world.lock().unwrap().active_for(speaker).cloned();
-        let thought = Thought {
-            id: format!("th-{}", uuid::Uuid::new_v4().simple()),
-            speaker: speaker.into(),
-            text: text.into(),
-            point: String::new(),
-            thread_id: active,
-            placed: false,
-            unclear: String::new(),
-            guess: String::new(),
-            heard: String::new(),
-            fixed: String::new(),
-            complete: true,
-            at_ms: now_ms(),
-            place_ms: None,
+        let (text, then) = match said {
+            Some((before, job)) => (before, Some(job(speaker.into()))),
+            None => (text, None),
         };
-        let id = thought.id.clone();
-        self.commit(vec![Change::ThoughtAdded { thought }]);
-        let _ = self.placer_queue.send(id);
+        let (active, asked) = {
+            let world = self.world.lock().unwrap();
+            (world.active_for(speaker).cloned(), world.thoughts.last().is_some_and(|t| t.text.trim_end().ends_with('?')))
+        };
+        if !filler(text, asked) {
+            let thought = Thought {
+                id: format!("th-{}", uuid::Uuid::new_v4().simple()),
+                speaker: speaker.into(),
+                text: text.into(),
+                point: String::new(),
+                thread_id: active,
+                placed: false,
+                unclear: String::new(),
+                guess: String::new(),
+                heard: String::new(),
+                fixed: String::new(),
+                complete: true,
+                at_ms: now_ms(),
+                place_ms: None,
+            };
+            let id = thought.id.clone();
+            self.commit(vec![Change::ThoughtAdded { thought }]);
+            let _ = self.placer_queue.send(placer::Job::Place(id));
+        }
+        if let Some(job) = then {
+            let _ = self.placer_queue.send(job);
+        }
     }
+}
+
+/// Lowercase words, with punctuation as spaces ("Mm-hmm." → "mm hmm").
+fn words(text: &str) -> Vec<String> {
+    let clean: String =
+        text.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' }).collect();
+    clean.split_whitespace().map(String::from).collect()
+}
+
+/// Sounds and connectors that carry nothing on their own.
+const SOUNDS: [&str; 32] = [
+    "um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "ahh", "eh", "hmm", "hm", "hmmm", "mm", "mmm", "oh", "so", "well", "like",
+    "and", "but", "anyway", "anyways", "wait", "actually", "basically", "i mean", "you know", "hold on", "let me think", "let me see",
+    "let s see",
+];
+/// Acknowledgements: filler too, unless they may answer a question just asked. Not "yes": said on its
+/// own it's usually meant ("I wonder if I should take it." "Yes."), so the placer judges it in context.
+const ACKS: [&str; 15] =
+    ["yeah", "yep", "yup", "okay", "ok", "alright", "all right", "right", "sure", "mhm", "mm hmm", "uh huh", "cool", "got it", "i see"];
+
+/// True when a turn holds nothing for the map: only sounds and connectors ("um, so"), or only
+/// acknowledgements ("yeah, okay") when the last thing said wasn't a question. "No", a name or a
+/// time never is; whatever this lets through, the placer can still set aside in context.
+fn filler(text: &str, asked: bool) -> bool {
+    let acks: &[&str] = if asked { &[] } else { &ACKS };
+    // Longest first, so "uh huh" isn't read as "uh" and then a stray "huh".
+    let mut phrases: Vec<Vec<&str>> = SOUNDS.iter().chain(acks).map(|p| p.split(' ').collect()).collect();
+    phrases.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    let words = words(text);
+    let mut rest = words.as_slice();
+    while !rest.is_empty() {
+        match phrases.iter().find(|p| rest.len() >= p.len() && rest.iter().zip(p.iter()).all(|(w, p)| w == p)) {
+            Some(p) => rest = &rest[p.len()..],
+            None => return false,
+        }
+    }
+    true
+}
+
+/// A spoken "where was I?" or "next one": the whole turn, or its end after a pause in it ("…it starts
+/// at two, okay, where was I?"), with the words said before it, which are still a thought.
+fn command(text: &str) -> Option<(&str, fn(String) -> placer::Job)> {
+    let job = |t: &str| -> Option<fn(String) -> placer::Job> {
+        if is_go_back(t) {
+            Some(placer::Job::Back)
+        } else if is_go_next(t) {
+            Some(placer::Job::Next)
+        } else {
+            None
+        }
+    };
+    if let Some(job) = job(text) {
+        return Some(("", job));
+    }
+    starts(text)
+        .into_iter()
+        .find_map(|i| job(&text[i..]).map(|job| (text[..i].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end(), job)))
+}
+
+/// Where a command may begin partway through a turn: a word after a punctuation mark, or a word that
+/// turns to one ("okay", "anyway"). So "fly there and go back" and "that song would take me back" stay thoughts.
+fn starts(text: &str) -> Vec<usize> {
+    const PAUSE: [char; 9] = [',', '.', ';', ':', '?', '!', '…', '—', '–'];
+    const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
+    let mut out = Vec::new();
+    let mut in_word = false;
+    for (i, c) in text.char_indices() {
+        if c.is_whitespace() {
+            in_word = false;
+        } else if !in_word {
+            in_word = true;
+            let word = words(text[i..].split_whitespace().next().unwrap_or(""));
+            let turns = word.first().is_some_and(|w| TURN.contains(&w.as_str()));
+            if i > 0 && (text[..i].trim_end().ends_with(PAUSE) || turns) {
+                out.push(i);
+            }
+        }
+    }
+    out
 }
 
 /// Where "where was I?" takes a speaker: the thread they most recently dropped, else the last other
@@ -204,7 +294,11 @@ fn way_back(world: &World, speaker: &str) -> Option<String> {
 /// Spoken or typed "where was I?" style requests, kept strict so ordinary thoughts
 /// like "go back to the drawing board" stay thoughts.
 fn is_go_back(text: &str) -> bool {
-    is_command(text, &["where was i", "what was i saying", "go back", "take me back", "where were we"], &["to where i was", "to that", "to it", "there"])
+    is_command(
+        text,
+        &["where was i", "what was i saying", "what was i talking about", "where were we", "take me back", "go back"],
+        &["to where i was", "to that", "to it", "there", "again", "going with this", "going with that"],
+    )
 }
 
 /// "Go to the next one" style requests.
@@ -212,18 +306,13 @@ fn is_go_next(text: &str) -> bool {
     is_command(text, &["go to the next one", "next one", "next thread", "go next", "next"], &["one", "thread", "topic"])
 }
 
-/// Words a spoken command may open with.
-const FILLER: [&str; 9] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now"];
+/// Words a spoken command may open with ("Okay, where was I?", "Anyway, next one").
+const FILLER: [&str; 14] = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now", "anyway", "anyways", "alright", "oh", "right"];
 
-/// True when the whole utterance is one of the asks, after filler words and before a short allowed tail.
+/// True when the whole utterance is one of the asks, after words that lead into it and before a short allowed tail.
 fn is_command(text: &str, asks: &[&str], tails: &[&str]) -> bool {
-    let clean: String = text
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
-        .collect();
-    let words: Vec<&str> = clean.split_whitespace().skip_while(|w| FILLER.contains(w)).collect();
-    let rest = words.join(" ");
+    let words = words(text);
+    let rest = words.iter().skip_while(|w| FILLER.contains(&w.as_str())).cloned().collect::<Vec<_>>().join(" ");
     asks.iter().any(|ask| {
         rest.strip_prefix(ask)
             .map(|tail| {
@@ -288,7 +377,7 @@ async fn main() -> anyhow::Result<()> {
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
-        let _ = core.placer_queue.send(id);
+        let _ = core.placer_queue.send(placer::Job::Place(id));
     }
 
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
@@ -639,8 +728,106 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 
 #[cfg(test)]
 mod tests {
-    use super::{access, local, normal_code, public, same, speaker_name, way_back, Access, Link};
+    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, way_back, Access, Core, Link};
     use crate::world::{Thought, Thread, ThreadStatus, World};
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::{broadcast, mpsc};
+
+    #[test]
+    fn filler_is_only_sounds_connectors_and_acknowledgements_after_no_question() {
+        for text in ["yeah", "so", "hmm okay", "right right right", "Um, so...", "Mm-hmm.", "you know", "let's see", "okay, yeah"] {
+            assert!(filler(text, false), "{text}");
+        }
+        // After a question an acknowledgement may be the answer: the placer decides.
+        for text in ["yeah", "hmm, okay", "uh-huh", "yes"] {
+            assert!(!filler(text, true), "{text}");
+        }
+        assert!(filler("um, let me think", true));
+        // Never filler: a yes or a no, a maybe, a name, a time, or anything with real words.
+        for text in ["yes", "no", "nope", "maybe", "Dad", "Tuesday", "oh wow", "yeah, the demo is Tuesday", "I don't know"] {
+            assert!(!filler(text, false), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_command_at_the_end_of_a_turn_still_acts() {
+        let said = |text: &str| {
+            command(text).map(|(before, job)| (before.to_string(), if matches!(job("you".into()), Job::Back(_)) { "back" } else { "next" }))
+        };
+        let back = |before: &str| Some((before.to_string(), "back"));
+        assert_eq!(said("where was I"), back(""));
+        assert_eq!(said("So, um, where was I going with this"), back(""));
+        assert_eq!(said("Right, where were we?"), back(""));
+        assert_eq!(said("It starts at two in the afternoon, okay, where was I?"), back("It starts at two in the afternoon"));
+        assert_eq!(said("the budget, now where was I"), back("the budget"));
+        assert_eq!(said("the budget um where was I"), back("the budget"));
+        assert_eq!(said("I'll pay it on Thursday. Anyway, next one."), Some(("I'll pay it on Thursday.".into(), "next")));
+        // Ordinary speech stays a thought: no pause before the words, or more words after them.
+        for text in [
+            "go back to the drawing board on this",
+            "that song would take me back",
+            "I'd fly to Paris and go back",
+            "you can't just now go back",
+            "Where was I when the power went out?",
+            "Tuesday, next week",
+            "What's next?",
+            "Anyway back to the hackathon. The placement needs to be under three seconds.",
+        ] {
+            assert_eq!(said(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn filler_never_becomes_a_thought_and_a_command_waits_behind_the_words_before_it() {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let (updates, _) = broadcast::channel(64);
+        let (placer_queue, mut queue) = mpsc::unbounded_channel();
+        let core = Arc::new(Core {
+            find: crate::find::Runtime::default(),
+            recap: crate::recap::Runtime::default(),
+            apps: crate::apps::Runtime::default(),
+            imports: crate::import::Imports::default(),
+            world: Mutex::new(world),
+            journal: Mutex::new(journal),
+            updates,
+            placer_queue,
+            room: None,
+            key: None,
+            placer_model: "test".into(),
+            http: reqwest::Client::new(),
+            last_activity: std::sync::atomic::AtomicU64::new(0),
+            looked: std::sync::atomic::AtomicBool::new(false),
+            wake: tokio::sync::Notify::new(),
+        });
+        let mut jobs = || {
+            let mut out = Vec::new();
+            while let Ok(job) = queue.try_recv() {
+                out.push(match job {
+                    Job::Place(_) => "place",
+                    Job::Back(_) => "back",
+                    Job::Next(_) => "next",
+                });
+            }
+            out
+        };
+        let texts = |core: &Core| core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect::<Vec<_>>();
+
+        core.add_thought("you", "um, so");
+        core.add_thought("you", "right right right");
+        assert!(texts(&core).is_empty() && jobs().is_empty());
+        core.add_thought("you", "It starts at two in the afternoon, okay, where was I?");
+        assert_eq!(texts(&core), ["It starts at two in the afternoon"]);
+        assert_eq!(jobs(), ["place", "back"]);
+        core.add_thought("you", "Okay, where was I?");
+        assert_eq!(jobs(), ["back"]);
+        // "yeah" after a question goes to the placer, which can tell an answer from filler.
+        core.add_thought("you", "Should I take the Google offer?");
+        core.add_thought("you", "yeah");
+        assert_eq!(texts(&core)[1..], ["Should I take the Google offer?", "yeah"]);
+        assert_eq!(jobs(), ["place", "place"]);
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn only_this_machine_counts_as_local() {
