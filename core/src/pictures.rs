@@ -81,7 +81,7 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                 }
             }
         }
-        if core.key.is_none() {
+        if core.key().is_err() {
             continue;
         }
         let world = core.snapshot();
@@ -149,7 +149,7 @@ fn prompt(thread: &Thread, points: &[String]) -> String {
 }
 
 async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> anyhow::Result<String> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let body = serde_json::json!({
         "model": "muse-image-1.0",
         "prompt": prompt(thread, points),
@@ -162,6 +162,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
     });
     let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));

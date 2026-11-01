@@ -83,13 +83,13 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         state(&core, &speaker, period, true, "", core.snapshot().recaps.iter().find(|r| r.period == period).cloned());
         let since = slice(&core.snapshot(), period, crate::now_ms()).since_ms;
         // Placement is already in progress; don't pay for a second placement call,
-        // or summarize a thought on the provisional branch it may soon leave.
+        // or summarize a thought on the provisional branch it may soon leave. On a refused key nothing is placing.
         for _ in 0..40 {
-            if !placing(&core.snapshot(), since, crate::now_ms()) { break; }
+            if core.key_refused() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         let world = core.snapshot();
-        if placing(&world, since, crate::now_ms()) {
+        if !core.key_refused() && placing(&world, since, crate::now_ms()) {
             state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
             return;
         }
@@ -109,7 +109,8 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             }
             Err(e) => {
                 tracing::warn!("recap failed: {e:#}");
-                state(&core, &speaker, period, false, "Couldn't make a recap just now. Your thoughts are still here. Try again.", None);
+                let message = if core.key_refused() { crate::model::REFUSED } else { "Couldn't make a recap just now. Your thoughts are still here. Try again." };
+                state(&core, &speaker, period, false, message, None);
             }
         }
     });
@@ -246,12 +247,13 @@ struct Answer {
 }
 
 async fn generate(core: &Core, source: &Source) -> anyhow::Result<Answer> {
-    let key = core.key.as_deref().context("MODEL_API_KEY is not set")?;
+    let key = core.key()?;
     let body = model_body(source)?;
     // One call, no automatic retries. A failure leaves the last saved recap intact.
     let response = core.http.post("https://api.meta.ai/v1/chat/completions")
         .timeout(Duration::from_secs(40)).bearer_auth(key).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     read_answer(status, value)
 }
@@ -374,6 +376,7 @@ mod tests {
                 key, placer_model: "test".into(), http: reqwest::Client::new(),
                 last_activity: AtomicU64::new(0), looked: AtomicBool::new(false), wake: tokio::sync::Notify::new(),
                 imports: crate::import::Imports::default(),
+                service: Default::default(),
             }) }
         }
     }
@@ -573,6 +576,19 @@ mod tests {
         assert!(message.contains("Couldn't make a recap"));
         assert!(recap.is_none());
         assert_eq!(fixture.core.snapshot().recaps.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refused_key_says_so_at_once_instead_of_waiting_for_a_thought_that_cant_place() {
+        let fixture = Fixture::new(Some("wrong".into()));
+        *fixture.core.world.lock().unwrap() = sample(crate::now_ms()).into();
+        let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
+        fixture.core.add_thought("you", "ask Sam about the heater warranty");
+        let mut rx = fixture.core.updates.subscribe();
+        request(fixture.core.clone(), "you".into(), Period::Today);
+        let (message, recap) = ready(&mut rx).await;
+        assert_eq!(message, crate::model::REFUSED);
+        assert!(recap.is_none());
     }
 
     #[tokio::test]

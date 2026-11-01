@@ -20,3 +20,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# A paused clock, so tests of retry schedules run in an instant.
+tokio = { version = "1", features = ["test-util"] }

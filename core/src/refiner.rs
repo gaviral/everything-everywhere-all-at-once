@@ -4,7 +4,7 @@
 
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -105,7 +105,7 @@ pub async fn run(core: Arc<Core>) {
         let quiet = core.quiet_ms() >= 4_000;
         let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
         let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
-        if !due || core.key.is_none() {
+        if !due || core.key().is_err() {
             continue;
         }
         let since = last_pass;
@@ -147,10 +147,11 @@ fn rest_ms(failures: u32) -> u64 {
 }
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let body = request(world, since, &chrono_today());
     let response = core.http.post(URL).bearer_auth(key).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));

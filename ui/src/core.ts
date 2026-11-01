@@ -322,8 +322,9 @@ export function useCore(speaker?: string) {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
-  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
-  const [noKey, setNoKey] = useState(false);
+  // The core says so on connect when it has no model key, or once the service refused it: the map can be
+  // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
+  const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -360,7 +361,9 @@ export function useCore(speaker?: string) {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
-            setNoKey(false);
+            // A word about the key is the core's to repeat: it does, right after this, while it still holds.
+            setKeyNotice("");
+            setNotice((shown) => (shown.includes("MODEL_API_KEY") ? "" : shown));
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -409,7 +412,7 @@ export function useCore(speaker?: string) {
             }
           // Other errors and notices use the same notice area.
           case "notice":
-            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
+            if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice(msg.message);
             break;
           case "found":
@@ -479,7 +482,9 @@ export function useCore(speaker?: string) {
     voiceStatusRevision,
     connected,
     notice,
-    noKey,
+    noKey: keyNotice !== "",
+    keyRefused: keyNotice.includes("refused"),
+    keyNotice,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),
