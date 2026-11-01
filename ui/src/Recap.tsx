@@ -62,6 +62,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     sheet.showModal();
+    sheet.querySelector<HTMLButtonElement>(".recap-close")?.focus();
     return () => {
       sheet.close();
       document.body.style.overflow = overflow;
@@ -98,7 +99,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     onClick={(event) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}>
     <div className="recap-top">
       <span className="recap-eyebrow"><span aria-hidden="true">✦</span> Recap <span className="sr-only">by AI</span></span>
-      <button className="recap-close" onClick={onClose} aria-label="Close recap" autoFocus>×</button>
+      <button className="recap-close" onClick={onClose} aria-label="Close recap">×</button>
     </div>
     <div className="recap-intro">
       <h1 id="recap-title">{view.period === "today" ? "Your day, in one place." : "Your session, in one place."}</h1>
