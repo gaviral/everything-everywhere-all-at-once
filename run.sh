@@ -16,9 +16,11 @@ if [ "$1" = room ] && [ -z "$ROOM_CODE" ]; then
   ROOM_CODE="$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 8)"
   export ROOM_CODE
 fi
-# `./run.sh sample` opens a ready-made map to explore without a key or a mic; it starts fresh from samples/ each time.
+# `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
+# or a founder's day); it starts fresh from samples/ each time.
 if [ "$1" = "sample" ]; then
-  mkdir -p data/sample && cp samples/student-week.jsonl data/sample/journal.jsonl
+  case "${2:-}" in founder) map=founder-day ;; *) map=student-week ;; esac
+  mkdir -p data/sample && cp "samples/$map.jsonl" data/sample/journal.jsonl
 fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"

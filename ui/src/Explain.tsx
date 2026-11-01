@@ -1,4 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+// crypto.randomUUID needs a secure page; a guest laptop in a room loads plain http from the LAN.
+const newId = () => (window.isSecureContext && crypto.randomUUID ? crypto.randomUUID() : `x${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 import type { Explanation } from "./core";
 
 // A word, a phrase or a sentence; longer selections are usually for copying.
@@ -29,7 +32,7 @@ export function Explain({ explanations, explain }: {
   const seen = useRef<Range | null>(null);
 
   const ask = (target: Picked) => {
-    const id = crypto.randomUUID();
+    const id = newId();
     const moveFocus = !!box.current?.contains(document.activeElement);
     setPicked({ ...target, id, asked: true });
     if (!explain(id, target.text, target.context, target.threadId)) setLost(id);
@@ -79,7 +82,7 @@ export function Explain({ explanations, explain }: {
       const around = element.textContent ?? "";
       const context = element.closest("li")?.getAttribute("title") || (around.length < 300 ? around : text);
       const threadId = element.closest(".thread")?.id.replace(/^thread-/, "") || null;
-      setPicked({ id: crypto.randomUUID(), text, context, threadId, range: seen.current, touch, asked: false });
+      setPicked({ id: newId(), text, context, threadId, range: seen.current, touch, asked: false });
     };
     const outside = (event: Event) => !box.current?.contains(event.target as Node);
     const onPointerUp = (event: PointerEvent) => {
