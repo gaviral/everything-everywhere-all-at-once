@@ -141,6 +141,10 @@ pub struct World {
     pub apps_seeded: bool,
     #[serde(default)]
     pub recaps: Vec<crate::recap::Recap>,
+    /// When the messages an import has read were sent, whether or not they gave a point, so the same chats
+    /// aren't read (and paid for) again. Only the core needs it: windows never get it.
+    #[serde(default, skip_serializing)]
+    pub read_ms: std::collections::HashSet<u64>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -203,6 +207,8 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// An import finished reading the messages sent at these times; most gave points, some gave none.
+    MessagesRead { at_ms: Vec<u64> },
 }
 
 impl World {
@@ -257,6 +263,7 @@ impl World {
                 }
             }
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::MessagesRead { at_ms } => self.read_ms.extend(at_ms),
             Change::ThreadAdded { thread } => {
                 if self.thread(&thread.id).is_none() {
                     self.threads.push(thread.clone());
@@ -951,6 +958,7 @@ mod tests {
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000] },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
             // Aimed at the merged thread, so it follows the merge on replay too.
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget and demo".into() },
@@ -1001,7 +1009,8 @@ mod tests {
                 | Change::ThreadPicture { .. }
                 | Change::ThoughtCorrected { .. }
                 | Change::ThoughtSplit { .. }
-                | Change::ThoughtSkipped { .. } => {}
+                | Change::ThoughtSkipped { .. }
+                | Change::MessagesRead { .. } => {}
             }
         }
         changes
@@ -1012,7 +1021,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 25, "one of each kind of change");
+        assert_eq!(kinds.len(), 26, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

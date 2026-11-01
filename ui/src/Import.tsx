@@ -222,7 +222,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
         </div>
       </div>
       {preview.already > 0 && (
-        <p className="import-note">{plural(preview.already, "message")} of yours from this file {preview.already === 1 ? "is" : "are"} already on the map, so {preview.already === 1 ? "it's" : "they're"} skipped.</p>
+        <p className="import-note">{plural(preview.already, "message")} of yours from this file {preview.already === 1 ? "was" : "were"} imported before, so {preview.already === 1 ? "it's" : "they're"} skipped.</p>
       )}
       {preview.total - preview.already > preview.messages && (
         <p className="import-note">

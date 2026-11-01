@@ -94,10 +94,10 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 ## Import
 
-1. `POST /import` (host only, needs a key, one at a time, up to 100 MB) parses a ChatGPT export (in each chat, the branch the person saw last), a Claude export, or a plain list or JSON Lines of messages. It keeps the person's latest messages up to 300,000 characters (each cut at 2,000, with 240 characters of the AI's reply as context), skips messages whose time is already on the map, packs them into parts of up to 8,000 characters, and returns a preview with the models and a cost estimate. Nothing is sent yet.
+1. `POST /import` (host only, needs a key, one at a time, up to 100 MB) parses a ChatGPT export (in each chat, the branch the person saw last), a Claude export, or a plain list or JSON Lines of messages. It keeps the person's latest messages up to 300,000 characters (each cut at 2,000, with 240 characters of the AI's reply as context), skips messages whose time is already on the map or in `MessagesRead` (what an import finished reading, including messages that gave no point, so the same file twice adds nothing), packs them into parts of up to 8,000 characters, and returns a preview with the models and a cost estimate. Nothing is sent yet.
 2. `import_start`: the ideas model reads six parts at a time; each idea is a topic, a point, the person's own words, a kind and maybe a date. Ideas are grouped by topic name.
 3. The grouping model sees the topics with their latest points, the open questions, the tasks and the map's thread titles, never the messages. It returns threads (one level of branches, or an existing thread), at most one question per thread, and tasks. Only topics and threads that exist are trusted; a topic it leaves out becomes its own thread; if grouping fails, every topic does.
-4. Threads land one at a time as `ThreadAdded`, `ThoughtAdded` (already placed, with the message's own time), `SuggestionAdded` and `ActionProposed`. `import_cancel` stops it; what landed stays.
+4. Threads land one at a time as `ThreadAdded`, `ThoughtAdded` (already placed, with the message's own time), `SuggestionAdded` and `ActionProposed`, then `MessagesRead`. `import_cancel` stops it; what landed stays.
 
 ## Adding an app block
 

@@ -135,7 +135,7 @@ struct Preview {
     file: String,
     format: &'static str,
     conversations: usize,
-    /// All of the person's messages in the file, those already on the map (skipped), and how many
+    /// All of the person's messages in the file, those imported before (skipped), and how many
     /// this import reads: the latest of the rest, up to the cap.
     total: usize,
     already: usize,
@@ -181,9 +181,7 @@ pub async fn prepare(
     let Ok(body) = axum::body::to_bytes(request.into_body(), MAX_BYTES).await else {
         return refuse(StatusCode::PAYLOAD_TOO_LARGE, "That file is over the 100 MB limit.");
     };
-    // An imported point keeps its message's exact time, so a message seen before is one already on the map
-    // (whatever name it went under).
-    let known: HashSet<u64> = core.snapshot().thoughts.iter().map(|t| t.at_ms).collect();
+    let known = known(&core.snapshot());
     let file: String = query.name.rsplit(['/', '\\']).next().unwrap_or_default().trim().chars().take(80).collect();
     let file = if file.is_empty() { "your file".to_string() } else { file };
     // A big export takes a moment to read; keep it off the threads that serve the map.
@@ -196,7 +194,7 @@ pub async fn prepare(
     };
     if chosen.said.is_empty() {
         let message = if chosen.already > 0 {
-            "Everything in this file is already on your map."
+            "Everything in this file was already imported."
         } else {
             "There are no messages of yours in this file, so there's nothing to import."
         };
@@ -222,6 +220,13 @@ pub async fn prepare(
     };
     *core.imports.prepared.lock().unwrap() = Some(Prepared { id: preview.id.clone(), file, parts });
     Json(preview).into_response()
+}
+
+/// The times of the messages not to read again. A point keeps its message's exact time, so a message with a
+/// point is one already on the map (whatever name it went under); an earlier import also remembers the ones
+/// that gave none ("thanks", pasted code), or importing the same file twice would read and pay for them again.
+fn known(world: &World) -> HashSet<u64> {
+    world.thoughts.iter().map(|t| t.at_ms).chain(world.read_ms.iter().copied()).collect()
 }
 
 /// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
@@ -294,10 +299,17 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     let mut ideas: Vec<Idea> = Vec::new();
     let (mut failed, mut reason) = (0, String::new());
     let mut topics_seen = HashSet::new();
-    let mut reads = futures_util::stream::iter(0..job.parts.len()).map(|i| extract(&core, &extract_model, &job.parts[i], offset)).buffer_unordered(PARALLEL);
-    while let Some(result) = reads.next().await {
+    let mut read_parts = Vec::new();
+    let mut reads = futures_util::stream::iter(0..job.parts.len())
+        .map(|i| {
+            let (core, model, part) = (&core, &extract_model, &job.parts[i]);
+            async move { (i, extract(core, model, part, offset).await) }
+        })
+        .buffer_unordered(PARALLEL);
+    while let Some((i, result)) = reads.next().await {
         match result {
             Ok(found) => {
+                read_parts.push(i);
                 topics_seen.extend(found.iter().map(|idea| topic_key(&idea.topic)));
                 ideas.extend(found);
             }
@@ -343,6 +355,9 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
     (status.state, status.threads) = ("adding".into(), 0);
     publish(&core, &speaker, &status);
     land(&core, &speaker, &groups, &ideas, &mut status).await;
+    // Everything in the parts that were read, once it all landed (a stop before then leaves the rest to read again).
+    let at_ms: Vec<u64> = read_parts.iter().flat_map(|&i| job.parts[i].iter().map(|s| s.at_ms)).collect();
+    core.commit(vec![Change::MessagesRead { at_ms }]);
     status.state = "done".into();
     status.note = notes.join(" ");
     finish(&core, &speaker, &status);
@@ -732,7 +747,7 @@ struct Chosen {
 
 /// The person's latest messages up to the size cap, each with a time: its own, else its neighbors'
 /// in the same chat, else (a list without times) a second apart in file order, ending now. Messages
-/// whose time is `known` are already on the map and are left out.
+/// whose time is `known` (see `known`) were imported before and are left out.
 fn select(mut conversations: Vec<Conversation>, now: u64, known: &HashSet<u64>) -> Chosen {
     for c in &mut conversations {
         let first = c.turns.iter().find_map(|t| t.at_ms);
@@ -1569,9 +1584,13 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
+            Self::with_key(None)
+        }
+
+        fn with_key(key: Option<&str>) -> Self {
             let path = std::env::temp_dir().join(format!("e2a2o-import-{}.jsonl", uuid::Uuid::new_v4()));
             let (journal, world) = crate::world::Journal::open(&path).unwrap();
-            let core = Arc::new(Core { room: Some("k7m2x9qp".into()), ..Core::test(journal, world) });
+            let core = Arc::new(Core { room: Some("k7m2x9qp".into()), key: key.map(Into::into), ..Core::test(journal, world) });
             Fixture { path, core }
         }
     }
@@ -1653,6 +1672,50 @@ mod tests {
         // The host gets past that check (here, to the missing key) without the body either.
         let host = prepare(State(f.core.clone()), link("127.0.0.1:51000"), name(), unread()).await;
         assert_eq!(host.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn the_same_file_twice_is_skipped_even_for_messages_that_gave_no_point() {
+        let f = Fixture::with_key(Some("test-key"));
+        let file = r#"[{"role": "user", "content": "I want to move in January.", "timestamp": 1791000000},
+                       {"role": "user", "content": "thanks!", "timestamp": 1791000100}]"#;
+        let upload = || async {
+            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+            let name = Query(FileName { name: "chats.json".into() });
+            prepare(State(f.core.clone()), link, name, Request::new(axum::body::Body::from(file))).await
+        };
+        let first = upload().await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let seen = axum::body::to_bytes(first.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&seen).unwrap()["messages"], 2);
+
+        // What `run` leaves when it lands: a point for the first message, and both remembered as read.
+        let point = Thought {
+            id: "th-1".into(),
+            speaker: "you".into(),
+            text: "I want to move in January.".into(),
+            point: "Move in January".into(),
+            thread_id: None,
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 1_791_000_000_000,
+            place_ms: None,
+        };
+        f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000] }]);
+        assert_eq!(known(&f.core.snapshot()), HashSet::from([1_791_000_000_000, 1_791_000_100_000]));
+
+        let again = upload().await;
+        assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let said = axum::body::to_bytes(again.into_body(), 1 << 16).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&said).unwrap()["error"], "Everything in this file was already imported.");
+
+        // It survives a restart: the journal replays what was read.
+        let (_, replayed) = crate::world::Journal::open(&f.path).unwrap();
+        assert_eq!(replayed.read_ms, HashSet::from([1_791_000_000_000, 1_791_000_100_000]));
     }
 
     #[test]
