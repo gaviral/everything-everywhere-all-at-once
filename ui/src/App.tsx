@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCore, type Action, type ItemStatus, type Thread, type Thought, type World } from "./core";
 
@@ -45,7 +45,20 @@ export default function App() {
     }
   }, [world.active]);
 
+  // True once the voice service confirms it's listening; if it then stops (an error, a dropped
+  // connection), the mic turns off too instead of pulsing at nothing.
+  const heard = useRef(false);
+  useEffect(() => {
+    if (core.listening) heard.current = true;
+    else if (heard.current && stopMic) {
+      heard.current = false;
+      stopMic();
+      setStopMic(null);
+    }
+  }, [core.listening]);
+
   const toggleMic = async () => {
+    heard.current = false;
     if (stopMic) {
       stopMic();
       setStopMic(null);
@@ -56,8 +69,9 @@ export default function App() {
       core.listen(true);
       const stop = await startMic(core.sendAudio);
       setStopMic(() => stop);
-    } catch {
+    } catch (err) {
       core.listen(false);
+      core.showNotice(`Mic didn't start: ${err instanceof Error ? err.message : "no access"}`);
     }
   };
 
@@ -342,7 +356,8 @@ function Point({ thought }: { thought: Thought }) {
 }
 
 function ActionRow({ action, on }: { action: Action; on: Handlers }) {
-  const app = action.kind === "event" ? "Calendar" : "Reminders";
+  // Matches the core: an event without a date goes to Reminders.
+  const app = action.kind === "event" && action.when ? "Calendar" : "Reminders";
   const when = action.when
     ? new Date(`${action.when}T09:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
     : "";

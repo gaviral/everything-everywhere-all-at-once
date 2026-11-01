@@ -94,6 +94,8 @@ pub async fn run(core: Arc<Core>) {
         }
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         match pass(&core, &world).await {
+            // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
+            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
             Ok(changes) if !changes.is_empty() => core.commit(changes),
             Ok(_) => {}
             Err(e) => tracing::warn!("refiner pass failed: {e:#}"),
@@ -185,7 +187,8 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
                 action: Action {
                     id: new_id("ac"),
                     thread_id: a.thread_id,
-                    kind: if a.kind == "event" { "event".into() } else { "reminder".into() },
+                    // An event needs a date; without one it's a reminder rather than an invented day.
+                    kind: if a.kind == "event" && !a.when.trim().is_empty() { "event".into() } else { "reminder".into() },
                     title: a.title.trim().into(),
                     when: a.when.trim().into(),
                     status: ItemStatus::New,

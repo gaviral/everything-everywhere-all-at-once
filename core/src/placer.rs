@@ -7,7 +7,6 @@ use anyhow::{anyhow, bail, Context};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::mpsc;
 
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
@@ -56,9 +55,19 @@ fn clean(text: &str) -> String {
 
 pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<String>) {
     while let Some(thought_id) = queue.recv().await {
-        if let Err(e) = place(&core, &thought_id).await {
-            tracing::warn!("placement failed: {e:#}");
-            core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+        // A blip (rate limit, timeout) shouldn't lose a thought: three tries, then say so.
+        for attempt in 1..=3u64 {
+            match place(&core, &thought_id).await {
+                Ok(()) => break,
+                Err(e) if attempt < 3 => {
+                    tracing::warn!("placement failed (try {attempt}): {e:#}");
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
+                }
+                Err(e) => {
+                    tracing::warn!("placement failed: {e:#}");
+                    core.send(ServerMsg::Error { message: format!("Couldn't place a thought: {e}") });
+                }
+            }
         }
     }
 }
@@ -76,7 +85,6 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let started = Instant::now();
     let response = core
         .http
         .post(URL)
@@ -91,7 +99,8 @@ async fn place(core: &Core, thought_id: &str) -> anyhow::Result<()> {
     }
     let content = body["choices"][0]["message"]["content"].as_str().context("no answer")?;
     let placement: Placement = serde_json::from_str(content).context("answer wasn't the expected JSON")?;
-    let place_ms = started.elapsed().as_millis() as u64;
+    // From when the thought arrived, so time waiting in the queue counts too.
+    let place_ms = now_ms().saturating_sub(thought.at_ms);
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
     core.commit(decide(&world, &thought, placement, place_ms));

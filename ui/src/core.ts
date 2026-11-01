@@ -197,6 +197,7 @@ export function useCore() {
   const [notice, setNotice] = useState("");
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const socket = useRef<WebSocket | null>(null);
+  const outbox = useRef<string[]>([]);
 
   useEffect(() => {
     let closed = false;
@@ -211,6 +212,8 @@ export function useCore() {
       ws.onopen = () => {
         setConnected(true);
         retry = 500;
+        // Thoughts typed while the connection was down go out now.
+        for (const message of outbox.current.splice(0)) ws.send(message);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -261,7 +264,12 @@ export function useCore() {
     connected,
     notice,
     clearNotice: () => setNotice(""),
-    sendText: (text: string) => send(JSON.stringify({ type: "text", text })),
+    showNotice: (message: string) => setNotice(message),
+    sendText: (text: string) => {
+      const message = JSON.stringify({ type: "text", text });
+      if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
+      else if (outbox.current.length < 50) outbox.current.push(message);
+    },
     sendAudio: (frame: ArrayBuffer) => send(frame),
     listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
     focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
