@@ -8,12 +8,17 @@
 .palace-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 48px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
 .palace-intro p { max-width: 300px; margin: 0 0 3px; color: var(--muted); font-size: 13px; }
 .palace-keyboard { margin: 0 0 32px; color: var(--muted); font-size: 11px; }
-.palace-rooms { display: flex; flex-direction: column; gap: 36px; }
-.palace-room { min-width: 0; }
+/* Rooms flow side by side like words, each as wide as its pictures (--span of the row's columns, set by Palace.tsx);
+   the gap between rooms is twice the gap between pictures, so each room still reads as one group. */
+.palace-rooms { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 36px; }
+.palace-room { flex: none; min-width: 0; width: calc(var(--span, 6) * var(--tile, 171px) + (var(--span, 6) - 1) * 18px); max-width: 100%; }
 .palace-room-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.palace-room-rule { flex: 1; height: 1px; background: var(--line); }
+.palace-room-rule { flex: 1; min-width: 16px; height: 1px; background: var(--line); }
+/* A narrow room cuts a long title; its first picture carries the full one. */
+.palace-room-heading > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palace-room-heading > span:last-child { flex: none; }
 /* Tiles are buttons, which center their content: start keeps the pictures in a row level when captions differ. */
-.palace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 24px 18px; align-items: start; }
+.palace-grid { display: grid; grid-template-columns: repeat(var(--span, 6), minmax(0, 1fr)); gap: 24px 18px; align-items: start; }
 .palace-tile { display: block; min-width: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 /* Arrow keys bring a tile clear of what stays on screen: the header and tools above (114 px at 1440×900) and the dock
    below, with the clearance a thread gets on the map. */
@@ -45,6 +50,7 @@
   .palace-intro p { margin-top: 10px; }
   .palace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
   .palace-rooms { gap: 30px; }
+  .palace-room { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: none; } }
 
