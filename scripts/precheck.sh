@@ -60,7 +60,7 @@ else
   warn "app not running on :$port, live probes skipped"
 fi
 
-grep -q 'contributor' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
+grep -q '"muse-spark-1.2-contributor"' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
 check "run.sh names no other project's Keychain item" "! grep -q 'e2a2o' run.sh"
 # Placeholders the owner still has to decide on (pitch, cover, ...) must not ship unnoticed.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do warn "README still has a $marker placeholder for User to decide"; done
