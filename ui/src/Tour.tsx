@@ -22,7 +22,7 @@ export function Tour({ populated }: { populated: boolean }) {
   const [steps] = useState<Step[]>(() => {
     const composer = { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" };
     const map = { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." };
-    const tools = { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary." };
+    const tools = { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary. Press ? for everything you can say." };
     return populated ? [map, composer, tools] : [composer, map, tools];
   });
   const [step, setStep] = useState(() => hasToured() ? -1 : 0);
