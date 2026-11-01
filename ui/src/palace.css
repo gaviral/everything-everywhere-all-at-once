@@ -41,3 +41,12 @@
   .palace-rooms { gap: 30px; }
 }
 @media (prefers-reduced-motion: reduce) { .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: none; } }
+
+/* Labels stay readable when the gallery is shown in a recording. */
+.palace-keyboard, .palace-parent { font-size: 12px; }
+.palace-room-heading, .palace-badge { font-size: 11px; }
+.palace-point { font-size: 13px; }
+.palace-point > span { font-size: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .palace-art, .palace-point { transition: none; }
+}

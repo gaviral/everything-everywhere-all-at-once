@@ -24,12 +24,18 @@ function Blocks({ app }: { app: MiniApp }) {
 }
 
 export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [request, setRequest] = useState("");
   const build = core.apps.build;
   const buildArea = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
   const ready = build?.stage === "ready" || build?.stage === "matched";
   const busy = !!build && ["searching", "composing", "validating"].includes(build.stage);
+  useEffect(() => {
+    if (!core.snapshotRevision || initialized.current) return;
+    initialized.current = true;
+    if (core.world.apps.length === 0) setOpen(true);
+  }, [core.snapshotRevision, core.world.apps.length]);
   useEffect(() => {
     if (build) setOpen(true);
   }, [build?.id]);
@@ -56,36 +62,19 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
       else core.showNotice("Sound is unavailable here. You can choose a card instead.");
     }, 50);
   };
-  return <aside className="apps-panel" aria-label="Apps">
+  const enabledCount = core.world.apps.filter((a) => a.enabled).length;
+  return <aside className={`apps-panel${open ? " is-open" : ""}${core.apps.soundPending ? " has-sound" : ""}`} aria-label="Apps">
     <div className="apps-heading">
       <button className="apps-title" aria-expanded={open} aria-controls="apps-content" onClick={() => setOpen(!open)}>
-        <strong>Apps</strong><span>{core.world.apps.filter((a) => a.enabled).length} on</span><span aria-hidden="true">{open ? "−" : "+"}</span>
+        <span className="apps-mark" aria-hidden="true">✦</span><strong>Apps</strong><span>{enabledCount} on</span><span className="apps-toggle">{open ? "Close" : "Open"}</span>
       </button>
-      <button className="apps-new" onClick={() => { setOpen(true); window.setTimeout(() => document.getElementById("app-request")?.focus(), 0); }}>Make an app</button>
+      {open && <button className="apps-new" onClick={() => document.getElementById("app-request")?.focus()}>Make an app</button>}
     </div>
     {core.apps.soundPending && <div className="apps-sound" role="status">
       <span>{core.apps.soundPending} has a quiet tune for you.</span><button onClick={play}>Play tune</button>
       <button onClick={core.apps.clearSound} aria-label="Dismiss tune">×</button>
     </div>}
     {open && <div id="apps-content">
-      <div className="apps-list">
-        {core.world.apps.map((app) => <article className="apps-row" key={app.id} id={`app-${app.id}`}>
-          <div className="apps-info"><strong>{app.name}</strong><p>{app.purpose}</p>
-            <details><summary>Steps</summary><Blocks app={app} />
-              {app.prompt && <p className="apps-prompt">{app.prompt.system}</p>}
-              <button className="apps-remove" disabled={!core.connected} onClick={() => core.removeApp(app.id)}>Remove app</button>
-            </details>
-            {app.id === "app-volume" && app.watcher.kind === "volume" && <label className="apps-output">When it gets loud
-              <select aria-label={`${app.name} response`} value={app.publishers.some((p) => p.kind === "sound") ? "sound" : "card"}
-                disabled={!core.connected} onChange={(e) => { if (e.target.value === "sound") unlockTune(); core.appOutput(app.id, e.target.value === "sound"); }}>
-                <option value="card">Show a calm card</option><option value="sound">Play a light tune</option>
-              </select>
-            </label>}
-          </div>
-          <button className={`apps-switch ${app.enabled ? "on" : ""}`} role="switch" aria-checked={app.enabled}
-            aria-label={`${app.name} on`} disabled={!core.connected} onClick={() => core.toggleApp(app.id, !app.enabled)}>{app.enabled ? "On" : "Off"}</button>
-        </article>)}
-      </div>
       {build && <div className={`apps-build ${build.stage}`} ref={buildArea} tabIndex={-1} aria-label="App being composed">
         <p className="apps-request">“{build.request}”</p>
         <ol className="apps-progress" aria-live="polite" aria-relevant="additions text">
@@ -112,6 +101,25 @@ export function Apps({ core }: { core: ReturnType<typeof useCore> }) {
           <button disabled={!core.connected || !request.trim() || busy || ready}>Make app</button></div>
         <p className="apps-help">You can also say “make an app that…” while the mic is on.</p>
       </form>
+      <div className="apps-list">
+        {core.world.apps.length > 0 && <h2 className="apps-list-heading">Your apps</h2>}
+        {core.world.apps.map((app) => <article className="apps-row" key={app.id} id={`app-${app.id}`}>
+          <div className="apps-info"><strong>{app.name}</strong><p>{app.purpose}</p>
+            <details><summary>Steps</summary><Blocks app={app} />
+              {app.prompt && <p className="apps-prompt">{app.prompt.system}</p>}
+              <button className="apps-remove" disabled={!core.connected} onClick={() => core.removeApp(app.id)}>Remove app</button>
+            </details>
+            {app.id === "app-volume" && app.watcher.kind === "volume" && <label className="apps-output">When it gets loud
+              <select aria-label={`${app.name} response`} value={app.publishers.some((p) => p.kind === "sound") ? "sound" : "card"}
+                disabled={!core.connected} onChange={(e) => { if (e.target.value === "sound") unlockTune(); core.appOutput(app.id, e.target.value === "sound"); }}>
+                <option value="card">Show a calm card</option><option value="sound">Play a light tune</option>
+              </select>
+            </label>}
+          </div>
+          <button className={`apps-switch ${app.enabled ? "on" : ""}`} role="switch" aria-checked={app.enabled}
+            aria-label={app.name} disabled={!core.connected} onClick={() => core.toggleApp(app.id, !app.enabled)}>{app.enabled ? "On" : "Off"}</button>
+        </article>)}
+      </div>
     </div>}
   </aside>;
 }
