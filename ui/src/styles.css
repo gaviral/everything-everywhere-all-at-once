@@ -13,6 +13,12 @@
   --ai-button-ink: #fff;
   --accent-button-ink: #fff;
   --amber-button-ink: #fff;
+  /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
+  --room-red: #b4253f; --room-red-soft: #fbe1e5;
+  --room-green: #1d7a43; --room-green-soft: #dcf2e3;
+  --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
+  --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
+  --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
   color-scheme: light;
 }
@@ -33,6 +39,11 @@
     --ai-button-ink: #20152f;
     --accent-button-ink: #102344;
     --amber-button-ink: #30200b;
+    --room-red: #ff8a9c; --room-red-soft: #3a1d23;
+    --room-green: #76d39c; --room-green-soft: #1b3125;
+    --room-pink: #f293d2; --room-pink-soft: #341c2e;
+    --room-teal: #6fd2ca; --room-teal-soft: #17302f;
+    --room-lime: #c2da6a; --room-lime-soft: #2b3117;
     --shadow: 0 2px 12px rgba(0, 0, 0, .24);
     color-scheme: dark;
   }
@@ -828,3 +839,13 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .composer { position: sticky; bottom: 0; flex: none; }
   .away-items { max-height: 15dvh; }
 }
+
+/* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
+   ink, so color stays scarce enough to mean something. */
+.branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
+/* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
+.when.due { color: var(--amber); }
+.when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
+.when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
+/* stand-in: `?look=ink` shows option 2 (no room colors) for side-by-side screenshots; one look ships. */
+.look-ink .branches { border-left-color: var(--line); }

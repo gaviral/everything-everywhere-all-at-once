@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { capitalized, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
+import { roomColors, roomStyle } from "./rooms";
 import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
@@ -38,6 +39,7 @@ function makeRooms(threads: Thread[]): Room[] {
 export function Palace({ threads, active, onOpen }: { threads: Thread[]; active: string | null; onOpen: (thread: Thread) => void }) {
   const me = useMe();
   const rooms = useMemo(() => makeRooms(threads), [threads]);
+  const colors = useMemo(() => roomColors(threads), [threads]);
   const byId = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -78,7 +80,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
       </div>
       <div className="palace-rooms">
         {rooms.map(({ root, members }) => (
-          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`}>
+          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`} style={roomStyle(colors.get(root.id))}>
             {/* A room of one place is just its tile: the heading would repeat the tile's title. */}
             {members.length > 1 && <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} places</span></div>}
             <div className="palace-grid">

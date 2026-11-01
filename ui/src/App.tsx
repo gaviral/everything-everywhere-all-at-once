@@ -17,6 +17,7 @@ import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
+import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -333,6 +334,7 @@ export default function App() {
   }, [world.active]);
 
   const threadById = useMemo(() => new Map(world.threads.map((thread) => [thread.id, thread])), [world.threads]);
+  const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const previousThoughtGroups = useRef(new Map<string, Thought[]>());
   const thoughtsByThread = useMemo(() => {
     const grouped = new Map<string, Thought[]>();
@@ -612,7 +614,7 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
-          <MapCards active={world.active} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} on={on} />
+          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} on={on} />
         )}
       </main>}
 
@@ -718,7 +720,7 @@ function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: 
 }
 
 type MapProps = {
-  active: string | null; on: Handlers; activePath: Set<string>;
+  active: string | null; on: Handlers; activePath: Set<string>; rooms: Map<string, string>;
   childrenByParent: Map<string | null, Thread[]>; thoughtsByThread: Map<string, Thought[]>;
   ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
   matches: Set<string>; searching: boolean; expanded: Record<string, boolean>;
@@ -732,7 +734,7 @@ const MapCards = memo(function MapCards(props: MapProps) {
     : roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
 });
 
-function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
+function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
@@ -751,6 +753,7 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
       id={`thread-${thread.id}`}
       aria-labelledby={`title-${thread.id}`}
       className={classes}
+      style={roomStyle(rooms.get(thread.id))}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
@@ -813,7 +816,7 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
           ))}
         </div>
       )}
@@ -870,12 +873,16 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const date = day(action.when);
   const app = action.kind === "event" && date ? "Calendar" : "Reminders";
   const when = date ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
+  // How soon it's due, in words and in amber's shade (what needs you): overdue darkest, today full, later quiet.
+  const days = date ? Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000) : null;
+  const due = days == null || action.status === "done" ? "" : days < 0 ? "overdue" : days === 0 ? "today" : days === 1 ? "tomorrow" : "";
+  const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
   return (
     <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
-        {when && <span className="when"> · {when}</span>}
+        {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
       </span>
       {action.status === "new" && (
         <span className="ai-actions">

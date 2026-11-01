@@ -14,21 +14,25 @@ use std::time::Duration;
 
 const URL: &str = "https://api.meta.ai/v1/images/generations";
 
-/// The house style, so pictures read as one set and each still stands out: one concrete thing
-/// with a twist (vivid, odd images are the ones a memory palace keeps), never a diagram,
-/// drawn the same way every time, on a background color of its own.
-const STYLE: &str = "A memory-palace picture: turn the topic into one concrete, physical thing (an object or a creature) \
-doing something vivid and a little absurd, so it sticks in the mind: oversized, made of an unexpected material, \
-or in an odd situation, yet clearly about the topic. If the topic is serious or painful, make it gentle instead of absurd. \
-Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself. \
-Never a diagram, chart, flowchart, collage, set of icons or screen. \
-House style, the same for every picture: bold, simple 3D clay-style illustration, chunky rounded shapes, saturated colors, \
-soft studio light, the subject centered and filling most of the square, on a plain flat background with nothing else on it. \
-It must read at a glance as a tiny thumbnail. No text, letters, numbers, logos or borders.";
+/// What a picture is: the one object anyone would name for the topic, so it reads at 38 px on a folded card.
+/// In blind matching on the sample at map size, busy clay scenes got 12-16 of 32 thumbnails paired with the right
+/// title; one recognizable object, distinct from the map's other topics, got 30-32.
+const SUBJECT: &str = "A picture that stands for the topic at a glance: the single most recognizable everyday object for it \
+(for example an umbrella for a worry about the weather, a passport for a trip), alone. A twist only in material or scale, \
+never one that hides what the object is. If the topic is serious or painful, keep it gentle. \
+Exactly one object: no second object, no props, no scene, no ground line. Its outline must be unmistakable as a tiny silhouette. \
+Avoid cultural, ethnic or national stereotypes. Never a diagram, chart, collage, set of icons or screen. \
+The object is centered and fills most of the square, on a plain flat background with nothing else on it. \
+No text, letters, numbers, logos or borders.";
 
-/// Background colors, warm and cool in turn, so threads started one after another never look alike.
-const COLORS: [&str; 10] =
-    ["coral", "teal", "mustard yellow", "cornflower blue", "tangerine", "mint green", "rose pink", "lavender", "lime green", "sky blue"];
+/// Each room's color, in the order rooms started: none near the blue, amber or purple the app keeps for where you
+/// are, what needs you and what the AI added. Siblings share it (their objects tell them apart), so a room reads as
+/// one group in the Palace; the UI tints the room's titles with the same family (`ui/src/rooms.ts`).
+// Cool and warm take turns, so neighboring rooms never look alike; a calm green comes first, red only fourth.
+const FAMILIES: [&str; 5] = ["emerald green", "orchid pink", "teal", "raspberry red", "lime green"];
+
+/// The other topics a prompt names, newest first: a Palace screen shows 18 tiles side by side (3 rows of 6).
+const OTHERS: usize = 18;
 
 /// The map shows pictures at 52 px or less; 128 px stays sharp on 2x and 3x screens.
 const SMALL: u32 = 128;
@@ -99,13 +103,14 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                 .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
                 .map(|p| p.point.clone())
                 .collect();
+            let prompt = prompt(&world, thread, &points);
             let attempt = attempts.entry(thread.id.clone()).or_default();
             attempt.count += 1;
             attempt.in_flight = true;
             let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
             drawing.push(async move {
                 let started = crate::now_ms();
-                let result = draw(&core, &dir, &thread, &points).await;
+                let result = draw(&core, &dir, &thread, &prompt).await;
                 if result.is_ok() {
                     tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
                 }
@@ -145,26 +150,60 @@ pub(crate) fn perf(world: &World, now: u64) {
         ready(world, &HashMap::new(), now + SETTLE_MS, QUIET_MS).iter().map(|thread| {
             let points = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
                 .map(|p| p.point.clone()).collect::<Vec<_>>();
-            prompt(thread, &points)
+            prompt(world, thread, &points)
         }).collect::<Vec<_>>()
     }, |prompts| prompts.iter().map(String::len).sum());
 }
 
-/// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
-fn prompt(thread: &Thread, points: &[String]) -> String {
-    // Numbered threads take turns through the colors; others (imported ones) get one picked from their id.
-    let number: usize = thread.id.trim_start_matches('T').parse()
-        .unwrap_or_else(|_| thread.id.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)));
-    let color = COLORS[number % COLORS.len()];
-    // The first few points say what the thread is; more only makes the prompt longer.
-    let details = points.iter().take(6).map(String::as_str).collect::<Vec<_>>().join("; ");
-    format!("{STYLE} Background color: {color}. Topic: {}. Details: {details}.", thread.title)
+/// What Muse Image is asked for: the object rule, the room's look, the topic, and the topics to keep it apart from.
+fn prompt(world: &World, thread: &Thread, points: &[String]) -> String {
+    let family = family(world, thread);
+    // stand-in: E2A2O_LOOK=ink draws option 2 (house black ink) for side-by-side screenshots; one look ships.
+    let look = if std::env::var("E2A2O_LOOK").as_deref() == Ok("ink") {
+        "House style: bold flat illustration, simple shapes, no gradients. Colors: a near-black ink object with one \
+mid-gray tone, on a plain light neutral gray background with no warm or cool tint; no other colors."
+            .to_string()
+    } else {
+        format!(
+            "House style: bold, simple 3D clay-style illustration, chunky rounded shapes, soft studio light. Colors: the \
+object is made entirely of {family} clay in a few shades of {family}, on a pale, light {family} background; nothing in any other color."
+        )
+    };
+    let mut prompt = format!("{SUBJECT} {look} Topic: {}.", thread.title);
+    // The first point says what the thread is; more details invite props.
+    if let Some(point) = points.first() {
+        prompt += &format!(" Detail: {point}.");
+    }
+    let mut others: Vec<&Thread> = world.threads.iter().filter(|t| t.id != thread.id).collect();
+    others.sort_by_key(|t| std::cmp::Reverse(t.touched_ms));
+    let others = others.iter().take(OTHERS).map(|t| t.title.as_str()).collect::<Vec<_>>();
+    if !others.is_empty() {
+        prompt += &format!(
+            " Other topics on this map: {}. Pick an object clearly different from what any of them would get.",
+            others.join("; ")
+        );
+    }
+    prompt
 }
 
-async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> anyhow::Result<String> {
+/// The color family of a thread's room: rooms take turns through `FAMILIES` in the order their first thread started.
+fn family(world: &World, thread: &Thread) -> &'static str {
+    let mut root = thread;
+    // A parent chain can't be longer than the map; the bound keeps a broken one from looping.
+    for _ in 0..world.threads.len() {
+        match root.parent_id.as_deref().and_then(|id| world.thread(id)) {
+            Some(parent) => root = parent,
+            None => break,
+        }
+    }
+    let index = world.threads.iter().filter(|t| t.parent_id.is_none()).position(|t| t.id == root.id).unwrap_or(0);
+    FAMILIES[index % FAMILIES.len()]
+}
+
+async fn draw(core: &Core, dir: &Path, thread: &Thread, prompt: &str) -> anyhow::Result<String> {
     let body = serde_json::json!({
         "model": "muse-image-1.0",
-        "prompt": prompt(thread, points),
+        "prompt": prompt,
         "n": 1,
         // Sets the shape only; Muse Image draws at its own size (1600 px).
         "size": "1024x1024",
@@ -465,22 +504,28 @@ mod tests {
     }
 
     #[test]
-    fn neighboring_threads_get_different_colors() {
-        let thread = |id: &str| Thread {
+    fn rooms_take_turns_through_the_colors_and_branches_share_their_room() {
+        let thread = |id: &str, parent: Option<&str>, title: &str, touched_ms: u64| Thread {
             id: id.into(),
-            title: "Laundry".into(),
-            parent_id: None,
+            title: title.into(),
+            parent_id: parent.map(Into::into),
             status: crate::world::ThreadStatus::Open,
             last_point: String::new(),
-            touched_ms: 0,
+            touched_ms,
             tags: vec![],
             picture: None,
             dropped_by: String::new(),
         };
-        let points = vec!["Fold it tonight".to_string()];
-        assert_ne!(prompt(&thread("T3"), &points), prompt(&thread("T4"), &points));
-        assert!(prompt(&thread("T3"), &points).ends_with("Topic: Laundry. Details: Fold it tonight."));
-        assert!(prompt(&thread("T3"), &points)
-            .contains("Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself."));
+        let mut world = World::default();
+        world.threads = vec![thread("T1", None, "Laundry", 1), thread("T2", None, "Rent", 2), thread("T3", Some("T1"), "Socks", 3)];
+        assert_eq!(family(&world, &world.threads[0]), FAMILIES[0]);
+        assert_eq!(family(&world, &world.threads[1]), FAMILIES[1]);
+        assert_eq!(family(&world, &world.threads[2]), FAMILIES[0], "a branch has its room's color");
+        let points = vec!["Fold it tonight".to_string(), "Buy softener".to_string()];
+        let laundry = prompt(&world, &world.threads[0], &points);
+        assert!(laundry.contains("of emerald green clay"), "{laundry}");
+        assert!(laundry.contains("Topic: Laundry. Detail: Fold it tonight. Other topics on this map: Socks; Rent."), "{laundry}");
+        assert!(!laundry.contains("Buy softener"), "one point says what it is");
+        assert!(laundry.contains("Avoid cultural, ethnic or national stereotypes."));
     }
 }
