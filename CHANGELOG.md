@@ -51,6 +51,15 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - The sample maps are dated the week of Nov 3, 2026, and include a real “Did you mean” question: “BC Hydra” to “BC Hydro” and “CSB” to “CSP”.
 
 ### Recent changes
+- The first "Later" on the unfinished-thought card brings it back once, at a pause at least 5 minutes later; a second "Later" hides it until that thread changes.
+- Suggested tags wait until a thread has 3 thoughts before they appear; kept tags always show.
+- Importing the same file again skips messages an earlier import already read, so nothing is added twice; importing shows "Everything in this file was already imported" when there is nothing new.
+- Import reads at most 12 messages per part (smaller parts), because the fast model skipped late messages in larger groups.
+- The refiner resolves relative dates ("tomorrow", "Friday") from the day a point was said, not today, so an imported point from last Wednesday that says "by Friday" gets the right Friday; older points show their said date in the refiner's prompt.
+- Notices that say "mic" in a thread title no longer stay on screen for good (the notice filter matched the word too broadly).
+- An Explain answer stays on screen when the talk moves on and the thread folds away; it used to vanish.
+- Reconnecting clears stale live words from the dock.
+- Turning the mic off and quickly on again no longer switches it off (a late "Stopped listening" message arrived after the new session started).
 - A refused key (wrong or expired) stops model calls after the first, says so plainly (“AI key refused”), and keeps waiting thoughts until a restart with a working key; a busy service backs off and says so once.
 - A key that can't use Contributor mode no longer reads as refused: placing and Explain switch to `muse-spark-1.2` until a restart and say so once; a `PLACER_MODEL` you set is used as is.
 - Time apps keep the local time you asked for on days the clocks change: “play a tune at 5 PM”, made early on Nov 1, started at 4 PM before (2 of 2 runs) and at 5 PM now (2 of 2), and an app repeating every day keeps its hour, even after a run that came late.
