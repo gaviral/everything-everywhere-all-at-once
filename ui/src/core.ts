@@ -37,6 +37,13 @@ export interface Thought {
   place_ms: number | null;
 }
 
+/** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
+ * has a capital inside ("iPhone", "eBay") is a name, and stays as it is. */
+export function capitalized(point: string): string {
+  return point.replace(/^([\s"'\p{Ps}\p{Pi}]*)(\p{Ll})(\S*)/u, (word: string, lead: string, first: string, rest: string) =>
+    /\p{Lu}/u.test(rest) ? word : lead + first.toUpperCase() + rest);
+}
+
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
