@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 
@@ -58,10 +58,24 @@ export default function App() {
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
-  // A view said aloud works as its button: Map or Palace, Focus on (with a thread to focus on), or off ("show all").
+  // The "?" list of what you can say, opened by its button or by asking ("What can I say?"). It closes on your next
+  // turn, Esc or a click outside it, never on a timer: what you say next is your own sign you're done reading.
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Ahead of the view effect: a spoken turn's end and the list it asked for can arrive in one render.
+  useEffect(() => { if (core.handoff) setHelpOpen(false); }, [core.handoff]);
   useEffect(() => {
-    if (!core.viewAsk || !world.threads.length) return;
+    if (!helpOpen) return;
+    const outside = (event: PointerEvent) => { if (!(event.target instanceof Element && event.target.closest(".shortcuts"))) setHelpOpen(false); };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [helpOpen]);
+  // A view said aloud works as its button: Map or Palace, Focus on (with a thread to focus on), or off ("show all");
+  // and the "?" list, on an empty map too, where "What can I say?" is most likely.
+  useEffect(() => {
+    if (!core.viewAsk) return;
     const asked = core.viewAsk.view;
+    if (asked === "help") { setHelpOpen(true); return; }
+    if (!world.threads.length) return;
     setView(asked === "palace" ? "palace" : "map");
     if (asked === "all" || (asked === "focus" && world.active)) {
       setFocusMode(asked === "focus");
@@ -222,7 +236,8 @@ export default function App() {
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
   // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
-    if (!core.notice || noticeFocused || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
+    // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
+    if (!core.notice || noticeFocused || core.notice === LOOKING || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
     const timer = window.setTimeout(core.clearNotice, 5000);
     return () => window.clearTimeout(timer);
   }, [core.notice, core.found, core.clearNotice, noticeFocused]);
@@ -284,6 +299,7 @@ export default function App() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (draft.trim()) {
+      setHelpOpen(false);
       if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
       if (core.sendText(draft.trim())) setDraft("");
     }
@@ -417,9 +433,11 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
-      if (event.key === "Escape") {
-        const shortcuts = document.querySelector<HTMLDetailsElement>(".shortcuts[open]");
-        if (shortcuts) { event.preventDefault(); shortcuts.open = false; shortcuts.querySelector("summary")?.focus(); return; }
+      if (event.key === "Escape" && document.querySelector(".shortcuts[open]")) {
+        event.preventDefault();
+        setHelpOpen(false);
+        document.querySelector<HTMLElement>(".shortcuts summary")?.focus();
+        return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
@@ -566,20 +584,23 @@ export default function App() {
         </div>
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
-        <details className="shortcuts"><summary aria-label="Keyboard and voice commands">?</summary><div className="keyboard-hint">
-          <div>✦ added or suggested by AI</div>
+        {/* What you can say comes first: asking for this list by voice is how most people open it. */}
+        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div className="keyboard-hint">
+          <strong>Say or type</strong>
+          <div>“What can I say?” · opens this list</div>
+          <div>“Where was I?” or “Go back” · return to where you left off</div>
+          <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
+          <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
+          <div>“New thread” or “Create a new one” · your next thought starts one</div>
+          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
+          <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <strong>Keyboard</strong>
           <div>Map: / search · j / k move between threads · Enter show or hide · Esc fold quiet threads</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
-          <strong>Say or type</strong>
-          <div>“Where was I?” or “Go back” · return to where you left off</div>
-          <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
-          <div>“New thread” or “Create a new one” · your next thought starts one</div>
-          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
-          <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
-          <div>Back, next and last can follow a thought after a pause; the thought is kept.</div>
+          <strong>On the map</strong>
+          <div>✦ added or suggested by AI</div>
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />

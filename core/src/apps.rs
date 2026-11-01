@@ -420,10 +420,12 @@ pub fn volume_output(core: &Core, id: String, sound: bool) {
     }
 }
 
-/// A spoken or typed "make an app that …", returning what the app should do in the person's own words.
-/// As with main.rs `is_command`, punctuation and filler before it don't count ("Okay, make an app that …",
-/// "Can you make me an app to …"), but it must open what was said: "I might make an app that …" stays a thought.
+/// A spoken or typed "make an app that …" ("build an app that …", "make a new app to …"), returning what the app
+/// should do in the person's own words. As with every request, punctuation and the words that lead into it don't
+/// count ("Okay, make an app that …", "Can you make me an app to …"; main.rs `lead_in`), but it must open what was
+/// said: "I might make an app that …" and "Let's make an app that …" (talk about one) stay thoughts.
 pub fn command(text: &str) -> Option<String> {
+    let text = crate::lead_in(text);
     // Each word, lowercased, with where it ends in the text.
     let mut words: Vec<(String, usize)> = Vec::new();
     let mut start = None;
@@ -435,20 +437,14 @@ pub fn command(text: &str) -> Option<String> {
         }
     }
     let said: Vec<&str> = words.iter().map(|(w, _)| w.as_str()).collect();
-    let mut at = 0;
-    loop {
-        match &said[at..] {
-            [w, ..] if crate::FILLER.contains(w) || matches!(*w, "hey" | "please") => at += 1,
-            ["can" | "could" | "would" | "will", "you", ..] => at += 2,
-            _ => break,
-        }
-    }
-    let ask = match &said[at..] {
-        ["make" | "create", "an", "app", "that" | "to", ..] => 4,
-        ["make" | "create", "me" | "us", "an", "app", "that" | "to", ..] => 5,
+    let ask = match said.as_slice() {
+        ["make" | "create" | "build", "an", "app", "that" | "to", ..] => 4,
+        ["make" | "create" | "build", "me" | "us", "an", "app", "that" | "to", ..] => 5,
+        ["make" | "create" | "build", "a", "new", "app", "that" | "to", ..] => 5,
+        ["make" | "create" | "build", "me" | "us", "a", "new", "app", "that" | "to", ..] => 6,
         _ => return None,
     };
-    let rest = &text[words[at + ask - 1].1..];
+    let rest = &text[words[ask - 1].1..];
     Some(rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '.' | '…' | ':' | ';' | '-' | '—')).trim_end().into())
 }
 

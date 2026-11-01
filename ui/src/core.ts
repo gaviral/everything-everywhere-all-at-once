@@ -54,9 +54,13 @@ export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
 
-// A view asked for by voice ("palace", "show the map", "let's focus", "show all"); the revision makes the
-// same one asked twice a new ask.
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all"; revision: number };
+// A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
+// say?"); the revision makes the same one asked twice a new ask.
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help"; revision: number };
+
+// Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
+// when something newer stops the search.
+export const LOOKING = "Looking through your threads…";
 
 export interface Suggestion {
   id: string;
@@ -467,7 +471,7 @@ export function useCore(speaker?: string) {
           // Other errors and notices use the same notice area.
           case "notice":
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
-            setNotice(msg.message);
+            setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             break;
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
@@ -490,6 +494,8 @@ export function useCore(speaker?: string) {
         awaitingThought = false;
         setPartial("");
         setHandoff("");
+        // No answer comes on a closed connection.
+        setNotice((shown) => (shown === LOOKING ? "" : shown));
         recapDisconnected();
         setConnected(false);
         setListening(false);
