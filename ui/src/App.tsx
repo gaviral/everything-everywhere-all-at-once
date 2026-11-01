@@ -67,6 +67,7 @@ export default function App() {
   const [noticeFocused, setNoticeFocused] = useState(false);
   const lastNavigation = useRef(0);
   const following = useRef(false);
+  const followDone = useRef(() => {});
   useEffect(() => {
     const navigate = () => { lastNavigation.current = Date.now(); };
     const scroll = () => { if (!following.current) navigate(); };
@@ -141,9 +142,16 @@ export default function App() {
       // Just far enough: up from under the composer; down to it with its thread's head too, when both fit.
       const delta = shown.bottom > bottom ? shown.bottom - bottom + 12
         : shown.bottom - (thread.top - top - 12) <= bottom ? thread.top - top - 12 : shown.top - top - 12;
+      // The map's own scrolling isn't you moving around, until it ends: smooth scrolling can outlast a fixed second
+      // when frames are slow, and a late scroll event then held the next landing back for 5 s.
+      followDone.current();
       following.current = true;
+      const ends = "onscrollend" in document;
+      const done = () => { following.current = false; document.removeEventListener("scrollend", done); window.clearTimeout(cap); };
+      const cap = window.setTimeout(done, ends ? 3000 : reducedMotion ? 100 : 1000);
+      if (ends) document.addEventListener("scrollend", done);
+      followDone.current = done;
       window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
-      window.setTimeout(() => { following.current = false; }, reducedMotion ? 100 : 1000);
     }), 120);
   }, [world.thoughts, world.threads, world.active, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
 
