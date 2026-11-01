@@ -304,6 +304,22 @@ async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_
 }
 
 #[tokio::test]
+async fn an_app_hears_the_newest_thought_once() {
+    let fixture = Fixture::new();
+    let resolver = seeds(true).remove(0);
+    let said = |id: &str, text: &str, at_ms| Thought { id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(),
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
+        complete: true, at_ms, place_ms: None };
+    fixture.core.commit(vec![Change::AppRegistered { app: resolver.clone() },
+        Change::ThoughtAdded { thought: said("a", "rent is due friday", 1) }, Change::ThoughtAdded { thought: said("b", "pay it from savings", 2) }]);
+    fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
+    execute(&fixture.core, &resolver, Some(("T1".into(), "b".into()))).await.unwrap();
+    let asked = fixture.core.apps.asked.lock().unwrap().pop().unwrap();
+    assert_eq!(asked.matches("pay it from savings").count(), 1, "{asked}");
+    assert!(asked.contains("rent is due friday\nNewest: pay it from savings"), "{asked}");
+}
+
+#[tokio::test]
 async fn volume_uses_separate_sources_and_the_selected_publisher() {
     let fixture = Fixture::new();
     seed(&fixture.core, false);

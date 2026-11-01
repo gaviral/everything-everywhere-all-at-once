@@ -84,6 +84,9 @@ pub struct Runtime {
     state: Mutex<RuntimeState>,
     #[cfg(test)]
     answers: Mutex<std::collections::VecDeque<Value>>,
+    /// What each model call was asked.
+    #[cfg(test)]
+    asked: Mutex<Vec<String>>,
 }
 
 #[derive(Default)]
@@ -417,8 +420,9 @@ async fn execute(core: &Core, app: &MiniApp, target: Option<(String, String)>) -
     let thread_id = target.as_ref().map(|t| t.0.clone()).or_else(|| world.active.clone());
     let thought = target.as_ref().and_then(|t| world.thoughts.iter().find(|p| p.id == t.1));
     let topic = thread_id.as_deref().and_then(|id| world.thread(id)).map(|t| t.title.as_str()).unwrap_or("");
+    // The points before the newest thought: with it in both, an app looking for repetition finds it every time.
     let points = world.thoughts.iter().filter(|t| t.placed && t.thread_id == thread_id)
-        .filter(|t| thought.is_none_or(|latest| t.at_ms <= latest.at_ms)).collect::<Vec<_>>();
+        .filter(|t| thought.is_none_or(|latest| t.at_ms <= latest.at_ms && t.id != latest.id)).collect::<Vec<_>>();
     let (points, newest) = said(&points[points.len().saturating_sub(8)..], thought);
     let time = format!("{} ({} Unix ms)", local_time(), now_ms());
     let fields = [("thought", newest.as_str()), ("points", points.as_str()), ("topic", topic), ("time", time.as_str())];
@@ -494,6 +498,8 @@ pub fn valid_date(text: &str) -> bool {
 fn notice(core: &Core, message: &str) { core.send(ServerMsg::Notice { message: message.into() }); }
 
 async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value) -> anyhow::Result<Value> {
+    #[cfg(test)]
+    core.apps.asked.lock().unwrap().push(user.into());
     #[cfg(test)]
     if let Some(answer) = core.apps.answers.lock().unwrap().pop_front() { return Ok(answer); }
     let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
