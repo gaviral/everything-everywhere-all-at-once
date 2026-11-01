@@ -31,7 +31,7 @@
 {"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Text Priya about slides","when":"2026-11-03","status":"new","done_ms":null}}
 {"type":"tag_suggested","thread_id":"T3","tag":"school"}
 {"type":"tag_suggested","thread_id":"T3","tag":"group-project"}
-{"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T3","text":"Could combine the rehearsal with a Zoom call Tuesday evening","status":"new"}}
+{"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T3","text":"Could combine the rehearsal with a Zoom call this evening","status":"new"}}
 {"type":"thread_added","thread":{"id":"T4","title":"Demo recording plan","parent_id":"T1","status":"open","last_point":"","touched_ms":1793747400000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T4"}
 {"type":"thought_added","thought":{"id":"th-9","speaker":"you","text":"Okay back to the hackathon. For the demo I want to show the mic working, then the map building, then the apps","point":"Demo: mic, map building, then apps","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747400000,"place_ms":1800}}
@@ -94,8 +94,8 @@
 {"type":"thought_added","thought":{"id":"th-26","speaker":"you","text":"Back to the group project, I just realized our presentation and the hackathon deadline are basically the same week","point":"Group presentation and hackathon deadline same week","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749200000,"place_ms":1800}}
 {"type":"thread_touched","thread_id":"T3","last_point":"Group presentation and hackathon deadline same week","at_ms":1793749200000}
 {"type":"active_changed","thread_id":"T3"}
-{"type":"thought_added","thought":{"id":"th-27","speaker":"you","text":"I think I need to do the hackathon stuff tonight and tomorrow morning and the group stuff Tuesday afternoon","point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749260000,"place_ms":1500}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Hackathon tonight and tomorrow AM, group stuff Tuesday PM","at_ms":1793749260000}
+{"type":"thought_added","thought":{"id":"th-27","speaker":"you","text":"I think I need to do the group stuff this afternoon and the hackathon stuff tonight and tomorrow morning","point":"Group stuff this afternoon, hackathon tonight and tomorrow AM","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749260000,"place_ms":1500}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Group stuff this afternoon, hackathon tonight and tomorrow AM","at_ms":1793749260000}
 {"type":"thread_picture","thread_id":"T3","path":"/images/T3-b8498b6119a54b63a1b2bcf545ec1916-small.webp"}
 {"type":"thought_added","thought":{"id":"th-28","speaker":"you","text":"The cooking class thing I can do on my phone while waiting for the demo to render or whatever","point":"Book cooking class on phone during downtime","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749400000,"place_ms":1700}}
 {"type":"thread_touched","thread_id":"T5","last_point":"Book cooking class on phone during downtime","at_ms":1793749400000}
