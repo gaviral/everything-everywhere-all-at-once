@@ -107,12 +107,22 @@ pub struct World {
     /// Merged thread id → the thread it became, so late changes still land.
     #[serde(default)]
     pub merged: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub apps: Vec<crate::apps::MiniApp>,
+    #[serde(default)]
+    pub apps_seeded: bool,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    AppRegistered { app: crate::apps::MiniApp },
+    AppEnabled { id: String, enabled: bool },
+    AppRemoved { id: String },
+    AppRan { id: String, at_ms: u64 },
+    AppOutput { id: String, sound: bool },
+    AppsSeeded,
     ThoughtAdded { thought: Thought },
     ThreadAdded { thread: Thread },
     ThoughtPlaced {
@@ -159,6 +169,23 @@ impl World {
     pub fn apply(&mut self, change: &Change) {
         let change = &self.resolved(change);
         match change {
+            Change::AppRegistered { app } => {
+                if !self.apps.iter().any(|a| a.id == app.id) { self.apps.push(app.clone()); }
+            }
+            Change::AppEnabled { id, enabled } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id) { a.enabled = *enabled; }
+            }
+            Change::AppRemoved { id } => self.apps.retain(|a| &a.id != id),
+            Change::AppRan { id, at_ms } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id) { a.last_run_ms = *at_ms; }
+            }
+            Change::AppOutput { id, sound } => {
+                if let Some(a) = self.apps.iter_mut().find(|a| &a.id == id && matches!(a.watcher, crate::apps::Watcher::Volume { .. })) {
+                    a.publishers = if *sound { vec![crate::apps::Publisher::Sound {}] }
+                        else { vec![crate::apps::Publisher::Card { text: "Voices have been loud for a little while. A small pause might help.".into() }] };
+                }
+            }
+            Change::AppsSeeded => self.apps_seeded = true,
             Change::ThoughtAdded { thought } => {
                 if !self.thoughts.iter().any(|t| t.id == thought.id) {
                     self.thoughts.push(thought.clone());

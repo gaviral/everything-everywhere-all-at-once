@@ -9,6 +9,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
+import { Apps } from "./Apps";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
@@ -373,6 +374,7 @@ export default function App() {
         </div>
       )}
 
+      <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
