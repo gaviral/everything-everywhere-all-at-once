@@ -197,6 +197,9 @@ pub async fn run(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>) {
                             let _ = core.placer_queue.send(Job::Place(id));
                         });
                     }
+                    // One later retry a round: the cap skips the quick tries, so without this its first try would
+                    // spawn three and each of those three more.
+                    break;
                 }
             }
         }
@@ -851,6 +854,33 @@ mod tests {
     fn a_thought_that_couldnt_be_placed_goes_back_in_the_queue_later_and_later() {
         let waits: Vec<u64> = (0..7).map(|round| super::retry_in(round).as_secs()).collect();
         assert_eq!(waits, [15, 30, 60, 120, 240, 240, 240]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_thought_said_while_capped_waits_with_one_later_try_a_round() {
+        use tokio::sync::mpsc;
+        let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        // The retries land here, where the test counts them before passing each on to the placer.
+        let (placer_queue, mut retries) = mpsc::unbounded_channel();
+        let core = Arc::new(Core {
+            placer_queue,
+            key: Some("good".into()),
+            service: crate::model::Service::with_limit(1),
+            ..Core::test(journal, world)
+        });
+        core.spend().unwrap();
+        let (jobs, queue) = mpsc::unbounded_channel();
+        tokio::spawn(super::run(core.clone(), queue));
+        jobs.send(super::Job::Place("t1".into())).unwrap();
+        let start = tokio::time::Instant::now();
+        let mut at = Vec::new();
+        while let Ok(Some(job)) = tokio::time::timeout_at(start + Duration::from_secs(100), retries.recv()).await {
+            at.push(start.elapsed().as_secs());
+            jobs.send(job).unwrap();
+        }
+        assert_eq!(at, [15, 45], "one retry a round, 15 s then 30 s on; not three a round, each making three");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
