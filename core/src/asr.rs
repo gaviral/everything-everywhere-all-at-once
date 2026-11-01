@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 
 pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
-    let key = core.key.clone().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio_tungstenite::connect_async(format!("{URL}?sessionId={session}"))
         .await
@@ -32,9 +32,17 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer"]
     });
     sink.send(Message::Text(handshake.to_string().into())).await?;
-    match stream.next().await {
-        Some(Ok(Message::Text(t))) if serde_json::from_str::<Value>(t.as_str())?.get("sessionId").is_some() => {}
+    let first = match stream.next().await {
+        Some(Ok(Message::Text(t))) => serde_json::from_str::<Value>(t.as_str())?,
         other => return Err(anyhow!("Voice Transcribe refused the session: {other:?}")),
+    };
+    // A session starts with its id. A refusal carries one too, as an error event, and a wrong key there is
+    // told like any model call's.
+    if first["type"] == "error" || first.get("sessionId").is_none() {
+        if let Some(status) = first["errorType"].as_str().and_then(crate::model::status_of) {
+            core.check(status)?;
+        }
+        return Err(anyhow!("Voice Transcribe refused the session: {first}"));
     }
     core.send_to(&speaker, ServerMsg::Status { listening: true, note: "Listening".into() });
 
@@ -84,6 +92,9 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
             }
         }
         Some("error") => {
+            if let Some(status) = event["errorType"].as_str().and_then(crate::model::status_of) {
+                let _ = core.check(status);
+            }
             let message = event["message"].as_str().unwrap_or("unknown error").to_string();
             core.send_to(speaker, ServerMsg::Error { message: format!("Voice Transcribe: {message}") });
         }

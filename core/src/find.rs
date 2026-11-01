@@ -234,7 +234,7 @@ fn search(core: Arc<Core>, speaker: String, query: String, said: String, request
         drop(world);
         return show(&core, &speaker, found, &said);
     }
-    if core.key.is_none() || world.threads.is_empty() || words(&query).is_empty() {
+    if core.key().is_err() || world.threads.is_empty() || words(&query).is_empty() {
         return missing(&core, &speaker, &said);
     }
     core.send_to(&speaker, ServerMsg::Notice { message: "Looking through your threads…".into() });
@@ -335,10 +335,11 @@ fn checked(world: &World, source: &[SourceThread], choice: Choice) -> Option<Fou
 }
 
 async fn model_match(core: &Core, world: &World, query: &str, ranked: &[Ranked]) -> anyhow::Result<Option<Found>> {
-    let key = core.key.as_deref().context("MODEL_API_KEY is not set")?;
+    let key = core.key()?;
     let source = source(world, ranked);
     let body = model_body(&source, query)?;
     let response = core.http.post("https://api.meta.ai/v1/chat/completions").bearer_auth(key).json(&body).send().await?;
+    core.check(response.status())?;
     if !response.status().is_success() { bail!("model returned {}", response.status()); }
     let value: serde_json::Value = response.json().await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;

@@ -161,7 +161,7 @@ export default function App() {
       stopMic();
       setStopMic(null);
       core.listen(false);
-      core.showNotice("The mic stopped. Tap it to keep talking.");
+      core.showNotice(core.noKey ? core.keyNotice : "The mic stopped. Tap it to keep talking.");
     }
   }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
 
@@ -465,13 +465,13 @@ export default function App() {
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
-          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"} />
-          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? "No AI key" : "Ready"}</span>
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"} />
+          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"}</span>
         </div>
         </div>
       </header>
 
-      <div className="sr-only" role="status">{core.notice && (core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice)}</div>
+      <div className="sr-only" role="status">{core.notice && (!core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice)}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       <AnimatePresence>
         {core.notice && (
@@ -483,7 +483,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            <span>{core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
+            <span>{!core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)." : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically." : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again." : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again." : core.notice}</span>
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -516,7 +516,7 @@ export default function App() {
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
-            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? "Finding a place for your thought…" : "Start with whatever is on your mind."}</p>
+            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
@@ -564,7 +564,7 @@ export default function App() {
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className="live">{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} noKey={core.noKey} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -660,9 +660,10 @@ function ThreadCard({ thread, active, on, activePath, childrenByParent, thoughts
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
-          {!collapsed && (thread.tags ?? []).length > 0 && (
+          {/* A suggested tag waits until the thread has said enough (3 thoughts) for it to add anything; kept tags always show. */}
+          {!collapsed && (thread.tags ?? []).some((t) => t.kept || thoughts.length >= 3) && (
             <div className="tags">
-              {thread.tags.map((t) => (
+              {thread.tags.filter((t) => t.kept || thoughts.length >= 3).map((t) => (
                 <button
                   key={t.name}
                   className={t.kept ? "tag kept" : "tag"}
@@ -799,7 +800,7 @@ function MicIcon() {
   );
 }
 
-function PendingThought({ thought, noKey, reducedMotion }: { thought: Thought; noKey: boolean; reducedMotion: boolean }) {
+function PendingThought({ thought, noKey, refused, reducedMotion }: { thought: Thought; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (noKey) return;
@@ -812,6 +813,6 @@ function PendingThought({ thought, noKey, reducedMotion }: { thought: Thought; n
     return () => { window.clearTimeout(timeout); window.clearInterval(interval); };
   }, [noKey]);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className="pending-label">{noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
+    <span className="pending-label">{refused ? "Waiting for a working key" : noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
   </motion.span>;
 }

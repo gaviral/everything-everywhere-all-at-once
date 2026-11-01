@@ -51,6 +51,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - The sample maps are dated the week of Nov 3, 2026, and include a real “Did you mean” question: “BC Hydra” to “BC Hydro” and “CSB” to “CSP”.
 
 ### Recent changes
+- A refused key (wrong or expired) stops model calls after the first, says so plainly (“AI key refused”), and keeps waiting thoughts until a restart with a working key; a busy service backs off and says so once.
 - Filler such as “um, so” is set aside before placement; “yeah, okay” is set aside unless the last turn was a question.
 - A turn that moves to another topic is split at the change, with joining words removed; a short filler turn can be skipped, but turns over 8 words are placed.
 - When your thoughts land during an absence of at least 30 seconds, “While you were away” lists those threads and their new proposals; each row opens its thread.

@@ -327,8 +327,9 @@ export function useCore(speaker?: string) {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
-  // The core says so on connect when it has no model key: the map can be browsed, nothing new is placed.
-  const [noKey, setNoKey] = useState(false);
+  // The core says so on connect when it has no model key, or once the service refused it: the map can be
+  // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
+  const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
@@ -365,7 +366,9 @@ export function useCore(speaker?: string) {
         switch (msg.type) {
           case "snapshot":
             setFound(null);
-            setNoKey(false);
+            // A word about the key is the core's to repeat: it does, right after this, while it still holds.
+            setKeyNotice("");
+            setNotice((shown) => (shown.includes("MODEL_API_KEY") ? "" : shown));
             // The core sends a running import's status right after the snapshot; one it doesn't has ended
             // (it finished while this window was away, or the core restarted).
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
@@ -417,7 +420,7 @@ export function useCore(speaker?: string) {
             }
           // Other errors and notices use the same notice area.
           case "notice":
-            if (msg.message.includes("MODEL_API_KEY")) setNoKey(true);
+            if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice(msg.message);
             break;
           case "found":
@@ -465,6 +468,7 @@ export function useCore(speaker?: string) {
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
+  const noKey = keyNotice !== "";
   const requestRecap = (requested?: RecapPeriod) => {
     const since = requested === undefined ? recapFallback(world) : undefined;
     const period = since !== undefined ? "session" : requested ?? "today";
@@ -492,6 +496,8 @@ export function useCore(speaker?: string) {
     connected,
     notice,
     noKey,
+    keyRefused: keyNotice.includes("refused"),
+    keyNotice,
     found,
     queuedCount,
     clearNotice: useCallback(() => setNotice(""), []),

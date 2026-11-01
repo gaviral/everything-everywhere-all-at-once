@@ -31,6 +31,7 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 - A prepared map of a student's week, dated Nov 3, 2026: 8 threads with branches, 30 thoughts, tags, two suggestions, two reminders, one thread left unfinished, and a picture for every thread (drawn once by the app's own picture pipeline and kept in `samples/images/`, so the Palace is full without a key). It starts fresh from `samples/` on each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.”
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, wait for the "You didn't finish …" card and press Finish it, open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
+- With a wrong or expired key, the first model call is refused and the app stops calling: the header says “AI key refused” and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart. If the service is busy (rate limited), it backs off and says so once.
 - A second map, a founder's day: `./run.sh sample founder`.
 
 **With a key: watch a map build itself.**

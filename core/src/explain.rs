@@ -3,7 +3,7 @@
 
 use crate::world::World;
 use crate::{protocol::ServerMsg, Core};
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,7 +26,13 @@ pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, t
         Ok(text) => ServerMsg::Explanation { id, text, failed: false },
         Err(e) => {
             tracing::warn!("explain failed: {e:#}");
-            let text = if core.key.is_none() { "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart." } else { "Couldn't explain that just now." };
+            let text = if core.key.is_none() {
+                "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart."
+            } else if core.key_refused() {
+                crate::model::REFUSED
+            } else {
+                "Couldn't explain that just now."
+            };
             ServerMsg::Explanation { id, text: text.into(), failed: true }
         }
     };
@@ -115,7 +121,7 @@ fn names(text: &str, term: &str) -> bool {
 }
 
 async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
-    let key = core.key.as_deref().ok_or_else(|| anyhow!("MODEL_API_KEY is not set"))?;
+    let key = core.key()?;
     let phrase: String = phrase.chars().take(200).collect();
     let body = json!({
         "model": core.placer_model,
@@ -130,6 +136,7 @@ async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
     });
     let response = core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send().await?;
     let status = response.status();
+    core.check(status)?;
     let value: serde_json::Value = response.json().await?;
     if !status.is_success() {
         bail!("{status}: {}", value["error"]["message"].as_str().unwrap_or("no message"));
@@ -343,6 +350,7 @@ mod tests {
                 last_activity: std::sync::atomic::AtomicU64::new(0),
                 looked: std::sync::atomic::AtomicBool::new(false),
                 wake: tokio::sync::Notify::new(),
+                service: Default::default(),
             }));
         }
         // A few at a time, as one person clicking around would never send dozens at once.

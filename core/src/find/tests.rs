@@ -17,6 +17,7 @@ impl Fixture {
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(),
+            service: Default::default(),
         }) }
     }
 }

@@ -124,6 +124,7 @@ mod tests {
             recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
             updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
+            service: Default::default(),
         };
         let status = |core: &Core| core.snapshot().actions[0].status;
         core.commit(vec![Change::ActionProposed { action: Action { id: "a".into(), thread_id: "T1".into(), kind: "reminder".into(),
@@ -157,6 +158,7 @@ mod tests {
             recap: Default::default(), apps: Default::default(), world: Mutex::new(world.into()), journal: Mutex::new(journal),
             updates, placer_queue, room: None, key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: Default::default(), looked: Default::default(), wake: Default::default(),
+            service: Default::default(),
         };
         let action = |id: &str| Change::ActionProposed { action: Action { id: id.into(), thread_id: "T1".into(), kind: "reminder".into(),
             title: "Pay rent".into(), when: String::new(), status: ItemStatus::New, done_ms: None } };
