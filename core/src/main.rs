@@ -465,15 +465,22 @@ async fn connect(
     ConnectInfo(link): ConnectInfo<Link>,
     State(core): State<Arc<Core>>,
 ) -> impl IntoResponse {
-    let speaker = speaker_name(&join.name);
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here()))
+    let speaker = speaker_name(&join.name, link.here());
+    let renamed = speaker != speaker_name(&join.name, true);
+    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed))
 }
 
+/// What another laptop is called when it asks for this machine's name, or for none.
+const GUEST: &str = "Guest";
+
 /// What a window's thoughts are labeled with: its name in the room, on one line and at most 24
-/// characters; alone, "you".
-fn speaker_name(name: &str) -> String {
+/// characters; alone, "you". "you" is this machine's own name (alone, and on everything from before
+/// rooms), so another laptop that asks for it, or for no name, is "Guest": else it would get the host's
+/// live words, mic and notices.
+fn speaker_name(name: &str, here: bool) -> String {
     let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(24).collect();
     match name.trim() {
+        name if !here && (name.is_empty() || name.eq_ignore_ascii_case("you")) => GUEST.into(),
         "" => "you".into(),
         name => name.into(),
     }
@@ -481,7 +488,8 @@ fn speaker_name(name: &str) -> String {
 
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool) {
+/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead.
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
@@ -490,6 +498,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let snapshot = ServerMsg::Snapshot { world: core.snapshot() };
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
+    }
+    if renamed {
+        let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
+        if out.send(Message::Text(serde_json::to_string(&notice).unwrap().into())).await.is_err() { return; }
     }
     if let Some(build) = apps::unsettled_build(&core) {
         let message = ServerMsg::AppsBuild { build };
@@ -663,9 +675,19 @@ mod tests {
 
     #[test]
     fn names_label_thoughts() {
-        assert_eq!(speaker_name("  Sam \n Lee "), "Sam Lee");
-        assert_eq!(speaker_name(""), "you");
-        assert_eq!(speaker_name(&"x".repeat(40)).len(), 24);
+        assert_eq!(speaker_name("  Sam \n Lee ", false), "Sam Lee");
+        assert_eq!(speaker_name("", true), "you");
+        assert_eq!(speaker_name(&"x".repeat(40), false).len(), 24);
+    }
+
+    #[test]
+    fn another_laptop_cant_take_this_machines_name() {
+        // "you" is this machine's, and private messages go to every window with the same name.
+        assert_eq!(speaker_name("you", true), "you");
+        for name in ["", "you", " YOU ", "You\n", "yo\u{0}u"] {
+            assert_eq!(speaker_name(name, false), "Guest", "{name:?}");
+        }
+        assert_eq!(speaker_name("Youssef", false), "Youssef");
     }
 
     #[test]
