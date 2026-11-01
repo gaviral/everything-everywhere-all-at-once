@@ -168,7 +168,7 @@ Every model request has a time limit: 20 s for placing and Explain, 4 s before T
 - From speech to the map is about 3 seconds, measured with `scripts/voice.mjs`.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, or undo the refiner's renames and merges.
 - A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
-- With a key, failed placement waits at “Finding a thread”; after 5 seconds, its chip shows elapsed time. It retries after 15 seconds, then less often, up to every 4 minutes.
+- With a key, failed placement waits at “Finding a thread”; once it has waited more than 5 seconds, its chip shows the seconds. It retries after 15 seconds, then less often, up to every 4 minutes.
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
