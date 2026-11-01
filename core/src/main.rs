@@ -224,8 +224,10 @@ impl Core {
     /// retries included, each up to a minute when the model is slow.
     fn run_command(&self, speaker: &str, job: fn(String) -> placer::Job) {
         let now = now_ms();
-        // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`).
-        let waiting = self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
+        // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`). Without a working
+        // key none lands, so there's nothing to wait for.
+        let waiting = self.key().is_ok()
+            && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
         match job(speaker.into()) {
             placer::Job::Back(speaker) if !waiting => self.go_back(&speaker),
             placer::Job::Next(speaker) if !waiting => self.go_next(&speaker),
@@ -927,7 +929,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::sync::{broadcast, mpsc};
 
-    /// A core on an empty map, with the placer's queue to watch.
+    /// A core on an empty map with a working key (words said can land, so commands and searches wait for them),
+    /// with the placer's queue to watch.
     fn test_core(room: Option<&str>) -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
         let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
@@ -943,7 +946,7 @@ mod tests {
             updates,
             placer_queue,
             room: room.map(Room::from),
-            key: None,
+            key: Some("test".into()),
             placer_model: "test".into(),
             http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0),
@@ -1103,7 +1106,8 @@ mod tests {
             updates,
             placer_queue,
             room: None,
-            key: None,
+            // Words said can land, so a command waits behind them.
+            key: Some("test".into()),
             placer_model: "test".into(),
             http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0),
@@ -1303,6 +1307,30 @@ mod tests {
         assert_eq!(jobs(), ["back", "place"]);
         assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"), "not yet");
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// With no key, or one the service refused, nothing said lands: a command never waits behind it.
+    #[test]
+    fn without_a_working_key_a_command_acts_at_once() {
+        for refused in [false, true] {
+            let (mut core, mut queue, path) = test_core(None);
+            if refused {
+                let _ = core.check(reqwest::StatusCode::UNAUTHORIZED);
+            } else {
+                Arc::get_mut(&mut core).unwrap().key = None;
+            }
+            core.commit(vec![
+                Change::ThreadAdded { thread: thread("Garden", 1, "") },
+                Change::ThreadAdded { thread: thread("Party", 2, "") },
+                Change::ThoughtAdded { thought: said("a", "you", "Garden", 1) },
+                Change::ActiveChanged { thread_id: "Party".into(), speaker: "you".into() },
+            ]);
+            core.add_thought("you", "The caterer needs the head count by Friday, okay, where was I?");
+            let waiting = std::iter::from_fn(|| queue.try_recv().ok()).filter(|job| !matches!(job, Job::Place(_))).count();
+            assert_eq!(waiting, 0, "refused: {refused}");
+            assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("Garden"), "refused: {refused}");
+            let _ = std::fs::remove_file(&path);
+        }
     }
 
     /// "Where was I?" after words still being placed waits its turn in the placer's queue; a search said after it
