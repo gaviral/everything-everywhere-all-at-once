@@ -272,6 +272,11 @@ export default function App() {
       core.listen(false);
       return;
     }
+    // Without a key the core can't listen: say so, without asking the browser for the microphone first.
+    if (core.noKey) {
+      core.showNotice(core.keyNotice);
+      return;
+    }
     setStartingMic(true);
     try {
       const stopAudio = await startMic(core.sendAudio);
@@ -735,7 +740,7 @@ export default function App() {
           </form>
         </div>
       </section>
-      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} />}
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
