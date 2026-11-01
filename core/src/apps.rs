@@ -454,7 +454,11 @@ async fn execute(core: &Core, app: &MiniApp, target: Option<(String, String)>) -
             "type":"object","properties":{"publish":{"type":"boolean"},"text":{"type":"string"},"when":{"type":"string"}},"required":["publish","text","when"]
         })).await?)?
     } else { Output { publish: true, text: app.purpose.clone(), when: String::new() } };
-    if !output.publish { return Ok(()); }
+    if !output.publish {
+        tracing::info!("app {} ran: nothing to show", app.id);
+        return Ok(());
+    }
+    tracing::info!("app {} ran: publishing", app.id);
     // A person may switch it off, or change the volume output, while the model is answering.
     let live = core.snapshot();
     let Some(current) = live.apps.iter().find(|a| a.id == app.id && a.enabled) else { return Ok(()) };

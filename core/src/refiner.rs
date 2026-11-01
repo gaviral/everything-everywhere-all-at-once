@@ -101,12 +101,19 @@ pub async fn run(core: Arc<Core>) {
         let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
         let result = pass(&core, &world, since).await;
+        let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
         match result {
             // Talking resumed while the model worked: move nothing under them; redo the pass at the next pause.
-            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => seen_thoughts = 0,
-            Ok(changes) if !changes.is_empty() => core.commit(changes),
-            Ok(_) => {}
+            Ok(changes) if !changes.is_empty() && core.quiet_ms() < 2_000 => {
+                tracing::info!("refiner pass in {took} ms: {} changes held back, talk resumed", changes.len());
+                seen_thoughts = 0;
+            }
+            Ok(changes) if !changes.is_empty() => {
+                tracing::info!("refiner pass in {took} ms: {} changes", changes.len());
+                core.commit(changes);
+            }
+            Ok(_) => tracing::info!("refiner pass in {took} ms: nothing to change"),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
