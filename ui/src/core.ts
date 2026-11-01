@@ -30,6 +30,9 @@ export interface Thought {
 
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
+// An answer to "Explain"; failed when there's none, with a short reason.
+export type Explanation = { text: string; failed: boolean };
+
 export interface Suggestion {
   id: string;
   thread_id: string;
@@ -90,7 +93,7 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "explanation"; id: string; text: string };
+  | { type: "explanation"; id: string; text: string; failed: boolean };
 
 const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
 
@@ -223,7 +226,7 @@ export function useCore() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
-  const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -280,7 +283,7 @@ export function useCore() {
             setNotice(msg.message);
             break;
           case "explanation":
-            setExplanations((e) => ({ ...e, [msg.id]: msg.text }));
+            setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
             break;
         }
       };
@@ -333,7 +336,7 @@ export function useCore() {
     tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
     visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,
-    explain: (id: string, text: string, context: string) =>
-      send(JSON.stringify({ type: "explain", id, text, context })),
+    explain: (id: string, text: string, context: string, thread_id: string | null) =>
+      send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
   };
 }
