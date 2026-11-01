@@ -489,9 +489,16 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
         return StatusCode::FORBIDDEN.into_response();
     }
     request.extensions_mut().insert(access);
-    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
+    // Built files and pictures never change under their names (content hash, uuid); everything else, the
+    // page above all, is checked every time, so after an update the browser never shows the old app.
+    let fixed = ["/assets/", "/images/"].iter().any(|dir| request.uri().path().starts_with(dir));
     let mut response = next.run(request).await;
+    // Pages elsewhere can't even embed our files (an <img> sends no Origin).
     response.headers_mut().insert("cross-origin-resource-policy", header::HeaderValue::from_static("same-origin"));
+    // A missing file comes back as the page (the app's own routes), and that must not stick.
+    let page = response.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
+    let cache = if fixed && response.status().is_success() && !page { "public, max-age=31536000, immutable" } else { "no-cache" };
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static(cache));
     response
 }
 
