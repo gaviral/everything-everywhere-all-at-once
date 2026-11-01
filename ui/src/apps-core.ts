@@ -77,6 +77,18 @@ export function applyAppChange<T extends AppsWorld>(world: T, c: AppChange): T {
 
 export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string; playful?: boolean };
 
+/** What the core says when it won't start a build (core/src/apps.rs `compose`): an empty request or one over its
+ *  2,000 bytes, or another app still waiting. No build answers the request then. */
+export const DESCRIBE_APP = "Describe the app in one short sentence.";
+const REFUSALS = [DESCRIBE_APP, "Keep or discard the current app first."];
+
+/** Over the core's limit: it counts UTF-8 bytes, so 1,000 "é" are 2,000 of them, though an input counts 1,000. The
+ *  core counts after dropping a leading "make an app that"; this counts it too, so only a request within a few bytes
+ *  of the limit that starts that way is held back here and not there. */
+export function tooLongForApp(request: string): boolean {
+  return new TextEncoder().encode(request.trim()).length > 2000;
+}
+
 /** A tune the browser wouldn't play yet: which app, and which tune. */
 export interface PendingTune { name: string; playful: boolean }
 
@@ -91,12 +103,16 @@ export function useApps() {
   const panelRequest = useRef<string | null>(null);
   const latest = useRef<string | null>(null);
   const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
-  const reset = useCallback(() => { latest.current = null; setBuild(null); }, []);
+  // A new connection: a request sent on the old one gets no answer.
+  const reset = useCallback(() => { latest.current = null; panelRequest.current = null; setBuild(null); }, []);
   useEffect(() => {
     for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlockTune);
     return () => { for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlockTune); };
   }, []);
   const receive = useCallback((message: { type: string }) => {
+    // A panel request the core refused claims no build: left waiting, it took the next one that ended the same way
+    // (a composer build, then shown in the panel). The notice itself is the core's to show (core.ts).
+    if (message.type === "notice" && REFUSALS.includes((message as { message?: string }).message ?? "")) panelRequest.current = null;
     const msg = message as AppsServerMsg;
     if (msg.type === "apps_build") {
       if (msg.build.id !== latest.current) {

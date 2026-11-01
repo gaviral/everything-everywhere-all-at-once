@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { useCore } from "./core";
-import type { AppBuild, MiniApp, Watcher } from "./apps-core";
+import { DESCRIBE_APP, tooLongForApp, type AppBuild, type MiniApp, type Watcher } from "./apps-core";
 import { playTune, unlockTune } from "./apps-audio";
 import "./apps.css";
 
@@ -99,6 +99,8 @@ export function Apps({ core }: { core: Core }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!request.trim() || waiting || !core.connected) return;
+    // What the core would answer, without sending what it would refuse.
+    if (tooLongForApp(request)) { core.showNotice(DESCRIBE_APP); return; }
     if (compose(request.trim())) setRequest("");
   };
   const matched = core.world.apps.find((a) => a.id === build?.match_id);
@@ -179,8 +181,9 @@ const readingMs = (text: string) => 1000 + 250 * (text.match(/[\p{L}\p{N}']+/gu)
 /** An app asked for by voice or in the composer builds here, in the dock with your live words: its steps while it
  *  works, then the app in a line with its blocks and Keep or Discard, a short line after, then it goes. It used to
  *  open the Apps panel above the map and scroll to it, so the map left the screen mid-talk and came back with a
- *  jump. The dock publishes its height and the map's end makes room for it (App.tsx), so the map stays put.
- *  `onLeave` takes focus that was in the card when it goes (to the composer). */
+ *  jump. The dock publishes its height and the map's end makes room for it (App.tsx), so the map stays put; only a
+ *  thought you said in the last 10 s that the card would cover moves clear of it, once, as for the unfinished card
+ *  (data-dock-card). `onLeave` takes focus that was in the card when it goes (to the composer). */
 export function DockBuild({ core, onLeave }: { core: Core; onLeave: () => void }) {
   const current = core.apps.build;
   const [gone, setGone] = useState<string | null>(null);
@@ -218,7 +221,7 @@ export function DockBuild({ core, onLeave }: { core: Core; onLeave: () => void }
   return <>
     <div className="sr-only" role="status">{status}</div>
     <AnimatePresence>
-      {build && <motion.div key="dock-build" ref={card} tabIndex={-1} className={`dock-build ${build.stage}`} role="group" aria-label="App being composed"
+      {build && <motion.div key="dock-build" ref={card} tabIndex={-1} className={`dock-build ${build.stage}`} role="group" aria-label="App being composed" data-dock-card
         initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8 }} transition={spring}
         onKeyDown={(event) => {
           if (event.key !== "Escape" || !withoutApp(build)) return;
