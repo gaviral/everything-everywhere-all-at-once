@@ -126,6 +126,17 @@ fn ready<'a>(world: &'a World, attempts: &HashMap<String, Attempt>, now: u64, qu
     threads
 }
 
+#[cfg(test)]
+pub(crate) fn perf(world: &World, now: u64) {
+    crate::perf::measure("picture ready + prompts", || {
+        ready(world, &HashMap::new(), now + SETTLE_MS, QUIET_MS).iter().map(|thread| {
+            let points = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
+                .map(|p| p.point.clone()).collect::<Vec<_>>();
+            prompt(thread, &points)
+        }).collect::<Vec<_>>()
+    }, |prompts| prompts.iter().map(String::len).sum());
+}
+
 /// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
 fn prompt(thread: &Thread, points: &[String]) -> String {
     let number: usize = thread.id.trim_start_matches('T').parse().unwrap_or(0);
@@ -171,7 +182,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
 
 /// Pictures drawn before small copies existed get one now, so older maps load light too.
 async fn shrink_old(core: &Core, dir: &Path) {
-    for thread in core.snapshot().threads {
+    for thread in core.snapshot().threads.clone() {
         let Some(name) = thread.picture.as_deref().and_then(|p| p.strip_prefix("/images/")) else { continue };
         if !name.ends_with(".webp") || name.ends_with("-small.webp") || name.contains(['/', '\\']) {
             continue;
