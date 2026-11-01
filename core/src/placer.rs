@@ -1227,6 +1227,8 @@ mod tests {
     /// change before thought `thought` was said, and that thought's words and selection (a real miss, kept
     /// outside this repo).
     ///
+    /// `before`: [thread, words, seconds ago], the speaker's own turn before; `asked`: [speaker, thread, words,
+    /// seconds ago], someone else's turn after it.
     /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread) or "new<T1" (a new branch of T1).
     /// `split`: the turn must (true) or must not (false) be cut in two. `known`: a miss not fixed yet, and why.
     #[tokio::test]
@@ -1324,6 +1326,16 @@ mod tests {
             };
             world.apply(&Change::ThoughtAdded { thought: earlier });
             world.apply(&Change::ActiveChanged { thread_id: thread_id.into(), speaker: "you".into() });
+        }
+        // `asked`: [speaker, thread, words, seconds ago]: someone else's turn after that, such as a question.
+        if let Some(a) = case["asked"].as_array() {
+            let speaker = a[0].as_str().unwrap();
+            let theirs = Thought {
+                text: a[2].as_str().unwrap().into(),
+                at_ms: now - 1000 * a[3].as_u64().unwrap_or(5),
+                ..thought("th-asked", speaker, Some(a[1].as_str().unwrap()), true)
+            };
+            world.apply(&Change::ThoughtAdded { thought: theirs });
         }
         if let Some(selected) = case["selected"].as_str() {
             world.apply(&Change::ActiveChanged { thread_id: selected.into(), speaker: "you".into() });
