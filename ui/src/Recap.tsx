@@ -92,7 +92,8 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     <span className="recap-source">{title(action.thread_id)}{action.when ? ` · ${action.when}` : ""} · {action.kind === "event" && action.when ? "Calendar" : "Reminders"}</span>
   </li>)}</ul>;
   const plans = recap?.plans ?? [];
-  const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms);
+  // Only thoughts that arrived since, not ones dated ahead of this clock (the samples are dated Nov 3, 2026).
+  const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms && t.at_ms <= Date.now());
   const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
   return <dialog ref={dialog} className="recap-sheet" aria-labelledby="recap-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
