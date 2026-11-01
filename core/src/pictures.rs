@@ -1,6 +1,6 @@
 //! Pictures: once a thread has stayed quiet, Muse Image draws one vivid picture
 //! for it, a memory anchor in the spirit of a memory palace. A few at a time, in the background.
-//! The map shows a small copy; the full picture stays beside it on disk.
+//! The map shows a small copy and the Palace a larger one; the full picture stays beside them on disk.
 
 use crate::world::{Change, Thread, World};
 use crate::Core;
@@ -32,6 +32,9 @@ const COLORS: [&str; 10] =
 
 /// The map shows pictures at 52 px or less; 128 px stays sharp on 2x and 3x screens.
 const SMALL: u32 = 128;
+/// The Palace's widest tile is ≈ 200 CSS px (its grid at a 700 px window; 171 px at full width), 400 pixels on a
+/// 2x screen, where the map's 128 px copy was stretched ≈ 3×. 512 px keeps that sharp with room for larger tiles.
+const PALACE: u32 = 512;
 
 /// Attempts per thread, so a passing failure (a timeout, a rate limit) doesn't cost it its picture.
 const TRIES: u32 = 3;
@@ -186,11 +189,30 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
     }
 }
 
-/// Pictures drawn before small copies existed get one now, so older maps load light too.
+/// Pictures drawn before the copies existed get them now, so older maps load light and their Palace stays sharp.
 async fn shrink_old(core: &Core, dir: &Path) {
     for thread in core.snapshot().threads.clone() {
         let Some(name) = thread.picture.as_deref().and_then(|p| p.strip_prefix("/images/")) else { continue };
-        if !name.ends_with(".webp") || name.ends_with("-small.webp") || name.contains(['/', '\\']) {
+        if !name.ends_with(".webp") || name.contains(['/', '\\']) {
+            continue;
+        }
+        if let Some(stem) = name.strip_suffix("-small.webp") {
+            // A map copy from before Palace copies: make one if the full picture is still there (a shipped
+            // sample keeps only its copies, and the Palace shows the map copy instead).
+            let palace = dir.join(format!("{stem}-palace.webp"));
+            if !tokio::fs::try_exists(&palace).await.unwrap_or(true) {
+                if let Ok(bytes) = tokio::fs::read(dir.join(format!("{stem}.webp"))).await {
+                    let copy = tokio::task::spawn_blocking(move || square_copy(&bytes, PALACE, 8)).await;
+                    match copy.map_err(anyhow::Error::from).and_then(|copy| copy) {
+                        Ok(copy) => {
+                            if let Err(e) = tokio::fs::write(&palace, copy).await {
+                                tracing::warn!("no Palace copy of {name}: {e:#}");
+                            }
+                        }
+                        Err(e) => tracing::warn!("no Palace copy of {name}: {e:#}"),
+                    }
+                }
+            }
             continue;
         }
         let small = match tokio::fs::read(dir.join(name)).await {
@@ -204,26 +226,30 @@ async fn shrink_old(core: &Core, dir: &Path) {
     }
 }
 
-/// Writes the small copy of the full picture `name` next to it; returns the copy's path for the map.
+/// Writes the map's and the Palace's copies of the full picture `name` next to it; returns the map copy's path.
+/// The Palace finds its copy by name ("-palace" for "-small").
 async fn shrink(dir: &Path, name: &str, bytes: Vec<u8>) -> anyhow::Result<String> {
     let stem = name.strip_suffix(".webp").context("not a WebP picture")?;
-    let small = tokio::task::spawn_blocking(move || small_copy(&bytes)).await??;
+    let (small, palace) =
+        tokio::task::spawn_blocking(move || anyhow::Ok((square_copy(&bytes, SMALL, 6)?, square_copy(&bytes, PALACE, 8)?))).await??;
+    tokio::fs::write(dir.join(format!("{stem}-palace.webp")), palace).await?;
     let name = format!("{stem}-small.webp");
     tokio::fs::write(dir.join(&name), small).await?;
     Ok(format!("/images/{name}"))
 }
 
-/// A square copy at most `SMALL` pixels wide: the center, each new pixel the average of the ones it
-/// covers, six bits a channel (no visible change this small, and half the bytes), lossless WebP.
-fn small_copy(webp: &[u8]) -> anyhow::Result<Vec<u8>> {
+/// A square copy at most `side` pixels wide: the center, each new pixel the average of the ones it covers,
+/// lossless WebP with `bits` a channel (six halve the bytes with no visible change at map size; the Palace's
+/// larger copy keeps eight, so soft shading doesn't band).
+fn square_copy(webp: &[u8], side: u32, bits: u32) -> anyhow::Result<Vec<u8>> {
     let mut decoder = image_webp::WebPDecoder::new(Cursor::new(webp))?;
     let (width, height) = decoder.dimensions();
     let channels = if decoder.has_alpha() { 4 } else { 3 };
     let mut pixels = vec![0u8; decoder.output_buffer_size().context("picture too large")?];
     decoder.read_image(&mut pixels)?;
-    let side = width.min(height);
+    let (out, side) = (side.min(width.min(height)), width.min(height));
     let (left, top) = ((width - side) / 2, (height - side) / 2);
-    let out = SMALL.min(side);
+    let drop = 8 - bits.min(8);
     let mut small = Vec::with_capacity((out * out * channels) as usize);
     for y in 0..out {
         let (y0, y1) = (top + y * side / out, top + (y + 1) * side / out);
@@ -241,7 +267,8 @@ fn small_copy(webp: &[u8]) -> anyhow::Result<Vec<u8>> {
             let count = (x1 - x0) * (y1 - y0);
             for total in &sum[..channels as usize] {
                 let value = ((total + count / 2) / count) as u8;
-                small.push((value & !3) | (value >> 6));
+                // Dropped low bits repeat the high ones, so white stays white.
+                small.push(if drop == 0 { value } else { (value >> drop << drop) | (value >> (8 - drop)) });
             }
         }
     }
@@ -427,12 +454,14 @@ mod tests {
         }
         let mut full = Vec::new();
         image_webp::WebPEncoder::new(&mut full).encode(&pixels, width, height, image_webp::ColorType::Rgb8).unwrap();
-        let small = small_copy(&full).unwrap();
-        let mut decoder = image_webp::WebPDecoder::new(Cursor::new(&small)).unwrap();
-        assert_eq!(decoder.dimensions(), (SMALL, SMALL));
-        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
-        decoder.read_image(&mut out).unwrap();
-        assert!(out.chunks(3).all(|p| p == [0, 0, 255]), "only the blue middle is kept");
+        for (side, bits, expect) in [(SMALL, 6, SMALL), (PALACE, 8, 200)] {
+            let copy = square_copy(&full, side, bits).unwrap();
+            let mut decoder = image_webp::WebPDecoder::new(Cursor::new(&copy)).unwrap();
+            assert_eq!(decoder.dimensions(), (expect, expect), "never larger than the picture's square");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+            decoder.read_image(&mut out).unwrap();
+            assert!(out.chunks(3).all(|p| p == [0, 0, 255]), "only the blue middle is kept");
+        }
     }
 
     #[test]
