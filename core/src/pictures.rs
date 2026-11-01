@@ -164,17 +164,10 @@ pub(crate) fn perf(world: &World, now: u64) {
 /// What Muse Image is asked for: the object rule, the room's look, the topic, and the topics to keep it apart from.
 fn prompt(world: &World, thread: &Thread, points: &[String]) -> String {
     let family = family(world, thread);
-    // stand-in: E2A2O_LOOK=ink draws option 2 (house black ink) for side-by-side screenshots; one look ships.
-    let look = if std::env::var("E2A2O_LOOK").as_deref() == Ok("ink") {
-        "House style: bold flat illustration, simple shapes, no gradients. Colors: a near-black ink object with one \
-mid-gray tone, on a plain light neutral gray background with no warm or cool tint; no other colors."
-            .to_string()
-    } else {
-        format!(
-            "House style: bold, simple 3D clay-style illustration, chunky rounded shapes, soft studio light. Colors: the \
+    let look = format!(
+        "House style: bold, simple 3D clay-style illustration, chunky rounded shapes, soft studio light. Colors: the \
 object is made entirely of {family} clay in a few shades of {family}, on a pale, light {family} background; nothing in any other color."
-        )
-    };
+    );
     let mut prompt = format!("{SUBJECT} {look} Topic: {}.", thread.title);
     // The first point says what the thread is; more details invite props.
     if let Some(point) = points.first() {
