@@ -23,7 +23,27 @@ export interface RecapData {
   limited: boolean;
 }
 export type RecapServerMsg = { type: "recap_state"; period: RecapPeriod; loading: boolean; message: string; recap: RecapData | null };
-type View = Omit<RecapServerMsg, "type">;
+type View = Omit<RecapServerMsg, "type"> & { fallbackSince?: number };
+
+// The core's session boundary includes unplaced thoughts; its recap includes placed points.
+export function recapFallback(world: World, now = Date.now()): number | undefined {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const thoughts = world.thoughts.filter((t) => t.at_ms <= now).sort((a, b) => a.at_ms - b.at_ms);
+  if (thoughts.some((t) => t.placed && t.thread_id && t.at_ms >= midnight.getTime())) return;
+  if (!thoughts.length) return;
+  let start = thoughts.length - 1;
+  while (start > 0 && thoughts[start].at_ms - thoughts[start - 1].at_ms < 30 * 60 * 1000) start--;
+  if (thoughts.slice(start).some((t) => t.placed && t.thread_id)) return thoughts[start].at_ms;
+}
+
+export function isDefaultRecap(text: string): boolean {
+  const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const filler = ["and", "so", "ok", "okay", "wait", "um", "uh", "hmm", "now", "anyway", "anyways", "alright", "oh", "right"];
+  while (words.length && filler.includes(words[0]!)) words.shift();
+  if (words.at(-1) === "please") words.pop();
+  return ["recap", "give me a recap"].includes(words.join(" "));
+}
 
 export function useRecap() {
   const [view, setView] = useState<View | null>(null);
@@ -33,22 +53,23 @@ export function useRecap() {
     setView((old) => {
       // A finished request must not reopen a sheet the person already closed.
       if (!old && !state.loading) return null;
-      return { ...state, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
+      return { ...state, fallbackSince: old?.period === state.period ? old.fallbackSince : undefined, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
     });
     return true;
   }, []);
-  const open = useCallback((period: RecapPeriod, recap: RecapData | null, connected: boolean) => {
-    setView({ period, recap, loading: connected, message: connected ? "" : "Reconnect to make a recap. Your saved recap is still here." });
+  const open = useCallback((period: RecapPeriod, recap: RecapData | null, connected: boolean, fallbackSince?: number) => {
+    setView({ period, recap, fallbackSince, loading: connected, message: connected ? "" : "Reconnect to make a recap. Your saved recap is still here." });
   }, []);
   const close = useCallback(() => setView(null), []);
   const disconnected = useCallback(() => setView((old) => old?.loading ? { ...old, loading: false, message: "Connection lost. Reconnect and try again." } : old), []);
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
+export function Recap({ view, world, connected, noKey, onRequest, onClose, onFocus }: {
   view: View | null;
   world: World;
   connected: boolean;
+  noKey: boolean;
   onRequest: (period: RecapPeriod) => void;
   onClose: () => void;
   onFocus: (id: string) => void;
@@ -70,7 +91,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     };
   }, [open]);
   if (!view) return null;
-  const recap = view.recap;
+  const recap = noKey ? null : view.recap;
   const resolve = (id: string) => {
     for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     return id;
@@ -111,8 +132,9 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
         </div>
         {recap && <span className="recap-meta">{recap.thought_count} {recap.thought_count === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "thread" : "threads"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
       </div>
+      {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
-        {view.loading ? <p className="recap-loading">Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
+        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>
@@ -150,7 +172,7 @@ export function Recap({ view, world, connected, onRequest, onClose, onFocus }: {
     </div>}
     <footer className="recap-footer">
       <span>{recap?.thought_count ? "Pick up any thread when you're ready." : "Your thoughts will be here."}</span>
-      <button className="recap-refresh" disabled={view.loading || !connected} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
+      <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
     </footer>
   </dialog>;
 }

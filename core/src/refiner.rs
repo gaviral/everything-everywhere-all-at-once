@@ -251,8 +251,15 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     let mut out = Vec::new();
     for t in pass.titles {
         // A new title is short and more than a change of case, and a name the person gave stays theirs
-        // ("we're calling this Project Falcon").
-        let keep = |th: &Thread| words(&t.title) == words(&th.title) || said_in(world, &th.id).any(|text| named(&th.title, text));
+        // ("we're calling this Project Falcon"), unless they later gave it the proposed name.
+        let keep = |th: &Thread| {
+            // Said order, including cues within a thought; split thoughts can share a timestamp.
+            let last_named = |title: &str| {
+                said_in(world, &th.id).enumerate().filter_map(|(i, text)| named_at(title, text).map(|at| (i, at))).last()
+            };
+            words(&t.title) == words(&th.title)
+                || last_named(&th.title).is_some_and(|old| !last_named(&t.title).is_some_and(|new| new > old))
+        };
         if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) {
             continue;
         }
@@ -353,13 +360,25 @@ fn said_in<'a>(world: &'a World, id: &'a str) -> impl Iterator<Item = &'a str> +
     world.thoughts.iter().filter(move |p| p.placed && p.thread_id.as_deref() == Some(id)).map(|p| p.text.as_str())
 }
 
-/// The title is a name they gave in so many words: "we're calling this Project Falcon", "call it Garden Project",
+/// The last cue for a name they gave in so many words: "we're calling this Project Falcon", "call it Garden Project",
 /// "it's called Falcon"; not just words they used ("I need to file the quarterly taxes").
-fn named(title: &str, text: &str) -> bool {
+fn named_at(title: &str, text: &str) -> Option<usize> {
     const CUES: [&str; 7] = ["call", "calling", "called", "name", "named", "title", "titled"];
     let (title, text) = (words(title), words(text));
-    !title.is_empty()
-        && text.windows(title.len()).enumerate().any(|(i, w)| w == title.as_slice() && text[i.saturating_sub(2)..i].iter().any(|c| CUES.contains(&c.as_str())))
+    if title.is_empty() {
+        return None;
+    }
+    text.windows(title.len()).enumerate().rev().find_map(|(i, w)| {
+        if w != title.as_slice() {
+            return None;
+        }
+        let start = i.saturating_sub(2);
+        let cue = text[start..i].iter().rposition(|c| CUES.contains(&c.as_str())).map(|at| start + at)?;
+        // "Don't call it X" or "never name it X" turns a name down instead of giving it.
+        const NOT: [&str; 6] = ["don", "dont", "not", "never", "stop", "shouldn"];
+        let refused = text[cue.saturating_sub(2)..cue].iter().any(|w| NOT.contains(&w.as_str()));
+        (!refused).then_some(cue)
+    })
 }
 
 /// Every word of a thread, its title's and what was said on it.
@@ -495,12 +514,21 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, existing, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, existing, named_at, rest_ms, Pass};
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
     /// A Sunday, as `chrono_today` writes it.
     const TODAY: &str = "2026-11-01 (Sunday)";
 
+    #[test]
+    fn a_name_turned_down_is_not_a_name_given() {
+        assert_eq!(named_at("Project Falcon", "Call it Project Falcon"), Some(0));
+        assert_eq!(named_at("Project Falcon", "Don't call it Project Falcon"), None);
+        assert_eq!(named_at("Falcon", "We shouldn't name it Falcon"), None);
+        assert_eq!(named_at("Falcon", "I'd never call it Falcon"), None);
+        // An earlier real naming still counts when a later mention turns it down.
+        assert_eq!(named_at("Falcon", "Call it Falcon. Don't call it Falcon"), Some(0));
+    }
     #[test]
     fn a_failing_pass_waits_longer_each_time_and_the_prompt_stays_bounded() {
         let rests: Vec<u64> = (0..8).map(|failures| rest_ms(failures) / 1000).collect();
@@ -786,6 +814,107 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    fn rename(world: &World, title: &str) -> Vec<String> {
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "titles": [{"thread_id": "T1", "title": title}]
+        }))
+        .unwrap();
+        shown(&changes_on(world, pass, TODAY))
+    }
+
+    #[test]
+    fn the_latest_naming_wins_in_said_order_not_timestamp_order() {
+        let old = "We're calling this Project Falcon.";
+        let new = "Actually, let's call it Quick Launch.";
+        for (said, allowed) in [
+            (vec![old, new], true),
+            (vec![new, old], false),
+            (vec![old, new, old], false),
+            (vec![old, new, old, new], true),
+            (vec![old], false),
+            (vec![old, "Quick Launch would look good on the landing page."], false),
+            (vec!["This is named Project Falcon.", "The project is titled Quick Launch."], true),
+            (vec!["It's called Project Falcon.", "Let's name it Quick Launch."], true),
+            (vec!["The title is Project Falcon.", new], true),
+        ] {
+            // Split thoughts can share a timestamp; imported or split thoughts need not have increasing times.
+            for equal_times in [true, false] {
+                let mut world = map(&[("T1", "Project Falcon", &said)]);
+                let count = world.thoughts.len();
+                for (i, thought) in world.thoughts.iter_mut().enumerate() {
+                    thought.at_ms = if equal_times { 1000 } else { (count - i) as u64 * 1000 };
+                }
+                let expected = if allowed { vec!["T1 title Quick Launch"] } else { vec![] };
+                assert_eq!(rename(&world, "Quick Launch"), expected, "{said:?}, equal times: {equal_times}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_later_speaker_in_a_room_can_rename_a_person_named_title() {
+        let mut world = map(&[("T1", "Project Falcon", &["Calling this Project Falcon.", "Let's call it Quick Launch actually."])]);
+        world.thoughts[0].speaker = "User".into();
+        world.thoughts[1].speaker = "Sam".into();
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+        assert!(rename(&world, "Launch plan").is_empty(), "a model-invented title still has no cue");
+        world.thoughts.reverse();
+        assert!(rename(&world, "Quick Launch").is_empty(), "said order applies across speakers too");
+    }
+
+    #[test]
+    fn naming_ignores_case_and_punctuation() {
+        let world = map(&[("T1", "Project Falcon", &["Let's call it 'PROJECT—FALCON', okay?", "No wait, CALL it quick—launch!"])]);
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+    }
+
+    #[test]
+    fn naming_cues_are_ordered_within_a_thought_too() {
+        for (said, allowed) in [
+            ("Call it Project Falcon; actually, let's call it Quick Launch.", true),
+            ("Call it Quick Launch; actually, let's call it Project Falcon.", false),
+            ("Call it Project Falcon; call it Quick Launch; call it Project Falcon.", false),
+            ("Call it Project Falcon; call it Quick Launch; call it Project Falcon; call it Quick Launch.", true),
+        ] {
+            let world = map(&[("T1", "Project Falcon", &[said])]);
+            let expected = if allowed { vec!["T1 title Quick Launch"] } else { vec![] };
+            assert_eq!(rename(&world, "Quick Launch"), expected, "{said}");
+        }
+        for (current, proposed) in [("Project Falcon", "Falcon"), ("Falcon", "Project Falcon")] {
+            let world = map(&[("T1", current, &["Call Project Falcon."])]);
+            assert!(rename(&world, proposed).is_empty(), "two matches of the same cue are not a later naming");
+        }
+    }
+
+    #[test]
+    fn only_placed_naming_on_the_same_thread_can_supersede_a_name() {
+        let mut world = map(&[
+            ("T1", "Project Falcon", &["Call it Project Falcon."]),
+            ("T2", "Other project", &["Call it Quick Launch."]),
+        ]);
+        assert!(rename(&world, "Quick Launch").is_empty(), "another thread's cue doesn't count");
+        world.thoughts[1].thread_id = Some("T1".into());
+        world.thoughts[1].placed = false;
+        assert!(rename(&world, "Quick Launch").is_empty(), "an unplaced cue doesn't count");
+        world.thoughts[1].placed = true;
+        assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
+    }
+
+    #[test]
+    fn a_later_naming_does_not_bypass_other_title_guards() {
+        for (current, proposed, cue) in [
+            ("Project Falcon", "project—FALCON!", "Call it project—FALCON!"),
+            ("Project Falcon", "A new title with six words", "Call it A new title with six words."),
+            ("Project Falcon", "Notes for T2", "Call it Notes for T2."),
+        ] {
+            let world = map(&[("T1", current, &["Call it Project Falcon.", cue]), ("T2", "Other project", &[])]);
+            assert!(rename(&world, proposed).is_empty(), "{proposed}");
+        }
+        let world = map(&[("T1", "Project Falcon", &["We're discussing Project Falcon."])]);
+        assert_eq!(rename(&world, "Launch plan"), ["T1 title Launch plan"], "unnamed titles still allow model improvements");
+        assert!(rename(&world, "   ").is_empty());
+        assert!(rename(&World::default(), "Quick Launch").is_empty(), "a missing thread is still rejected");
     }
 
     #[test]
