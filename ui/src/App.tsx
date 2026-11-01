@@ -71,6 +71,8 @@ export default function App() {
     const navigate = () => { lastNavigation.current = Date.now(); };
     const scroll = () => { if (!following.current) navigate(); };
     const key = (event: KeyboardEvent) => {
+      // Keys typed into a field (a space in a thought, "j" in a search) aren't moving around the map.
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", " ", "j", "k"].includes(event.key)) navigate();
     };
     window.addEventListener("scroll", scroll, true);
@@ -88,38 +90,62 @@ export default function App() {
   }, []);
   const seenThoughts = useRef<Set<string> | null>(null);
   const seenSnapshot = useRef(0);
+  const seenActive = useRef<string | null>(null);
+  // What the map shows next: the newest landing, or your own place when it moves without one ("where was I?").
+  const followTarget = useRef<{ thread: string; thought?: string } | null>(null);
+  const followTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(followTimer.current), []);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
     if (!core.snapshotRevision) return;
+    let landing: { thread: string; thought: string; mine: boolean } | null = null;
+    let moved = false;
     if (seenThoughts.current && seenSnapshot.current === core.snapshotRevision) {
       const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
-        // A landing gets one chance to follow; never catch up later while someone is reading.
-        if (view === "map" && !query.trim() && !core.recap.view && thought.thread_id) {
-          const threadId = thought.thread_id;
-          requestAnimationFrame(() => {
-            if (Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
-                document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
-            const target = document.getElementById(`thread-${threadId}`);
-            if (!target) return;
-            const rect = target.getBoundingClientRect();
-            const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
-            const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
-            if (bottom <= top || (rect.bottom > top && rect.top < bottom)) return;
-            const delta = rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
-            following.current = true;
-            window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
-            window.setTimeout(() => { following.current = false; }, reducedMotion ? 100 : 1000);
-          });
-        }
+        if (thought.thread_id) landing = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
       }
+      moved = !!world.active && world.active !== seenActive.current;
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
-  }, [world.thoughts, world.threads, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
+    seenActive.current = world.active;
+    // Where you are goes first: your thought landing on another thread means "…, where was I?" moved you on in the
+    // same breath (your place can end where it started, so it doesn't count as moving).
+    const elsewhere = !!world.active && (moved || (!!landing?.mine && landing.thread !== world.active));
+    // A landing gets one chance to follow; never catch up later while someone is reading.
+    if ((!landing && !elsewhere) || view !== "map" || query.trim() || core.recap.view) return;
+    followTarget.current = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing;
+    // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
+    window.clearTimeout(followTimer.current);
+    followTimer.current = window.setTimeout(() => requestAnimationFrame(() => {
+      const target = followTarget.current;
+      followTarget.current = null;
+      if (!target || Date.now() - lastNavigation.current < 5000 || document.activeElement === searchRef.current ||
+          document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain")) return;
+      const card = document.getElementById(`thread-${target.thread}`);
+      if (!card) return;
+      const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
+      const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
+      if (bottom <= top) return;
+      // The thought itself has to be in view (a thread's latest, when you moved back to it), not just its thread's
+      // edge: a thread at the foot of the map shows its head while the thought lands under the composer.
+      const thread = settledRect(card);
+      const point = target.thought ? document.getElementById(`point-${target.thought}`)
+        : card.querySelector<HTMLElement>(":scope > div > .points > li:last-child");
+      const shown = point ? settledRect(point) : thread;
+      if (shown.top >= top && shown.bottom <= bottom) return;
+      // Just far enough: up from under the composer; down to it with its thread's head too, when both fit.
+      const delta = shown.bottom > bottom ? shown.bottom - bottom + 12
+        : shown.bottom - (thread.top - top - 12) <= bottom ? thread.top - top - 12 : shown.top - top - 12;
+      following.current = true;
+      window.scrollBy({ top: delta, behavior: reducedMotion ? "instant" : "smooth" });
+      window.setTimeout(() => { following.current = false; }, reducedMotion ? 100 : 1000);
+    }), 120);
+  }, [world.thoughts, world.threads, world.active, core.snapshotRevision, me, view, query, core.recap.view, reducedMotion]);
 
   // Coming back to the window is a good moment to tidy the map.
   const { visible } = core;
@@ -616,6 +642,14 @@ export default function App() {
     </div>
     </MotionConfig>
   );
+}
+
+/** Where an element sits in the viewport once the map's motion settles: layout animations move things with
+ *  transforms (a landing point starts where its pending pill was), and offsets leave transforms out. */
+function settledRect(element: HTMLElement) {
+  let y = 0;
+  for (let at: HTMLElement | null = element; at; at = at.offsetParent as HTMLElement | null) y += at.offsetTop;
+  return { top: y - window.scrollY, bottom: y - window.scrollY + element.offsetHeight };
 }
 
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
