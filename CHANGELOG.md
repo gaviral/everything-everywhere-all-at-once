@@ -92,6 +92,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - A long turn gets more room to be placed: a turn over 1,000 characters is allowed two tokens a character (up to 12,000, with a time limit that grows with it) instead of 2,000, and an answer the model cut off at its limit is asked once more with twice the room, not again with the same. A 1,672-character part of a turn once ran out of 2,000.
 - A picture that hangs gives up after 55 s and a refiner pass after 52 s, not 2 minutes (a picture: twice the slowest normal one in a log, 27 s; a pass: twice what filling its answer room takes), so the redraw or the next pass starts sooner.
 
+- `PICTURES=off` in `.env` draws no thread pictures (no Muse Image calls); threads keep their letter tiles.
+
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
 - `scripts/precheck.sh`: static checks, `cargo test` and live probes; the merge gate runs it.
