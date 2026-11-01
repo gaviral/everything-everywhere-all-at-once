@@ -61,7 +61,7 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     Ok(())
 }
 
-fn handle(core: &Core, speaker: &str, text: &str) {
+fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
     let Ok(event) = serde_json::from_str::<Value>(text) else { return };
     match event["type"].as_str() {
         Some("transcript") => {

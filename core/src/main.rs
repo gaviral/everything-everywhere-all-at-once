@@ -3,6 +3,7 @@
 //! With a room code, a second laptop on the same network joins the same map.
 
 mod apple;
+mod apps;
 mod asr;
 mod explain;
 mod pictures;
@@ -31,6 +32,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    apps: apps::Runtime,
     world: Mutex<World>,
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
@@ -130,8 +132,11 @@ impl Core {
     }
 
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed.
-    pub fn add_thought(&self, speaker: &str, text: &str) {
+    pub fn add_thought(self: &Arc<Self>, speaker: &str, text: &str) {
         self.touch();
+        if let Some(request) = apps::command(text) {
+            return apps::compose(self.clone(), request);
+        }
         if is_go_back(text) {
             return self.go_back(speaker);
         }
@@ -236,6 +241,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        apps: apps::Runtime::default(),
         world: Mutex::new(world),
         journal: Mutex::new(journal),
         updates,
@@ -252,6 +258,8 @@ async fn main() -> anyhow::Result<()> {
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
     });
+    apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
+    tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
     let images = Path::new(&data).join("images");
@@ -472,6 +480,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if out.send(Message::Text(serde_json::to_string(&snapshot).unwrap().into())).await.is_err() {
         return;
     }
+    if let Some(build) = apps::build(&core) {
+        let message = ServerMsg::AppsBuild { build };
+        if out.send(Message::Text(serde_json::to_string(&message).unwrap().into())).await.is_err() { return; }
+    }
     let (source, reader) = (core.clone(), speaker.clone());
     let forward = tokio::spawn(async move {
         loop {
@@ -497,9 +509,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     });
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
+    let volume_source = uuid::Uuid::new_v4().to_string();
     while let Some(Ok(message)) = incoming.next().await {
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
+                Ok(ClientMsg::DecideApp { build_id, keep }) => apps::decide(&core, &build_id, keep),
+                Ok(ClientMsg::ToggleApp { id, enabled }) => apps::toggle(&core, id, enabled),
+                Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
+                Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
+                Ok(ClientMsg::AppOutput { id, sound }) => apps::volume_output(&core, id, sound),
                 Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_thought(&speaker, text.trim()),
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
@@ -514,7 +533,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         }
                     });
                 }
-                Ok(ClientMsg::Listen { on: false }) => audio = None,
+                Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context));
@@ -553,6 +572,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         }
     }
     forward.abort();
+    apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
         tracing::info!("{speaker} left the room");
     }

@@ -22,6 +22,13 @@ const Me = createContext(ALONE.me);
 /** The name this window's own thoughts carry: "you" alone, the name you joined with in a room. */
 export const useMe = () => useContext(Me);
 
+/** Who left a dropped thread unfinished, to name on its tag: empty when it's yours, or from before
+ * rooms (when everyone was "you"). */
+export function leftBy(thread: { dropped_by?: string }, me: string): string {
+  const by = thread.dropped_by ?? "";
+  return by === me || by === ALONE.me ? "" : by;
+}
+
 /** Opens the core's WebSocket as this window's seat; each time it opens or drops, checks the room still takes it. */
 export function openSocket(url: string): WebSocket {
   const params = new URLSearchParams();
