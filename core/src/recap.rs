@@ -71,10 +71,11 @@ pub fn command(text: &str) -> Option<Period> {
     else { None }
 }
 
-pub fn request(core: Arc<Core>, period: Period) {
+/// The sheet's progress goes to whoever asked; the recap itself is saved to the shared map.
+pub fn request(core: Arc<Core>, speaker: String, period: Period) {
     tokio::spawn(async move {
         let _guard = core.recap.gate.lock().await;
-        state(&core, period, true, "", core.snapshot().recaps.iter().find(|r| r.period == period).cloned());
+        state(&core, &speaker, period, true, "", core.snapshot().recaps.iter().find(|r| r.period == period).cloned());
         let since = slice(&core.snapshot(), period, crate::now_ms()).since_ms;
         // Placement is already in progress; don't pay for a second placement call,
         // or summarize a thought on the provisional branch it may soon leave.
@@ -84,13 +85,13 @@ pub fn request(core: Arc<Core>, period: Period) {
         }
         let world = core.snapshot();
         if world.thoughts.iter().any(|t| !t.placed && t.at_ms >= since) {
-            state(&core, period, false, "A thought is still finding its thread. Try again in a moment.", None);
+            state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
             return;
         }
         let source = slice(&world, period, crate::now_ms());
         let source_key = source.key();
         if let Some(saved) = world.recaps.iter().find(|r| r.period == period && r.source_key == source_key) {
-            state(&core, period, false, "", Some(saved.clone()));
+            state(&core, &speaker, period, false, "", Some(saved.clone()));
             return;
         }
         let answer = if source.threads.is_empty() { Ok(Answer::default()) } else { generate(&core, &source).await };
@@ -98,18 +99,18 @@ pub fn request(core: Arc<Core>, period: Period) {
             Ok(answer) => {
                 let recap = finish(source, answer, source_key);
                 core.commit(vec![Change::RecapSaved { recap: recap.clone() }]);
-                state(&core, period, false, "", Some(recap));
+                state(&core, &speaker, period, false, "", Some(recap));
             }
             Err(e) => {
                 tracing::warn!("recap failed: {e:#}");
-                state(&core, period, false, "Couldn't make a recap just now. Your thoughts are still here. Try again.", None);
+                state(&core, &speaker, period, false, "Couldn't make a recap just now. Your thoughts are still here. Try again.", None);
             }
         }
     });
 }
 
-fn state(core: &Core, period: Period, loading: bool, message: &str, recap: Option<Recap>) {
-    core.send(ServerMsg::RecapState { period, loading, message: message.into(), recap });
+fn state(core: &Core, speaker: &str, period: Period, loading: bool, message: &str, recap: Option<Recap>) {
+    core.send_to(speaker, ServerMsg::RecapState { period, loading, message: message.into(), recap });
 }
 
 #[derive(Serialize)]
@@ -315,7 +316,7 @@ mod tests {
             let (placer_queue, _) = mpsc::unbounded_channel();
             Self { path, core: Arc::new(Core {
                 recap: Runtime::default(), apps: crate::apps::Runtime::default(),
-                world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue,
+                world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
                 key, placer_model: "test".into(), http: reqwest::Client::new(),
                 last_activity: AtomicU64::new(0), looked: AtomicBool::new(false), wake: tokio::sync::Notify::new(),
             }) }
@@ -325,7 +326,7 @@ mod tests {
 
     fn thread(id: &str) -> Thread {
         Thread { id: id.into(), title: format!("Topic {id}"), parent_id: None,
-            status: ThreadStatus::Open, last_point: "Last point".into(), touched_ms: 0, tags: vec![], picture: None }
+            status: ThreadStatus::Open, last_point: "Last point".into(), touched_ms: 0, tags: vec![], picture: None, dropped_by: String::new() }
     }
     fn thought(id: u64, thread_id: &str, at_ms: u64) -> Thought {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
@@ -445,10 +446,10 @@ mod tests {
         assert_eq!(loaded.recaps[0].source_key, "saved");
     }
 
-    async fn ready(rx: &mut broadcast::Receiver<ServerMsg>) -> (String, Option<Recap>) {
+    async fn ready(rx: &mut broadcast::Receiver<crate::protocol::Outgoing>) -> (String, Option<Recap>) {
         tokio::time::timeout(Duration::from_secs(3), async {
             loop {
-                if let ServerMsg::RecapState { loading: false, message, recap, .. } = rx.recv().await.unwrap() { return (message, recap); }
+                if let ServerMsg::RecapState { loading: false, message, recap, .. } = rx.recv().await.unwrap().message { return (message, recap); }
             }
         }).await.unwrap()
     }
@@ -463,7 +464,7 @@ mod tests {
         fixture.core.commit(vec![Change::RecapSaved { recap: finish(source, answer(), key) }]);
         let mut rx = fixture.core.updates.subscribe();
         for n in 0..2 {
-            if n == 0 { request(fixture.core.clone(), Period::Today); }
+            if n == 0 { request(fixture.core.clone(), "you".into(), Period::Today); }
             else { fixture.core.add_thought("you", "what did I decide today?"); }
             let (message, recap) = ready(&mut rx).await;
             assert!(message.is_empty());
@@ -471,7 +472,7 @@ mod tests {
         }
         assert_eq!(fixture.core.snapshot().thoughts.len(), 2, "a recap request is not a thought");
         fixture.core.world.lock().unwrap().thoughts.push(thought(3, "T1", crate::now_ms()));
-        request(fixture.core.clone(), Period::Today);
+        request(fixture.core.clone(), "you".into(), Period::Today);
         let (message, recap) = ready(&mut rx).await;
         assert!(message.contains("Couldn't make a recap"));
         assert!(recap.is_none());
@@ -483,7 +484,7 @@ mod tests {
         let fixture = Fixture::new(None);
         let mut rx = fixture.core.updates.subscribe();
         for _ in 0..2 {
-            request(fixture.core.clone(), Period::Session);
+            request(fixture.core.clone(), "you".into(), Period::Session);
             let (message, recap) = ready(&mut rx).await;
             assert!(message.is_empty());
             assert_eq!(recap.unwrap().thought_count, 0);

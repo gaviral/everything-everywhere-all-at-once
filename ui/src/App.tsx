@@ -13,11 +13,13 @@ import { Apps } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
+import { leftBy, useMe } from "./room";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 export default function App() {
   const core = useCore();
+  const me = useMe();
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { world } = core;
@@ -147,7 +149,8 @@ export default function App() {
     }
   };
 
-  const pending = world.thoughts.filter((t) => !t.placed);
+  // Your own thoughts on their way; in a room the other person's land on the map with their name.
+  const pending = world.thoughts.filter((t) => !t.placed && t.speaker === me);
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
@@ -289,12 +292,13 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
   const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+  // Only threads you left: in a room, the other person's are theirs to pick up.
   const dropped = world.threads
-    .filter((t) => t.status === "dropped" && !dismissed.includes(dropKey(t)))
+    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
   const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === "you").at(-1)?.text ?? ""
+    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me).at(-1)?.text ?? ""
     : "";
 
   const goBack = (thread: Thread) => {
@@ -483,7 +487,10 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
   const branches = childrenByParent.get(thread.id) ?? [];
   const active = world.active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
-  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" ? "dropped" : ""].join(" ");
+  // Your own unfinished thread is flagged; someone else's tag just says whose it is.
+  const me = useMe();
+  const by = thread.status === "dropped" ? leftBy(thread, me) : "";
+  const classes = ["thread", active ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : ""].join(" ");
 
   return (
     <motion.section
@@ -500,7 +507,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
         <div className="head-text">
           <div className="head-line">
             <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
-            {thread.status === "dropped" && <span className="chip dropped">left off</span>}
+            {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {active && <span className="chip now">active</span>}
             <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
           </div>
@@ -562,7 +569,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
 
 function Point({ thought, on }: { thought: Thought; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const other = thought.speaker !== "you";
+  const other = thought.speaker !== useMe();
   const reducedMotion = useReducedMotion();
   return (
     <motion.li layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined}>

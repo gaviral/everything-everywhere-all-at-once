@@ -22,6 +22,14 @@ pub enum ServerMsg {
     Explanation { id: String, text: String, failed: bool },
 }
 
+/// A message on its way out: to every window, or only to one speaker's (in a room, each person's
+/// own live words, mic and notices stay on their own laptop).
+#[derive(Clone)]
+pub struct Outgoing {
+    pub to: Option<String>,
+    pub message: ServerMsg,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {

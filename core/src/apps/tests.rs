@@ -13,7 +13,7 @@ impl Fixture {
         let (placer_queue, _) = mpsc::unbounded_channel();
         Self { path, core: Arc::new(Core {
             recap: crate::recap::Runtime::default(),
-            apps: Runtime::default(), world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue,
+            apps: Runtime::default(), world: Mutex::new(world), journal: Mutex::new(journal), updates, placer_queue, room: None,
             key: None, placer_model: "test".into(), http: reqwest::Client::new(),
             last_activity: std::sync::atomic::AtomicU64::new(0), looked: std::sync::atomic::AtomicBool::new(false),
             wake: tokio::sync::Notify::new(),
@@ -37,7 +37,7 @@ fn old_snapshots_and_journals_still_load_and_apps_replay() {
     assert!(old.apps.is_empty());
     assert!(!old.apps_seeded);
     let fixture = Fixture::new();
-    fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T1".into() }, Change::AppRegistered { app: app() },
+    fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() }, Change::AppRegistered { app: app() },
         Change::AppEnabled { id: "test-app".into(), enabled: false }, Change::AppRan { id: "test-app".into(), at_ms: 100 }]);
     let (_, loaded) = Journal::open(&fixture.path).unwrap();
     assert_eq!(loaded.active.as_deref(), Some("T1"));
@@ -178,7 +178,7 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     let mut changes = fixture.core.updates.subscribe();
     let task = tokio::spawn(run(fixture.core.clone()));
     tokio::time::timeout(Duration::from_secs(2), async {
-        loop { if matches!(changes.recv().await.unwrap(), ServerMsg::Change { change: Change::SuggestionAdded { .. } }) { break; } }
+        loop { if matches!(changes.recv().await.unwrap().message, ServerMsg::Change { change: Change::SuggestionAdded { .. } }) { break; } }
     }).await.unwrap();
     assert_eq!(fixture.core.snapshot().suggestions.len(), 2);
     assert!(fixture.core.snapshot().apps.iter().find(|a| a.id == "timer").unwrap().last_run_ms > 0);
@@ -202,7 +202,7 @@ async fn one_composition_answer_becomes_a_reviewable_draft_then_a_journaled_app(
     assert!(!b.draft.as_ref().unwrap().enabled);
     let mut stages = Vec::new();
     while let Ok(message) = messages.try_recv() {
-        if let ServerMsg::AppsBuild { build } = message { stages.push(build.stage); }
+        if let ServerMsg::AppsBuild { build } = message.message { stages.push(build.stage); }
     }
     assert_eq!(stages, ["searching", "composing", "validating", "ready"]);
     decide(&fixture.core, &b.id, true);
@@ -281,7 +281,7 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
     let mut sounded = false;
-    while let Ok(message) = messages.try_recv() { if matches!(message, ServerMsg::AppsSound { .. }) { sounded = true; } }
+    while let Ok(message) = messages.try_recv() { if matches!(message.message, ServerMsg::AppsSound { .. }) { sounded = true; } }
     assert!(sounded);
     assert_eq!(fixture.core.snapshot().suggestions.len(), 1, "choosing sound replaces the card");
 }
@@ -299,4 +299,14 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     toggle(&fixture.core, a.id.clone(), false);
     assert!(!fixture.core.apps.state.lock().unwrap().pending.contains_key(&a.id));
+}
+
+#[test]
+fn in_a_room_an_app_hears_who_said_what() {
+    let said_by = |speaker: &str, text: &str| Thought { id: text.into(), speaker: speaker.into(), text: text.into(), point: String::new(),
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None };
+    let (rent, friday, agree) = (said_by("User", "rent is due"), said_by("User", "pay it friday"), said_by("Sam", "friday works"));
+    // One speaker: the prompt reads exactly as it did before rooms.
+    assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));
+    assert_eq!(said(&[&rent, &friday], Some(&agree)), ("User: rent is due\nAvi: pay it friday".to_string(), "Sam: friday works".to_string()));
 }

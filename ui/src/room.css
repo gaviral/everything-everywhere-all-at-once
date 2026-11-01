@@ -1,0 +1,61 @@
+/* Joining a room: one calm card where the empty map would be. */
+.join {
+  min-height: 100vh;
+  padding: 18vh 24px 24px;
+}
+
+.join-card {
+  display: grid;
+  gap: 10px;
+  max-width: 360px;
+  margin: 0 auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+.join-card h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.join-card p {
+  margin: 0 0 8px;
+}
+
+.join-card input {
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: 0;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font: inherit;
+}
+
+.join-card input:focus-visible {
+  border-color: var(--accent);
+}
+
+.join-card button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.join-card button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.join-note {
+  color: var(--amber);
+  font-size: 13px;
+}

@@ -243,6 +243,7 @@ mod tests {
             touched_ms: 0,
             tags: vec![],
             picture: None,
+            dropped_by: String::new(),
         };
         let points = vec!["Fold it tonight".to_string()];
         assert_ne!(prompt(&thread("T3"), &points), prompt(&thread("T4"), &points));

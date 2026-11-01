@@ -109,6 +109,7 @@ mod tests {
             touched_ms: 0,
             tags: vec![],
             picture: None,
+            dropped_by: String::new(),
         };
         let mut world = World::default();
         for t in [thread("T1", "The hackathon app", None), thread("T2", "Placement speed", Some("T1")), thread("T3", "Laundry", None)] {

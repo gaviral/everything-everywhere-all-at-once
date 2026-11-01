@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { volumeReporter } from "./apps-audio";
 import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { openSocket } from "./room";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -15,6 +16,8 @@ export interface Thread {
   touched_ms: number;
   tags: { name: string; kept: boolean }[];
   picture: string | null;
+  /** While dropped: who left it unfinished. */
+  dropped_by: string;
 }
 
 export interface Thought {
@@ -59,7 +62,9 @@ export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
+  /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
+  active_by: Record<string, string>;
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
@@ -84,8 +89,8 @@ type Change =
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
-  | { type: "thread_status"; thread_id: string; status: ThreadStatus }
-  | { type: "active_changed"; thread_id: string }
+  | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
+  | { type: "active_changed"; thread_id: string; speaker: string }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | { type: "suggestion_added"; suggestion: Suggestion }
@@ -107,7 +112,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string; failed: boolean };
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -169,6 +174,7 @@ function apply(world: World, raw: Change): World {
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: move(s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: move(a.thread_id)! })),
         active: move(world.active),
+        active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
       };
     }
@@ -218,13 +224,15 @@ function apply(world: World, raw: Change): World {
       return {
         ...world,
         threads: world.threads.map((t) =>
-          t.id === c.thread_id ? { ...t, last_point: c.last_point, touched_ms: c.at_ms, status: "open" } : t,
+          t.id === c.thread_id ? { ...t, last_point: c.last_point, touched_ms: c.at_ms, status: "open", dropped_by: "" } : t,
         ),
       };
-    case "thread_status":
-      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status } : t)) };
+    case "thread_status": {
+      const dropped_by = c.status === "dropped" ? c.speaker : "";
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status, dropped_by } : t)) };
+    }
     case "active_changed":
-      return { ...world, active: c.thread_id };
+      return { ...world, active: c.thread_id, active_by: { ...world.active_by, [c.speaker]: c.thread_id } };
     case "thought_corrected": {
       // Mirrors the core: yes swaps the unclear words for the guess, no keeps them;
       // no to a fix made without asking puts the words back as heard.
@@ -285,7 +293,7 @@ export function useCore() {
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${scheme}://${location.host}/ws`);
+      const ws = openSocket(`${scheme}://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
