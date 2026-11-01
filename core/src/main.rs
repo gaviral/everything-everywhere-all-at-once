@@ -499,7 +499,13 @@ async fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     // Alone, only this machine can reach the core; a room opens it to the local network, behind the code.
     let address = if room.is_some() { "0.0.0.0" } else { "127.0.0.1" };
-    let listener = tokio::net::TcpListener::bind((address, port)).await?;
+    let listener = tokio::net::TcpListener::bind((address, port)).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
+        } else {
+            anyhow::anyhow!("couldn't open port {port}: {e}")
+        }
+    })?;
     tracing::info!("E2A2O core on http://localhost:{port}");
     if let Some(code) = &room {
         let host = lan_ip().map_or_else(|| "<this laptop's address>".into(), |ip| ip.to_string());
