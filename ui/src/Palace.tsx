@@ -1,9 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { capitalized, firstLetter, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
+
+// The narrowest a picture gets and the space between two, as the grid had them (auto-fill, minmax(150px, 1fr), 18 px).
+const TILE_MIN = 150;
+const TILE_GAP = 18;
 
 // Keep each family together, including malformed or temporarily orphaned data.
 function makeRooms(threads: Thread[]): Room[] {
@@ -51,6 +55,28 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     window.scrollTo({ top: window.scrollY + palace.getBoundingClientRect().top - toolsBottom, behavior: "instant" });
     palace.querySelector<HTMLButtonElement>(".palace-tile")?.focus();
   }, []);
+  // Rooms flow side by side, each as wide as its pictures (up to a full row), so a session's rooms fit one screen: 7
+  // threads in 2 rooms and 3 on their own took 926 px stacked, against 668 px between the tools and the dock at
+  // 1440×900. Every room uses the columns the whole width would get, so pictures keep one size and line up.
+  const roomsRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState({ count: 6, width: 171 });
+  useLayoutEffect(() => {
+    const rooms = roomsRef.current;
+    if (!rooms) return;
+    const measure = () => {
+      const width = rooms.clientWidth;
+      const count = Math.max(1, Math.floor((width + TILE_GAP) / (TILE_MIN + TILE_GAP)));
+      setColumns((was) => {
+        const next = { count, width: (width - (count - 1) * TILE_GAP) / count };
+        return was.count === next.count && Math.abs(was.width - next.width) < 0.5 ? was : next;
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(rooms);
+    return () => observer.disconnect();
+  }, []);
+  const span = (tiles: number) => ({ "--span": Math.min(tiles, columns.count) }) as CSSProperties;
   // A thread that gets its first branch (or loses its last) moves to another section, so React mounts a new tile
   // for it and focus falls to the page: the new tile takes it back, so the arrow keys and Enter keep working.
   const focused = useRef<HTMLButtonElement | null>(null);
@@ -74,8 +100,16 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const direction = directions[event.key];
     if (!direction) return;
     event.preventDefault();
-    const { x, y } = spot(event.currentTarget);
     const candidates = Array.from(container.current?.querySelectorAll<HTMLButtonElement>(".palace-tile") ?? []);
+    // Left and right go in reading order, as in a photo grid: past a row's end to the next row's start. Rooms flow
+    // like words, so the page's order is the reading order; by geometry, the end of a row jumped up a row.
+    if (!direction[1]) {
+      const next = candidates[candidates.indexOf(event.currentTarget) + direction[0]];
+      next?.focus();
+      next?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    const { x, y } = spot(event.currentTarget);
     let best: HTMLButtonElement | undefined;
     let bestScore = Infinity;
     for (const candidate of candidates) {
@@ -121,15 +155,15 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
         <div><span className="palace-eyebrow">A picture for every thread</span><h1>Your palace</h1></div>
         <p>Open a picture to return to its thread.</p>
       </div>
-      <div className="palace-rooms">
+      <div className="palace-rooms" ref={roomsRef} style={{ "--tile": `${columns.width}px` } as CSSProperties}>
         {branched.map(({ root, members }) => (
-          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`}>
+          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`} style={span(members.length)}>
             <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} threads</span></div>
             <div className="palace-grid">{members.map((thread) => tile(thread, root))}</div>
           </section>
         ))}
         {alone.length > 0 && (
-          <section className="palace-room" aria-label="Threads on their own">
+          <section className="palace-room" aria-label="Threads on their own" style={span(alone.length)}>
             {/* The heading sets them apart from the rooms above; with no rooms, it would say nothing. */}
             {branched.length > 0 && <div className="palace-room-heading"><span>On their own</span><span className="palace-room-rule" /><span>{alone.length} {alone.length === 1 ? "thread" : "threads"}</span></div>}
             <div className="palace-grid">{alone.map(({ root }) => tile(root, root))}</div>
