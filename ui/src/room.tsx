@@ -27,7 +27,12 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
   if (!actions) return null;
   const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
   return (
-    <details className="room-menu">
+    <details className="room-menu" onKeyDown={(event) => {
+      if (event.key !== "Escape" || !event.currentTarget.open) return;
+      event.stopPropagation();
+      event.currentTarget.open = false;
+      event.currentTarget.querySelector("summary")?.focus();
+    }}>
       <summary aria-label="Room details">Room <span aria-hidden="true">⌄</span></summary>
       <div className="room-panel">
         <div className="room-panel-title">This room</div>

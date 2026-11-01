@@ -26,7 +26,7 @@ export function Tour({ populated }: { populated: boolean }) {
   });
   const [step, setStep] = useState(() => hasToured() ? -1 : 0);
   const nextRef = useRef<HTMLButtonElement>(null);
-  const focusNext = useRef(false);
+  const focusNext = useRef(true);
   useLayoutEffect(() => {
     if (step >= 0 && focusNext.current) {
       nextRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
@@ -52,14 +52,14 @@ export function Tour({ populated }: { populated: boolean }) {
   };
 
   return createPortal(<section className="tour-tip" aria-label={`Quick tour, step ${step + 1} of ${steps.length}`}>
-    <div className="tour-copy" aria-live="polite">
+    <div className="tour-copy" id="tour-copy">
       <span className="tour-count">Quick tour · {step + 1} of {steps.length}</span>
       <strong>{current.title}</strong>
       <p>{current.text}</p>
     </div>
     <div className="tour-actions">
       <button className="tour-skip" onClick={finish}>Skip tour</button>
-      <button ref={nextRef} className="tour-next" onClick={next}>{step === steps.length - 1 ? "Got it" : "Next"}</button>
+      <button ref={nextRef} className="tour-next" aria-describedby="tour-copy" onClick={next}>{step === steps.length - 1 ? "Got it" : "Next"}</button>
     </div>
   </section>, slot);
 }
