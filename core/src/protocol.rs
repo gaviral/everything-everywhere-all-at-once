@@ -28,6 +28,9 @@ pub enum ServerMsg {
     Explanation { id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
     Import { status: crate::import::Status },
+    /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
+    /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
+    Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's

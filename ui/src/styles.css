@@ -730,6 +730,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .live { color: var(--ink); font-style: normal; font-size: 14px; }
 .first-hint { color: var(--muted); font-size: 13px; }
 .pending-label { color: var(--accent); font-weight: 600; }
+/* A retry is said calmly: it's saved and will land, nothing to act on. */
+.pending-label.retrying { color: var(--muted); }
 .pill { border-style: solid; color: var(--ink); }
 .notice { display: flex; align-items: flex-start; gap: 12px; width: max-content; max-width: min(90vw, 540px); cursor: default; }
 .notice button { flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }

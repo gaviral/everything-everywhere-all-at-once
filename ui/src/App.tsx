@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 
@@ -752,7 +752,7 @@ export default function App() {
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -1114,20 +1114,30 @@ function MicIcon() {
   );
 }
 
-function PendingThought({ thought, noKey, refused, reducedMotion }: { thought: Thought; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
-  const [elapsed, setElapsed] = useState(0);
+/** A thought on its way to the map, and honestly where it stands: waiting in line behind others, being placed, or
+ *  retrying after a failed try (with when). Seconds count from when it was said, after the first 5. */
+function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (noKey) return;
-    const started = Date.now();
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setElapsed(Math.floor((Date.now() - started) / 1000));
-      interval = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    }, 6000);
-    return () => { window.clearTimeout(timeout); window.clearInterval(interval); };
-  }, [noKey]);
+    if (noKey || refused) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [noKey, refused]);
+  const retryAt = placing.retryAt[thought.id];
+  const elapsed = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
+  const since = elapsed > 5 ? ` · ${elapsed}s` : "";
+  let label: string;
+  if (refused) label = "Waiting for a working key";
+  else if (noKey) label = "Needs the AI key";
+  else if (placing.now === thought.id) label = `Finding a thread${since}`;
+  else if (retryAt !== undefined) {
+    const left = Math.ceil((retryAt - now) / 1000);
+    label = left >= 2 ? `Couldn't place yet · retrying in ${left}s` : "Couldn't place yet · retrying";
+  }
+  // Another thought is being placed first; with none, this one is about to be.
+  else label = placing.now ? `Waiting${since}` : `Finding a thread${since}`;
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className="pending-label">{refused ? "Waiting for a working key" : noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
+    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
   </motion.span>;
 }
 

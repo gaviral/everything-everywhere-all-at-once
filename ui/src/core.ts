@@ -154,7 +154,12 @@ type ServerMsg =
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "explanation"; id: string; text: string; failed: boolean }
-  | { type: "import"; status: ImportStatus };
+  | { type: "import"; status: ImportStatus }
+  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
+
+/** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
+ *  with when it tries again, on this window's clock. Any other is waiting in line. */
+export type Placing = { now: string | null; retryAt: Record<string, number> };
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
@@ -378,6 +383,7 @@ export function useCore(speaker?: string) {
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
+  const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
@@ -473,6 +479,9 @@ export function useCore(speaker?: string) {
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             break;
+          case "placing":
+            setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
+            break;
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
@@ -561,6 +570,7 @@ export function useCore(speaker?: string) {
     found,
     viewAsk,
     queuedCount,
+    placing,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
