@@ -123,23 +123,33 @@ fn names(text: &str, term: &str) -> bool {
 async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
     let key = core.key()?;
     let phrase: String = phrase.chars().take(200).collect();
-    let response = core
-        .ask_model(&core.placer_model, |model| {
-            let body = json!({
-                "model": model,
-                "reasoning_effort": "minimal",
-                // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
-                "max_tokens": 1200,
-                "prompt_cache_key": "e2a2o-explain",
-                "messages": [
-                    {"role": "system", "content": SYSTEM},
-                    {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
-                ],
-            });
-            core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send()
-        })
-        .await?;
-    let value = crate::model::answer(response).await?;
+    // The request as last sent, for the trace: a default model may give way to its base (model.rs).
+    let asked = std::sync::Mutex::new(serde_json::Value::Null);
+    let started = std::time::Instant::now();
+    let answered = async {
+        let response = core
+            .ask_model(&core.placer_model, |model| {
+                let body = json!({
+                    "model": model,
+                    "reasoning_effort": "minimal",
+                    // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
+                    "max_tokens": 1200,
+                    "prompt_cache_key": "e2a2o-explain",
+                    "messages": [
+                        {"role": "system", "content": SYSTEM},
+                        {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
+                    ],
+                });
+                let send = core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send();
+                *asked.lock().unwrap() = body;
+                send
+            })
+            .await?;
+        crate::model::answer(response).await
+    }
+    .await;
+    core.trace.call(&asked.lock().unwrap(), started, answered.as_ref(), serde_json::Value::Null);
+    let value = answered?;
     let text = value["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
     if text.is_empty() {
         bail!("no answer ({})", value["choices"][0]["finish_reason"].as_str().unwrap_or("no reason given"));

@@ -85,7 +85,10 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {
-            let words = sentence_case(event["transcript"].as_str().unwrap_or_default().trim());
+            let raw = event["transcript"].as_str().unwrap_or_default();
+            let words = sentence_case(raw.trim());
+            // As heard and as kept, to tell the transcriber's punctuation from ours.
+            core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);

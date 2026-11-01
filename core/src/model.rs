@@ -175,9 +175,15 @@ impl Core {
     /// its body included. The answer's status goes through `check`, then its JSON through `answer`.
     pub async fn call_model(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
         let key = self.key()?;
-        let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
-        self.check(response.status())?;
-        answer(response).await
+        let started = std::time::Instant::now();
+        let result = async {
+            let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
+            self.check(response.status())?;
+            answer(response).await
+        }
+        .await;
+        self.trace.call(body, started, result.as_ref(), Value::Null);
+        result
     }
 
     /// Asks a feature's model: `send` posts the request for one model name, and the answer's status is read as

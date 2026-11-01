@@ -13,6 +13,7 @@ mod model;
 mod pictures;
 mod placer;
 mod refiner;
+mod trace;
 mod recap;
 mod protocol;
 mod world;
@@ -65,6 +66,8 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
+    pub trace: trace::Trace,
 }
 
 impl Core {
@@ -692,6 +695,7 @@ async fn main() -> anyhow::Result<()> {
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
         service: model::Service::default(),
+        trace: trace::Trace::from_env(Path::new(&data)),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
@@ -1190,6 +1194,7 @@ impl Core {
             wake: Default::default(),
             imports: Default::default(),
             service: Default::default(),
+            trace: Default::default(),
         }
     }
 }

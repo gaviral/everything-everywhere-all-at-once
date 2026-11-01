@@ -19,6 +19,8 @@ For each NEW THOUGHT decide: \"continue\" if it says more about the active threa
 \"return\" if it says more about an earlier thread's, \
 or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
 (set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
+Place by what the words are about, not by how they are said or a word they share with a title: \
+a thought that trails off belongs with its own topic, never with a thread about unfinished thoughts. \
 \"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
 split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
 never between two sentences about one thing, such as a deadline and what is due by then. \
@@ -225,18 +227,30 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let placement = loop {
-        let response = core
-            .ask_model(&core.placer_model, |model| {
-                core.http
-                    .post(url)
-                    .bearer_auth(key)
-                    // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-                    .timeout(patience(room))
-                    .json(&request(&world, &thought, model, room, new_thread))
-                    .send()
-            })
-            .await?;
-        let body = crate::model::answer(response).await?;
+        // The model asked last, for the trace: a default may give way to its base model (model.rs).
+        let asked = Mutex::new(String::new());
+        let started = std::time::Instant::now();
+        let answered = async {
+            let response = core
+                .ask_model(&core.placer_model, |model| {
+                    *asked.lock().unwrap() = model.to_string();
+                    core.http
+                        .post(url)
+                        .bearer_auth(key)
+                        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
+                        .timeout(patience(room))
+                        .json(&request(&world, &thought, model, room, new_thread))
+                        .send()
+                })
+                .await?;
+            crate::model::answer(response).await
+        }
+        .await;
+        if core.trace.is_on() {
+            let sent = request(&world, &thought, &asked.lock().unwrap(), room, new_thread);
+            core.trace.call(&sent, started, answered.as_ref(), json!({"thought": thought_id, "room": room}));
+        }
+        let body = answered?;
         match read(&body)? {
             Some(placement) => break placement,
             None if !again && room < MAX_ROOM => {
@@ -251,13 +265,62 @@ async fn place(core: &Core, thought_id: &str, url: &str) -> anyhow::Result<Optio
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
 
+    let answer = (placement.action.clone(), placement.thread_id.clone(), placement.title.clone(), placement.split.clone());
     let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread);
+    core.trace.write(|| traced(&world, &thought, answer, new_thread, &changes, rest.as_deref()));
     drop(world);
     if new_thread {
         core.new_threads.placed(thought_id, &changes, rest.as_deref());
     }
     core.commit(changes);
     Ok(rest)
+}
+
+/// A placement's trace line: the words, the thread active for the speaker when they were placed (the one
+/// selected, or the last spoken on), what the model answered, and where they landed. Lines about the same
+/// words share the thought's id; a split turn's rest gets its own line when it's placed.
+fn traced(
+    world: &World,
+    thought: &Thought,
+    (action, thread_id, title, split): (String, String, String, String),
+    new_thread: bool,
+    changes: &[Change],
+    rest: Option<&str>,
+) -> serde_json::Value {
+    // A thread this placement made isn't on the map yet: its title is in the changes.
+    let title_of = |id: &str| {
+        changes
+            .iter()
+            .find_map(|c| match c {
+                Change::ThreadAdded { thread } if thread.id == id => Some(thread.title.clone()),
+                _ => None,
+            })
+            .or_else(|| world.thread(id).map(|t| t.title.clone()))
+    };
+    let (landed, point) = changes
+        .iter()
+        .find_map(|c| match c {
+            Change::ThoughtPlaced { thread_id, point, .. } => Some((thread_id.clone(), point.clone())),
+            _ => None,
+        })
+        .unzip();
+    let active = world.active_for(&thought.speaker).cloned();
+    json!({
+        "kind": "placed",
+        "thought": thought.id,
+        "speaker": thought.speaker,
+        "text": thought.text,
+        "active": active,
+        "active_title": active.as_deref().and_then(title_of),
+        "answer": {"action": action, "thread_id": thread_id, "title": title, "split": split},
+        "new_thread_asked": new_thread,
+        "skipped": changes.iter().any(|c| matches!(c, Change::ThoughtSkipped { .. })),
+        "landed": landed,
+        "landed_title": landed.as_deref().and_then(title_of),
+        "new": changes.iter().any(|c| matches!(c, Change::ThreadAdded { .. })),
+        "point": point,
+        "rest": rest,
+    })
 }
 
 /// The room a turn gets (see `ROOM`).
@@ -400,6 +463,21 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
         .map(|t| format!("Just asked: \"{}\"\n", t.text.trim()))
         .unwrap_or_default();
+    // What the speaker said just before, word for word, and where it went: a thread's title and last point say
+    // what it's about, not what was just said, so "and then we have these cursor thingy as well" after a word
+    // on a coding tool's subscription went to the thread named for the UI cursor (2026-11-01 replay). Only a
+    // turn said moments before counts: his turns came a median 31 s apart (9 s at the quarter), and one said
+    // longer ago than `JUST_BEFORE_MS` is context the map's points already give. Left out when it's the question
+    // just asked, which is already there.
+    let before = world
+        .thoughts
+        .iter()
+        .take_while(|t| t.id != thought.id)
+        .filter(|t| t.placed && t.speaker == thought.speaker && t.at_ms <= thought.at_ms)
+        .max_by_key(|t| t.at_ms)
+        .filter(|t| thought.at_ms.saturating_sub(t.at_ms) <= JUST_BEFORE_MS && asked.is_empty())
+        .and_then(|t| Some(format!("Said just before (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim())))
+        .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
@@ -412,7 +490,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{starts}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{before}{starts}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -433,6 +511,9 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         }}}
     })
 }
+
+/// How recent the turn said before must be to go in the prompt as said (see `request`): two minutes.
+const JUST_BEFORE_MS: u64 = 120_000;
 
 /// Names in the prompt, at most: the latest ones.
 const NAMES: usize = 30;
@@ -985,6 +1066,33 @@ mod tests {
     }
 
     #[test]
+    fn the_turn_said_just_before_goes_in_as_said_with_its_thread() {
+        let earlier = |speaker: &str, ago_ms: u64, text: &str| Thought {
+            text: text.into(),
+            at_ms: 1_000_000 - ago_ms,
+            ..thought(&format!("b-{speaker}-{ago_ms}"), speaker, Some("T2"), true)
+        };
+        let prompt = |before: Vec<Thought>, text: &str| {
+            let now = Thought { text: text.into(), at_ms: 1_000_000, ..thought("n", "you", None, true) };
+            let world = World { thoughts: before.into_iter().chain([now.clone()]).collect(), ..map() };
+            request(&world, &now, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string()
+        };
+        let line = "Said just before (placed in T2): \"And the coding tool subscription I have\"\n";
+        let text = "And then we have the cursor plan as well";
+        assert!(prompt(vec![earlier("you", 30_000, "And the coding tool subscription I have")], text).contains(line));
+        // Too long ago, someone else's, or not placed yet: left out.
+        assert!(!prompt(vec![earlier("you", 121_000, "And the coding tool subscription I have")], text).contains("Said just before"));
+        assert!(!prompt(vec![earlier("Sam", 30_000, "And the coding tool subscription I have")], text).contains("Said just before"));
+        let waiting = Thought { placed: false, ..earlier("you", 30_000, "Still being placed") };
+        assert!(!prompt(vec![waiting], text).contains("Said just before"));
+        // Only the latest, and a question just asked is said once, as the question.
+        let two = prompt(vec![earlier("you", 60_000, "Older words"), earlier("you", 20_000, "And the coding tool subscription I have")], text);
+        assert!(two.contains(line) && !two.contains("Older words"));
+        let asked = prompt(vec![earlier("you", 20_000, "Should we use the cursor plan?")], "Yeah.");
+        assert!(asked.contains("Just asked") && !asked.contains("Said just before"));
+    }
+
+    #[test]
     fn a_short_reply_to_a_question_comes_with_the_question() {
         let asked = Thought { text: "Should we say it runs on Meta's models?".into(), ..thought("q", "you", Some("T1"), true) };
         let told = Thought { text: "It runs on Meta's models.".into(), ..thought("s", "you", Some("T1"), true) };
@@ -1068,5 +1176,172 @@ mod tests {
         // Sure, but nothing to change.
         let same = outcome(&place(text, json!({"unclear": "Muse Bark", "guess": "muse bark", "sure": true})));
         assert_eq!(same[2..], ["Muse Bark", "", "", ""]);
+    }
+
+    /// His 08:24 case, in other words: one card selected, a thought about another card's topic. The model's
+    /// thread wins: selecting a card makes it the active one, a hint, never where the words must go.
+    #[tokio::test]
+    async fn content_wins_over_the_selected_card_and_the_trace_says_both() {
+        let answer = r#"{"action":"return","thread_id":"T1","title":"","parent_id":"","point":"Mic cut me off mid-sentence","split":"","complete":true,"dropped":[],"unclear":"","guess":"","sure":false}"#;
+        let (url, _) = stand_in(vec![body(json!("stop"), json!(answer))]).await;
+        let dir = std::env::temp_dir().join(format!("e2a2o-placer-trace-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (journal, _) = crate::world::Journal::open(&dir.join("journal.jsonl")).unwrap();
+        let mut world = World::default();
+        for (id, title) in [("T1", "Microphone feedback"), ("T2", "Grocery list")] {
+            world.apply(&Change::ThreadAdded { thread: Thread { title: title.into(), ..thread(id) } });
+        }
+        // The grocery card is selected (a click is an ActiveChanged, as `Core::focus` makes it).
+        world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() });
+        let core = Core { key: Some("good".into()), trace: crate::trace::Trace::to(&dir), ..Core::test(journal, world) };
+        core.keep("you", "The mic cut me off again in the middle of a sentence");
+        let id = core.snapshot().thoughts[0].id.clone();
+        super::place(&core, &id, &url).await.unwrap();
+        let world = core.snapshot();
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T1"), "content, not the selection");
+        assert_eq!(world.active_for("you").map(String::as_str), Some("T1"), "the map follows the words");
+
+        let lines: Vec<serde_json::Value> =
+            std::fs::read_to_string(dir.join("trace.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let call = lines.iter().find(|l| l["kind"] == "call").expect("the model call");
+        assert_eq!((call["feature"].as_str(), call["thought"].as_str(), call["model"].as_str()), (Some("placer"), Some(id.as_str()), Some("test")));
+        assert!(call["sent"][1]["content"].as_str().unwrap().contains("Active thread: T2"), "what was sent");
+        assert_eq!(call["answer"].as_str(), Some(answer), "what came back");
+        let placed = lines.iter().find(|l| l["kind"] == "placed").expect("the placement");
+        assert_eq!(placed["thought"].as_str(), Some(id.as_str()));
+        assert_eq!((placed["active"].as_str(), placed["active_title"].as_str()), (Some("T2"), Some("Grocery list")));
+        assert_eq!((placed["landed"].as_str(), placed["landed_title"].as_str()), (Some("T1"), Some("Microphone feedback")));
+        assert_eq!((placed["answer"]["action"].as_str(), placed["new"].as_bool()), (Some("return"), Some(false)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_traced_placement_that_starts_a_thread_names_it_and_a_split_names_the_rest() {
+        let world = map();
+        let said = turn("Book the dentist and also the car needs new tires");
+        let answer = reply(json!({"action": "new", "title": "Dentist", "point": "Book the dentist", "split": "also the car needs new tires"}));
+        let (changes, rest) = settle(&world, &said, answer, 0, false);
+        let line = super::traced(&world, &said, ("new".into(), String::new(), "Dentist".into(), "also the car".into()), false, &changes, rest.as_deref());
+        assert_eq!(line["text"], said.text);
+        assert_eq!((line["new"].as_bool(), line["landed_title"].as_str()), (Some(true), Some("Dentist")));
+        assert_eq!(line["rest"].as_str(), rest.as_deref());
+        assert!(line["rest"].is_string());
+    }
+
+    /// Routing cases against the real model: `cargo test --release -- --ignored routing_cases --nocapture`, with
+    /// MODEL_API_KEY set (about $0.0002 a placement on the default model). Each line of `ROUTING_CASES` (default
+    /// scripts/routing-cases.jsonl) is a map, the card selected, words said, and where they may land; each runs
+    /// `ROUTING_RUNS` times (default 3) on a fresh copy, since one answer is a hint, not proof. A case fails when
+    /// most of its runs land somewhere it doesn't allow. A line can instead take its map from a journal: every
+    /// change before thought `thought` was said, and that thought's words and selection (a real miss, kept
+    /// outside this repo).
+    ///
+    /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread) or "new<T1" (a new branch of T1).
+    /// `split`: the turn must (true) or must not (false) be cut in two. `known`: a miss not fixed yet, and why.
+    #[tokio::test]
+    #[ignore]
+    async fn routing_cases() {
+        let Some(key) = std::env::var("MODEL_API_KEY").ok().filter(|k| !k.trim().is_empty()) else {
+            panic!("routing_cases needs MODEL_API_KEY");
+        };
+        let file = std::env::var("ROUTING_CASES").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/routing-cases.jsonl").into());
+        let runs: usize = std::env::var("ROUTING_RUNS").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
+        let cases: Vec<serde_json::Value> =
+            std::fs::read_to_string(&file).unwrap().lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect();
+        let mut failed = Vec::new();
+        for case in &cases {
+            let name = case["name"].as_str().unwrap_or("?");
+            let (world, said) = case_map(case);
+            let mut good = 0;
+            for run in 1..=runs {
+                let dir = std::env::temp_dir().join(format!("e2a2o-case-{}", uuid::Uuid::new_v4().simple()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let (journal, _) = crate::world::Journal::open(&dir.join("journal.jsonl")).unwrap();
+                let core = Core {
+                    key: Some(key.clone()),
+                    placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
+                    ..Core::test(journal, world.clone())
+                };
+                // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.
+                let id = said.id.clone();
+                core.commit(vec![Change::ThoughtAdded { thought: said.clone() }]);
+                let rest = super::place(&core, &id, super::URL).await;
+                let after = core.snapshot();
+                let landed = after.thoughts.iter().find(|t| t.id == id).and_then(|t| t.thread_id.clone()).unwrap_or_default();
+                let made = after.thread(&landed).filter(|_| world.thread(&landed).is_none());
+                let got = match made {
+                    Some(t) => format!("new<{}", t.parent_id.clone().unwrap_or_default()),
+                    None => landed.clone(),
+                };
+                let split = matches!(rest, Ok(Some(_)));
+                let fits = case["want"].as_array().is_some_and(|want| {
+                    want.iter().filter_map(|w| w.as_str()).any(|w| w == got || (w == "new" && got.starts_with("new<")))
+                }) && case["split"].as_bool().is_none_or(|s| s == split);
+                good += usize::from(fits);
+                let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
+                println!("{} {name} #{run}: {got} \"{title}\"{}", if fits { "ok  " } else { "MISS" }, if split { " (split)" } else { "" });
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+            // A known miss is said, not failed: it waits for its fix (`known` says why and when).
+            match case["known"].as_str() {
+                Some(why) if good * 2 <= runs => println!("known miss, {name}: {good}/{runs}: {why}"),
+                Some(_) => println!("a known miss now lands right, {name}: {good}/{runs}: drop its \"known\""),
+                None if good * 2 <= runs => failed.push(format!("{name}: {good}/{runs}")),
+                None => {}
+            }
+        }
+        assert!(failed.is_empty(), "cases that mostly missed: {failed:?}");
+    }
+
+    /// A case's map and the thought said: threads given inline (`threads`: [id, title, last point, parent?],
+    /// `selected`, `text`, `before`), or a journal up to a thought (`journal`, `thought`), said when it was.
+    fn case_map(case: &serde_json::Value) -> (World, Thought) {
+        if let Some(path) = case["journal"].as_str() {
+            let id = case["thought"].as_str().unwrap();
+            let mut world = World::default();
+            for line in std::fs::read_to_string(path).unwrap().lines() {
+                let Ok(change) = serde_json::from_str::<Change>(line) else { continue };
+                if let Change::ThoughtAdded { thought } = &change {
+                    if thought.id == id {
+                        // Selected when it was said: what the core kept with it.
+                        if let Some(at) = &thought.thread_id {
+                            world.apply(&Change::ActiveChanged { thread_id: at.clone(), speaker: thought.speaker.clone() });
+                        }
+                        return (world, Thought { placed: false, point: String::new(), ..thought.clone() });
+                    }
+                }
+                world.apply(&change);
+            }
+            panic!("thought {id} isn't in {path}");
+        }
+        let mut world = World::default();
+        for t in case["threads"].as_array().unwrap() {
+            let field = |i: usize| t[i].as_str().unwrap_or_default().to_string();
+            world.apply(&Change::ThreadAdded {
+                thread: Thread { title: field(1), parent_id: Some(field(3)).filter(|p| !p.is_empty()), ..thread(&field(0)) },
+            });
+            world.apply(&Change::ThreadTouched { thread_id: field(0), last_point: field(2), at_ms: 0 });
+        }
+        // `before`: [thread, words, seconds ago]: a turn said and placed that long before this one.
+        let now = crate::now_ms();
+        if let Some(b) = case["before"].as_array() {
+            let thread_id = b[0].as_str().unwrap();
+            let earlier = Thought {
+                text: b[1].as_str().unwrap().into(),
+                at_ms: now - 1000 * b[2].as_u64().unwrap_or(10),
+                ..thought("th-before", "you", Some(thread_id), true)
+            };
+            world.apply(&Change::ThoughtAdded { thought: earlier });
+            world.apply(&Change::ActiveChanged { thread_id: thread_id.into(), speaker: "you".into() });
+        }
+        if let Some(selected) = case["selected"].as_str() {
+            world.apply(&Change::ActiveChanged { thread_id: selected.into(), speaker: "you".into() });
+        }
+        let said = Thought {
+            text: case["text"].as_str().unwrap().into(),
+            at_ms: now,
+            ..thought(&format!("th-{}", uuid::Uuid::new_v4().simple()), "you", None, true)
+        };
+        (world.clone(), Thought { thread_id: world.active_for("you").cloned(), ..said })
     }
 }
