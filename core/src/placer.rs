@@ -13,13 +13,15 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 
 // Stable text first, so the API's prompt cache can reuse it.
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
-For each NEW THOUGHT decide: \"continue\" if it belongs to the active thread, \"return\" if it goes back to an earlier thread, \
-or \"new\" if it starts a new topic or tangent (set parent_id to the thread it branched from, or leave it empty). \
+For each NEW THOUGHT decide: \"continue\" if it says more about the active thread's last point (a detail, an answer, a correction), \
+\"return\" if it says more about an earlier thread's, \
+or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
+(set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
 thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
 point: the thought in at most 12 words, in the speaker's own voice. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
-unclear: words that look mistranscribed, else an empty string. \
+unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
 guess: what those words most likely were, judging by the context, else an empty string. \
 sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. Answer with JSON only.";
 
