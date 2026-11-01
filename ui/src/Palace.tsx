@@ -79,17 +79,18 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
       <div className="palace-rooms">
         {rooms.map(({ root, members }) => (
           <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`}>
-            <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} {members.length === 1 ? "place" : "places"}</span></div>
+            {/* A room of one place is just its tile: the heading would repeat the tile's title. */}
+            {members.length > 1 && <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} places</span></div>}
             <div className="palace-grid">
               {members.map((thread) => {
                 const isActive = active === thread.id;
                 const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
-                return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={`palace-point-${thread.id}`}>
+                return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} onClick={() => onOpen(thread)} onKeyDown={navigate} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
                   <span className="palace-art">
                     {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
                     <span className="palace-placeholder" aria-hidden="true"><span>{Array.from(thread.title.trim())[0]?.toLocaleUpperCase() || "?"}</span></span>
                     <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
-                    <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{capitalized(thread.last_point) || "No point yet"}</span>
+                    {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{capitalized(thread.last_point)}</span>}
                   </span>
                   <span className="palace-title">{thread.title}</span>
                   <span className="palace-parent">{parent ? `Branch of ${parent.title}` : "Room"}</span>
