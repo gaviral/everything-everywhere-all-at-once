@@ -24,6 +24,10 @@ Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. 
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
+/// How long a pass gets, its whole answer included. The 8 normal passes in the 2026-11-01 log took 5–13 s: twice the
+/// slowest is 26 s, rounded up to 30. A pass still out then is hung: it fails and is redone at the next pause
+/// (`run`), not two minutes on.
+const PATIENCE: Duration = Duration::from_secs(30);
 
 #[derive(Deserialize, Default)]
 struct Pass {
@@ -162,8 +166,7 @@ fn rest_ms(failures: u32) -> u64 {
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
     let body = request(world, since, &chrono_today());
-    // A pass runs in the background, so it can wait: two minutes is far past any real answer.
-    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
+    let value = core.call_model(URL, &body, PATIENCE).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     serde_json::from_str(content).context("answer wasn't the expected JSON")
 }

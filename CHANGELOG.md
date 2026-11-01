@@ -88,6 +88,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - “While you were away” stays up when your last turn is split in two or an import lands; the import panel no longer sticks on “Importing” after a restart.
 - Your new thought scrolls into view when it lands under the composer (its thread's title showing above the composer used to count as in view), and “…, where was I?” brings the thread it goes back to into view; the other person's thoughts in a room don't move your view, and nothing moves while you scroll or read (typing in a field doesn't count as scrolling).
 - A request typed into the Apps panel as “Make an app that…” keeps the panel open after Keep or Discard, as other typed requests do (it closed after 2 s, so a montage of typed requests had to reopen it); app times read “Fri, Nov 6, 7:00 PM”, not “11/6/2026, 7:00:00 PM”.
+- A long turn gets more room to be placed: a turn over 1,000 characters is allowed two tokens a character (up to 12,000, with a time limit that grows with it) instead of 2,000, and an answer the model cut off at its limit is asked once more with twice the room, not again with the same. A 1,672-character part of a turn once ran out of 2,000.
+- A picture that hangs gives up after 55 s and a refiner pass after 30 s, not 2 minutes (twice the slowest normal ones in a log, 27 s and 13 s), so the redraw or the next pass starts sooner.
 
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
