@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
+import { volumeReporter } from "./apps-audio";
+import { useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -23,6 +26,8 @@ export interface Thought {
   placed: boolean;
   unclear: string;
   guess?: string;
+  heard?: string;
+  fixed?: string;
   complete: boolean;
   at_ms: number;
   place_ms: number | null;
@@ -50,7 +55,8 @@ export interface Action {
   done_ms: number | null;
 }
 
-export interface World {
+export interface World extends AppsWorld {
+  recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
   active: string | null;
@@ -60,6 +66,8 @@ export interface World {
 }
 
 type Change =
+  | { type: "recap_saved"; recap: RecapData }
+  | AppChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
   | {
@@ -69,6 +77,8 @@ type Change =
       point: string;
       unclear: string;
       guess?: string;
+      heard?: string;
+      fixed?: string;
       complete: boolean;
       place_ms: number;
     }
@@ -87,6 +97,8 @@ type Change =
   | { type: "thread_picture"; thread_id: string; path: string };
 
 type ServerMsg =
+  | RecapServerMsg
+  | AppsServerMsg
   | { type: "snapshot"; world: World }
   | { type: "change"; change: Change }
   | { type: "partial"; text: string }
@@ -95,7 +107,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "explanation"; id: string; text: string; failed: boolean };
 
-const EMPTY: World = { threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {} };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -105,7 +117,21 @@ function resolve(world: World, id: string): string {
   return current;
 }
 
+// Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
+// when lowercasing keeps the length, so the cut lines up.
+function swap(text: string, from: string, to: string): string {
+  const even = text.toLowerCase().length === text.length && from.toLowerCase().length === from.length;
+  const [hay, needle] = even ? [text.toLowerCase(), from.toLowerCase()] : [text, from];
+  const word = /[A-Za-z0-9]/;
+  for (let i = needle ? hay.indexOf(needle) : -1; i >= 0; i = hay.indexOf(needle, i + needle.length)) {
+    const end = i + from.length;
+    if (!word.test(text[i - 1] ?? "") && !word.test(text[end] ?? "")) return text.slice(0, i) + to + text.slice(end);
+  }
+  return text;
+}
+
 function apply(world: World, raw: Change): World {
+  if (isAppChange(raw)) return applyAppChange(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -120,6 +146,8 @@ function apply(world: World, raw: Change): World {
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "recap_saved":
+      return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
     case "tag_suggested":
       return onThread(c.thread_id, (t) =>
         t.tags.some((x) => x.name === c.tag) ? t : { ...t, tags: [...t.tags, { name: c.tag, kept: false }] },
@@ -175,6 +203,10 @@ function apply(world: World, raw: Change): World {
                 point: c.point,
                 unclear: c.unclear,
                 guess: c.guess ?? "",
+                // A sure fix is already in the point; the text takes it too, only on first placing.
+                text: !t.placed && c.heard && c.fixed ? swap(t.text, c.heard, c.fixed) : t.text,
+                heard: c.heard ?? "",
+                fixed: c.fixed ?? "",
                 complete: c.complete,
                 placed: true,
                 place_ms: c.place_ms,
@@ -194,22 +226,30 @@ function apply(world: World, raw: Change): World {
     case "active_changed":
       return { ...world, active: c.thread_id };
     case "thought_corrected": {
-      // Mirrors the core: yes swaps the unclear words for the guess, no keeps them.
+      // Mirrors the core: yes swaps the unclear words for the guess, no keeps them;
+      // no to a fix made without asking puts the words back as heard.
       const t = world.thoughts.find((x) => x.id === c.thought_id);
       if (!t) return world;
-      const swap = (text: string) => {
-        if (!c.accept || !t.unclear || !t.guess) return text;
-        // Ignore case only when lowercasing keeps the length, so the cut lines up (as in the core).
-        const even = text.toLowerCase().length === text.length && t.unclear.toLowerCase().length === t.unclear.length;
-        const i = even ? text.toLowerCase().indexOf(t.unclear.toLowerCase()) : text.indexOf(t.unclear);
-        return i < 0 ? text : text.slice(0, i) + t.guess + text.slice(i + t.unclear.length);
+      const undo = !c.accept && !!t.heard && !!t.fixed;
+      const correct = (text: string) => {
+        if (c.accept && t.unclear && t.guess) return swap(text, t.unclear, t.guess);
+        if (!c.accept && t.heard && t.fixed) return swap(text, t.fixed, t.heard);
+        return text;
       };
-      const fixed = { ...t, text: swap(t.text), point: swap(t.point), unclear: "", guess: "" };
+      const next = {
+        ...t,
+        text: correct(t.text),
+        point: correct(t.point),
+        unclear: "",
+        guess: "",
+        heard: undo ? "" : t.heard,
+        fixed: undo ? "" : t.fixed,
+      };
       return {
         ...world,
-        thoughts: world.thoughts.map((x) => (x.id === t.id ? fixed : x)),
+        thoughts: world.thoughts.map((x) => (x.id === t.id ? next : x)),
         threads: world.threads.map((th) =>
-          th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: fixed.point } : th,
+          th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next.point } : th,
         ),
       };
     }
@@ -217,6 +257,12 @@ function apply(world: World, raw: Change): World {
 }
 
 export function useCore() {
+  const recap = useRecap();
+  const receiveRecap = recap.receive;
+  const recapDisconnected = recap.disconnected;
+  const apps = useApps();
+  const receiveApps = apps.receive;
+  const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
@@ -243,6 +289,7 @@ export function useCore() {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        resetApps();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now.
@@ -251,6 +298,8 @@ export function useCore() {
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        if (receiveRecap(msg)) return;
+        if (receiveApps(msg)) return;
         switch (msg.type) {
           case "snapshot":
             currentWorld = { ...EMPTY, ...msg.world };
@@ -288,6 +337,7 @@ export function useCore() {
         }
       };
       ws.onclose = () => {
+        recapDisconnected();
         setConnected(false);
         setListening(false);
         setVoiceStatusRevision((revision) => revision + 1);
@@ -300,15 +350,32 @@ export function useCore() {
       window.clearTimeout(timer);
       socket.current?.close();
     };
-  }, []);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
     socket.current.send(data);
     return true;
   }, []);
+  const sendOrWarn = (data: string) => {
+    if (send(data)) return true;
+    setNotice("Not connected — try again when connected.");
+    return false;
+  };
+  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
 
   return {
+    recap,
+    requestRecap: (period: RecapPeriod) => {
+      const sent = send(JSON.stringify({ type: "recap", period }));
+      recap.open(period, world.recaps.find((r) => r.period === period) ?? null, sent);
+    },
+    apps,
+    composeApp: (request: string) => send(JSON.stringify({ type: "compose_app", request })),
+    decideApp: (build_id: string, keep: boolean) => send(JSON.stringify({ type: "decide_app", build_id, keep })),
+    toggleApp: (id: string, enabled: boolean) => send(JSON.stringify({ type: "toggle_app", id, enabled })),
+    removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
+    appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
     snapshotRevision,
     mapChange,
@@ -327,13 +394,13 @@ export function useCore() {
       else { setNotice("Too many thoughts are waiting to send. Keep this one here until you reconnect."); return false; }
       return true;
     },
-    sendAudio: (frame: ArrayBuffer) => send(frame),
-    listen: (on: boolean) => send(JSON.stringify({ type: "listen", on })),
-    focus: (thread_id: string) => send(JSON.stringify({ type: "focus", thread_id })),
-    setItem: (id: string, status: ItemStatus) => send(JSON.stringify({ type: "item", id, status })),
-    approve: (id: string) => send(JSON.stringify({ type: "approve", id })),
-    correct: (thought_id: string, accept: boolean) => send(JSON.stringify({ type: "correct", thought_id, accept })),
-    tag: (thread_id: string, tag: string, keep: boolean) => send(JSON.stringify({ type: "tag", thread_id, tag, keep })),
+    sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
+    listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
+    focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    setItem: (id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })),
+    approve: (id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })),
+    correct: (thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })),
+    tag: (thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })),
     visible: () => send(JSON.stringify({ type: "visible" })),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>

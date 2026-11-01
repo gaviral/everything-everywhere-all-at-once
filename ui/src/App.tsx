@@ -9,7 +9,10 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
 };
 import { startMic } from "./mic";
+import { Apps } from "./Apps";
 import { Explain } from "./Explain";
+import { Palace } from "./Palace";
+import { Recap } from "./Recap";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
@@ -22,6 +25,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [view, setView] = useState<"map" | "palace">("map");
   const [recentFirst, setRecentFirst] = useState(false);
   const [startingMic, setStartingMic] = useState(false);
   const [firstHint, setFirstHint] = useState(false);
@@ -219,6 +223,7 @@ export default function App() {
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       const target = event.target as HTMLElement;
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { event.preventDefault(); searchRef.current?.focus(); }
@@ -279,11 +284,27 @@ export default function App() {
     : "";
 
   const goBack = (thread: Thread) => {
+    setView("map");
+    setExpanded((state) => {
+      const next = { ...state };
+      let current: Thread | undefined = thread;
+      const visited = new Set<string>();
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        next[current.id] = false;
+        current = current.parent_id ? threadById.get(current.parent_id) : undefined;
+      }
+      return next;
+    });
     setQuery("");
     setFocusMode(false);
     core.focus(thread.id);
     setDismissed((d) => [...d, dropKey(thread)]);
-    requestAnimationFrame(() => document.getElementById(`thread-${thread.id}`)?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }));
+    requestAnimationFrame(() => {
+      const target = document.getElementById(`thread-${thread.id}`);
+      target?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
+      target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
+    });
   };
 
   return (
@@ -293,9 +314,12 @@ export default function App() {
         <div className="brand">
           E2A2O <small>threads</small>
         </div>
+        <div className="header-actions">
+        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap("today"); }}><span aria-hidden="true">✦</span> Recap</button>
         <div className="status">
           <span className={core.connected ? "dot ok" : "dot"} />
           {!core.connected ? "Connecting…" : core.listening ? "Listening" : "Ready"}
+        </div>
         </div>
       </header>
 
@@ -319,17 +343,22 @@ export default function App() {
 
       <Explain explanations={core.explanations} explain={core.explain} />
 
+      <Apps core={core} />
       {world.threads.length > 0 && <nav className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
-          <label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          <div className="palace-switch" role="group" aria-label="View">
+            <button aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
+            <button aria-pressed={view === "palace"} onClick={() => setView("palace")}>Palace</button>
+          </div>
+          {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>{focusMode ? "Show all" : "Focus"}</button>
           <button aria-pressed={recentFirst} onClick={() => setRecentFirst((value) => !value)}>{recentFirst ? "Recent first" : "Map order"}</button>
           {world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
-          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details>
+          <details className="shortcuts"><summary aria-label="Keyboard shortcuts">?</summary><div className="keyboard-hint"><div>✦ added or suggested by AI</div><div>/ search · j / k move · Enter show or hide · Esc fold quiet threads</div></div></details></>}
         </div>
-        {search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
+        {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      <main ref={mapRef} className="map" aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className="map" aria-label="Thread map">
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
@@ -353,7 +382,7 @@ export default function App() {
             />
           ))
         )}
-      </main>
+      </main>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className="dock" aria-label="Your thoughts">
@@ -414,6 +443,14 @@ export default function App() {
           </form>
         </div>
       </section>
+      <Recap view={core.recap.view} world={world} connected={core.connected} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+        const thread = world.threads.find((t) => t.id === id);
+        if (thread) goBack(thread);
+        requestAnimationFrame(() => {
+          const target = document.getElementById(`thread-${id}`)?.querySelector<HTMLButtonElement>(".thread-toggle");
+          target?.focus({ preventScroll: true });
+        });
+      }} />
     </div>
     </MotionConfig>
   );
@@ -469,7 +506,7 @@ function ThreadCard({ thread, world, on, activePath, childrenByParent, thoughtsB
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} onClick={() => setExpanded((state) => ({ ...state, [thread.id]: !collapsed }))} disabled={searching && matches.has(thread.id)}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={() => { if (!(searching && matches.has(thread.id))) setExpanded((state) => ({ ...state, [thread.id]: !collapsed })); }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -517,6 +554,13 @@ function Point({ thought, on }: { thought: Thought; on: Handlers }) {
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{thought.point}</span>
+      {thought.heard && thought.fixed && (
+        // Fixed without asking: quiet until you look, and one tap puts the words back.
+        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
+          <span>fixed</span>
+          <span>heard “{thought.heard}” · undo</span>
+        </button>
+      )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?
