@@ -1,10 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// In development the core runs on :4321; Vite proxies its WebSocket and the room check.
+// In development the core runs on :4321; Vite proxies its WebSocket, the room check and the import upload.
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: { "/ws": { target: "ws://localhost:4321", ws: true }, "/room": "http://localhost:4321" },
+    proxy: { "/ws": { target: "ws://localhost:4321", ws: true }, "/room": "http://localhost:4321", "/import": "http://localhost:4321" },
   },
 });

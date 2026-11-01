@@ -16,6 +16,8 @@ cp .env.example .env   # add your Meta Model API key from dev.meta.ai
 
 In a room, each person joins with a short name, each laptop transcribes its own mic, and every thought shows who said it; "where was I?" and the unfinished-thought card follow each person. The room has its own map (`data/room`). Without one, the core only answers this machine.
 
+**Import chats** (top right) turns a ChatGPT or Claude export (`conversations.json`), or a JSON list of messages, into threads, open questions and deadlines; only your own messages become points, and it says what goes to which model before anything is sent. **Try with a sample** uses `ui/public/sample-chats.json`, a small synthetic export.
+
 ## How it's built
 
 - `core/` (Rust): the world in memory, journaled to `data/journal.jsonl` on every change; the realtime relay to Muse Voice Transcribe (the key never reaches the browser); the placer, which asks Muse Spark where each thought belongs; WebSocket updates to every open window.

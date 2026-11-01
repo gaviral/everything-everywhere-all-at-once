@@ -752,3 +752,22 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .status { font-size: 12px; }
   .map-tools { top: 58px; }
 }
+
+/* Keep the marker with the first line even when point content wraps. */
+.points li { position: relative; padding-left: 13px; }
+.points li::before { position: absolute; left: 0; top: .65em; transform: none; }
+.points li.other::before { transform: rotate(45deg); }
+
+/* The tour takes space beside its subject instead of covering an app control. */
+.tour-tip { max-width: 712px; margin: 8px auto 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); font-size: 13px; }
+.tour-copy strong { display: block; color: var(--ink); font-size: 14px; }
+.tour-copy p { margin: 3px 0 0; color: var(--ink); }
+.tour-count { display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; }
+.tour-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.tour-actions button { min-height: 36px; padding: 6px 12px; border: 0; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+.tour-skip { background: transparent; color: var(--muted); }
+.tour-next { background: var(--accent); color: var(--accent-button-ink); }
+#tour-composer .tour-tip { margin: 0; }
+@media (max-width: 760px) {
+  #tour-tools .tour-tip, #tour-map .tour-tip { margin-inline: 16px; }
+}

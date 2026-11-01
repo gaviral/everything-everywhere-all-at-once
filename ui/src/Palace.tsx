@@ -1,4 +1,4 @@
-import { useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import type { Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import "./palace.css";
@@ -40,6 +40,9 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
   const rooms = useMemo(() => makeRooms(threads), [threads]);
   const byId = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
   const container = useRef<HTMLElement>(null);
+  useEffect(() => {
+    container.current?.querySelector<HTMLButtonElement>(".palace-tile")?.focus();
+  }, []);
 
   const navigate = (event: KeyboardEvent<HTMLButtonElement>) => {
     const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -87,7 +90,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
                     {thread.picture ? <img src={thread.picture} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
                     <span className="palace-placeholder" aria-hidden="true"><span>✦</span></span>
                     <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
-                    <span className="palace-point" id={`palace-point-${thread.id}`}><span>Last thought</span>{thread.last_point || "No point yet"}</span>
+                    <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><span>Last thought</span>{thread.last_point || "No point yet"}</span>
                   </span>
                   <span className="palace-title">{thread.title}</span>
                   <span className="palace-parent">{parent ? `Branch of ${parent.title}` : "Room"}</span>
