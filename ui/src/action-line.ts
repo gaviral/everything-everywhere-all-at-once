@@ -21,6 +21,11 @@ export function actionLine(action: Action, app: string, file = false): { button?
   return {};
 }
 
+/** Whether its row shows ×: every waiting item, with or without a button (an undated one hosted has none). */
+export function dismissable(action: Action): boolean {
+  return action.status === "new";
+}
+
 /** A real YYYY-MM-DD day, as the core checks it (apps.rs `valid_date`): only then is there a calendar file. */
 export function dated(text: string): boolean {
   const when = text.trim();

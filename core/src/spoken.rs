@@ -204,8 +204,7 @@ fn proposed<'a>(core: &Core, world: &'a World, speaker: &str) -> Option<&'a crat
 fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
     let (message, adding) = match proposed(core, world, speaker) {
         // Without Apple's apps the window saves a calendar file, which only a click can start.
-        Some(action) if !crate::apple::reachable() =>
-            (format!("To add “{}”, choose Download .ics on its row: your calendar app opens it.", action.title), false),
+        Some(action) if !crate::apple::reachable() => (file_words(action), false),
         // As a click on Add: it goes into the host's apps, so it's the host's call.
         Some(_) if !core.is_host(speaker) => ("Only the host can add this: it goes into their apps.".to_string(), false),
         Some(action) => {
@@ -217,6 +216,16 @@ fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
     };
     core.send_to(speaker, ServerMsg::Notice { message });
     adding
+}
+
+/// Where Apple's apps can't be reached: a dated item saves from its row's Download .ics; one with no day has no
+/// file (a calendar can't hold it) and no button, so the words don't send anyone looking for one.
+fn file_words(action: &crate::world::Action) -> String {
+    if crate::apps::valid_date(action.when.trim()) {
+        format!("To add “{}”, choose Download .ics on its row: your calendar app opens it.", action.title)
+    } else {
+        format!("“{}” has no day, so there's no calendar file to save: × on its row dismisses it.", action.title)
+    }
 }
 
 /// "Keep it" (true) or "discard it" (false) for an app that was just built.

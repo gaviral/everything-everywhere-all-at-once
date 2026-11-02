@@ -157,8 +157,9 @@ export function Room({ children }: { children: ReactNode }) {
     recheck = () => {
       knock(current.code, current === ALONE ? "" : current.me)
         .then((d) => {
-          if (d.room === (current !== ALONE) && (!d.room || d.member) && !d.taken) return;
+          // Always: a restarted core may run with other settings (hosted, models, sample) that site.ts reads.
           setDoor(d);
+          if (d.room === (current !== ALONE) && (!d.room || d.member) && !d.taken) return;
           setCurrent(d.room ? null : ALONE);
           setNote(!d.room ? "" : !d.member ? "The room has a new code. Ask the host for it." : d.taken ? TAKEN : "");
         })

@@ -4,7 +4,7 @@ import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatu
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
-import { actionLine } from "./action-line";
+import { actionLine, dismissable } from "./action-line";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -1357,9 +1357,10 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
         {/* Under the title, beside its "Try again", where the click was: a notice elsewhere is missed on camera. */}
         {line.failed && <span className="action-failed" role="alert">{line.failed}</span>}
       </span>
-      {line.button && (
+      {/* × on every waiting item: one with no day has nothing to download hosted, but can still be dismissed. */}
+      {dismissable(action) && (
         <span className="ai-actions">
-          <button ref={add} aria-label={line.label} onClick={approve}>{line.button}</button>
+          {line.button && <button ref={add} aria-label={line.label} onClick={approve}>{line.button}</button>}
           <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
             ×
           </button>

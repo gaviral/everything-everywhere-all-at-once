@@ -13,7 +13,7 @@ const root = new URL("../ui", import.meta.url).pathname;
 const server = await createServer({ root, server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
   const site = await server.ssrLoadModule("/src/site.ts");
-  const { actionLine } = await server.ssrLoadModule("/src/action-line.ts");
+  const { actionLine, dismissable } = await server.ssrLoadModule("/src/action-line.ts");
   const { TIPS } = await server.ssrLoadModule("/src/Tips.tsx");
   const { MIC_WORDS } = await server.ssrLoadModule("/src/MicButton.tsx");
 
@@ -85,9 +85,16 @@ try {
   const action = { id: "ac-1", thread_id: "T1", kind: "event", title: "Demo day", when: "2026-11-04", status: "new", done_ms: null };
   assert.deepEqual(actionLine(action, "Calendar", true), { button: "Download .ics", label: "Download Demo day as a calendar file" });
   assert.deepEqual(actionLine({ ...action, when: "" }, "Reminders", true), {});
+  // Undated, it has no button, yet its × stays (App.tsx `ActionRow`): only a waiting item has one.
+  assert.ok(dismissable({ ...action, when: "" }));
+  for (const status of ["kept", "done", "dismissed"]) assert.ok(!dismissable({ ...action, status }), status);
+  assert.match(readFileSync(`${root}/src/App.tsx`, "utf8"), /\{dismissable\(action\) && \(/, "the row's × follows `dismissable`, not the button");
   assert.deepEqual(actionLine({ ...action, status: "done" }, "Calendar", true), { status: "Saved as .ics" });
   assert.deepEqual(actionLine({ ...action, status: "dismissed" }, "Calendar", true), {});
   assert.deepEqual(actionLine(action, "Calendar"), { button: "Add to Calendar", label: "Add Demo day to Calendar" }, "on a Mac, as before");
+  // A restarted core's settings reach the window: the door is kept before the "nothing changed" return (room.tsx).
+  const recheck = readFileSync(`${root}/src/room.tsx`, "utf8").split("recheck = () => {\n")[1];
+  assert.ok(recheck.indexOf("setDoor(d)") < recheck.indexOf("return;"), "recheck keeps the new door before returning");
   assert.match(TIPS.file(false, true), /Download \.ics/);
   assert.match(TIPS.file(false, false), /no day/);
   assert.match(TIPS.file(true, false), /calendar file/);
