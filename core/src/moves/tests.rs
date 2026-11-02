@@ -543,3 +543,35 @@ async fn delete_that_with_nothing_just_before_deletes_your_latest_with_undo() {
     f.say("Delete that").await;
     assert!(!has(&f, &said) && has(&f, "w"));
 }
+
+#[tokio::test]
+async fn undo_brings_a_point_back_to_its_thread_even_after_someone_else_emptied_it() {
+    let f = Fixture::new(slipped());
+    // You delete one of Garden's two points; Ben then deletes the other, and Garden leaves the map.
+    let yours = f.watch(|core| click_delete(core, "you", "a"));
+    let bens = f.watch(|core| click_delete(core, "ben", "w"));
+    assert!(bens.contains(&"removed T1".to_string()), "{bens:?}");
+    // Your Undo: Garden comes back with your point, not a point on no card.
+    let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&yours)));
+    assert!(undone.contains(&"thread T1 Garden".to_string()), "{undone:?}");
+    assert!(has(&f, "a") && f.on("a") == "T1" && f.core.snapshot().thread("T1").is_some());
+    let ids = |w: &World| w.threads.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&f.core.snapshot()), ["T1", "T2", "T3"], "where it stood");
+    assert_eq!(ids(&f.replayed(slipped())), ["T1", "T2", "T3"]);
+}
+
+#[tokio::test]
+async fn undo_puts_a_thread_and_its_points_back_where_they_stood_as_the_journal_replays() {
+    // Two points said in the same moment (a turn's parts), and a thread between two others.
+    let mut base = slipped();
+    let at = base.thoughts[0].at_ms;
+    base.thoughts.insert(1, thought("a2", "T1", "Water them at dusk", at));
+    let f = Fixture::new(base.clone());
+    let ids = |w: &World| (w.threads.iter().map(|t| t.id.clone()).collect::<Vec<_>>(), w.thoughts.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
+    for id in ["b", "a"] {
+        let lines = f.watch(|core| click_delete(core, "you", id));
+        f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+        assert_eq!(ids(&f.core.snapshot()), ids(&base), "after deleting {id} and Undo");
+        assert_eq!(ids(&f.replayed(base.clone())), ids(&base), "replayed, after {id}");
+    }
+}

@@ -153,6 +153,7 @@ type Change =
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "put_back"; id: string; before: string }
   | { type: "thought_noted"; thought_id: string; note: Note }
   | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
@@ -371,6 +372,17 @@ export function apply(world: World, raw: Change): World {
         active: world.active === c.thread_id ? null : world.active,
         active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
       };
+    }
+    case "put_back": {
+      // As the core: what an Undo brought back stands just before the one that followed it; either missing, nothing.
+      const put = <T extends { id: string }>(list: T[]) => {
+        const from = list.findIndex((x) => x.id === c.id);
+        if (from < 0 || c.id === c.before || !list.some((x) => x.id === c.before)) return list;
+        const rest = list.filter((_, i) => i !== from);
+        const to = rest.findIndex((x) => x.id === c.before);
+        return [...rest.slice(0, to), list[from], ...rest.slice(to)];
+      };
+      return { ...world, threads: put(world.threads), thoughts: put(world.thoughts) };
     }
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)

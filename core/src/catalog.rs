@@ -232,8 +232,10 @@ pub enum Undo {
     /// `thought` comes off the map; `started`, the thread it began, goes into `to` while it holds nothing else (or
     /// leaves the map, with nowhere to go).
     Unfile { thought: String, started: Option<String>, to: Option<String> },
-    /// `thoughts` come back, and `threads`, empty ones that left the map with them.
-    Restore { thoughts: Vec<Thought>, threads: Vec<Thread> },
+    /// `thoughts` come back, and `threads`, every thread they were on as it was: one off the map by then comes back
+    /// first (it left with them, or a later delete emptied it), so none comes back to a card that isn't there.
+    /// `order`: the map's ids as they stood, so each comes back where it was (`places`).
+    Restore { thoughts: Vec<Thought>, threads: Vec<Thread>, order: Vec<String> },
     /// The window puts its folds back as they were before this open or fold (it keeps them).
     Refold,
     /// The window puts back the view it showed before this one was asked.
@@ -756,6 +758,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     for id in emptied {
         let Some(thread) = world.thread(&id) else { continue };
         if !empty_without(&world, &id, &gone) {
+            threads.push(thread.clone());
             kept.push(id);
             continue;
         }
@@ -768,9 +771,10 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
         }
     }
     changes.extend(repoint(&world, &kept, &thoughts));
+    let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads })
+    Some(Undo::Restore { thoughts, threads, order })
 }
 
 /// Takes exactly these thoughts off the map, a delete by hand (moves.rs): `ThoughtSkipped`, so the journal keeps their
@@ -793,15 +797,35 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
         let Some(thread) = world.thread(&id) else { continue };
         if empty_without(&world, &id, &gone) {
             changes.push(Change::ThreadRemoved { thread_id: id });
-            threads.push(thread.clone());
         } else {
             kept.push(id);
         }
+        threads.push(thread.clone());
     }
     changes.extend(repoint(&world, &kept, &thoughts));
+    let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads })
+    Some(Undo::Restore { thoughts, threads, order })
+}
+
+/// Every thread's and thought's id in map order, for an Undo to put back what it brings back where it was.
+fn order_of(world: &World) -> Vec<String> {
+    world.threads.iter().map(|t| t.id.clone()).chain(world.thoughts.iter().map(|t| t.id.clone())).collect()
+}
+
+/// Where what an Undo brings back (`back`, threads and thoughts) goes: just before the first of its kind that followed
+/// it in `order` and is on the map once it's back. The last first, so one brought back can stand before another.
+fn places(world: &World, order: &[String], back: &[(String, bool)]) -> Vec<Change> {
+    let at = |id: &str| order.iter().position(|o| o == id);
+    let mut back: Vec<&(String, bool)> = back.iter().filter(|(id, _)| at(id).is_some()).collect();
+    back.sort_by_key(|(id, _)| at(id));
+    back.iter().rev().filter_map(|(id, thread)| {
+        let here = |o: &String| back.iter().any(|(b, t)| b == o && t == thread)
+            || if *thread { world.thread(o).is_some() } else { world.thoughts.iter().any(|t| &t.id == o) };
+        let before = order[at(id)? + 1..].iter().find(|o| here(o))?;
+        Some(Change::PutBack { id: id.clone(), before: before.clone() })
+    }).collect()
 }
 
 /// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other thought, no branch.
@@ -957,17 +981,25 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 core.focus(speaker, &to);
             }
         }
-        Undo::Restore { thoughts, threads } => {
-            // A thread they started went with them: back on the map if it left it, else they come back where its id
-            // leads now.
+        Undo::Restore { thoughts, threads, order } => {
+            // Each thread they were on: back on the map if it left it, else they come back where its id leads now.
+            // Both stand where they stood.
             let world = core.snapshot();
-            let mut back: Vec<Change> = threads.iter()
+            let gone: Vec<&Thread> = threads.iter()
                 .filter(|t| world.thread(&t.id).is_none() && !world.merged.contains_key(&t.id))
-                .map(|thread| Change::ThreadAdded { thread: thread.clone() })
                 .collect();
+            let mut back: Vec<Change> = gone.iter().map(|thread| Change::ThreadAdded { thread: (*thread).clone() }).collect();
             back.extend(thoughts.iter()
+                .filter(|t| !world.thoughts.iter().any(|o| o.id == t.id))
                 .map(|t| Thought { thread_id: t.thread_id.as_ref().map(|id| world.resolve(id)), ..t.clone() })
                 .map(|thought| Change::ThoughtAdded { thought }));
+            let returning: Vec<(String, bool)> = gone.iter().map(|t| (t.id.clone(), true))
+                .chain(back.iter().filter_map(|c| match c {
+                    Change::ThoughtAdded { thought } => Some((thought.id.clone(), false)),
+                    _ => None,
+                }))
+                .collect();
+            back.extend(places(&world, order, &returning));
             drop(world);
             core.commit(back);
             // Words not placed yet go back in line: the placer let go of them while they were off the map.

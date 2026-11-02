@@ -86,6 +86,16 @@ try {
   assert.match(core, /type: "delete", thought_id/);
   assert.match(protocol, /Delete \{ thought_id: String \}/);
   assert.match(app, /“Delete this”/);
+  // Undo puts a thread and a point back where they stood, as the core does (world.rs `PutBack`); either gone, nothing.
+  const off = apply(apply(world, { type: "thought_skipped", thought_id: "b" }), { type: "thread_removed", thread_id: "T2" });
+  const back = [{ type: "thread_added", thread: world.threads[1] }, { type: "thought_added", thought: world.thoughts[2] },
+    { type: "put_back", id: "T2", before: "T3" }].reduce(apply, off);
+  assert.deepEqual(back.threads.map((t) => t.id), ["T1", "T2", "T3"]);
+  const first = [{ type: "thought_skipped", thought_id: "a" }, { type: "thought_added", thought: world.thoughts[0] },
+    { type: "put_back", id: "a", before: "w" }].reduce(apply, world);
+  assert.deepEqual(first.thoughts.map((t) => t.id), ["a", "w", "b"]);
+  assert.equal(apply(world, { type: "put_back", id: "a", before: "gone" }).thoughts, world.thoughts);
+  assert.equal(apply(world, { type: "put_back", id: "a", before: "a" }).thoughts, world.thoughts);
   const { pointOf, watchAttention, attentionTeller } = await server.ssrLoadModule("/src/this-card.ts");
   const li2 = (id) => ({ closest: (s) => (s.startsWith("li") ? { id } : null) });
   assert.equal(pointOf(li2("point-th-1")), "th-1");
