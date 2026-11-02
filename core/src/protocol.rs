@@ -44,6 +44,12 @@ pub enum ServerMsg {
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
     /// `live`: the end of the count really sends (else a dry run).
     SendCard { id: u64, to: String, text: String, state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
+    /// The GitHub card (github.rs), to the asker's windows: `loading` as soon as it's asked, then `ready` with the pull
+    /// requests (at most `ROWS`, `more` when GitHub has others) or `failed` with `message` saying why in one line.
+    PullsCard { id: u64, title: String, repo: String, state: crate::github::CardState, pulls: Vec<crate::github::Pull>, more: bool, message: String },
+    /// The note card (notes.rs), to the asker's windows: the note's title and sections as Notes gets them, `saving`
+    /// then `saved` (Open in Notes) or `failed`, or at once `dry_run`, with `message` saying so. `live`: it really writes.
+    NoteCard { id: u64, title: String, sections: Vec<crate::notes::NoteSection>, state: crate::notes::NoteState, live: bool, message: String },
     /// Draft words of the turn being spoken; replaces the previous draft.
     Partial { text: String },
     Status { listening: bool, note: String },
@@ -164,6 +170,8 @@ pub enum ClientMsg {
     Approve { id: String },
     /// The message card's Stop, or Esc while it counts down: it goes down unsent (messages.rs).
     StopSend { id: u64 },
+    /// The note card's Open in Notes: Notes shows the note that card saved (notes.rs). It never changes the note.
+    OpenNote { id: u64 },
     /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered
     /// others (`sample::SAMPLES`), none the default.
     Sample {
