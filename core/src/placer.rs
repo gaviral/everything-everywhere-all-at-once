@@ -2459,6 +2459,7 @@ mod tests {
     /// the point holds none of them (a slip kept, an exclamation). `rounds`: at most this many rounds of calls (1:
     /// no answer was cut off at its room and asked again). Each run prints how long it took to place, and the end
     /// the median.
+    /// `cut`: the words are the rest of the turn `before`, cut where it moved on to another topic.
     /// `talk`: instead of one thought, turns said in a row on one map (see `talk_run`): [{text, want?, speaker?,
     /// at?, id?}].
     #[tokio::test]
@@ -2585,7 +2586,8 @@ mod tests {
 
     /// One run of a `talk` case: its turns said in a row on one map, each placed as the app places it, the rest of a
     /// turn cut in two right after it. A turn's move: "new" (it started a thread), "same" (it landed where its
-    /// speaker's words before it did), "back" (on another thread already on the map) or "skip"; a turn cut in two
+    /// speaker's words before it did), "back" (on another thread already on the map), "skip" or "fail" (no answer); a
+    /// turn cut in two
     /// joins its parts' moves with "+" ("same+new"). It fits when each turn with a `want` made one of its moves.
     /// With TALK_OUT set, each run appends a line there with every turn's threads and the threads' titles, for a
     /// script that scores a whole talk.
@@ -2611,11 +2613,17 @@ mod tests {
             while let Some(part) = next.take() {
                 let before = core.snapshot();
                 let went = std::time::Instant::now();
-                next = super::place(core, &part, super::URL, super::patience).await.ok().flatten();
+                let placed = super::place(core, &part, super::URL, super::patience).await;
                 times.push(went.elapsed().as_millis());
+                let failed = placed.as_ref().err().map(ToString::to_string);
+                next = placed.ok().flatten();
                 let after = core.snapshot();
                 let landed = after.thoughts.iter().find(|t| t.id == part && t.placed).and_then(|t| t.thread_id.clone());
+                if let Some(e) = &failed {
+                    println!("     {name} #{run} turn {i}: failed: {e}");
+                }
                 kinds.push(match &landed {
+                    None if failed.is_some() => "fail",
                     None => "skip",
                     Some(on) if before.thread(on).is_none() => "new",
                     Some(on) if last.get(speaker) == Some(on) => "same",
@@ -2720,6 +2728,10 @@ mod tests {
             at_ms: now,
             ..thought(&format!("th-{}", uuid::Uuid::new_v4().simple()), "you", None, true)
         };
+        // `cut`: the words are the rest of the turn `before`, cut where it moved on (`settle`).
+        if case["cut"].as_bool() == Some(true) {
+            world.split_from.insert(said.id.clone(), "th-before".into());
+        }
         (world.clone(), Thought { thread_id: world.active_for("you").cloned(), ..said })
     }
 
