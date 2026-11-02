@@ -78,10 +78,12 @@ const ROLES = [
     ],
   },
   { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
-  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"composer","model":"muse-spark-1\.3"/ },
-  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap","model":"muse-spark-1\.3"/ },
+  // The core traces building an app as "app" (core/src/apps.rs `feature`), and a Recap kept current before you ask as
+  // "recap draft" (core/src/recap.rs): asking shows that draft, so either call proves the Recap's model.
+  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"app","model":"muse-spark-1\.3"/ },
+  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap( draft)?","model":"muse-spark-1\.3"/ },
   { anchor: "pictures", model: "Muse Image 1.0", proof: /"feature":"picture","model":"muse-image-1\.0"/ },
-  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"Wait, where was I\?"/, none: /"model":/ },
+  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"[Ww]ait, where was I\?"/, none: /"model":/ },
 ];
 assert.ok(/\(docs\/trace\.md(#[a-z0-9-]+)?\)/.test(first), "the first screen doesn't link to docs/trace.md");
 const trace = read("docs/trace.md");
@@ -146,6 +148,13 @@ assert.equal(ex[0].sent.characters, 1800);
 assert.ok(ex[0].sent.last.length <= KEEP + 1 && ex[0].answer.length <= KEEP + 1, "an excerpt keeps the whole prompt");
 assert.deepEqual(ex[2].answer, { images: 1 });
 assert.equal(shorten(lines[3]).error, "timed out");
+// A race's slower call is dropped, not failed: it counts apart and keeps out of the times.
+const raced = summary(parse([
+  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], answer: "{}" },
+  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], error: "dropped before its answer: another of the same call answered first" },
+].map((l) => JSON.stringify(l)).join("\n")));
+assert.deepEqual(raced.calls.map((r) => [r.calls, r.failed, r.dropped, r.median_ms]), [[2, 0, 1, 2000]]);
+assert.match(table(raced), /\| placer \| muse-spark-1\.3 \| 2 \(1 dropped\) \| 2\.0 s \| 2\.0 s \|/);
 
 // Nothing acts unasked (core/src/apps.rs `starts_on`): only Search-first starts on, and only in demo mode, so the
 // docs a judge reads must not say the Argument resolver or the Volume watcher run before they're switched on. Change

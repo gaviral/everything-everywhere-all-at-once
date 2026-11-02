@@ -40,14 +40,19 @@ export const median = (xs) => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
-/** One row per feature and model: calls, failed calls, median and slowest ms. In the order each first ran. */
+/** A placement races two calls (core/src/placer.rs); the slower one is traced as dropped (core/src/model.rs), not failed. */
+export const dropped = (line) => typeof line.error === "string" && line.error.startsWith("dropped before its answer");
+
+/** One row per feature and model: calls, failed calls, calls dropped as a race's loser, median and slowest ms of the
+ * answered ones. In the order each first ran. */
 export function summary(lines) {
   const rows = new Map();
   for (const l of lines.filter((l) => l.kind === "call")) {
     const key = `${feature(l)}\u0000${l.model}`;
-    const row = rows.get(key) ?? { feature: feature(l), model: l.model, calls: 0, failed: 0, ms: [] };
+    const row = rows.get(key) ?? { feature: feature(l), model: l.model, calls: 0, failed: 0, dropped: 0, ms: [] };
     row.calls += 1;
-    if (l.error) row.failed += 1;
+    if (dropped(l)) row.dropped += 1;
+    else if (l.error) row.failed += 1;
     else row.ms.push(l.ms);
     rows.set(key, row);
   }
@@ -93,7 +98,8 @@ export function excerpt(lines) {
 export function table({ calls, heard, placements, pictures }) {
   const out = ["| Feature | Model | Calls | Median | Slowest |", "|---|---|---|---|---|"];
   for (const r of calls) {
-    const fail = r.failed ? ` (${r.failed} failed)` : "";
+    const notes = [r.failed && `${r.failed} failed`, r.dropped && `${r.dropped} dropped`].filter(Boolean);
+    const fail = notes.length ? ` (${notes.join(", ")})` : "";
     const s = (ms) => (ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`);
     out.push(`| ${r.feature} | ${r.model} | ${r.calls}${fail} | ${s(r.median_ms)} | ${s(r.slowest_ms)} |`);
   }
