@@ -15,10 +15,20 @@ type Options = { now?: number; timeZone?: string; locale?: string };
 // A choice said outright: "I decided…", "we've settled on…", "made up my mind", "we chose…". Not "I can't decide",
 // "haven't decided" or "I'm going with Sam" (a trip, not a choice): a decision marked that wasn't one would misstate
 // the person's own record, so only words that can't mean anything else count.
+// Each clause is read on its own, and one that denies or asks it doesn't count: "I haven't made up my mind",
+// "not sure we decided", "have we decided on the train" (speech often comes without its "?"), "if we chose…".
 const DECIDED = /\b(?:(?:i|we)(?:'ve| have)? (?:finally )?(?:decided|settled on|chose)|made up (?:my|our) minds?)\b/i;
+const DENIED = /\b(?:not|never|no|yet to)\b|n't\b/i;
+const ASKED = /\b(?:have|has|had|did|do|does|if|whether)(?: you| i| we| they)?\s*$/i;
 
 export function saysDecided(words: string): boolean {
-  return DECIDED.test(words.replace(/[’‘]/g, "'"));
+  for (const clause of words.replace(/[’‘]/g, "'").match(/[^.,;!?]+[.,;!?]*/g) ?? []) {
+    const found = DECIDED.exec(clause);
+    if (!found || clause.trim().endsWith("?")) continue;
+    const before = clause.slice(0, found.index);
+    if (!DENIED.test(before) && !ASKED.test(before)) return true;
+  }
+  return false;
 }
 
 // Words that carry meaning, for matching a recap's decision to the thought it came from.
@@ -74,9 +84,13 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
     for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     return id;
   };
+  // Only from a recap that still matches the map: a thought scratched (or placed) since in its window means the recap
+  // spoke of a map that's gone, and an undone decision mustn't come back as **Decided:** (the core redoes it on asking).
+  const current = (recap: World["recaps"][number]) => recap.thought_count === undefined || recap.thought_count ===
+    world.thoughts.filter((t) => t.placed && t.thread_id && t.at_ms >= recap.since_ms && t.at_ms <= recap.through_ms).length;
   const decisions = new Map<string, string[]>();
   const seen = new Set<string>();
-  for (const recap of world.recaps) for (const item of recap.decisions) {
+  for (const recap of world.recaps.filter(current)) for (const item of recap.decisions) {
     const key = item.text.trim().toLocaleLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -101,6 +115,7 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
     return lines;
   };
 
+  const saidDecided = (thoughts: Thought[]) => new Set(thoughts.filter((t) => saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
   const ids = new Set(world.threads.map((t) => t.id));
   const children = new Map<string | null, Thread[]>();
   for (const thread of world.threads) {
@@ -114,7 +129,7 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
     if (done.has(thread.id)) return;
     done.add(thread.id);
     const thoughts = byThread.get(thread.id) ?? [];
-    const marked = new Set(thoughts.filter((t) => saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
+    const marked = saidDecided(thoughts);
     const unmatched: string[] = [];
     for (const decision of decisions.get(thread.id) ?? []) {
       const at = decidedAt(decision, thoughts);
@@ -135,7 +150,7 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
   // A thread on a loop of parents (never expected) still makes it in.
   for (const thread of world.threads) section(thread, 2);
   if (waiting.length) {
-    out.push("", "## Not placed yet", "", ...bullets([...waiting].sort((a, b) => said(a) - said(b)), new Set()));
+    out.push("", "## Not placed yet", "", ...bullets([...waiting].sort((a, b) => said(a) - said(b)), saidDecided(waiting)));
   }
 
   const threads = world.threads.length;

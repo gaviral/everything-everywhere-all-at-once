@@ -801,8 +801,8 @@ export default function App() {
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
-        {/* Import's other half, in its shape (an arrow out on a phone); only once there's a map to save. */}
-        {world.threads.length > 0 && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
+        {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
+        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}

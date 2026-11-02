@@ -54,21 +54,30 @@ try {
   // Decisions: said outright, they're marked on their point; a recap's decision lands on the point it restates, or
   // under the heading when no point does; said once even when both recaps have it; a merged thread's goes where it went.
   for (const yes of ["I decided to rent the van", "We've decided: Lisbon", "we have finally settled on the blue tiles", "I've made up my mind", "We chose the earlier flight", "I’ve decided"]) assert.ok(saysDecided(yes), yes);
-  for (const no of ["I can't decide", "I haven't decided yet", "have you decided?", "I'm going with Sam to Tahoe", "decide by Friday", "undecided"]) assert.ok(!saysDecided(no), no);
+  for (const no of ["I can't decide", "I haven't decided yet", "have you decided?", "I'm going with Sam to Tahoe", "decide by Friday", "undecided",
+    "I haven't made up my mind", "Have we decided on the train", "Have we decided on the train?", "not sure we chose the right one", "if we chose the van it'd fit", "I never settled on a name"]) assert.ok(!saysDecided(no), no);
+  for (const yes of ["I'm not sure, but I decided to go", "Not the bus. We chose the train", "I decided not to go"]) assert.ok(saysDecided(yes), yes);
   const decided = md({
     threads: [thread("T1", "Pottery"), thread("T2", "Trip")],
     thoughts: [thought("p1", "T1", "class on Tuesdays or Saturdays", at(1, 9, 0)), thought("p2", "T1", "book the Saturday pottery class", at(1, 9, 10)),
       thought("t1", "T2", "I decided to take the train", at(1, 10, 0))],
     merged: { OLD: "T2" },
     recaps: [
-      { period: "today", decisions: [{ thread_id: "T1", text: "Book the Saturday pottery class" }, { thread_id: "OLD", text: "Hotel near the station" }] },
-      { period: "session", decisions: [{ thread_id: "T1", text: "book the Saturday pottery class" }] },
+      { period: "today", since_ms: at(1, 0, 0), through_ms: at(1, 23, 0), thought_count: 3, decisions: [{ thread_id: "T1", text: "Book the Saturday pottery class" }, { thread_id: "OLD", text: "Hotel near the station" }] },
+      { period: "session", since_ms: at(1, 9, 0), through_ms: at(1, 10, 0), thought_count: 3, decisions: [{ thread_id: "T1", text: "book the Saturday pottery class" }] },
     ],
   }).text;
   assert.match(decided, /- Nov 1, 9:00 AM · Class on Tuesdays or Saturdays\n- 9:10 AM · \*\*Decided:\*\* Book the Saturday pottery class\n/);
   assert.equal(decided.match(/Decided:\*\* Book the Saturday/g).length, 1, "a decision in both recaps is said once");
   assert.match(decided, /## Trip\n\n- \*\*Decided:\*\* Hotel near the station\n- Nov 1, 10:00 AM · \*\*Decided:\*\* I decided to take the train/);
   assert.equal(decidedAt("Book the Saturday pottery class", [thought("q", "T1", "pottery is fun", 1)]), null, "one shared word isn't the same decision");
+  // A recap made before a thought was scratched spoke of a map that's gone: its decisions don't come back.
+  const undone = md({ threads: [thread("T1", "Trip")], thoughts: [thought("u1", "T1", "trip in June", at(1, 9, 0))],
+    recaps: [{ period: "today", since_ms: at(1, 0, 0), through_ms: at(1, 23, 0), thought_count: 2, decisions: [{ thread_id: "T1", text: "Rent the van" }] }] }).text;
+  assert.ok(!undone.includes("Decided"), "a scratched decision stays scratched");
+  // Not placed yet, a decision said outright is still marked.
+  assert.match(md({ threads: [], thoughts: [thought("w", null, "I decided to rent the van", at(1, 9, 0))] }).text,
+    /## Not placed yet\n\n- Nov 1, 9:00 AM · \*\*Decided:\*\* I decided to rent the van/);
 
   // Words said across a pause read as one point, as the card shows them.
   const joined = md({ threads: [thread("T1", "Shed")], thoughts: [thought("h", "T1", "paint the shed", at(1, 9, 0), { text: "I want to paint the" }), thought("k", "T1", "paint the shed green", at(1, 9, 1), { text: "shed green" })], notes: { k: { continues: "h" } } });
@@ -120,6 +129,7 @@ try {
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.ok(app.includes('if (asked === "export") { exportMap(core.viewAsk); return; }'), "the spoken ask exports");
   assert.ok(app.includes('onClick={() => exportMap()} aria-label="Export map as Markdown"'), "the Export button exports, named for screen readers");
+  assert.ok(app.includes('{(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()}'), "Export shows while every thought waits for a thread");
   console.log("export-check: ok");
 } finally {
   await server.close();
