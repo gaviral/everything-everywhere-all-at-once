@@ -18,7 +18,8 @@ try {
 
   const src = new URL("../ui/src/", import.meta.url);
   const copies = readdirSync(src).filter((f) => /\.tsx?$/.test(f) && f !== "merges.ts")
-    .filter((f) => /\.merged(?: \?\? \{\})?\)\.length;[^;]*\.merged\[/.test(readFileSync(new URL(f, src), "utf8")));
+    // A copy steps an id to the thread it merged into (`id = world.merged[id]`), whatever its loop counts hops with.
+    .filter((f) => /\b(\w+)\s*=\s*[\w.?]+\.merged\[\1\]/.test(readFileSync(new URL(f, src), "utf8")));
   assert.deepEqual(copies, [], "follow merges with resolveMerged (ui/src/merges.ts), not a copy of its loop");
   console.log("merges-check: ok");
 } finally {
