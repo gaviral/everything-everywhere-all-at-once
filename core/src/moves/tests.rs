@@ -449,3 +449,21 @@ async fn following_a_move_ends_a_new_thread_asked_for_before_it() {
     f.core.new_threads.said("you", "next");
     assert!(f.core.new_threads.starts("next"));
 }
+
+/// Undoing a move to a new thread removes that thread; a topic started in between must keep its own id, and the next
+/// new topic must get a fresh one rather than land on it.
+#[tokio::test]
+async fn a_removed_thread_does_not_hand_out_an_id_already_in_use() {
+    let f = Fixture::new(slipped());
+    let lines = f.say("Move that to a new thread").await;
+    let moved_to = f.on("w");
+    // Meanwhile the placer starts a new topic.
+    let made = f.core.snapshot().next_thread_id();
+    f.core.commit(vec![Change::ThreadAdded { thread: thread(&made, "Meanwhile", now_ms()) }]);
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    let w = f.core.snapshot();
+    assert!(w.thread(&moved_to).is_none(), "the undone move's thread is gone");
+    let next = w.next_thread_id();
+    assert!(w.thread(&next).is_none() && !w.merged.contains_key(&next), "next_thread_id {next} is already in use");
+    assert!(w.thread(&crate::spoken::fresh_id(&w)).is_none());
+}

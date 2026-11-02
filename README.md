@@ -42,7 +42,7 @@ Every model the app calls at runtime is Meta's, through the Meta Model API; `scr
 | Muse Spark 1.2 (`PLACER_MODEL`) | Place each finished thought; Did you mean and auto-fix use its placement result. Explain runs when you select words and press Explain. Reads a spoken correction (“No, the bills”) that no rule reads. Contributor mode is opt-in (`PLACER_MODEL=muse-spark-1.2-contributor`). | minimal | Measured with Contributor mode: end of speech to map median 3.6 s, slowest 5.1 s (n = 9, one take through the real speech path, 2026-11-01); placing alone median 2.8 s over 1,015 turns (2026-10-27 to 11-01, core/src/placer.rs `first_try`). Without it, placing was a little slower: median 3.3 s vs 3.0 s (n ≈ 42 each) |
 | Muse Spark 1.3 (`REFINER_MODEL`, default) | Refiner at a pause or when you return; composer when you ask to make an app; Search-first when enabled; app prompts when a watcher fires. | low | — |
 | Muse Spark 1.3 (`REFINER_MODEL`) | Take me there, with minimal effort, only when local word search finds no match | minimal | 62 paraphrases that share no word with their target: median 1.1 s, p90 1.7 s, slowest 2.8 s; 51 found it (2026-11-01, core/src/find.rs `PATIENCE`) |
-| Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | When you ask for Recap or press Recap | low | — |
+| Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | Keeps a Recap draft current as thoughts land (only while the hour has calls to spare), and when you ask for Recap with something newer | minimal | One call alone on the demo map: 2.5–3.0 s with minimal vs 5.2–9.5 s with low (n = 3 each, 2026-11-01); asking shows the kept draft in 5–11 ms (n = 3) |
 | Muse Spark 1.2 (`IMPORT_EXTRACT_MODEL`, default) | Chat import: extracts ideas from message parts | minimal | — |
 | Muse Spark 1.3 (`IMPORT_MERGE_MODEL`, default) | Chat import: groups the extracted ideas into threads | low | — |
 | Muse Image 1.0 | Draws a thread picture after it has settled | — | — |
@@ -61,9 +61,9 @@ Get the code and step into its folder:
 git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ```
 
-The first run compiles the Rust core, which takes a few minutes. When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
+The first run downloads and compiles the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01). When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
 
-If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
+If port 4321 is busy, `run.sh` says so before building; use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**
 
@@ -86,6 +86,7 @@ cp .env.example .env                           # then open .env and paste your M
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- Forgot the key? `./run.sh demo` (and `room`) stops before building and says how to add it; `demo.mjs` stops if the core has no key or the key was refused.
 - On a Mac, the key can live in the login Keychain instead of `.env`: `security add-generic-password -s e2a2o -a e2a2o -w` asks for it once, and `run.sh` reads it when there's no `.env`.
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
@@ -103,7 +104,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 4. `Um, so, anyway.` → filler is set aside; nothing lands.
 5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
 6. Select a phrase on the map and press **Explain** → one sentence of context after the model call.
-7. `What did I decide today?` → a recap after the model call, decisions first; it covers today's thoughts. Say `palace` (or `map`) and it closes on that view.
+7. `What did I decide today?` → the recap shows at once, decisions first (kept current in the background as thoughts land; anything newer is added in place a few seconds later); it covers today's thoughts. Say `palace` (or `map`) and it closes on that view.
 8. In Apps, ask `Make an app that shows a card when I mention the demo.` Keep it, then say `demo` in a new thought → the app may take several seconds to build; the card appears when its phrase watcher fires.
 9. Switch away for 30 seconds after adding a thought, then return (see [What you'll see](#what-youll-see)).
 10. Click **Palace** → the thread pictures appear in a grid.
@@ -281,5 +282,5 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
 - In a room, a name belongs to one laptop at a time, ignoring case; the host keeps theirs until the core stops.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
-- One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
+- One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction). Export (or “export my map”) saves the map as Markdown, made in the window: threads as headings, points with their times, decisions marked; the words behind each point stay in the journal.
 - The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a hand-written “Did you mean” question that works as a live one; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).

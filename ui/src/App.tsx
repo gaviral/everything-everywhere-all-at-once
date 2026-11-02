@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
@@ -35,6 +36,7 @@ import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
@@ -83,6 +85,11 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
+  const jumps = useRef(jumpTracker()).current;
+  const worldNow = useRef(world);
+  worldNow.current = world;
+  useEffect(() => { if (core.found) jumps.jumped(worldNow.current, core.found.thread_id); }, [core.found, jumps]);
   const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal, attending: core.attending, correctable: core.correctable });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
@@ -113,6 +120,13 @@ export default function App() {
     } else restoreMap.current = true;
     setView(next);
   };
+  // Export, or "export my map": the whole map as a Markdown file, made here from the map this window holds (export-md.ts).
+  const exportMap = (asked?: ViewAsk | null) => {
+    if (!world.threads.length && !world.thoughts.length) { core.showNotice("Nothing on the map yet to export.", asked); return; }
+    const file = mapMarkdown(world);
+    download(file);
+    core.showNotice(exportedNotice(file), asked);
+  };
   // "Scratch that" after a view or fold said aloud: what this window showed before it (revert.ts).
   const keepShown = useRevert(core.revertAsk, () => ({ view, focusMode, query, expanded, kept: [...keptOpen.current] }), (shown) => {
     showView(shown.view);
@@ -136,6 +150,7 @@ export default function App() {
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
+    if (asked === "export") { exportMap(core.viewAsk); return; }
     keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
@@ -236,6 +251,7 @@ export default function App() {
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
     seenActive.current = world.active;
+    const answered = moved && jumps.moved(world.active!);
     // Where you are goes first: your thought landing on another thread means "…, where was I?" moved you on in the
     // same breath (your place can end where it started, so it doesn't count as moving).
     const elsewhere = !!world.active && (moved || (!!landing?.mine && landing.thread !== world.active));
@@ -243,6 +259,8 @@ export default function App() {
     // words move your view.
     const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
     if (!follow) return;
+    // Your place moved by a jump that shows its own point: the jump is the look.
+    if (answered && !("thought" in follow)) return;
     // Your landing the map won't show (another view, a search, Recap open): the dock says where it went.
     if (view !== "map" || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
     followTarget.current = follow;
@@ -257,6 +275,7 @@ export default function App() {
       followTarget.current = null;
       followLanding.current = null;
       if (!target) return;
+      if (!target.thought && !landed && jumps.since(scheduled, target.thread)) return;
       if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
@@ -287,6 +306,7 @@ export default function App() {
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       scrollForMap(following, delta, !!reducedMotion);
     };
+    const scheduled = jumps.mark();
     window.clearTimeout(followTimer.current);
     cancelAnimationFrame(followFrame.current);
     followTimer.current = window.setTimeout(() => { followFrame.current = requestAnimationFrame(look); }, 120);
@@ -783,6 +803,7 @@ export default function App() {
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Export my map” · saves it as a Markdown file, as Export does</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
@@ -794,6 +815,11 @@ export default function App() {
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
+        {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
+        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
+          <span className="import-long">Export</span>
+          <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
+        </button>}
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
           <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
@@ -873,6 +899,7 @@ export default function App() {
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+            jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();
@@ -927,6 +954,7 @@ export default function App() {
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
+            <ModelLine hearing={!!core.partial} hidden={!!draft} />
             <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>

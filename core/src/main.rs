@@ -181,6 +181,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker, now_ms()) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
             return;
@@ -715,6 +716,12 @@ fn view(text: &str) -> Option<View> {
     ];
     let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
     let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
+    // "Export my map" and its kin: a file of the map ("save my map" too, as a Save button would). Only the whole turn,
+    // so "export the photos" and "I should save the map for Dana" stay thoughts.
+    let export = [
+        "export", "export map", "export my map", "export the map", "export this map", "download my map", "download the map",
+        "save my map", "save the map",
+    ];
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -727,6 +734,8 @@ fn view(text: &str) -> Option<View> {
         Some(View::Focus)
     } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
         Some(View::All)
+    } else if is_command(text, &export, &["as markdown", "to markdown", "as a markdown file", "as a file"]) {
+        Some(View::Export)
     } else {
         None
     }
@@ -828,6 +837,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
+    tokio::spawn(recap::keep(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -846,7 +856,7 @@ async fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
-            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
+            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT={} ./run.sh", port.saturating_add(1))
         } else {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }
@@ -1691,6 +1701,11 @@ mod tests {
             ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
+            ("Export my map", View::Export),
+            ("Okay, export the map as Markdown, please.", View::Export),
+            ("Can you download my map?", View::Export),
+            ("Save the map as a file", View::Export),
+            ("Export.", View::Export),
         ] {
             assert_eq!(view(text), Some(asked), "{text}");
         }
@@ -1701,6 +1716,8 @@ mod tests {
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
             // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
+            // Export takes only the map, whole: these are talk.
+            "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
