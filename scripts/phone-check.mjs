@@ -7,7 +7,10 @@
 //  - the header's parts never overlap or leave the screen: "E2A2O" whole, "This session…" not cut, every button whole;
 //  - notices (the notice, the message card, a map update) never cover the composer, the header's buttons or each other,
 //    scrolled or not, and never the open Room panel;
-//  - a tapped point's Delete and Move don't cover its words, and sit 8 px or more apart;
+//  - a tapped point's Delete and Move don't cover its words, and sit 8 px or more apart; once it settles, no notice,
+//    header or dock covers them (the stack of notices takes at most half the room above the dock);
+//  - the ? list opens below the header's two rows; a long message's Stop stays on screen; the tour on its side is
+//    clear of the notices;
 //  - the map gets most of the screen once you scroll into it (the tools row no longer pinned on a phone).
 // `SHOTS=<folder> node scripts/phone-check.mjs` also saves the map at 390 × 844 and 320 × 568, light and dark, and the
 // laptop's 1440 × 900 (to compare before and after a change: the demo video is recorded there).
@@ -240,8 +243,8 @@ try {
   }
 
   // A tapped point: Delete and Move show, beside or under its words, never over them, 8 px or more apart.
-  for (const width of [320, 375, 390]) {
-    await size(width, 844);
+  for (const [width, height] of [[320, 844], [375, 844], [390, 844], [320, 568], [844, 390]]) {
+    await size(width, height);
     const out = await evaluate(`(async () => {
       const { cross, shown } = window.__phone;
       const li = document.querySelector("#point-p0");
@@ -265,11 +268,72 @@ try {
         const gap = Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
         if (gap < 8) out.push("Delete is " + Math.round(gap) + " px from Move: a slip deletes");
       }
+      // Once the page has moved it into view: its words and buttons are on top, under no notice, header or dock.
+      await new Promise((r) => setTimeout(r, 900));
+      const { name } = window.__phone;
+      for (const [what, r] of [...[...range.getClientRects()].map((line) => ["its words", line]), ...buttons.map((b) => [b.textContent, b.getBoundingClientRect()])]) {
+        const x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+        const hit = y >= 0 && y <= innerHeight ? document.elementFromPoint(x, y) : null;
+        if (!hit || !li.contains(hit)) { out.push(what + " covered by " + (hit ? name(hit) : "the screen's edge") + " at y " + Math.round(y)); break; }
+      }
       li.blur();
       return out;
     })()`);
-    fail(`${width}px tapped point`, out);
+    fail(`${width}×${height} tapped point`, out);
   }
+
+  // The ? list opens under the header's two rows, not over its buttons (its old top, 58 px, was the one-row header's).
+  for (const width of [320, 390]) {
+    await size(width, 844);
+    await evaluate(`scrollTo(0, 0)`);
+    await evaluate(`document.querySelector(".shortcuts summary").click()`);
+    await frames();
+    fail(`${width}px open ? list`, await evaluate(`(() => {
+      const hint = document.querySelector(".keyboard-hint"); if (!hint || !window.__phone.shown(hint)) return ["didn't open"];
+      const h = hint.getBoundingClientRect();
+      return window.__phone.headerParts().filter(([, r]) => window.__phone.cross(h, r)).map(([n]) => "covers " + n);
+    })()`));
+    await evaluate(`document.querySelector(".shortcuts summary").click()`);
+    await frames();
+  }
+
+  // A long message counting down: its words scroll in the card and its Stop shows, on top, wherever the page is.
+  core.send({ ...SEND_CARD, id: 2, text: "Hi Mia, could you confirm what to bring on Saturday? ".repeat(12) });
+  assert(await until(`document.querySelector(".send-card-text")?.textContent.length > 300`, 5000), "the long message shows");
+  for (const [w, h] of [[320, 568], [390, 844], [844, 390]]) {
+    await size(w, h);
+    for (const y of [0, 400]) {
+      await evaluate(`scrollTo(0, ${y})`);
+      await frames(); await frames();
+      fail(`${w}×${h} long message scrolled ${y}`, await evaluate(`(() => {
+        const stop = document.querySelector(".send-card-stop"); if (!stop) return ["no Stop"];
+        const r = stop.getBoundingClientRect(), x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+        const hit = y >= 0 && y <= innerHeight ? document.elementFromPoint(x, y) : null;
+        return hit && stop.contains(hit) ? [] : ["Stop isn't on screen: " + (hit ? "under " + window.__phone.name(hit) : "off it") + " at y " + Math.round(y)];
+      })()`));
+    }
+  }
+  core.send({ ...SEND_CARD, id: 3 });
+  assert(await until(`document.querySelector(".send-card-text")?.textContent.length < 100`, 5000), "the short message is back");
+
+  // The tour on its side with every notice up: a step on the map's page (not the composer's, in the dock) brings its
+  // tip to the top, and the notices go under it. A populated map's steps: the map, the composer, the tools.
+  if (await evaluate(`!!document.querySelector(".tour-tip")`)) {
+    await size(844, 390);
+    for (let step = 0; step < 2; step++) { await evaluate(`document.querySelector(".tour-next").click()`); await frames(); }
+    await frames(); await sleep(250);
+    fail("844×390 tour with notices", await evaluate(`(() => {
+      const tip = document.querySelector(".tour-tip"); if (!tip) return ["the tour ended"];
+      if (tip.closest(".dock")) return ["the tour's last step is in the dock, not on the page"];
+      const out = [];
+      for (const part of tip.querySelectorAll("strong, p, button")) {
+        const r = part.getBoundingClientRect(), x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+        const hit = y >= 0 && y <= innerHeight ? document.elementFromPoint(x, y) : null;
+        if (!hit || !tip.contains(hit)) out.push(window.__phone.name(part) + " is " + (hit ? "under " + window.__phone.name(hit) : "off screen"));
+      }
+      return out;
+    })()`));
+  } else failures.push("setup: the tour isn't up on a fresh page");
 
   if (shots) {
     for (const value of ["light", "dark"]) {
@@ -330,4 +394,4 @@ if (failures.length) {
   console.log(`phone-check: ${failures.length} failed\n  ${failures.join("\n  ")}`);
   process.exit(1);
 }
-console.log("phone-check: ok (no sideways scroll, 16 px fields, header whole, notices clear, tapped points readable, map room)");
+console.log("phone-check: ok (no sideways scroll, 16 px fields, header whole, notices clear, tapped points readable, map room, ? list, long message's Stop, tour clear)");

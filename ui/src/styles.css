@@ -871,7 +871,8 @@ header:has(.room-menu[open]) { z-index: 11; }
 }
 @media (max-width: 560px) {
   .header-actions { gap: 8px; }
-  .keyboard-hint { position: fixed; right: 16px; top: 58px; width: min(310px, calc(100vw - 32px)); }
+  /* Under the header wherever it ends: two rows on a phone (below), where 58 px put the list over its buttons. */
+  .keyboard-hint { position: fixed; right: 16px; top: calc(var(--header-height, 64px) + 6px); width: min(310px, calc(100vw - 32px)); }
   .recap-button { padding-inline: 9px; }
   .status { font-size: 12px; }
 }
@@ -976,15 +977,17 @@ img.slot-picture[data-instant] { transition: none; }
      stack ran onto the composer. Capped above the dock, it scrolls past that. The lane is see-through to taps. */
   .notice-lane {
     display: flex; position: sticky; top: calc(var(--header-height, 64px) + 6px); z-index: 6; height: auto; align-items: stretch;
-    max-height: min(calc(100dvh - var(--header-height, 64px) - var(--dock-height, 120px) - 12px), var(--lane-room, 100dvh)); overflow-y: auto; overscroll-behavior: contain;
+    --lane-max: min(calc(100dvh - var(--header-height, 64px) - var(--dock-height, 120px) - 12px), var(--lane-room, 100dvh));
+    max-height: var(--lane-max); overflow-y: auto; overscroll-behavior: contain;
     padding: 8px 16px; pointer-events: none;
   }
   .notice-lane:empty { padding: 0; }
   .notice-lane > * { pointer-events: auto; }
   .notice-lane > .notice, .notice-lane > .map-change, .notice-lane > .send-card { width: auto; max-width: none; margin: 0; }
-  /* A message about to go out comes first, so its Stop is never scrolled out of a short stack. */
-  .notice-lane > .send-card { order: -1; }
-  .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; }
+  /* A message about to go out comes first, so its Stop is never scrolled out of a short stack; a long message scrolls
+     inside the card (send-card.css), so its Stop is never pushed out either. */
+  .notice-lane > .send-card { order: -1; max-height: calc(var(--lane-max) - 16px); }
+  .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; top: var(--lane-top, calc(var(--header-height, 64px) + 6px)); }
 }
 /* The status in words where there's room beside the count; under 380 px the dot alone (its name says it). */
 @media (max-width: 379px) {
@@ -1013,6 +1016,7 @@ img.slot-picture[data-instant] { transition: none; }
   header { position: relative; }
   .map-tools { position: static; }
   .thread, .palace-tile { scroll-margin-top: 12px; }
+  .tour-tip { scroll-margin-top: 8px; }
   .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .composer { position: sticky; bottom: 0; flex: none; }
@@ -1020,12 +1024,12 @@ img.slot-picture[data-instant] { transition: none; }
      over the page as on a laptop and capped above the dock, scrolling past that. Of no height at 8 px, a stack covered
      the header's buttons and ran onto the composer; in the flow, the tour above it left it no room. */
   .notice-lane, .apps-panel.is-open ~ .notice-lane {
-    position: fixed; inset-inline: 0; top: var(--lane-top, 8px); height: auto; max-height: var(--lane-room, 60dvh);
+    position: fixed; inset-inline: 0; top: var(--lane-top, 8px); height: auto; max-height: var(--lane-room, 60dvh); --lane-max: var(--lane-room, 60dvh);
     overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 8px; pointer-events: none;
   }
   .notice-lane:empty { padding: 0; }
   .notice-lane > * { pointer-events: auto; }
-  .notice-lane > .send-card { order: -1; }
+  .notice-lane > .send-card { order: -1; max-height: calc(var(--lane-max) - 8px); }
   /* The unfinished card keeps its title and buttons; its quote of your last words gave the dock a line the map needs. */
   .pullback-quote { display: none; }
 }

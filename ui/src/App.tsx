@@ -294,7 +294,7 @@ export default function App() {
       if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
-      const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
+      const top = mapTop();
       const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
       if (bottom <= top) return;
       // Your words landing, also when your place moved with them to a new topic. Your place moving on its own
@@ -353,6 +353,30 @@ export default function App() {
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
   const laneRef = useRef<HTMLDivElement>(null);
   useLaneRoom(laneRef, headerRef, dockRef);
+
+  // A point tapped or tabbed to on a phone or a short window shows whole with its Delete and Move: not under the stack
+  // of notices, the header or the dock (at 320 × 568 the notices covered a focused point's words and buttons). The
+  // laptop's notices are a narrow column of no height in the flow: there the browser's own scroll to focus stays.
+  useEffect(() => {
+    const stacked = window.matchMedia("(max-width: 560px), (max-height: 560px)");
+    const showPoint = (event: FocusEvent) => {
+      const point = stacked.matches ? (event.target as Element | null)?.closest?.(".points li") : null;
+      if (!point) return;
+      // A frame on, once its Delete and Move have their row.
+      requestAnimationFrame(() => {
+        if (!point.contains(document.activeElement) || following.current) return;
+        const top = mapTop();
+        const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
+        const rect = point.getBoundingClientRect();
+        if (bottom <= top || (rect.top >= top && rect.bottom <= bottom)) return;
+        // Too tall for the band, or above it: its first line goes to the band's top; below it, its foot to the band's foot.
+        const delta = rect.top < top || rect.height > bottom - top - 16 ? rect.top - top - 8 : rect.bottom - bottom + 8;
+        scrollForMap(following, delta, !!reducedMotion);
+      });
+    };
+    document.addEventListener("focusin", showPoint);
+    return () => document.removeEventListener("focusin", showPoint);
+  }, [reducedMotion]);
 
   // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
   // kept every later notice up for good: on each change, look where focus is now.
@@ -1173,10 +1197,35 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
   }, [present]);
 }
 
+/** Where the map shows clear of what's pinned over it: under the header, the tools row and, on a phone or a short
+ *  window, the stack of notices (a lane of its own height there; the laptop's lane has no height, so it's left out). */
+function mapTop() {
+  const bars = Array.from(document.querySelectorAll<HTMLElement>("header, .map-tools, .notice-lane"))
+    .filter((bar) => !bar.classList.contains("notice-lane") || (bar.offsetHeight > 0 && bar.childElementCount > 0));
+  return Math.max(0, ...bars.map((bar) => bar.getBoundingClientRect().bottom));
+}
+
+/** The least height a notice shows whole in: its own, but for the message card, whose words scroll (send-card.css), its
+ *  heading, Stop and one line of words. Read from its parts: its own height may be what the lane's cap left it. */
+function leastHeight(notice: HTMLElement) {
+  const text = notice.querySelector<HTMLElement>(":scope > .send-card-text");
+  if (!text) return notice.offsetHeight;
+  const px = (value: string) => parseFloat(value) || 0;
+  const card = getComputedStyle(notice), words = getComputedStyle(text);
+  let total = px(card.paddingTop) + px(card.paddingBottom) + px(card.borderTopWidth) + px(card.borderBottomWidth);
+  for (const part of Array.from(notice.children) as HTMLElement[]) {
+    if (part === text) total += px(words.lineHeight) + px(words.marginTop) + px(words.marginBottom);
+    else if (getComputedStyle(part).position !== "absolute") total += part.offsetHeight;
+  }
+  return Math.ceil(total);
+}
+
 /** Where the notice lane may be on a phone or a short window (styles.css): --lane-top, just under the header or 8 px
  *  from the top once a short window's header has scrolled away (there the lane is fixed: in the flow, the tour above
  *  it left it 22 px), and --lane-room, from where the lane is to the dock's top, so a stack of notices never runs
- *  under the composer (at 320 × 568 the message card's Stop was under the mic). The laptop's lane reads neither. */
+ *  under the composer (at 320 × 568 the message card's Stop was under the mic), and at most half of that, so the map
+ *  keeps a band to show a point in. The laptop's lane reads neither. A fixed lane also goes below the tour's tip while
+ *  it's on screen (scripts/phone-check.mjs). */
 function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const lane = ref.current;
@@ -1185,11 +1234,25 @@ function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HT
     const set = (name: string, px: number) => { if (lane.style.getPropertyValue(name) !== `${px}px`) lane.style.setProperty(name, `${px}px`); };
     const measure = () => {
       frame = 0;
-      const laneTop = Math.max(8, Math.round((headerRef.current?.getBoundingClientRect().bottom ?? 0) + 6));
-      set("--lane-top", laneTop);
-      const top = getComputedStyle(lane).position === "fixed" ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
       const dock = dockRef.current?.getBoundingClientRect().top ?? window.innerHeight;
-      set("--lane-room", Math.max(0, Math.floor(dock - top - 8)));
+      const fixed = getComputedStyle(lane).position === "fixed";
+      let laneTop = Math.max(8, Math.round((headerRef.current?.getBoundingClientRect().bottom ?? 0) + 6));
+      // A fixed lane goes under the tour's tip while you're in it (focus is: each step focuses its Next) and it's on
+      // screen: on its side, the stack covered its words and Next. Where both don't fit, the first notice stays whole
+      // and covers only the tip's foot. Once you're on the map (a point tapped), the map's band comes first.
+      // The first notice as it's drawn (the message card comes first by its CSS order), and the least it shows whole in.
+      const first = (Array.from(lane.children) as HTMLElement[]).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      const least = first ? leastHeight(first) : 0;
+      const tip = fixed ? document.querySelector(".tour-tip") : null;
+      const tour = tip?.contains(document.activeElement) ? tip.getBoundingClientRect() : undefined;
+      if (tour && tour.bottom > laneTop && tour.top < dock) laneTop = Math.max(laneTop, Math.round(Math.min(tour.bottom + 6, dock - 16 - least)));
+      set("--lane-top", laneTop);
+      const top = fixed ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
+      // The stack gets at most half of what's left above the dock, the map the rest: at 320 × 568 and on its side three
+      // notices took it all, and a point tapped or landing had nowhere to show. The first notice always shows whole
+      // (the message card's Stop), and the rest scroll in the lane.
+      const left = Math.max(0, Math.floor(dock - top - 8));
+      set("--lane-room", Math.min(left, Math.max(least + 16, Math.floor(left / 2))));
     };
     const soon = () => { if (!frame) frame = requestAnimationFrame(measure); };
     measure();
@@ -1198,11 +1261,15 @@ function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HT
     for (const element of [document.body, lane, headerRef.current, dockRef.current]) if (element) observer.observe(element);
     window.addEventListener("scroll", soon, { passive: true });
     window.addEventListener("resize", soon);
+    document.addEventListener("focusin", soon);
+    document.addEventListener("focusout", soon);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("scroll", soon);
       window.removeEventListener("resize", soon);
+      document.removeEventListener("focusin", soon);
+      document.removeEventListener("focusout", soon);
     };
   }, []);
 }
