@@ -3,6 +3,7 @@
 //! main.rs (`every_pack_command_acts_alone_and_its_look_alikes_stay_thoughts`). No test calls a model.
 
 use super::*;
+use crate::world::fixtures::thread;
 use crate::world::{Action, Journal};
 
 struct Fixture {
@@ -21,20 +22,6 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-fn thread(id: &str, title: &str, touched_ms: u64) -> Thread {
-    Thread {
-        id: id.into(),
-        title: title.into(),
-        parent_id: None,
-        status: ThreadStatus::Open,
-        last_point: String::new(),
-        touched_ms,
-        tags: Vec::new(),
-        picture: None,
-        dropped_by: String::new(),
     }
 }
 

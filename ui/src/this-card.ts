@@ -3,6 +3,7 @@
 // selection, then pointer, then your active thread (core/src/catalog.rs `this`). The window's own "this" mark
 // (Attention.tsx) picks the same way from what it told (`resolveThis`).
 import type { World } from "./core";
+import { resolveMerged } from "./merges";
 
 /** The thread a node sits in: a map card (`thread-<id>`) or a Palace tile (`data-thread`); the innermost, so a branch
  *  inside its parent's card is itself. */
@@ -100,7 +101,7 @@ export function attend(was: Attending, selected: string | null, pointed: string 
  *  one counts as the thread it joined. */
 export function resolveThis(a: Attending, world: Pick<World, "threads" | "merged">, active: string | null, now: number): string | null {
   const onMap = (id: string | null) => {
-    for (let hops = Object.keys(world.merged).length; id && hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+    if (id) id = resolveMerged(world, id);
     return id && world.threads.some((thread) => thread.id === id) ? id : null;
   };
   const left = a.left && now - a.left.at <= POINTER_MS ? a.left.id : null;

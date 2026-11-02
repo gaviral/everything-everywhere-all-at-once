@@ -3,11 +3,10 @@
 // world's notes as changes arrive, and that the marks on a point explain themselves.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 globalThis.location = new URL("http://localhost:4321/");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { asIdeas, carriedIds, wordsSaid, CHUNK_TIPS } = await server.ssrLoadModule("/src/chunks.tsx");
   const { apply } = await server.ssrLoadModule("/src/core.ts");

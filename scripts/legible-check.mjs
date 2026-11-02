@@ -4,12 +4,11 @@
 // unless it is listed below with its reason.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 const src = new URL("../ui/src/", import.meta.url);
 const read = (name) => readFileSync(new URL(name, src), "utf8");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { saidDiffers, intoColumns, NATURAL_PAUSE_MS, TWO_COLUMNS, focusSpot, restoreFocus, POINT_OWN } = await server.ssrLoadModule("/src/legible.ts");
   // A click into a point's Move field (or anywhere in its menu) is the menu's, not a toggle of the point's words

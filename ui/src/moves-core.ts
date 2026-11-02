@@ -2,15 +2,9 @@
 // where the person put it, and a merge of the two threads waiting on a card is past. Pure, so scripts/moves-check.mjs
 // holds it to the core.
 import type { Thread, World } from "./core";
+import { resolveMerged as resolve } from "./merges";
 
 export type MoveChange = { type: "thought_moved"; thought_id: string; thread_id: string; from: string; undo?: boolean };
-
-/** The thread a merged one became, as the core's `World::resolve`. */
-function resolve(world: Pick<World, "merged">, id: string): string {
-  let at = id;
-  for (let hops = Object.keys(world.merged ?? {}).length; hops > 0 && world.merged[at]; hops--) at = world.merged[at];
-  return at;
-}
 
 /** Applies a move as the core does (`World::moved`, `tidy::follow`): only to a thread on the map; a person's move (not
  *  an undo) settles a merge card between the two threads, since it says they're two topics. */

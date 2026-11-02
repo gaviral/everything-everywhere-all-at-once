@@ -3,11 +3,10 @@
 // state shows, and a scan that fails when a ✦ in the UI has no tip.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 const src = new URL("../ui/src/", import.meta.url);
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { micState, micEnds, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
   const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");

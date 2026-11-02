@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
+import { resolveMerged } from "./merges";
 import "./recap.css";
 import { TIPS } from "./Tips";
 import { runningModel, useSteps } from "./model-line";
@@ -115,10 +116,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
   if (!view) return null;
   const recap = noKey ? null : view.recap;
   const recapId = recap ? `${recap.period}-${recap.generated_ms}` : "";
-  const resolve = (id: string) => {
-    for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
-    return id;
-  };
+  const resolve = (id: string) => resolveMerged(world, id);
   const title = (id: string) => world.threads.find((t) => t.id === resolve(id))?.title ?? "Open thread";
   const follow = (id: string) => { onClose(); onFocus(resolve(id)); };
   const link = (id: string, text: string, className = "recap-thread") => (

@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import React from "../ui/node_modules/react/index.js";
 import ReactDOMServer from "../ui/node_modules/react-dom/server.node.js";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 // A page's sound starts suspended until a click, tap or key press resumes it; every note started is kept here.
 const started = [];
@@ -29,8 +29,7 @@ globalThis.AudioContext = class {
 const pitch = (note) => note.frequency.ramps.at(-1) ?? note.frequency.value;
 const notes = () => started.filter((note) => pitch(note) > 100);
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { DockBuild, DockTune, Apps } = await server.ssrLoadModule("/src/Apps.tsx");
   const { useApps, panelBuildFor } = await server.ssrLoadModule("/src/apps-core.ts");

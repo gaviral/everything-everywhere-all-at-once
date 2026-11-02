@@ -3,12 +3,11 @@
 // isn't overridden by the follow its own move sets off.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 // room.tsx reads the page's address as it loads: this is the app opened alone.
 globalThis.location = new URL("http://localhost:4321/");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const core = await server.ssrLoadModule("/src/core.ts");
   const { pendingLabel, landingToFollow } = core;

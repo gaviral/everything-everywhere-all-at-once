@@ -2,6 +2,7 @@
 // note and Undo; anything else waits on its card as a proposal (Rename or Merge applies it, × keeps things as they
 // are); a merge applied can be undone from its note too.
 import type { ItemState, ItemStatus, Thread, World } from "./core";
+import { resolveMerged as resolve } from "./merges";
 
 export interface Proposal {
   id: string;
@@ -35,13 +36,6 @@ export type TidyChange =
   | { type: "tidy_proposed"; proposal: Proposal };
 
 type Change = { type: string; [key: string]: unknown };
-
-/** The thread a merged one became, as the core's `World::resolve`. */
-function resolve(world: Pick<World, "merged">, id: string): string {
-  let at = id;
-  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[at]; hops--) at = world.merged[at];
-  return at;
-}
 
 /** Applies a tidy change as the core does (`World::apply`); null for any other change. */
 export function applyTidy<W extends World>(world: W, change: Change): W | null {

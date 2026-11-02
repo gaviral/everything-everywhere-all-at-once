@@ -5,7 +5,7 @@
 // has answered since.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 // Just enough of a browser for react-dom to mount a component that draws nothing, set before react-dom loads.
 const noop = () => {};
@@ -30,8 +30,7 @@ const React = (await import(new URL("node_modules/react/index.js", ui))).default
 const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { staysUp, upFor, SHORTEST_MS, micStopped, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const { readMs } = await server.ssrLoadModule("/src/attention-core.ts");

@@ -510,7 +510,7 @@ fn yes_or_no(text: &str) -> Option<bool> {
 /// the unclear ones plus two, since a fix replaces them; longer is a sentence, not a fix.
 fn fix<'a>(text: &'a str, unclear: &str) -> Option<&'a str> {
     let t = crate::lead_in(text);
-    let spans = spans(t);
+    let spans = crate::word_spans(t);
     let said: Vec<&str> = spans.iter().map(|(w, _)| w.as_str()).collect();
     let mut at = 0;
     while at < said.len() && NO.contains(&said[at]) {
@@ -600,7 +600,7 @@ fn correction(text: &str) -> Option<Correction<'_>> {
     if crate::is_ask(t, &SCRATCH, &[]) {
         return Some(Correction::Scratch);
     }
-    let spans = spans(t);
+    let spans = crate::word_spans(t);
     let said: Vec<&str> = spans.iter().map(|(w, _)| w.as_str()).collect();
     let mut at = 0;
     while at < said.len() && NO.contains(&said[at]) {
@@ -634,23 +634,6 @@ fn correction(text: &str) -> Option<Correction<'_>> {
         return Some(Correction::Redo { rest: after(at), strong: false });
     }
     None
-}
-
-/// Each word of `text` as `crate::words` splits them, with where it ends.
-fn spans(text: &str) -> Vec<(String, usize)> {
-    let mut out = Vec::new();
-    let mut start = None;
-    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
-        match (c.is_alphanumeric(), start) {
-            (true, None) => start = Some(i),
-            (false, Some(s)) => {
-                out.push((text[s..i].to_lowercase(), i));
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    out
 }
 
 /// Acts on a correction of the speaker's previous turn: "scratch that" takes it back; "No, I meant …" takes it back

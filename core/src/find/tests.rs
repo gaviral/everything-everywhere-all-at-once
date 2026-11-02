@@ -2,7 +2,8 @@
 //! may choose, and what the person sees when nothing matches. No test calls the model.
 
 use super::*;
-use crate::world::{Tag, Thread};
+use crate::world::fixtures::thread;
+use crate::world::Tag;
 use crate::world::{Change, Journal, ThreadStatus};
 
 struct Fixture { core: Arc<Core>, path: std::path::PathBuf }
@@ -16,13 +17,6 @@ impl Fixture {
 }
 
 impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); } }
-
-fn thread(id: &str, title: &str, touched_ms: u64) -> Thread {
-    Thread {
-        id: id.into(), title: title.into(), parent_id: None, status: crate::world::ThreadStatus::Open,
-        last_point: String::new(), touched_ms, tags: Vec::new(), picture: None, dropped_by: String::new(),
-    }
-}
 
 fn point(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
     Thought {

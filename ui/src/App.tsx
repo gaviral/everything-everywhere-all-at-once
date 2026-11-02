@@ -23,6 +23,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { resolveMerged } from "./merges";
 import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
@@ -66,12 +67,7 @@ export default function App() {
     for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
     const threads = new Set<string>();
     const threadIds = new Set(world.threads.map((thread) => thread.id));
-    const mergeCount = Object.keys(world.merged).length;
-    const card = (thought: Thought) => {
-      let id = thought.thread_id;
-      for (let hops = mergeCount; hops > 0 && id && world.merged[id]; hops--) id = world.merged[id];
-      return id;
-    };
+    const card = (thought: Thought) => thought.thread_id && resolveMerged(world, thought.thread_id);
     // Ideas, as the cards count them: a part said before a pause and carried on by a later one is in that one.
     const carried = carriedIds(world.thoughts, world.notes ?? {}, card);
     let thoughts = 0;
@@ -611,8 +607,7 @@ export default function App() {
     const ask = core.unfoldAsk;
     if (!ask) return;
     keepShown();
-    let id = ask.thread_id;
-    for (let hops = Object.keys(world.merged).length; id && hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+    const id = ask.thread_id && resolveMerged(world, ask.thread_id);
     if (id && !world.threads.some((thread) => thread.id === id)) return;
     const ids = id ? [id, ...branchesUnder(world.threads, id)] : world.threads.map((thread) => thread.id);
     setView("map");

@@ -1499,3 +1499,44 @@ mod tests {
         assert!(world.recaps[0].plans.is_empty() && world.recaps[0].worked_on.len() == 1);
     }
 }
+
+/// The parts of a test map that the modules' tests (moves, catalog, find, spoken) share, instead of a copy in each.
+#[cfg(test)]
+pub(crate) mod fixtures {
+    use super::{Thought, Thread, ThreadStatus};
+
+    /// An open top-level thread with nothing else on it.
+    pub(crate) fn thread(id: &str, title: &str, touched_ms: u64) -> Thread {
+        Thread {
+            id: id.into(),
+            title: title.into(),
+            parent_id: None,
+            status: ThreadStatus::Open,
+            last_point: String::new(),
+            touched_ms,
+            tags: Vec::new(),
+            picture: None,
+            dropped_by: String::new(),
+        }
+    }
+
+    /// A finished thought of yours placed on `thread`, its point its words, placed a second after it was said.
+    pub(crate) fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
+        Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: text.into(),
+            point: text.into(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms,
+            place_ms: Some(1_000),
+            decided: false,
+        }
+    }
+}
