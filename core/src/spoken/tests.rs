@@ -83,7 +83,7 @@ fn filing_lands_at_once_with_what_to_add_as_its_point_and_every_word_kept() {
     world.active = Some("T2".into());
     let f = Fixture::new(world);
     let mut updates = f.core.updates.subscribe();
-    assert!(act(&f.core, "you", "Add oat milk to the shopping list."));
+    assert!(act(&f.core, "you", "Add oat milk to the shopping list.").is_some());
     let world = f.core.snapshot();
     let thought = world.thoughts.last().unwrap();
     assert_eq!((thought.text.as_str(), thought.point.as_str(), thought.placed), ("Add oat milk to the shopping list.", "Oat milk", true));
@@ -98,19 +98,19 @@ fn filing_lands_at_once_with_what_to_add_as_its_point_and_every_word_kept() {
     }
     assert_eq!(notices, ["Added to Shopping list"]);
     // A kind of place no thread has yet: a thread of that name.
-    assert!(act(&f.core, "you", "Put the tent on the packing list"));
+    assert!(act(&f.core, "you", "Put the tent on the packing list").is_some());
     let world = f.core.snapshot();
     let new = world.threads.iter().find(|t| t.title == "Packing list").unwrap();
     assert_eq!(world.thoughts.last().unwrap().thread_id.as_ref(), Some(&new.id));
     // Not sure where: the rest of `add_turn` keeps it as a thought for the placer.
-    assert!(!act(&f.core, "you", "Put the kids in the car"));
+    assert!(act(&f.core, "you", "Put the kids in the car").is_none());
 }
 
 #[test]
 fn filing_never_takes_an_id_a_placement_on_its_way_could_make() {
     // The placer counts from the map it asked the model with: here T2, the next "T" number when it asked.
     let f = Fixture::new(map(vec![thread("T1", "Rent", 1)]));
-    assert!(act(&f.core, "you", "Add milk to the shopping list"));
+    assert!(act(&f.core, "you", "Add milk to the shopping list").is_some());
     let world = f.core.snapshot();
     let shopping = world.threads.iter().find(|t| t.title == "Shopping list").unwrap();
     assert!(!shopping.id.starts_with('T'), "{}", shopping.id);
@@ -128,7 +128,7 @@ fn a_place_in_another_script_is_read_without_panicking() {
     }
     assert_eq!(destination(&world, "日本語"), Destination::Thread("T1".into()));
     let f = Fixture::new(world);
-    assert!(act(&f.core, "you", "Add milk to 日本語"));
+    assert!(act(&f.core, "you", "Add milk to 日本語").is_some());
     assert_eq!(f.core.snapshot().thoughts.last().unwrap().thread_id.as_deref(), Some("T1"));
 }
 
@@ -139,7 +139,7 @@ fn new_thread_about_lands_at_once_with_no_model_call() {
     world.active = Some("T1".into());
     let f = Fixture::new(world);
     let mut updates = f.core.updates.subscribe();
-    assert!(act(&f.core, "you", "New thread about the garden shed"));
+    assert!(act(&f.core, "you", "New thread about the garden shed").is_some());
     let world = f.core.snapshot();
     let shed = world.threads.iter().find(|t| t.title == "Garden shed").unwrap();
     let thought = world.thoughts.last().unwrap();
@@ -176,16 +176,16 @@ fn leaving_a_thought_unfinished_for_a_filing_offers_it_back() {
         place_ms: Some(0),
     });
     let f = Fixture::new(world);
-    assert!(act(&f.core, "you", "Add milk to the shopping list"));
+    assert!(act(&f.core, "you", "Add milk to the shopping list").is_some());
     let world = f.core.snapshot();
     let rent = world.thread("T1").unwrap();
     assert_eq!((rent.status, rent.dropped_by.as_str()), (ThreadStatus::Dropped, "you"));
     // "Finish it" now goes to the window, which knows which card it shows.
     let mut updates = f.core.updates.subscribe();
-    assert!(act(&f.core, "you", "Finish it"));
+    assert!(act(&f.core, "you", "Finish it").is_some());
     assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Finish })));
     // Someone else's is theirs: no card, so "finish it" is talk.
-    assert!(!act(&f.core, "sam", "Finish it"));
+    assert!(act(&f.core, "sam", "Finish it").is_none());
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn expand_opens_the_thread_with_its_branches_and_a_miss_said_plainly_is_answered
     let f = Fixture::new(map(vec![thread("T1", "App feedback and ideas", 1), branch, deeper, thread("T4", "Rent", 4)]));
     let said = |text: &str| {
         let mut updates = f.core.updates.subscribe();
-        let acted = act(&f.core, "you", text);
+        let acted = act(&f.core, "you", text).is_some();
         let mut out = Vec::new();
         while let Ok(message) = updates.try_recv() {
             match message.message {
@@ -285,11 +285,12 @@ fn add_it_to_reminders_adds_the_newest_waiting_on_your_thread() {
     let mut world = map(vec![thread("T1", "Rent", 1), thread("T2", "Garden", 2)]);
     world.actions = vec![action("a", "T1", ItemStatus::New), action("b", "T2", ItemStatus::New), action("c", "T1", ItemStatus::Done)];
     world.active_by.insert("you".into(), "T1".into());
-    assert_eq!(proposed(&world, "you").map(|a| a.id.as_str()), Some("a"));
+    let f = Fixture::new(World::default());
+    assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("a"));
     world.active_by.insert("you".into(), "T9".into());
-    assert_eq!(proposed(&world, "you").map(|a| a.id.as_str()), Some("b"));
+    assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("b"));
     world.actions.retain(|a| a.status != ItemStatus::New);
-    assert!(proposed(&world, "you").is_none());
+    assert!(proposed(&f.core, &world, "you").is_none());
     for said in ["Add it to Reminders", "Okay, add that to my calendar.", "Approve it", "Yes, add it"] {
         assert!(is_approve(said), "{said}");
     }

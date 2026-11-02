@@ -5,6 +5,7 @@
 //! By rule, with no model call, and only as the whole turn, as every request is (decisions/commands.md): the same
 //! words inside a longer sentence are a thought, and so is anything a rule here can't place for sure.
 
+use crate::catalog::{Act, Done, Undo};
 use crate::find;
 use crate::protocol::{ServerMsg, View};
 use crate::world::{Change, ItemStatus, Thought, Thread, ThreadStatus, World};
@@ -12,60 +13,85 @@ use crate::{now_ms, placer, Core};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-/// Acts on `text` when the whole turn is one of the pack's commands; false leaves it to the rest of `add_turn`.
-pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
+/// Acts on `text` when the whole turn is one of the pack's commands, and says what it did (catalog.rs); None leaves
+/// it to the rest of `add_turn`.
+pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     if is_stop_listening(text) {
         core.send_to(speaker, ServerMsg::View { view: View::Pause });
-        return true;
+        return Some(Done::new(Act::Pause));
     }
     let world = core.snapshot();
+    let before = world.active_for(speaker).cloned();
     if is_lost_thought(text) {
         drop(world);
         core.run_command(speaker, placer::Job::Back);
-        return true;
+        return Some(Done::moved(Act::Back, before));
     }
     // The card's buttons go to the window: it knows which card it shows, and which it hid for now (Later) or for
     // good. "Where was I?" picks by the map alone, so "finish it" could open a card you snoozed instead of the one
     // in front of you.
     if is_finish(text) && has_dropped(&world, speaker) {
         core.send_to(speaker, ServerMsg::View { view: View::Finish });
-        return true;
+        return Some(Done::moved(Act::Finish, before));
     }
     if is_forget(text) {
         core.send_to(speaker, ServerMsg::View { view: View::Forget });
-        return true;
+        return Some(Done::new(Act::Forget));
     }
     if is_later(text) && has_dropped(&world, speaker) {
         core.send_to(speaker, ServerMsg::View { view: View::Later });
-        return true;
+        return Some(Done::new(Act::Later));
     }
     if is_approve(text) {
         approve(core, speaker, &world);
-        return true;
+        return Some(Done::new(Act::Approve));
     }
     if let Some(keep) = keep_app(text) {
         // "Keep it" with no app waiting is talk about something else.
-        let Some(build) = crate::apps::waiting(core) else { return false };
+        let build = crate::apps::waiting(core)?;
         crate::apps::decide(core, &build, keep);
-        return true;
+        return Some(Done::new(if keep { Act::KeepApp } else { Act::DiscardApp }));
     }
     if let Some(first) = new_thread_about(text) {
         let title = title_for(&first);
-        land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
+        let (thought, started) = land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
         core.send_to(speaker, ServerMsg::Notice { message: format!("New thread: “{title}”") });
-        return true;
+        return Some(Done::with(Act::NewThreadAbout, Some(Undo::Unfile { thought, started, to: before })));
     }
     if let Some(ask) = unfold(text) {
-        if unfold_act(core, speaker, &world, &ask) {
-            return true;
+        if let Some(done) = unfold_act(core, speaker, &world, &ask) {
+            return Some(done);
         }
     }
     match filing(text).map(|(what, place)| (what, destination(&world, place))) {
-        Some((_, Destination::Unsure)) | None => false,
-        Some((what, destination)) => {
-            file(core, speaker, &world, text, what, destination);
-            true
-        }
+        Some((_, Destination::Unsure)) | None => None,
+        Some((what, destination)) => file(core, speaker, &world, text, what, destination)
+            .map(|(thought, started)| Done::with(Act::File, Some(Undo::Unfile { thought, started, to: before }))),
+    }
+}
+
+/// The act a whole turn names by the pack's rules, without the map: what `act` would do if the map allowed it.
+pub fn kind(text: &str) -> Option<Act> {
+    if is_stop_listening(text) {
+        Some(Act::Pause)
+    } else if is_lost_thought(text) {
+        Some(Act::Back)
+    } else if is_finish(text) {
+        Some(Act::Finish)
+    } else if is_forget(text) {
+        Some(Act::Forget)
+    } else if is_later(text) {
+        Some(Act::Later)
+    } else if is_approve(text) {
+        Some(Act::Approve)
+    } else if let Some(keep) = keep_app(text) {
+        Some(if keep { Act::KeepApp } else { Act::DiscardApp })
+    } else if new_thread_about(text).is_some() {
+        Some(Act::NewThreadAbout)
+    } else if let Some(ask) = unfold(text) {
+        Some(if ask.open { Act::Unfold } else { Act::Fold })
+    } else {
+        filing(text).map(|_| Act::File)
     }
 }
 
@@ -166,15 +192,16 @@ fn is_approve(text: &str) -> bool {
     crate::is_command(text, &asks, &[])
 }
 
-/// The action an "add it to Reminders" adds: the newest one waiting on the speaker's thread, else the newest.
-fn proposed<'a>(world: &'a World, speaker: &str) -> Option<&'a crate::world::Action> {
+/// The action an "add it to Reminders" adds: the newest one waiting on the thread "this" means (catalog.rs: what the
+/// speaker selected, else points at, else is on), else the newest.
+fn proposed<'a>(core: &Core, world: &'a World, speaker: &str) -> Option<&'a crate::world::Action> {
     let waiting = || world.actions.iter().rev().filter(|a| a.status == ItemStatus::New);
-    let here = world.active_for(speaker);
-    waiting().find(|a| Some(&a.thread_id) == here).or_else(|| waiting().next())
+    let here = crate::catalog::this(core, world, speaker);
+    waiting().find(|a| Some(&a.thread_id) == here.as_ref()).or_else(|| waiting().next())
 }
 
 fn approve(core: &Arc<Core>, speaker: &str, world: &World) {
-    let message = match proposed(world, speaker) {
+    let message = match proposed(core, world, speaker) {
         // As a click on Add: it goes into the host's apps, so it's the host's call.
         Some(_) if !core.is_host(speaker) => "Only the host can add this: it goes into their apps.".to_string(),
         Some(action) => {
@@ -289,7 +316,9 @@ fn unfold(text: &str) -> Option<Unfold> {
                 .then_some(Unfold { target: Target::All, open, sure: true, title_only: false });
         }
         let named = IN.iter().find_map(|p| after.strip_prefix(&format!("{p} "))).or((*all == "all of").then_some(after))?;
-        return Some(Unfold { target: Target::Named(as_said(t, named)), open, sure: true, title_only: false });
+        // "Open everything under it": the card "this" means (catalog.rs), not a thread called "it".
+        let target = if THIS.contains(&named) { Target::This } else { Target::Named(as_said(t, named)) };
+        return Some(Unfold { target, open, sure: true, title_only: false });
     }
     Some(Unfold { target: Target::Named(as_said(t, rest)), open, sure: false, title_only: !strong })
 }
@@ -333,21 +362,26 @@ fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
     if titled.is_some() || title_only { titled } else { find::thread_for(world, name) }
 }
 
-fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> bool {
+/// Opens or folds what `ask` names, and says so; None when it isn't plainly about the map and nothing matched (a
+/// thought). A miss said plainly is answered, with no undo.
+fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> Option<Done> {
     let notice = |message: String| core.send_to(speaker, ServerMsg::Notice { message });
+    let act = if ask.open { Act::Unfold } else { Act::Fold };
+    let missed = |sure: bool| sure.then(|| Done::missed(act));
     if world.threads.is_empty() {
         if ask.sure {
             notice("Nothing on the map yet: say a thought first".into());
         }
-        return ask.sure;
+        return missed(ask.sure);
     }
     let id = match &ask.target {
         Target::All => {
             core.send_to(speaker, ServerMsg::Unfold { thread_id: None, open: ask.open });
             notice(if ask.open { "Every thread is open" } else { "Every thread is folded" }.into());
-            return true;
+            return Some(Done::with(act, Some(Undo::Refold { thread: None, open: ask.open })));
         }
-        Target::This => world.active_for(speaker).cloned(),
+        // "Expand this": what the speaker selected, else points at, else is on.
+        Target::This => crate::catalog::this(core, world, speaker),
         Target::Named(name) => named_thread(world, name, ask.title_only),
     };
     let Some(thread) = id.and_then(|id| world.thread(&id)) else {
@@ -357,7 +391,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> b
                 _ => "Say which thread: “expand” and its title".into(),
             });
         }
-        return ask.sure;
+        return missed(ask.sure);
     };
     let branches = descendants(world, &thread.id).len();
     core.send_to(speaker, ServerMsg::Unfold { thread_id: Some(thread.id.clone()), open: ask.open });
@@ -367,7 +401,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> b
         (true, 1) => format!("Opened {} and its branch", thread.title),
         (true, n) => format!("Opened {} and its {n} branches", thread.title),
     });
-    true
+    Some(Done::with(act, Some(Undo::Refold { thread: Some(thread.id.clone()), open: ask.open })))
 }
 
 /// Every thread under `id`, however deep.
@@ -463,7 +497,8 @@ fn destination(world: &World, place: &str) -> Destination {
 
 /// Files the words at once, with no model call: the turn as said is kept as the thought's words, and what to add is
 /// its point. The speaker moves there, as any landing moves them (placer.rs `decide`), so the map shows it.
-fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, destination: Destination) {
+/// The thought it filed, and the thread it started, if it did.
+fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, destination: Destination) -> Option<(String, Option<String>)> {
     let (landing, message) = match destination {
         Destination::Thread(id) => {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
@@ -473,10 +508,11 @@ fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, 
             let message = format!("Added to a new thread: {title}");
             (Landing::New(title), message)
         }
-        Destination::Unsure => return,
+        Destination::Unsure => return None,
     };
-    land(core, speaker, world, said, what, landing);
+    let landed = land(core, speaker, world, said, what, landing);
     core.send_to(speaker, ServerMsg::Notice { message });
+    Some(landed)
 }
 
 /// Where a thought the pack places lands: a thread on the map, or a new one with this title.
@@ -519,11 +555,13 @@ fn fresh_id(world: &World) -> String {
 /// Lands `said` with `point` at once, with no model call, as the placer's `decide` would: a new thread made, a
 /// dropped one picked up again, the thread touched, and the speaker moved there. Leaving a thread whose last words of
 /// theirs trailed off marks it unfinished, so the card can offer it, as any landing does.
-fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str, landing: Landing) {
+/// Returns the thought's id, and the thread it started, if it did.
+fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str, landing: Landing) -> (String, Option<String>) {
     // Somewhere chosen now: a "new thread" asked for before this ends here.
     core.new_threads.cancel(speaker);
     let now = now_ms();
     let mut changes = Vec::new();
+    let mut started = None;
     let id = match landing {
         Landing::Thread(id) => {
             if world.thread(&id).is_some_and(|t| t.status == ThreadStatus::Dropped) {
@@ -546,6 +584,7 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
                     dropped_by: String::new(),
                 },
             });
+            started = Some(id.clone());
             id
         }
     };
@@ -568,7 +607,7 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
     let thought_id = thought.id.clone();
     changes.push(Change::ThoughtAdded { thought });
     changes.push(Change::ThoughtPlaced {
-        thought_id,
+        thought_id: thought_id.clone(),
         thread_id: id.clone(),
         point: point.clone(),
         unclear: String::new(),
@@ -593,6 +632,7 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
         changes.push(Change::ActiveChanged { thread_id: id, speaker: speaker.into() });
     }
     core.commit(changes);
+    (thought_id, started)
 }
 
 /// What "new thread about …" keeps as its first thought, for main.rs's table.

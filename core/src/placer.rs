@@ -680,7 +680,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
 }
 
 /// How recent the turn said before must be to go in the prompt as said (see `request`): two minutes.
-const JUST_BEFORE_MS: u64 = 120_000;
+pub(crate) const JUST_BEFORE_MS: u64 = 120_000;
 
 /// Names in the prompt, at most: the latest ones.
 const NAMES: usize = 30;

@@ -202,7 +202,13 @@ pub enum Change {
     ThreadPicture { thread_id: String, path: String },
     /// "Did you mean …?" answered: yes swaps the unclear words for the guess, no keeps them; either way the question goes.
     /// No to a fix made without asking puts the words back as heard.
-    ThoughtCorrected { thought_id: String, accept: bool },
+    ThoughtCorrected {
+        thought_id: String,
+        accept: bool,
+        /// A yes in the person's own words ("No, Muse Spark"): these replace the unclear words instead of the guess.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        with: String,
+    },
     /// A turn that moved on to another topic partway: the thought keeps the words before (`text`),
     /// and `rest`, placed next, takes the others.
     ThoughtSplit { thought_id: String, text: String, rest: Thought },
@@ -344,7 +350,7 @@ impl World {
                 }
             }
             Change::ThreadMerged { from, into } => self.merge(from, into),
-            Change::ThoughtCorrected { thought_id, accept } => self.correct(thought_id, *accept),
+            Change::ThoughtCorrected { thought_id, accept, with } => self.correct(thought_id, *accept, with),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
                     self.suggestions.push(suggestion.clone());
@@ -419,12 +425,13 @@ impl World {
     }
 
     /// A "Did you mean …?" answered: see `Change::ThoughtCorrected`.
-    fn correct(&mut self, thought_id: &str, accept: bool) {
+    fn correct(&mut self, thought_id: &str, accept: bool, with: &str) {
         let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
         let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
-        if accept && !t.unclear.is_empty() && !t.guess.is_empty() {
-            t.text = swap(&t.text, &t.unclear, &t.guess);
-            t.point = swap(&t.point, &t.unclear, &t.guess);
+        let to = if with.is_empty() { t.guess.clone() } else { with.to_string() };
+        if accept && !t.unclear.is_empty() && !to.is_empty() {
+            t.text = swap(&t.text, &t.unclear, &to);
+            t.point = swap(&t.point, &t.unclear, &to);
         }
         if !accept && !t.heard.is_empty() && !t.fixed.is_empty() {
             t.text = swap(&t.text, &t.fixed, &t.heard);
@@ -711,8 +718,8 @@ mod tests {
             place_ms: None,
         };
         let mut world = World { thoughts: vec![thought("a"), thought("b")], ..World::default() };
-        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true });
-        world.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: false });
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() });
+        world.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() });
         assert_eq!(world.thoughts[0].text, "ask Muse Spark about it");
         assert_eq!(world.thoughts[0].point, "Ask Muse Spark");
         assert_eq!(world.thoughts[1].text, "ask muse bark about it");
@@ -743,7 +750,7 @@ mod tests {
         world.apply(&serde_json::from_str(lines[2]).unwrap());
         assert_eq!(world.thoughts[0].text, "Muse Spark is fast");
 
-        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false });
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() });
         let undone = &world.thoughts[0];
         assert_eq!((undone.text.as_str(), undone.point.as_str()), ("Muse Bark is fast", "Muse Bark is fast"));
         assert!(undone.heard.is_empty() && undone.fixed.is_empty());
@@ -987,8 +994,8 @@ mod tests {
                 },
             },
             Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
-            Change::ThoughtCorrected { thought_id: "a".into(), accept: true },
-            Change::ThoughtCorrected { thought_id: "b".into(), accept: false },
+            Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() },
+            Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() },
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },

@@ -20,6 +20,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { UndoButton } from "./Undo";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -736,6 +737,7 @@ export default function App() {
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
+          <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
           <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
@@ -767,6 +769,7 @@ export default function App() {
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
+            <UndoButton id={core.undoId} onUndo={core.undo} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}

@@ -5,6 +5,7 @@ import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeri
 import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
+import { watchAttention } from "./attention";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -129,7 +130,7 @@ type Change =
       complete: boolean;
       place_ms: number;
     }
-  | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
@@ -156,6 +157,7 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
+  | { type: "undoable"; id: number }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "unfold"; thread_id: string | null; open: boolean }
@@ -359,7 +361,9 @@ export function apply(world: World, raw: Change): World {
       if (!t) return world;
       const undo = !c.accept && !!t.heard && !!t.fixed;
       const correct = (text: string) => {
-        if (c.accept && t.unclear && t.guess) return swap(text, t.unclear, t.guess);
+        // A yes in your own words ("No, Muse Spark") puts those in instead of the guess.
+        const to = c.with || t.guess;
+        if (c.accept && t.unclear && to) return swap(text, t.unclear, to);
         if (!c.accept && t.heard && t.fixed) return swap(text, t.fixed, t.heard);
         return text;
       };
@@ -429,6 +433,8 @@ export function useCore(speaker?: string) {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
+  const [undoId, setUndoId] = useState<number | null>(null);
   const [found, setFound] = useState<Found | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
   const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
@@ -494,7 +500,9 @@ export function useCore(speaker?: string) {
             } else if (change.type === "thread_merged") {
               const from = currentWorld.threads.find((thread) => thread.id === change.from);
               const into = currentWorld.threads.find((thread) => thread.id === change.into);
-              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+              // An empty thread going (words you took back that had started it) isn't a merge to announce.
+              const held = currentWorld.thoughts.some((thought) => thought.thread_id === change.from);
+              if (from && into && held) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -532,6 +540,11 @@ export function useCore(speaker?: string) {
           case "notice":
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
+            // A newer answer: the Undo shown was for the one before.
+            if (msg.message) setUndoId(null);
+            break;
+          case "undoable":
+            setUndoId(msg.id);
             break;
           case "placing":
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
@@ -539,6 +552,7 @@ export function useCore(speaker?: string) {
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
+            setUndoId(null);
             break;
           case "view":
             setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
@@ -590,6 +604,8 @@ export function useCore(speaker?: string) {
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  // "This" for spoken requests: the card you selected or point at (attention.ts).
+  useEffect(() => watchAttention((selected, pointed) => { send(JSON.stringify({ type: "attention", selected, pointed })); }), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
@@ -630,6 +646,8 @@ export function useCore(speaker?: string) {
     queuedCount,
     placing,
     clearNotice: useCallback(() => setNotice(""), []),
+    undoId,
+    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }

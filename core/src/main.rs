@@ -5,6 +5,7 @@
 mod apple;
 mod apps;
 mod asr;
+mod catalog;
 mod clock;
 mod explain;
 mod find;
@@ -43,6 +44,8 @@ use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
     find: find::Runtime,
+    /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
+    catalog: catalog::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
     world: Mutex<Arc<World>>,
@@ -257,50 +260,82 @@ impl Core {
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
+        // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
+        // first: "yeah" is filler otherwise.
+        if catalog::answer(self, speaker, text) {
+            return;
+        }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
         if filler(text, asked) {
             return;
         }
         find::stop(self, speaker);
-        if let Some(period) = recap::command(text) {
-            let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
-            return recap::request(self.clone(), speaker.into(), period);
+        if let Some(done) = self.request(speaker, text, search) {
+            return catalog::did(self, speaker, text, done);
         }
-        if let Some(request) = apps::command(text) {
-            return apps::compose(self.clone(), request);
-        }
-        if let Some(view) = view(text) {
-            return self.send_to(speaker, ServerMsg::View { view });
-        }
-        if is_new_thread(text) {
-            return self.new_thread(speaker);
-        }
-        if spoken::act(self, speaker, text) {
+        // "No, I meant …" and "scratch that": the speaker's previous turn, redone or taken back.
+        if catalog::correct(self, speaker, text, search) {
             return;
         }
         let (first, said, then) = turn(text);
-        // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
-        if first.is_none() {
-            if let Some(ask) = find::command(text) {
-                if !search {
-                    return find::dropped(self, speaker, ask, text);
-                }
-                return find::request(self.clone(), speaker.into(), ask, text.into());
-            }
-        }
         if let Some(job) = first {
             self.run_command(speaker, job);
         }
         if !filler(said, asked) {
-            self.keep(speaker, said);
+            let id = self.keep(speaker, said);
+            catalog::kept(self, speaker, said, vec![id]);
         }
         if let Some(job) = then {
             self.run_command(speaker, job);
         }
     }
 
+    /// Acts on `text` when the whole turn is a request (catalog.rs), and says what it did and how to take it back;
+    /// None leaves it to be talk. The same path for words said, typed, and the safety net's reading of a correction.
+    fn request(self: &Arc<Self>, speaker: &str, text: &str, search: bool) -> Option<catalog::Done> {
+        use catalog::{Act, Done, Undo};
+        let before = self.snapshot().active_for(speaker).cloned();
+        if let Some(period) = recap::command(text) {
+            let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
+            recap::request(self.clone(), speaker.into(), period);
+            return Some(Done::new(Act::Recap));
+        }
+        if let Some(request) = apps::command(text) {
+            apps::compose(self.clone(), request);
+            return Some(Done::new(Act::Compose));
+        }
+        if let Some(view) = view(text) {
+            self.send_to(speaker, ServerMsg::View { view });
+            return Some(Done::view(view));
+        }
+        if is_new_thread(text) {
+            self.new_thread(speaker);
+            return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
+        }
+        if let Some(done) = spoken::act(self, speaker, text) {
+            return Some(done);
+        }
+        let (first, said, then) = turn(text);
+        // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
+        if first.is_none() {
+            if let Some(ask) = find::command(text) {
+                if !search {
+                    find::dropped(self, speaker, ask, text);
+                } else {
+                    find::request(self.clone(), speaker.into(), ask, text.into());
+                }
+                return Some(Done::moved(Act::Search, before));
+            }
+        }
+        if let (Some(job), "", None) = (first, said, then) {
+            self.run_command(speaker, job);
+            return Some(Done::moved(catalog::of_job(job), before));
+        }
+        None
+    }
+
     /// Words to place: a thought in the speaker's active thread, queued for the placer.
-    pub fn keep(&self, speaker: &str, text: &str) {
+    pub fn keep(&self, speaker: &str, text: &str) -> String {
         let thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
@@ -320,7 +355,8 @@ impl Core {
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
         self.commit(vec![Change::ThoughtAdded { thought }]);
-        let _ = self.placer_queue.send(placer::Job::Place(id));
+        let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
+        id
     }
 
     /// "Where was I?", "next one" or "last one" acts at once, unless words the speaker said before it are still
@@ -702,6 +738,7 @@ async fn main() -> anyhow::Result<()> {
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
         find: find::Runtime::default(),
+        catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
         world: Mutex::new(world.into()),
@@ -1132,9 +1169,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.commit(vec![change]);
                 }
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
-                Ok(ClientMsg::Correct { thought_id, accept }) => {
-                    core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
-                }
+                Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
+                Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
+                Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1219,6 +1256,7 @@ impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
             find: Default::default(),
+            catalog: Default::default(),
             recap: Default::default(),
             apps: Default::default(),
             world: Mutex::new(world.into()),
