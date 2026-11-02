@@ -4,6 +4,7 @@ import type { useCore } from "./core";
 import { DESCRIBE_APP, tooLongForApp, type AppBuild, type MiniApp, type Watcher } from "./apps-core";
 import { playTune, unlockTune } from "./apps-audio";
 import "./apps.css";
+import { TIPS } from "./Tips";
 
 type Core = ReturnType<typeof useCore>;
 
@@ -229,7 +230,7 @@ export function DockBuild({ core, onLeave }: { core: Core; onLeave: () => void }
           event.stopPropagation();
           leave(build.id);
         }}>
-        <span className="dock-build-mark" aria-hidden="true">{build.stage === "kept" ? "✓" : "✦"}</span>
+        <span className="dock-build-mark" aria-hidden="true" data-tip={build.stage === "kept" ? undefined : TIPS.build}>{build.stage === "kept" ? "✓" : "✦"}</span>
         <div className="dock-build-text">
           {app && (deciding(build) || build.stage === "kept")
             ? <p className="dock-build-title"><strong>{app.name}</strong><span> · {build.stage === "kept" ? build.message : app.purpose}</span></p>

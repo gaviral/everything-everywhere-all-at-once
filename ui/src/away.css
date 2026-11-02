@@ -13,10 +13,16 @@
 .away-dismiss:hover { background: var(--bg); color: var(--ink); }
 .away-items { max-height: min(30vh, 260px); overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 0 6px 6px; }
 .away-items li + li { border-top: 1px solid var(--line); }
-.away-items a { display: block; min-height: 44px; padding: 9px 8px; border-radius: 7px; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
-.away-items a:hover { background: var(--bg); }
+/* A row reads as something to open (C218, "I can't really click on that"): a chevron at its end, the pointer, and on
+   hover or focus the accent's soft tint with the chevron nudged 2 px the way it goes. */
+.away-items a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 8px; border-radius: 7px; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
+.away-items a:hover, .away-items a:focus-visible { background: var(--accent-soft); }
+.away-text { flex: 1; min-width: 0; }
+.away-go { flex: none; color: var(--muted); font-size: 20px; line-height: 1; transition: transform .15s ease-out, color .15s; }
+.away-items a:is(:hover, :focus-visible) .away-go { color: var(--accent); transform: translateX(2px); }
+.away-when { margin: 0; padding: 6px 14px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .away-go { transition: none; } .away-items a:is(:hover, :focus-visible) .away-go { transform: none; } }
 .away-items a:focus-visible, .away-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .away-title { display: block; font-size: 14px; font-weight: 550; }
-.away-arrow { margin-left: 8px; color: var(--accent); }
 .away-detail { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
 .away-mark { color: var(--ai); }

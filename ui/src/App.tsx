@@ -20,6 +20,9 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { composerHint, MicButton, micState } from "./MicButton";
+import { Symbols } from "./Symbols";
+import { Tips, TIPS } from "./Tips";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -701,6 +704,9 @@ export default function App() {
     });
   };
 
+  const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
+    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused });
+
   const friendlyNotice = core.notice && (
     !core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)."
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
@@ -741,8 +747,7 @@ export default function App() {
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
-          <strong>On the map</strong>
-          <div>✦ added or suggested by AI</div>
+          <Symbols />
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
@@ -773,7 +778,7 @@ export default function App() {
       </AnimatePresence>
 
       {core.mapChange && mapChangeVisible && (
-        <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+        <div className="map-change"><span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -860,24 +865,16 @@ export default function App() {
               ref={composerRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={core.listening ? "Listening… or type" : core.connected ? "Type a thought, or tap the mic" : "Type a thought — it will send when connected"}
+              placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
-            <button
-              type="button"
-              className={stopMic ? "mic on" : "mic"}
-              onClick={toggleMic}
-              disabled={startingMic || (!core.connected && !stopMic)}
-              aria-label={stopMic ? "Stop listening" : "Start listening"}
-              aria-pressed={!!stopMic}
-            >
-              <MicIcon />
-            </button>
+            <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
+      <Tips />
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
@@ -1077,7 +1074,8 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
                   className={t.kept ? "tag kept" : "tag"}
                   aria-label={`${t.kept ? "Kept tag" : "AI-suggested tag"}: ${t.name}`}
                   aria-pressed={t.kept}
-                  title={t.kept ? "Remove tag" : "Keep this tag"}
+                  title={t.kept ? "Remove tag" : undefined}
+                  data-tip={t.kept ? undefined : TIPS.tag}
                   onClick={() => on.tag(thread.id, t.name, !t.kept)}
                 >
                   {!t.kept && <span aria-hidden="true">✦ </span>}{t.name}
@@ -1104,7 +1102,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       </ul>
       {ideas.map((s) => (
         <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span>
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
             <span className="ai-actions">
@@ -1142,7 +1140,7 @@ function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: bo
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
       {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
-      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
+      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture" data-tip={TIPS.picture}>✦</span>}
     </span>
   );
 }
@@ -1166,7 +1164,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
       )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
-          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess}>✦</span> Did you mean “{thought.guess}”?
           <button onClick={() => on.correct(thought.id, true)}>Yes</button>
           <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
             No
@@ -1174,7 +1172,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
         </span>
       ) : (
         thought.unclear && (
-          <span className="unclear" title={`Might be misheard: ${thought.unclear}`} role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
+          <span className="unclear" data-tip={TIPS.unclear(thought.unclear)} role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
             ?
           </span>
         )
@@ -1202,7 +1200,8 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
   return (
     <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
+      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
+        data-tip={action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
         {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
@@ -1222,15 +1221,6 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
         </span>
       )}
     </motion.div>
-  );
-}
-
-function MicIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <rect x="9" y="3" width="6" height="11" rx="3" />
-      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-    </svg>
   );
 }
 

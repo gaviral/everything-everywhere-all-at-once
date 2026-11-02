@@ -1,0 +1,33 @@
+/* The mic's states (MicButton.tsx). Each differs by shape, not only color. Selectors go through .composer so they
+   win over the base .mic rules in styles.css whatever order the files load in. */
+.composer .mic { position: relative; }
+
+/* Listening: no idle pulse any more (motion only when something changed, decisions/visual.md); a thin ring that is
+   whole while the mic hears silence and swells with each loudness reading, up to the composer's own 6 px padding,
+   so it never crosses the composer's edge. It eases over one reading's 320 ms, so it moves as a voice does, not in
+   steps. */
+.composer .mic.on {
+  animation: none;
+  box-shadow: 0 0 0 calc(2px + var(--fill, 0) * 4px) color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: box-shadow 320ms linear, background .2s, transform .15s;
+}
+/* Hearing you: words are coming back from the speech service; the ring darkens. */
+.composer .mic[data-state="hearing"] { box-shadow: 0 0 0 calc(2px + var(--fill, 0) * 4px) color-mix(in srgb, var(--accent) 50%, transparent); }
+
+/* Starting: a dashed ring, not yet whole, around the soft disc (the browser may be asking for the microphone). */
+.composer .mic[data-state="starting"] { background: var(--accent-soft); color: var(--accent); box-shadow: none; opacity: 1; }
+.composer .mic[data-state="starting"]::after { content: ""; position: absolute; inset: -4px; border: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); border-radius: 50%; }
+
+/* Paused by "stop listening": the off disc with a pause badge, so it isn't mistaken for a mic never started. */
+.mic-badge { position: absolute; right: -3px; bottom: -3px; display: flex; gap: 2px; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 50%; background: var(--card); }
+.mic-badge i { width: 2px; height: 7px; border-radius: 1px; background: var(--ink); }
+
+/* No key, or a refused one: amber (what needs you), the mic struck through. It stays pressable to say why. */
+.composer .mic:is([data-state="nokey"], [data-state="refused"]) { background: var(--amber-soft); color: var(--amber); }
+.composer .mic:is([data-state="nokey"], [data-state="refused"]):hover { background: color-mix(in srgb, var(--amber) 18%, var(--amber-soft)); }
+
+/* Connecting: faded and not pressable (.mic:disabled in styles.css). */
+
+@media (prefers-reduced-motion: reduce) {
+  .composer .mic.on { transition: background .2s; }
+}
