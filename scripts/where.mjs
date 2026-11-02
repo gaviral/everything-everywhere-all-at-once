@@ -48,10 +48,15 @@ for (const c of lines(join(dir, "journal.jsonl"))) {
       titles.set(c.thread.id, c.thread.title);
       break;
     case "thread_renamed":
+    case "thread_retitled":
+    case "title_chosen":
       titles.set(c.thread_id, c.title);
       break;
     case "thread_merged":
       merged.set(c.from, c.into);
+      break;
+    case "thread_unmerged":
+      merged.delete(c.unmerge.thread.id);
       break;
     case "thought_added": {
       const t = c.thought;

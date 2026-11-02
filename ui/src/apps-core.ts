@@ -89,6 +89,16 @@ export function tooLongForApp(request: string): boolean {
   return new TextEncoder().encode(request.trim()).length > 2000;
 }
 
+/** Where a build shows, as it arrives: the id it keeps in the Apps panel, or null for the dock. Asked for in the panel's
+ *  own form (or its "Make that instead"), there; said, typed in the composer, or still waiting when this window
+ *  connected, in the dock. `askedInPanel` is what the panel last sent. */
+export function panelBuildFor(build: AppBuild, askedInPanel: string | null, previous: string | null): string | null {
+  // The core drops a leading "Make an app that…", so what was typed in the panel ends with the build's request.
+  const asked = !!askedInPanel?.trimEnd().endsWith(build.request);
+  // The same build sent again after a reconnect stays where it was.
+  return asked || previous === build.id ? build.id : null;
+}
+
 /** A tune the browser wouldn't play yet: which app, and which tune. */
 export interface PendingTune { name: string; playful: boolean }
 
@@ -117,11 +127,9 @@ export function useApps() {
     if (msg.type === "apps_build") {
       if (msg.build.id !== latest.current) {
         latest.current = msg.build.id;
-        // The core drops a leading "Make an app that…", so what was typed in the panel ends with the build's request.
-        const asked = !!panelRequest.current?.trimEnd().endsWith(msg.build.request);
+        const asked = panelRequest.current;
         panelRequest.current = null;
-        // The same build sent again after a reconnect stays where it was.
-        setPanelBuild((previous) => (asked || previous === msg.build.id ? msg.build.id : null));
+        setPanelBuild((previous) => panelBuildFor(msg.build, asked, previous));
       }
       setBuild(msg.build);
       return true;

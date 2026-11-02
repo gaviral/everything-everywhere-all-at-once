@@ -6,6 +6,7 @@ import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
+import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -121,11 +122,14 @@ export interface World extends AppsWorld {
   merged: Record<string, string>;
   /** Thought id → its note (chunks.tsx). */
   notes?: Record<string, Note>;
+  /** Renames and merges the AI wasn't sure of, waiting on their cards (tidy-core.ts). */
+  proposals?: Proposal[];
 }
 
 type Change =
   | { type: "recap_saved"; recap: RecapData }
   | AppChange
+  | TidyChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
   | {
@@ -171,6 +175,7 @@ type ServerMsg =
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
   | { type: "undoable"; id: number }
+  | { type: "correctable"; for_ms: number; back_to: string | null }
   | { type: "revert" }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
@@ -228,7 +233,7 @@ export function landingToFollow(world: World, added: Thought[], me: string, move
   return { landing, held: late };
 }
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -253,6 +258,7 @@ function swap(text: string, from: string, to: string): string {
 
 export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
+  if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -287,7 +293,7 @@ export function apply(world: World, raw: Change): World {
     case "messages_read":
       return world;
     case "thread_renamed":
-      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)), proposals: settle(world, "rename", c.thread_id) };
     case "thread_merged": {
       // As the core: never into itself, or into a thread that isn't there (its thoughts would vanish).
       if (c.from === c.into || !world.threads.some((t) => t.id === c.into)) return world;
@@ -301,6 +307,8 @@ export function apply(world: World, raw: Change): World {
         active: move(world.active),
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
+        // Left behind, as the core does (`tidy::record`): a rename meant for `from` would rename `into`.
+        proposals: settle(world, null, c.from),
       };
     }
     case "suggestion_added":
@@ -314,6 +322,7 @@ export function apply(world: World, raw: Change): World {
         ...world,
         suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: c.status } : s)),
         actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms } : a)),
+        proposals: (world.proposals ?? []).map((p) => (p.id === c.id ? { ...p, status: c.status } : p)),
       };
     case "thought_added":
       return world.thoughts.some((t) => t.id === c.thought.id)
@@ -473,7 +482,7 @@ export function useCore(speaker?: string) {
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
-  const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
+  const [mapChange, setMapChange] = useState<(TidyNote & { id: number }) | null>(null);
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
@@ -485,6 +494,9 @@ export function useCore(speaker?: string) {
   const [undoId, setUndoId] = useState<number | null>(null);
   // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
   const [revertAsk, setRevertAsk] = useState(0);
+  // Whether your last turn can still be corrected, until when here, and where undoing it takes you (catalog.rs
+  // `Correctable`): the "this" mark previews a correction from it (attention-core.ts `thisBase`).
+  const [correctable, setCorrectable] = useState<{ until: number; back_to: string | null } | null>(null);
   // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
   const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
@@ -547,15 +559,11 @@ export function useCore(speaker?: string) {
             break;
           case "change": {
             const change = msg.change;
-            if (change.type === "thread_renamed") {
-              const old = currentWorld.threads.find((thread) => thread.id === resolve(currentWorld, change.thread_id));
-              if (old && old.title !== change.title) setMapChange({ id: ++changeId, text: `AI renamed “${old.title}” to “${change.title}”` });
-            } else if (change.type === "thread_merged") {
-              const from = currentWorld.threads.find((thread) => thread.id === change.from);
-              const into = currentWorld.threads.find((thread) => thread.id === change.into);
-              // An empty thread going (words you took back that had started it) isn't a merge to announce.
-              const held = currentWorld.thoughts.some((thought) => thought.thread_id === change.from);
-              if (from && into && held) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+            // An AI rename, a merge, or one undone: said above the map, with Undo where it can be taken back.
+            const note = tidyNote(currentWorld, change);
+            if (note) {
+              const id = ++changeId;
+              setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -599,6 +607,9 @@ export function useCore(speaker?: string) {
           case "undoable":
             setUndoId(msg.id);
             break;
+          case "correctable":
+            setCorrectable(msg.for_ms > 0 ? { until: Date.now() + msg.for_ms, back_to: msg.back_to } : null);
+            break;
           case "revert":
             setRevertAsk((n) => n + 1);
             break;
@@ -632,6 +643,8 @@ export function useCore(speaker?: string) {
         setHandoff("");
         // No answer comes on a closed connection.
         setNotice((shown) => (shown === LOOKING ? "" : shown));
+        // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
+        setCorrectable(null);
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -705,9 +718,15 @@ export function useCore(speaker?: string) {
     clearNotice: useCallback(() => setNotice(""), []),
     undoId,
     revertAsk,
+    correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
+    tidy: useCallback((id: string, apply: boolean) => sendOrWarn(JSON.stringify({ type: "tidy", id, apply })), [sendOrWarn]),
+    // Newest first, so each puts back the title or thread from before it.
+    untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
+    hideMapChange: useCallback(() => setMapChange(null), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }

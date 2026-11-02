@@ -1,0 +1,4 @@
+/* The Undo on the note about an AI rename or a merge: as on a notice (undo.css), bold and underlined beside the words,
+   and it takes the room before ×, which then sits right after it. */
+.map-change .undo { margin-left: auto; font-size: 13px; font-weight: 600; line-height: 1.4; text-decoration: underline; text-underline-offset: 2px; }
+.map-change .undo + button { margin-left: 0; }
