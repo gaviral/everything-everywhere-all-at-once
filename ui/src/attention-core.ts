@@ -1,4 +1,4 @@
-// What just changed and where to look, as one rule set for the whole map (decisions/attention.md): a landing's
+// What just changed and where to look, as one rule set for the whole map: a landing's
 // highlight, the "latest" mark, "New in X ↓", unseen marks and the "this" a spoken command points at. The timings
 // come from reading, not from a clock: a highlight lasts as long as it takes to look over and read what it marks.
 import type { World } from "./core";

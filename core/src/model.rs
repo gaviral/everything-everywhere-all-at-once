@@ -29,7 +29,7 @@ const BUSY: &str = "The AI service is busy. Thoughts retry on their own; try any
 const SPELL_MS: u64 = 5 * 60_000;
 
 /// The most model calls the core makes in any 60 minutes, unless MODEL_CALLS_PER_HOUR says otherwise (0 turns it off).
-/// Worked back from User's own map on Nov 1: its busiest hour held 74 spoken thoughts, 30 new threads and 3 recaps,
+/// Worked back from a real map on Nov 1: its busiest hour held 74 spoken thoughts, 30 new threads and 3 recaps,
 /// which is at most ≈ 200 calls (77 placements, 3 of them splits; the Argument app on ≤ 44 thoughts with an earlier
 /// point; the refiner on ≤ 37, one per two thoughts; 30 pictures; 3 recaps; a few Explains and searches). Twice that
 /// leaves room for a faster talker or a room of two, and a runaway (a timer app every 10 s is 360 an hour) still

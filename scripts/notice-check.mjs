@@ -62,7 +62,7 @@ try {
   assert.equal(upFor(long), readMs(long));
   assert.ok(upFor(long) > SHORTEST_MS);
 
-  // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review, Sol).
+  // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review).
   assert.ok(!staysUp("Back to Visa was refused"));
 
   // The real hook, with App.tsx's answer to "stop listening" while the mic is off.
@@ -89,7 +89,7 @@ try {
   await settle();
   assert.equal(core.undoId, null);
 
-  // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review, Sol).
+  // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review).
   const before = core.answerRevision;
   say({ type: "view", view: "pause" });
   await settle();
@@ -102,7 +102,7 @@ try {
   assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.answerRevision,/);
 
   // "No, I meant stop listening": the core sends the view, then "Did … instead" with its Undo. Arriving in one render,
-  // the correction's answer and Undo stay; the window's "already off" stands down (review, Sol).
+  // the correction's answer and Undo stay; the window's "already off" stands down (review).
   say({ type: "view", view: "pause" });
   say({ type: "notice", message: "Did “stop listening” instead. Your earlier words are off the map." });
   say({ type: "undoable", id: 7 });
