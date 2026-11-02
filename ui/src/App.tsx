@@ -36,7 +36,7 @@ import { isUndoKey, micNotice, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel,
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-import { headClickToggles, showsLiveLine } from "./ux-rules";
+import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
@@ -945,7 +945,7 @@ export default function App() {
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
             <h1>Think out loud.</h1>
-            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
+            <p>{emptyLine({ starting: startingMic, listening: core.listening, pending: pending.length, noKey: core.noKey })}</p>
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
@@ -1012,7 +1012,7 @@ export default function App() {
           <AttentionNote onGo={attention.go} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />

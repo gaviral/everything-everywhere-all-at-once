@@ -5,6 +5,7 @@ import { resolveMerged } from "./merges";
 import "./recap.css";
 import { TIPS } from "./Tips";
 import { runningModel, useSteps } from "./model-line";
+import { capitalized } from "./core";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -123,8 +124,10 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
   const link = (id: string, text: string, className = "recap-thread") => (
     <a className={className} href={`#thread-${resolve(id)}`} onClick={(event) => { event.preventDefault(); follow(id); }}>{text}</a>
   );
-  const rows = (items: RecapItem[]) => <ul className="recap-items">{items.map((item, i) => <li key={`${item.thread_id}-${i}`}>
-    {link(item.thread_id, item.text, "recap-item-link")}
+  // Each row as the map shows its point: capitalized (the core copies a decided point as said: "if under $80 …", 16 of
+  // 30 rows on ec4ae51), a decision after the map's ✓ (review spec-recap #3).
+  const rows = (items: RecapItem[], decided = false) => <ul className="recap-items">{items.map((item, i) => <li key={`${item.thread_id}-${i}`}>
+    {decided && <span className="decided" aria-hidden="true">✓</span>}{link(item.thread_id, capitalized(item.text), "recap-item-link")}
     <span className="recap-source">{title(item.thread_id)} ↗</span>
   </li>)}</ul>;
   const actions = (recap?.actions ?? []).map((a) => world.actions.find((current) => current.id === a.id) ?? a).filter((a) => a.status !== "dismissed");
@@ -168,7 +171,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
     {recap && <div className="recap-content" aria-busy={view.loading}>
       {/* The answer to "what did I decide?" comes first, and says so when there is none. */}
       <div className="recap-columns">
-        <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{recap.decisions.length ? rows(recap.decisions) : <p className="recap-empty">None yet</p>}</section>
+        <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{recap.decisions.length ? rows(recap.decisions, true) : <p className="recap-empty">None yet</p>}</section>
         {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
         {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
       </div>

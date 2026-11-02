@@ -20,7 +20,7 @@ try {
   // What /room says → how the window runs. An older core, or none yet: a laptop, as before.
   assert.deepEqual(site.siteFrom(null), site.LOCAL);
   assert.deepEqual(site.siteFrom({ room: false }), { hosted: false, calendarFile: false, sample: false, models: [] });
-  const models = [{ step: "listens", model: "muse-voice-transcribe-1.0" }, { step: "places", model: "muse-spark-1.2-contributor" }];
+  const models = [{ step: "hears", model: "muse-voice-transcribe-1.0" }, { step: "places", model: "muse-spark-1.2-contributor" }];
   assert.deepEqual(site.siteFrom({ hosted: true, calendar_file: true, sample: true, models }), { hosted: true, calendarFile: true, sample: true, models });
 
   // Hosted words: true on a server; none points at a .env file, the host's computer or a Mac.
@@ -54,7 +54,7 @@ try {
   }
 
   // The first screen: Meta's models by step, public names (Contributor mode is how the key asks, not a model).
-  assert.equal(site.modelsLine(models), "Runs on Meta's models: Muse Voice Transcribe 1.0 listens · Muse Spark 1.2 places");
+  assert.equal(site.modelsLine(models), "Hears: Muse Voice Transcribe 1.0 · Places: Muse Spark 1.2");
   assert.equal(site.modelsLine([]), "", "without a key none runs, so none is named");
 
   // The calendar file: one all-day event, the next day as its end, even across a month and a year.

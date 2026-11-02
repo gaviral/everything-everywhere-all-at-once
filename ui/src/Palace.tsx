@@ -7,11 +7,18 @@ import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
 
-/** A tile's picture, by the one picture-slot rule (pictures.ts): the letter tile under it shows until it decodes.
- *  A map without a Palace copy (a shipped sample's older pictures) shows the map's copy instead. */
+/** A tile's picture, by the one picture-slot rule (pictures.ts), in two layers: the map's copy, which the map already
+ *  decoded, so it shows at once with no fade (the same slot key as the map card's), and the large copy fading in over
+ *  it. The Palace used to open on a grid of letters, then letters showed through the fading pictures (≈ 0.2 s, 4 of 4
+ *  takes; review spec-palace #3). A map without a Palace copy (a shipped sample's older pictures) keeps the map's. */
 function PalacePicture({ picture }: { picture: string | null }) {
-  const { img } = usePicture(picture ? [palaceCopy(picture), picture] : []);
-  return img && <img key={img.src} {...img} loading="lazy" />;
+  const large = picture && palaceCopy(picture) !== picture ? palaceCopy(picture) : null;
+  const base = usePicture(picture ? [picture] : []).img;
+  const top = usePicture(large ? [large] : []).img;
+  return <>
+    {base && <img key={base.src} {...base} />}
+    {top && <img key={top.src} {...top} loading="lazy" />}
+  </>;
 }
 
 // The core writes a 512 px copy beside the map's 128 px one, named alike, so tiles stay sharp at Palace size.

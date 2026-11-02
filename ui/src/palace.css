@@ -70,4 +70,7 @@
 .palace-room-rule { height: 2px; background: color-mix(in srgb, var(--room, var(--line)) 40%, transparent); }
 .palace-placeholder { background: var(--room-soft, var(--line)); color: var(--room, var(--muted)); }
 .palace-placeholder span { background: color-mix(in srgb, var(--room, var(--muted)) 12%, var(--card)); color: var(--room, var(--muted)); }
+/* A picture on its way shows the room's color, not its letter, and no letter shows through it as it fades in. A thread
+   with no picture yet, or one that failed, has no <img>, so its letter stays (picslot). */
+.palace-art:has(> img) .palace-placeholder > span { visibility: hidden; }
 
