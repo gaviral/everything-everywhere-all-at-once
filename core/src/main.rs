@@ -49,6 +49,8 @@ pub struct Core {
     placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Who said "new thread", and the thought that starts each one.
     new_threads: placer::NewThreads,
+    /// The thought being placed, and those waiting to try again.
+    pub placing: placer::Placing,
     /// Set when a room is open.
     room: Option<Room>,
     pub key: Option<String>,
@@ -135,6 +137,7 @@ impl Core {
     fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
         let Some(thread) = world.thread(thread_id) else { return };
+        self.placing.moved(speaker);
         let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
         if thread.status == ThreadStatus::Dropped {
             changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
@@ -307,24 +310,30 @@ impl Core {
     }
 
     /// "Where was I?", "next one" or "last one" acts at once, unless words the speaker said before it are still
-    /// being placed: landing moves them to its thread and would undo it, so then it waits behind them in the
-    /// placer's queue. Always waiting would put it behind every placement queued, the other person's and
-    /// retries included, each up to a minute when the model is slow. A "new thread" said before it ends as it's
-    /// said: the speaker chose a thread to be on.
+    /// waiting for their first try: landing moves them to its thread and would undo it, so then it waits behind
+    /// them in the placer's line, and acts as soon as they're placed or their try fails (`placer::serve`). It never
+    /// waits for the other person's words, or for a retry: a thought that lands after its speaker moved on
+    /// doesn't move them. A "new thread" said before it ends as it's said: the speaker chose a thread to be on.
     fn run_command(&self, speaker: &str, job: Command) {
         self.new_threads.cancel(speaker);
-        let now = now_ms();
-        // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`). Without a working
-        // key none lands, so there's nothing to wait for.
+        // Without a working key none lands, so there's nothing to wait for.
         let waiting = self.key().is_ok()
-            && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
-        match job(speaker.into()) {
-            placer::Job::Back(speaker) if !waiting => self.go_back(&speaker),
-            placer::Job::Next(speaker) if !waiting => self.go_next(&speaker),
-            placer::Job::Previous(speaker) if !waiting => self.go_previous(&speaker),
-            job => {
-                let _ = self.placer_queue.send(job);
-            }
+            && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && !self.placing.failed(&t.id));
+        let job = job(speaker.into());
+        if waiting {
+            let _ = self.placer_queue.send(job);
+        } else {
+            self.act(job);
+        }
+    }
+
+    /// A spoken command, now.
+    pub(crate) fn act(&self, job: placer::Job) {
+        match job {
+            placer::Job::Back(speaker) => self.go_back(&speaker),
+            placer::Job::Next(speaker) => self.go_next(&speaker),
+            placer::Job::Previous(speaker) => self.go_previous(&speaker),
+            placer::Job::Place(_) => {}
         }
     }
 }
@@ -686,6 +695,7 @@ async fn main() -> anyhow::Result<()> {
         updates,
         placer_queue,
         new_threads: placer::NewThreads::default(),
+        placing: placer::Placing::default(),
         room: room.as_deref().map(Room::from),
         key,
         // A key that can't use Contributor mode gets muse-spark-1.2 instead, unless PLACER_MODEL is set (model.rs).
@@ -1029,7 +1039,7 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
 
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
-    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
+    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
     if core.key.is_none() {
@@ -1197,6 +1207,7 @@ impl Core {
             updates: broadcast::channel(1024).0,
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
+            placing: Default::default(),
             room: None,
             key: None,
             placer_model: "test".into(),
@@ -1763,6 +1774,8 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
         assert_eq!(received(&mut window).await["type"], "snapshot");
+        // Where unplaced thoughts stand, so a window that reconnects shows its pills as they are: nothing yet.
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "placing", "now": null, "retries": []}));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
         core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
@@ -1912,10 +1925,11 @@ mod tests {
             Change::ThreadAdded { thread: thread("T1", 1, "User") },
             Change::ThreadAdded { thread: thread("T2", 2, "") },
             Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
-            // Sam's words are being placed, and one of User's failed a minute ago and waits for a retry.
+            // Sam's words are being placed, and one of User's failed and waits for a retry.
             Change::ThoughtAdded { thought: unplaced("sam", "Sam", now) },
             Change::ThoughtAdded { thought: unplaced("old", "User", now - 61_000) },
         ]);
+        core.placing.retry(&core, "old", "User", std::time::Duration::from_secs(15));
         // Neither holds User up: no wait behind the other person's placements or a retry.
         core.add_thought("User", "Where was I?");
         assert!(jobs().is_empty());

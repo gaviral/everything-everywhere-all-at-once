@@ -1,0 +1,12 @@
+{"at": 0.0, "text": "The rent is due on Friday, I should pay it tonight.", "expect": "thought"}
+{"at": 0.0, "text": "Mom's birthday is next week, I want to book the cooking class she mentioned.", "expect": "thought"}
+{"at": 0.0, "text": "For the hackathon demo, the video has to be under three minutes.", "expect": "thought"}
+{"at": 0.0, "text": "The kitchen faucet is leaking again, I need to call the plumber.", "expect": "thought"}
+{"at": 0.0, "text": "The cooking class has a Saturday morning slot, that works for her.", "expect": "thought"}
+{"at": 0.0, "text": "For the demo, we open with the mic turning on.", "expect": "thought"}
+{"at": 0.0, "text": "I should also set up autopay for the electric bill.", "expect": "thought"}
+{"at": 0.0, "text": "The plumber said Tuesday afternoon is the earliest he can come.", "expect": "thought"}
+{"at": 0.0, "text": "I want to start running again, maybe three mornings a week.", "expect": "thought"}
+{"at": 0.0, "text": "The demo needs a dark background so the map stands out.", "expect": "thought"}
+{"at": 0.0, "text": "And for the birthday, a card from my sister and me.", "expect": "thought"}
+{"at": 0.0, "text": "Running shoes first, mine are worn out, okay, where was I?", "expect": "thought+back"}

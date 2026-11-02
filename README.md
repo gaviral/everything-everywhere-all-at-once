@@ -46,7 +46,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
-- `scripts/demo-talk-v4.jsonl` adds what came later: filler that doesn't land (“Um, so, yeah.”), a turn that splits into two topics, and “…okay, where was I?” at the end of a turn. `node scripts/voice.mjs <talk>` speaks any of these through the real speech path instead of typing them.
+- `scripts/demo-talk-v4.jsonl` adds what came later: filler that doesn't land (“Um, so, yeah.”), a turn that splits into two topics, and “…okay, where was I?” at the end of a turn. `node scripts/voice.mjs <talk>` speaks any of these through the real speech path instead of typing them. `scripts/burst-talk.jsonl` is twelve quick lines on six topics, ending on “…okay, where was I?”.
 - `data/demo` keeps growing across runs; move it aside for an empty map.
 - To talk: `./run.sh` (its map is in `data/`), press the mic and allow it, then speak; or type and press Enter.
 - To start from your past chats, see [How it works](#how-it-works).
@@ -102,7 +102,7 @@ The Palace: one picture per thread, drawn by Muse Image during pauses.
 Recap: what you decided and planned, then what you worked on, each line linking back to its thread.
 
 - The first time, a three-step tour (Skip tour ends it).
-- Your words appear live at the bottom; each finished thought waits there (“Finding a thread,” or “Needs the AI key” without a key), then moves onto the map when placement is available. Hover a point for its original words and how long placing took.
+- Your words appear live at the bottom; each finished thought waits there (“Waiting” while it's in line, “Finding a thread” while its own call runs, “Couldn't place yet · retrying” after a failed try, or “Needs the AI key” without a key), then moves onto the map when placement is available. After 5 seconds the pill counts the seconds since you said it. Hover a point for its original words and how long placing took.
 - Threads and their branches; the active one is marked; a thread you left mid-sentence says "left off".
 - The unfinished card: see [How it works](#how-it-works).
 - “While you were away” appears if thoughts land while you are away for at least 30 seconds. It lists their threads and proposals; each row opens its thread.
@@ -222,7 +222,7 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
 - From speech to the map is about 3 seconds, measured with `scripts/voice.mjs`.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, or undo the refiner's renames and merges.
 - A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
-- With a key, failed placement waits at “Finding a thread”; after more than 5 seconds, its chip shows the seconds. It retries after 15 seconds, then less often, up to every 4 minutes.
+- Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land 20 to 30 seconds after you stop (three speakers at once in a room, measured with `scripts/voice.mjs`); talking alone at a normal pace keeps up (about 3 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - The loudness scale for volume apps comes from synthesized speech played through Chrome's processing, not yet from a real microphone. There, the browser's automatic gain lifted normal speech and left a raised voice only about 1.3 times as loud, so a raised voice can take a few seconds to set off a volume app.

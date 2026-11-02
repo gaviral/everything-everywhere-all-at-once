@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
@@ -162,6 +162,12 @@ export default function App() {
   // Your newest landing since the map last looked. The core sends a turn's changes one by one, so a new topic can
   // arrive as a landing and then your place moving to it.
   const followLanding = useRef<{ thread: string; thought: string } | null>(null);
+  // Your thoughts that failed a try, and a late landing held back (see `landingToFollow`).
+  const retried = useRef(new Set<string>());
+  const heldLanding = useRef<Landing | null>(null);
+  useEffect(() => {
+    for (const id of Object.keys(core.placing.retryAt)) retried.current.add(id);
+  }, [core.placing]);
   const followTimer = useRef<number | undefined>(undefined);
   const followFrame = useRef(0);
   // The landing the map last showed you, and when: the unfinished card keeps clear of it.
@@ -173,17 +179,19 @@ export default function App() {
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
     if (!core.snapshotRevision) return;
-    let landing: { thread: string; thought: string; mine: boolean } | null = null;
+    let landing: Landing | null = null;
     let moved = false;
+    const held = heldLanding.current;
+    heldLanding.current = null;
     if (seenThoughts.current && seenSnapshot.current === core.snapshotRevision) {
       const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
+      moved = !!world.active && world.active !== seenActive.current;
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
-        if (thought.thread_id) landing = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
       }
-      moved = !!world.active && world.active !== seenActive.current;
+      ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
@@ -753,7 +761,7 @@ export default function App() {
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -1115,20 +1123,18 @@ function MicIcon() {
   );
 }
 
-function PendingThought({ thought, noKey, refused, reducedMotion }: { thought: Thought; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
-  const [elapsed, setElapsed] = useState(0);
+/** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
+function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (noKey) return;
-    const started = Date.now();
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setElapsed(Math.floor((Date.now() - started) / 1000));
-      interval = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    }, 6000);
-    return () => { window.clearTimeout(timeout); window.clearInterval(interval); };
-  }, [noKey]);
+    if (noKey || refused) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [noKey, refused]);
+  const retryAt = placing.retryAt[thought.id];
+  const label = pendingLabel(thought, placing, now, noKey, refused);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className="pending-label">{refused ? "Waiting for a working key" : noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
+    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
   </motion.span>;
 }
 

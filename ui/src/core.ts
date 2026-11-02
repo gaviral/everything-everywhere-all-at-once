@@ -155,7 +155,57 @@ type ServerMsg =
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "explanation"; id: string; text: string; failed: boolean }
-  | { type: "import"; status: ImportStatus };
+  | { type: "import"; status: ImportStatus }
+  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
+
+/** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
+ *  with when it tries again, on this window's clock. Any other is waiting in line. */
+export type Placing = { now: string | null; retryAt: Record<string, number> };
+
+/** What a pending thought's pill says: waiting in line, being placed, or retrying after a failed try (with when).
+ *  Seconds count from when it was said, after the first 5. */
+export function pendingLabel(thought: Thought, placing: Placing, now: number, noKey: boolean, refused: boolean) {
+  if (refused) return "Waiting for a working key";
+  if (noKey) return "Needs the AI key";
+  const since = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
+  const after = since > 5 ? ` · ${since}s` : "";
+  if (placing.now === thought.id) return `Finding a thread${after}`;
+  const retryAt = placing.retryAt[thought.id];
+  if (retryAt !== undefined) {
+    const left = Math.ceil((retryAt - now) / 1000);
+    return left >= 2 ? `Couldn't place yet · retrying in ${left}s` : "Couldn't place yet · retrying";
+  }
+  // Behind another being placed, or the whole line waiting out a busy service: "Finding a thread" only while a call
+  // for this one is running.
+  return `Waiting${after}`;
+}
+
+export type Landing = { thread: string; thought: string; mine: boolean };
+
+/**
+ * The landing the map follows among thoughts just placed (`added`, in list order): the newest, except a late one of
+ * yours. A thought of yours that failed a try (`retried`) and lands after you moved on (newer words of yours landed,
+ * or you went elsewhere) doesn't move your place (placer.rs `decide`), so it doesn't move the map either: it's
+ * returned as `held`, and followed only if the next message moves your place to its thread (`held` passed back).
+ * The rest of a late thought cut in two lands just as late, so it joins `retried` (placer.rs `Placing::placed`).
+ */
+export function landingToFollow(world: World, added: Thought[], me: string, moved: boolean, retried: Set<string>, held: Landing | null) {
+  let landing: Landing | null = null;
+  let late: Landing | null = null;
+  for (const thought of added) {
+    if (!thought.thread_id) continue;
+    const at = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
+    if (!at.mine || moved || at.thread === world.active || !retried.has(thought.id)) {
+      landing = at;
+      continue;
+    }
+    late = at;
+    const rest = world.thoughts[world.thoughts.findIndex((t) => t.id === thought.id) + 1];
+    if (rest && !rest.placed && rest.speaker === thought.speaker && rest.at_ms === thought.at_ms) retried.add(rest.id);
+  }
+  if (!landing && moved && held?.thread === world.active) landing = held;
+  return { landing, held: late };
+}
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
 
@@ -379,6 +429,7 @@ export function useCore(speaker?: string) {
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
+  const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
@@ -475,6 +526,9 @@ export function useCore(speaker?: string) {
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             break;
+          case "placing":
+            setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
+            break;
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
@@ -563,6 +617,7 @@ export function useCore(speaker?: string) {
     found,
     viewAsk,
     queuedCount,
+    placing,
     clearNotice: useCallback(() => setNotice(""), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
