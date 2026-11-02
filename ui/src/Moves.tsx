@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Thought, Thread } from "./core";
 import { moveTargets, typedTitle } from "./moves-core";
 import "./moves.css";
@@ -119,6 +119,16 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   const moves = useContext(MovesContext);
   const [editing, setEditing] = useState(false);
   const done = useRef(false);
+  // Enter or Esc ends the edit from the keyboard: focus goes back to the title, so Enter edits it again and j/k carry
+  // on from its card. Leaving the field by click or Tab keeps focus where it went.
+  const refocus = useRef(false);
+  const button = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!editing && refocus.current) {
+      refocus.current = false;
+      button.current?.focus();
+    }
+  }, [editing]);
   const heading = { className: "title", id: `title-${thread.id}`, role: "heading", "aria-level": Math.min(depth, 6) } as const;
   if (!moves) return <div {...heading}>{thread.title}</div>;
   const finish = (typed: string | null) => {
@@ -135,8 +145,8 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
           onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
             event.stopPropagation();
-            if (event.key === "Enter") { event.preventDefault(); finish(event.currentTarget.value); }
-            if (event.key === "Escape") { event.preventDefault(); finish(null); }
+            if (event.key === "Enter") { event.preventDefault(); refocus.current = true; finish(event.currentTarget.value); }
+            if (event.key === "Escape") { event.preventDefault(); refocus.current = true; finish(null); }
           }}
           onBlur={(event) => finish(event.currentTarget.value)} />
       </div>
@@ -144,7 +154,7 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   }
   return (
     <div {...heading}>
-      <button type="button" className="title-button" title="Rename"
+      <button ref={button} type="button" className="title-button" title="Rename"
         onClick={() => { done.current = false; setEditing(true); }}>{thread.title}</button>
     </div>
   );

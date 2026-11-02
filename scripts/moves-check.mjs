@@ -59,6 +59,18 @@ try {
   assert.match(app, /useDropPoint\(thread\.id\)[\s\S]*\{\.\.\.drop\.props\}/);
   assert.match(app, /<MovesProvider threads=\{world\.threads\} move=\{core\.move\} rename=\{core\.rename\}>/);
   assert.match(app, /“Move that to \[thread\]”[^<]*“Rename this to \[title\]”/);
+  // On a phone Move shows once a tap focuses its point, so every point takes focus, an imported one (no placement
+  // time) too, without becoming a Tab stop of its own.
+  const css = readFileSync(new URL("../ui/src/moves.css", import.meta.url), "utf8");
+  assert.match(css, /@media \(hover: none\)[\s\S]*\.points li:not\(:focus-within\) \.move-button/);
+  const li = app.match(/<motion\.li id=\{`point-[^\n]*/)[0];
+  assert.match(li, /tabIndex=\{thought\.place_ms != null \? 0 : -1\}/, "every point focusable by a tap");
+  // Enter or Esc in a title's field gives focus back to the title, so Enter edits it again and j/k go on from there.
+  const moves = readFileSync(new URL("../ui/src/Moves.tsx", import.meta.url), "utf8");
+  assert.match(moves, /"Enter"\) \{[^}]*refocus\.current = true/);
+  assert.match(moves, /"Escape"\) \{[^}]*refocus\.current = true/);
+  assert.match(moves, /if \(!editing && refocus\.current\) \{[^}]*button\.current\?\.focus\(\)/);
+  assert.match(moves, /<button ref=\{button\}[^>]*className="title-button"/);
   const core = readFileSync(new URL("../ui/src/core.ts", import.meta.url), "utf8");
   assert.match(core, /type: "move", thought_id, thread_id/);
   assert.match(core, /type: "rename", thread_id, title/);

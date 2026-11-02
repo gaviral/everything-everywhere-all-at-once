@@ -1210,6 +1210,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
   const { latest, arriving } = usePointMarks(thought.id);
   const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
+  // Every point takes focus from a tap, so a phone shows its Move (moves.css); only one with a placement time to read
+  // is a stop for Tab, as Move and Words said are their own.
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
   // Joined across a pause, the words are each part as said; a "why here" opens with them.
@@ -1224,7 +1226,7 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
