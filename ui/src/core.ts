@@ -583,8 +583,13 @@ export function useCore(speaker?: string) {
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
+  // The words of the last voice error, so the window can say why the mic stopped (notice-rules.ts `micStopped`).
+  const [voiceError, setVoiceError] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
+  // How many times a stream said it was listening: a window that starts its mic again knows a "not listening" that
+  // comes before its stream's "listening" is the old stream's, late.
+  const [listenedRevision, setListenedRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
   // The notice up now, for the socket handler, whose `notice` would be the one from when it connected.
@@ -713,9 +718,11 @@ export function useCore(speaker?: string) {
           case "status":
             setListening(msg.listening);
             setVoiceStatusRevision((revision) => revision + 1);
+            if (msg.listening) setListenedRevision((revision) => revision + 1);
             break;
           case "error":
             if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
+              setVoiceError(msg.message);
               setVoiceErrorRevision((revision) => revision + 1);
               break;
             }
@@ -839,8 +846,10 @@ export function useCore(speaker?: string) {
     partial,
     handoff,
     voiceErrorRevision,
+    voiceError,
     listening,
     voiceStatusRevision,
+    listenedRevision,
     connected,
     notice,
     answerRevision,

@@ -192,7 +192,7 @@ A thought said in two parts across a pause lands as one point. The prompt also q
 
 Leave a thread whose last thought trailed off (“I need to pay rent before…”) and it's marked dropped, for you only. After 2.5 s without new words, the card offers the one you dropped last with your last words and Finish it and Later. The first Later hides it until at least 5 minutes have passed and you pause; it then returns once. A second Later hides it until that thread changes.
 
-Spoken commands are recognized by rule, with no model call, and only as a whole turn, except that “where was I?”, “next one” and “last one” also work at a turn's start or end (“The rent is due Friday. Well, where was I?” places the thought, then goes back), while “I bought a boat. What was I thinking?” stays a thought:
+Spoken commands are recognized by rule, with no model call, and only as a whole turn, except that “where was I?”, “next one” and “last one” also work at a turn's start or end (“The rent is due Friday. Well, where was I?” places the thought, then goes back), and “stop listening” at its end (“…the flight. Stop listening.”), while “I bought a boat. What was I thinking?” stays a thought:
 
 - **Getting back:** “where was I?”, “next one”, “last one”, “Finish it”, “Later”, “forget it”.
 - **Finding:** “where did I talk about …?”, “take me back to …”, “go to the one about …”.
@@ -281,7 +281,7 @@ A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each 
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
 - From the end of speech to the map: median 3.6 s, slowest 5.1 s with Contributor mode (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
 - Placing is a model's judgment. You can move or delete a thought and rename a thread yourself, by voice or click, with Undo; you can't merge or split threads yourself, except by applying the refiner's proposals, nor move a whole thread under another.
-- A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
+- A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that goes quiet without closing (no word and no progress report for 3.8 s, longer than any finished turn takes to come back) ends the same way, saying the voice service stopped answering.
 - Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land long after you stop (27 s in one measured run: three speakers at once in a room, with `scripts/voice.mjs`); talking alone at a normal pace keeps up (3 to 4 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
