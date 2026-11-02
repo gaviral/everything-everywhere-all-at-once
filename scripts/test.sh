@@ -21,7 +21,11 @@ total=0; passed=0
 for c in scripts/*-check.mjs; do
   case "$c" in *composer-check.mjs) continue ;; esac
   total=$((total + 1)); name=$(basename "$c" .mjs)
-  if out=$(node "$c" 2>&1); then passed=$((passed + 1)); echo "PASS  $name"; else echo "FAIL  $name"; echo "$out" | tail -20 | sed 's/^/        /'; failed=1; fi
+  # Exit 3: the check can't run on this machine (points-check without Chrome), as precheck reads it: skipped, not failed.
+  out=$(node "$c" 2>&1); rc=$?
+  if [ $rc = 0 ]; then passed=$((passed + 1)); echo "PASS  $name"
+  elif [ $rc = 3 ]; then total=$((total - 1)); echo "SKIP  $name: $(echo "$out" | tail -1 | sed 's/^SKIP [^:]*: //')"
+  else echo "FAIL  $name"; echo "$out" | tail -20 | sed 's/^/        /'; failed=1; fi
 done
 echo "$passed of $total UI checks pass"
 [ $failed = 0 ] && echo "OK: every offline test passes." || echo "Some tests failed (above)."

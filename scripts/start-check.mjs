@@ -3,7 +3,7 @@
 // process environment win, takes PORT from either, and probes every address the core binds for the mode, so a
 // missing key or a busy port stops the run before the build, never after it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,8 +68,12 @@ assert.ok(coreAddresses({ ROOM_CODE: "abcd2345", ROOM_HTTPS: "1" }, null).error)
 assert.deepEqual(coreAddresses({ ROOM_CODE: "  " }, "192.168.1.5").addresses, ["127.0.0.1"]);
 
 // End to end on real sockets, in a throwaway folder (an empty core/.env stops the upward .env search there).
+// Each throwaway folder goes when the check ends (the temp folder held 1,952 of them on 2026-11-02).
+const made = [];
+process.on("exit", () => { for (const dir of made) rmSync(dir, { recursive: true, force: true }); });
 const repo = (dotenv) => {
   const dir = mkdtempSync(join(tmpdir(), "e2a2o-start-"));
+  made.push(dir);
   mkdirSync(join(dir, "core"));
   writeFileSync(join(dir, "core", ".env"), "");
   if (dotenv !== undefined) writeFileSync(join(dir, ".env"), dotenv);
