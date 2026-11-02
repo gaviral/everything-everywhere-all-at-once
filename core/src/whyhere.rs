@@ -242,6 +242,7 @@ mod tests {
                 complete: true,
                 at_ms: 0,
                 place_ms: None,
+                decided: false,
             },
         }
     }
