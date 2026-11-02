@@ -198,6 +198,40 @@ try {
     await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
     if (!await until(`document.querySelector(".template")?.textContent.includes("last landed on")`, 4000)) fail("_template", "never heard the thought it added land");
   }
+  // Bubble flight: a panel; a thought of yours on its way leaves as a bubble (the playground has no composer, so the check
+  // lends one) that stays inside a phone's screen, never takes the pointer and goes once the thought is placed; with
+  // reduced motion there's none (the app stops every animation then, styles.css).
+  if (checked.includes("bubble-flight")) {
+    if (infos["./bricks/bubble-flight/brick.json"].kind !== "panel") fail("bubble-flight", "brick.json: a panel, as its spec says");
+    for (const [w, reduced] of [[1280, false], [390, false], [1280, true]]) {
+      const where = `bubble-flight (empty map, ${w} px${reduced ? ", reduced motion" : ""})`;
+      await width(w, w < 600 ? 844 : 860);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] });
+      await go(`${base}/bricks.html?brick=bubble-flight&sample=empty`);
+      await until(`document.querySelector(".playground")?.dataset.brickShown === "bubble-flight"`, 8000);
+      await settle();
+      await evaluate(`(() => {
+        const composer = Object.assign(document.createElement("div"), { className: "composer" });
+        composer.style.cssText = "position:fixed;left:8px;right:8px;bottom:16px;height:44px";
+        document.body.append(composer);
+        [...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click();
+      })()`);
+      if (reduced) {
+        await sleep(400);
+        if (await evaluate(`!!document.querySelector(".bubble-flight-bubble")`)) fail(where, "a bubble shows with reduced motion");
+        continue;
+      }
+      if (!await until(`!!document.querySelector(".bubble-flight-bubble")`, 1000)) { fail(where, "no bubble for a thought on its way"); continue; }
+      const bubble = await evaluate(`(() => { const b = document.querySelector(".bubble-flight-bubble"), r = b.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: innerWidth, pointer: getComputedStyle(b).pointerEvents }; })()`);
+      if (bubble.left < 0 || bubble.right > bubble.width) fail(where, "a bubble runs past the screen's edges");
+      if (bubble.pointer !== "none") fail(where, "a bubble takes the pointer");
+      if (!await until(`!document.querySelector(".bubble-flight-bubble")`, 4000)) fail(where, "a bubble stays after its thought is placed");
+      if (await evaluate(`document.querySelector(".playground").dataset.errors !== "0" || !!document.querySelector(".brick-broke")`)) fail(where, "a thought caused an error");
+    }
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+    await width(1280, 860);
+  }
   if (checked.includes("bubbles")) {
     await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
     await until(`!!document.querySelector(".bubbles-bubble")`, 8000);

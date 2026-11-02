@@ -1,0 +1,8 @@
+{
+  "id": "bubble-flight",
+  "name": "Bubble flight",
+  "does": "Carries your words from the composer toward the thread where they land.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
