@@ -47,17 +47,25 @@ export function eligible(page: { search: string; hostname: string; standalone: b
     && !temporaryAddress(page.hostname) && !page.shownBefore;
 }
 
+/**
+ * Whether a thought of yours was placed during this visit: one whose id wasn't on the map when it arrived (`atStart`).
+ * Ids, not a count: a thought taken back ("scratch that") and a new one would leave the count where it started.
+ */
+export function placedSince(atStart: ReadonlySet<string> | null, placed: readonly string[]): boolean {
+  return atStart !== null && placed.some((id) => !atStart.has(id));
+}
+
 const SHOWN_KEY = "e2a2o.install-hint";
 
 /** True when it was already shown, or when storage doesn't work (then "once" can't be kept, so never). */
-function shownBefore() {
+export function shownBefore() {
   try {
     localStorage.setItem(`${SHOWN_KEY}.probe`, "1");
     localStorage.removeItem(`${SHOWN_KEY}.probe`);
     return localStorage.getItem(SHOWN_KEY) === "1";
   } catch { return true; }
 }
-function rememberShown() {
+export function rememberShown() {
   try { localStorage.setItem(SHOWN_KEY, "1"); } catch { /* checked in shownBefore */ }
 }
 
@@ -85,11 +93,11 @@ function standalone() {
 }
 
 /**
- * `placedMine`: how many of this window's thoughts are on the map. `quiet`: nothing else is in the dock and the
+ * `placedMine`: the ids of this window's thoughts on the map. `quiet`: nothing else is in the dock and the
  * person isn't mid-thought; `loaded`: the map has arrived, so what's on it already doesn't count. Returns the hint to
  * show, or null.
  */
-export function useInstallHint(placedMine: number, quiet: boolean, loaded: boolean) {
+export function useInstallHint(placedMine: readonly string[], quiet: boolean, loaded: boolean) {
   const [, rerender] = useState(0);
   const allowed = useRef<boolean | null>(null);
   // The tour is checked as it goes: it may finish during this visit, and counts from then on.
@@ -97,8 +105,8 @@ export function useInstallHint(placedMine: number, quiet: boolean, loaded: boole
     allowed.current = eligible({ search: location.search, hostname: location.hostname, standalone: standalone(),
       toured: true, shownBefore: shownBefore() });
   }
-  const atStart = useRef<number | null>(null);
-  if (loaded && atStart.current === null) atStart.current = placedMine;
+  const atStart = useRef<Set<string> | null>(null);
+  if (loaded && atStart.current === null) atStart.current = new Set(placedMine);
   const [phase, setPhase] = useState<"waiting" | "shown" | "done">("waiting");
   useEffect(() => {
     const update = () => rerender((n) => n + 1);
@@ -109,10 +117,15 @@ export function useInstallHint(placedMine: number, quiet: boolean, loaded: boole
   // Earned from the next render on, never the one where the thought lands: the dock's own reply to it (the
   // first-thought line) is set in that same moment, and the hint must wait for it to go.
   const [earned, setEarned] = useState(false);
-  useEffect(() => { if (atStart.current !== null && placedMine > atStart.current) setEarned(true); }, [placedMine]);
+  useEffect(() => { if (placedSince(atStart.current, placedMine)) setEarned(true); }, [placedMine]);
   const show = phase === "waiting" ? allowed.current && hasToured() && way !== null && earned && quiet : phase === "shown";
   useEffect(() => {
-    if (phase === "waiting" && show) { rememberShown(); setPhase("shown"); }
+    // Read again at the moment: another tab of this browser may have shown it since this one loaded.
+    if (phase === "waiting" && show) {
+      if (shownBefore()) { setPhase("done"); return; }
+      rememberShown();
+      setPhase("shown");
+    }
     // Once seen, it goes as soon as the dock is needed again (a new thought, a card) and doesn't come back.
     if (phase === "shown" && !quiet) setPhase("done");
   }, [phase, show, quiet]);

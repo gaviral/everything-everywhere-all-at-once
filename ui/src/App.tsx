@@ -14,7 +14,7 @@ type Handlers = {
   unlink: (thoughtId: string) => void;
 };
 import { startMic } from "./mic";
-import { Apps, DockBuild, DockTune } from "./Apps";
+import { Apps, buildInTheWay, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -659,8 +659,9 @@ export default function App() {
   const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
   // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
   // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
-  const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).length, [world.thoughts, me]);
-  const install = useInstallHint(placedMine, view === "map" && !hasAway && !pullBack && !core.apps.build && !firstHint
+  const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).map((t) => t.id), [world.thoughts, me]);
+  const buildGone = useState<string | null>(null);
+  const install = useInstallHint(placedMine, view === "map" && !hasAway && !pullBack && !buildInTheWay(core.apps, buildGone[0]) && !firstHint
     && !core.partial && !core.handoff && !pending.length && !core.listening && !stopMic && !startingMic && !draft && core.queuedCount === 0 && !attention.value.note?.title,
     core.snapshotRevision > 0);
   // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
@@ -908,7 +909,7 @@ export default function App() {
           </AnimatePresence>
           {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
               unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
-          <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
+          <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}

@@ -92,7 +92,8 @@ for (const path of ["/manifest.webmanifest", favicon, touch, ...manifest.icons.m
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { installWay, hintText, temporaryAddress, eligible } = await server.ssrLoadModule("/src/Install.tsx");
+  const { installWay, hintText, temporaryAddress, eligible, placedSince, shownBefore, rememberShown } = await server.ssrLoadModule("/src/Install.tsx");
+  const { buildInTheWay } = await server.ssrLoadModule("/src/Apps.tsx");
   const ua = {
     chromeMac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
     safariMac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15",
@@ -126,6 +127,33 @@ try {
   assert.equal(eligible({ ...page, toured: false }), false, "never over the first tour");
   assert.equal(eligible({ ...page, shownBefore: true }), false, "once per browser");
   assert.equal(eligible({ ...page, hostname: "192.168.1.5" }), false, "never for a room guest's temporary address");
+
+  // Earned by a thought placed in this visit, by id: one taken back and a new one leave the count where it was.
+  assert.equal(placedSince(null, ["t1"]), false, "nothing counts before the map arrives");
+  assert.equal(placedSince(new Set(["t1"]), ["t1"]), false, "what was on the map at load doesn't count");
+  assert.equal(placedSince(new Set(["t1"]), []), false, "scratch that: one fewer, nothing new");
+  assert.equal(placedSince(new Set(["t1"]), ["t2"]), true, "scratch that, then a new thought: earned");
+  assert.equal(placedSince(new Set(), ["t1", "t2"]), true);
+
+  // Once per browser, read at the moment it would show: another tab that showed it first counts.
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  assert.equal(shownBefore(), false, "a fresh browser");
+  rememberShown(); // tab A shows it
+  assert.equal(shownBefore(), true, "tab B, open since before, sees it was shown");
+  globalThis.localStorage = { getItem() { throw new Error("off"); }, setItem() { throw new Error("off"); }, removeItem() {} };
+  assert.equal(shownBefore(), true, "storage off: never, since once can't be kept");
+  delete globalThis.localStorage;
+
+  // A build is in the way only while it wants the person; the core keeps the last one after it's decided.
+  const b = (stage) => ({ id: "build-1", stage });
+  assert.equal(buildInTheWay({ build: null, inPanel: false }, null), false);
+  assert.equal(buildInTheWay({ build: b("composing"), inPanel: false }, null), true, "its card in the dock");
+  assert.equal(buildInTheWay({ build: b("kept"), inPanel: false }, null), true, "its confirmation still showing");
+  assert.equal(buildInTheWay({ build: b("kept"), inPanel: false }, "build-1"), false, "kept, and its card gone");
+  assert.equal(buildInTheWay({ build: b("declined"), inPanel: false }, "build-1"), false, "dismissed");
+  assert.equal(buildInTheWay({ build: b("ready"), inPanel: true }, null), true, "waiting for Keep in the panel");
+  assert.equal(buildInTheWay({ build: b("discarded"), inPanel: true }, null), false, "decided in the panel");
 } finally {
   await server.close();
 }
