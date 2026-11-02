@@ -107,6 +107,7 @@ fn load_at(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str
     if changes.is_empty() {
         return Err(missing());
     }
+    let changes = fresh_items(&core.snapshot(), changes);
     if !empty(&core.snapshot()) {
         return Err(NOT_EMPTY.into());
     }
@@ -159,6 +160,41 @@ fn rebase(v: &mut serde_json::Value, by: usize) {
     }
 }
 
+/// The sample's reminders, ideas and tidy cards with ids no card on the map has: an emptied map still holds the ones
+/// it set aside, and a second sample's "sg-1" would be dropped as already there (`World::apply` adds an id once). On a
+/// map that never had any, the ids stay as the sample has them; else each gets the first "-<n>" ending free for all.
+fn fresh_items(world: &crate::world::World, mut changes: Vec<Change>) -> Vec<Change> {
+    let taken: std::collections::HashSet<&str> = world.suggestions.iter().map(|s| s.id.as_str())
+        .chain(world.actions.iter().map(|a| a.id.as_str()))
+        .chain(world.proposals.iter().map(|p| p.id.as_str()))
+        .collect();
+    let ids: Vec<String> = changes.iter().filter_map(|c| match c {
+        Change::SuggestionAdded { suggestion } => Some(suggestion.id.clone()),
+        Change::ActionProposed { action } => Some(action.id.clone()),
+        Change::TidyProposed { proposal } => Some(proposal.id.clone()),
+        _ => None,
+    }).collect();
+    if !ids.iter().any(|id| taken.contains(id.as_str())) {
+        return changes;
+    }
+    let n = (2..).find(|n| ids.iter().all(|id| !taken.contains(format!("{id}-{n}").as_str()))).unwrap_or(2);
+    let fresh = |id: &mut String| {
+        if ids.contains(id) {
+            *id = format!("{id}-{n}");
+        }
+    };
+    for change in changes.iter_mut() {
+        match change {
+            Change::SuggestionAdded { suggestion } => fresh(&mut suggestion.id),
+            Change::ActionProposed { action } => fresh(&mut action.id),
+            Change::TidyProposed { proposal } => fresh(&mut proposal.id),
+            Change::ItemStatus { id, .. } | Change::ItemMoved { id, .. } => fresh(id),
+            _ => {}
+        }
+    }
+    changes
+}
+
 const NOT_EMPTY: &str = "The sample only fills an empty map, and this one has thoughts.";
 
 /// Copies the sample's pictures, keeping any file already there (a map's pictures have their own names).
@@ -181,7 +217,7 @@ fn copy_pictures(from: &Path, to: &Path) {
 #[cfg(test)]
 mod tests {
     use super::{load, load_at, pick, NOT_EMPTY, SAMPLE, SAMPLES};
-    use crate::world::{Journal, ThreadStatus};
+    use crate::world::{Change, ItemStatus, Journal, ThreadStatus};
     use crate::Core;
     use std::path::Path;
 
@@ -239,6 +275,37 @@ mod tests {
             let on = t.thread_id.as_deref().unwrap();
             assert!(world.thread(on).is_some() && world.resolve(on) == on, "{} sits on {on}, which leads to {}", t.id, world.resolve(on));
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A second sample after the first was emptied (its cards set aside, its points and threads gone): the new one's
+    /// reminders and ideas wait on its cards. The first one's ids are still on the map (set aside), so the second's,
+    /// the same "sg-1" and "ac-1", were dropped as already there.
+    #[test]
+    fn a_second_sample_after_emptying_the_map_keeps_its_reminders_and_ideas() {
+        let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+        let core = Core::test(journal, world);
+        load(&core, "you", &samples(), &dir.join("images"), "team-sync").unwrap();
+        let world = core.snapshot();
+        let mut empty: Vec<Change> = world.thoughts.iter().map(|t| Change::ThoughtSkipped { thought_id: t.id.clone() }).collect();
+        let items = world.suggestions.iter().map(|s| s.id.clone()).chain(world.actions.iter().map(|a| a.id.clone()));
+        empty.extend(items.map(|id| Change::ItemStatus { id, status: ItemStatus::Dismissed, done_ms: None }));
+        let mut threads = world.threads.clone();
+        threads.sort_by_key(|t| t.parent_id.is_none());
+        empty.extend(threads.into_iter().map(|t| Change::ThreadRemoved { thread_id: t.id }));
+        drop(world);
+        core.commit(empty);
+        assert!(core.snapshot().threads.is_empty() && core.snapshot().thoughts.is_empty());
+        load(&core, "you", &samples(), &dir.join("images"), "debug-break").unwrap();
+        let world = core.snapshot();
+        let waiting = |status: ItemStatus| status == ItemStatus::New;
+        let ideas = world.suggestions.iter().filter(|s| waiting(s.status) && world.thread(&s.thread_id).is_some()).count();
+        let tasks = world.actions.iter().filter(|a| waiting(a.status) && world.thread(&a.thread_id).is_some()).count();
+        assert_eq!((ideas, tasks), (1, 2), "the debug-break sample has one idea and two reminders");
+        // The journal replays to the same map.
+        let (_, replayed) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+        assert_eq!(serde_json::to_value(&replayed).unwrap(), serde_json::to_value(&*world).unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

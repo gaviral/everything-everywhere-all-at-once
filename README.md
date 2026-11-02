@@ -173,7 +173,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser. The app has no accounts, analytics or telemetry; the hosted site adds a sign-in and runs one core per person on its server.
 - Only model calls leave the core, to `api.meta.ai`. While the mic is on, that's the audio, after a 0.5 s synthetic “ah” the core sends so a session's first line comes back fast. Each finished thought goes with every thread's title and last point, as two identical calls at once (`PLACER_RACE=1` sends one). Every call and exactly what it sends: [docs/FEATURES.md](docs/FEATURES.md#privacy-and-data).
-- Placing uses `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode: a little faster, but Meta may keep what it reads to improve its products.
+- Placing uses `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode: a little faster, but Meta may keep what it reads to improve its products. A `PLACER_MODEL` you set is used as is, with no fallback: if the key can't use it (401 or 403), every model feature stops until a restart.
 - On disk: `data/<map>/journal.jsonl` and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 
 ## Security and checks

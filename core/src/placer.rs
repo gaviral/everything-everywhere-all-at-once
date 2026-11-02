@@ -18,6 +18,13 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 // made a price or a moved date its own branch, and "the thread it branched from" hung a cafe shift under a midterm it
 // clashed with. Replaying 48 recorded placements twice (2026-11-01, Spark 1.2, minimal): updates on their thread 28 →
 // 55 of 68, branches under an unrelated thread 13 → 0 of 16; a party's invite list and cake still branch (12 of 12).
+// Something not done yet is about that thing, not about a habit of not finishing: right after "My biggest problem is
+// that I never finish my", on a thread named for that, "Oh, and rent is due Friday and I still haven't sent it" was
+// reasoned over at length (is an unsent payment a case of never finishing?) and placed in 5.6 s and 5.0 s in the
+// takes, over the 5 s the map has. Always right ("new"), the time was all reasoning: the same request sent alone,
+// one lane, batches of 12 side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698 → 528 with this
+// wording; 743 → 538 and 813 → 479 with an earlier one ("a bill not paid, a message not sent"); the same line after
+// a finished sentence took 365–499.
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
 For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
 news that something is done), \"return\" if it says more about an earlier thread, \
@@ -27,7 +34,8 @@ An update on what a thread is about goes on that thread, even with a new detail;
 which thread that is goes by what the words mean, read with what was said just before, never by a word shared with a title. \
 Being about the same project is not enough to continue. \
 Place by what the words are about, not by how they are said or a word they share with a title: \
-a thought that trails off belongs with its own topic, never with a thread about unfinished thoughts. \
+a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
+never with a thread about unfinished thoughts or habits. \
 \"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
 split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
 never between two sentences about one thing, such as a deadline and what is due by then. \
@@ -425,7 +433,8 @@ pub enum Route {
     /// Placed (or set aside as filler, `skipped`): `path` runs from the top thread down to the one it landed on (a
     /// branch has its parent first), `new` when that thread was made for it. `pick` is what the model answered, and
     /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` gave the first good
-    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the calls went. Sent only once the changes are on the map.
+    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the first calls went (a round
+    /// cut off and asked again counts). Sent only once the changes are on the map.
     Decided {
         thought_id: String,
         path: Vec<String>,
@@ -524,6 +533,8 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let candidates = candidates(&world, &thought);
+    // From when the first calls went, so a round cut off and asked again counts too: the tag says what the wait was.
+    let went = std::time::Instant::now();
     let (lane, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
@@ -533,7 +544,6 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         let lanes = if core.calls_left() >= lanes { lanes } else { 1 };
         // The map shows the threads the prompt names lighting up while these calls run (ui/src/route.ts).
         core.send(ServerMsg::Route { route: Route::Weighing { thought_id: thought_id.into(), candidates: candidates.clone(), lanes } });
-        let went = std::time::Instant::now();
         let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
             .map(|lane| {
                 let call = core.ask_model(
@@ -1045,18 +1055,28 @@ pub(crate) mod rules {
     pub const NOT_FILLER: &str = "too long to be filler";
     pub const SAYS_DECIDED: &str = "says a decision: kept";
     pub const FILLER_UNCLEAR: &str = "unclear what was filler";
+    pub const ANSWERS: &str = "answers a question: kept";
 }
 
 /// `decide`, with the rule that put the thought somewhere other than the model's pick, if one did (`rules`).
 fn decide_ruled(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> (Vec<Change>, Option<&'static str>) {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
     // Never words that say a decision: "Okay, decided:" cut off by a pause is two words, and the rest needs it.
-    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
+    // Nor a short turn right after a question (`just_asked`): it answers it ("The blue."), as the prompt asks of the
+    // model too ("never skip … any other answer"); the code holds it to that.
+    let answers = just_asked(world, thought).is_some();
+    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) && !answers {
         return (vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }], None);
     }
-    // Kept for one of two reasons, and the map says which: it's long, or it says a decision.
+    // Kept for one of three reasons, and the map says which: it's long, it says a decision, or it answers a question.
     let mut rule = (p.action == "skip").then(|| {
-        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS { rules::NOT_FILLER } else { rules::SAYS_DECIDED }
+        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS {
+            rules::NOT_FILLER
+        } else if crate::decided::said(&thought.text) {
+            rules::SAYS_DECIDED
+        } else {
+            rules::ANSWERS
+        }
     });
     let now = now_ms();
     let speaker = &thought.speaker;
@@ -2213,7 +2233,8 @@ mod tests {
     }
 
     /// Routing cases against the real model: `cargo test --release -- --ignored routing_cases --nocapture`, with
-    /// MODEL_API_KEY set (about $0.0002 a placement on the default model). Each line of `ROUTING_CASES` (default
+    /// MODEL_API_KEY set (about $0.0002 a call on the default model; a placement races `RACE` calls as the app
+    /// does, PLACER_RACE=1 for one). Each line of `ROUTING_CASES` (default
     /// scripts/routing-cases.jsonl) is a map, the card selected, words said, and where they may land; each runs
     /// `ROUTING_RUNS` times (default 3) on a fresh copy, since one answer is a hint, not proof. A case fails when
     /// most of its runs land somewhere it doesn't allow. A line can instead take its map from a journal: every
@@ -2250,6 +2271,9 @@ mod tests {
                 let core = Core {
                     key: Some(key.clone()),
                     placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+                    // As the app races (`RACE`, or PLACER_RACE), so a case checks the answer the app would keep:
+                    // the first good one, which skews to the shorter reasonings.
+                    placer_race: super::race_from_env(),
                     ..Core::test(journal, world.clone())
                 };
                 // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.
