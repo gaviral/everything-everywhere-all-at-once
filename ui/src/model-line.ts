@@ -3,7 +3,8 @@
 // Pure rules here (scripts/model-line-check.mjs holds them); the store and hook below; ModelLine.tsx shows it.
 import { useSyncExternalStore } from "react";
 
-export type StepMsg = { type: "step"; id: number; step: string; model: string | null; done: boolean; ok: boolean; ms: number };
+/** `superseded`: a racing call dropped because another answered first (core/src/placer.rs); not a failure. */
+export type StepMsg = { type: "step"; id: number; step: string; model: string | null; done: boolean; ok: boolean; ms: number; superseded?: boolean };
 
 /** "muse-spark-1.2-contributor" → "Muse Spark 1.2": the model's public name. Contributor mode is how the key asks,
  *  not another model, so it's left out on screen (the full id stays in the line's tooltip). */
@@ -63,6 +64,8 @@ export function stepped(state: LineState, msg: StepMsg, now: number): LineState 
     return { ...state, running, listening: state.listening?.id === msg.id ? null : state.listening };
   }
   if (!msg.done && msg.model) return { ...state, running: [...running, { id: msg.id, step: msg.step, model: msg.model, at: now }] };
+  // A placement's losing call only stops running: the winner's time stays, never "didn't answer" over it.
+  if (msg.superseded) return { ...state, running };
   // A step behind that finishes during a waited-on step's hold leaves that one's time showing (a picture done 0.1 s
   // after a placing never covers it).
   const last = state.last;
