@@ -147,6 +147,18 @@ pub struct World {
     /// Stable hashes of messages an import has read, including those that gave no point.
     #[serde(default, skip_serializing)]
     pub read_keys: std::collections::HashSet<String>,
+    /// Renames and merges the refiner wasn't sure of, waiting on their cards (tidy.rs).
+    #[serde(default)]
+    pub proposals: Vec<crate::tidy::Proposal>,
+    /// Threads whose title is the refiner's own, with the title before it, for Undo.
+    #[serde(default, skip_serializing)]
+    pub retitled: std::collections::HashMap<String, String>,
+    /// Threads whose title the person chose: the refiner leaves it alone.
+    #[serde(default, skip_serializing)]
+    pub titled: std::collections::HashSet<String>,
+    /// Merged thread id → what its merge moved, to undo it exactly.
+    #[serde(default, skip_serializing)]
+    pub unmerge: std::collections::HashMap<String, crate::tidy::Unmerge>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -191,8 +203,17 @@ pub enum Change {
         #[serde(default = "you")]
         speaker: String,
     },
+    /// A rename whose maker isn't said: in journals from before tidy.rs, the refiner's own.
     ThreadRenamed { thread_id: String, title: String },
     ThreadMerged { from: String, into: String },
+    /// A rename the refiner was sure of (tidy.rs); `was` is the title before it, for Undo.
+    ThreadRetitled { thread_id: String, title: String, was: String },
+    /// A title the person chose (a proposal's Rename, or an AI rename undone): the refiner leaves it alone (tidy.rs).
+    TitleChosen { thread_id: String, title: String },
+    /// A merge undone: the thread comes back with what it held (tidy.rs).
+    ThreadUnmerged { unmerge: crate::tidy::Unmerge },
+    /// A rename or merge the refiner wasn't sure of, proposed on the card (tidy.rs).
+    TidyProposed { proposal: crate::tidy::Proposal },
     SuggestionAdded { suggestion: Suggestion },
     ActionProposed { action: Action },
     ItemStatus { id: String, status: ItemStatus, done_ms: Option<u64> },
@@ -267,6 +288,7 @@ impl World {
 
     pub fn apply(&mut self, change: &Change) {
         let change = self.resolved(change);
+        crate::tidy::follow(self, &change);
         match change.as_ref() {
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
@@ -359,12 +381,24 @@ impl World {
                 self.active = Some(thread_id.clone());
                 self.active_by.insert(speaker.clone(), thread_id.clone());
             }
-            Change::ThreadRenamed { thread_id, title } => {
+            Change::ThreadRenamed { thread_id, title } | Change::TitleChosen { thread_id, title } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.title = title.clone();
                 }
             }
             Change::ThreadMerged { from, into } => self.merge(from, into),
+            Change::ThreadRetitled { thread_id, title, was } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    th.title = title.clone();
+                    self.retitled.insert(thread_id.clone(), was.clone());
+                }
+            }
+            Change::ThreadUnmerged { unmerge } => crate::tidy::unmerge(self, unmerge),
+            Change::TidyProposed { proposal } => {
+                if !self.proposals.iter().any(|p| p.id == proposal.id) {
+                    self.proposals.push(proposal.clone());
+                }
+            }
             Change::ThoughtCorrected { thought_id, accept, with } => self.correct(thought_id, *accept, with),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
@@ -406,6 +440,9 @@ impl World {
                     a.status = *status;
                     a.done_ms = *done_ms;
                 }
+                if let Some(p) = self.proposals.iter_mut().find(|p| &p.id == id) {
+                    p.status = *status;
+                }
             }
         }
     }
@@ -416,6 +453,9 @@ impl World {
     fn merge(&mut self, from: &str, into: &str) {
         if from == into || self.thread(into).is_none() {
             return;
+        }
+        if let Some(record) = crate::tidy::record(self, from, into) {
+            self.unmerge.insert(from.into(), record);
         }
         for t in self.thoughts.iter_mut().filter(|t| t.thread_id.as_deref() == Some(from)) {
             t.thread_id = Some(into.into());
@@ -473,6 +513,8 @@ impl World {
             | Change::ThreadStatus { thread_id, .. }
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
+            | Change::ThreadRetitled { thread_id, .. }
+            | Change::TitleChosen { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
             | Change::TagRemoved { thread_id, .. }
@@ -497,6 +539,8 @@ impl World {
             | Change::ThreadStatus { thread_id, .. }
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
+            | Change::ThreadRetitled { thread_id, .. }
+            | Change::TitleChosen { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
             | Change::TagRemoved { thread_id, .. }
@@ -1009,6 +1053,34 @@ mod tests {
                 },
             },
             Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
+            Change::TidyProposed {
+                proposal: crate::tidy::Proposal {
+                    id: "tp-1".into(),
+                    kind: crate::tidy::Kind::Merge,
+                    thread_id: "T3".into(),
+                    title: String::new(),
+                    into: "T1".into(),
+                    status: super::ItemStatus::New,
+                },
+            },
+            Change::ThreadRetitled { thread_id: "T3".into(), title: "Muse Spark questions".into(), was: "Topic T3".into() },
+            Change::TitleChosen { thread_id: "T3".into(), title: "Muse Spark".into() },
+            Change::ThreadAdded { thread: test_thread("T4", None) },
+            Change::ThreadMerged { from: "T4".into(), into: "T1".into() },
+            Change::ThreadUnmerged {
+                unmerge: crate::tidy::Unmerge {
+                    thread: test_thread("T4", None),
+                    into: "T1".into(),
+                    at: 3,
+                    thoughts: Vec::new(),
+                    branches: Vec::new(),
+                    suggestions: Vec::new(),
+                    actions: Vec::new(),
+                    proposals: Vec::new(),
+                    active: false,
+                    active_by: Vec::new(),
+                },
+            },
             Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() },
             Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() },
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
@@ -1069,6 +1141,10 @@ mod tests {
                 | Change::ActiveChanged { .. }
                 | Change::ThreadRenamed { .. }
                 | Change::ThreadMerged { .. }
+                | Change::ThreadRetitled { .. }
+                | Change::TitleChosen { .. }
+                | Change::ThreadUnmerged { .. }
+                | Change::TidyProposed { .. }
                 | Change::SuggestionAdded { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
@@ -1093,7 +1169,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 29, "one of each kind of change");
+        assert_eq!(kinds.len(), 33, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1122,7 +1198,8 @@ mod tests {
 
         // And the talk landed as told.
         let w = &replayed;
-        assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T3"]);
+        assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T3", "T4"], "a merge undone puts its thread back");
+        assert_eq!((w.proposals.len(), w.proposals[0].into.as_str()), (1, "T1"));
         assert_eq!(w.thread("T3").unwrap().title, "Budget and demo", "a change aimed at a merged thread follows it");
         assert_eq!((w.active_for("User").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));
         assert_eq!(w.thread("T1").unwrap().dropped_by, "User");

@@ -48,6 +48,7 @@ export function changes(before: World, after: World, me: string): Unseen[] {
   };
   items(after.suggestions, before.suggestions, (s) => s.text);
   items(after.actions, before.actions, (a) => a.title);
+  items(after.proposals ?? [], before.proposals ?? [], (p) => (p.kind === "rename" ? `Rename to “${p.title}”?` : "Same topic?"));
   const titles = new Map(before.threads.map((t) => [t.id, t.title]));
   for (const thread of after.threads) {
     const old = titles.get(thread.id);

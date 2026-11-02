@@ -118,6 +118,10 @@ pub enum ClientMsg {
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
+    /// A rename or merge the refiner proposed: Rename or Merge applies it, × (`apply` false) keeps things as they are.
+    Tidy { id: String, apply: bool },
+    /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
+    Untidy { kind: crate::tidy::Kind, thread_id: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

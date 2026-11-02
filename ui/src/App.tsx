@@ -21,12 +21,14 @@ import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
+import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { useRevert } from "./revert";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
+import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -606,46 +608,35 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [firstHint]);
 
-  const [mapChangeVisible, setMapChangeVisible] = useState(false);
   const [mapAnnouncement, setMapAnnouncement] = useState("");
+  const { mapChange, hideMapChange } = core;
   useEffect(() => {
-    if (!core.mapChange) return;
-    setMapChangeVisible(true);
+    if (!mapChange) return;
     setMapAnnouncement("");
-    const announcement = window.setTimeout(() => setMapAnnouncement(core.mapChange!.text), 700);
-    const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
+    const announcement = window.setTimeout(() => setMapAnnouncement(mapChange.text), 700);
+    // Hidden in the core's state, so a later rename doesn't join a note no longer up (tidy-core.ts `joinNotes`).
+    const timer = window.setTimeout(hideMapChange, 10000);
     return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
-  }, [core.mapChange]);
+  }, [mapChange, hideMapChange]);
 
-  // Pull-back: at a natural pause, offer the most recently dropped thread.
+  // Pull-back: at a natural pause, offer the most recently dropped thread (unfinished.ts).
   const [lastActivity, setLastActivity] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  const [laterAt, setLaterAt] = useState<Record<string, number>>({});
+  const [hidden, setHidden] = useState<Hidden>(NONE_HIDDEN);
   useEffect(() => setLastActivity(Date.now()), [core.partial, world.thoughts.length]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 400);
     return () => window.clearInterval(timer);
   }, []);
-  const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
   // Once the return card covers an unfinished thread, don't repeat it in the pull-back.
   useEffect(() => {
     const covered = away.items.filter((item) => item.unfinished)
       .flatMap((item) => world.threads.filter((t) => t.id === item.threadId && t.dropped_by === me).map(dropKey));
-    if (covered.length) setDismissed((previous) => covered.every((key) => previous.includes(key)) ? previous : [...new Set([...previous, ...covered])]);
+    if (covered.length) setHidden((was) => dismiss(was, covered));
   }, [away.items, world.threads, me]);
-  // Only threads you left: in a room, the other person's are theirs to pick up.
-  const dropped = world.threads
-    .filter((t) => t.status === "dropped" && t.dropped_by === me && !dismissed.includes(dropKey(t)) &&
-      (laterAt[dropKey(t)] === undefined || now - laterAt[dropKey(t)] >= 5 * 60 * 1000))
-    .sort((a, b) => b.touched_ms - a.touched_ms)[0];
-  const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
-  // Later: hidden for 5 minutes, then offered once more; a second Later sets it aside until that thread changes.
-  const later = (thread: Thread) => {
-    const key = dropKey(thread);
-    if (laterAt[key] !== undefined) setDismissed((d) => [...d, key]);
-    else setLaterAt((previous) => ({ ...previous, [key]: Date.now() }));
-  };
+  const dropped = leftOff(world.threads, me, hidden, now);
+  const pullBack = cardAt(dropped, now, lastActivity);
+  const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
   // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
   // acts on the card you see (or would see at the next pause); with none, "forget it" takes the one hidden for now
   // and "finish it" the newest you left. Your words stay on the map either way.
@@ -653,7 +644,7 @@ export default function App() {
     const asked = core.viewAsk?.view;
     if (asked !== "later" && asked !== "forget" && asked !== "finish") return;
     const mine = world.threads.filter((t) => t.status === "dropped" && t.dropped_by === me).sort((a, b) => b.touched_ms - a.touched_ms);
-    const yours = mine.find((t) => !dismissed.includes(dropKey(t)));
+    const yours = mine.find((t) => !hidden.dismissed.includes(dropKey(t)));
     if (asked === "finish") {
       const card = dropped ?? mine[0];
       if (!card) { core.showNotice("Nothing unfinished to finish."); return; }
@@ -667,7 +658,7 @@ export default function App() {
       later(card);
       core.showNotice(`Later: ${card.title} comes back after a while.`);
     } else {
-      setDismissed((d) => [...d, dropKey(card)]);
+      setHidden((was) => dismiss(was, [dropKey(card)]));
       core.showNotice(`Set aside: ${card.title}. What you said stays on the map.`);
     }
   }, [core.viewAsk]);
@@ -702,13 +693,7 @@ export default function App() {
     if (grew) keepClear();
   });
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
-  // Your last words there by when you said them, as the core's Thought::said_at: imported points land last in
-  // the list with their old times, and a time ahead of the clock (a sample map) counts as the earliest.
-  const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
-  const lastWords = pullBack
-    ? world.thoughts.filter((t) => t.placed && t.thread_id === pullBack.id && t.speaker === me)
-      .reduce<Thought | undefined>((last, t) => (!last || saidAt(t) >= saidAt(last) ? t : last), undefined)?.text ?? ""
-    : "";
+  const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
 
   const goBack = (thread: Thread) => {
     setView("map");
@@ -726,7 +711,7 @@ export default function App() {
     setQuery("");
     setFocusMode(false);
     core.focus(thread.id);
-    setDismissed((d) => [...d, dropKey(thread)]);
+    setHidden((was) => dismiss(was, [dropKey(thread)]));
     requestAnimationFrame(() => {
       const target = document.getElementById(`thread-${thread.id}`);
       if (target) scrollCardToTop(target, !!reducedMotion);
@@ -813,8 +798,12 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {core.mapChange && mapChangeVisible && (
-        <div className="map-change"><span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+      {core.mapChange && (
+        <div className="map-change">
+          {core.mapChange.ai && <span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span>} {core.mapChange.text}
+          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); core.hideMapChange(); }}>Undo</button>}
+          <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
+        </div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -845,7 +834,9 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
+          <TidyProvider world={world} decide={core.tidy}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </TidyProvider>
         )}
       </main>}
 
@@ -1076,7 +1067,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
   const actions = actionsByThread.get(thread.id) ?? [];
-  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length;
+  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length + useWaitingProposals(thread.id);
   const branches = childrenByParent.get(thread.id) ?? [];
   const isActive = active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
@@ -1158,6 +1149,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
           )}
         </motion.div>
       ))}
+      <ProposalRows thread={thread.id} />
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
