@@ -21,7 +21,7 @@ publish=""
 case "${1:-}" in
   "") ;;
   --publish) publish=${2:-}; [ -n "$publish" ] || { echo "Usage: sh scripts/release.sh --publish OWNER/REPO" >&2; exit 2; } ;;
-  -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "Unknown option: $1 (try sh scripts/release.sh --help)" >&2; exit 2 ;;
 esac
 
@@ -29,6 +29,7 @@ repo=$(git remote get-url origin 2>/dev/null | sed -E 's#^(https://github\.com/|
 case "$repo" in */*) ;; *) echo "FAIL  origin isn't a GitHub repo ($repo)"; exit 1 ;; esac
 url="https://github.com/$repo"
 echo "Release gate for $repo"
+[ -z "$publish" ] || [ "$publish" = "$repo" ] || { echo "FAIL  --publish $publish doesn't match this repo ($repo); nothing changed"; exit 1; }
 
 # 1. The checks run on what goes public: GitHub's main, checked out here, with nothing uncommitted on top.
 if git fetch --quiet origin main 2>/dev/null; then
@@ -53,7 +54,7 @@ blocked=""; accepted=""
 for h in $leaks; do
   case " ${ACCEPT_COMMITS:-} " in *" $h "*) accepted="$accepted $h" ;; *) blocked="$blocked $h" ;; esac
 done
-if [ -z "$blocked" ]; then pass "no commit message on $ref names a local path"
+if [ -z "$blocked" ]; then pass "no commit message on $ref names a local path${accepted:+ (but the kept ones below)}"
 else
   fail "commit messages on $ref name local paths (reword them before public, or list them in ACCEPT_COMMITS):"
   for h in $blocked; do echo "$h $(git log -1 --format=%s "$h" | cut -c1-110)" | indent; done
@@ -67,8 +68,9 @@ refs=$(git ls-remote --heads --tags origin 2>/dev/null | awk '{print $2}' | grep
 [ -z "$refs" ] && pass "GitHub holds only main" || { warn "these go public with main (delete or keep, by choice):"; echo "$refs" | indent; }
 
 # 6. Web links in the README open for a logged-out visitor (links inside the repo: precheck's links-check).
-for link in $(grep -oE 'https?://[^] )"<>`]+' README.md | sed 's/[.,;:]*$//' | sort -u); do
-  case "$link" in "$url"|"$url"/*) continue ;; esac   # the repo itself: checked after it's public
+# Links only ([text](https://...), href= and src=): an address in a code block is something to type, not to click.
+for link in $(grep -oE '\]\(https?://[^) ]+|(href|src)="https?://[^"]+' README.md | sed -E 's/^(\]\(|href="|src=")//' | sort -u); do
+  case "$link" in "$url"|"$url"/*|"$url".git) continue ;; esac   # the repo itself: checked after it's public
   code=$(status "$link")
   case "$code" in 2*|3*) pass "README link opens: $link" ;; *) fail "README link answers $code: $link" ;; esac
 done
@@ -98,12 +100,11 @@ if [ -z "$publish" ]; then
   [ $failed = 0 ] && echo "OK: ready to go public." || echo "Fix the FAIL lines first."
   echo "To go public (one-way; clones made meanwhile stay):"
   echo "  gh repo edit $repo --visibility public --accept-visibility-change-consequences"
-  echo "  curl -s -o /dev/null -w '%{http_code}\\n' $url    # 200 once public, logged out"
+  echo "  curl -s -o /dev/null -w '%{http_code}' $url    # 200 once public, logged out"
   echo "or both, after these checks: sh scripts/release.sh --publish $repo"
   exit $failed
 fi
 
-[ "$publish" = "$repo" ] || { echo "FAIL  --publish $publish doesn't match this repo ($repo); nothing changed"; exit 1; }
 [ $failed = 0 ] || { echo "Not publishing: fix the FAIL lines first. Nothing changed."; exit 1; }
 gh repo edit "$repo" --visibility public --accept-visibility-change-consequences || { echo "FAIL  gh repo edit failed"; exit 1; }
 # GitHub usually serves the page at once; give it 30 s before calling it a failure.
