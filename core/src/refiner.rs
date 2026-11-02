@@ -139,9 +139,7 @@ pub async fn run(core: Arc<Core>) {
         let result = pass(&core, body).await;
         let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
-        if result.is_ok() {
-            (since, owed) = (at, later.into_iter().collect());
-        }
+        settle(result.is_ok(), at, later, &mut since, &mut owed);
         match result {
             // Talking resumed while the model worked: move nothing under them; it lands at the next pause, a few
             // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
@@ -224,6 +222,14 @@ fn kept_apart(world: &World) -> Vec<(String, String)> {
         }
     }
     pairs
+}
+
+/// After a pass: one that came back moves the window to its map's time and owes what it left out; a failed one
+/// moves neither, so its threads go again.
+fn settle(ok: bool, at: u64, later: Vec<String>, since: &mut u64, owed: &mut HashSet<String>) {
+    if ok {
+        (*since, *owed) = (at, later.into_iter().collect());
+    }
 }
 
 /// `request_in` for one pass after `since`, with nothing owed (the live checks send what a pass sends).
@@ -1338,6 +1344,16 @@ mod tests {
         let (text, later) = describe_in(&world, &Window { since: now, now, owed: &owed }, TODAY);
         assert_eq!(full(&text), ["T3"]);
         assert!(later.is_empty());
+    }
+
+    /// A pass that came back moves the window and owes what it left; a failed one keeps both, so it goes again.
+    #[test]
+    fn only_a_pass_that_came_back_moves_the_window() {
+        let (mut since, mut owed) = (5, HashSet::from(["T1".to_string()]));
+        super::settle(false, 9, vec!["T2".into()], &mut since, &mut owed);
+        assert_eq!((since, owed.clone()), (5, HashSet::from(["T1".to_string()])));
+        super::settle(true, 9, vec!["T2".into()], &mut since, &mut owed);
+        assert_eq!((since, owed), (9, HashSet::from(["T2".to_string()])));
     }
 
     /// A thread owed a full pass and merged before that pass (a merge keeps the points' times): the thread it
