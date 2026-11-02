@@ -29,6 +29,7 @@ import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } fro
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { staysUp, upFor } from "./notice-rules";
+import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -857,7 +858,7 @@ export default function App() {
       </main>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-      <section ref={dockRef} className="dock" aria-label="Your thoughts">
+      <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
@@ -898,7 +899,7 @@ export default function App() {
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
@@ -1096,6 +1097,15 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const drop = useDropPoint(thread.id);
   const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
 
+  const toggle = (event: React.MouseEvent) => {
+    if (searching && matches.has(thread.id)) return;
+    // Option-click opens or folds every branch under it too, as "expand …" does.
+    const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
+    const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
+    for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
+    setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
+  };
+
   return (
     <motion.section
       layout={reducedMotion ? false : true}
@@ -1109,7 +1119,10 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       {...drop.props}
     >
       <ThisTag thread={thread.id} />
-      <div className="thread-head">
+      {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
+      <div className="thread-head" onClick={(event) => {
+        if (headClickToggles(event.target as Element, window.getSelection()?.toString())) toggle(event);
+      }}>
         <UnseenDot thread={thread.id} />
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
@@ -1140,14 +1153,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={(event) => {
-          if (searching && matches.has(thread.id)) return;
-          // Option-click opens or folds every branch under it too, as "expand …" does.
-          const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
-          const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
-          for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
-          setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
-        }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>

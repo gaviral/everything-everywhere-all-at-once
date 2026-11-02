@@ -3,7 +3,9 @@
   --card: #ffffff;
   --ink: #1d1d1f;
   --muted: #696970;
-  --line: #e7e6e1;
+  /* Card edges have to survive video compression: #e7e6e1 was 1.15:1 on the page and cards turned into floating text
+     in the demo's frames; this is 1.35:1, still a hairline (UX audit fix 3). */
+  --line: #d9d7cf;
   --accent: #245fbd;
   --accent-soft: #e8f0fe;
   --amber: #95600f;
@@ -19,7 +21,7 @@
   --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
   --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
   --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.07);
   color-scheme: light;
 }
 
@@ -158,6 +160,12 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
+}
+
+/* The head opens the card (ux-rules.ts), so its "Show" answers a hover anywhere on it. */
+.thread-head:hover > .thread-toggle {
+  color: var(--ink);
 }
 
 .picture {
@@ -205,9 +213,11 @@ header {
   background: var(--accent-soft);
 }
 
+/* A thread's name has to win over its thoughts (15 px/400) at a glance: 17 px/650, two steps up, as a list title in
+   Things is; counts and "Show" stay 13 px and quiet (UX audit fix 4). */
 .title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 650;
 }
 
 .chip {
@@ -866,8 +876,10 @@ header:has(.shortcuts[open]) { z-index: 11; }
 /* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
    ink, so color stays scarce enough to mean something. */
 .branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
-/* A folded thread's proposals still waiting for you: amber, as everything that needs you. */
-.chip.waiting { color: var(--amber); background: var(--amber-soft); }
+/* A folded thread's proposals still waiting for you: a quiet count, as Things' metadata is gray. Amber is kept for what
+   can slip away (left off, Finish it, due dates), so "left off" is the one warm mark on the map; with amber here it was
+   on 5 of 8 cards (UX audit fix 5, von Restorff). */
+.chip.waiting { color: var(--muted); background: var(--bg); }
 /* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
 .when.due { color: var(--amber); }
 .when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }

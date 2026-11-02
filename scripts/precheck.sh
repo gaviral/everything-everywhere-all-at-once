@@ -52,7 +52,8 @@ check "samples: every thread has its picture shipped (no blank Palace without a 
 
 port=${PORT:-4321}
 if curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
-  code() { curl -s --max-time 2 -o /dev/null -w '%{http_code}' "$@"; }
+  # Local room probes accept our self-signed certificate; this does not install trust anywhere.
+  code() { curl -ks --max-time 2 -o /dev/null -w '%{http_code}' "$@"; }
   ws() { code -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$@"; }
   check "live: another site's WebSocket is refused" "[ \"\$(ws -H 'Origin: https://example.com' http://127.0.0.1:$port/ws)\" = 403 ]"
   check "live: a rebinding Host is refused" "[ \"\$(code -H 'Host: example.com' http://127.0.0.1:$port/)\" = 403 ]"
@@ -62,8 +63,10 @@ if curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
   if [ -z "$ip" ]; then
     warn "no network address found, room probes skipped"
   elif curl -s --max-time 2 http://127.0.0.1:$port/room | grep -q '"room":true'; then
-    check "live: in a room, the map needs the code" "[ \"\$(ws http://$ip:$port/ws)\" = 403 ] && [ \"\$(code http://$ip:$port/images/x)\" = 403 ]"
-    check "live: in a room, other sites are still refused" "[ \"\$(ws -H 'Origin: https://example.com' http://$ip:$port/ws)\" = 403 ]"
+    room_url="http://$ip:$port"
+    [ "$(code "https://$ip:$port/")" = 200 ] && room_url="https://$ip:$port"
+    check "live: in a room, the map needs the code" "[ \"\$(ws $room_url/ws)\" = 403 ] && [ \"\$(code $room_url/images/x)\" = 403 ]"
+    check "live: in a room, other sites are still refused" "[ \"\$(ws -H 'Origin: https://example.com' $room_url/ws)\" = 403 ]"
   else
     check "live: alone, the core isn't on the network" "[ \"\$(code http://$ip:$port/)\" = 000 ]"
   fi
@@ -71,8 +74,8 @@ else
   warn "app not running on :$port, live probes skipped"
 fi
 
-grep -q 'contributor' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
-grep -q 'e2a2o' run.sh && warn "run.sh names the developer's Keychain item"
+grep -q '"muse-spark-1.2-contributor"' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
+check "run.sh names no other project's Keychain item" "! grep -q 'e2a2o' run.sh"
 # Placeholders the owner still has to decide on (pitch, cover, ...) must not ship unnoticed.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do warn "README still has a $marker placeholder for User to decide"; done
 # So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them.
