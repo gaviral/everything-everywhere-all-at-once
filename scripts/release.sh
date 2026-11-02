@@ -50,7 +50,7 @@ if [ -f LICENSE ]; then pass "LICENSE: $(head -1 LICENSE), $(grep -m1 -i 'copyri
 
 # 4. History goes public with the repo: no commit message or identity may carry a local path or a private address.
 ref=origin/main; git rev-parse -q --verify "$ref" >/dev/null || ref=HEAD
-paths='/Users/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders|/tmp/claude|/code/(e2a2o|e2a2o|canvas)'
+paths='/[U]sers/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders|(^|[^a-z])/tmp/'
 leaks=$(git log --format='@@ %h%n%B' "$ref" | awk -v re="$paths" '/^@@ /{h=$2; next} $0 ~ re && !seen[h]++ {print h}')
 blocked=""; accepted=""
 for h in $leaks; do

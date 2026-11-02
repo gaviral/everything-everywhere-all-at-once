@@ -107,7 +107,7 @@ for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print
 for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at"; done
 grep -q 'timeout' core/src/asr.rs || warn "speech stream has no read timeout"
 # Commit messages go public with the repo; scripts/release.sh lists each one and blocks on it.
-n=$(git log --format=%B HEAD | grep -cE '/Users/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
+n=$(git log --format=%B HEAD | grep -cE '/[U]sers/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
 [ "$n" = 0 ] || warn "commit messages name local paths: scripts/release.sh lists the commits"
 [ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
 exit $failed
