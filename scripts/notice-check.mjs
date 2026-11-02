@@ -77,6 +77,9 @@ try {
   }
   const root = createRoot(element());
   root.render(React.createElement(Window));
+  // The hook opens its socket in an effect; on a busy machine that can take longer than one settle.
+  for (let waited = 0; !sockets.length && waited < 5000; waited += 20) await settle();
+  assert.ok(sockets.length, "useCore opened no socket within 5 s");
   await settle();
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
 
