@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { receiveStep, resetSteps } from "./model-line";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -69,9 +70,9 @@ export type Explanation = { text: string; failed: boolean };
 
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
-// mic off ("stop listening"). The revision makes the same one asked twice a new ask.
+// mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number; answers: number };
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -512,8 +513,8 @@ export function movesAsked(speaker?: string) {
     const change = msg.type === "change" ? msg.change : null;
     const landed = landing;
     if (change?.type !== "thread_touched" && change?.type !== "thread_status") landing = null;
-    // Not Later or the mic: they leave the map as it is.
-    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause"].includes(msg.view))) return true;
+    // Not Later, the mic or an export: they leave the map as it is.
+    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause", "export"].includes(msg.view))) return true;
     if (!speaker || !change) return false;
     if (change.type === "thought_placed" && world.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
       landing = change.thread_id;
@@ -592,6 +593,7 @@ export function useCore(speaker?: string) {
       socket.current = ws;
       ws.onopen = () => {
         resetApps();
+        resetSteps();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
@@ -606,6 +608,7 @@ export function useCore(speaker?: string) {
         if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
+        if (receiveStep(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);
