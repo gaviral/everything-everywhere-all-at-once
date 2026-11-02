@@ -15,6 +15,8 @@
 
 ## Meta models it runs on
 
+Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
+
 | When you… | Meta model | Does | Measured | Proof: [a real run's trace](docs/trace.md) |
 |---|---|---|---|---|
 | talk | Muse Voice Transcribe 1.0 | hears you, live | 0.4 s after you stop | [heard](docs/trace.md#heard) |
