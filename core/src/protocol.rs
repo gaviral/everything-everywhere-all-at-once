@@ -113,8 +113,11 @@ pub enum ClientMsg {
     Mark { kind: String, id: String, off: bool },
     /// Keep or dismiss a suggestion, or dismiss an action.
     Item { id: String, status: crate::world::ItemStatus },
-    /// Approve an action: add it to Reminders or Calendar.
+    /// Approve an action: add it to Reminders or Calendar, or, where they can't be reached, say the window saved it
+    /// as a calendar file (apple.rs `saved`).
     Approve { id: String },
+    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs).
+    Sample,
     /// Keep a suggested hashtag, or remove one.
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.

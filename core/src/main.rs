@@ -17,6 +17,7 @@ mod model;
 mod pictures;
 mod placer;
 mod refiner;
+mod sample;
 mod trace;
 mod recap;
 mod protocol;
@@ -810,6 +811,34 @@ fn is_ask(text: &str, asks: &[&str], tails: &[&str]) -> bool {
     })
 }
 
+/// The map's folder: `E2A2O_DATA`, else `../data` (beside the core's folder, as run.sh starts it).
+pub fn data_dir() -> String {
+    std::env::var("E2A2O_DATA").unwrap_or_else(|_| "../data".into())
+}
+
+/// Run by a service for people who sign in (`E2A2O_HOSTED=1`, set by the deploy): the map lives on its server, not
+/// on anyone's own computer, so the window says so, and a dated item saves as a calendar file instead of going to
+/// Reminders or Calendar (apple.rs `reachable`). Off unless set, so a laptop or a trial link reads as before.
+pub fn hosted() -> bool {
+    std::env::var("E2A2O_HOSTED").is_ok_and(|v| trace::on(&v))
+}
+
+/// The Meta models this core asks, by step, for the first screen: the same settings each step reads (a test below
+/// holds the fixed names to the files that send them). Pictures only while they're on.
+fn models(core: &Core) -> serde_json::Value {
+    let tidy = std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into());
+    let pictures = !std::env::var("PICTURES").is_ok_and(|value| value.eq_ignore_ascii_case("off"));
+    let mut models = vec![
+        serde_json::json!({ "step": "listens", "model": "muse-voice-transcribe-1.0" }),
+        serde_json::json!({ "step": "places", "model": core.placer_model.name() }),
+        serde_json::json!({ "step": "tidies", "model": tidy }),
+    ];
+    if pictures {
+        models.push(serde_json::json!({ "step": "draws", "model": "muse-image-1.0" }));
+    }
+    serde_json::Value::Array(models)
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -830,7 +859,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let room = room_code()?;
     let tunnel = tunnel::Tunnel::from_env(room.as_deref())?;
-    let data = std::env::var("E2A2O_DATA").unwrap_or_else(|_| "../data".into());
+    let data = data_dir();
     let (journal, world) = Journal::open(&Path::new(&data).join("journal.jsonl"))?;
     let pending: Vec<String> = world.thoughts.iter().filter(|t| !t.placed).map(|t| t.id.clone()).collect();
 
@@ -1106,7 +1135,12 @@ async fn room_info(
         && !join.name.trim().is_empty()
         && core.room.as_ref().is_some_and(|room| room.names.lock().unwrap().taken(&speaker_name(&join.name, link.here()), link));
     let tunnel = core.room.as_ref().is_some_and(|room| room.tunnel.is_some());
-    Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel }))
+    // How this core runs, for the window's words: hosted or on someone's computer, whether a dated item goes to
+    // Apple's apps or saves as a calendar file, whether a sample map can fill an empty one, and the models it asks
+    // (only with a key: without one, none runs).
+    let models = if core.key.is_some() { models(&core) } else { serde_json::json!([]) };
+    Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
+        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "models": models }))
 }
 
 /// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
@@ -1299,11 +1333,17 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     audio = Some(start_listening(&core, &speaker, &listens));
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
+                Ok(ClientMsg::Sample) => sample::fill(&core, &speaker),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }
                 Ok(ClientMsg::Item { id, status }) => apple::item(&core, id, status),
+                // Where Apple's apps can't be reached, the window saved it as a calendar file on its own computer, so
+                // it's anyone's to save.
+                Ok(ClientMsg::Approve { id }) if !apple::reachable() => {
+                    apple::saved(&core, &id);
+                }
                 // It goes into Reminders or Calendar on the laptop running the core, so it's that person's call.
                 Ok(ClientMsg::Approve { id }) if here => {
                     tokio::spawn(apple::approve(core.clone(), id));
@@ -2659,6 +2699,25 @@ mod tests {
         for path in [path, alone_path] {
             let _ = std::fs::remove_file(path);
         }
+    }
+
+    /// The first screen names the Meta models each step asks (`models`): the names are the ones those steps send,
+    /// so a renamed model can't leave the screen naming the old one. Pictures only while they're on.
+    #[test]
+    fn the_models_on_the_first_screen_are_the_ones_each_step_asks() {
+        let (core, _queue, path) = test_core(None);
+        let models = super::models(&core);
+        let named = |step: &str| models.as_array().unwrap().iter().find(|m| m["step"] == step).map(|m| m["model"].as_str().unwrap().to_string());
+        assert_eq!(named("places").as_deref(), Some(core.placer_model.name()));
+        let sources = [("listens", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("draws", include_str!("pictures.rs"))];
+        for (step, source) in sources {
+            let Some(model) = named(step) else {
+                assert!(step == "draws" && std::env::var("PICTURES").is_ok_and(|v| v.eq_ignore_ascii_case("off")), "{step} is named");
+                continue;
+            };
+            assert!(model.starts_with("muse-") && source.contains(&format!("\"{model}\"")), "{step}: {model}");
+        }
+        let _ = std::fs::remove_file(&path);
     }
 
     /// The sample is a judge's first map, and its tour says to type "where was I?": that goes where the unfinished
