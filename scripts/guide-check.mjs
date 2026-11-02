@@ -129,7 +129,13 @@ const guide = (kind, target, text, by = "Claude") => core.send({ type: "guide", 
 // Never stuck: past 3 minutes (it takes about one), it fails naming the step it was on.
 let doing = "opening the page";
 const step = (name) => { doing = name; };
-setTimeout(() => { console.error(`guide-check: stuck at “${doing}” after 3 minutes`); core.close(); process.exit(1); }, 180_000).unref();
+setTimeout(async () => {
+  console.error(`guide-check: stuck at “${doing}” after 3 minutes`);
+  core.close();
+  // Its browser too, or it outlives the check (it did once, before this).
+  await Promise.race([page?.close(), sleep(4000)]).catch(() => {});
+  process.exit(1);
+}, 180_000).unref();
 
 let page = null;
 let failed = null;
