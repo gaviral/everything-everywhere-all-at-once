@@ -18,6 +18,9 @@
 //    was there; a drag places a point where it's dropped (asked as a position, a mark left on its line) and its pin puts
 //    it back; a thread opens on the map. In the app: a landing from the core pulses, a place someone else gave moves the
 //    point there, and a drag reaches the core as a position.
+// Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
+//    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
+//    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -192,6 +195,42 @@ try {
   }
   // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
   await width(1280, 860);
+  // Tiny transcript: a panel that takes the live words from the dock (`showsLiveWords`); nothing before words are
+  // said, nor for a typed thought; said words show as they come, inside a 320 px screen's edges, and stay with the
+  // first-use hint after the turn ends (time to try the slider) until a click dismisses both, for good.
+  if (checked.includes("tiny-transcript")) {
+    const where = "tiny-transcript (empty map, 320 px)";
+    const info = infos["./bricks/tiny-transcript/brick.json"];
+    if (info.kind !== "panel") fail("tiny-transcript", "brick.json: a panel, as its spec says");
+    if (info.showsLiveWords !== true) fail("tiny-transcript", "brick.json: showsLiveWords true, so the dock's big line leaves the words to it");
+    const press = (label) => evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+    const shownNow = () => evaluate(`document.querySelector(".tiny-transcript-text")?.textContent ?? ""`);
+    await width(320, 844);
+    await go(`${base}/bricks.html?brick=tiny-transcript&sample=empty`);
+    await until(`document.querySelector(".playground")?.dataset.brickShown === "tiny-transcript"`, 8000);
+    await settle();
+    if (await evaluate(`!!document.querySelector(".tiny-transcript")`)) fail(where, "shows a transcript before anything is said");
+    await press("Add a thought");
+    await sleep(1600);
+    if (await evaluate(`!!document.querySelector(".tiny-transcript")`)) fail(where, "shows a typed thought: only words as they're said");
+    await press("Say a thought");
+    if (!await until(`!!document.querySelector(".tiny-transcript-text")`, 1000)) fail(where, "doesn't show your words as you say them");
+    else {
+      const first = await shownNow();
+      if (!await until(`(document.querySelector(".tiny-transcript-text")?.textContent ?? "").length > ${first.length}`, 1500)) fail(where, "the words don't grow as you talk");
+      const box = await evaluate(`(() => { const r = document.querySelector(".tiny-transcript-text").getBoundingClientRect(); return { left: r.left, right: r.right, width: innerWidth }; })()`);
+      if (box.left < 7.5 || box.right > box.width - 7.5) fail(where, "the transcript runs past the screen's edges");
+      // The turn ends (the playground's "Say a thought": a word every 250 ms, the end 600 ms after the last).
+      if (!await until(`document.querySelector(".playground-map").textContent.includes("2 placed")`, 6000)) fail(where, "the thought said never landed");
+      if (!await evaluate(`!!document.querySelector(".tiny-transcript-hint input[type=range]") && !!document.querySelector(".tiny-transcript-text")`)) fail(where, "the first-use hint left with the turn, before it was dismissed");
+      await evaluate(`document.body.click()`);
+      if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail(where, "keeps showing words once the turn is over and the hint dismissed");
+      await press("Say a thought");
+      if (!await until(`!!document.querySelector(".tiny-transcript-text")`, 1000)) fail(where, "doesn't show your words the second time");
+      else if (await evaluate(`!!document.querySelector(".tiny-transcript-hint")`)) fail(where, "the first-use hint came back once dismissed");
+    }
+    await width(1280, 860);
+  }
   if (checked.includes("_template")) {
     await go(`${base}/bricks.html?brick=_template&sample=student-week`);
     await until(`!!document.querySelector(".template")`, 8000);
@@ -359,6 +398,25 @@ try {
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);
   assert.deepEqual(await views(), ["Map", "Palace"], "at their defaults, no brick joins Map and Palace");
   await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+  // Tiny transcript off (its default): the dock's big line shows your words, as ever. A tab takes live words only while
+  // its own mic is on, so the mic starts first, as live-page-check starts it: a stand-in microphone (a tone through a
+  // real MediaStream) and a real tap.
+  const tiny = appBricks.find((info) => info.id === "tiny-transcript");
+  const tapMic = async () => {
+    const at = await evaluate(`(() => { const r = document.querySelector("button.mic").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+  };
+  if (tiny) {
+    await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(); const tone = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+    await tapMic();
+    if (!await until(`!!document.querySelector(".status.capturing")`, 5000)) fail("the dock", "a tap on the mic didn't start it, so no live words reach this tab");
+    core.send({ type: "partial", text: "The rent is due" });
+    if (!await until(`document.querySelector(".dock .live.words")?.textContent.includes("The rent is due")`, 3000)) fail("the dock", "with Tiny transcript off, its live line doesn't show your words");
+    core.send({ type: "partial", text: "" });
+    // Its first-use hint is checked in the playground; here it would only cover the dock.
+    await evaluate(`localStorage.setItem("e2a2o.brick.tiny-transcript.hinted", "true")`);
+  }
   await evaluate(`document.querySelector(".apps-title").click()`);
   await until(`!!document.querySelector(".apps-catalog button")`, 3000);
   await evaluate(`document.querySelector(".apps-catalog button").click()`);
@@ -367,12 +425,36 @@ try {
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
-  for (const { name } of viewBricks) {
+  for (const { name } of [...viewBricks, ...(tiny ? [tiny] : [])]) {
     await evaluate(`${switchFor(name)}.click()`);
     if (await evaluate(`${switchFor(name)}.getAttribute("aria-checked")`) !== "true") fail("Catalog", `${name}'s switch didn't turn on`);
   }
   await evaluate(`document.querySelector(".catalog-close").click()`);
   if (!await until(`!document.querySelector("dialog.catalog")`, 2000)) fail("Catalog", "× doesn't close it");
+  // Tiny transcript on: your words from the core show in it, 11 px, and not in the dock (never twice); a long turn
+  // keeps its newest words in view, its start behind the "…"; at the turn's end the words go.
+  if (tiny) {
+    const long = "So for the garden this year it's tomatoes along the fence, beans up the trellis, and the herbs by the kitchen door where the morning light is best";
+    core.send({ type: "partial", text: long });
+    if (!await until(`document.querySelector(".tiny-transcript-text")?.textContent === ${JSON.stringify(long)}`, 3000)) fail("Tiny transcript", "switched on, it doesn't show your words as they're heard");
+    else {
+      if (await evaluate(`!!document.querySelector(".dock .live")`)) fail("Tiny transcript", "the dock's big line still shows: your words show twice");
+      const line = await evaluate(`(() => {
+        const text = document.querySelector(".tiny-transcript-text"), box = text.getBoundingClientRect(), style = getComputedStyle(text);
+        // The words under the line's right end, just inside its padding: the newest ones.
+        const at = document.caretRangeFromPoint(box.right - parseFloat(style.paddingRight) - 2, box.top + box.height / 2);
+        return { size: style.fontSize, clipped: text.scrollWidth > text.clientWidth || text.querySelector("bdi").getBoundingClientRect().left < box.left,
+          end: at && text.contains(at.startContainer) ? at.startOffset : -1 };
+      })()`);
+      if (line.size !== "11px") fail("Tiny transcript", `its words are ${line.size}, not 11 px`);
+      if (!line.clipped) fail("Tiny transcript", "the long turn fits, so its end isn't checked (make it longer)");
+      if (line.end < long.length - 3) fail("Tiny transcript", `a long turn shows its start, not the words being said now (the line ends at character ${line.end} of ${long.length})`);
+    }
+    core.send({ type: "partial", text: "" });
+    if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
+    await tapMic();
+    if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
+  }
   const switched = ["Map", "Palace", ...viewBricks.map((info) => info.name)].join();
   if ((await views()).join() !== switched) fail("Catalog", `switched on, the view switch says ${await views()}, not ${switched}`);
   // Each view shows in the map's place, with something in it, and Map brings the map back.

@@ -77,7 +77,13 @@ try {
   assert.equal(line({ view: "palace", starting: true, listening: false }), true, "starting the mic still answers the click");
   assert.equal(line({ pending: 1 }), false, "a pending thought takes the line's place");
   assert.equal(line({ listening: false }), false);
+  // A brick that shows the live words itself (Tiny transcript) takes the line: the words never show twice.
+  assert.equal(line({ words: true, wordsElsewhere: true }), false, "words shown by a brick stay out of the dock");
+  assert.equal(line({ wordsElsewhere: true }), false, "no place kept for words that won't come");
+  assert.equal(line({ starting: true, listening: false, wordsElsewhere: true }), false, "the composer and the mic say it's starting");
   assert.match(app, /\{showsLiveLine\(\{[^}]*view \}\) && <div/, "the dock is wired to the rule");
+  assert.match(app, /showsLiveLine\(\{[^}]*\bwordsElsewhere, view \}\)/, "the dock hears which bricks show the words");
+  assert.match(app, /const wordsElsewhere = BRICKS\.some\(\(brick\) => brick\.info\.showsLiveWords && bricksOn\.has\(brick\.info\.id\)\);/, "…from the bricks on");
   assert.match(app, /className=\{view === "palace" \? "dock in-palace" : "dock"\}/, "the dock knows it is over the Palace");
   assert.match(palace, /\.dock\.in-palace \.dock-inner > :empty \{ display: none; \}/, "empty dock slots give their gaps back over the Palace");
   const top = +palace.match(/\n\.palace \{[^}]*padding:\s*(\d+)px/)[1];

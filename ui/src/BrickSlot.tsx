@@ -12,10 +12,12 @@ import "./bricks.css";
 export type BrickHost = { map: MapSnapshot; actions: BrickActions; on: BrickOn };
 
 /** This window's host: the map from its world (`revision`: the core's snapshot count, so a reconnect's catch-up isn't
- *  taken for landings), the app's own actions (`act`, the latest each render, behind actions that keep their
- *  identity), and events: landings seen here, and the mic's loudness as the core is sent it (apps-audio.ts). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, act: BrickActions): BrickHost {
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms), [world, me, connected, rooms]);
+ *  taken for landings) with this window's live words (`partial`: a new map with each word heard; the arrays stay the
+ *  same, so a brick that works from them redoes nothing), the app's own actions (`act`, the latest each render,
+ *  behind actions that keep their identity), and events: landings seen here, and the mic's loudness as the core is
+ *  sent it (apps-audio.ts). */
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: BrickActions): BrickHost {
+  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial), [world, me, connected, rooms, partial]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const actions = useMemo<BrickActions>(() => ({
