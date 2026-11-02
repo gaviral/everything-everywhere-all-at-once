@@ -194,7 +194,7 @@ Spoken commands are recognized by rule, with no model call, and only as a whole 
 - **Getting back:** “where was I?”, “next one”, “last one”, “Finish it”, “Later”, “forget it”.
 - **Finding:** “where did I talk about …?”, “take me back to …”, “go to the one about …”.
 - **Views:** “palace”, “map”, “focus on this”, “show all”, “expand everything”, “collapse this”, “what can I say?”.
-- **Filing:** “add milk to the shopping list”, “new thread about …”, “move that to the pottery thread”, “rename this to …”.
+- **Filing:** “add milk to the shopping list”, “new thread about …”, “move that to the pottery thread”, “rename this to …”, “delete this”.
 - **Actions:** “add it to Reminders”, “keep it” or “discard it” for an app, “stop listening”.
 - **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” undoes it. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
 
@@ -272,7 +272,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
 - From the end of speech to the map: median 3.6 s, slowest 5.1 s with Contributor mode (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
-- Placing is a model's judgment. You can move a thought and rename a thread yourself, by voice or click, with Undo; you can't merge or split threads yourself, except by applying the refiner's proposals, nor move a whole thread under another.
+- Placing is a model's judgment. You can move or delete a thought and rename a thread yourself, by voice or click, with Undo; you can't merge or split threads yourself, except by applying the refiner's proposals, nor move a whole thread under another.
 - A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
 - Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land long after you stop (27 s in one measured run: three speakers at once in a room, with `scripts/voice.mjs`); talking alone at a normal pace keeps up (3 to 4 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.

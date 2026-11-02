@@ -3,32 +3,69 @@ import type { Thought, Thread } from "./core";
 import { moveTargets, typedTitle } from "./moves-core";
 import "./moves.css";
 
-// Move and rename on the map (core/src/moves.rs): a point's Move opens a list of threads to send it to (type to narrow
-// it, as Things' Move does), or drag Move onto a card; a click on a title renames the thread. Both answer with a notice
-// that carries Undo, as saying "move that to …" or "rename this to …" does: one definition for both (catalog.rs).
-type Moves = { threads: Thread[]; move: (thoughtId: string, threadId: string | null) => void; rename: (threadId: string, title: string) => void };
+// Move, rename and delete on the map (core/src/moves.rs): a point's Move opens a list of threads to send it to (type to
+// narrow it, as Things' Move does), or drag Move onto a card; a click on a title renames the thread; a point's Delete,
+// or the Delete key on a focused point, takes it off the map. Each answers with a notice that carries Undo, as saying
+// "move that to …", "rename this to …" or "delete this" does: one definition for each (catalog.rs).
+type Moves = {
+  threads: Thread[];
+  move: (thoughtId: string, threadId: string | null) => void;
+  rename: (threadId: string, title: string) => void;
+  remove?: (thoughtId: string) => void;
+};
 const MovesContext = createContext<Moves | null>(null);
 
-export function MovesProvider({ threads, move, rename, children }: Moves & { children: ReactNode }) {
-  const value = useMemo(() => ({ threads, move, rename }), [threads, move, rename]);
+export function MovesProvider({ threads, move, rename, remove, children }: Moves & { children: ReactNode }) {
+  const value = useMemo(() => ({ threads, move, rename, remove }), [threads, move, rename, remove]);
+  // Delete or Backspace on a focused point (not one of its buttons, not a field) deletes it, as its Delete does. One
+  // listener for the map, so the point itself keeps no key handler (its Words said button is its keyboard path).
+  useEffect(() => {
+    if (!remove) return;
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      const point = event.target instanceof HTMLElement && event.target.matches("li[id^='point-']") ? event.target : null;
+      if (!point) return;
+      event.preventDefault();
+      focusAfter(point);
+      remove(point.id.slice("point-".length));
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [remove]);
   return <MovesContext.Provider value={value}>{children}</MovesContext.Provider>;
 }
 
 /** What a dragged point carries: its id, under a type only this map reads, so a drag from elsewhere moves nothing. */
 export const DRAG_TYPE = "application/x-e2a2o-thought";
 
-/** A point's Move: a click opens the list, a drag drops it on another card. */
+/** Where focus goes once a point leaves the map, so the keyboard carries on: the next point, else the one before,
+ *  else its card's title (Things moves the selection the same way). Before it goes, while its neighbors are known. */
+function focusAfter(point: HTMLElement | null) {
+  const next = point?.nextElementSibling ?? point?.previousElementSibling;
+  const target = next instanceof HTMLElement && next.matches("li[id^='point-']") ? next
+    : point?.closest(".thread")?.querySelector<HTMLElement>(".title-button") ?? null;
+  target?.focus();
+}
+
+/** A point's Delete and Move: Delete takes it off the map (Undo on the notice brings it back); Move's click opens the
+ *  list, its drag drops it on another card. */
 export function MovePoint({ thought }: { thought: Thought }) {
   const moves = useContext(MovesContext);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   if (!moves) return null;
+  const remove = moves.remove;
   const close = (refocus: boolean) => {
     setOpen(false);
     if (refocus) button.current?.focus();
   };
   return (
     <span className="move-point">
+      {remove && (
+        <button type="button" className="move-button delete-button" aria-label={`Delete “${thought.point}”`}
+          onClick={(event) => { focusAfter(event.currentTarget.closest("li")); remove(thought.id); }}>Delete</button>
+      )}
       <button ref={button} type="button" className="move-button" draggable aria-expanded={open} aria-haspopup="true"
         aria-label={`Move “${thought.point}” to another thread`}
         onClick={() => setOpen((was) => !was)}

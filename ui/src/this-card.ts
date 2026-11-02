@@ -27,19 +27,44 @@ export function selectedThread(doc: Document): string | null {
   return null;
 }
 
-/** Calls `report` with the selected and pointed card whenever either changes; returns the way to stop. */
-export function watchAttention(report: (selected: string | null, pointed: string | null) => void, doc: Document = document): () => void {
+/** The point a node sits in (`point-<thought id>`), for "delete this" (core moves.rs). */
+export function pointOf(node: Node | null): string | null {
+  const element = node && "closest" in node ? (node as Element) : node?.parentElement ?? null;
+  const id = element?.closest<HTMLElement>("li[id^='point-']")?.id;
+  return id?.startsWith("point-") ? id.slice("point-".length) : null;
+}
+
+/** The selected point, as `selectedThread` picks a card: words selected in it, else keyboard focus in it. */
+export function selectedPoint(doc: Document): string | null {
+  const selection = doc.getSelection();
+  if (selection && !selection.isCollapsed) {
+    const point = pointOf(selection.anchorNode);
+    if (point) return point;
+  }
+  const active = doc.activeElement;
+  if (active && active !== doc.body && active.matches(":focus-visible")) return pointOf(active);
+  return null;
+}
+
+/** Calls `report` with the selected and pointed card, and the point you're on (selected, else under the pointer),
+ *  whenever any changes; returns the way to stop. */
+export function watchAttention(report: (selected: string | null, pointed: string | null, point: string | null) => void, doc: Document = document): () => void {
   let selected: string | null = null;
   let pointed: string | null = null;
-  const update = (nextPointed: string | null) => {
+  let point: string | null = null;
+  let pointer: string | null = null;
+  const update = (nextPointed: string | null, nextPointer: string | null = pointer) => {
     const nextSelected = selectedThread(doc);
-    if (nextSelected === selected && nextPointed === pointed) return;
+    const nextPoint = selectedPoint(doc) ?? nextPointer;
+    pointer = nextPointer;
+    if (nextSelected === selected && nextPointed === pointed && nextPoint === point) return;
     selected = nextSelected;
     pointed = nextPointed;
-    report(selected, pointed);
+    point = nextPoint;
+    report(selected, pointed, point);
   };
-  const over = (event: PointerEvent) => update(threadOf(event.target as Node));
-  const left = () => update(null);
+  const over = (event: PointerEvent) => update(threadOf(event.target as Node), pointOf(event.target as Node));
+  const left = () => update(null, null);
   // Focus leaves one element before it reaches the next: read it once it has landed.
   let timer = 0;
   const reselect = () => { clearTimeout(timer); timer = setTimeout(() => update(pointed), 0) as unknown as number; };
@@ -90,9 +115,10 @@ export function attentionTeller() {
   let now: Attending = { selected: null, pointed: null, left: null };
   const watchers = new Set<() => void>();
   return {
-    tell(selected: string | null, pointed: string | null, send: (message: string) => unknown) {
+    tell(selected: string | null, pointed: string | null, send: (message: string) => unknown, point: string | null = null) {
       now = attend(now, selected, pointed, Date.now());
-      last = JSON.stringify({ type: "attention", selected, pointed });
+      // The point only when there is one: the core reads a missing one as none.
+      last = JSON.stringify({ type: "attention", selected, pointed, ...(point ? { point } : {}) });
       send(last);
       for (const watcher of watchers) watcher();
     },

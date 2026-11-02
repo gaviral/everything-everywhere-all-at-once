@@ -775,7 +775,7 @@ export default function App() {
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
           <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
           <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
-          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title</div>
+          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title · “Delete this” · the point you're on, else your last; or a point's Delete</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
@@ -856,7 +856,7 @@ export default function App() {
         ) : (
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
-          <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
+          <MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider>
           </TidyProvider>

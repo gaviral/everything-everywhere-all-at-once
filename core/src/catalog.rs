@@ -56,6 +56,7 @@ pub enum Act {
     Undo,
     Move,
     Rename,
+    Delete,
 }
 
 /// What a request needs before it can act; without it, it answers why not (never a silent thought).
@@ -76,6 +77,8 @@ pub enum Needs {
     Question,
     /// The speaker's previous turn, within `JUST_BEFORE_MS`.
     LastTurn,
+    /// A thought on the map: the point the speaker points at or focused, else their latest.
+    Thought,
 }
 
 /// How a request is undone.
@@ -138,6 +141,7 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::Fold, does: "fold a thread and every branch under it", template: Some("collapse <thread title>"), phrases: &["Collapse this", "Fold the garden"], needs: Needs::Thread, answers: "the thread folds: “Folded …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Hide") },
     Def { act: Act::Move, does: "move a thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there: “Moved to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
     Def { act: Act::Rename, does: "rename a thread", template: Some("rename this to <words>"), phrases: &["Rename this to Pottery class", "Rename the garden thread to Backyard", "Call this thread Pottery class"], needs: Needs::Thread, answers: "the title changes: “Renamed to …”", undo: UndoBy::Retitle, external: false, button: Some("rename") },
+    Def { act: Act::Delete, does: "delete a thought from the map", template: None, phrases: &["Delete this thought", "Delete this", "Forget the last one", "Remove my last thought"], needs: Needs::Thought, answers: "the point goes: “Deleted …”", undo: UndoBy::Restore, external: false, button: Some("delete") },
     Def { act: Act::Palace, does: "switch to the Palace of pictures", template: Some("palace"), phrases: &["Palace", "Go to the palace"], needs: Needs::Nothing, answers: "the Palace shows", undo: UndoBy::ViewBack, external: false, button: Some("Palace") },
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
     Def { act: Act::Focus, does: "show only one thread", template: Some("focus"), phrases: &["Focus", "Let's focus", "Focus on this"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
@@ -317,6 +321,9 @@ struct Attention {
     selected: Option<String>,
     pointed: Option<String>,
     left: Option<(String, u64)>,
+    /// The point (a thought id) focused or under the pointer, and the last one it left, for "delete this".
+    point: Option<String>,
+    point_left: Option<(String, u64)>,
 }
 
 #[derive(Default)]
@@ -363,7 +370,7 @@ const POINTER_MS: u64 = 2_000;
 /// is a notice the person is looking at.
 pub fn did(core: &Core, speaker: &str, said: &str, done: Done) {
     let id = remember(core, speaker, said, Was::Request { act: done.act, undo: done.undo.clone() });
-    if done.undo.is_some() && matches!(done.act, Act::File | Act::NewThreadAbout | Act::Unfold | Act::Fold | Act::Move | Act::Rename) {
+    if done.undo.is_some() && matches!(done.act, Act::File | Act::NewThreadAbout | Act::Unfold | Act::Fold | Act::Move | Act::Rename | Act::Delete) {
         core.send_to(speaker, ServerMsg::Undoable { id });
     }
 }
@@ -413,6 +420,27 @@ pub fn attend(core: &Core, speaker: &str, selected: Option<String>, pointed: Opt
     }
     a.selected = selected;
     a.pointed = pointed;
+}
+
+/// The point the window says the speaker is on (focused, else under the pointer), as a thought id; None when neither.
+pub fn attend_point(core: &Core, speaker: &str, point: Option<String>) {
+    let mut all = core.catalog.attention.lock().unwrap();
+    let a = all.entry(speaker.into()).or_default();
+    if a.point != point {
+        if let Some(was) = a.point.take() {
+            a.point_left = Some((was, now_ms()));
+        }
+    }
+    a.point = point;
+}
+
+/// What "delete this" means for a speaker: the point they focused or point at (or the one the pointer left within
+/// `POINTER_MS`), while it's on the map; None leaves it to their latest thought (moves.rs).
+pub fn this_thought(core: &Core, world: &World, speaker: &str) -> Option<String> {
+    let a = core.catalog.attention.lock().unwrap().get(speaker).cloned().unwrap_or_default();
+    let on_map = |id: &String| world.thoughts.iter().any(|t| &t.id == id).then(|| id.clone());
+    let left = a.point_left.as_ref().filter(|(_, at)| now_ms().saturating_sub(*at) <= POINTER_MS).map(|(id, _)| id);
+    a.point.as_ref().and_then(on_map).or_else(|| left.and_then(on_map))
 }
 
 /// What "this" means for a speaker: the thread they selected, else the one under their pointer (or the one it left
@@ -533,6 +561,12 @@ const SCRATCH: [&str; 14] = [
     "i take it back", "delete that", "remove that", "delete that note", "remove that note", "cancel that",
 ];
 
+/// A "scratch that" said as a delete ("delete that", "remove that note"): with nothing to take back, it deletes.
+fn deletes(text: &str) -> bool {
+    let t = crate::lead_in(text).trim_start_matches(|c: char| !c.is_alphanumeric()).to_ascii_lowercase();
+    ["delete ", "remove "].iter().any(|verb| t.starts_with(verb))
+}
+
 /// Leads that only start a correction. "I mean" and "I said" also start talk ("I said I'd call her"), so they need a
 /// "no" before them; "I meant to" is talk ("I meant to call Mom") unless it's "I meant to say".
 const STRONG: [&str; 14] = [
@@ -611,15 +645,21 @@ pub fn correct(core: &Arc<Core>, speaker: &str, text: &str, search: bool) -> boo
         Correction::Scratch => {
             match previous {
                 Some(previous) => scratch(core, speaker, text, previous),
+                // "Delete that" with nothing just before to take back: a thought, as "delete this" reads it (the
+                // point you're on, else your latest), with Undo.
+                None if deletes(text) => {
+                    let done = crate::moves::delete_said(core, speaker, false);
+                    did(core, speaker, text, done);
+                }
                 None => core.send_to(speaker, ServerMsg::Notice { message: "Nothing to undo: nothing said just before".into() }),
             }
             return true;
         }
         Correction::Redo { rest, strong } => (rest, strong),
     };
-    // "No, that goes in the pottery thread", "No, rename it Pottery class": a repair of the map that acts on the
-    // words said before, so they stay (moves.rs), and nothing before is undone.
-    if classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename)) {
+    // "No, that goes in the pottery thread", "No, rename it Pottery class", "No, delete this": a repair of the map
+    // that acts on the words said before, so they stay (moves.rs), and nothing before is undone.
+    if classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename | Act::Delete)) {
         if let Some(done) = core.request(speaker, rest, search) {
             did(core, speaker, text, done);
             return true;
@@ -733,6 +773,37 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     Some(Undo::Restore { thoughts, threads })
 }
 
+/// Takes exactly these thoughts off the map, a delete by hand (moves.rs): `ThoughtSkipped`, so the journal keeps their
+/// words and replay takes them off again. Unlike `unkeep`, a turn's other parts stay (each is its own point), and a
+/// thread they leave empty leaves the map rather than joining another: deleting says nothing about where talk goes.
+/// Undo puts both back.
+pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
+    let world = core.snapshot();
+    let thoughts: Vec<Thought> = world.thoughts.iter().filter(|t| ids.contains(&t.id)).cloned().collect();
+    if thoughts.is_empty() {
+        return None;
+    }
+    let gone = |t: &Thought| ids.contains(&t.id);
+    let mut changes: Vec<Change> = thoughts.iter().map(|t| Change::ThoughtSkipped { thought_id: t.id.clone() }).collect();
+    let mut on: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
+    on.sort();
+    on.dedup();
+    let (mut threads, mut kept) = (Vec::new(), Vec::new());
+    for id in on {
+        let Some(thread) = world.thread(&id) else { continue };
+        if empty_without(&world, &id, &gone) {
+            changes.push(Change::ThreadRemoved { thread_id: id });
+            threads.push(thread.clone());
+        } else {
+            kept.push(id);
+        }
+    }
+    changes.extend(repoint(&world, &kept, &thoughts));
+    drop(world);
+    core.commit(changes);
+    Some(Undo::Restore { thoughts, threads })
+}
+
 /// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other thought, no branch.
 fn empty_without(world: &World, id: &str, gone: &dyn Fn(&Thought) -> bool) -> bool {
     !world.thoughts.iter().any(|t| t.thread_id.as_deref() == Some(id) && !gone(t))
@@ -770,8 +841,8 @@ fn redo(core: &Arc<Core>, speaker: &str, said: &str, rest: &str, previous: Last,
             run_undo(core, speaker, undo);
         }
     }
-    // A move or a rename acts on the words said before (moves.rs): they stay on the map.
-    let repairs = classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename));
+    // A move, a rename or a delete acts on the words said before (moves.rs): they stay on the map.
+    let repairs = classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename | Act::Delete));
     let kept = match &previous.was {
         Was::Kept { ids } if !repairs => Some(ids),
         _ => None,
@@ -851,7 +922,7 @@ fn took_off(core: &Arc<Core>, speaker: &str, turn: u64, ids: &[String], rest: &s
 }
 
 /// At most 8 words of `text`, for a notice.
-fn short(text: &str) -> String {
+pub(crate) fn short(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let cut = words.iter().take(8).copied().collect::<Vec<_>>().join(" ");
     let cut = cut.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();

@@ -116,6 +116,8 @@ pub async fn run(core: Arc<Core>) {
         }
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
+        // A thought deleted since the last pass: the next ones count as new from here.
+        seen_thoughts = seen_thoughts.min(placed);
         let new_thoughts = placed.saturating_sub(seen_thoughts);
         let new_threads = world.threads.len() > seen_threads;
         let quiet = core.quiet_ms() >= 4_000;
@@ -152,6 +154,7 @@ pub async fn run(core: Arc<Core>) {
 fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
     let world = core.snapshot();
     drop_stale_titles(&mut answer, sent, &world);
+    drop_deleted(&mut answer, sent, &world);
     let changes = changes(&world, answer);
     tracing::info!("refiner pass {when}: {} changes", changes.len());
     if !changes.is_empty() {
@@ -167,6 +170,28 @@ fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
     let heard: HashSet<&str> =
         now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
     pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
+}
+
+/// Leaves out everything a pass says about a thread that lost a thought while the model read it (deleted, or taken
+/// back by "scratch that"): its title, idea, question, task, tags or merge may come from those words, and the person
+/// took them off the map. The next pass reads the thread without them.
+fn drop_deleted(pass: &mut Pass, sent: &World, now: &World) {
+    let kept: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
+    let lost: HashSet<String> = sent.thoughts.iter()
+        .filter(|t| t.placed && !kept.contains(t.id.as_str()))
+        .filter_map(|t| t.thread_id.as_deref())
+        .flat_map(|id| [id.to_string(), sent.resolve(id), now.resolve(id)])
+        .collect();
+    if lost.is_empty() {
+        return;
+    }
+    let ok = |id: &str| !lost.contains(id);
+    pass.titles.retain(|t| ok(&t.thread_id));
+    pass.merges.retain(|m| ok(&m.from) && ok(&m.into));
+    pass.suggestions.retain(|i| ok(&i.thread_id));
+    pass.questions.retain(|i| ok(&i.thread_id));
+    pass.actions.retain(|a| ok(&a.thread_id));
+    pass.tags.retain(|t| ok(&t.thread_id));
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -648,7 +673,8 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, drop_stale_titles, existing, named_at, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, drop_deleted, drop_stale_titles, existing, land, named_at, rest_ms, Pass};
+    use crate::Core;
     use crate::tidy::Kind;
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
@@ -1218,6 +1244,43 @@ mod tests {
             now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
             assert_eq!(titles(&now), ["T2 proposes title Grocery list"], "placed: {placed}");
         }
+    }
+
+    #[test]
+    fn a_pass_says_nothing_about_a_thread_whose_thought_was_deleted_while_it_was_out() {
+        let sent = map(&[("T1", "Rent", &["Pay rent on Friday.", "Ask Sam to cancel the lease."]), ("T2", "Groceries", &["Buy oat milk."])]);
+        let pass = || -> Pass {
+            serde_json::from_value(serde_json::json!({
+                "titles": [{"thread_id": "T1", "title": "Lease"}, {"thread_id": "T2", "title": "Groceries and milk"}],
+                "suggestions": [{"thread_id": "T1", "text": "Email Sam about the lease"}, {"thread_id": "T2", "text": "Check the pantry first"}],
+                "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Ask Sam to cancel the lease", "when": ""}],
+                "tags": [{"thread_id": "T1", "tags": ["#home"]}],
+                "merges": [{"from": "T2", "into": "T1"}]
+            }))
+            .unwrap()
+        };
+        let landed = |now: &World| {
+            let mut p = pass();
+            drop_deleted(&mut p, &sent, now);
+            shown(&changes_on(now, p, TODAY))
+        };
+        assert!(landed(&sent).iter().any(|l| l.starts_with("T1")), "nothing deleted: the pass stands");
+        // "Ask Sam to cancel the lease" deleted while the model read it: nothing from it lands, the other thread's does.
+        let mut now = sent.clone();
+        let gone = now.thoughts.iter().find(|t| t.text.starts_with("Ask Sam")).unwrap().id.clone();
+        now.apply(&Change::ThoughtSkipped { thought_id: gone });
+        let out = landed(&now);
+        assert!(out.iter().all(|l| !l.starts_with("T1") && !l.contains("into T1") && !l.contains("lease")), "{out:?}");
+        assert!(out.iter().any(|l| l.starts_with("T2")), "{out:?}");
+        // And `land` reads it that way: a live core's map never shows it.
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let core = Core::test(journal, now.clone());
+        land(&core, pass(), &sent, "test");
+        let after = core.snapshot();
+        let _ = std::fs::remove_file(&path);
+        assert!(after.actions.is_empty() && after.suggestions.iter().all(|s| s.thread_id != "T1"), "{:?}", after.suggestions);
+        assert_eq!(after.thread("T1").unwrap().title, "Rent");
     }
 
     #[test]

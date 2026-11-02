@@ -120,6 +120,9 @@ pub enum ClientMsg {
         selected: Option<String>,
         #[serde(default)]
         pointed: Option<String>,
+        /// The point (thought id) focused, else under the pointer: what "delete this" means (moves.rs).
+        #[serde(default)]
+        point: Option<String>,
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
@@ -136,6 +139,8 @@ pub enum ClientMsg {
     },
     /// A title typed on a thread's card (moves.rs).
     Rename { thread_id: String, title: String },
+    /// The point's Delete: the thought (with the words it carries on) off the map, with Undo (moves.rs).
+    Delete { thought_id: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.
