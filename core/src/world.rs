@@ -262,6 +262,9 @@ pub enum Change {
     SuggestionAdded { suggestion: Suggestion },
     ActionProposed { action: Action },
     ItemStatus { id: String, status: ItemStatus, done_ms: Option<u64> },
+    /// A waiting idea or task goes with the words it was made from to another thread (moves.rs `made_from`): a move,
+    /// or that move's Undo.
+    ItemMoved { id: String, thread_id: String },
     /// The refiner brought a waiting idea or task in line with something said after it (refiner.rs `refine`): `now`
     /// is what it became (dismissed when cancelled, done or no longer true; else a new day or wording), `was` what
     /// it was, for Undo, and `why` the later words in short ("conference cancelled").
@@ -546,6 +549,17 @@ impl World {
             Change::ThreadPicture { thread_id, path } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.picture = Some(path.clone());
+                }
+            }
+            Change::ItemMoved { id, thread_id } => {
+                let to = self.resolve(thread_id);
+                if self.thread(&to).is_some() {
+                    if let Some(s) = self.suggestions.iter_mut().find(|s| &s.id == id) {
+                        s.thread_id = to.clone();
+                    }
+                    if let Some(a) = self.actions.iter_mut().find(|a| &a.id == id) {
+                        a.thread_id = to;
+                    }
                 }
             }
             Change::ItemStatus { id, status, done_ms } => {
@@ -1286,6 +1300,7 @@ mod tests {
                 },
             },
             Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
+            Change::ItemMoved { id: "sg-1".into(), thread_id: "T2".into() },
             Change::ItemRefined {
                 id: "sg-1".into(),
                 now: super::ItemState { status: super::ItemStatus::New, text: "Ask Sam and Ana".into(), when: String::new() },
@@ -1396,6 +1411,7 @@ mod tests {
                 | Change::SuggestionAdded { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
+                | Change::ItemMoved { .. }
                 | Change::ItemRefined { .. }
                 | Change::ItemRestored { .. }
                 | Change::TagSuggested { .. }
@@ -1424,7 +1440,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 40, "one of each kind of change");
+        assert_eq!(kinds.len(), 41, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

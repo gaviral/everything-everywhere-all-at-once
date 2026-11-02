@@ -409,6 +409,91 @@ pub struct Retry {
     pub in_ms: u64,
 }
 
+/// A placement deciding, told as it goes so the map can show it (ui/src/route.ts): the threads the prompt points the
+/// model to while the calls race, then where the thought went and what decided it. Only what the placer really does:
+/// the model reads every thread, so a candidate is a thread the prompt singles out, never a guess at the answer.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "stage", rename_all = "snake_case")]
+pub enum Route {
+    /// The calls went: `lanes` copies of one call race (see `RACE`), and `candidates` are the threads the prompt names.
+    Weighing { thought_id: String, candidates: Vec<Candidate>, lanes: usize },
+    /// Placed (or set aside as filler, `skipped`): `path` runs from the top thread down to the one it landed on (a
+    /// branch has its parent first), `new` when that thread was made for it. `pick` is what the model answered, and
+    /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` gave the first good
+    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the calls went. Sent only once the changes are on the map.
+    Decided {
+        thought_id: String,
+        path: Vec<String>,
+        new: bool,
+        skipped: bool,
+        pick: Pick,
+        rule: Option<String>,
+        why: String,
+        lane: usize,
+        lanes: usize,
+        ms: u64,
+    },
+}
+
+/// A thread the prompt points the model to, and why: "active" (where the speaker is), "said just before" (where
+/// their last words went), "left unfinished" (words this may finish), "just asked" (a question this may answer).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Candidate {
+    pub thread_id: String,
+    pub why: &'static str,
+}
+
+/// The model's answer, before the rules: its action, and the thread it named (to continue, or as a new one's parent).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Pick {
+    pub action: String,
+    pub thread_id: String,
+}
+
+/// The threads the prompt for `thought` singles out (see `request`), each once, on the map as it is (a merged one
+/// by the thread it went into), in the order the prompt gives them.
+pub(crate) fn candidates(world: &World, thought: &Thought) -> Vec<Candidate> {
+    let question = just_asked(world, thought);
+    let heads = crate::chunks::heads(world, thought, question);
+    let mut out: Vec<Candidate> = Vec::new();
+    let mut add = |id: Option<&String>, why: &'static str| {
+        let Some(id) = id.map(|id| world.resolve(id)).filter(|id| world.thread(id).is_some()) else { return };
+        if !out.iter().any(|c| c.thread_id == id) {
+            out.push(Candidate { thread_id: id, why });
+        }
+    };
+    add(world.active_for(&thought.speaker), "active");
+    add(question.and_then(|q| q.thread_id.as_ref()), "just asked");
+    add(heads.before.and_then(|t| t.thread_id.as_ref()), "said just before");
+    add(heads.left.and_then(|t| t.thread_id.as_ref()), "left unfinished");
+    out
+}
+
+/// The path to where `changes` placed a thought: its thread's parent first when it's a branch, then the thread. Read
+/// against the map after they landed: a merge while the model thought moves the thought (and a branch's parent) to the
+/// thread it went into (`World::apply`), so the path names the cards it's really on. `new` when the thread was made
+/// for it.
+fn path_of(world: &World, changes: &[Change]) -> (Vec<String>, bool) {
+    let Some(placed) = changes.iter().find_map(|c| match c {
+        Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
+        _ => None,
+    }) else {
+        return (Vec::new(), false);
+    };
+    let added = changes.iter().find_map(|c| match c {
+        Change::ThreadAdded { thread } if thread.id == placed => Some(thread.parent_id.clone()),
+        _ => None,
+    });
+    let id = world.resolve(&placed);
+    let parent = match world.thread(&id) {
+        Some(thread) => thread.parent_id.clone(),
+        None => added.clone().flatten(),
+    };
+    let mut path: Vec<String> = parent.map(|p| world.resolve(&p)).into_iter().collect();
+    path.push(id);
+    (path, added.is_some())
+}
+
 /// How long a thought waits after a round of failed tries before the next: 15 s, doubling to 4 min,
 /// so it lands soon after a blip without calling the model every few seconds through an outage.
 fn retry_in(round: u32) -> Duration {
@@ -433,29 +518,34 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
 
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
-    let placement = loop {
+    let candidates = candidates(&world, &thought);
+    let (lane, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
         // Only while the hourly cap has room for every lane: at the cap, one call goes, so the extra one can't be the
         // call refused there and show "AI paused" while the first places the thought.
         let lanes = core.placer_race.max(1);
         let lanes = if core.calls_left() >= lanes { lanes } else { 1 };
+        // The map shows the threads the prompt names lighting up while these calls run (ui/src/route.ts).
+        core.send(ServerMsg::Route { route: Route::Weighing { thought_id: thought_id.into(), candidates: candidates.clone(), lanes } });
+        let went = std::time::Instant::now();
         let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
             .map(|lane| {
-                core.ask_model(
+                let call = core.ask_model(
                     &core.placer_model,
                     url,
                     limit(room),
                     |model| request(&world, &thought, model, room, new_thread),
                     json!({"thought": thought_id, "room": room, "lane": lane}),
-                )
+                );
+                async move { (lane, call.await) }
             })
             .collect();
         let (mut won, mut cut_off, mut failed) = (None, false, None);
-        while let Some(answer) = futures_util::StreamExt::next(&mut calls).await {
+        while let Some((lane, answer)) = futures_util::StreamExt::next(&mut calls).await {
             match answer.and_then(|body| read(&body)) {
                 Ok(Some(placement)) => {
-                    won = Some(placement);
+                    won = Some((lane, u64::try_from(went.elapsed().as_millis()).unwrap_or(u64::MAX), placement));
                     break;
                 }
                 Ok(None) => cut_off = true,
@@ -464,7 +554,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         }
         drop(calls);
         match (won, cut_off, failed) {
-            (Some(placement), _, _) => break placement,
+            (Some((lane, ms, placement)), _, _) => break (lane, lanes, ms, placement),
             (None, false, Some(e)) => return Err(e),
             (None, _, _) if !again && room < MAX_ROOM => {
                 let more = (2 * room).min(MAX_ROOM);
@@ -480,11 +570,29 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     tracing::info!("placed in {place_ms} ms: {} {} parent {:?}", placement.action, placement.thread_id, placement.parent_id);
 
     let answer = (placement.action.clone(), placement.thread_id.clone(), placement.title.clone(), placement.split.clone());
+    let named = if placement.action == "new" { &placement.parent_id } else { &placement.thread_id };
+    let pick = Pick { action: clean(&placement.action), thread_id: clean(named) };
     // Landing after the speaker moved on (newer words of theirs landed, or they moved while it retried), it
     // doesn't take them back to where they were.
     let now = now_ms();
     let moves = !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
-    let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread, moves);
+    let (changes, rest, rule) = settle_ruled(&world, &thought, placement, place_ms, new_thread, moves);
+    // The path is filled in once the changes are on the map (`path_of`).
+    let mut decided = Route::Decided {
+        thought_id: thought_id.into(),
+        path: Vec::new(),
+        new: false,
+        skipped: changes.iter().any(|c| matches!(c, Change::ThoughtSkipped { .. })),
+        pick,
+        rule: rule.map(String::from),
+        why: changes.iter().find_map(|c| match c {
+            Change::ThoughtNoted { note, .. } => Some(note.why.clone()),
+            _ => None,
+        }).unwrap_or_default(),
+        lane,
+        lanes,
+        ms: race_ms,
+    };
     // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
     let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
     if !waiting(&core.snapshot()) {
@@ -507,6 +615,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     drop(world);
     // The ask for a new thread is spent only when the words land: placed again, they still start it.
     let landed = if new_thread { changes.clone() } else { Vec::new() };
+    let placing: Vec<Change> = changes.iter().filter(|c| matches!(c, Change::ThoughtPlaced { .. } | Change::ThreadAdded { .. })).cloned().collect();
     if !core.commit_if(|w| waiting(w) && there(w), changes) {
         let now = core.snapshot();
         if waiting(&now) && !there(&now) {
@@ -518,6 +627,11 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     if new_thread {
         core.new_threads.placed(thought_id, &landed, rest.as_deref());
     }
+    if let Route::Decided { path, new, .. } = &mut decided {
+        (*path, *new) = path_of(&core.snapshot(), &placing);
+    }
+    // After the changes, so the map never shows a place the thought didn't take (taken back, its thread deleted).
+    core.send(ServerMsg::Route { route: decided });
     Ok(rest)
 }
 
@@ -618,13 +732,30 @@ fn read(body: &serde_json::Value) -> anyhow::Result<Option<Placement>> {
 /// The changes for one answer. A turn that moved on to another topic is cut in two first: the answer
 /// places the words before, and the rest, returned, is placed next on the map this one leaves.
 /// `new_thread`: the thought starts a thread of its own (see `NewThreads`).
-fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> (Vec<Change>, Option<String>) {
+#[cfg(test)]
+fn settle(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> (Vec<Change>, Option<String>) {
+    let (changes, rest, _) = settle_ruled(world, thought, p, place_ms, new_thread, moves);
+    (changes, rest)
+}
+
+/// `settle`, with the rule that put the thought somewhere other than the model's pick, if one did (`decide_ruled`).
+fn settle_ruled(
+    world: &World,
+    thought: &Thought,
+    mut p: Placement,
+    place_ms: u64,
+    new_thread: bool,
+    moves: bool,
+) -> (Vec<Change>, Option<String>, Option<&'static str>) {
     let Some((before, rest)) = cut(&thought.text, &p.split) else {
         // A quote that cuts nothing leaves the model unsure which words were filler: place them all.
+        let mut rule = None;
         if p.action == "skip" && !clean(&p.split).is_empty() {
             p.action = "continue".into();
+            rule = Some(rules::FILLER_UNCLEAR);
         }
-        return (decide(world, thought, p, place_ms, new_thread, moves), None);
+        let (changes, decided) = decide_ruled(world, thought, p, place_ms, new_thread, moves);
+        return (changes, None, decided.or(rule));
     };
     let first = Thought { text: before.clone(), ..thought.clone() };
     // Misheard words in the rest are found again when it's placed.
@@ -646,8 +777,9 @@ fn settle(world: &World, thought: &Thought, mut p: Placement, place_ms: u64, new
     };
     let rest_id = rest.id.clone();
     let mut changes = vec![Change::ThoughtSplit { thought_id: thought.id.clone(), text: before, rest }];
-    changes.extend(decide(world, &first, p, place_ms, new_thread, moves));
-    (changes, Some(rest_id))
+    let (placed, rule) = decide_ruled(world, &first, p, place_ms, new_thread, moves);
+    changes.extend(placed);
+    (changes, Some(rest_id), rule)
 }
 
 /// Cuts a turn where the model says it moved on to another topic: the words before, and the rest.
@@ -866,12 +998,36 @@ fn capitalized(text: &str) -> Vec<String> {
 /// Turns the model's answer into changes, trusting only ids that exist. Moves and drops belong to
 /// the speaker: in a room, one person changing topic never drops a thread for the other.
 /// `new_thread`: the speaker asked for one, so whatever is placed starts it (see `NewThreads`).
+#[cfg(test)]
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> Vec<Change> {
+    decide_ruled(world, thought, p, place_ms, new_thread, moves).0
+}
+
+/// The rules that can put a thought somewhere other than the model's pick, in the person's words: the map says which
+/// one did (ui/src/route.ts).
+pub(crate) mod rules {
+    // Short enough to sit on a card's edge on a phone (ui/src/route.css).
+    pub const JOINS: &str = "finishes the words before";
+    pub const DECISION: &str = "decisions go on their thread";
+    pub const ASKED: &str = "you asked for a new thread";
+    pub const ONE_LEVEL: &str = "one level of branches";
+    pub const NO_SUCH: &str = "unknown thread: stays put";
+    pub const NOT_FILLER: &str = "too long to be filler";
+    pub const SAYS_DECIDED: &str = "says a decision: kept";
+    pub const FILLER_UNCLEAR: &str = "unclear what was filler";
+}
+
+/// `decide`, with the rule that put the thought somewhere other than the model's pick, if one did (`rules`).
+fn decide_ruled(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> (Vec<Change>, Option<&'static str>) {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
     // Never words that say a decision: "Okay, decided:" cut off by a pause is two words, and the rest needs it.
     if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
-        return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
+        return (vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }], None);
     }
+    // Kept for one of two reasons, and the map says which: it's long, or it says a decision.
+    let mut rule = (p.action == "skip").then(|| {
+        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS { rules::NOT_FILLER } else { rules::SAYS_DECIDED }
+    });
     let now = now_ms();
     let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();
@@ -898,15 +1054,33 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     // decision, and the map shows the two as one point with this one's mark.
     let decided = crate::decided::said_after(head.as_ref().map(|h| h.text.as_str()), &fix(&thought.text));
     let target = match p.action.as_str() {
-        _ if head.is_some() => head.as_ref().and_then(|h| h.thread_id.clone()),
+        _ if head.is_some() => {
+            let joined = head.as_ref().and_then(|h| h.thread_id.clone());
+            if p.action == "new" || joined.as_deref().is_some_and(|j| world.resolve(j) != world.resolve(&p.thread_id)) {
+                rule = Some(rules::JOINS);
+            }
+            joined
+        }
         // A decision goes on the thread it decides, not a branch of its own: the model branched "decided: if it's
         // under $80, I'm booking it" off Mom's birthday as "Pottery Class Cost" (2026-11-01 take), so the birthday's
         // card never showed what was decided about it.
-        "new" if decided && !new_thread && exists(&p.parent_id) => Some(p.parent_id.clone()),
+        "new" if decided && !new_thread && exists(&p.parent_id) => {
+            rule = Some(rules::DECISION);
+            Some(p.parent_id.clone())
+        }
         "new" => None,
-        _ if new_thread => None,
+        _ if new_thread => {
+            rule = Some(rules::ASKED);
+            None
+        }
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
-        _ => world.active_for(speaker).cloned().filter(|a| exists(a)),
+        _ => {
+            let active = world.active_for(speaker).cloned().filter(|a| exists(a));
+            if active.is_some() {
+                rule = rule.or(Some(rules::NO_SUCH));
+            }
+            active
+        }
     };
     let thread_id = match target {
         Some(id) => id,
@@ -921,6 +1095,9 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
             // branches of branches in the threads trace, 2026-11-01, sat under the wrong top thread: a flight home under a
             // cafe shift under a midterm). Naming a branch as its parent makes a thread of its own.
             let parent_id = Some(p.parent_id.clone()).filter(|x| world.thread(x).is_some_and(|t| t.parent_id.is_none()));
+            if parent_id.is_none() && world.thread(&p.parent_id).is_some() {
+                rule = Some(rules::ONE_LEVEL);
+            }
             changes.push(Change::ThreadAdded {
                 thread: Thread {
                     id: id.clone(),
@@ -963,7 +1140,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         changes.push(Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms: now });
     }
     if !moves {
-        return changes;
+        return (changes, rule);
     }
 
     // Leaving a thread whose last thought trailed off means it was dropped. Only the speaker's own
@@ -990,7 +1167,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     if world.active.as_deref() != Some(thread_id.as_str()) || world.active_by.get(speaker) != Some(&thread_id) {
         changes.push(Change::ActiveChanged { thread_id, speaker: speaker.clone() });
     }
-    changes
+    (changes, rule)
 }
 
 #[cfg(test)]
@@ -2238,3 +2415,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+#[cfg(test)]
+#[path = "placer_route_tests.rs"]
+mod route_tests;

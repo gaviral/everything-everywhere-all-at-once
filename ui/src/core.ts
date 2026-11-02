@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -183,6 +184,8 @@ type Change =
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  // A waiting idea or task goes with the words it was made from to another thread (a move, or its Undo).
+  | { type: "item_moved"; id: string; thread_id: string }
   // The refiner brought a waiting idea or task in line with something said later; restored is its Undo (refiner.rs).
   | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string }
   | { type: "item_restored"; id: string; to: ItemState }
@@ -408,6 +411,14 @@ export function apply(world: World, raw: Change): World {
         actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: to.status, title: to.text, when: to.when } : a)),
       };
     }
+    case "item_moved":
+      // As the core: only onto a thread that's there.
+      if (!world.threads.some((t) => t.id === c.thread_id)) return world;
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, thread_id: c.thread_id } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, thread_id: c.thread_id } : a)),
+      };
     case "item_status":
       return {
         ...world,
@@ -657,6 +668,7 @@ export function useCore(speaker?: string) {
       ws.onopen = () => {
         resetApps();
         resetSteps();
+        resetRoute();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
@@ -672,6 +684,7 @@ export function useCore(speaker?: string) {
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         if (receiveStep(msg)) return;
+        if (receiveRoute(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);
@@ -763,6 +776,7 @@ export function useCore(speaker?: string) {
             setRevertAsk((n) => n + 1);
             break;
           case "placing":
+            routePlacing(msg.now);
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
           case "found":
@@ -902,7 +916,8 @@ export function useCore(speaker?: string) {
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
-    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
+    undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
     undoLast: useCallback(() => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo_last" })); }, [sendOrWarn]),
     // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
@@ -935,8 +950,8 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    // "Try a sample map": the core fills an empty map with the sample (core/src/sample.rs).
-    sample: () => sendOrWarn(JSON.stringify({ type: "sample" })),
+    // "Try a sample map": the core fills an empty map with the sample, or the one named (core/src/sample.rs).
+    sample: (name?: string) => sendOrWarn(JSON.stringify(name ? { type: "sample", name } : { type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename, remove,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,

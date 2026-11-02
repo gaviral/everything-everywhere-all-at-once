@@ -41,8 +41,11 @@ import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
-import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
+import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
+import { useLanes, useRouteMark } from "./route";
+const ROUTE_CLASS = { candidate: "route-candidate", here: "route-here", via: "route-via" } as const;
+import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
@@ -942,7 +945,7 @@ export default function App() {
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
-            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} />
+            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} offline={!core.connected} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -985,8 +988,13 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
-              <button type="button" className="sample-button" onClick={core.sample} disabled={!core.connected}>Try a sample map</button>
+              <button type="button" className="sample-button" onClick={() => core.sample()} disabled={!core.connected}>Try a sample map</button>
               <span>A student's week, with pictures. Your own thoughts join it.</span>
+              {moreSamples(site.samples).length > 0 && <span className="more-samples" role="group" aria-label="Shorter sample maps">
+                <span>Or a shorter one:</span>
+                <span className="sample-links">{moreSamples(site.samples).map((choice) =>
+                  <button key={choice.id} type="button" className="sample-link" onClick={() => core.sample(choice.id)} disabled={!core.connected}>{choice.label}</button>)}</span>
+              </span>}
             </p>}
             {!core.noKey && modelsLine(site.models) && <p className="empty-models">{modelsLine(site.models)}</p>}
           </div>
@@ -1203,6 +1211,10 @@ function useDockRoom(ref: RefObject<HTMLElement | null>) {
   }), []);
 }
 
+/** How a dismissed suggestion or action leaves: a 150 ms fade, as a card's body folds (ThreadCard). A fade isn't motion,
+ *  so it stays under Reduce Motion, where the rows below snap up instead of gliding (MotionConfig "user"). */
+const EXIT = { opacity: 0, transition: { duration: 0.15 } };
+
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
   const grouped = new Map<string, T[]>();
   for (const item of items) if (item.status !== "dismissed") {
@@ -1250,7 +1262,10 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
   // A point dragged by its Move lands on the card under it (Moves.tsx).
   const drop = useDropPoint(thread.id);
-  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
+  // Live routing (route.ts): lit while the placer weighs it, or on the path a thought just took.
+  const route = useRouteMark(thread.id);
+  const routeClasses = route ? `route-lit ${ROUTE_CLASS[route.kind]}${route.deep ? " route-deep" : ""}` : "";
+  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : "", routeClasses].join(" ");
 
   const toggle = (event: React.MouseEvent) => {
     if (held.has(thread.id)) return;
@@ -1274,6 +1289,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
       {...drop.props}
     >
       <ThisTag thread={thread.id} />
+      {route?.tag && <span key={route.tag} className={`route-tag ${route.kind}`} title={route.title ?? undefined}>{route.tag}{route.title && <span className="sr-only"> · {route.title}</span>}</span>}
       {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
       <div className="thread-head" onClick={(event) => {
         if (headClickToggles(event.target as Element, window.getSelection()?.toString())) toggle(event);
@@ -1317,8 +1333,10 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           <Point key={t.id} thought={t} heads={heads} on={on} />
         ))}
       </ul>
+      {/* A dismissed row fades out (EXIT) and the rows below glide up, rather than the row vanishing under the click. */}
+      <AnimatePresence initial={false}>
       {ideas.map((s) => (
-        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
           <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
@@ -1331,10 +1349,13 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           )}
         </motion.div>
       ))}
+      </AnimatePresence>
       <ProposalRows thread={thread.id} />
+      <AnimatePresence initial={false}>
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
+      </AnimatePresence>
       </motion.div>}
       </AnimatePresence>
       {branches.length > 0 && (
@@ -1482,7 +1503,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
     if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
   }, [action.status]);
   return (
-    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
         data-tip={calendarFile ? TIPS.file(action.status === "done", !!line.button) : action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
@@ -1515,8 +1536,11 @@ function PendingThought({ thought, placing, noKey, refused, resting, reducedMoti
   }, [noKey, refused]);
   const retryAt = placing.retryAt[thought.id];
   const label = pendingLabel(thought, placing, now, noKey, refused, resting);
+  // The race (placer.rs `RACE`): one dot a call, while they run; the first good answer places it.
+  const lanes = useLanes(thought.id);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
+    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span>
+    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} {thought.text}
   </motion.span>;
 }
 

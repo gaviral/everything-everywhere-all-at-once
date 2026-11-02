@@ -593,9 +593,19 @@ const SCRATCH: [&str; 14] = [
 ];
 
 /// A "scratch that" said as a delete ("delete that", "remove that note"): with nothing to take back, it deletes.
+/// "Sorry, delete that" too: the "no" words before it (`NO`) are skipped, as `correction` skips them.
 fn deletes(text: &str) -> bool {
-    let t = crate::lead_in(text).trim_start_matches(|c: char| !c.is_alphanumeric()).to_ascii_lowercase();
+    let t = past_no(crate::lead_in(text)).trim_start_matches(|c: char| !c.is_alphanumeric()).to_ascii_lowercase();
     ["delete ", "remove "].iter().any(|verb| t.starts_with(verb))
+}
+
+/// `text` past the "no", "sorry" or "oops" words that lead it (`NO`).
+fn past_no(text: &str) -> &str {
+    let spans = crate::word_spans(text);
+    match spans.iter().take_while(|(w, _)| NO.contains(&w.as_str())).count() {
+        0 => text,
+        n => &text[spans[n - 1].1..],
+    }
 }
 
 /// Leads that only start a correction. "I mean" and "I said" also start talk ("I said I'd call her"), so they need a
@@ -610,7 +620,9 @@ const NO: [&str; 7] = ["no", "nope", "nah", "sorry", "oops", "wait", "actually"]
 
 fn correction(text: &str) -> Option<Correction<'_>> {
     let t = crate::lead_in(text);
-    if crate::is_ask(t, &SCRATCH, &[]) {
+    // "Scratch that", and "No, scratch that", "Oops, undo that", "Sorry, delete that": what people say first when
+    // a thought went wrong. Read only before the lead words, these fell to "No, I meant …" and landed as a point.
+    if crate::is_ask(t, &SCRATCH, &[]) || crate::is_ask(past_no(t), &SCRATCH, &[]) {
         return Some(Correction::Scratch);
     }
     let spans = crate::word_spans(t);
@@ -739,8 +751,8 @@ fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
         Was::Kept { ids } => {
             let restore = unkeep(core, speaker, &ids);
             let id = remember(core, speaker, said, Was::Request { act: Act::Undo, undo: restore.clone() });
-            let message = match restore {
-                Some(_) => format!("Removed “{}”", short(&previous.said)),
+            let message = match &restore {
+                Some(undo) => format!("Removed “{}”{}", short(&previous.said), with_cards(undo)),
                 None => "Nothing to remove: those words are already off the map".into(),
             };
             let undoable = restore.is_some();
@@ -777,6 +789,9 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     for id in emptied {
         let Some(thread) = world.thread(&id) else { continue };
         if !empty_without(&world, &id, &gone) {
+            let aside = withdraw(&made_from(&world, &id, &thoughts));
+            dismissed.extend(set_aside_ids(&aside));
+            changes.extend(aside);
             threads.push(thread.clone());
             kept.push(id);
             continue;
@@ -825,6 +840,10 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
             changes.extend(aside);
             changes.push(Change::ThreadRemoved { thread_id: id });
         } else {
+            // A thread that keeps other words loses only the cards made from these.
+            let aside = withdraw(&made_from(&world, &id, &thoughts));
+            dismissed.extend(set_aside_ids(&aside));
+            changes.extend(aside);
             kept.push(id);
         }
         threads.push(thread.clone());
@@ -863,6 +882,45 @@ pub(crate) fn set_aside(world: &World, thread_id: &str) -> Vec<Change> {
         .chain(world.actions.iter().filter_map(|a| waiting(&a.id, &a.thread_id, a.status)))
         .map(|id| Change::ItemStatus { id, status: ItemStatus::Dismissed, done_ms: None })
         .collect()
+}
+
+/// The waiting ideas and tasks on thread `id` made from the words `off` alone: each shares a meaning word with them
+/// (`refiner::content`, as the refiner reads what was said) and none with the thread's title or its other points.
+/// Those words going (a delete, "scratch that") or moving away takes the card with them: "I'm getting her the Breville
+/// one", deleted, left "Buy Breville espresso machine · Add to Reminders" on the card, and the refiner never sees
+/// deleted words to take it back (core-refiner review, 2026-11-02). A card that shares a word with what stays is
+/// left alone: it may come from that too.
+pub(crate) fn made_from(world: &World, id: &str, off: &[Thought]) -> Vec<String> {
+    use crate::refiner::content;
+    let id = world.resolve(id);
+    let on = |t: &Thought| t.placed && t.thread_id.as_deref().map(|x| world.resolve(x)).as_deref() == Some(id.as_str());
+    let said = |t: &Thought| content(&format!("{} {}", t.text, t.point));
+    let gone: std::collections::HashSet<String> = off.iter().filter(|t| on(t)).flat_map(said).collect();
+    let Some(thread) = world.thread(&id).filter(|_| !gone.is_empty()) else { return Vec::new() };
+    let mut kept = content(&thread.title);
+    kept.extend(world.thoughts.iter().filter(|t| on(t) && !off.iter().any(|o| o.id == t.id)).flat_map(said));
+    let theirs = |text: &str| {
+        let words = content(text);
+        !words.is_disjoint(&gone) && words.is_disjoint(&kept)
+    };
+    let waiting = |on: &str, status: ItemStatus| status == ItemStatus::New && world.resolve(on) == id;
+    world.suggestions.iter().filter(|s| waiting(&s.thread_id, s.status) && theirs(&s.text)).map(|s| s.id.clone())
+        .chain(world.actions.iter().filter(|a| waiting(&a.thread_id, a.status) && theirs(&a.title)).map(|a| a.id.clone()))
+        .collect()
+}
+
+/// Sets these waiting ideas and tasks aside, as `set_aside` does, for an Undo to open again.
+fn withdraw(ids: &[String]) -> Vec<Change> {
+    ids.iter().map(|id| Change::ItemStatus { id: id.clone(), status: ItemStatus::Dismissed, done_ms: None }).collect()
+}
+
+/// How a notice names the cards an Undo set aside with the words: "", " and the card made from them", " and the 2 …".
+pub(crate) fn with_cards(undo: &Undo) -> String {
+    match undo {
+        Undo::Restore { dismissed, .. } if dismissed.len() == 1 => " and the card made from it".into(),
+        Undo::Restore { dismissed, .. } if dismissed.len() > 1 => format!(" and the {} cards made from it", dismissed.len()),
+        _ => String::new(),
+    }
 }
 
 /// The ids `set_aside` dismissed, for an Undo to open again.

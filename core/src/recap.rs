@@ -30,8 +30,9 @@ Return JSON: summary (one short sentence, under 25 words; when there are decisio
 in the person's words; otherwise it names the two or three threads they spent the most on, by title; never a general line, and never a list of every thread), \
 worked_on (one line per supplied thread), plans, decisions, questions. \
 Every list item has thread_id and text (under 22 words). Plans are clear intentions stated in the points and not yet settled \
-(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points; a thread's \"decided\" lists ones the person said they decided, each a decision. \
-never suggestions, intentions, or AI proposals; an intention goes in plans, never in both. Questions must be unresolved in these points. \
+(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points; a thread's \"decided\" lists ones the person said they decided, each a decision, in their words. \
+never suggestions, intentions, or AI proposals; an intention goes in plans, never in both. \
+Each decision is a short sentence that reads on its own and says what \"it\" is. Questions must be unresolved in these points. \
 Do not infer that an action was added: the app reports approval separately. \
 Use only supplied thread IDs, no markdown, and empty lists when there is no evidence. \
 If the source is limited, do not claim this covers everything.";
@@ -114,10 +115,15 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         // Placement is already in progress; don't pay for a second placement call,
         // or summarize a thought on the provisional branch it may soon leave. Without a key that works now (none,
         // refused, or the hour's calls used up) nothing is placing: the answer says why at once, not after 10 s.
+        // Woken by each change sent (a landing commits the thought before it is sent), so the recap goes on the moment
+        // the thought lands, not up to a quarter second later; still looked at every 250 ms, for a key refused or the
+        // cap reached without a change, and at most 10 s in all.
         let can_place = || core.key().is_ok();
-        for _ in 0..40 {
-            if !can_place() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        let mut changes = core.updates.subscribe();
+        let until = tokio::time::Instant::now() + Duration::from_secs(10);
+        while can_place() && placing(&core.snapshot(), since, crate::now_ms()) && tokio::time::Instant::now() < until {
+            let look = until.min(tokio::time::Instant::now() + Duration::from_millis(250));
+            if let Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) = tokio::time::timeout_at(look, changes.recv()).await { break; }
         }
         let world = core.snapshot();
         if can_place() && placing(&world, since, crate::now_ms()) {
@@ -325,8 +331,11 @@ fn slice(world: &World, period: Period, through_ms: u64) -> Source {
             points: thoughts[thoughts.len().saturating_sub(MAX_POINTS)..].iter()
                 .map(|t| short(&format!("{}: {}{}", t.speaker, t.text, if t.unclear.is_empty() { "" } else { " [may be misheard]" }), 700)).collect(),
             // A head carried on across a pause is one idea with its carrier, whose point says both parts: once.
+            // In their own words past the marker ("If it's under $80, I'm booking it tonight"), not the placer's
+            // 12-word point, which the model echoed as is ("if under $80 booking pottery class tonight").
             decided: thoughts.iter().filter(|t| t.decided && crate::chunks::carriers(world, &t.id).next().is_none())
-                .map(|t| short(if t.point.trim().is_empty() { &t.text } else { &t.point }, 240)).collect(),
+                .map(|t| short(&crate::decided::words_on_map(world, t)
+                    .unwrap_or_else(|| if t.point.trim().is_empty() { t.text.clone() } else { t.point.clone() }), 240)).collect(),
         })
     }).collect();
     threads.sort_by(|a, b| b.touched_ms.cmp(&a.touched_ms).then_with(|| a.thread_id.cmp(&b.thread_id)));
@@ -756,13 +765,15 @@ mod tests {
         world.thoughts[0].decided = true;
         let source = slice(&world, Period::Session, 1000);
         let sent = serde_json::to_string(&model_body(&source).unwrap()).unwrap();
-        assert!(sent.contains(r#"\"decided\":[\"If it's under $80, I'm booking it tonight\"]"#), "{sent}");
+        // The person's words past "Okay, decided:", not the placer's point.
+        let said = "If it's under eighty dollars, I'm booking it tonight.";
+        assert!(sent.contains(&format!(r#"\"decided\":[\"{said}\"]"#)), "{sent}");
         assert_eq!(sent.matches(r#"\"decided\":"#).count(), 1, "a thread with no decision sends none");
         let mut a = answer();
         a.summary = "You circled around Topic T1 and Topic T2 today.".into();
         let recap = finish(source, a, "key".into());
         assert_eq!(recap.decisions.len(), 1);
-        assert_eq!((recap.decisions[0].thread_id.as_str(), recap.decisions[0].text.as_str()), ("T1", "If it's under $80, I'm booking it tonight"));
+        assert_eq!((recap.decisions[0].thread_id.as_str(), recap.decisions[0].text.as_str()), ("T1", said));
         assert!(recap.summary.starts_with("You decided"), "{}", recap.summary);
         // The model's own words for it win; the point isn't added twice.
         let source = slice(&world, Period::Session, 1000);
@@ -1038,6 +1049,34 @@ mod tests {
         let (message, recap) = ready(&mut rx).await;
         assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
         assert!(recap.is_none() && !message.contains("still finding"), "{message}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Recap" said right after a thought waits for it to land, then goes on at once: the landing wakes it, not the
+    /// next look a quarter second later. No model call: the recap of the map after the landing is already saved.
+    #[tokio::test(start_paused = true)]
+    async fn a_recap_waiting_on_a_thought_goes_on_the_moment_it_lands() {
+        let path = std::env::temp_dir().join(format!("e2a2o-recap-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core { key: Some("test".into()), ..Core::test(journal, world) });
+        let now = crate::now_ms();
+        let mut landed = sample(now);
+        landed.thoughts.push(thought(7, "T1", now));
+        let source = slice(&landed, Period::Today, now);
+        let key = source.key();
+        let mut world = landed.clone();
+        world.thoughts.last_mut().unwrap().placed = false;
+        world.recaps.push(finish(source, answer(), key));
+        *core.world.lock().unwrap() = world.into();
+        let mut rx = core.updates.subscribe();
+        request(core.clone(), "you".into(), Period::Today);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let lands = tokio::time::Instant::now();
+        core.commit(vec![Change::ThoughtPlaced { thought_id: "th-7".into(), thread_id: "T1".into(), point: "Point 7".into(), unclear: String::new(),
+            guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 10, decided: false }]);
+        let (message, recap) = ready(&mut rx).await;
+        assert!(message.is_empty() && recap.is_some(), "{message}");
+        assert!(lands.elapsed() < Duration::from_millis(50), "went on {:?} after the landing", lands.elapsed());
         let _ = std::fs::remove_file(&path);
     }
 

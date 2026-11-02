@@ -78,9 +78,11 @@
    still reads (≥ 5:1 in both themes). A card you point at or tab into is the one you're reading: it stays full. At
    the pause everything reads again. The 0.3 s is the card's own border and shadow change. */
 .thread, .thread .title, .thread .points, .thread .thread-count { transition: color .3s, background-color .3s, border-color .3s, box-shadow .3s; }
-.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) {
+/* Live routing (route.css): a card the placer is weighing, or on the path a thought just took, reads at full strength. */
+.thread { transition: color .3s, background-color .3s, border-color .3s, box-shadow .3s, outline-color .1s linear var(--route-delay, 0s); }
+.map.talking .thread:not(.active):not(.dropped):not(.route-lit):not(:has(.thread.active)):not(:hover):not(:focus-within) {
   background-color: color-mix(in srgb, var(--card) 45%, var(--bg));
   box-shadow: none;
 }
-.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) > .thread-head .title,
-.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) > div:not(.branches) .points { color: var(--muted); }
+.map.talking .thread:not(.active):not(.dropped):not(.route-lit):not(:has(.thread.active)):not(:hover):not(:focus-within) > .thread-head .title,
+.map.talking .thread:not(.active):not(.dropped):not(.route-lit):not(:has(.thread.active)):not(:hover):not(:focus-within) > div:not(.branches) .points { color: var(--muted); }

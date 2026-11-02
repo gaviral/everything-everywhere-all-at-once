@@ -359,7 +359,7 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
             let why = result.err().map(|e| short(&e)).unwrap_or_else(|| "no threads came back".into());
             tracing::warn!("import: grouping failed: {why}");
             notes.push(format!("Couldn't group the ideas into threads ({why}), so each topic became its own thread."));
-            by_topic(&topics, &ideas)
+            by_topic(&topics, &ideas, &today(offset))
         }
     };
 
@@ -1032,11 +1032,23 @@ fn short(e: &anyhow::Error) -> String {
     clip(&e.to_string(), 120)
 }
 
-/// The date if it's YYYY-MM-DD, else empty.
+/// The date if it's a real YYYY-MM-DD day ("2026-13-45" isn't), else empty.
 fn date(text: &str) -> String {
     let t = text.trim();
-    let ok = t.len() == 10 && t.bytes().enumerate().all(|(i, b)| if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() });
-    if ok { t.into() } else { String::new() }
+    if crate::apps::valid_date(t) { t.into() } else { String::new() }
+}
+
+/// A task's day as it lands: `None` when the day is already past (the prompt asks the model to skip those, and a
+/// reminder for last Monday is noise on a fresh map); else the real day, or empty for none or a garbled one.
+/// `today` is YYYY-MM-DD, local.
+fn upcoming(when: &str, today: &str) -> Option<String> {
+    let day = date(when);
+    (day.is_empty() || day.as_str() >= today).then_some(day)
+}
+
+/// Today, local, as YYYY-MM-DD.
+fn today(offset: i64) -> String {
+    day(crate::now_ms(), offset)[..10].to_string()
 }
 
 // ---- Grouping ----
@@ -1150,7 +1162,7 @@ async fn group(core: &Core, model: &str, topics: &[Topic], ideas: &[Idea], world
     });
     let answer = retry(2, || ask(core, model, "low", 16_000, MERGE, &prompt, "Map", &schema, Duration::from_secs(240))).await?;
     let merged: Merged = serde_json::from_str(&answer).context("answer wasn't the expected JSON")?;
-    Ok(plan(merged, topics, world))
+    Ok(plan(merged, topics, world, &today(offset)))
 }
 
 /// What the stronger model sees: the map's threads, the topics with a few of their ideas, and the
@@ -1191,7 +1203,7 @@ fn merge_prompt(topics: &[Topic], ideas: &[Idea], world: &World, offset: i64) ->
 
 /// Turns the model's answer into groups, trusting only topics and threads that exist. A topic the
 /// model left out becomes its own thread, so no idea is lost.
-fn plan(merged: Merged, topics: &[Topic], world: &World) -> Vec<Group> {
+fn plan(merged: Merged, topics: &[Topic], world: &World, today: &str) -> Vec<Group> {
     let mut keys: HashMap<String, usize> = HashMap::new();
     let mut groups: Vec<Group> = Vec::new();
     let mut taken = vec![false; topics.len()];
@@ -1253,10 +1265,10 @@ fn plan(merged: Merged, topics: &[Topic], world: &World) -> Vec<Group> {
     for a in merged.actions {
         let Some(&g) = keys.get(a.thread.trim()) else { continue };
         let title = a.title.trim();
+        let Some(when) = upcoming(&a.when, today) else { continue };
         if title.is_empty() || !seen.insert(title.to_lowercase()) {
             continue;
         }
-        let when = date(&a.when);
         // An event needs a date; without one it's a reminder rather than an invented day.
         let kind = if a.kind == "event" && !when.is_empty() { "event" } else { "reminder" };
         groups[g].actions.push(Task { kind: kind.into(), title: title.into(), when });
@@ -1269,8 +1281,9 @@ fn to_do(idea: &Idea) -> bool {
     if idea.kind == "task" { idea.open } else { !idea.when.is_empty() }
 }
 
-/// When grouping fails: one thread per topic, with its latest open question and up to two of its dated tasks.
-fn by_topic(topics: &[Topic], ideas: &[Idea]) -> Vec<Group> {
+/// When grouping fails: one thread per topic, with its latest open question and its two soonest upcoming dated
+/// tasks: never a decision (already made), a done task, or a day already past (`upcoming`).
+fn by_topic(topics: &[Topic], ideas: &[Idea], today: &str) -> Vec<Group> {
     topics
         .iter()
         .map(|t| {
@@ -1279,10 +1292,13 @@ fn by_topic(topics: &[Topic], ideas: &[Idea]) -> Vec<Group> {
                 title: t.label.clone(),
                 ideas: t.ideas.clone(),
                 question: of(|i| i.kind == "question" && i.open).last().map(|i| i.point.clone()).unwrap_or_default(),
-                actions: of(|i| to_do(i) && !i.when.is_empty())
-                    .take(2)
-                    .map(|i| Task { kind: "reminder".into(), title: i.point.clone(), when: i.when.clone() })
-                    .collect(),
+                actions: {
+                    let mut dated: Vec<(String, &Idea)> = of(|i| to_do(i) && i.kind != "decision")
+                        .filter_map(|i| upcoming(&i.when, today).filter(|d| !d.is_empty()).map(|d| (d, i)))
+                        .collect();
+                    dated.sort_by(|a, b| a.0.cmp(&b.0));
+                    dated.into_iter().take(2).map(|(when, i)| Task { kind: "reminder".into(), title: i.point.clone(), when }).collect()
+                },
                 ..Group::default()
             }
         })
@@ -1617,6 +1633,38 @@ mod tests {
     }
 
     #[test]
+    fn imported_days_are_real_and_still_ahead() {
+        let topics = topics(&[idea("Ana", "Follow up", 10)]);
+        let merged: Merged = serde_json::from_value(json!({
+            "threads": [{"key": "ana", "title": "Ana", "parent": "", "existing": "", "topics": [1]}],
+            "questions": [],
+            "actions": [
+                {"thread": "ana", "kind": "reminder", "title": "Follow up with Ana", "when": "2026-11-02"},
+                {"thread": "ana", "kind": "reminder", "title": "Send the deck", "when": "2026-10-30"},
+                {"thread": "ana", "kind": "event", "title": "Launch", "when": "2026-13-45"},
+                {"thread": "ana", "kind": "reminder", "title": "Book the room", "when": ""}
+            ]
+        })).unwrap();
+        let tasks = &plan(merged, &topics, &World::default(), "2026-11-05")[0].actions;
+        let got: Vec<(&str, &str, &str)> = tasks.iter().map(|t| (t.title.as_str(), t.kind.as_str(), t.when.as_str())).collect();
+        // Past days are skipped, as the prompt asks; an impossible one is no day, so no event.
+        assert_eq!(got, [("Launch", "reminder", ""), ("Book the room", "reminder", "")]);
+        // Without grouping: a past day, a decision and a done task never land; the two soonest upcoming do.
+        let dated = |point: &str, kind: &str, open: bool, when: &str, at_ms| Idea { kind: kind.into(), open, when: when.into(), ..idea("Ana", point, at_ms) };
+        let ideas = vec![
+            dated("Follow up with Ana on Monday", "task", true, "2026-11-02", 10),
+            dated("Decided on the venue", "decision", false, "2026-11-20", 20),
+            dated("Sent the invites", "task", false, "2026-11-09", 30),
+            dated("Dinner with Ana", "plan", true, "2026-11-30", 40),
+            dated("Ana's launch", "plan", true, "2026-11-12", 50),
+            dated("Ana's party", "plan", true, "2026-11-25", 60),
+        ];
+        let groups = by_topic(&super::topics(&ideas), &ideas, "2026-11-05");
+        let got: Vec<&str> = groups[0].actions.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(got, ["Ana's launch", "Ana's party"]);
+    }
+
+    #[test]
     fn grouping_keeps_every_idea_and_one_level_of_branches() {
         let ideas = vec![idea("Lisbon move", "Move in January", 10), idea("lisbon move!", "Lease ends Nov 30", 20), idea("Flat hunt", "Ask about Arroios", 30), idea("Sleep", "Wake at 4am", 40), idea("Gift", "Photo book for mom", 50)];
         let topics = topics(&ideas);
@@ -1643,7 +1691,7 @@ mod tests {
             "actions": [{"thread": "move", "kind": "event", "title": "Give notice", "when": ""}, {"thread": "move", "kind": "reminder", "title": "give notice", "when": "2026-11-15"}]
         }))
         .unwrap();
-        let groups = plan(merged, &topics, &world);
+        let groups = plan(merged, &topics, &world, "2026-11-02");
         assert_eq!(groups.len(), 4, "the topic the model left out gets its own thread");
         assert_eq!(groups[3].title, "Gift");
         let mut all: Vec<usize> = groups.iter().flat_map(|g| g.ideas.clone()).collect();

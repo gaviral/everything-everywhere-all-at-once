@@ -165,6 +165,11 @@ fn corrections_read_their_lead_and_keep_the_words_after_it() {
     assert_eq!(correction("No, that's not what I meant"), redo("", true));
     assert_eq!(correction("Scratch that"), Some(Correction::Scratch));
     assert_eq!(correction("Okay, undo that."), Some(Correction::Scratch));
+    // After "no", "sorry" or "oops" too (P23: 7 of 11 such lines landed as points before).
+    for scratch in ["No, scratch that", "Sorry, scratch that", "Oops, scratch that", "Oops, undo that", "No, undo that", "Nope, delete that", "Sorry, undo", "No no, take that back"] {
+        assert_eq!(correction(scratch), Some(Correction::Scratch), "{scratch}");
+    }
+    assert!(deletes("Nope, delete that") && deletes("Sorry, remove that note") && !deletes("Oops, scratch that"));
     for talk in ["No way", "No", "I meant to call Mom", "I mean the weather was nice", "I said I'd call her back", "Scratch that off the list", "Know what I meant?"] {
         assert_eq!(correction(talk), None, "{talk}");
     }
@@ -319,6 +324,16 @@ async fn scratch_that_takes_a_thought_off_and_again_puts_it_back() {
     assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
     assert!(off[2].starts_with("undoable "));
     assert_eq!(f.say("Undo that").await, ["added Buy more stakes for the beans", "notice Put back"]);
+}
+
+#[tokio::test]
+async fn oops_scratch_that_takes_the_thought_off_and_adds_none() {
+    let f = Fixture::new(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    let off = f.say("Oops, scratch that").await;
+    assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
+    assert!(f.core.snapshot().thoughts.iter().all(|t| !t.text.contains("scratch")), "the command landed as a thought");
 }
 
 #[tokio::test]
