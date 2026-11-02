@@ -57,9 +57,9 @@ Get the code and step into its folder:
 git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ```
 
-The first run compiles the Rust core, which takes a few minutes. When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
+The first run downloads and compiles the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01). When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
 
-If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
+If port 4321 is busy, `run.sh` says so before building; use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**
 
@@ -82,6 +82,7 @@ cp .env.example .env                           # then open .env and paste your M
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- Forgot the key? `./run.sh demo` (and `room`) stops before building and says how to add it; `demo.mjs` stops if the core has no key or the key was refused.
 - On a Mac, the key can live in the login Keychain instead of `.env`: `security add-generic-password -s e2a2o -a e2a2o -w` asks for it once, and `run.sh` reads it when there's no `.env`.
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.

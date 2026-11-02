@@ -27,6 +27,19 @@ if [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>
   MODEL_API_KEY="$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${KEYCHAIN_ACCOUNT:-e2a2o}" -w 2>/dev/null || true)"
   export MODEL_API_KEY
 fi
+# demo and room do nothing without a key: say so now, not after a few minutes of building.
+case "${1:-}" in demo|room)
+  if [ -z "$(printf %s "$MODEL_API_KEY" | tr -d '[:space:]')" ] && ! grep -qE '^[[:space:]]*MODEL_API_KEY=[^[:space:]#]' .env 2>/dev/null; then
+    [ -f .env ] || copy="cp .env.example .env, then "
+    echo "./run.sh $1 needs a Meta Model API key: ${copy:-}paste the key after MODEL_API_KEY= in .env." >&2
+    echo "No key? ./run.sh sample opens a ready-made map without one." >&2
+    exit 1
+  fi ;;
+esac
+port="${PORT:-4321}"
+# A busy port shows up before the build, with the same command on the next port.
+node -e 'const s = require("net").createServer(); s.once("error", () => process.exit(1)); s.listen(+process.argv[1], "127.0.0.1", () => s.close(() => process.exit(0)))' "$port" ||
+  { echo "Port $port is in use. Stop the other app, or use another port: PORT=$((port + 1)) ./run.sh $*" >&2; exit 1; }
 if [ "$1" = room ] && [ -z "$ROOM_CODE" ]; then
   # 8 letters and digits, without look-alikes (0/o, 1/l/i): easy to type, too many to guess.
   ROOM_CODE="$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 8)"
@@ -49,13 +62,12 @@ fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
-[ -d ui/node_modules ] || (cd ui && npm install)
+[ -d ui/node_modules ] || (cd ui && npm install --no-audit --no-fund --no-update-notifier)
 if ! out="$(cd ui && npm run build 2>&1)"; then
   echo "$out" >&2
   echo "The UI build failed (see above)." >&2
   exit 1
 fi
-port="${PORT:-4321}"
 case "${1:-}" in
   demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
   room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
