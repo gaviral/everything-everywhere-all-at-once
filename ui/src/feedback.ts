@@ -69,7 +69,8 @@ export const ACTIONS: Action[] = [
   { id: "clear-search", how: "click", at: [["App.tsx", `onClick={() => setQuery("")}`]], pressed: PRESS, done: "the whole map is back" },
   { id: "focus-mode", how: "click", at: [["App.tsx", "setFocusMode((value) => !value)"]], pressed: PRESS, done: "the map shows one thread; Focus stays pressed while on" },
   { id: "back-to-active", how: "click", at: [["App.tsx", "onClick={jumpToActive}"]], pressed: PRESS, done: "the map scrolls your thread to the top" },
-  { id: "sample-map", how: "click", at: [["App.tsx", "onClick={core.sample}"]], pressed: PRESS, waits: "core", done: "the sample map fills the window", failed: OFFLINE },
+  { id: "sample-map", how: "click", at: [["App.tsx", "onClick={() => core.sample()}"], ["App.tsx", "onClick={() => core.sample(choice.id)}"]], pressed: PRESS, waits: "core",
+    done: "the chosen sample map (the student's week, or a shorter one) fills the window", failed: OFFLINE },
   { id: "reload-after-crash", how: "click", at: [["Crash.tsx", "location.reload()"]], pressed: PRESS, done: "the page reloads" },
 
   // A card.
