@@ -89,6 +89,10 @@ export interface BrickActions {
    *  window on the map; it stays there until someone moves it. Both null: back to the view's own layout. Call it as
    *  often as a drag moves: steps go at most once a frame, and your own come back in `positions` (with `by` you). */
   position(id: string, x: number | null, y: number | null): void;
+  /** Taps the mic, as its button does: true starts listening, false stops, nothing switches it. Starting takes a click
+   *  or a key press in this tab, under way as it's called (the Keys brick's ⌘D), so a brick never turns the mic on by
+   *  itself; stopping always works. */
+  listen(on?: boolean): void;
 }
 
 /** What passes, for `on`. */

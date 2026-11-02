@@ -58,7 +58,7 @@ for (const rate of [48000, 44100]) {
 }
 
 // ---- mic.ts with a fake browser.
-function browser({ chromium = true, honorsRate = true, refusesMixedRates = false, startsSuspended = false, denies = false } = {}) {
+function browser({ chromium = true, honorsRate = true, refusesMixedRates = false, startsSuspended = false, denies = false, active = true, permission, worklet } = {}) {
   const log = [];
   const contexts = [];
   const tracks = [];
@@ -68,7 +68,7 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
       this.sampleRate = options.sampleRate && honorsRate ? options.sampleRate : 48000;
       this.state = startsSuspended ? "suspended" : "running";
       this.inClick = !clickDone;
-      this.audioWorklet = { addModule: async (url) => log.push(`module ${url}`) };
+      this.audioWorklet = { addModule: async (url) => { log.push(`module ${url}`); await worklet; } };
       this.destination = {};
       contexts.push(this);
     }
@@ -81,9 +81,10 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
     close() { this.state = "closed"; return Promise.resolve(); }
   }
   class FakeNode { constructor() { this.port = {}; } connect(next) { return next; } disconnect() {} }
-  const navigator = { ...(chromium ? { userAgentData: {} } : {}), mediaDevices: { getUserMedia: async () => {
+  const navigator = { userActivation: { isActive: active }, ...(chromium ? { userAgentData: {} } : {}), mediaDevices: { getUserMedia: async () => {
     clickDone = true;
     log.push("getUserMedia");
+    await permission;
     if (denies) throw new DOMException("denied", "NotAllowedError");
     const track = { stopped: false, stop() { this.stopped = true; } };
     tracks.push(track);
@@ -99,6 +100,40 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
 const server = await uiServer();
 try {
   const { startMic } = await server.ssrLoadModule("/src/mic.ts");
+
+  // A granted permission alone is not a gesture; no device or audio context is opened.
+  {
+    const b = browser({ active: false });
+    await assert.rejects(startMic(() => {}), /Tap the mic/);
+    assert.equal(b.contexts.length, 0);
+    assert.deepEqual(b.log, []);
+  }
+  // Reconnect/unmount/pagehide while permission is pending: any late stream is immediately closed.
+  {
+    let allow;
+    const b = browser({ permission: new Promise((resolve) => { allow = resolve; }) });
+    const abort = new AbortController();
+    const pending = startMic(() => {}, undefined, abort.signal);
+    abort.abort();
+    allow();
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.ok(b.tracks.length && b.tracks.every((t) => t.stopped));
+    assert.ok(b.contexts.every((c) => c.state === "closed"));
+    assert.ok(!b.log.some((l) => l.startsWith("module")), "late capture never connected");
+  }
+  // Cancellation while the worklet loads stops capture immediately, before that await resolves.
+  {
+    let loaded;
+    const b = browser({ worklet: new Promise((resolve) => { loaded = resolve; }) });
+    const abort = new AbortController();
+    const pending = startMic(() => {}, undefined, abort.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(b.log.some((l) => l.startsWith("module")));
+    abort.abort();
+    assert.ok(b.tracks.every((t) => t.stopped));
+    loaded();
+    await assert.rejects(pending, { name: "AbortError" });
+  }
 
   // Chrome: one context, at 24 kHz, made inside the click (before the prompt).
   {
@@ -245,7 +280,15 @@ try {
     assert.deepEqual(none, []);
   }
 
-  console.log("mic-check: ok (worklet at 24, 44.1 and 48 kHz; Chrome, Safari and Firefox capture paths)");
+  // The window's one way in: a click the browser made (never a script's `.click()`) or, without an event, mic.ts's
+  // gesture check above; and nothing but that path calls startMic.
+  {
+    const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+    assert.match(app, /const toggleMic = async \(event\?: \{ isTrusted: boolean \}\) => \{\s*if \(\(event && !event\.isTrusted\)/, "a script's click on the mic never starts it");
+    assert.equal(app.match(/\bstartMic\(/g)?.length, 1, "startMic is called from toggleMic alone");
+  }
+
+  console.log("mic-check: ok (worklet at 24, 44.1 and 48 kHz; Chrome, Safari and Firefox capture paths; only a gesture starts it)");
 } finally {
   await server.close();
 }

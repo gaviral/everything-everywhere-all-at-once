@@ -39,15 +39,51 @@ const until = async (done, what) => {
 const server = await uiServer();
 try {
   const { useCore, LOOKING } = await server.ssrLoadModule("/src/core.ts");
-  let core;
+  const { useSteps } = await server.ssrLoadModule("/src/model-line.ts");
+  let core, steps;
   const root = createRoot(element());
-  root.render(React.createElement(function Window() { core = useCore("me"); return null; }));
+  root.render(React.createElement(function Window() { core = useCore("me"); steps = useSteps().state; return null; }));
   await until(() => core?.connected, "the first connection");
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
   const world = { recaps: [], threads: [{ id: "T1", title: "Rent", parent_id: null, status: "open", last_point: "", touched_ms: 1, tags: [], picture: null, dropped_by: "" }],
     thoughts: [], active: "T1", active_by: { me: "T1" }, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: true };
   say({ type: "snapshot", world });
   await until(() => core.snapshotRevision === 1, "the map");
+
+  // A fresh tab can receive another window's or a previous session's listening state. It stays off.
+  say({ type: "status", listening: true, note: "Listening" });
+  say({ type: "partial", text: "another window" });
+  const listenStep = { type: "step", id: 77, step: "listen", model: "muse-voice-transcribe-1.0", done: false, ok: false, ms: 0 };
+  say(listenStep);
+  await until(() => core.voiceStatusRevision === 1, "the replayed status");
+  assert.equal(core.listening, false);
+  assert.equal(core.partial, "");
+  assert.equal(steps.listening, null, "a remote model step cannot say mic on");
+  assert.ok(!sockets.at(-1).sent.some((data) => JSON.parse(data).type === "listen"), "no automatic listen request");
+  const beforeAudio = sockets.at(-1).sent.length;
+  core.sendAudio(new ArrayBuffer(3840));
+  assert.equal(sockets.at(-1).sent.length, beforeAudio, "no audio sent without this tab's intent");
+  // Stand in for this tab's mic tap after capture starts.
+  assert.equal(core.listen(true), true);
+  say({ type: "status", listening: true, note: "Listening" });
+  await until(() => core.listening, "this tab listening");
+
+  say(listenStep);
+  await until(() => steps.listening?.id === 77, "the local listening step");
+  core.listen(false);
+  await until(() => !core.listening && !steps.listening, "capture and its model line off");
+  say(listenStep);
+  say({ type: "status", listening: true, note: "Listening" });
+  await until(() => core.voiceStatusRevision === 3, "a late status after stop");
+  assert.equal(core.listening, false);
+  assert.equal(steps.listening, null);
+  core.listen(true);
+
+  const pasted = "p".repeat(4000) + "\n\n" + "s".repeat(4000) + "\n\n" + "last";
+  const sentAt = sockets.at(-1).sent.length;
+  assert.equal(core.sendText(pasted), true);
+  assert.deepEqual(sockets.at(-1).sent.slice(sentAt).map((data) => JSON.parse(data).text), ["p".repeat(4000), "s".repeat(4000) + "\n\nlast"]);
+  await until(() => core.notice === "Sent in 2 parts", "the single split notice");
 
   // The live line: words as they're heard; at the turn's end they stay up (the hand-off) until the thought they
   // became arrives, so the dock never blanks between the words and the thought on its way.
@@ -72,6 +108,23 @@ try {
   const ended = Date.now();
   await until(() => core.handoff === "", "the hand-off to end");
   assert.ok(Date.now() - ended >= 1400, "after its moment, not at once");
+  // A tap stops the mic mid-sentence: the stream it stopped still ends, and its last words hand off as at a turn's end
+  // (they're this tab's own), until the thought they became arrives. After that end, words are another window's.
+  say({ type: "partial", text: "and the deposit" });
+  await until(() => core.partial === "and the deposit", "words before the tap");
+  core.listen(false);
+  assert.equal(core.partial, "and the deposit", "a stop keeps the words being said");
+  say({ type: "partial", text: "and the deposit is back" });
+  say({ type: "partial", text: "" });
+  await until(() => core.handoff === "and the deposit is back", "the stopped stream's last words, handed off");
+  say({ type: "change", change: { type: "thought_added", thought: thought("t2", "me") } });
+  await until(() => core.handoff === "" && core.world.thoughts.some((t) => t.id === "t2" && !t.placed), "the thought takes over");
+  const statusBefore = core.voiceStatusRevision;
+  say({ type: "partial", text: "another window talking" });
+  say({ type: "status", listening: false, note: "Stopped listening" });
+  await until(() => core.voiceStatusRevision === statusBefore + 1, "the stream's status");
+  assert.equal(core.partial, "", "past the stopped stream's end, words aren't this tab's");
+  core.listen(true);
 
   // Where pending thoughts stand: the one being placed, and each retry by this window's clock.
   const before = Date.now();
@@ -107,17 +160,30 @@ try {
   say({ type: "notice", message: LOOKING });
   core.askWhy("t1");
   await until(() => core.whys.t1?.pending && core.notice === LOOKING, "a search and a why");
+  const oldSession = core.micConnection();
+  assert.equal(oldSession(), true);
   old.readyState = 3;
   old.onclose();
   await until(() => !core.connected, "the drop");
   assert.deepEqual([core.listening, core.notice, core.whys.t1], [false, "", undefined], "nothing left waiting");
+  assert.equal(oldSession(), false, "an in-flight mic start loses its connection");
+  // The batch must fit the offline queue as a whole, so a failed send can keep its draft without duplicates.
+  assert.equal(core.sendText("x".repeat(6000 * 51)), false);
+  assert.equal(core.sendText("first paragraph\n\n" + "x".repeat(6000)), true);
   // Typed meanwhile: kept, counted where the dock shows it, never lost.
   assert.equal(core.sendText("Oh, and the electric bill"), true);
   assert.equal(core.sendText("Autopay before the 10th"), true);
-  await until(() => core.queuedCount === 2, "two waiting");
+  await until(() => core.queuedCount === 4, "four waiting");
   // Reconnected (the first retry is a second later): sent first, in the order typed.
   await until(() => sockets.at(-1) !== old && core.connected, "the next connection");
-  assert.deepEqual(sockets.at(-1).sent.slice(0, 2).map((m) => JSON.parse(m).text), ["Oh, and the electric bill", "Autopay before the 10th"]);
+  assert.deepEqual(sockets.at(-1).sent.slice(0, 4).map((m) => JSON.parse(m).text), ["first paragraph", "x".repeat(6000), "Oh, and the electric bill", "Autopay before the 10th"]);
+  const beforeReconnectStatus = core.voiceStatusRevision;
+  say({ type: "status", listening: true, note: "Listening" });
+  await until(() => core.voiceStatusRevision === beforeReconnectStatus + 1, "the reconnect status");
+  assert.equal(core.listening, false, "reconnect requires another tap");
+  assert.equal(oldSession(), false, "the old permission request cannot migrate to this socket");
+  assert.ok(!sockets.at(-1).sent.some((data) => JSON.parse(data).type === "listen"));
+
   await until(() => core.queuedCount === 0, "nothing waiting");
   // Past 50 waiting, the window says so instead of keeping more.
   const again = sockets.at(-1);

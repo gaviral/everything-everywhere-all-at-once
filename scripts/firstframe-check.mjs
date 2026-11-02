@@ -29,7 +29,9 @@ try {
   for (const [where, text] of Object.entries(others)) assert.ok(!/listen/i.test(text), `${where} says "${text}"; the header already says Listening`);
   const { statusLine } = await server.ssrLoadModule("/src/core.ts");
   assert.equal(statusLine({ connected: true, listening: true, noKey: false, refused: false, resting: false, paused: false }), "Listening", "the header still says Listening");
-  assert.match(app, /const status = statusLine\(\{ connected: core\.connected, listening: core\.listening/, "the header is wired to it");
+  // Wired to this tab's capture, not the core's word: it says Listening whenever the mic here takes sound, from its
+  // first frame, and never because another window or an older session is listening.
+  assert.match(app, /const status = statusLine\(\{ connected: core\.connected, listening: !!stopMic/, "the header is wired to it");
   assert.equal(others["empty map"], "Say what's on your mind.");
   assert.equal(others.composer, "Or type a thought");
   assert.equal(others["model line"], "Muse Voice Transcribe 1.0 · mic on", "the model line names who hears");

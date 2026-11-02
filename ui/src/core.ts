@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { receiveStep, resetSteps } from "./model-line";
+import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
 import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
@@ -12,7 +12,7 @@ import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
 import { failureNotice } from "./action-line";
-import { tooBig, tooLongThought } from "./limits";
+import { splitThought, tooBig } from "./limits";
 import { applyMove, type MoveChange } from "./moves-core";
 import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
@@ -207,6 +207,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | StepMsg
   | RecapServerMsg
   | AppsServerMsg
   | { type: "snapshot"; world: World }
@@ -632,6 +633,9 @@ export function movesAsked(speaker?: string) {
   };
 }
 
+/** The stream a tab stops still ends within this (asr.rs waits at most 3.8 s for the voice service). */
+const MIC_TAIL_MS = 4_000;
+
 export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
@@ -649,6 +653,12 @@ export function useCore(speaker?: string) {
   // The words of the last voice error, so the window can say why the mic stopped (notice-rules.ts `micStopped`).
   const [voiceError, setVoiceError] = useState("");
   const [listening, setListening] = useState(false);
+  // The core can replay this speaker's listening state from another window or an older session on load/reconnect.
+  // It is not permission to capture here: only App's mic tap calls listen(true). Never persist this tab's intent.
+  const localMic = useRef(false);
+  // Until when the stream this tab just stopped may still finish: its last words and their end (the hand-off to the
+  // thought on its way) are still this tab's. The core waits at most 3.8 s for the voice service (asr.rs QUIET_MAX).
+  const micTail = useRef(0);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   // How many times a stream said it was listening: a window that starts its mic again knows a "not listening" that
   // comes before its stream's "listening" is the old stream's, late.
@@ -741,6 +751,7 @@ export function useCore(speaker?: string) {
         if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
+        if (msg.type === "step" && msg.step === "listen" && !localMic.current) return;
         if (receiveStep(msg)) return;
         if (receiveRoute(msg)) return;
         switch (msg.type) {
@@ -797,6 +808,8 @@ export function useCore(speaker?: string) {
             break;
           }
           case "partial":
+            if (!localMic.current && Date.now() >= micTail.current) break;
+            if (!localMic.current && !msg.text) micTail.current = 0;
             window.clearTimeout(handoffTimer);
             if (msg.text) {
               lastPartial = msg.text;
@@ -810,7 +823,7 @@ export function useCore(speaker?: string) {
             setPartial(msg.text);
             break;
           case "status":
-            setListening(msg.listening);
+            setListening(localMic.current && msg.listening);
             setVoiceStatusRevision((revision) => revision + 1);
             if (msg.listening) setListenedRevision((revision) => revision + 1);
             break;
@@ -901,6 +914,9 @@ export function useCore(speaker?: string) {
         setPulls(NO_PULLS);
         recapDisconnected();
         setConnected(false);
+        localMic.current = false;
+        micTail.current = 0;
+        stopListeningStep();
         setListening(false);
         setVoiceStatusRevision((revision) => revision + 1);
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
@@ -1040,17 +1056,33 @@ export function useCore(speaker?: string) {
     },
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }
-      // Kept in the composer, to cut into parts.
-      const long = tooLongThought(text);
-      if (long) { setNotice(long); answered(); return false; }
-      const message = JSON.stringify({ type: "text", text });
-      if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
-      else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false; }
+      const parts = splitThought(text);
+      const online = socket.current?.readyState === WebSocket.OPEN;
+      // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
+      if (!online && outbox.current.length + parts.length > 50) {
+        setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
+      }
+      for (const part of parts) {
+        const message = JSON.stringify({ type: "text", text: part });
+        if (online) socket.current!.send(message);
+        else outbox.current.push(message);
+      }
+      if (!online) setQueuedCount(outbox.current.length);
+      if (parts.length > 1) { setNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
       return true;
     },
-    sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
-    listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
+    sendAudio: (frame: ArrayBuffer) => { if (localMic.current) { volume.feed(frame); send(frame); } },
+    // A pending permission prompt cannot migrate to a reconnected socket.
+    micConnection: () => { const ws = socket.current; return () => socket.current === ws && ws?.readyState === WebSocket.OPEN; },
+    listen: (on: boolean) => {
+      volume.reset();
+      const sent = send(JSON.stringify({ type: "listen", on }));
+      const was = localMic.current;
+      localMic.current = on && sent;
+      micTail.current = was && !localMic.current && sent ? Date.now() + MIC_TAIL_MS : 0;
+      if (!localMic.current) { stopListeningStep(); setListening(false); if (!micTail.current) { setPartial(""); setHandoff(""); } }
+      return sent;
+    },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
     // "Try a sample map": the core fills an empty map with the sample, or the one named (core/src/sample.rs).
     sample: (name?: string) => sendOrWarn(JSON.stringify(name ? { type: "sample", name } : { type: "sample" })),

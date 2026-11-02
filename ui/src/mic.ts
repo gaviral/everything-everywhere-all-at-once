@@ -65,19 +65,27 @@ export function watchMicPermission(permissions: Pick<Permissions, "query"> | und
   return () => { stopped = true; if (status) status.onchange = null; };
 }
 
-export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: () => void): Promise<() => void> {
+export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: () => void, signal?: AbortSignal): Promise<() => void> {
   if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) {
     throw new MicUnavailable(window.isSecureContext === false
       ? "Live audio needs a secure page (https). Open the link that starts with https."
       : "Live audio isn't available in this browser. You can type below.");
   }
+  // Defense at the capture boundary: a saved permission, core status or reconnect is never a gesture in this tab.
+  if (navigator.userActivation?.isActive === false) throw new MicUnavailable("Tap the mic to start listening.");
+  signal?.throwIfAborted();
   // Before any await, so it counts as part of the click.
   let context = atRate();
   let stream: MediaStream | undefined;
+  // Abort also closes tracks while the worklet loads; getUserMedia itself cannot be cancelled, so check again
+  // as soon as its promise resolves and stop any late stream before connecting it.
+  const cancel = () => { stream?.getTracks().forEach((track) => track.stop()); context.onstatechange = null; if (context.state !== "closed") void context.close(); };
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
+    signal?.throwIfAborted();
     let source: MediaStreamAudioSourceNode;
     try {
       source = context.createMediaStreamSource(stream);
@@ -92,6 +100,7 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     wake();
     context.onstatechange = wake;
     await context.audioWorklet.addModule("/pcm-worklet.js");
+    signal?.throwIfAborted();
     const writer = new AudioWorkletNode(context, "pcm-writer");
     writer.port.onmessage = (event) => onFrame(event.data as ArrayBuffer);
     source.connect(writer);
@@ -105,6 +114,7 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     const stop = () => {
       if (stopped) return;
       stopped = true;
+      signal?.removeEventListener("abort", cancel);
       writer.port.onmessage = null;
       context.onstatechange = null;
       source.disconnect();
@@ -117,8 +127,8 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     for (const track of tracks) track.onended = () => { stop(); onEnded?.(); };
     return stop;
   } catch (error) {
-    stream?.getTracks().forEach((track) => track.stop());
-    void context.close();
+    signal?.removeEventListener("abort", cancel);
+    cancel();
     throw error;
   }
 }

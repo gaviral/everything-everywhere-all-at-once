@@ -135,6 +135,7 @@ function Playground() {
       window.clearTimeout(placedLog.current);
       placedLog.current = window.setTimeout(() => said(x === null || y === null ? `position ${id} → back to the layout` : `position ${id} → placed at ${Math.round(x)}, ${Math.round(y)}`), 250);
     },
+    listen: (on) => said(`listen ${on === undefined ? "(switch)" : on ? "on" : "off"} → in the app: as a tap on the mic`),
   });
   const hum = () => VOICES.forEach((level, i) => window.setTimeout(() => received(level), i * 320));
 
