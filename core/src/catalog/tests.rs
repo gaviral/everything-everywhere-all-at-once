@@ -370,6 +370,78 @@ async fn expand_this_opens_the_card_under_the_pointer() {
     assert_eq!(f.say("Expand this").await[0], "open T1");
 }
 
+/// "Focus on this" focuses the card "this" means, as "collapse this" folds it; bare "Focus" stays on yours, as its
+/// button does. Scratching it puts back both the view and the thread you were on.
+#[tokio::test]
+async fn focus_on_this_focuses_the_card_this_means() {
+    let f = Fixture::new(garden());
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(f.say("Focus").await, ["view focus"]);
+    assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "on T1", "notice Undone: show only one thread"]);
+    // The card the pointer left just now still counts, and "let's" leads in as it does for "let's focus".
+    attend(&f.core, "you", None, None);
+    assert_eq!(f.say("Let's focus on that one").await, ["on T2", "view focus"]);
+    // Already there: only the view, and its undo is the view's alone.
+    let done = f.core.request("you", "Focus on this thread", true).unwrap();
+    assert!(matches!(done.undo, Some(Undo::View)), "{:?}", done.undo);
+    // A correction redoes it the same way ("Palace", then "No, I meant focus on this"; the new view replaces Palace).
+    let f = Fixture::new(garden());
+    attend(&f.core, "you", None, Some("T2".into()));
+    f.say("Palace").await;
+    assert_eq!(f.say("No, I meant focus on this").await, ["on T2", "view focus"]);
+    // Nothing pointed or selected: the thread you're on, so nothing moves.
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Focus on this").await, ["view focus"]);
+    // Nothing to focus on: said, not a silent view the window can't show (Sol's review); bare "Focus" too.
+    let f = Fixture::new(World::default());
+    for said in ["Let's focus on that one", "Focus"] {
+        assert_eq!(f.say(said).await, ["notice Nothing on the map yet: say a thought first"], "{said}");
+    }
+    let f = Fixture::new(World { active: None, active_by: HashMap::new(), ..garden() });
+    assert_eq!(f.say("Focus").await, ["notice Point at a thread, then say “focus on this”"]);
+    // Pointed at, it moves you there even from nowhere.
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
+}
+
+/// What the window is told about correcting the last turn, after `act` (`ServerMsg::Correctable`).
+async fn correctable(f: &Fixture, act: impl FnOnce()) -> Vec<(u64, Option<String>)> {
+    let mut updates = f.core.updates.subscribe();
+    act();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    let mut out = Vec::new();
+    while let Ok(o) = updates.try_recv() {
+        if let ServerMsg::Correctable { for_ms, back_to } = o.message {
+            out.push((for_ms, back_to));
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn the_window_learns_where_a_correction_starts_from() {
+    // "Next one" took you to Bills; "No, I meant collapse this" undoes the move first, so "this" is Garden, and the
+    // window's mark must say so (Sol's review: it marked Bills).
+    let f = Fixture::new(garden());
+    let next = correctable(&f, || f.core.add_thought("you", "Next one")).await;
+    assert_eq!(next, [(JUST_BEFORE_MS, Some("T1".into()))]);
+    assert_eq!(f.say("No, I meant collapse this").await, ["on T1", "fold T1", "notice Folded Garden"]);
+    // A thought kept, or a view: undoing it moves nobody.
+    let f = Fixture::new(garden());
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Buy more seeds")).await, [(JUST_BEFORE_MS, None)]);
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Palace")).await, [(JUST_BEFORE_MS, None)]);
+    // "Focus on this" moved you: the view's undo, then the move back.
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Focus on this")).await, [(JUST_BEFORE_MS, Some("T1".into()))]);
+    // Undo pressed: nothing left to correct.
+    let f = Fixture::new(garden());
+    let id = undoable(&f.say("Collapse the garden").await);
+    assert_eq!(correctable(&f, || { f.click_undo(id); }).await, [(0, None)]);
+}
+
 /// The latest thought asks "Did you mean “Muse Spark”?".
 fn asked() -> World {
     let mut world = garden();

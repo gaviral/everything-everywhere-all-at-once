@@ -239,6 +239,8 @@ function change(peer, c, t) {
       threads.set(c.thread.id, { title: c.thread.title, added: t });
       break;
     case "thread_renamed":
+    case "thread_retitled":
+    case "title_chosen":
       if (threads.has(c.thread_id)) threads.get(c.thread_id).title = c.title;
       break;
     case "thought_split":

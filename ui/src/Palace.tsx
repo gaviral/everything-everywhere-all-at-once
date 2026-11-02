@@ -21,6 +21,12 @@ const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palac
 const TILE_MIN = 150;
 const TILE_GAP = 18;
 
+/** The columns a row of this width gets: as many pictures as fit at TILE_MIN or wider, and how wide each is. */
+export function columnsFor(width: number) {
+  const count = Math.max(1, Math.floor((width + TILE_GAP) / (TILE_MIN + TILE_GAP)));
+  return { count, width: (width - (count - 1) * TILE_GAP) / count };
+}
+
 // Keep each family together, including malformed or temporarily orphaned data.
 function makeRooms(threads: Thread[]): Room[] {
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
@@ -77,12 +83,8 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const rooms = roomsRef.current;
     if (!rooms) return;
     const measure = () => {
-      const width = rooms.clientWidth;
-      const count = Math.max(1, Math.floor((width + TILE_GAP) / (TILE_MIN + TILE_GAP)));
-      setColumns((was) => {
-        const next = { count, width: (width - (count - 1) * TILE_GAP) / count };
-        return was.count === next.count && Math.abs(was.width - next.width) < 0.5 ? was : next;
-      });
+      const next = columnsFor(rooms.clientWidth);
+      setColumns((was) => was.count === next.count && Math.abs(was.width - next.width) < 0.5 ? was : next);
     };
     measure();
     const observer = new ResizeObserver(measure);
