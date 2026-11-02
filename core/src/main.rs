@@ -69,6 +69,8 @@ pub struct Core {
     pub key: Option<String>,
     /// Placing and Explain's model (model.rs).
     pub placer_model: model::Setting,
+    /// How many of the same placement call race, the first good answer winning (placer.rs `RACE`).
+    pub placer_race: usize,
     pub http: reqwest::Client,
     /// When the person last spoke or typed; background work waits for a pause.
     last_activity: std::sync::atomic::AtomicU64,
@@ -812,6 +814,7 @@ async fn main() -> anyhow::Result<()> {
         // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
         // and cheaper, but Meta may keep what it reads.
         placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+        placer_race: placer::race_from_env(),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -1396,6 +1399,8 @@ impl Core {
             room: None,
             key: None,
             placer_model: "test".into(),
+            // One call a placement, so a stand-in's answers are used in order; racing has its own test (placer.rs).
+            placer_race: 1,
             // One for every test core: making one reads the system's certificates, and a test may make thousands.
             http: {
                 static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();

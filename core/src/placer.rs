@@ -50,6 +50,29 @@ const JOINS: [&str; 9] = ["and", "also", "plus", "but", "so", "oh", "then", "any
 /// character (3,344 for that one).
 const ROOM: u32 = 2000;
 
+/// How many of the same placement call go at once, the first good answer winning, unless PLACER_RACE says otherwise
+/// (1 turns it off). A placement's time is nearly all reasoning, and how long it reasons varies from call to call:
+/// on 281 placements from two replays (2026-11-01, Spark 1.2 Contributor, minimal effort) time was 0.9 s + 4 ms a
+/// completion token (r = 0.94) and barely followed prompt size (r = 0.21); the median was 2.6 s, the slowest tenth
+/// over 4.3 s, the slowest 7.7 s. The faster of two draws from that spread is 2.1 s at the median and 3.1 s at the
+/// 90th percentile; starting the second only once the first is slow saves little (at 3 s: 90th percentile unchanged),
+/// since most of the spread is above the median. Cost: twice a placement's tokens (≈ US$0.004 more a thought on
+/// Spark 1.2) and two calls of the hourly cap (model.rs `CALLS_PER_HOUR`: its busiest measured hour had 77
+/// placements, so ≈ 280 of 400).
+pub const RACE: usize = 2;
+
+/// `RACE`, or PLACER_RACE when it's a whole number from 1 to 4.
+pub fn race_from_env() -> usize {
+    match std::env::var("PLACER_RACE").ok().map(|v| v.trim().parse::<usize>()) {
+        None => RACE,
+        Some(Ok(n)) if (1..=4).contains(&n) => n,
+        Some(_) => {
+            tracing::warn!("PLACER_RACE isn't a whole number from 1 to 4: using {RACE}");
+            RACE
+        }
+    }
+}
+
 /// The most room a placement is asked for: as much as the chat import asks for.
 const MAX_ROOM: u32 = 12_000;
 
@@ -404,24 +427,40 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let placement = loop {
-        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-        let body = core
-            .ask_model(
-                &core.placer_model,
-                url,
-                limit(room),
-                |model| request(&world, &thought, model, room, new_thread),
-                json!({"thought": thought_id, "room": room}),
-            )
-            .await?;
-        match read(&body)? {
-            Some(placement) => break placement,
-            None if !again && room < MAX_ROOM => {
+        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
+        // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
+        let mut calls: futures_util::stream::FuturesUnordered<_> = (0..core.placer_race.max(1))
+            .map(|lane| {
+                core.ask_model(
+                    &core.placer_model,
+                    url,
+                    limit(room),
+                    |model| request(&world, &thought, model, room, new_thread),
+                    json!({"thought": thought_id, "room": room, "lane": lane}),
+                )
+            })
+            .collect();
+        let (mut won, mut cut_off, mut failed) = (None, false, None);
+        while let Some(answer) = futures_util::StreamExt::next(&mut calls).await {
+            match answer.and_then(|body| read(&body)) {
+                Ok(Some(placement)) => {
+                    won = Some(placement);
+                    break;
+                }
+                Ok(None) => cut_off = true,
+                Err(e) => failed = failed.or(Some(e)),
+            }
+        }
+        drop(calls);
+        match (won, cut_off, failed) {
+            (Some(placement), _, _) => break placement,
+            (None, false, Some(e)) => return Err(e),
+            (None, _, _) if !again && room < MAX_ROOM => {
                 let more = (2 * room).min(MAX_ROOM);
                 tracing::info!("answer cut off at {room} tokens: asking once more with {more}");
                 (room, again) = (more, true);
             }
-            None => bail!("answer cut off at {room} tokens"),
+            (None, _, _) => bail!("answer cut off at {room} tokens"),
         }
     };
     // From when the thought arrived, so time waiting in the queue counts too.
@@ -632,12 +671,17 @@ pub(crate) fn perf(world: &World, thought: &Thought) {
 }
 
 fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool) -> serde_json::Value {
-    let threads = if world.threads.is_empty() {
+    // Oldest-touched first, the one just spoken on last (refiner.rs orders its list the same way): a placement
+    // rewrites only its own thread's line, so with the threads in the order they were made every line after it was a
+    // new prefix, and the cache held the system prompt only (625 tokens) in 14 of 24 calls on a 300-thread map
+    // (scale-2026-11-01.md). Ties (an import, a map made at once) keep the order they were made in.
+    let mut ordered: Vec<&Thread> = world.threads.iter().collect();
+    ordered.sort_by_key(|t| t.touched_ms);
+    let threads = if ordered.is_empty() {
         "(none yet)".to_string()
     } else {
-        world
-            .threads
-            .iter()
+        ordered
+            .into_iter()
             .map(|t| {
                 let status = if t.status == ThreadStatus::Dropped { "dropped" } else { "open" };
                 format!("{}: {} [{status}] last: {}", t.id, t.title, t.last_point)
@@ -1528,6 +1572,84 @@ mod tests {
         let (result, asked, placed) = place_against("Pay rent before Friday", vec![body(json!("stop"), json!("not json"))]).await;
         assert!(result.unwrap_err().to_string().starts_with("answer wasn't the expected JSON"));
         assert_eq!((asked, placed), (vec![2000], false));
+    }
+
+    /// Two of the same call race and the first good answer places the thought: one that reasons for long, fails or
+    /// is cut off costs nothing while the other answers. Each stand-in answer: its delay, its status and its body.
+    #[tokio::test]
+    async fn the_faster_of_two_racing_calls_places_the_thought() {
+        async fn race(answers: Vec<(u64, u16, serde_json::Value)>) -> (anyhow::Result<Option<String>>, Vec<u64>, bool, Duration) {
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let seen = asked.clone();
+            let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+                let (delay, status, answer) = {
+                    let mut asked = seen.lock().unwrap();
+                    asked.push(request["max_tokens"].as_u64().unwrap());
+                    answers[(asked.len() - 1).min(answers.len() - 1)].clone()
+                };
+                async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(answer))
+                }
+            };
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+            let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+            let (journal, world) = crate::world::Journal::open(&path).unwrap();
+            let core = Core { key: Some("good".into()), placer_race: 2, ..Core::test(journal, world) };
+            core.keep("you", "Pay rent before Friday");
+            let id = core.snapshot().thoughts[0].id.clone();
+            let started = std::time::Instant::now();
+            let result = super::place(&core, &id, &url, super::patience).await;
+            let took = started.elapsed();
+            let placed = core.snapshot().thoughts[0].placed;
+            let _ = std::fs::remove_file(&path);
+            let asked = asked.lock().unwrap().clone();
+            (result, asked, placed, took)
+        }
+        let whole = || body(json!("stop"), json!(WHOLE));
+        // One reasons for 5 s, the other answers at once: placed at once, both asked with the same room.
+        let (result, asked, placed, took) = race(vec![(5_000, 200, whole()), (50, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000]);
+        assert!(took < Duration::from_secs(2), "waited on the slow call: {took:?}");
+        // One fails: the other places it.
+        let (result, _, placed, _) = race(vec![(10, 500, json!({"error": {"message": "boom"}})), (100, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        // One is cut off: the other places it, with no second round.
+        let (result, asked, placed, _) = race(vec![(10, 200, body(json!("length"), json!(cut_short()))), (100, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000]);
+        // Both cut off: once more, both with twice the room.
+        let (result, asked, placed, _) =
+            race(vec![(10, 200, body(json!("length"), json!(cut_short()))), (10, 200, body(json!("length"), json!(cut_short()))), (10, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000, 4000, 4000]);
+        // Both fail: the error, and it waits to be placed again.
+        let (result, _, placed, _) = race(vec![(10, 500, json!({"error": {"message": "boom"}}))]).await;
+        assert!(result.is_err() && !placed);
+    }
+
+    /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
+    /// the talk keeps coming back to) used to rewrite the list's first line, so nothing after the system prompt was
+    /// cached. Now it rewrites only the last line.
+    #[test]
+    fn a_placement_rewrites_only_the_end_of_the_thread_list() {
+        let mut world = World { active: Some("T1".into()), ..World::default() };
+        for (id, touched) in [("T1", 400), ("T2", 100), ("T3", 200), ("T4", 300)] {
+            world.threads.push(Thread { touched_ms: touched, last_point: format!("about {id}"), ..thread(id) });
+        }
+        let said = Thought { text: "and one more thing on that".into(), at_ms: 500, ..thought("x", "you", None, true) };
+        let prompt = |world: &World| request(world, &said, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        let before = prompt(&world);
+        let order: Vec<&str> = before.lines().skip(1).take(4).map(|l| &l[..2]).collect();
+        assert_eq!(order, ["T2", "T3", "T4", "T1"], "oldest-touched first: {before}");
+        world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "one more thing".into(), at_ms: 500 });
+        let after = prompt(&world);
+        let same = before.chars().zip(after.chars()).take_while(|(a, b)| a == b).count();
+        assert!(before[..same].contains("T4: Topic T4 [open] last: about T4\n"), "the cached prefix ends where T1's line begins: {after}");
+        assert!(super::SYSTEM.len() > 2_000 && !super::SYSTEM.contains('{'), "the system prompt is stable text, sent first");
     }
 
     #[test]
