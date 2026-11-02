@@ -546,7 +546,8 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let candidates = candidates(&world, &thought);
     // From when the first calls went, so a round cut off and asked again counts too: the tag says what the wait was.
     let went = std::time::Instant::now();
-    let (lane, lanes, race_ms, placement) = loop {
+    let (world_at, thought_at) = (&world, &thought);
+    let (lane, model, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once, each lane to its own model (`MODELS`), and the first good answer
         // wins (see `RACE`); the others are dropped.
@@ -557,22 +558,32 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         // The map shows the threads the prompt names lighting up while these calls run (ui/src/route.ts).
         core.send(ServerMsg::Route { route: Route::Weighing { thought_id: thought_id.into(), candidates: candidates.clone(), lanes } });
         let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
-            .map(|lane| {
-                let call = core.ask_model(
-                    core.placer_lane(lane),
-                    url,
-                    limit(room),
-                    |model| request(&world, &thought, model, room, new_thread),
-                    json!({"thought": thought_id, "room": room, "lane": lane}),
-                );
-                async move { (lane, call.await) }
+            .map(|lane| async move {
+                // The model this lane's answer came from, kept as it's asked: the lane's setting can switch while
+                // another lane runs (a Contributor model giving way, a model taken out of the race), so it's not read after.
+                let asked = std::sync::Mutex::new(String::new());
+                let answer = core
+                    .ask_model(
+                        core.placer_lane(lane),
+                        url,
+                        limit(room),
+                        |model| {
+                            if let Ok(mut asked) = asked.lock() {
+                                model.clone_into(&mut asked);
+                            }
+                            request(world_at, thought_at, model, room, new_thread)
+                        },
+                        json!({"thought": thought_id, "room": room, "lane": lane}),
+                    )
+                    .await;
+                (lane, asked.into_inner().unwrap_or_default(), answer)
             })
             .collect();
         let (mut won, mut cut_off, mut failed) = (None, false, None);
-        while let Some((lane, answer)) = futures_util::StreamExt::next(&mut calls).await {
+        while let Some((lane, model, answer)) = futures_util::StreamExt::next(&mut calls).await {
             match answer.and_then(|body| read(&body)) {
                 Ok(Some(placement)) => {
-                    won = Some((lane, u64::try_from(went.elapsed().as_millis()).unwrap_or(u64::MAX), placement));
+                    won = Some((lane, model, u64::try_from(went.elapsed().as_millis()).unwrap_or(u64::MAX), placement));
                     break;
                 }
                 Ok(None) => cut_off = true,
@@ -581,7 +592,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         }
         drop(calls);
         match (won, cut_off, failed) {
-            (Some((lane, ms, placement)), _, _) => break (lane, lanes, ms, placement),
+            (Some((lane, model, ms, placement)), _, _) => break (lane, model, lanes, ms, placement),
             (None, false, Some(e)) => return Err(e),
             (None, _, _) if !again && room < MAX_ROOM => {
                 let more = (2 * room).min(MAX_ROOM);
@@ -594,8 +605,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // From when the thought arrived, so time waiting in the queue counts too.
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     // The parent asked for too: a branch that shouldn't be one shows here, not only in a trace file.
-    // The model the winning lane asked: after a Contributor model gave way, the one without it (`Setting::name`).
-    let model = core.placer_lane(lane).name().to_string();
+    // `model` is the one the winning lane asked: after a Contributor model gave way, the one without it.
     tracing::info!("placed in {place_ms} ms by {model} (lane {lane}): {} {} parent {:?}", placement.action, placement.thread_id, placement.parent_id);
 
     let answer = (placement.action.clone(), placement.thread_id.clone(), placement.title.clone(), placement.split.clone());
@@ -1998,21 +2008,41 @@ mod tests {
         notices: Vec<String>,
         /// Each of the 2 lanes' model after the race (a Contributor model may have given way).
         lanes: Vec<String>,
+        refused: bool,
     }
+
+    /// In `mixed`'s answers: a 200 whose headers go at once and whose body follows after the delay.
+    const HEADERS_FIRST: u16 = 1200;
 
     /// A placement raced on 2 lanes: `lanes` (empty: every lane asks `one`, as PLACER_MODEL does), against a stand-in
     /// that answers each model after its delay with its status (`answers`; else at once, 200), a whole answer when 200.
+    /// A model listed more than once answers its nth request with its nth entry, the last one after that.
     async fn mixed(one: &str, lanes: crate::model::Lanes, answers: Vec<(&'static str, u64, u16)>) -> Mixed {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let seen = asked.clone();
         let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
             let model = request["model"].as_str().unwrap_or_default().to_string();
-            seen.lock().unwrap().push(model.clone());
-            let (delay, status) = answers.iter().find(|(m, _, _)| *m == model).map_or((0, 200), |(_, d, s)| (*d, *s));
+            let nth = {
+                let mut seen = seen.lock().unwrap();
+                seen.push(model.clone());
+                seen.iter().filter(|m| **m == model).count() - 1
+            };
+            let mine: Vec<_> = answers.iter().filter(|(m, _, _)| *m == model).collect();
+            let (delay, status) = mine.get(nth).or(mine.last()).map_or((0, 200), |(_, d, s)| (*d, *s));
             async move {
-                tokio::time::sleep(Duration::from_millis(delay)).await;
+                use axum::response::IntoResponse;
+                let late = Duration::from_millis(delay);
+                if status == HEADERS_FIRST {
+                    let text = body(json!("stop"), json!(WHOLE)).to_string();
+                    let chunk = futures_util::stream::once(async move {
+                        tokio::time::sleep(late).await;
+                        Ok::<_, std::io::Error>(text)
+                    });
+                    return ([(axum::http::header::CONTENT_TYPE, "application/json")], axum::body::Body::from_stream(chunk)).into_response();
+                }
+                tokio::time::sleep(late).await;
                 let answer = if status == 200 { body(json!("stop"), json!(WHOLE)) } else { json!({"error": {"message": "no"}}) };
-                (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(answer))
+                (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(answer)).into_response()
             }
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2036,9 +2066,10 @@ mod tests {
             .collect();
         let notices = messages.iter().filter(|m| m["type"] == "notice").map(|m| m["message"].as_str().unwrap_or_default().to_string()).collect();
         let lanes = (0..2).map(|lane| core.placer_lane(lane).name().to_string()).collect();
+        let refused = core.key_refused();
         let _ = std::fs::remove_file(&path);
         let asked = asked.lock().unwrap().clone();
-        Mixed { result, asked, placed, took, decided, ends, notices, lanes }
+        Mixed { result, asked, placed, took, decided, ends, notices, lanes, refused }
     }
 
     const SPARK_13: &str = "muse-spark-1.3";
@@ -2108,6 +2139,38 @@ mod tests {
         assert_eq!(race.lanes, [SPARK_13, C12]);
         assert_eq!(race.decided["model"].as_str(), Some(SPARK_13));
         assert_eq!(race.notices, ["Using muse-spark-1.3 (this key can't use the contributor model)."]);
+    }
+
+    /// One model the key can't use (401 or 403) takes only that model out of the race: the other lane places the
+    /// thought, its model takes every lane from then on, said once, and the key isn't counted as refused. Only when
+    /// every listed model refuses it does the key count as refused, as with one model.
+    #[tokio::test]
+    async fn a_model_the_key_cant_use_leaves_the_race_without_stopping_placing() {
+        for status in [401, 403] {
+            let race = mixed("unused", default_lanes(), vec![(SPARK_13, 0, status), (SPARK_12, 50, 200)]).await;
+            assert!(race.result.unwrap().is_none() && race.placed, "{status}");
+            assert!(!race.refused, "{status}: one model's refusal counted as the key's");
+            assert_eq!(race.lanes, [SPARK_12, SPARK_12], "{status}");
+            assert_eq!(race.decided["model"].as_str(), Some(SPARK_12));
+            assert_eq!(race.notices, [format!("Placing uses {SPARK_12} (this key can't use {SPARK_13}).")]);
+        }
+        // The serve loop reads the key's state, not the first lane's error (`serve`: placing stops until a restart).
+        let race = mixed("unused", default_lanes(), vec![(SPARK_13, 0, 403), (SPARK_12, 50, 403)]).await;
+        assert!(race.result.is_err() && !race.placed && race.refused);
+        assert_eq!(race.notices.last().map(String::as_str), Some(crate::model::REFUSED));
+    }
+
+    /// The landing names the model the winning lane's answer came from, even when that lane's setting switched while
+    /// the race ran: a model listed twice shares one setting, and the other lane's Contributor refusal moves it to the
+    /// model without Contributor mode before the first lane's answer wins.
+    #[tokio::test]
+    async fn the_landing_names_the_model_the_winning_answer_came_from() {
+        const C13: &str = "muse-spark-1.3-contributor";
+        let lanes = crate::model::Lanes::pick(None, Some(format!("{C13},{C13}")), super::MODELS);
+        let race = mixed("unused", lanes, vec![(C13, 300, 200), (C13, 0, 403), (SPARK_13, 2_000, HEADERS_FIRST)]).await;
+        assert!(race.result.unwrap().is_none() && race.placed);
+        assert_eq!(race.lanes, [SPARK_13, SPARK_13], "the shared setting switched while the race ran");
+        assert_eq!(race.decided["model"].as_str(), Some(C13));
     }
 
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
