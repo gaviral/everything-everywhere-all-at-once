@@ -23,10 +23,12 @@ actions: concrete tasks or events the speaker decided on or needs to do, kind \"
 tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
 #hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
 Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \
-Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies. \
-Last, questions, apart from all the above: for a point that flags a problem or a to-do without saying what it is (\"the budget part needs work\", \
-\"the intro still bugs me\"), one concrete question that asks what (\"Which part of the budget needs work?\"), at most one per thread, never for a \
-point marked (trailed off).";
+Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
+/// What the answer's `questions` are, said in its schema rather than the rules above: there, it made the other ideas
+/// half as many (decisions/refinersure.md).
+const QUESTIONS: &str = "For a point that flags a problem or a to-do without saying what it is (\"the budget part needs work\", \
+\"the intro still bugs me\"): one concrete question that asks what (\"Which part of the budget needs work?\"), at most one per thread, \
+never for a point marked (trailed off). Empty when no point is like that.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
 /// How long a pass gets, its whole answer included: twice what filling its 6,000-token room takes, by the placer's rule
@@ -216,7 +218,7 @@ fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
                 "titles": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "title": {"type": "string"}}, "required": ["thread_id", "title"]}},
                 "merges": {"type": "array", "items": {"type": "object", "properties": {"from": {"type": "string"}, "into": {"type": "string"}}, "required": ["from", "into"]}},
                 "suggestions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
-                "questions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
+                "questions": {"type": "array", "description": QUESTIONS, "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
                 "actions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "kind": {"type": "string", "enum": ["reminder", "event"]}, "title": {"type": "string"}, "when": {"type": "string"}}, "required": ["thread_id", "kind", "title", "when"]}},
                 "tags": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["thread_id", "tags"]}}
             },
