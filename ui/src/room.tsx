@@ -68,8 +68,8 @@ export function leftBy(thread: { dropped_by?: string }, me: string): string {
 }
 
 /** Opens the core's WebSocket as this window's seat; each time it opens or drops, checks the room still takes it. */
-export function openSocket(url: string): WebSocket {
-  const params = new URLSearchParams();
+export function openSocket(url: string, extra: Record<string, string> = {}): WebSocket {
+  const params = new URLSearchParams(extra);
   if (seat.code) params.set("room", seat.code);
   if (seat !== ALONE) params.set("name", seat.me);
   const query = params.toString();

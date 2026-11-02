@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
-import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
@@ -96,6 +96,8 @@ export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: num
 // Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
 // when something newer stops the search.
 export const LOOKING = "Looking through your threads…";
+/** The message card's Stop pressed with the connection down (`stopSend`). */
+export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
 
 export interface Suggestion {
   id: string;
@@ -551,7 +553,25 @@ export function apply(world: World, raw: Change): World {
       };
       // As the core: a point that carries these words on across a pause (chunks.tsx) takes the same swap.
       const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
-      return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
+      let out = carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
+      // As the core: asked about words its own don't hold, they were said in a part it carries on; fixed there too.
+      const to = c.with || t.guess;
+      if (c.accept && t.unclear && to && swap(t.text, t.unclear, to) === t.text) {
+        const seen = [t.id];
+        for (let head = world.notes?.[t.id]?.continues; head && !seen.includes(head); head = world.notes?.[head]?.continues) {
+          seen.push(head);
+          const h = out.thoughts.find((x) => x.id === head);
+          if (!h) continue;
+          // Each part's point reads the ones before it, so each takes the swap; its words said only where they are.
+          if (swap(h.text, t.unclear, to) !== h.text) {
+            const answered = h.unclear.toLowerCase() === t.unclear.toLowerCase();
+            const fixed = { ...h, text: swap(h.text, t.unclear, to), ...(answered ? { unclear: "", guess: "" } : {}) };
+            out = { ...out, thoughts: out.thoughts.map((x) => (x.id === head ? fixed : x)) };
+          }
+          out = repoint(out, head, correct);
+        }
+      }
+      return out;
     }
     // A change this window doesn't know (a newer core, a tab open across a redeploy): the map as it was, not undefined.
     default:
@@ -656,6 +676,8 @@ export function useCore(speaker?: string) {
   const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
+  // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
+  const stopWaiting = useRef<number | null>(null);
 
   useEffect(() => {
     let closed = false;
@@ -666,11 +688,16 @@ export function useCore(speaker?: string) {
     let lastPartial = "";
     let awaitingThought = false;
     let handoffTimer: number | undefined;
+    // The message card the core last sent about since this connection opened or its last snapshot, if any.
+    let cardTold: number | null = null;
     const asked = movesAsked(speaker);
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
-      const ws = openSocket(`${scheme}://${location.host}/ws`);
+      // A Stop pressed offline rides on the connection itself, so the core applies it before this window counts as
+      // open, and a count that ends meanwhile can't send first (core/src/main.rs `connect`, messages.rs `finish`).
+      const waiting = stopWaiting.current;
+      const ws = openSocket(`${scheme}://${location.host}/ws`, waiting === null ? {} : { stop: String(waiting) });
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
@@ -679,6 +706,11 @@ export function useCore(speaker?: string) {
         resetRoute();
         setConnected(true);
         retry = 500;
+        cardTold = null;
+        // One pressed while this connection was still opening goes now, ahead of everything else.
+        const late = stopWaiting.current;
+        stopWaiting.current = null;
+        if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
         attention.current.resend((message) => ws.send(message));
@@ -707,6 +739,12 @@ export function useCore(speaker?: string) {
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
             // A new connection, maybe to a restarted core whose Undo ids start again at 1: no Undo from before it.
             setUndoId(null);
+            // The core sends the card first (send-card.ts `caughtUp`).
+            {
+              const told = cardTold;
+              cardTold = null;
+              setSendCard((shown) => caughtUp(shown, told));
+            }
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -817,6 +855,7 @@ export function useCore(speaker?: string) {
             setImportStatus(msg.status);
             break;
           case "send_card": {
+            cardTold = msg.id;
             const at = Date.now();
             setSendCard((shown) => cardReceived(shown, msg, at));
             // Recap is modal: the countdown and its Stop would sit under it, out of reach.
@@ -873,7 +912,15 @@ export function useCore(speaker?: string) {
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
-  const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
+  // Pressed while the connection is down, the Stop waits and the next connection carries it. A count that ends first,
+  // with none of the speaker's windows connected, ends unsent anyway (core/src/messages.rs `finish`).
+  const stopSend = useCallback((id: number) => {
+    if (send(JSON.stringify({ type: "stop_send", id }))) return true;
+    stopWaiting.current = id;
+    setNotice(STOP_WAITS);
+    answered();
+    return false;
+  }, [send]);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
   // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
   const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);

@@ -15,9 +15,9 @@ try {
   const decided = (thought_id, path, extra = {}) => ({ stage: "decided", thought_id, path, new: false, skipped: false,
     pick: { action: "continue", thread_id: path.at(-1) ?? "" }, rule: null, why: "", lane: 0, lanes: 2, ms: 2100, ...extra });
 
-  // While the calls race: the named threads are candidates; "active" needs no tag (the card's chip says it).
+  // While the calls race: the named threads are candidates; the window's own active needs no tag (the card's chip says it).
   let s = routed(EMPTY_ROUTE, weighing("a", [{ thread_id: "T1", why: "active" }, { thread_id: "T3", why: "left unfinished" }]), 0);
-  assert.deepEqual(markFor(s, "T1", 0), { kind: "candidate", tag: null, title: null, deep: false });
+  assert.deepEqual(markFor(s, "T1", 0, "T1"), { kind: "candidate", tag: null, title: null, deep: false });
   assert.equal(markFor(s, "T3", 0).tag, "left unfinished");
   assert.equal(markFor(s, "T2", 0), null, "a thread the prompt doesn't name isn't lit");
   assert.equal(lanesFor(s, "a"), 2);
@@ -49,12 +49,24 @@ try {
   assert.equal(landTag(decided("x", ["T1", "T4"], { new: true })), "new branch");
   assert.equal(raceLine(decided("x", ["T1"], { lanes: 1, ms: 900 })), "Answered in 0.9 s");
 
-  // A newer thought's routing takes over the map at once: the last landing's tag goes.
-  s = routed(s, weighing("b", [{ thread_id: "T2", why: "said just before" }]), 1_500);
-  assert.equal(markFor(s, "T1", 1_500), null);
-  assert.equal(markFor(s, "T2", 1_500).kind, "candidate");
+  // A turn said in two parts weighs its second 0 ms after the first lands: the landing's tag stays until read, over
+  // the card's candidate light (it's the speaker's active now); once read, the card is a candidate.
+  s = routed(s, weighing("b", [{ thread_id: "T2", why: "said just before" }, { thread_id: "T3", why: "active" }]), 1_500);
+  assert.equal(markFor(s, "T2", 1_500).tag, "here", "the landing's tag is still there to read");
+  assert.equal(markFor(s, "T1", 1_500).kind, "via");
+  assert.equal(markFor(s, "T2", until).kind, "candidate");
+  assert.equal(markFor(s, "T2", until).tag, "said just before");
+  // Your own active needs no tag (its chip says it); in a room another speaker's active has no chip here, so it's named.
+  assert.equal(markFor(s, "T3", 1_500, "T3").tag, null);
+  assert.equal(markFor(s, "T3", 1_500, "T1").tag, "active");
+  assert.equal(markFor(s, "T3", 1_500).tag, "active", "no window's own active known: named");
+  // A newer landing takes over from the last.
+  s = routed(s, decided("b", ["T3"]), 1_600);
+  assert.equal(markFor(s, "T2", 1_600), null);
+  assert.equal(markFor(s, "T3", 1_600).kind, "here");
+  s = routed(s, weighing("b2", [{ thread_id: "T2", why: "said just before" }]), 1_700);
   // Set aside as filler: nothing lands, nothing is lit.
-  s = routed(s, decided("b", [], { skipped: true }), 2_000);
+  s = routed(s, decided("b2", [], { skipped: true }), 2_000);
   assert.deepEqual(s, EMPTY_ROUTE);
   // A late decided for another thought doesn't put out the one being weighed.
   s = routed(routed(EMPTY_ROUTE, weighing("c", [{ thread_id: "T1", why: "active" }]), 0), decided("z", ["T3"]), 10);
@@ -66,11 +78,15 @@ try {
   const core = readFileSync(new URL("../ui/src/core.ts", import.meta.url), "utf8");
   const css = readFileSync(new URL("../ui/src/route.css", import.meta.url), "utf8");
   const legible = readFileSync(new URL("../ui/src/legible.css", import.meta.url), "utf8");
-  assert.match(app, /useRouteMark\(thread\.id\)/);
+  assert.match(app, /useRouteMark\(thread\.id, active\)/);
   assert.match(app, /useLanes\(thought\.id\)/);
   assert.match(core, /if \(receiveRoute\(msg\)\) return;/);
   assert.match(core, /routePlacing\(msg\.now\)/);
   assert.match(core, /resetRoute\(\);/);
+  // A card a point is dragged over keeps its drop outline (moves.css): every outline rule here gives way to it.
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, "").match(/^[^{}]*route-(candidate|here|via)[^{]*\{[^}]*outline[^}]*\}/gm) ?? []) {
+    for (const selector of rule.slice(0, rule.indexOf("{")).split(",")) assert.match(selector, /:not\(\.drop-over\)/, selector);
+  }
   assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ""), /\b(border-width|padding-block|margin-top|height:\s*\d+px;\s*}\s*\.thread)/, "routing changes no card's size");
   assert.match(css, new RegExp(`--route-delay: ${LEVEL_MS / 1000}s`), "the branch settles LEVEL_MS after its top thread");
   assert.match(css, /prefers-reduced-motion: reduce[\s\S]*--route-delay: 0s[\s\S]*animation: none/);

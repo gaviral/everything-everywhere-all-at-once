@@ -55,9 +55,10 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     }
     if let Some(first) = new_thread_about(text) {
         let title = title_for(&first);
-        let (thought, started) = land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
+        let (thought, started, dropped) = land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
         core.send_to(speaker, ServerMsg::Notice { message: format!("New thread: “{title}”") });
-        return Some(Done::with(Act::NewThreadAbout, Some(Undo::Unfile { thought, started, to: before })));
+        let reopen = dropped.is_some() && dropped == before;
+        return Some(Done::with(Act::NewThreadAbout, Some(Undo::Unfile { thought, started, to: before, reopen })));
     }
     if let Some(ask) = unfold(text) {
         if let Some(done) = unfold_act(core, speaker, &world, &ask) {
@@ -67,7 +68,10 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     match filing(text).map(|(what, place)| (what, destination(&world, place))) {
         Some((_, Destination::Unsure)) | None => None,
         Some((what, destination)) => file(core, speaker, &world, text, what, destination)
-            .map(|(thought, started)| Done::with(Act::File, Some(Undo::Unfile { thought, started, to: before }))),
+            .map(|(thought, started, dropped)| {
+                let reopen = dropped.is_some() && dropped == before;
+                Done::with(Act::File, Some(Undo::Unfile { thought, started, to: before, reopen }))
+            }),
     }
 }
 
@@ -555,7 +559,7 @@ pub(crate) fn destination(world: &World, place: &str) -> Destination {
 /// Files the words at once, with no model call: the turn as said is kept as the thought's words, and what to add is
 /// its point. The speaker moves there, as any landing moves them (placer.rs `decide`), so the map shows it.
 /// The thought it filed, and the thread it started, if it did.
-fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, destination: Destination) -> Option<(String, Option<String>)> {
+fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, destination: Destination) -> Option<(String, Option<String>, Option<String>)> {
     let (landing, message) = match destination {
         Destination::Thread(id) => {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
@@ -613,12 +617,12 @@ pub(crate) fn fresh_id(world: &World) -> String {
 /// dropped one picked up again, the thread touched, and the speaker moved there. Leaving a thread whose last words of
 /// theirs trailed off marks it unfinished, so the card can offer it, as any landing does.
 /// Returns the thought's id, and the thread it started, if it did.
-fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str, landing: Landing) -> (String, Option<String>) {
+fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str, landing: Landing) -> (String, Option<String>, Option<String>) {
     // Somewhere chosen now: a "new thread" asked for before this ends here.
     core.new_threads.cancel(speaker);
     let now = now_ms();
     let mut changes = Vec::new();
-    let mut started = None;
+    let (mut started, mut dropped) = (None, None);
     let id = match landing {
         Landing::Thread(id) => {
             if world.thread(&id).is_some_and(|t| t.status == ThreadStatus::Dropped) {
@@ -685,13 +689,14 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
             .is_some_and(|t| !t.complete);
         if trailed_off && world.thread(previous).is_some_and(|t| t.status == ThreadStatus::Open) {
             changes.push(Change::ThreadStatus { thread_id: previous.clone(), status: ThreadStatus::Dropped, speaker: speaker.into() });
+            dropped = Some(previous.clone());
         }
     }
     if world.active.as_deref() != Some(id.as_str()) || world.active_by.get(speaker) != Some(&id) {
         changes.push(Change::ActiveChanged { thread_id: id, speaker: speaker.into() });
     }
     core.commit(changes);
-    (thought_id, started)
+    (thought_id, started, dropped)
 }
 
 /// What "new thread about …" keeps as its first thought, for main.rs's table.

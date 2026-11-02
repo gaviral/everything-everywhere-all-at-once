@@ -24,14 +24,11 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 if [ -d ui/node_modules ]; then
   for c in scripts/*-check.mjs; do
     case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
-    # points-check drives headless Chrome; a machine without one (exit 3) gets a WARN, not a pass.
-    if [ "$(basename "$c")" = points-check.mjs ]; then
-      node "$c" > /dev/null 2>&1; rc=$?
-      if [ $rc = 3 ]; then warn "points-check skipped: no Chrome found (set CHROME)"; continue; fi
-      if [ $rc = 0 ]; then pass "points-check passes"; else fail "points-check passes"; fi
-      continue
-    fi
-    check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
+    # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
+    name=$(basename "$c" .mjs)
+    node "$c" > /dev/null 2>&1; rc=$?
+    if [ $rc = 3 ]; then warn "$name skipped: no Chrome found (set CHROME)"; continue; fi
+    if [ $rc = 0 ]; then pass "$name passes"; else fail "$name passes"; fi
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
 # links-check and dates-check need only node, so a fresh clone runs them too.
