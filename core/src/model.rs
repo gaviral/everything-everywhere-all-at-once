@@ -195,6 +195,16 @@ impl Service {
         (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
     }
 
+    /// True while the last hour's calls fill at most half the cap (always, with no cap): room for work nobody asked
+    /// for yet, such as a recap draft, that must never take a call placing needs.
+    fn spare(&self, now: u64) -> bool {
+        self.limit == 0 || {
+            let mut calls = self.calls.lock().unwrap();
+            self.wait(&mut calls, now);
+            calls.len() * 2 < self.limit
+        }
+    }
+
     /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
     /// step under one lock, so two features asking at once with one call left can't both take it.
     fn spend(&self, now: u64) -> Result<(), u64> {
@@ -241,6 +251,12 @@ impl Core {
     /// What the person is told while this hour's calls are used up, or None.
     pub fn capped_message(&self) -> Option<String> {
         self.service.capped_for(crate::now_ms()).map(|wait| capped(self.service.limit, wait))
+    }
+
+    /// True while this hour has calls to spare: under half the cap, which is about User's busiest hour (see
+    /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
+    pub fn calls_to_spare(&self) -> bool {
+        self.service.spare(crate::now_ms())
     }
 
     /// Counts one model call about to go out; past the cap, ends it unsent instead.
@@ -527,6 +543,18 @@ mod tests {
         let said = notices(&mut updates).join("\n");
         assert!(said.contains("Thoughts retry on their own") && said.contains("try anything else again"), "{said}");
         assert!(said.split_whitespace().count() <= 15, "short enough to read in the 5 s a notice shows (App.tsx): {said}");
+    }
+
+    #[test]
+    fn calls_are_spare_only_under_half_the_cap() {
+        let service = super::Service::with_limit(4);
+        assert!(service.spare(0));
+        service.spend(0).unwrap();
+        assert!(service.spare(1), "1 of 4");
+        service.spend(1).unwrap();
+        assert!(!service.spare(2), "2 of 4: the rest is placing's");
+        assert!(service.spare(super::HOUR_MS), "an hour on, the first has aged out");
+        assert!(super::Service::with_limit(0).spare(0), "no cap");
     }
 
     #[test]

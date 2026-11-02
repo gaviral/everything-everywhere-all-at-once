@@ -142,7 +142,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
-        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">Gathering your thoughts…{recap ? " Your last recap is below." : ""}</p>
+        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>

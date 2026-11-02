@@ -24,7 +24,11 @@
 .recap-period button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
 .recap-meta { color: var(--muted); font-size: 12px; }
 .recap-feedback p { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
-.recap-feedback .recap-loading { color: var(--ai); }
+/* Shown only when the wait is real: a recap kept current in the background answers in a few milliseconds, and a line
+   that came and went that fast would read as a flicker. 400 ms is about where a pause starts to feel like waiting. */
+.recap-feedback .recap-loading { color: var(--ai); animation: recap-late 200ms ease-out 400ms both; }
+@keyframes recap-late { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .recap-feedback .recap-loading { animation-duration: 1ms; } }
 .recap-feedback .recap-error { padding: 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); }
 .recap-summary { max-width: 660px; margin: 22px 0 0; font-size: 18px; line-height: 1.55; letter-spacing: -.015em; }
 .recap-limit { margin: 12px 0 0; color: var(--muted); font-size: 12px; }

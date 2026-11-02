@@ -827,6 +827,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
+    tokio::spawn(recap::keep(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {

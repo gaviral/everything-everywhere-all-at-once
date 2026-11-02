@@ -75,7 +75,7 @@ try {
     decisions: [item("T1", "Open with the mic turning on")], plans: [item("T2", "Book the cooking class")],
     questions: [item("T3", "Which room do we record in?")], worked_on: [item("T1", "How the demo opens")], unfinished: [],
     actions: [], thought_count: 4, thread_count: 3, limited: false };
-  const sheet = (shown) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading: false,
+  const sheet = (shown, loading = false) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading,
     message: "", recap: shown }, world: map, connected: true, noKey: false, listening: true, onRequest() {}, onMark: () => true,
     onClose() {}, onFocus() {} })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   const order = (shown, words) => words.map((w) => shown.indexOf(w)).every((at, i, all) => at >= 0 && (i === 0 || at > all[i - 1]));
@@ -83,7 +83,12 @@ try {
     "decisions first, then plans, open questions and what you worked on");
   // None decided: it says so, still first.
   assert.ok(order(sheet({ ...recap, decisions: [] }), ["Decisions made", "None yet", "Plans", "What you worked on"]), "no decisions yet");
-  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't; the sheet puts decisions first.");
+  // Asked while a newer one is made: the saved recap (kept current in the background) is there at once, decisions
+  // first, and the sheet says it's being brought up to date rather than making the person wait on an empty sheet.
+  const updating = sheet(recap, true);
+  assert.ok(order(updating, ["Bringing this up to date…", "Decisions made", "Open with the mic turning on"]), "the saved recap shows while loading");
+  assert.ok(sheet(null, true).includes("Gathering your thoughts…") && !sheet(null, true).includes("Decisions made"), "nothing saved yet");
+  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't; the sheet puts decisions first, and shows the saved recap at once while a newer one is made.");
 } finally {
   await server.close();
 }
