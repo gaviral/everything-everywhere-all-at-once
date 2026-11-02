@@ -1386,7 +1386,7 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
 /// call, so sharing its T numbers could hand two threads one id.
 async fn land(core: &Core, speaker: &str, groups: &[Group], ideas: &[Idea], status: &mut Status) {
     let world = core.snapshot();
-    let base = world.threads.len() + world.merged.len();
+    let base = world.threads_made();
     let mut ids: Vec<Option<String>> = vec![None; groups.len()];
     let (mut made, mut newest) = (0, None::<(u64, String)>);
     for i in order(groups, ideas) {
