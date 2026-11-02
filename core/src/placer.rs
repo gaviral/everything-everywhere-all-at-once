@@ -1024,14 +1024,14 @@ mod tests {
             .collect()
     }
 
-    /// User trailed off on T1; Sam talks on T2.
+    /// Ana trailed off on T1; Sam talks on T2.
     fn room() -> World {
         let mut world = World {
             threads: vec![thread("T1"), thread("T2")],
-            thoughts: vec![thought("a", "User", Some("T1"), false), thought("b", "Sam", Some("T2"), true)],
+            thoughts: vec![thought("a", "Ana", Some("T1"), false), thought("b", "Sam", Some("T2"), true)],
             ..World::default()
         };
-        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "Ana".into() });
         world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
         world
     }
@@ -1145,18 +1145,18 @@ mod tests {
 
     #[test]
     fn a_late_landing_leaves_a_thread_with_newer_words_as_they_left_it() {
-        // User said a about T1, and its try failed; then b on T1, trailing off, and c on T2, which left T1 unfinished.
-        let said = |id: &str, thread: Option<&str>, at_ms: u64, complete: bool| Thought { at_ms, point: format!("point {id}"), ..thought(id, "User", thread, complete) };
+        // Ana said a about T1, and its try failed; then b on T1, trailing off, and c on T2, which left T1 unfinished.
+        let said = |id: &str, thread: Option<&str>, at_ms: u64, complete: bool| Thought { at_ms, point: format!("point {id}"), ..thought(id, "Ana", thread, complete) };
         let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
         world.thoughts = vec![said("a", None, 1, true), said("b", Some("T1"), 2, false), said("c", Some("T2"), 3, true)];
         for change in [
             Change::ThreadTouched { thread_id: "T1".into(), last_point: "point b".into(), at_ms: 2 },
-            Change::ThreadStatus { thread_id: "T1".into(), status: ThreadStatus::Dropped, speaker: "User".into() },
-            Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+            Change::ThreadStatus { thread_id: "T1".into(), status: ThreadStatus::Dropped, speaker: "Ana".into() },
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "Ana".into() },
         ] {
             world.apply(&change);
         }
-        // a lands on T1 at last: on the map, but T1 still ends with b, unfinished, and User stays on T2.
+        // a lands on T1 at last: on the map, but T1 still ends with b, unfinished, and Ana stays on T2.
         let a = world.thoughts[0].clone();
         let changes = decide(&world, &a, answer("continue", "T1", &["T2"]), 0, false, false);
         assert!(matches!(changes[..], [Change::ThoughtPlaced { ref thread_id, .. }] if thread_id == "T1"), "{changes:?}");
@@ -1164,22 +1164,22 @@ mod tests {
             world.apply(change);
         }
         let t1 = world.thread("T1").unwrap();
-        assert_eq!((t1.status, t1.dropped_by.as_str(), t1.last_point.as_str()), (ThreadStatus::Dropped, "User", "point b"));
-        assert_eq!(world.active_for("User").map(String::as_str), Some("T2"));
+        assert_eq!((t1.status, t1.dropped_by.as_str(), t1.last_point.as_str()), (ThreadStatus::Dropped, "Ana", "point b"));
+        assert_eq!(world.active_for("Ana").map(String::as_str), Some("T2"));
         // A new thread has nothing newer: a late landing still gives it its point.
         let changes = decide(&world, &a, answer("new", "", &[]), 0, false, false);
-        assert!(changes.iter().any(|c| matches!(c, Change::ThreadTouched { last_point, .. } if last_point == "User says a")), "{changes:?}");
+        assert!(changes.iter().any(|c| matches!(c, Change::ThreadTouched { last_point, .. } if last_point == "Ana says a")), "{changes:?}");
         assert!(!changes.iter().any(|c| matches!(c, Change::ActiveChanged { .. })), "{changes:?}");
     }
 
     #[test]
     fn words_said_in_the_same_millisecond_keep_the_order_they_were_said_in() {
         // a and b came in the same millisecond (a queue sent on reconnecting); a's try failed and b landed.
-        let at = |id: &str, thread: Option<&str>| Thought { at_ms: 5, ..thought(id, "User", thread, true) };
+        let at = |id: &str, thread: Option<&str>| Thought { at_ms: 5, ..thought(id, "Ana", thread, true) };
         let world = World { threads: vec![thread("T2")], thoughts: vec![at("a", None), at("b", Some("T2"))], ..World::default() };
         let now = crate::now_ms();
         let since = |id: &str| super::said_since(&world, &world.thoughts.iter().find(|t| t.id == id).unwrap().clone(), now).map(|t| t.id.clone()).collect::<Vec<_>>();
-        // b counts as newer, so a landing late doesn't move User back; nothing is newer than b.
+        // b counts as newer, so a landing late doesn't move Ana back; nothing is newer than b.
         assert_eq!(since("a"), ["b"]);
         assert!(since("b").is_empty());
     }
@@ -1190,10 +1190,10 @@ mod tests {
         // Sam keeps going on T2, and the model even calls T1 dropped: it isn't Sam's to drop.
         let changes = decide(&world, &thought("c", "Sam", None, true), answer("continue", "T2", &["T1"]), 0, false, true);
         assert!(drops(&changes).is_empty(), "{changes:?}");
-        // User moves to T2, leaving T1 unfinished: dropped, for User.
-        let changes = decide(&world, &thought("d", "User", None, true), answer("return", "T2", &[]), 0, false, true);
-        assert_eq!(drops(&changes), [("T1".to_string(), "User".to_string())]);
-        assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "User")));
+        // Ana moves to T2, leaving T1 unfinished: dropped, for Ana.
+        let changes = decide(&world, &thought("d", "Ana", None, true), answer("return", "T2", &[]), 0, false, true);
+        assert_eq!(drops(&changes), [("T1".to_string(), "Ana".to_string())]);
+        assert!(changes.iter().any(|c| matches!(c, Change::ActiveChanged { thread_id, speaker } if thread_id == "T2" && speaker == "Ana")));
     }
 
     #[test]
@@ -1234,16 +1234,16 @@ mod tests {
     #[test]
     fn new_thread_marks_only_the_speakers_next_thought() {
         let threads = NewThreads::default();
-        threads.said("User", "a");
-        threads.ask("User");
+        threads.said("Ana", "a");
+        threads.ask("Ana");
         threads.said("Sam", "b");
-        threads.said("User", "c");
-        threads.said("User", "d");
+        threads.said("Ana", "c");
+        threads.said("Ana", "d");
         assert_eq!(["a", "b", "c", "d"].map(|id| threads.starts(id)), [false, false, true, false]);
         // Moving to a thread before saying anything ends the ask.
-        threads.ask("User");
-        threads.cancel("User");
-        threads.said("User", "e");
+        threads.ask("Ana");
+        threads.cancel("Ana");
+        threads.said("Ana", "e");
         assert!(!threads.starts("e"));
     }
 
@@ -1446,9 +1446,9 @@ mod tests {
         core.snapshot().thoughts.iter().any(|t| t.text == text && t.placed)
     }
 
-    /// User talks fast: twelve thoughts 30 ms apart, one whose call stalls and one whose call fails. Every one is
+    /// Ana talks fast: twelve thoughts 30 ms apart, one whose call stalls and one whose call fails. Every one is
     /// saved as it's said, every one lands exactly once, the stall holds no one up, the pills say what's going on,
-    /// and the two that land late don't pull him off the thread he's on.
+    /// and the two that land late don't pull her off the thread she's on.
     #[tokio::test]
     async fn a_burst_with_a_stalled_and_a_failed_call_lands_every_thought_once_without_waiting_on_them() {
         let (core, path, mut updates) = burst_core().await;
@@ -1461,7 +1461,7 @@ mod tests {
             .collect();
         let start = std::time::Instant::now();
         for (i, text) in said.iter().enumerate() {
-            core.add_thought("User", text);
+            core.add_thought("Ana", text);
             // Saved as it's said: on the map and in the journal before any model answers.
             assert_eq!(core.snapshot().thoughts.len(), i + 1);
             let (_, reopened) = crate::world::Journal::open(&path).unwrap();
@@ -1500,9 +1500,9 @@ mod tests {
         }
         assert!(!retried.iter().any(|id| id != &stall && id != &fail), "only those two retried");
         assert_eq!(errors, 0, "one failure is a blip, not an error");
-        // The last thing he said is where he is: the two late ones landed on the map without moving him.
+        // The last thing she said is where she is: the two late ones landed on the map without moving her.
         let last = world.thoughts.iter().find(|t| t.text == said[11]).unwrap();
-        assert_eq!(world.active_for("User"), last.thread_id.as_ref());
+        assert_eq!(world.active_for("Ana"), last.thread_id.as_ref());
         eprintln!("burst of 12 (30 ms apart, 100 ms answers, 400 ms first try): from the first said, the 10 fine in {:?}, all 12 in {:?}", others_in + said_in, others_in + said_in + all_in);
         let _ = std::fs::remove_file(&path);
     }
@@ -1512,39 +1512,39 @@ mod tests {
     #[tokio::test]
     async fn a_command_waits_only_for_the_speakers_own_first_tries() {
         let (core, path, _updates) = burst_core().await;
-        let active = |core: &Core| core.snapshot().active_for("User").cloned();
+        let active = |core: &Core| core.snapshot().active_for("Ana").cloned();
         // Two threads of his; then a slow thought, and "where was I?" right behind it.
-        core.add_thought("User", "the kitchen needs paint");
+        core.add_thought("Ana", "the kitchen needs paint");
         until(Duration::from_secs(2), || landed(&core, "the kitchen needs paint")).await;
-        core.add_thought("User", "the party is on Saturday");
+        core.add_thought("Ana", "the party is on Saturday");
         until(Duration::from_secs(2), || landed(&core, "the party is on Saturday")).await;
         let party = active(&core).unwrap();
-        core.add_thought("User", "slow: the caterer needs a head count");
-        core.add_thought("User", "Where was I?");
+        core.add_thought("Ana", "slow: the caterer needs a head count");
+        core.add_thought("Ana", "Where was I?");
         assert_eq!(active(&core), Some(party.clone()), "waits for his words before it");
         until(Duration::from_secs(2), || landed(&core, "slow: the caterer needs a head count")).await;
         let after_landing = until(Duration::from_secs(1), || active(&core) != Some(id_of_thread(&core, "slow: the caterer needs a head count"))).await;
         assert!(after_landing <= Duration::from_millis(200), "acts within 0.2 s of them landing: {after_landing:?}");
 
         // His words on a retry don't hold a command up, and landing later doesn't undo it.
-        core.add_thought("User", "stall: the fence needs fixing");
+        core.add_thought("Ana", "stall: the fence needs fixing");
         let stall = id_of(&core, "stall: the fence needs fixing");
         until(Duration::from_secs(2), || core.placing.failed(&stall)).await;
         let here = active(&core);
         let said = std::time::Instant::now();
-        core.add_thought("User", "Next one");
+        core.add_thought("Ana", "Next one");
         let moved = said.elapsed();
         assert!(moved <= Duration::from_millis(200) && active(&core) != here, "acts at once: {moved:?}");
         let there = active(&core);
         until(Duration::from_secs(5), || landed(&core, "stall: the fence needs fixing")).await;
-        assert_eq!(active(&core), there, "the late landing leaves him where the command put him");
+        assert_eq!(active(&core), there, "the late landing leaves her where the command put her");
 
-        // Sam's words in line don't hold User's command up.
+        // Sam's words in line don't hold Ana's command up.
         for i in 1..=4 {
             core.add_thought("Sam", &format!("slow: Sam's thought {i}"));
         }
         let said = std::time::Instant::now();
-        core.add_thought("User", "Where was I?");
+        core.add_thought("Ana", "Where was I?");
         assert!(said.elapsed() <= Duration::from_millis(200));
         assert!(core.snapshot().thoughts.iter().filter(|t| t.speaker == "Sam" && t.placed).count() < 4, "before Sam's words landed");
         let _ = std::fs::remove_file(&path);
@@ -1727,7 +1727,7 @@ mod tests {
     fn the_placer_sees_the_speakers_own_thread() {
         let world = room();
         let prompt = |speaker: &str| request(&world, &thought("e", speaker, None, true), "m", ROOM, false)["messages"][1]["content"].to_string();
-        assert!(prompt("User").contains("Active thread: T1"));
+        assert!(prompt("Ana").contains("Active thread: T1"));
         assert!(prompt("Sam").contains("Active thread: T2"));
         assert!(prompt("Lee").contains("Active thread: T2"), "someone new starts where the talk is");
     }

@@ -46,7 +46,7 @@ try {
   world = apply(world, { type: "thought_noted", thought_id: "nope", note: { why: "x" } });
   assert.deepEqual(world.notes, {}, "no note for a thought that isn't there");
 
-  // Kept apart, the second part says its own words again, on the card's last point too (Sol review, 2026-11-01).
+  // Kept apart, the second part says its own words again, on the card's last point too (review, 2026-11-01).
   const bill = { recaps: [], threads: [{ id: "T1", title: "Bills", parent_id: null, status: "open", last_point: "I need to pay the electric bill", touched_ms: 0, tags: [] }],
     thoughts: [thought("a", "I need to pay the"), { ...thought("b", "electric bill"), point: "I need to pay the electric bill" }],
     active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false, notes: { b: { continues: "a" } } };
@@ -81,7 +81,7 @@ try {
   assert.match(app, /data-heads=\{heads\.map/);
   assert.match(readFileSync(new URL("../ui/src/find.ts", import.meta.url), "utf8"), /\[data-heads~=/);
   // Keyboard and screen reader: "keep apart" is in the button's name, focus stays on the point it leaves, and the
-  // assumption's tip is reachable by Tab (Claude and Sol reviews, 2026-11-01).
+  // assumption's tip is reachable by Tab (reviews, 2026-11-01).
   const chunks = readFileSync(new URL("../ui/src/chunks.tsx", import.meta.url), "utf8");
   assert.match(chunks, /aria-label=\{`Joined across a pause; keep apart:/);
   assert.match(chunks, /closest<HTMLElement>\("li\[tabindex\]"\)\?\.focus\(\); unlink\(/, "focus moves before the button goes");

@@ -245,6 +245,45 @@ export function landingToFollow(world: World, added: Thought[], me: string, move
   return { landing, held: late };
 }
 
+/**
+ * Jumps the map's own follow must leave alone. A jump (find's answer, a "While you were away" row) moves your place
+ * and shows its own point; the move would also set off a follow of your place, which ~120 ms later highlighted the
+ * thread's newest point instead and could scroll the found one away. Either order is covered: the jump before its
+ * move reaches the map (Away: the row reveals, then focus's ActiveChanged comes back) or after it (find: ActiveChanged,
+ * then Found). Only a follow of your place is answered, never a landing. A jump that moved your place also stands
+ * down any follow of your place scheduled before it, whatever its thread: the map doesn't reschedule for an answered
+ * move, so that older follow would otherwise run and pull you back off the jump.
+ */
+export function jumpTracker() {
+  let seq = 0;
+  // A jump whose move hasn't reached the map yet.
+  let pending: string | null = null;
+  let last: { thread: string; seq: number; moved?: boolean } | null = null;
+  return {
+    jumped(world: World, thread: string) {
+      const id = resolve(world, thread);
+      seq += 1;
+      pending = id;
+      last = { thread: id, seq };
+    },
+    /** At a move of your place: true when a jump already answered it. Any move ends the pending jump. */
+    moved(active: string) {
+      const answered = pending === active;
+      pending = null;
+      if (answered && last) last.moved = true;
+      return answered;
+    },
+    /** Taken when a follow is scheduled, for `since`. */
+    mark: () => seq,
+    /** When the follow runs: true when a jump came after it was scheduled, to its thread or moving your place. */
+    since(mark: number, thread: string) {
+      const answered = !!last && last.seq > mark && (last.thread === thread || !!last.moved);
+      if (answered) pending = null;
+      return answered;
+    },
+  };
+}
+
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
@@ -781,7 +820,7 @@ export function useCore(speaker?: string) {
     hideMapChange: useCallback(() => setMapChange(null), []),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
-    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review of judgeseye, Sol).
+    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review).
     showNotice: (message: string, asked?: ViewAsk | null) => {
       if (asked && answers.current > asked.answers) return;
       setNotice(message);

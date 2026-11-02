@@ -2,7 +2,7 @@
 // Composer check: sends app requests to running cores the way the Apps panel does (compose_app), waits for each
 // build to settle, discards it so nothing changes, and says whether the result does what was asked. Every
 // search and composition is a real model call.
-//   PORT=4490 ./run.sh demo                  # a core with a key; seed apps are on in demo mode
+//   PORT=4490 ./run.sh demo                  # a core with a key; Search-first is on in demo mode
 //   node scripts/composer-check.mjs [--ports 4490,4491] [--runs 2] [--only 1,5] [--requests FILE] [--out results.json]
 // Each line of the requests file: {"id", "request", "expect": any of "build", "match:APP_ID", "refuse", "notice"},
 // and checks on a draft: "watcher" (kinds), "words" (a phrase or topic holds one; a thought watcher's prompt names

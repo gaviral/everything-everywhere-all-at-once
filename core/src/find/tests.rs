@@ -142,11 +142,11 @@ fn go_to_the_one_about_a_topic_jumps_as_where_did_i_talk_about_does() {
     let fixture = Fixture::new(World {
         threads: vec![thread("T1", "Habits", 1), thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "I never finish what I start", 1)],
-        active_by: HashMap::from([("User".into(), "T2".into())]),
+        active_by: HashMap::from([("Ana".into(), "T2".into())]),
         ..World::default()
     });
-    fixture.core.add_thought("User", "Go to the one about never finishing things");
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    fixture.core.add_thought("Ana", "Go to the one about never finishing things");
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T1"));
     assert_eq!(fixture.core.snapshot().thoughts.len(), 1, "a jump, not a thought");
 }
 
@@ -241,12 +241,12 @@ fn fallback_is_bounded_and_only_offers_latest_points() {
 #[test]
 fn a_new_request_only_cancels_that_speakers_old_request() {
     let runtime = Runtime::default();
-    let (User, _) = runtime.next("User", String::new(), String::new());
+    let (ana, _) = runtime.next("Ana", String::new(), String::new());
     let (sam, _) = runtime.next("Sam", String::new(), String::new());
-    assert!(runtime.current("User", User));
-    let (_, stopped) = runtime.next("User", String::new(), String::new());
-    assert_eq!(stopped.request, User);
-    assert!(!runtime.current("User", User));
+    assert!(runtime.current("Ana", ana));
+    let (_, stopped) = runtime.next("Ana", String::new(), String::new());
+    assert_eq!(stopped.request, ana);
+    assert!(!runtime.current("Ana", ana));
     assert!(runtime.current("Sam", sam));
     // An ended search can't answer twice.
     assert!(runtime.end("Sam", sam).is_some() && runtime.end("Sam", sam).is_none());
@@ -256,18 +256,18 @@ fn a_new_request_only_cancels_that_speakers_old_request() {
 fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_thought() {
     let mut rent = thread("T1", "Home", 1);
     rent.status = ThreadStatus::Dropped;
-    rent.dropped_by = "User".into();
+    rent.dropped_by = "Ana".into();
     let fixture = Fixture::new(World {
         threads: vec![rent, thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1)],
         active: Some("T2".into()),
-        active_by: HashMap::from([("User".into(), "T2".into()), ("Sam".into(), "T2".into())]),
+        active_by: HashMap::from([("Ana".into(), "T2".into()), ("Sam".into(), "T2".into())]),
         ..World::default()
     });
     let mut updates = fixture.core.updates.subscribe();
-    fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+    fixture.core.add_thought("Ana", "Where did I talk about the rent deposit?");
     let world = fixture.core.snapshot();
-    assert_eq!(world.active_for("User").map(String::as_str), Some("T1"));
+    assert_eq!(world.active_for("Ana").map(String::as_str), Some("T1"));
     assert_eq!(world.active_for("Sam").map(String::as_str), Some("T2"));
     assert_eq!(world.thread("T1").unwrap().status, ThreadStatus::Open);
     assert_eq!(world.thoughts.len(), 1);
@@ -275,23 +275,23 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
     while let Ok(out) = updates.try_recv() {
         match out.message {
             ServerMsg::Found { thread_id, thought_id, message } => {
-                assert_eq!(out.to.as_deref(), Some("User"));
+                assert_eq!(out.to.as_deref(), Some("Ana"));
                 assert_eq!(thread_id, "T1");
                 assert_eq!(thought_id.as_deref(), Some("answer"));
                 assert_eq!(message, "Here: Home — Rent deposit comes back in June");
                 jumps += 1;
             }
-            ServerMsg::Change { change: Change::ActiveChanged { speaker, .. } } => assert_eq!(speaker, "User"),
+            ServerMsg::Change { change: Change::ActiveChanged { speaker, .. } } => assert_eq!(speaker, "Ana"),
             ServerMsg::Change { change: Change::ThreadStatus { .. } } => {}
             // Where a correction of this turn would start from (catalog.rs), to the asker alone.
-            ServerMsg::Correctable { .. } => assert_eq!(out.to.as_deref(), Some("User")),
+            ServerMsg::Correctable { .. } => assert_eq!(out.to.as_deref(), Some("Ana")),
             _ => panic!("unexpected message"),
         }
     }
     assert_eq!(jumps, 1);
     let journal = std::fs::read_to_string(&fixture.path).unwrap();
     assert!(journal.lines().all(|line| serde_json::from_str::<Change>(line).is_ok()), "only existing journal changes");
-    fixture.core.add_thought("User", "I need to find the rent receipt");
+    fixture.core.add_thought("Ana", "I need to find the rent receipt");
     assert_eq!(fixture.core.snapshot().thoughts.len(), 2, "ordinary thoughts still reach placement");
 }
 
@@ -331,7 +331,7 @@ fn words_after_the_question_and_a_saying_are_kept() {
     let world = || World {
         threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1)],
-        active_by: HashMap::from([("User".into(), "T2".into())]),
+        active_by: HashMap::from([("Ana".into(), "T2".into())]),
         ..World::default()
     };
     for (said, expected, on) in [
@@ -360,10 +360,10 @@ fn words_after_the_question_and_a_saying_are_kept() {
     ] {
         let fixture = Fixture::new(world());
         let mut updates = fixture.core.updates.subscribe();
-        fixture.core.add_thought("User", said);
+        fixture.core.add_thought("Ana", said);
         assert_eq!(told(&mut updates), expected, "{said}");
         let world = fixture.core.snapshot();
-        assert_eq!(world.active_for("User").map(String::as_str), Some(on), "{said}");
+        assert_eq!(world.active_for("Ana").map(String::as_str), Some(on), "{said}");
         // A kept thought starts out on the thread the speaker is on: after a jump, the answer's.
         assert!(world.thoughts.iter().filter(|t| !t.placed).all(|t| t.thread_id.as_deref() == Some(on)), "{said}");
     }
@@ -373,23 +373,23 @@ fn words_after_the_question_and_a_saying_are_kept() {
 /// the words the search held go in first, in the order they were said.
 #[tokio::test]
 async fn newer_words_stop_a_search_and_take_down_its_notice() {
-    let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+    let pending = Thought { speaker: "Ana".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
     let mut fixture = Fixture::new(World {
         threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
-        active_by: HashMap::from([("User".into(), "T2".into())]),
+        active_by: HashMap::from([("Ana".into(), "T2".into())]),
         ..World::default()
     });
     // A working key, so the search waits for the thought still placing and says it's looking.
     Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
     let mut updates = fixture.core.updates.subscribe();
-    fixture.core.add_thought("User", "Where did I talk about the rent deposit? The landlord says June.");
-    fixture.core.add_thought("User", "Hmm.");
+    fixture.core.add_thought("Ana", "Where did I talk about the rent deposit? The landlord says June.");
+    fixture.core.add_thought("Ana", "Hmm.");
     assert_eq!(told(&mut updates), ["notice: Looking through your threads…"], "\"hmm\" adds nothing, so the search goes on");
-    fixture.core.add_thought("User", "The kitchen needs paint.");
+    fixture.core.add_thought("Ana", "The kitchen needs paint.");
     assert_eq!(told(&mut updates), ["notice: ", "thought: The landlord says June.", "thought: The kitchen needs paint."]);
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "the stopped search never jumps");
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T2"), "the stopped search never jumps");
     assert!(told(&mut updates).is_empty());
 }
 
@@ -433,15 +433,15 @@ fn a_to_do_that_starts_with_find_or_take_me_to_reaches_the_map() {
     let fixture = Fixture::new(World {
         threads: vec![thread("T1", "Dentist", 1), thread("T2", "Airport pickup", 2), thread("T3", "Call Mom", 3)],
         thoughts: vec![point("a", "T1", "Find a dentist near the office", 1), point("b", "T2", "Airport Friday at six", 2), point("c", "T3", "Call Mom this week", 3)],
-        active_by: HashMap::from([("User".into(), "T3".into())]),
+        active_by: HashMap::from([("Ana".into(), "T3".into())]),
         ..World::default()
     });
     let mut updates = fixture.core.updates.subscribe();
     for said in ["Find a dentist near the office", "Take me to the airport Friday", "Find time to call Mom"] {
-        fixture.core.add_thought("User", said);
+        fixture.core.add_thought("Ana", said);
         assert_eq!(fixture.core.snapshot().thoughts.last().map(|t| (t.text.as_str(), t.placed)), Some((said, false)), "{said}");
     }
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T3"), "no jump");
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T3"), "no jump");
     while let Ok(out) = updates.try_recv() {
         assert!(!matches!(out.message, ServerMsg::Found { .. } | ServerMsg::Notice { .. }), "a thought, not a search");
     }
@@ -452,21 +452,21 @@ fn a_to_do_that_starts_with_find_or_take_me_to_reaches_the_map() {
         decided: false,
     }).collect();
     fixture.core.commit(placed);
-    fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T3".into(), speaker: "User".into() }]);
-    fixture.core.add_thought("User", "Find where I talked about the airport");
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"));
+    fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T3".into(), speaker: "Ana".into() }]);
+    fixture.core.add_thought("Ana", "Find where I talked about the airport");
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T2"));
     assert_eq!(fixture.core.snapshot().thoughts.len(), 6);
 }
 
 #[test]
 fn filler_while_a_search_is_looking_keeps_the_search() {
     let fixture = Fixture::new(World::default());
-    let (request, _) = fixture.core.find.next("User", String::new(), String::new());
-    fixture.core.add_thought("User", "Hmm.");
-    fixture.core.add_thought("User", "um, okay");
-    assert!(fixture.core.find.current("User", request), "\"hmm\" while it looks adds nothing");
-    fixture.core.add_thought("User", "The deposit comes back in June.");
-    assert!(!fixture.core.find.current("User", request), "a new thought is newer than the search");
+    let (request, _) = fixture.core.find.next("Ana", String::new(), String::new());
+    fixture.core.add_thought("Ana", "Hmm.");
+    fixture.core.add_thought("Ana", "um, okay");
+    assert!(fixture.core.find.current("Ana", request), "\"hmm\" while it looks adds nothing");
+    fixture.core.add_thought("Ana", "The deposit comes back in June.");
+    assert!(!fixture.core.find.current("Ana", request), "a new thought is newer than the search");
 }
 
 #[test]
@@ -480,8 +480,8 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
     world.thoughts[0].point = "Rent deposit returns in June".into();
     let fixture = Fixture::new(world);
     let mut updates = fixture.core.updates.subscribe();
-    let (request, _) = fixture.core.find.next("User", String::new(), String::new());
-    show(&fixture.core, "User", request, found, "the rent deposit");
+    let (request, _) = fixture.core.find.next("Ana", String::new(), String::new());
+    show(&fixture.core, "Ana", request, found, "the rent deposit");
     let mut seen = false;
     while let Ok(out) = updates.try_recv() {
         if let ServerMsg::Found { thread_id, message, .. } = out.message {
@@ -495,31 +495,31 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
 
 #[tokio::test]
 async fn a_jump_waits_for_the_thought_said_just_before_it() {
-    // User said something a moment ago; it's still finding its thread when User asks where the rent deposit came up.
-    let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+    // Ana said something a moment ago; it's still finding its thread when Ana asks where the rent deposit came up.
+    let pending = Thought { speaker: "Ana".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
     let mut fixture = Fixture::new(World {
         threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
         thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
-        active_by: HashMap::from([("User".into(), "T2".into())]),
+        active_by: HashMap::from([("Ana".into(), "T2".into())]),
         ..World::default()
     });
     // A working key, so the thought can land.
     Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
     let mut updates = fixture.core.updates.subscribe();
-    fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+    fixture.core.add_thought("Ana", "Where did I talk about the rent deposit?");
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "nothing moves while it's placed");
-    // It lands on Work and makes Work User's thread; only then the jump, which User keeps.
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T2"), "nothing moves while it's placed");
+    // It lands on Work and makes Work Ana's thread; only then the jump, which Ana keeps.
     fixture.core.commit(vec![
         Change::ThoughtPlaced {
             thought_id: "pending".into(), thread_id: "T2".into(), point: "Paint the kitchen".into(), unclear: String::new(),
             guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
             decided: false,
         },
-        Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
+        Change::ActiveChanged { thread_id: "T2".into(), speaker: "Ana".into() },
     ]);
     tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T1"));
     let mut said = Vec::new();
     while let Ok(out) = updates.try_recv() {
         match out.message {
@@ -536,11 +536,11 @@ async fn a_jump_waits_for_the_thought_said_just_before_it() {
 #[tokio::test(start_paused = true)]
 async fn without_a_working_key_a_jump_doesnt_wait_for_a_thought_that_cant_be_placed() {
     for key in ["none", "refused", "refused while the jump waits"] {
-        let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+        let pending = Thought { speaker: "Ana".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
         let mut fixture = Fixture::new(World {
             threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
             thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
-            active_by: HashMap::from([("User".into(), "T2".into())]),
+            active_by: HashMap::from([("Ana".into(), "T2".into())]),
             ..World::default()
         });
         if key != "none" {
@@ -549,11 +549,11 @@ async fn without_a_working_key_a_jump_doesnt_wait_for_a_thought_that_cant_be_pla
         if key == "refused" {
             let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
         }
-        fixture.core.add_thought("User", "Where did I talk about the rent deposit?");
+        fixture.core.add_thought("Ana", "Where did I talk about the rent deposit?");
         if key == "refused while the jump waits" {
             let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
             tokio::time::sleep(Duration::from_millis(300)).await;
         }
-        assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"), "{key}");
+        assert_eq!(fixture.core.snapshot().active_for("Ana").map(String::as_str), Some("T1"), "{key}");
     }
 }

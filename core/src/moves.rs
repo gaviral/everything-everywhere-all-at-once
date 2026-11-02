@@ -1,4 +1,4 @@
-//! Move and rename: the person fixes the map themselves (decisions/moverename.md). A misplaced thought moves to
+//! Move and rename: the person fixes the map themselves. A misplaced thought moves to
 //! another thread ("move that to the pottery thread", or the point's Move button), a thread takes the title they give
 //! it ("rename this to Pottery class", or a click on its title), and either comes back in one step (Undo, or "scratch
 //! that"). Both are the person's, so the AI never overrides them: the refiner never merges the two threads a move set

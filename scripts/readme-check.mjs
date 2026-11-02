@@ -4,7 +4,7 @@
 // is one the core's code calls. Also: every source file is in docs/ARCHITECTURE.md's parts list, and the trace
 // summary script reads a trace right.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { excerpt, median, parse, shorten, summary, table, KEEP } from "./trace-summary.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -24,15 +24,23 @@ const words = first.replace(/<!--[\s\S]*?-->/g, "").replace(/!\[[^\]]*\]\([^)]*\
   .replace(/\]\([^)]*\)/g, "]").split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
 assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words; at most ${MAX_WORDS}`);
 
-// What it does, for a person: the pitch, word for word as User left it (his call is open), as one whole paragraph.
-// When User changes the pitch, change it here too: a cut that only this check sees is the point.
+// What it does, for a person: the pitch, word for word as approved, as one whole paragraph.
+// When the pitch changes, change it here too: a cut that only this check sees is the point.
 const PITCH = "For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.";
-assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn't User's, word for word (whole paragraph)");
+assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn't the approved one, word for word (whole paragraph)");
 
 // Shows it: every image there exists.
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
 assert.ok(images.some((src) => /screens\//.test(src)), "no screenshot or GIF of the app on the first screen");
 for (const src of images) assert.ok(existsSync(root + src), `the first screen shows ${src}, which isn't in the repo`);
+// Below it too (the 16-second run right after the marker): every image exists and loads quickly on a judge's
+// connection; 3 MB is about 1 s at 25 Mbit/s, and the run is 1 MB today.
+for (const [, a, b] of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)) {
+  const src = a ?? b;
+  if (/^https?:/.test(src)) continue;
+  assert.ok(existsSync(root + src), `the README shows ${src}, which isn't in the repo`);
+  assert.ok(statSync(root + src).size <= 3e6, `the README shows ${src}, ${(statSync(root + src).size / 1e6).toFixed(1)} MB; at most 3 MB`);
+}
 
 // Which Meta model does what: each model the core calls by default is named, and every name is a real one.
 const code = readdirSync(root + "core/src").filter((f) => f.endsWith(".rs")).map((f) => read(`core/src/${f}`)).join("\n");
@@ -121,5 +129,19 @@ assert.equal(ex[0].sent.characters, 1800);
 assert.ok(ex[0].sent.last.length <= KEEP + 1 && ex[0].answer.length <= KEEP + 1, "an excerpt keeps the whole prompt");
 assert.deepEqual(ex[2].answer, { images: 1 });
 assert.equal(shorten(lines[3]).error, "timed out");
+
+// Nothing acts unasked (core/src/apps.rs `starts_on`): only Search-first starts on, and only in demo mode, so the
+// docs a judge reads must not say the Argument resolver or the Volume watcher run before they're switched on. Change
+// the rule and this fails until the docs say the new one.
+const rule = read("core/src/apps.rs").match(/^pub fn starts_on\([^)]*\) -> bool \{(.*)\}$/m);
+assert.ok(rule, "core/src/apps.rs has no starts_on");
+assert.equal(rule[1].trim(), "demo && matches!(watcher, Watcher::AppRequest {})", "seed defaults changed: update the docs below, then this line");
+for (const [doc, text] of [["README.md", readme], ["docs/trace.md", trace]]) {
+  assert.ok(!/seed[^.]*on by default|on by default[^.]*seed/i.test(text), `${doc} says seed apps are on by default`);
+  for (const sentence of text.split(/(?<=\.)\s+/).filter((t) => /Argument resolver/.test(t) && /seed/i.test(t)))
+    assert.ok(/start(s)? off/.test(sentence) || !/runs|plays|fires/.test(sentence), `${doc} says a seed runs without saying it starts off: ${sentence.slice(0, 120)}`);
+}
+assert.match(readme, /start off until you switch them on in Apps: Argument resolver[^.]*Volume watcher/, "README doesn't say the Argument resolver and Volume watcher start off");
+assert.match(trace, /Argument resolver, a seeded app, starts off/, "docs/trace.md doesn't say the Argument resolver starts off");
 
 console.log(`readme-check: OK (first screen ${words.length} words, ${images.length} images, ${sources.length} source files listed)`);
