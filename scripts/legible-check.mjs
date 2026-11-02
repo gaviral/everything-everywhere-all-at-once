@@ -67,6 +67,7 @@ try {
   assert.match(point, /<button type="button" className="said-toggle" aria-expanded=\{open\} aria-controls=\{`said-\$\{thought\.id\}`\}[^>]*>Words said<\/button>/, "a Words said button");
   assert.match(point, /id=\{`said-\$\{thought\.id\}`\}/, "the words it controls carry the id");
   assert.doesNotMatch(point, /onKeyDown/, "no key handler on the <li>: the button is the keyboard path");
+  assert.match(read("legible.css"), /\.said-toggle \{[^}]*user-select: none/, "its name stays out of words selected to explain");
 
   // Numbers that live in two files say the same thing.
   const css = read("legible.css"), app = read("App.tsx");
