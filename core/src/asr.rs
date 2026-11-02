@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 
 pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
-    let key = core.key()?.to_string();
+    let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio_tungstenite::connect_async(format!("{URL}?sessionId={session}"))
         .await

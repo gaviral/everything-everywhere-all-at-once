@@ -3,13 +3,17 @@
 //! the calls after it. A refused key (401 or 403) won't fix itself, so it stops every model call until a
 //! restart and every window is told; a busy service (429) is said once a spell, and a caller that tries
 //! again does so on its own schedule. A default model in Contributor mode that the key can't use gives
-//! way to the same model without it, for the rest of the session.
+//! way to the same model without it, for the rest of the session. The core makes at most a set number of model
+//! calls in any hour (`CALLS_PER_HOUR`), so a loop nobody is watching can't run up the bill; past it, every model
+//! feature rests as it does without a key, said once, until the oldest call is an hour old.
 
 use crate::{protocol::ServerMsg, Core};
 use anyhow::bail;
 use reqwest::StatusCode;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 /// What every window is told when the service refuses the key, then and on connecting after.
@@ -24,6 +28,15 @@ const BUSY: &str = "The AI service is busy. Thoughts retry on their own; try any
 /// tries is the refiner's 5 minutes (`refiner::rest_ms`), so one spell's own retries never say it twice.
 const SPELL_MS: u64 = 5 * 60_000;
 
+/// The most model calls the core makes in any 60 minutes, unless MODEL_CALLS_PER_HOUR says otherwise (0 turns it off).
+/// Worked back from User's own map on Nov 1: its busiest hour held 74 spoken thoughts, 30 new threads and 3 recaps,
+/// which is at most ≈ 200 calls (77 placements, 3 of them splits; the Argument app on ≤ 44 thoughts with an earlier
+/// point; the refiner on ≤ 37, one per two thoughts; 30 pictures; 3 recaps; a few Explains and searches). Twice that
+/// leaves room for a faster talker or a room of two, and a runaway (a timer app every 10 s is 360 an hour) still
+/// stops within the hour, at ≈ US$0.50 of text calls.
+pub const CALLS_PER_HOUR: usize = 400;
+const HOUR_MS: u64 = 60 * 60_000;
+
 /// What a model answer's status means for the calls after it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -35,6 +48,8 @@ pub enum Verdict {
     Busy,
     /// Anything else, such as a 500: maybe a blip; the caller decides.
     Other,
+    /// Not sent: the core already made its `CALLS_PER_HOUR` in the last hour.
+    Capped,
 }
 
 /// Sorts a model answer by its HTTP status.
@@ -72,6 +87,7 @@ impl std::fmt::Display for Verdict {
             Verdict::Refused => "the AI key was refused",
             Verdict::Busy => "the AI service is busy",
             Verdict::Other => "the AI service failed",
+            Verdict::Capped => "this hour's AI calls are used up",
         })
     }
 }
@@ -121,22 +137,125 @@ impl From<&str> for Setting {
     }
 }
 
-/// What the model service has said about the key and its load. It lives on the core, so it lasts until a restart.
-#[derive(Default)]
+/// What the model service has said about the key and its load, and the calls made this hour. It lives on the core,
+/// so it lasts until a restart.
 pub struct Service {
     /// Set by the first 401 or 403 and never cleared: a restart reads the key again.
     refused: AtomicBool,
     /// When a busy spell was last said.
     busy_said_ms: AtomicU64,
+    /// The most calls in any hour; 0 for no cap.
+    limit: usize,
+    /// When each call of the last hour was sent, oldest first.
+    calls: Mutex<VecDeque<u64>>,
+    /// Set when the cap was said, cleared by the next call that goes out, so each spell is said once.
+    capped_said: AtomicBool,
+}
+
+impl Default for Service {
+    fn default() -> Self {
+        Service::with_limit(CALLS_PER_HOUR)
+    }
+}
+
+impl Service {
+    pub fn with_limit(limit: usize) -> Self {
+        Service { refused: AtomicBool::new(false), busy_said_ms: AtomicU64::new(0), limit, calls: Mutex::default(), capped_said: AtomicBool::new(false) }
+    }
+
+    /// MODEL_CALLS_PER_HOUR when it's a number, else `CALLS_PER_HOUR`.
+    pub fn from_env() -> Self {
+        let set = std::env::var("MODEL_CALLS_PER_HOUR").ok();
+        let limit = match set.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            None => CALLS_PER_HOUR,
+            Some(v) => v.parse().unwrap_or_else(|_| {
+                tracing::warn!("MODEL_CALLS_PER_HOUR={v:?} isn't a whole number: using {CALLS_PER_HOUR}");
+                CALLS_PER_HOUR
+            }),
+        };
+        if limit == 0 {
+            tracing::warn!("MODEL_CALLS_PER_HOUR=0: no cap on model calls");
+        }
+        Service::with_limit(limit)
+    }
+
+    /// While the cap is reached at `now`: how long until the oldest call of the hour leaves it.
+    fn capped_for(&self, now: u64) -> Option<u64> {
+        if self.limit == 0 {
+            return None;
+        }
+        self.wait(&mut self.calls.lock().unwrap(), now)
+    }
+
+    /// `capped_for` on calls already locked: drops the calls an hour old, then the wait if the rest fill the cap.
+    fn wait(&self, calls: &mut VecDeque<u64>, now: u64) -> Option<u64> {
+        while calls.front().is_some_and(|&at| now.saturating_sub(at) >= HOUR_MS) {
+            calls.pop_front();
+        }
+        (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
+    }
+
+    /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
+    /// step under one lock, so two features asking at once with one call left can't both take it.
+    fn spend(&self, now: u64) -> Result<(), u64> {
+        if self.limit > 0 {
+            let mut calls = self.calls.lock().unwrap();
+            if let Some(wait) = self.wait(&mut calls, now) {
+                return Err(wait);
+            }
+            calls.push_back(now);
+        }
+        self.capped_said.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+/// What the person is told while the cap holds: for how long, why, and that nothing they say is lost. Short enough
+/// for the 5 s a notice shows (App.tsx).
+pub fn capped(limit: usize, wait_ms: u64) -> String {
+    let minutes = wait_ms.div_ceil(60_000).max(1);
+    format!("AI paused up to {minutes} min (hourly limit of {limit} calls). Your words are kept.")
 }
 
 impl Core {
     /// The key for a model call, or why there's none (missing, or refused), so nothing is sent that can't work.
+    /// While this hour's calls are used up, it's that, said once a spell: every feature rests as it does without a key.
     pub fn key(&self) -> anyhow::Result<&str> {
+        let key = self.listening_key()?;
+        if let Some(wait) = self.service.capped_for(crate::now_ms()) {
+            self.say_capped(wait);
+            return Err(Verdict::Capped.into());
+        }
+        Ok(key)
+    }
+
+    /// The key for Voice Transcribe, which the cap doesn't stop: a stream is one call a session, not a loop, and
+    /// what's heard while the cap holds is kept and placed after.
+    pub fn listening_key(&self) -> anyhow::Result<&str> {
         if self.key_refused() {
             return Err(Verdict::Refused.into());
         }
         self.key.as_deref().ok_or_else(|| anyhow::anyhow!("MODEL_API_KEY is not set"))
+    }
+
+    /// What the person is told while this hour's calls are used up, or None.
+    pub fn capped_message(&self) -> Option<String> {
+        self.service.capped_for(crate::now_ms()).map(|wait| capped(self.service.limit, wait))
+    }
+
+    /// Counts one model call about to go out; past the cap, ends it unsent instead.
+    pub fn spend(&self) -> anyhow::Result<()> {
+        self.service.spend(crate::now_ms()).map_err(|wait| {
+            self.say_capped(wait);
+            Verdict::Capped.into()
+        })
+    }
+
+    fn say_capped(&self, wait: u64) {
+        if !self.service.capped_said.swap(true, Ordering::Relaxed) {
+            tracing::warn!("{} model calls in the last hour (MODEL_CALLS_PER_HOUR): model features rest for {} s", self.service.limit, wait / 1000);
+            self.send(ServerMsg::Notice { message: capped(self.service.limit, wait) });
+        }
     }
 
     /// True once the service refused the key, until a restart.
@@ -167,7 +286,7 @@ impl Core {
                 }
                 Err(Verdict::Busy.into())
             }
-            Verdict::Fine | Verdict::Other => Ok(()),
+            Verdict::Fine | Verdict::Other | Verdict::Capped => Ok(()),
         }
     }
 
@@ -181,6 +300,7 @@ impl Core {
     /// here, and says what it was for.
     pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
         let key = self.key()?;
+        self.spend()?;
         let started = std::time::Instant::now();
         let result = async {
             let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
@@ -209,12 +329,14 @@ impl Core {
         let key = self.key()?;
         let model = setting.name();
         let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
+        self.spend()?;
         let (mut sent, mut started) = (body(model), std::time::Instant::now());
         let mut response = post(&sent).await;
         let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
         if let (Some(status), Some(base)) = (turned_away, setting.base.as_deref().filter(|base| *base != model)) {
             tracing::info!("{model} answered {status}: asking {base} instead");
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
+            self.spend()?;
             (sent, started) = (body(base), std::time::Instant::now());
             response = post(&sent).await;
             // Two features finding out at once say it once.
@@ -405,6 +527,72 @@ mod tests {
         let said = notices(&mut updates).join("\n");
         assert!(said.contains("Thoughts retry on their own") && said.contains("try anything else again"), "{said}");
         assert!(said.split_whitespace().count() <= 15, "short enough to read in the 5 s a notice shows (App.tsx): {said}");
+    }
+
+    #[test]
+    fn the_cap_counts_an_hour_of_calls_and_frees_one_as_the_oldest_ages_out() {
+        let service = super::Service::with_limit(3);
+        let hour = 60 * 60_000;
+        for at in [0, 10, 20] {
+            assert_eq!(service.spend(at), Ok(()));
+        }
+        assert_eq!(service.spend(30), Err(hour - 30), "full: the wait is until the oldest call is an hour old");
+        assert_eq!(service.spend(hour - 1), Err(1));
+        assert_eq!(service.spend(hour), Ok(()), "the call at 0 left the hour");
+        assert_eq!(service.spend(hour + 5), Err(5), "the next to leave is the one at 10, 5 ms on");
+        let off = super::Service::with_limit(0);
+        assert!((0..1000).all(|at| off.spend(at).is_ok()), "0 is no cap");
+        assert_eq!(super::Service::default().limit, super::CALLS_PER_HOUR);
+    }
+
+    #[test]
+    fn features_asking_at_once_never_take_more_than_the_cap() {
+        let service = super::Service::with_limit(100);
+        let start = std::sync::Barrier::new(16);
+        let took: usize = std::thread::scope(|s| {
+            let threads: Vec<_> = (0..16)
+                .map(|_| s.spawn(|| {
+                    start.wait();
+                    (0..100).filter(|_| service.spend(1_000).is_ok()).count()
+                }))
+                .collect();
+            threads.into_iter().map(|t| t.join().unwrap()).sum()
+        });
+        assert_eq!(took, 100, "1600 asks at once, 100 calls allowed");
+        assert_eq!(service.calls.lock().unwrap().len(), 100);
+    }
+
+    #[tokio::test]
+    async fn past_the_cap_nothing_is_sent_every_feature_rests_and_listening_goes_on() {
+        use serde_json::json;
+        let (url, keys) = stand_in().await;
+        let path = std::env::temp_dir().join(format!("e2a2o-model-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core { key: Some("good".into()), service: super::Service::with_limit(2), ..Core::test(journal, world) };
+        let mut updates = core.updates.subscribe();
+        let reply = json!({"choices": [{"message": {"content": "hi"}}]});
+        assert!(call(&core, &url, 200, reply.clone(), 0).await.is_ok());
+        // Placing and Explain count each model they ask: here the default and then the one without Contributor mode.
+        let asked = Mutex::new(Vec::new());
+        assert_eq!(ask(&core, &url, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap(), StatusCode::OK);
+        assert!(core.capped_message().is_some());
+        for _ in 0..3 {
+            assert_eq!(Verdict::of(&call(&core, &url, 200, reply.clone(), 0).await.unwrap_err()), Some(Verdict::Capped));
+            assert_eq!(Verdict::of(&ask(&core, &url, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap_err()), Some(Verdict::Capped));
+        }
+        // The ask goes to the same stand-in as the call: those two reached the service, and nothing after them.
+        assert_eq!(keys.lock().unwrap().len(), 2, "nothing more reached the service");
+        assert_eq!(asked.lock().unwrap().len(), 1);
+        assert_eq!(Verdict::of(&core.key().unwrap_err()), Some(Verdict::Capped), "the refiner, pictures and search rest");
+        assert_eq!(core.listening_key().unwrap(), "good", "the microphone still works: what's heard is kept");
+        assert!(!core.key_refused());
+        let said = notices(&mut updates);
+        assert_eq!(said.len(), 1, "said once a spell: {said:?}");
+        assert!(said[0].starts_with("AI paused up to 60 min (hourly limit of 2 calls)"), "{said:?}");
+        assert!(said[0].split_whitespace().count() <= 15, "short enough for the 5 s a notice shows: {said:?}");
+        let told = crate::catch_up(&core, "you").into_iter().filter(|m| matches!(m, ServerMsg::Notice { message } if message == &said[0])).count();
+        assert_eq!(told, 1, "a window that connects later is told too");
+        let _ = std::fs::remove_file(&path);
     }
 
     /// The default for placing and Explain (main.rs), and the same model without Contributor mode.

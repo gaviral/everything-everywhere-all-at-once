@@ -1,8 +1,9 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
+import { usePicture } from "./pictures";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -161,6 +162,12 @@ export default function App() {
   // Your newest landing since the map last looked. The core sends a turn's changes one by one, so a new topic can
   // arrive as a landing and then your place moving to it.
   const followLanding = useRef<{ thread: string; thought: string } | null>(null);
+  // Your thoughts that failed a try, and a late landing held back (see `landingToFollow`).
+  const retried = useRef(new Set<string>());
+  const heldLanding = useRef<Landing | null>(null);
+  useEffect(() => {
+    for (const id of Object.keys(core.placing.retryAt)) retried.current.add(id);
+  }, [core.placing]);
   const followTimer = useRef<number | undefined>(undefined);
   const followFrame = useRef(0);
   // The landing the map last showed you, and when: the unfinished card keeps clear of it.
@@ -172,17 +179,19 @@ export default function App() {
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
     if (!core.snapshotRevision) return;
-    let landing: { thread: string; thought: string; mine: boolean } | null = null;
+    let landing: Landing | null = null;
     let moved = false;
+    const held = heldLanding.current;
+    heldLanding.current = null;
     if (seenThoughts.current && seenSnapshot.current === core.snapshotRevision) {
       const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
+      moved = !!world.active && world.active !== seenActive.current;
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
-        if (thought.thread_id) landing = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
       }
-      moved = !!world.active && world.active !== seenActive.current;
+      ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
@@ -673,7 +682,7 @@ export default function App() {
         <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
-      <Explain explanations={core.explanations} explain={core.explain} />
+      <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
       <div id="tour-tools" />
       <Apps core={core} />
@@ -752,7 +761,7 @@ export default function App() {
           {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -779,7 +788,7 @@ export default function App() {
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1013,15 +1022,15 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
 }
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
- *  arrives later fades in over it and moves nothing. A card used to grow 5–19 px when its picture came, its title
- *  sliding right. ✦ marks a picture only once one shows. */
+ *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
+ *  rule in pictures.ts). A card used to grow 5–19 px when its picture came, its title sliding right, and a picture
+ *  that failed showed a broken-image glyph. ✦ marks a picture only once one shows. */
 function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
-  const [loaded, setLoaded] = useState<string | null>(null);
-  const shown = !!thread.picture && loaded === thread.picture;
+  const { shown, img } = usePicture(thread.picture ? [thread.picture] : []);
   return (
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
-      {thread.picture && <img key={thread.picture} className={shown ? "picture is-shown" : "picture"} src={thread.picture} alt="" onLoad={() => setLoaded(thread.picture)} />}
+      {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
       {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
     </span>
   );
@@ -1114,20 +1123,18 @@ function MicIcon() {
   );
 }
 
-function PendingThought({ thought, noKey, refused, reducedMotion }: { thought: Thought; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
-  const [elapsed, setElapsed] = useState(0);
+/** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
+function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (noKey) return;
-    const started = Date.now();
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setElapsed(Math.floor((Date.now() - started) / 1000));
-      interval = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    }, 6000);
-    return () => { window.clearTimeout(timeout); window.clearInterval(interval); };
-  }, [noKey]);
+    if (noKey || refused) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [noKey, refused]);
+  const retryAt = placing.retryAt[thought.id];
+  const label = pendingLabel(thought, placing, now, noKey, refused);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className="pending-label">{refused ? "Waiting for a working key" : noKey ? "Needs the AI key" : `Finding a thread${elapsed > 5 ? ` · ${elapsed}s` : ""}`}</span> {thought.text}
+    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
   </motion.span>;
 }
 

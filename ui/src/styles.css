@@ -621,6 +621,19 @@ header {
   cursor: pointer;
 }
 
+/* An "off" mark on this answer: quiet until pressed, a toggle so it can be taken back. */
+.explain-actions button.explain-off {
+  margin-right: auto;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.explain-actions button.explain-off[aria-pressed="true"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
 .explain-actions button.quiet {
   background: transparent;
   color: var(--muted);
@@ -730,6 +743,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .live { color: var(--ink); font-style: normal; font-size: 14px; }
 .first-hint { color: var(--muted); font-size: 13px; }
 .pending-label { color: var(--accent); font-weight: 600; }
+/* A retry is said calmly: it's saved and will land, nothing to act on. */
+.pending-label.retrying { color: var(--muted); }
 .pill { border-style: solid; color: var(--ink); }
 .notice { display: flex; align-items: flex-start; gap: 12px; width: max-content; max-width: min(90vw, 540px); cursor: default; }
 .notice button { flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
@@ -756,8 +771,6 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .picture-wrap > .picture { grid-area: 1 / 1; }
 .picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
 .thread.collapsed .picture-letter { font-size: 16px; }
-.picture-wrap > img.picture { opacity: 0; transition: opacity .2s ease-out; }
-.picture-wrap > img.picture.is-shown { opacity: 1; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
 .point-mark { font-size: 11px; }
 .map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
@@ -859,3 +872,10 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .when.due { color: var(--amber); }
 .when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
 .when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
+
+/* Every picture slot (pictures.ts): hidden until it decodes, then a short fade over its letter tile; one already
+   decoded when it mounts (a card back from the Palace) shows at once. A failed picture is never shown, so no
+   broken-image glyph. The fade stays under Reduce Motion: it moves nothing. */
+img.slot-picture { opacity: 0; transition: opacity .2s ease-out; }
+img.slot-picture.is-shown { opacity: 1; }
+img.slot-picture[data-instant] { transition: none; }
