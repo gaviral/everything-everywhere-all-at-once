@@ -1,0 +1,58 @@
+.tiny-transcript {
+  position: fixed;
+  bottom: calc(var(--dock-height, 120px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 16px));
+}
+
+/* One line that runs from its end: what you're saying now stays in view, and a long turn's start goes behind a "…"
+   at the left (right to left, the start is the right edge, so the words overflow and the ellipsis falls leftward). */
+.tiny-transcript-text {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.tiny-transcript-hint {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.tiny-transcript-hint::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--card);
+}
+
+.tiny-transcript-help { margin: 0 0 6px; }
+.tiny-transcript-size { display: block; width: 100%; margin: 0; accent-color: var(--accent); }
+.tiny-transcript-size:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

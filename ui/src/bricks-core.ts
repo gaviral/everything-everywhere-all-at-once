@@ -23,7 +23,7 @@ export function infoProblems(json: unknown, folder: string): string[] {
   if (!json || typeof json !== "object" || Array.isArray(json)) return ["brick.json isn't an object"];
   const info = json as Record<string, unknown>;
   const problems: string[] = [];
-  const known = ["id", "name", "does", "kind", "defaultOn", "demoSafe", "flag"];
+  const known = ["id", "name", "does", "kind", "defaultOn", "demoSafe", "flag", "showsLiveWords"];
   for (const key of Object.keys(info)) if (!known.includes(key)) problems.push(`unknown field "${key}" (fields: ${known.join(", ")})`);
   if (info.id !== folder) problems.push(`id is ${JSON.stringify(info.id)}; it must be the folder's name, "${folder}"`);
   const bare = folder.replace(/^_/, "");
@@ -37,6 +37,7 @@ export function infoProblems(json: unknown, folder: string): string[] {
   if (info.flag !== undefined && (typeof info.flag !== "string" || !/^[a-z][a-z0-9-]*$/.test(info.flag) || APP_FLAGS.includes(info.flag))) {
     problems.push(`flag: a lowercase word for the address (?word), not one of the app's own: ${APP_FLAGS.join(", ")}`);
   }
+  if (info.showsLiveWords !== undefined && typeof info.showsLiveWords !== "boolean") problems.push("showsLiveWords: true or false (true: it shows map.partial, so the dock doesn't)");
   return problems;
 }
 
@@ -132,8 +133,10 @@ export function useCatalogOpen(): boolean {
 /** Nothing placed by hand, the same object each time. */
 const UNPLACED = Object.freeze({});
 
-/** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only. */
-export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>): MapSnapshot {
+/** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only, and
+ *  `partial`, this tab's live words (core.ts `partial`: the core sends them to the speaker's windows alone, and a tab
+ *  takes them only while its own mic is on). */
+export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string): MapSnapshot {
   const notes = world.notes ?? {};
   return {
     threads: world.threads,
@@ -147,6 +150,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     rooms,
     positions: world.positions ?? UNPLACED,
     me,
+    partial,
     connected,
   };
 }

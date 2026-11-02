@@ -177,7 +177,10 @@ pub fn stops_listening(text: &str) -> bool {
 
 /// "What was I thinking?" when you've lost your thought: as "where was I?". Only the whole turn: at the end of a
 /// sentence it's often about a choice ("I bought a boat. What was I thinking?"). "Let me think" stays filler: it's
-/// a pause to think, not a wish to be moved.
+/// a pause to think, not a wish to be moved. Saying you lost your place ("I lost my train of thought", "going back to
+/// what I was saying") is "where was I?" too, also only as the whole turn: with more words it's about something else
+/// ("I lost my place in line", "I don't remember the name"). "I don't remember" alone stays a thought: it answers a
+/// question as often as it means a lost thought.
 fn is_lost_thought(text: &str) -> bool {
     crate::is_command(
         text,
@@ -186,6 +189,16 @@ fn is_lost_thought(text: &str) -> bool {
             "let me finish my thought", "let me finish that thought", "let me finish my sentence", "help me finish my thought",
         ],
         &["again"],
+    ) || crate::is_command(
+        text,
+        &[
+            "i lost my place", "i ve lost my place", "lost my place", "i lost my train of thought", "i ve lost my train of thought",
+            "lost my train of thought", "i lost track of what i was saying", "where did i leave off",
+            "i don t remember what i was saying", "i don t remember what i was going to say", "i don t remember what i was gonna say",
+            "i can t remember what i was saying", "i forgot what i was saying", "i forgot what i was going to say", "i forgot what i was gonna say",
+            "going back to what i was saying", "going back to what you were saying", "getting back to what i was saying", "back to what i was saying",
+        ],
+        &["again", "sorry", "before", "earlier"],
     )
 }
 
