@@ -11,7 +11,8 @@
 use crate::{Access, Link};
 use std::net::IpAddr;
 
-/// The header Cloudflare sets to the visitor's address; it replaces any value the visitor sends.
+/// The header Cloudflare sets to the visitor's address. A request that already carries one is refused at
+/// Cloudflare's edge (error 1000, measured with a quick tunnel), so a visitor can't pick their own.
 pub const VISITOR: axum::http::HeaderName = axum::http::HeaderName::from_static("cf-connecting-ip");
 
 /// Codes shorter than this are refused in tunnel mode: the link is on the internet, not a home network.
