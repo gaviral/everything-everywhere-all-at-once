@@ -61,7 +61,7 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
-  const attention = useAttention({ world, revision: core.snapshotRevision, me, view, words: core.partial || core.handoff || "", reveal });
+  const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
@@ -199,6 +199,8 @@ export default function App() {
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
       ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
+      // A retry that landed late isn't followed (you've moved on): the dock says where it went.
+      if (heldLanding.current) attention.held(heldLanding.current);
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
@@ -1180,6 +1182,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
+      {latest && <span className="sr-only">(your latest thought)</span>}
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>

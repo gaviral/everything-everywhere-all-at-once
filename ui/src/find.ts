@@ -47,6 +47,7 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
 
     let target: HTMLElement | null = null;
     let frame = 0;
+    let unlook = () => {};
     // Let the cleared search, map view and unfolded points render before looking up the point.
     frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -62,11 +63,12 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
         if (!hadTabindex) target.addEventListener("blur", () => target?.removeAttribute("tabindex"), { once: true });
         // The one "look here" highlight (Attention.tsx), for as long as reading it takes; a thread's is on its head.
         const title = currentWorld.current.threads.find((thread) => thread.id === id)?.title ?? "";
-        look(target.querySelector<HTMLElement>(":scope > .thread-head") ?? target, target.id.startsWith("thread-") ? title : `${title} ${wordsIn(target)}`);
+        unlook = look(target.querySelector<HTMLElement>(":scope > .thread-head") ?? target, target.id.startsWith("thread-") ? title : `${title} ${wordsIn(target)}`);
       });
     });
     return () => {
       cancelAnimationFrame(frame);
+      unlook();
     };
   }, [requested, reducedMotion, setView, setQuery, setFocusMode, setExpanded]);
   return reveal;

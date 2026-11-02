@@ -3,7 +3,7 @@
 // card a spoken "this" acts on. App.tsx feeds it the world and tells it what the map showed or held back.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Landing, World } from "./core";
-import { carry, changes, direction, LOOK_MS, newestOwn, pointsAtThis, readMs, type Unseen } from "./attention-core";
+import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, pointsAtThis, readMs, type Unseen } from "./attention-core";
 import "./attention.css";
 
 /** The visible band of the map: under the header and tools, above the dock. */
@@ -13,9 +13,22 @@ export function band() {
   return { top, bottom: Math.min(window.innerHeight, dock) };
 }
 
-/** Whether an element's first line is inside the band, where it can be read. */
+/** A modal sheet (Recap, Import) is over the map: nothing under it can be read. */
+function covered() {
+  return !!document.querySelector("dialog[open]");
+}
+
+/** Runs `check` when a sheet opens or closes in place (Import keeps its dialog; Recap's goes, so `covered` is also a
+ *  dependency where this is used). */
+function watchCover(check: () => void) {
+  const watch = new MutationObserver(check);
+  watch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+  return () => watch.disconnect();
+}
+
+/** Whether an element's first line is inside the band, where it can be read, with no sheet over it. */
 function readable(element: HTMLElement | null) {
-  if (!element || document.visibilityState !== "visible") return false;
+  if (!element || document.visibilityState !== "visible" || covered()) return false;
   const rect = element.getBoundingClientRect();
   const { top, bottom } = band();
   const line = parseFloat(getComputedStyle(element).lineHeight) || 22;
@@ -37,8 +50,9 @@ let current: { element: HTMLElement; frame: number; timer: number } | null = nul
 export const FADE_OUT_MS = 1000;
 
 /** "Look here": highlights `element` once it holds still (a smooth scroll or a slide into place has ended), for as long
- *  as reading `text` takes, then fades it. Every "go there" uses it: a landing, Take me there, a Recap link. */
-export function look(element: HTMLElement, text = wordsIn(element)) {
+ *  as reading `text` takes, then fades it. Every "go there" uses it: a landing, Take me there, a Recap link. Returns a
+ *  stop for its owner's cleanup, which leaves a newer highlight alone. */
+export function look(element: HTMLElement, text = wordsIn(element)): () => void {
   stop();
   const read = readMs(text);
   const entry = { element, frame: 0, timer: 0 };
@@ -61,6 +75,7 @@ export function look(element: HTMLElement, text = wordsIn(element)) {
     } else entry.frame = requestAnimationFrame(wait);
   };
   entry.frame = requestAnimationFrame(wait);
+  return () => { if (current === entry) stop(); };
 }
 
 function stop() {
@@ -91,8 +106,11 @@ type Value = {
 const Context = createContext<Value>({ latest: null, unseen: new Map(), thisThread: null, note: null, known: { current: null } });
 
 /** The attention state for the map, from the world as it changes. */
-export function useAttention({ world, revision, me, view, words, reveal }: {
-  world: World; revision: number; me: string; view: string; words: string;
+export function useAttention({ world, revision, me, view, covered: sheet, words, reveal }: {
+  world: World; revision: number; me: string; view: string;
+  /** A sheet is over the map (Recap): the checks run again when it goes. */
+  covered: boolean;
+  words: string;
   reveal: (thread: string, thought: string | null) => void;
 }) {
   const [latest, setLatest] = useState<string | null>(null);
@@ -109,16 +127,17 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
     const last = before.current;
     before.current = { world, revision };
     known.current = new Set(placed.map((t) => t.id));
-    if (!last) {
-      // A fresh page: your newest words by when you said them (a time ahead of the clock, a sample, counts least).
-      const now = Date.now();
-      const own = placed.filter((t) => t.speaker === me || t.speaker === "you");
-      const newest = own.reduce<typeof own[number] | undefined>((a, t) => (!a || (t.at_ms > now ? 0 : t.at_ms) >= (a.at_ms > now ? 0 : a.at_ms) ? t : a), undefined);
-      setLatest(newest?.id ?? null);
+    // A fresh page: your newest words by when you said them.
+    if (!last) { setLatest(newestSaid(placed, me, Date.now())); return; }
+    const wasPlaced = new Set(last.world.thoughts.filter((t) => t.placed).map((t) => t.id));
+    if (last.revision !== revision) {
+      // A new snapshot (a reconnect): your words that landed meanwhile take the mark, as on a fresh page; else it stays
+      // unless its thought is gone.
+      const since = newestSaid(placed.filter((t) => !wasPlaced.has(t.id)), me, Date.now());
+      setLatest((now) => since ?? (now && placed.some((t) => t.id === now) ? now : newestSaid(placed, me, Date.now())));
+      setUnseen((marks) => carry(marks, world));
       return;
     }
-    if (last.revision !== revision) { setUnseen((marks) => carry(marks, world)); return; }
-    const wasPlaced = new Set(last.world.thoughts.filter((t) => t.placed).map((t) => t.id));
     const mine = newestOwn(placed.filter((t) => !wasPlaced.has(t.id)), me);
     if (mine) setLatest(mine);
     // A change already in view when it happens is seen happening; only what changed out of sight is marked. A
@@ -157,7 +176,9 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
     document.addEventListener("visibilitychange", check);
     document.addEventListener("pointerdown", touch, true);
     document.addEventListener("focusin", touch, true);
+    const unwatch = watchCover(check);
     return () => {
+      unwatch();
       cancelAnimationFrame(frame);
       for (const timer of timers.current.values()) window.clearTimeout(timer);
       timers.current.clear();
@@ -168,7 +189,7 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
       document.removeEventListener("pointerdown", touch, true);
       document.removeEventListener("focusin", touch, true);
     };
-  }, [unseen, view]);
+  }, [unseen, view, sheet]);
 
   // "New in X ↓" points at a held-back landing until it's in view (then it gets the highlight), you go there, or a
   // newer landing is shown.
@@ -178,7 +199,8 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
     const check = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        if (view !== "map") { setNote((n) => (n && n.dir !== null ? { ...n, dir: null } : n)); return; }
+        // Under a sheet or in another view there's no way to point: just where it went.
+        if (view !== "map" || covered()) { setNote((n) => (n && n.dir !== null ? { ...n, dir: null } : n)); return; }
         const point = document.getElementById(`point-${note.thought}`) ?? document.getElementById(`thread-${note.thread}`);
         if (!point) return;
         if (point.id.startsWith("point-") && readable(point)) {
@@ -193,8 +215,12 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
     check();
     window.addEventListener("scroll", check, { passive: true });
     window.addEventListener("resize", check);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
-  }, [note, view]);
+    const unwatch = watchCover(check);
+    return () => { unwatch(); cancelAnimationFrame(frame); window.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
+  }, [note, view, sheet]);
+
+  // The highlight is this map's: it goes with it.
+  useEffect(() => stop, []);
 
   const titleOf = (thread: string) => world.threads.find((t) => t.id === thread)?.title ?? "";
   const titles = useRef(titleOf);
