@@ -318,6 +318,21 @@ async fn undo_after_the_count_says_it_is_too_late() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn undo_after_a_corrected_message_sent_says_it_is_too_late() {
+    let mut f = Fixture::new(full(false));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.core.add_thought("me", "No, I meant text Sam Lee that I'm running late");
+    settle().await;
+    wait(60_000).await;
+    f.told();
+    f.core.add_thought("me", "Undo that");
+    let told = f.told();
+    assert!(told.iter().any(|t| t.contains("isn't counting down any more")), "{told:?}");
+    assert!(!told.iter().any(|t| t.contains("Undone")), "{told:?}");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_reloaded_window_gets_the_counting_card_back_with_the_time_left() {
     let mut f = Fixture::new(full(false));
     f.core.add_thought("me", ASK);

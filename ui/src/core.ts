@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
-import { received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -812,6 +812,8 @@ export function useCore(speaker?: string) {
           case "send_card": {
             const at = Date.now();
             setSendCard((shown) => cardReceived(shown, msg, at));
+            // Recap is modal: the countdown and its Stop would sit under it, out of reach.
+            if (comesFirst(msg)) closeRecap();
             break;
           }
         }

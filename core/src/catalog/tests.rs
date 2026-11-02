@@ -714,3 +714,76 @@ async fn the_undo_key_takes_back_the_last_turn_as_undo_that_does() {
     let f = Fixture::new(garden());
     assert_eq!(key(&f), ["notice Nothing to undo: nothing said just before"]);
 }
+
+/// A message made by "No, I meant …" is remembered inside `Undo::Each` (redo): once it has sent, neither "undo that",
+/// ⌘Z nor the Undo button may say it was taken back, and nothing else in that turn is undone either.
+#[tokio::test]
+async fn a_sent_message_inside_a_redo_is_never_said_to_be_undone() {
+    const SPENT: &str = "notice Can't undo that here: the message isn't counting down any more";
+    let remembered = |f: &Fixture, undo: Undo| remember(&f.core, "you", "No, I meant text Sam that I'm late", Was::Request { act: Act::Message, undo: Some(undo) });
+    // Nothing counts down: the message went.
+    let f = Fixture::new(garden());
+    let id = remembered(&f, Undo::Each(vec![Undo::Unsend { id: 7 }]));
+    assert_eq!(f.click_undo(id), [SPENT]);
+    let f = Fixture::new(garden());
+    remembered(&f, Undo::Each(vec![Undo::Unsend { id: 7 }]));
+    assert_eq!(f.say("Undo that").await, [SPENT]);
+    // With earlier words taken off the map in the same turn: they stay off, and the notice says why.
+    let f = Fixture::new(garden());
+    let before = f.core.snapshot().thoughts.len();
+    let restore = Undo::Restore { thoughts: vec![thought("th-x", "T1", "Buy stakes", now_ms())], threads: vec![], order: vec![], dismissed: vec![], merged: vec![], on: vec![], active: None };
+    let id = remembered(&f, Undo::Each(vec![Undo::Unsend { id: 7 }, restore]));
+    assert_eq!(f.click_undo(id), [SPENT]);
+    assert_eq!(f.core.snapshot().thoughts.len(), before);
+}
+
+/// Delete, or "scratch that" with nowhere to merge, on the only thought of the thread people are on takes the thread
+/// off the map, and with it where they were. Undo is one exact step back: the thread comes back, and so does everyone
+/// who was on it, the shared "where the talk is" included.
+#[test]
+fn undo_of_the_only_thought_on_your_thread_puts_you_back_on_it() {
+    let now = now_ms();
+    let call = || thought("c", "T3", "Call Mom on Sunday", now);
+    // Delete by hand: T1 keeps the garden, T3 holds one thought, and you and Sam are on T3.
+    let mut world = garden();
+    world.threads.push(thread("T3", "Mom", 3));
+    world.thoughts.push(call());
+    world.active = Some("T3".into());
+    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into()), ("Lena".into(), "T2".into())]);
+    let f = Fixture::new(world);
+    let undo = take_off(&f.core, &["c".to_string()]).unwrap();
+    assert!(f.core.snapshot().thread("T3").is_none() && f.core.snapshot().active.is_none());
+    run_undo(&f.core, "you", &undo);
+    let after = f.core.snapshot();
+    assert!(after.thread("T3").is_some());
+    assert_eq!(after.active.as_deref(), Some("T3"));
+    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into()), ("Lena".into(), "T2".into())]));
+
+    // "Scratch that" on the first words: nowhere to merge into, so T3 leaves; undo puts you back on it.
+    let f = Fixture::new(World {
+        threads: vec![thread("T3", "Mom", 3)],
+        thoughts: vec![call()],
+        active: Some("T3".into()),
+        active_by: HashMap::from([("you".into(), "T3".into())]),
+        ..World::default()
+    });
+    let undo = unkeep(&f.core, "you", &["c".to_string()]).unwrap();
+    assert!(f.core.snapshot().thread("T3").is_none());
+    run_undo(&f.core, "you", &undo);
+    let after = f.core.snapshot();
+    assert_eq!((after.active.as_deref(), after.active_for("you").map(String::as_str)), (Some("T3"), Some("T3")));
+
+    // Someone moved on meanwhile: they stay where they went, and the talk stays where it is now.
+    let mut world = garden();
+    world.threads.push(thread("T3", "Mom", 3));
+    world.thoughts.push(call());
+    world.active = Some("T3".into());
+    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into())]);
+    let f = Fixture::new(world);
+    let undo = take_off(&f.core, &["c".to_string()]).unwrap();
+    f.core.commit(vec![Change::ActiveChanged { thread_id: "T1".into(), speaker: "Sam".into() }]);
+    run_undo(&f.core, "you", &undo);
+    let after = f.core.snapshot();
+    assert_eq!(after.active.as_deref(), Some("T1"), "the talk moved on to T1");
+    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T1".into())]));
+}

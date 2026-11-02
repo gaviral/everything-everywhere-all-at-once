@@ -5,12 +5,15 @@
 // sends: the core does, only when its own countdown ends (its tests stand in for Messages, so nothing is sent here
 // or there).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
+
+const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url), "utf8");
 
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { received, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/send-card.ts");
+  const { received, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS, comesFirst } = await server.ssrLoadModule("/src/send-card.ts");
   const { upFor } = await server.ssrLoadModule("/src/notice-rules.ts");
   const text = "Hi Mia, could you confirm what to bring?";
   const msg = (state, extra = {}) => ({ type: "send_card", id: 1, to: "Mia", text, state, in_ms: 0, live: false, message: "", ...extra });
@@ -64,6 +67,15 @@ try {
   assert.match(cardWords(dry, t0 + 5000).status, /^Dry run: nothing sent/);
   assert.equal(cardWords(received(card, msg("failed"), t0 + 5000), t0 + 5000).status, "Not sent");
   assert.deepEqual(Object.keys(STATE_CLASS).sort(), ["counting", "dry_run", "failed", "sent", "stopped"]);
+
+  // A modal sheet (Recap, Import) makes the rest of the window inert and covers it: a message that starts counting
+  // closes them, so its countdown and Stop are in view and clickable while it can still be stopped (the sheet says
+  // "Say 'map' to close", so the mic is on behind it). Only a new count does; its end leaves a sheet opened since alone.
+  assert.equal(comesFirst(card), true);
+  for (const ended of [stopped, sent, dry, late]) assert.equal(comesFirst(ended), false, ended.state);
+  assert.equal(comesFirst(null), false);
+  assert.match(src("core.ts"), /case "send_card": \{[^}]*comesFirst\([^)]*\)\) closeRecap\(\)/, "Recap closes for a counting card");
+  assert.match(src("Import.tsx"), /comesFirst\(core\.sendCard\)\) setOpen\(false\)/, "Import closes for a counting card");
   console.log("send-card-check: ok");
 } finally {
   await server.close();

@@ -68,6 +68,10 @@ fn lowercase_first(label: &str) -> String {
 /// empty map takes it, checked under the commit's lock, so a thought said meanwhile, or a second click, never mixes
 /// a sample into real thoughts. The speaker lands on the sample's active thread.
 fn load(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str) -> Result<(), String> {
+    load_at(core, speaker, samples, images, file, crate::now_ms())
+}
+
+fn load_at(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str, now: u64) -> Result<(), String> {
     let missing = || "The sample map isn't installed here.".to_string();
     let text = std::fs::read_to_string(samples.join(format!("{file}.jsonl"))).map_err(|_| missing())?;
     // Unreadable lines are skipped, as when a journal opens (world.rs `Journal::open`).
@@ -75,14 +79,24 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str) -
     // A map emptied after a merge or delete still holds those ids (T2 leads into T1): the sample's threads take
     // fresh ones, so none of them resolves into another.
     let made = core.snapshot().threads_made();
-    let changes: Vec<Change> = text.lines().filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+    let mut lines: Vec<serde_json::Value> = text.lines().filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok()).collect();
+    // The samples are dated (Nov 3): opened before then, a recap would skip lines still in the future. They move
+    // back to end just now, their gaps kept.
+    let ahead = lines.iter().filter_map(latest).max().unwrap_or(0).saturating_sub(now);
+    if ahead > 0 {
+        lines.iter_mut().for_each(|v| shift(v, ahead));
+    }
+    let changes: Vec<Change> = lines.into_iter()
         .filter_map(|mut v| { rebase(&mut v, made); serde_json::from_value(v).ok() })
         // The person who opens it owns it: a hosted visitor or a room guest isn't "you", and only their own words and
-        // drops give them the unfinished card and "where was I?".
+        // drops give them the unfinished card and "where was I?". Only the sample's own "you" lines become theirs:
+        // the others in it (Sam and Lena at the team meeting) keep their words.
         .map(|change| match change {
             Change::ThoughtAdded { mut thought } => {
-                thought.speaker = speaker.into();
+                if thought.speaker == "you" {
+                    thought.speaker = speaker.into();
+                }
                 Change::ThoughtAdded { thought }
             }
             Change::ThreadStatus { thread_id, status, .. } => Change::ThreadStatus { thread_id, status, speaker: speaker.into() },
@@ -102,6 +116,33 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str) -
     }
     // The sample's moves are the speaker's (above), so they land on its active thread with the rest of it.
     Ok(())
+}
+
+/// The times a sample line keeps: when a line was said, a thread last touched, an item done.
+const TIMES: [&str; 3] = ["at_ms", "touched_ms", "done_ms"];
+
+/// The latest time in a sample line, if it has one.
+fn latest(v: &serde_json::Value) -> Option<u64> {
+    match v {
+        serde_json::Value::Array(all) => all.iter().filter_map(latest).max(),
+        serde_json::Value::Object(all) => all.iter()
+            .filter_map(|(k, v)| if TIMES.contains(&k.as_str()) { v.as_u64() } else { latest(v) }).max(),
+        _ => None,
+    }
+}
+
+/// Every time in a sample line, `by` earlier.
+fn shift(v: &mut serde_json::Value, by: u64) {
+    match v {
+        serde_json::Value::Array(all) => all.iter_mut().for_each(|v| shift(v, by)),
+        serde_json::Value::Object(all) => for (k, v) in all.iter_mut() {
+            match v.as_u64() {
+                Some(ms) if TIMES.contains(&k.as_str()) => *v = (ms.saturating_sub(by)).into(),
+                _ => shift(v, by),
+            }
+        },
+        _ => {}
+    }
 }
 
 /// Every thread id in a sample line ("T3"), `by` on ("T7" after 4 made).
@@ -139,7 +180,7 @@ fn copy_pictures(from: &Path, to: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, pick, NOT_EMPTY, SAMPLE, SAMPLES};
+    use super::{load, load_at, pick, NOT_EMPTY, SAMPLE, SAMPLES};
     use crate::world::{Journal, ThreadStatus};
     use crate::Core;
     use std::path::Path;
@@ -214,6 +255,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
         assert!(card.is_some(), "the unfinished card is offered to Dana");
         assert_eq!(crate::way_back(&world, "Dana", crate::now_ms()), card, "“where was I?” goes where the card points");
+    }
+
+    /// The meeting sample is a meeting: whoever opens it takes the sample's own "you" lines, and Sam's and Lena's
+    /// stay theirs, so their names show on their points and the model still sees who said what.
+    #[test]
+    fn the_opener_takes_the_samples_own_lines_and_the_others_keep_theirs() {
+        for opener in ["you", "Dana"] {
+            let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+            let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+            let core = Core::test(journal, world);
+            load(&core, opener, &samples(), &dir.join("images"), "team-sync").unwrap();
+            let world = core.snapshot();
+            let _ = std::fs::remove_dir_all(&dir);
+            let speakers: std::collections::BTreeSet<&str> = world.thoughts.iter().map(|t| t.speaker.as_str()).collect();
+            assert_eq!(speakers, std::collections::BTreeSet::from([opener, "Lena", "Sam"]), "opened by {opener}");
+        }
+    }
+
+    /// The samples are dated (Nov 3). Opened before that, they end "just now" with their gaps kept, so a recap, a
+    /// "today" or anything ordered by time sees them; nothing on the map is in the future.
+    #[test]
+    fn a_sample_opened_before_its_own_date_ends_just_now() {
+        let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+        let open_at = |name: &str, now: u64| {
+            let (journal, world) = Journal::open(&dir.join(name)).unwrap();
+            let core = Core::test(journal, world);
+            load_at(&core, "you", &samples(), &dir.join("images"), SAMPLE, now).unwrap();
+            core.snapshot()
+        };
+        let last = |w: &crate::world::World| w.thoughts.iter().map(|t| t.at_ms).max().unwrap();
+        let gaps = |w: &crate::world::World| w.thoughts.iter().map(|t| last(w) - t.at_ms).collect::<Vec<_>>();
+        // Opened after its date, it keeps its own times.
+        let dated = open_at("dated.jsonl", u64::MAX / 2);
+        let now = last(&dated) - 24 * 3600 * 1000;
+        let early = open_at("early.jsonl", now);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(last(&early), now, "the sample ends just now");
+        assert!(early.thoughts.iter().all(|t| t.at_ms <= now), "every line is in the past, so a recap of today finds it");
+        assert!(early.threads.iter().all(|t| t.touched_ms <= now), "no thread touched in the future");
+        assert_eq!(gaps(&early), gaps(&dated), "the gaps between lines stay as they were");
     }
 
     #[test]
