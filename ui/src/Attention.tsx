@@ -3,7 +3,7 @@
 // card a spoken "this" acts on. App.tsx feeds it the world and tells it what the map showed or held back.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Landing, World } from "./core";
-import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, thisBase, thisKind, type Unseen } from "./attention-core";
+import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, sameOr, thisBase, thisKind, type Unseen } from "./attention-core";
 import { POINTER_MS, resolveThis, type AttentionTeller } from "./this-card";
 import "./attention.css";
 
@@ -142,7 +142,7 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
       // unless its thought is gone.
       const since = newestSaid(placed.filter((t) => !wasPlaced.has(t.id)), me, Date.now());
       setLatest((now) => since ?? (now && placed.some((t) => t.id === now) ? now : newestSaid(placed, me, Date.now())));
-      setUnseen((marks) => carry(marks, world));
+      setUnseen((marks) => sameOr(marks, carry(marks, world)));
       return;
     }
     const mine = newestOwn(placed.filter((t) => !wasPlaced.has(t.id)), me);
@@ -154,7 +154,7 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
     // proposal in a folded thread already says "N to review" there: one cue per change.
     const folded = (c: Unseen) => c.element.startsWith("item-") && !!document.getElementById(`thread-${c.thread}`)?.classList.contains("collapsed");
     const fresh = view === "map" ? changes(last.world, world, me).filter((c) => !readable(document.getElementById(c.element)) && !folded(c)) : changes(last.world, world, me);
-    setUnseen((marks) => carry([...marks.filter((m) => !fresh.some((f) => f.thread === m.thread)), ...fresh], world));
+    setUnseen((marks) => sameOr(marks, carry([...marks.filter((m) => !fresh.some((f) => f.thread === m.thread)), ...fresh], world)));
   }, [world, revision, me]);
 
   // Unseen marks clear once their change has been in view for its reading time, or when you touch the thread.
