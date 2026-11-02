@@ -731,7 +731,10 @@ async fn execute(core: &Core, app: &MiniApp, target: Option<(String, String)>) -
     drop(world);
     core.commit(changes);
     // Loud voices get the playful tune, meant to break the tension; timers and words get the calm one.
-    if sound { core.send(ServerMsg::AppsSound { name: app.name.clone(), playful: matches!(app.watcher, Watcher::Volume { .. }), why: why(&app.watcher) }); }
+    if sound {
+        core.send(ServerMsg::AppsSound { name: app.name.clone(), playful: matches!(app.watcher, Watcher::Volume { .. }), why: why(&app.watcher) });
+        core.rule_step(None, "tune");
+    }
     Ok(())
 }
 
@@ -809,7 +812,7 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
     // Now and then a reply comes back with no answer in it (about 1 build in 60); a second try has one.
     let mut again = false;
     loop {
-        let value = core.call_model(URL, &body, Duration::from_secs(45)).await?;
+        let value = core.call_model_noting(URL, &body, Duration::from_secs(45), json!({"feature": feature(name)})).await?;
         let finish = &value["choices"][0]["finish_reason"];
         match value["choices"][0]["message"]["content"].as_str() {
             Some(content) => return serde_json::from_str(content).context("answer wasn't the expected JSON"),
@@ -817,6 +820,17 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
             None => bail!("no answer (finish_reason {finish})"),
         }
         again = true;
+    }
+}
+
+/// What a call of `model` is for, by its answer's name, as the trace and the window's model line say it: building
+/// an app ("app"), looking for one you have ("app search"), or one of yours running ("app run"), so running an app
+/// a watcher woke never reads as building one.
+fn feature(name: &str) -> &'static str {
+    match name {
+        "AppSearch" => "app search",
+        "AppOutput" => "app run",
+        _ => "app",
     }
 }
 

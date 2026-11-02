@@ -42,18 +42,28 @@ pub enum ServerMsg {
     Unfold { thread_id: Option<String>, open: bool },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
+    /// The answer to a "Why here?" (whyhere.rs): why the thought is on its thread; `failed` when there's none, so the
+    /// window can offer to ask again. Only to the asker's windows; a model's answer also lands as the thought's note.
+    WhyHere { thought_id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
     Import { status: crate::import::Status },
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
     /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
     Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
+    /// One step of the work, for the window's model line (ui/src/model-line.ts): the step (the trace's feature:
+    /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
+    /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
+    /// `ms` and `ok`), sharing `id`. Sent from where every call goes through (model.rs), so the name shown is the
+    /// name asked, never a label kept by hand.
+    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64 },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
 /// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
 /// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
 /// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), its Finish it
-/// ("finish"), and the mic, off ("stop listening").
+/// ("finish"), and the mic, off ("stop listening"). Export: the window saves the map as Markdown ("export my map"),
+/// made from the map it already holds, so nothing but the file the person saves leaves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -66,6 +76,7 @@ pub enum View {
     Forget,
     Finish,
     Pause,
+    Export,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
@@ -100,13 +111,18 @@ pub enum ClientMsg {
         #[serde(default)]
         thread_id: Option<String>,
     },
+    /// Why a thought is on its thread, asked from its point or a "While you were away" row (whyhere.rs).
+    WhyHere { thought_id: String },
     /// Mark an AI answer as off, or take the mark back: `kind` is "explain" (the request's id) or "recap"
     /// (its period and when it was made, as "today-1793547629176").
     Mark { kind: String, id: String, off: bool },
     /// Keep or dismiss a suggestion, or dismiss an action.
     Item { id: String, status: crate::world::ItemStatus },
-    /// Approve an action: add it to Reminders or Calendar.
+    /// Approve an action: add it to Reminders or Calendar, or, where they can't be reached, say the window saved it
+    /// as a calendar file (apple.rs `saved`).
     Approve { id: String },
+    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs).
+    Sample,
     /// Keep a suggested hashtag, or remove one.
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.
@@ -123,10 +139,14 @@ pub enum ClientMsg {
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
+    /// ⌘Z / Ctrl+Z: "undo that" without words, the speaker's last turn, after its notice and Undo have gone too.
+    UndoLast,
     /// A rename or merge the refiner proposed: Rename or Merge applies it, × (`apply` false) keeps things as they are.
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
     Untidy { kind: crate::tidy::Kind, thread_id: String },
+    /// The Undo on the note about an idea or task the refiner withdrew or corrected: it is as it was (refiner.rs).
+    Restore { id: String },
     /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
     /// (moves.rs).
     Move {

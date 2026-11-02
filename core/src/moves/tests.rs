@@ -112,6 +112,7 @@ fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         complete: true,
         at_ms,
         place_ms: Some(1_000),
+        decided: false,
     }
 }
 
@@ -138,15 +139,15 @@ fn slipped() -> World {
 
 #[test]
 fn the_words_read_as_a_move_or_a_rename_only_as_the_whole_turn() {
-    let moved = |place: &str, sure: bool| Some(Ask::Move { place: Place::Named(place.into()), sure });
+    let moved = |place: &str, sure: bool| Some(Ask::Move { place: Place::Named(place.into()), sure, last: false });
     assert_eq!(read("Move that to the pottery thread."), moved("the pottery thread", true));
     assert_eq!(read("Okay, move that to pottery please"), moved("pottery", false));
     assert_eq!(read("Put that in the bills thread"), moved("the bills thread", true));
     assert_eq!(read("That goes in Pottery class"), moved("Pottery class", false));
     assert_eq!(read("File that under bills"), moved("bills", false));
-    assert_eq!(read("Move my last thought to the garden"), moved("the garden", false));
-    assert_eq!(read("Move that to a new thread"), Some(Ask::Move { place: Place::New, sure: true }));
-    assert_eq!(read("Move it into its own thread"), Some(Ask::Move { place: Place::New, sure: true }));
+    assert_eq!(read("Move my last thought to the garden"), Some(Ask::Move { place: Place::Named("the garden".into()), sure: false, last: true }));
+    assert_eq!(read("Move that to a new thread"), Some(Ask::Move { place: Place::New, sure: true, last: false }));
+    assert_eq!(read("Move it into its own thread"), Some(Ask::Move { place: Place::New, sure: true, last: false }));
     let renamed = |target: Target, title: &str| Some(Ask::Rename { targets: vec![(target, title.into())] });
     assert_eq!(read("Rename this to pottery class."), renamed(Target::This, "Pottery class"));
     assert_eq!(read("Rename it “Pottery”"), renamed(Target::This, "Pottery"));
@@ -169,7 +170,7 @@ async fn move_that_takes_the_latest_thought_and_the_speaker_there_and_undo_puts_
     let base = slipped();
     let f = Fixture::new(base.clone());
     let lines = f.say("Move that to the pottery thread").await;
-    assert_eq!(&lines[..3], ["moved w to T2", "on T2", "notice Moved to Pottery class"], "{lines:?}");
+    assert_eq!(&lines[..3], ["moved w to T2", "on T2", "notice Moved “Learn to throw on the wheel” to Pottery class"], "{lines:?}");
     let world = f.core.snapshot();
     assert_eq!((f.on("w").as_str(), world.thread("T2").unwrap().last_point.as_str()), ("T2", "Learn to throw on the wheel"));
     assert_eq!(world.thread("T1").unwrap().last_point, "Plant the tomatoes", "the card it left shows its own latest point");
@@ -208,7 +209,7 @@ async fn a_move_to_a_new_thread_starts_it_and_undo_takes_it_away() {
     let new = f.on("w");
     // Its title from the point, at most the refiner's 5 words, never ending on a small word ("… on the").
     assert!(lines.contains(&format!("thread {new} Learn to throw")), "{lines:?}");
-    assert!(lines.contains(&"notice Moved to a new thread: Learn to throw".to_string()));
+    assert!(lines.contains(&"notice Moved “Learn to throw on the wheel” to a new thread: Learn to throw".to_string()));
     let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
     assert!(undone.contains(&format!("removed {new}")), "{undone:?}");
     assert!(f.core.snapshot().thread(&new).is_none() && f.on("w") == "T1");
@@ -241,7 +242,7 @@ async fn clicks_go_through_the_same_definition_and_scratch_that_undoes_them() {
     let f = Fixture::new(slipped());
     // An older point, moved by its button: the speaker stays where they are.
     let lines = f.watch(|core| click_move(core, "you", "a", Some("T3".into())));
-    assert_eq!(lines, ["moved a to T3", "notice Moved to Bills", "undoable 1"], "{lines:?}");
+    assert_eq!(lines, ["moved a to T3", "notice Moved “Plant the tomatoes” to Bills", "undoable 1"], "{lines:?}");
     f.say("Scratch that").await;
     assert_eq!(f.on("a"), "T1");
     let lines = f.watch(|core| click_rename(core, "you", "T2", "  Kiln days. "));
@@ -336,6 +337,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -353,6 +355,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -369,6 +372,7 @@ async fn no_that_goes_in_another_thread_moves_the_words_and_keeps_them() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: id.clone(), thread_id: "T1".into(), point: "Learn to center the clay".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     let lines = f.say("No, that goes in the pottery thread").await;
     assert!(lines.contains(&format!("moved {id} to T2")), "{lines:?}");
@@ -444,7 +448,7 @@ async fn following_a_move_ends_a_new_thread_asked_for_before_it() {
     let f = Fixture::new(slipped());
     f.core.focus("you", "T3");
     f.say("New thread").await;
-    f.say("Move that to pottery").await;
+    f.say("Move my last thought to pottery").await;
     assert_eq!(f.on("w"), "T2");
     f.core.new_threads.said("you", "next");
     assert!(f.core.new_threads.starts("next"));
@@ -466,4 +470,68 @@ async fn a_removed_thread_does_not_hand_out_an_id_already_in_use() {
     let next = w.next_thread_id();
     assert!(w.thread(&next).is_none() && !w.merged.contains_key(&next), "next_thread_id {next} is already in use");
     assert!(w.thread(&crate::spoken::fresh_id(&w)).is_none());
+}
+
+/// "That" means what "this" means (catalog.rs `this`): a card you selected or point at (or just left), else the thread
+/// you're on, and of that card its newest point; only the thought you just said, still finding its place, comes
+/// first, and "my last thought" is always your latest. The skeptic persona run of 2026-11-01 (synthetic): on the Cat
+/// card, "move that to Health" moved "Book Lisbon flights", the latest part of an earlier ramble, and said only
+/// "Moved to Health".
+#[tokio::test]
+async fn that_is_the_newest_point_of_the_card_this_means() {
+    // A ramble's last part (Lisbon) was said last but landed first; the placer left you on Garden.
+    let rambled = || {
+        let mut world = slipped();
+        world.threads.push(thread("T4", "Lisbon trip", 4));
+        world.thoughts.push(thought("l", "T4", "Book Lisbon flights", now_ms() - 5_000));
+        world
+    };
+    let f = Fixture::new(rambled());
+    let lines = f.say("Move that to pottery").await;
+    assert_eq!(&lines[..3], ["moved w to T2", "on T2", "notice Moved “Learn to throw on the wheel” to Pottery class"], "{lines:?}");
+    assert_eq!(f.on("l"), "T4", "the ramble's other part stays");
+    // Selected, or under the pointer, or just left by it: that card's newest point, and you stay where you are.
+    for (selected, pointed, leave) in [(Some("T3"), None, false), (None, Some("T3"), false), (None, Some("T3"), true)] {
+        let f = Fixture::new(rambled());
+        catalog::attend(&f.core, "you", selected.map(String::from), pointed.map(String::from));
+        if leave {
+            catalog::attend(&f.core, "you", None, None);
+        }
+        let lines = f.say("Move that to pottery").await;
+        assert_eq!(lines, ["moved c to T2", "notice Moved “The electric bill is due Friday” to Pottery class", "undoable 1"], "{selected:?} {pointed:?} {leave}");
+        assert_eq!((f.on("w").as_str(), f.on("l").as_str()), ("T1", "T4"));
+    }
+    // "My last thought" is your latest, wherever you point.
+    let f = Fixture::new(rambled());
+    catalog::attend(&f.core, "you", None, Some("T3".into()));
+    assert!(f.say("Move my last thought to pottery").await.contains(&"moved l to T2".to_string()));
+    // The thought you just said, not on the map yet, is "that" even with the pointer on a card.
+    let mut world = rambled();
+    let mut pending = thought("p", "T1", "Glaze the bowls", now_ms());
+    pending.placed = false;
+    world.thoughts.push(pending);
+    let f = Fixture::new(world);
+    catalog::attend(&f.core, "you", None, Some("T3".into()));
+    assert_eq!(f.say("Move that to pottery").await, ["notice Moving it once it finds its place…"]);
+    // Replayed from the journal, the map is the live one.
+    let base = rambled();
+    let f = Fixture::new(base.clone());
+    catalog::attend(&f.core, "you", Some("T3".into()), None);
+    f.say("Move that to pottery").await;
+    assert_eq!(serde_json::to_value(&*f.core.snapshot()).unwrap(), serde_json::to_value(&f.replayed(base)).unwrap());
+}
+
+/// A card can be left with no point of its own (a parent whose only point moved keeps its children). Pointed at,
+/// "move that" has nothing to take from it, and says so: it never reaches for the speaker's latest thought elsewhere.
+#[tokio::test]
+async fn that_on_a_card_with_no_point_moves_nothing() {
+    let mut world = slipped();
+    let mut child = thread("T4", "Electric bill", 4);
+    child.parent_id = Some("T5".into());
+    world.threads.push(child);
+    world.threads.push(thread("T5", "Money", 5));
+    let f = Fixture::new(world);
+    catalog::attend(&f.core, "you", None, Some("T5".into()));
+    assert_eq!(f.say("Move that to pottery").await, ["notice Nothing on Money to move: point at one of its points"]);
+    assert_eq!(f.on("w"), "T1", "the latest thought, on Garden, stays");
 }

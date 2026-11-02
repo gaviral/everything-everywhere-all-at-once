@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 const newId = () => (window.isSecureContext && crypto.randomUUID ? crypto.randomUUID() : `x${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 import type { Explanation } from "./core";
 import { TIPS } from "./Tips";
+import { siteText, useSite } from "./site";
 
 // A word, a phrase or a sentence; longer selections are usually for copying.
 const LONGEST = 160;
@@ -24,6 +25,7 @@ export function Explain({ explanations, explain, mark }: {
   /** Marks an answer as off, or takes the mark back; false when it couldn't be sent. */
   mark: (kind: "explain", id: string, off: boolean) => boolean;
 }) {
+  const { hosted } = useSite();
   const [picked, setPicked] = useState<Picked | null>(null);
   // Answers marked off in this window, so the toggle shows its state while the card is open.
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
@@ -156,7 +158,7 @@ export function Explain({ explanations, explain, mark }: {
         <div className="explain-card">
           <div role="status">{failed ? (
             <>
-              {answer?.failed ? answer.text : "Couldn't explain that just now."}
+              {answer?.failed ? siteText(answer.text, hosted) : "Couldn't explain that just now."}
             </>
           ) : answer ? (
             <>
