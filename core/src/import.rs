@@ -1748,7 +1748,7 @@ mod tests {
             let failing = futures_util::stream::once(async { Err::<axum::body::Bytes, std::io::Error>(std::io::Error::other("read")) });
             Request::new(axum::body::Body::from_stream(failing))
         };
-        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
         let name = || Query(FileName { name: "conversations.json".into() });
         let guest = prepare(State(f.core.clone()), link("192.168.1.9:51000"), name(), unread()).await;
         assert_eq!(guest.status(), StatusCode::FORBIDDEN);
@@ -1763,7 +1763,7 @@ mod tests {
         let file = r#"[{"role": "user", "content": "I want to move in January.", "timestamp": 1791000000},
                        {"role": "user", "content": "thanks!", "timestamp": 1791000000}]"#;
         let upload = || async {
-            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
             let name = Query(FileName { name: "chats.json".into() });
             prepare(State(f.core.clone()), link, name, Request::new(axum::body::Body::from(file))).await
         };
@@ -1829,7 +1829,7 @@ mod tests {
                        {"role":"user","content":"thanks!","timestamp":1791000100}]"#;
         let response = prepare(
             State(f.core.clone()),
-            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() }),
+            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false }),
             Query(FileName { name: "chats.json".into() }),
             Request::new(axum::body::Body::from(file)),
         ).await;

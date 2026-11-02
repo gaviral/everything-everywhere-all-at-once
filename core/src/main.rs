@@ -20,6 +20,7 @@ mod recap;
 mod protocol;
 mod spoken;
 mod tidy;
+mod tls;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -36,6 +37,7 @@ use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, Outgoing, ServerMsg, View};
 use std::collections::{HashMap, HashSet};
+use std::future::IntoFuture;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -834,15 +836,30 @@ async fn main() -> anyhow::Result<()> {
         .layer(middleware::from_fn_with_state(core.clone(), gate))
         .with_state(core);
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
-    // Alone, only this machine can reach the core; a room opens it to the local network, behind the code.
-    let address = if room.is_some() { "0.0.0.0" } else { "127.0.0.1" };
-    let listener = tokio::net::TcpListener::bind((address, port)).await.map_err(|e| {
+    let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
             anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
         } else {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }
-    })?;
+    };
+    // Alone, only this machine can reach the core; a room opens it to the local network, behind the code.
+    if room.is_some() && std::env::var("ROOM_HTTPS").as_deref() == Ok("1") {
+        let ip = lan_ip().ok_or_else(|| anyhow::anyhow!("HTTPS room needs a LAN IPv4 address; check the network connection"))?;
+        // Separate addresses let both listeners use PORT: the host keeps its secure-context HTTP URL.
+        let local = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.map_err(unopened)?;
+        let secure = tls::Listener::bind(SocketAddr::new(ip, port), Path::new(&data)).await?;
+        tracing::info!("E2A2O core on http://localhost:{port}");
+        tracing::info!("Room open. On the other laptop, open https://{ip}:{port}/?room={}", room.as_deref().unwrap());
+        tracing::info!("Guest: accept this laptop's self-signed certificate, then allow microphone access. Certificate is kept in {data}/tls/identity.json");
+        tokio::try_join!(
+            axum::serve(local, app.clone().into_make_service_with_connect_info::<Link>()).into_future(),
+            axum::serve(secure, app.into_make_service_with_connect_info::<Link>()).into_future(),
+        )?;
+        return Ok(());
+    }
+    let address = if room.is_some() { "0.0.0.0" } else { "127.0.0.1" };
+    let listener = tokio::net::TcpListener::bind((address, port)).await.map_err(unopened)?;
     tracing::info!("E2A2O core on http://localhost:{port}");
     if let Some(code) = &room {
         let host = lan_ip().map_or_else(|| "<this laptop's address>".into(), |ip| ip.to_string());
@@ -890,6 +907,7 @@ fn lan_ip() -> Option<std::net::IpAddr> {
 struct Link {
     from: SocketAddr,
     to: SocketAddr,
+    tls: bool,
 }
 
 impl Link {
@@ -903,7 +921,13 @@ impl Connected<axum::serve::IncomingStream<'_, tokio::net::TcpListener>> for Lin
     fn connect_info(stream: axum::serve::IncomingStream<'_, tokio::net::TcpListener>) -> Self {
         // Unknown only if the socket already closed; an unspecified address matches no Host.
         let to = stream.io().local_addr().unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
-        Link { from: *stream.remote_addr(), to }
+        Link { from: *stream.remote_addr(), to, tls: false }
+    }
+}
+
+impl Connected<axum::serve::IncomingStream<'_, tls::Listener>> for Link {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, tls::Listener>) -> Self {
+        *stream.remote_addr()
     }
 }
 
@@ -956,10 +980,11 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
 
 fn access(room: bool, link: Link, host: Option<&str>, origin: Option<&str>, has_code: bool) -> Access {
     // "localhost" means this machine only when the request comes from it.
-    let ours = |value: &str| (link.here() && local(value)) || (room && reached(value, link.to));
+    let ours = |value: &str| (link.here() && local(value)) || (room && reached(value, link));
     let Some(host) = host.filter(|h| ours(h)) else { return Access::None };
-    // Our pages are plain http, so their Origin is "http://" and the Host they were loaded from.
-    let ours_too = |origin: &str| (link.here() && local(origin)) || (room && origin.strip_prefix("http://") == Some(host));
+    // A room Origin must name the exact Host and the listener's scheme, including its port.
+    let scheme = if link.tls { "https://" } else { "http://" };
+    let ours_too = |origin: &str| (link.here() && local(origin)) || (room && origin.strip_prefix(scheme) == Some(host));
     if !origin.is_none_or(ours_too) {
         return Access::None;
     }
@@ -971,8 +996,10 @@ fn access(room: bool, link: Link, host: Option<&str>, origin: Option<&str>, has_
 }
 
 /// True when a Host names the address the connection reached, e.g. "192.168.1.20:4321".
-fn reached(host: &str, to: SocketAddr) -> bool {
-    !to.ip().is_unspecified() && (host == to.to_string() || (to.port() == 80 && host == to.ip().to_string()))
+fn reached(host: &str, link: Link) -> bool {
+    let to = link.to;
+    let default_port = if link.tls { 443 } else { 80 };
+    !to.ip().is_unspecified() && (host == to.to_string() || (to.port() == default_port && host == to.ip().to_string()))
 }
 
 /// The app's own files, which hold nothing of the map. Everything else needs the code in a room.
@@ -2033,7 +2060,7 @@ mod tests {
     }
 
     fn link(from: &str, to: &str) -> Link {
-        Link { from: from.parse().unwrap(), to: to.parse().unwrap() }
+        Link { from: from.parse().unwrap(), to: to.parse().unwrap(), tls: false }
     }
 
     #[test]
@@ -2066,6 +2093,35 @@ mod tests {
         // The host's own window needs no code.
         let here = link("127.0.0.1:50000", "127.0.0.1:4321");
         assert_eq!(access(true, here, Some("localhost:4321"), Some("http://localhost:4321"), false), Access::Map);
+    }
+
+    #[test]
+    fn https_rooms_keep_the_host_origin_and_code_gates() {
+        let guest = Link { tls: true, ..link("192.168.1.9:51000", "192.168.1.5:4321") };
+        let host = Some("192.168.1.5:4321");
+        let origin = Some("https://192.168.1.5:4321");
+        assert_eq!(access(true, guest, host, origin, true), Access::Map);
+        assert_eq!(access(true, guest, host, origin, false), Access::Page);
+        assert_eq!(access(true, guest, host, None, true), Access::Map);
+        assert_eq!(access(true, guest, host, None, false), Access::Page);
+        for bad in ["http://192.168.1.5:4321", "https://192.168.1.5:3000", "https://192.168.1.6:4321",
+            "https://example.com", "https://localhost:4321", "https://192.168.1.5:4321.evil.com", "null"] {
+            assert_eq!(access(true, guest, host, Some(bad), true), Access::None, "{bad}");
+        }
+        for bad in ["example.com:4321", "host.local:4321", "localhost:4321", "192.168.1.6:4321", "192.168.1.5:3000"] {
+            assert_eq!(access(true, guest, Some(bad), origin, true), Access::None, "{bad}");
+        }
+        assert_eq!(access(true, guest, None, origin, true), Access::None);
+        assert_eq!(access(false, guest, host, origin, true), Access::None);
+        let http = Link { tls: false, ..guest };
+        assert_eq!(access(true, http, host, origin, true), Access::None);
+        let https_default = Link { to: "192.168.1.5:443".parse().unwrap(), ..guest };
+        assert_eq!(access(true, https_default, Some("192.168.1.5"), Some("https://192.168.1.5"), true), Access::Map);
+        assert_eq!(access(true, Link { tls: false, ..https_default }, Some("192.168.1.5"), None, true), Access::None);
+        // The host's HTTP window and local development origins still work, without the room code.
+        let here = link("127.0.0.1:50000", "127.0.0.1:4321");
+        assert_eq!(access(true, here, Some("localhost:4321"), Some("http://localhost:4321"), false), Access::Map);
+        assert_eq!(access(false, here, Some("localhost:4321"), Some("https://localhost:5173"), false), Access::Map);
     }
 
     #[test]
@@ -2352,7 +2408,7 @@ mod tests {
     #[test]
     fn in_a_room_a_name_belongs_to_one_laptop() {
         let (core, _queue, path) = test_core(Some("k7m2x9qp"));
-        let link = |from: &str| Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() };
+        let link = |from: &str| Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false };
         let host = link("127.0.0.1:51000");
         let guest = link("192.168.1.20:51001");
         let other_window = link("192.168.1.20:51002");

@@ -113,10 +113,11 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 ```
 
 - Needs a key, like everything that calls a model. There's no sample room.
-- The core prints a link with a fresh room code, `http://<this laptop's address>:4321/?room=<code>`. Open it on a second laptop on the same network; the host uses http://localhost:4321. Each person joins with a name.
+- The core prints a link with a fresh room code, `https://<this laptop's address>:4321/?room=<code>`. Open it on a second laptop on the same network; the host uses http://localhost:4321. Each person joins with a name.
 - One map for both; each thought carries its speaker's name, and each person has their own place, unfinished card and "where was I?".
 - One laptop is enough to see it: with a key, `node scripts/demo.mjs scripts/room-talk.jsonl --room <code>` plays two speakers, User and Sam, next to your own window.
-- The second laptop loads the page over plain http from a network address, which browsers don't treat as secure: its mic doesn't work, but typing and Explain do. To use its mic in Chrome, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` on that laptop, add the link's address (for example `http://192.168.1.20:4321`), set the flag to Enabled and relaunch Chrome. If macOS asks whether the host may accept incoming connections, choose Allow.
+- The guest sees a self-signed certificate warning: verify the address with the host, accept the exception, then allow microphone access. The certificate is saved in `data/room/tls/identity.json` and reused across restarts. Exceptions depend on the browser; some need the certificate imported and trusted before microphone access works. An IP/hostname change or yearly certificate renewal needs a new exception.
+- `./run.sh room` opts into HTTPS. `ROOM_HTTPS=0 ./run.sh room` keeps the old HTTP room mode (guest typing works, mic unavailable). When starting the core directly, set both `ROOM_CODE` and `ROOM_HTTPS=1` for HTTPS. Alone mode stays on loopback HTTP and creates no certificate.
 
 ## What you'll see
 

@@ -32,6 +32,10 @@ if [ "$1" = room ] && [ -z "$ROOM_CODE" ]; then
   ROOM_CODE="$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 8)"
   export ROOM_CODE
 fi
+# Rooms opt into HTTPS; ROOM_HTTPS=0 keeps the old HTTP room mode (guest mic unavailable).
+if [ "$1" = room ]; then
+  export ROOM_HTTPS="${ROOM_HTTPS:-1}"
+fi
 # `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
 # or a founder's day); it starts fresh from samples/ each time. Its pictures were drawn once, by the app's
 # own picture pipeline, and the sample's journal names them: they go where the core serves /images from

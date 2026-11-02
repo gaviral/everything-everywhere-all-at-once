@@ -51,6 +51,7 @@ Core, one process (core/src: axum, tokio)
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
+  tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
   refiner_live.rs  the refiner against the real model, on maps built to tempt it (`--ignored refiner_live`)
 ```
@@ -110,7 +111,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 `gate` in `main.rs` runs before every route and gives each request one of three levels: refused (403), the page only, or the map.
 - Host: must be `localhost`, `127.0.0.1` or `[::1]` when the connection comes from this machine, or, in a room, the exact address and port the connection reached. A name a site could point at this laptop never passes, which stops DNS rebinding.
-- Origin, when present: a page on this machine for a local connection, or `http://` plus the Host in a room. Browsers always send it on a WebSocket handshake, so another site can't open `/ws`.
+- Origin, when present: a page on this machine for a local connection, or, in a room, the listener's scheme (`https://` on the HTTPS listener, else `http://`) plus the Host. Browsers always send it on a WebSocket handshake, so another site can't open `/ws`.
 - In a room, a connection from another machine without the code gets only the page's own files (`/`, `/index.html`, `/room`, `/pcm-worklet.js`, `/assets/*`); with it, everything else (`/ws`, `/images`, …). The code comes from `?room=` or a `room` cookie, is compared as lowercase letters and digits, in constant time.
 - Every response that passes carries `Cross-Origin-Resource-Policy: same-origin`. Approving actions and importing also need a connection from this machine.
 - Hashed files under `/assets/` and images get `Cache-Control: public, max-age=31536000, immutable`; pages and other responses get `no-cache`. A missing file that falls back to the page also gets `no-cache`, so an update is checked before the old page can be reused.
@@ -119,6 +120,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 ## Rooms
 
 - `ROOM_CODE` binds the core to `0.0.0.0`; without it, to `127.0.0.1`.
+- With `ROOM_HTTPS=1` too (`./run.sh room` sets it; `ROOM_HTTPS=0` turns it off), the host keeps plain HTTP on `127.0.0.1` and guests get HTTPS on the laptop's network address, the same port, so a guest's browser treats the page as secure and lets its mic work. The certificate names that address, this machine's name and localhost, and is reused across restarts.
 - Each outgoing message goes to every window or to one speaker's windows: live words, mic status, "Back to …" notes, Recap progress and import progress go only to their speaker.
 - Per speaker: the active thread (`active_by`), who dropped a thread (`dropped_by`), the way back, and what the placer sees as "active".
 - Another laptop that asks for no name, or for "you" (the host's own name), joins as "Guest" and is told so.
