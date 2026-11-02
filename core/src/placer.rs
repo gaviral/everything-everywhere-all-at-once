@@ -25,27 +25,43 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 // one lane, batches of 12 side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698 → 528 with this
 // wording; 743 → 538 and 813 → 479 with an earlier one ("a bill not paid, a message not sent"); the same line after
 // a finished sentence took 365–499.
+// Thinking out loud about one project, one thread took idea after idea: in a real talk (2026-11-02), 9 turns on 3 ideas
+// landed on one thread, and over 31 of its turns three blind readers' majority (2 of 3) kept apart 40 pairs the app had
+// put together (89.5% of 465 pairs agreed). So the model finds the main subject first (the point is often at the end),
+// a thread takes it only if its title covers it as it is, words that announce a move usually start a topic, and a
+// point names what "it" is and keeps "not" and "maybe" instead of clipping the words. The talk replayed through the
+// placer alone (82 turns, Contributor models, two runs each), pairs agreeing with the readers: Spark 1.2 85.8% and
+// 86.0% before → 89.5% and 89.9% after; Spark 1.3 86.5% and 85.8% → 87.5% and 90.1%; pairs put together that the
+// readers keep apart, the main error, 57–62 → 32–49. The routing cases ran as fast as before, run side by side (median
+// 4.0 → 4.1 s on 1.3, 3.3 → 3.2 s on 1.2).
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
 For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
 news that something is done), \"return\" if it says more about an earlier thread, \
 or \"new\" if it starts a new topic or a tangent (parent_id: the thread whose own subject it is one part of, such as the hostel for a trip; \
 never one it only clashes with, shares a day or a word with, or was said after; else empty). \
+First find its main subject, reading to the end: the point often comes last (a closing ask, or what an example was given for). \
 An update on what a thread is about goes on that thread, even with a new detail; \
 which thread that is goes by what the words mean, read with what was said just before, never by a word shared with a title. \
-Being about the same project is not enough to continue. \
+Continue or return only if that subject fits under the thread's title as it is: one that would need a wider title is a new topic, \
+even on the same project, as usually is what follows words that announce a move (\"another idea\", \"anyway\", \"then I was thinking\"). \
+A thought that mostly repeats a point on the map returns to that point's thread. \
 Place by what the words are about, not by how they are said or a word they share with a title: \
 a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
 never with a thread about unfinished thoughts or habits. \
-\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
-split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked, or only talks about pasting or saying the next part \
+(\"here's the next one\"); never skip \"yes\", \"no\" or any other answer. \
+split: if it moves on to another topic partway (often at such words), the exact words where that starts \
+(the other fields describe only the words before), else an empty string; \
 never between two sentences about one thing, such as a deadline and what is due by then. \
-thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
-point: the thought in at most 12 words, in the speaker's own voice; a question they ask stays a question, one they quote keeps who asked. \
+thread_id: the existing thread for continue or return. title: up to 5 words naming its subject, for a new thread, with a misheard word as its guess. \
+point: what the thought means in at most 12 words, in the speaker's own voice, naming its subject instead of \"it\" or \"this\" (\"The lease ends in May\", not \"It ends in May\"), \
+with negations and hedges (\"not\", \"maybe\") kept as said: not a clipped copy, no fillers or exclamations; \
+a question they ask stays a question, one they quote keeps who asked. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
-unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
+unclear: words that look mistranscribed, such as a near miss of a name on the map or an everyday word where a known name fits (\"ocean\" for Notion), else an empty string. \
 guess: what those words most likely were, judging by the context, else an empty string. \
-sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. \
+sure: true only if the context leaves no doubt about the guess (the right name is on the map, or the words around it fit that name alone), else false. \
 joins: \"before\" if the new thought carries on the words said just before, cut off from them by a pause: it finishes that sentence, \
 or can't stand alone without it (\"the one on Main Street\" right after naming a class); \"unfinished\" if it finishes the words left unfinished; \
 else \"none\". A sentence that stands on its own, or a decision, is \"none\", even on the same topic. On a join, point says the whole idea, both parts. \
@@ -99,6 +115,13 @@ pub fn race_from_env() -> usize {
 
 /// The most room a placement is asked for: as much as the chat import asks for.
 const MAX_ROOM: u32 = 12_000;
+
+/// How many of a thread's latest points the prompt shows, oldest first, for the threads touched last (`RECENT`); the
+/// others show their last point. A tool-calling placer tried on a real talk (2026-11-02, 14 runs, scored against a
+/// blind jury's 2-of-3 gold) showed each thread's last 4 points and put together about half as many pairs the gold
+/// keeps apart (23 vs 56) as this prompt did with the last point only.
+const POINTS: usize = 3;
+const RECENT: usize = 20;
 
 /// What the placer works through, in the order it was said: a thought to place, or a speaker's spoken
 /// command. A command waits behind the thoughts said before it, so their placements can't undo it.
@@ -902,6 +925,17 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // (scale-2026-11-01.md). Ties (an import, a map made at once) keep the order they were made in.
     let mut ordered: Vec<&Thread> = world.threads.iter().collect();
     ordered.sort_by_key(|t| t.touched_ms);
+    // A thread shows its latest points (`POINTS`), not only its last: by its title and last point, a thread that had
+    // taken in a few ideas looked like the place for any of them, or for anything near its title. Only the threads
+    // touched last (`RECENT`) do, so a map of hundreds stays the length it was; their lines are the list's end, the
+    // part a placement rewrites anyway.
+    let recent: HashSet<&str> = ordered.iter().rev().take(RECENT).map(|t| t.id.as_str()).collect();
+    let mut points: HashMap<&str, Vec<&str>> = HashMap::new();
+    for t in world.thoughts.iter().filter(|t| t.placed && !t.point.trim().is_empty()) {
+        if let Some(on) = t.thread_id.as_deref().filter(|on| recent.contains(on)) {
+            points.entry(on).or_default().push(t.point.trim());
+        }
+    }
     let threads = if ordered.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -909,7 +943,11 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
             .into_iter()
             .map(|t| {
                 let status = if t.status == ThreadStatus::Dropped { "dropped" } else { "open" };
-                format!("{}: {} [{status}] last: {}", t.id, t.title, t.last_point)
+                let last = match points.get(t.id.as_str()) {
+                    Some(said) => said[said.len().saturating_sub(POINTS)..].join(" | "),
+                    None => t.last_point.clone(),
+                };
+                format!("{}: {} [{status}] last: {last}", t.id, t.title)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -931,6 +969,16 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     let quote = |label: &str, t: &Thought| Some(format!("{label} (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim()));
     let before = heads.before.and_then(|t| quote("Said just before", t)).unwrap_or_default();
     let left = heads.left.and_then(|t| quote("Left unfinished", t)).unwrap_or_default();
+    // The rest of a turn cut where it moved on (`settle`): placed alone, with its first part quoted just before it, a
+    // rest about a summary card read as more of the watch-sync thread its first part went to (its routing case: 0 of 3
+    // runs on Spark 1.3 Contributor, 1 of 3 on 1.2; with this line and the prompt's subject check, 2 of 3 on each).
+    let moved_on = world
+        .split_from
+        .get(&thought.id)
+        .and_then(|first| world.thoughts.iter().find(|t| &t.id == first))
+        .and_then(|first| first.thread_id.as_deref().map(|on| world.resolve(on)))
+        .map(|on| format!("It is the rest of the turn just before, cut there because it moves on from {on} to another topic: return to another thread or start a new one.\n"))
+        .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
@@ -943,7 +991,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{before}{left}{starts}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads (last: their latest points, oldest first):\n{threads}\nActive thread: {active}\n{names}{asked}{before}{left}{moved_on}{starts}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -2447,12 +2495,21 @@ mod tests {
     ///
     /// `before`: [thread, words, seconds ago], the speaker's own turn before; `asked`: [speaker, thread, words,
     /// seconds ago], someone else's turn after it.
-    /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread) or "new<T1" (a new branch of T1).
+    /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread), "new<T1" (a new branch of T1) or
+    /// "skip" (set aside as adding nothing).
     /// `split`: the turn must (true) or must not (false) be cut in two. `known`: a miss not fixed yet, and why.
     /// `unfinished`: [thread, words, seconds ago], an earlier turn of the speaker's that trailed off; `trailed`: the
     /// turn `before` trailed off. `joins`: the words must (true) or must not (false) be linked to a turn before
     /// (chunks.rs); `assumed`: an assumption must (true) or must not (false) be noted. Their cases are in
     /// scripts/chunk-cases.jsonl (`ROUTING_CASES=../scripts/chunk-cases.jsonl`).
+    /// `title`, `point`: the landed thread's title, or the point, holds one of these words (any case; a list of
+    /// lists, one from each); `point_not`:
+    /// the point holds none of them (a slip kept, an exclamation). `rounds`: at most this many rounds of calls (1:
+    /// no answer was cut off at its room and asked again). Each run prints how long it took to place, and the end
+    /// the median.
+    /// `cut`: the words are the rest of the turn `before`, cut where it moved on to another topic.
+    /// `talk`: instead of one thought, turns said in a row on one map (see `talk_run`): [{text, want?, speaker?,
+    /// at?, id?}].
     #[tokio::test]
     #[ignore]
     async fn routing_cases() {
@@ -2463,7 +2520,17 @@ mod tests {
         let runs: usize = std::env::var("ROUTING_RUNS").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
         let cases: Vec<serde_json::Value> =
             std::fs::read_to_string(&file).unwrap().lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect();
-        let mut failed = Vec::new();
+        // Whether `text` holds any of the case's words in `field`; None when the case doesn't name any.
+        // A list of lists needs one word from each ("not", and "maybe").
+        let holds = |case: &serde_json::Value, field: &str, text: &str| {
+            let text = text.to_lowercase();
+            let any = |words: &Vec<serde_json::Value>| words.iter().filter_map(|w| w.as_str()).any(|w| text.contains(&w.to_lowercase()));
+            case[field].as_array().map(|list| match list.iter().map(|g| g.as_array()).collect::<Option<Vec<_>>>() {
+                Some(groups) if !groups.is_empty() => groups.into_iter().all(any),
+                _ => any(list),
+            })
+        };
+        let (mut failed, mut times, mut fit, mut tried) = (Vec::new(), Vec::new(), 0, 0);
         for case in &cases {
             let name = case["name"].as_str().unwrap_or("?");
             let (world, said) = case_map(case);
@@ -2481,34 +2548,70 @@ mod tests {
                     placer_race: super::race_from_env(),
                     ..Core::test(journal, world.clone())
                 };
+                tried += 1;
+                if let Some(talk) = case["talk"].as_array() {
+                    good += usize::from(talk_run(&core, case, talk, run, &mut times).await);
+                    let _ = std::fs::remove_dir_all(&dir);
+                    continue;
+                }
                 // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.
                 let id = said.id.clone();
                 core.commit(vec![Change::ThoughtAdded { thought: said.clone() }]);
+                // Timed here, not by `place_ms`: the thought keeps the time the case was read, so a later run's
+                // `place_ms` would count the runs before it too.
+                let (went, left) = (std::time::Instant::now(), core.calls_left());
                 let rest = super::place(&core, &id, super::URL, super::patience).await;
+                let ms = went.elapsed().as_millis();
+                times.push(ms);
+                // One call a lane, more when an answer was cut off at its room and asked again (`room_for`).
+                let (calls, lanes) = (left.saturating_sub(core.calls_left()), core.placer_race.max(1));
                 let after = core.snapshot();
-                let landed = after.thoughts.iter().find(|t| t.id == id).and_then(|t| t.thread_id.clone()).unwrap_or_default();
+                let placed = after.thoughts.iter().find(|t| t.id == id).cloned().unwrap_or_else(|| said.clone());
+                let landed = placed.thread_id.clone().filter(|_| placed.placed).unwrap_or_default();
                 let made = after.thread(&landed).filter(|_| world.thread(&landed).is_none());
                 let got = match made {
                     Some(t) => format!("new<{}", t.parent_id.clone().unwrap_or_default()),
+                    // Set aside as adding nothing: off the map (`ThoughtSkipped`).
+                    None if !after.thoughts.iter().any(|t| t.id == id) => "skip".into(),
                     None => landed.clone(),
                 };
                 let split = matches!(rest, Ok(Some(_)));
                 let note = after.notes.get(&id).cloned().unwrap_or_default();
+                let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
+                let point = if placed.placed { placed.point.clone() } else { String::new() };
                 let fits = case["want"].as_array().is_some_and(|want| {
                     want.iter().filter_map(|w| w.as_str()).any(|w| w == got || (w == "new" && got.starts_with("new<")))
                 }) && case["split"].as_bool().is_none_or(|s| s == split)
                     && case["joins"].as_bool().is_none_or(|j| j == !note.continues.is_empty())
-                    && case["assumed"].as_bool().is_none_or(|a| a == !note.assumed.is_empty());
+                    && case["assumed"].as_bool().is_none_or(|a| a == !note.assumed.is_empty())
+                    && holds(case, "title", &title).is_none_or(|h| h)
+                    && holds(case, "point", &point).is_none_or(|h| h)
+                    && holds(case, "point_not", &point).is_none_or(|h| !h)
+                    && case["rounds"].as_u64().is_none_or(|r| calls as u64 <= r * lanes as u64);
                 good += usize::from(fits);
-                let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
+                // A slip fixed without asking (heard → fixed), or one asked about ("Did you mean …?": unclear → guess).
+                let slip = if !placed.fixed.is_empty() {
+                    format!(" fixed: {} → {}", placed.heard, placed.fixed)
+                } else if !placed.unclear.is_empty() {
+                    format!(" asks: {} → {}", placed.unclear, placed.guess)
+                } else {
+                    String::new()
+                };
                 let noted = [("joins", note.continues.as_str()), ("assumed", note.assumed.as_str()), ("why", note.why.as_str())]
                     .iter()
                     .filter(|(_, v)| !v.is_empty())
                     .map(|(k, v)| format!(" {k}: {v}"))
                     .collect::<String>();
-                println!("{} {name} #{run}: {got} \"{title}\"{}{noted}", if fits { "ok  " } else { "MISS" }, if split { " (split)" } else { "" });
+                println!(
+                    "{} {name} #{run}: {got} \"{title}\"{} {:.1} s{} point: \"{point}\"{slip}{noted}",
+                    if fits { "ok  " } else { "MISS" },
+                    if split { " (split)" } else { "" },
+                    ms as f64 / 1000.0,
+                    if calls > lanes { format!(" ({calls} calls: cut off and asked again)") } else { String::new() }
+                );
                 let _ = std::fs::remove_dir_all(&dir);
             }
+            fit += good;
             // A known miss is said, not failed: it waits for its fix (`known` says why and when).
             match case["known"].as_str() {
                 Some(why) if good * 2 <= runs => println!("known miss, {name}: {good}/{runs}: {why}"),
@@ -2517,7 +2620,90 @@ mod tests {
                 None => {}
             }
         }
+        times.sort_unstable();
+        let at = |q: f64| times.get(((times.len() as f64 - 1.0) * q).round() as usize).map_or(0.0, |&ms| ms as f64 / 1000.0);
+        println!(
+            "runs that fit: {fit}/{tried}; {} placements in: median {:.2} s, 90th percentile {:.2} s, slowest {:.2} s",
+            times.len(),
+            at(0.5),
+            at(0.9),
+            at(1.0)
+        );
         assert!(failed.is_empty(), "cases that mostly missed: {failed:?}");
+    }
+
+    /// One run of a `talk` case: its turns said in a row on one map, each placed as the app places it, the rest of a
+    /// turn cut in two right after it. A turn's move: "new" (it started a thread), "same" (it landed where its
+    /// speaker's words before it did), "back" (on another thread already on the map), "skip" or "fail" (no answer); a
+    /// turn cut in two
+    /// joins its parts' moves with "+" ("same+new"). It fits when each turn with a `want` made one of its moves.
+    /// With TALK_OUT set, each run appends a line there with every turn's threads and the threads' titles, for a
+    /// script that scores a whole talk.
+    async fn talk_run(core: &Core, case: &serde_json::Value, talk: &[serde_json::Value], run: usize, times: &mut Vec<u128>) -> bool {
+        let name = case["name"].as_str().unwrap_or("?");
+        // As far apart as `at` says (seconds from the first turn; else 12 s apart), the last one now: the prompt
+        // quotes the turn before only when it came within `JUST_BEFORE_MS`.
+        let at = |i: usize| talk[i]["at"].as_f64().unwrap_or(12.0 * i as f64);
+        let base = crate::now_ms().saturating_sub((1000.0 * at(talk.len().saturating_sub(1))) as u64);
+        let (mut last, mut moves, mut turns, mut fits) = (std::collections::HashMap::<String, String>::new(), Vec::new(), Vec::new(), true);
+        for (i, turn) in talk.iter().enumerate() {
+            let id = turn["id"].as_str().map_or_else(|| format!("th-talk-{i}"), String::from);
+            let speaker = turn["speaker"].as_str().unwrap_or("you");
+            let said = Thought {
+                text: turn["text"].as_str().unwrap_or_default().into(),
+                at_ms: base + (1000.0 * at(i)) as u64,
+                thread_id: core.snapshot().active_for(speaker).cloned(),
+                ..thought(&id, speaker, None, true)
+            };
+            core.commit(vec![Change::ThoughtAdded { thought: said }]);
+            // The turn, then the rest each cut leaves, as the placer's queue takes them.
+            let (mut kinds, mut landings, mut next) = (Vec::new(), Vec::new(), Some(id.clone()));
+            while let Some(part) = next.take() {
+                let before = core.snapshot();
+                let went = std::time::Instant::now();
+                let placed = super::place(core, &part, super::URL, super::patience).await;
+                times.push(went.elapsed().as_millis());
+                let failed = placed.as_ref().err().map(ToString::to_string);
+                next = placed.ok().flatten();
+                let after = core.snapshot();
+                let landed = after.thoughts.iter().find(|t| t.id == part && t.placed).and_then(|t| t.thread_id.clone());
+                if let Some(e) = &failed {
+                    println!("     {name} #{run} turn {i}: failed: {e}");
+                }
+                kinds.push(match &landed {
+                    None if failed.is_some() => "fail",
+                    None => "skip",
+                    Some(on) if before.thread(on).is_none() => "new",
+                    Some(on) if last.get(speaker) == Some(on) => "same",
+                    Some(_) => "back",
+                });
+                if let Some(on) = &landed {
+                    last.insert(speaker.to_string(), on.clone());
+                    let (title, point) = (after.thread(on).map(|t| t.title.clone()).unwrap_or_default(), after.thoughts.iter().find(|t| t.id == part).map(|t| t.point.clone()).unwrap_or_default());
+                    println!("     {name} #{run} turn {i}: {} {on} \"{title}\" point: \"{point}\"", kinds.last().unwrap());
+                }
+                landings.push(landed);
+            }
+            let made = kinds.join("+");
+            if let Some(want) = turn["want"].as_array() {
+                fits &= want.iter().any(|w| w.as_str() == Some(made.as_str()));
+            }
+            turns.push(json!({"id": id, "speaker": speaker, "threads": landings}));
+            moves.push(made);
+        }
+        let map = core.snapshot();
+        let titles: Vec<&str> = map.threads.iter().map(|t| t.title.as_str()).collect();
+        println!("{} {name} #{run}: {}; {} threads: {}", if fits { "ok  " } else { "MISS" }, moves.join(" "), titles.len(), titles.join(" | "));
+        if let Ok(path) = std::env::var("TALK_OUT") {
+            let threads: Vec<_> = map.threads.iter().map(|t| json!({"id": t.id, "title": t.title, "parent": t.parent_id})).collect();
+            let line = json!({"case": name, "run": run, "model": std::env::var("PLACER_MODEL").ok(), "turns": turns, "threads": threads});
+            let written = std::fs::OpenOptions::new().create(true).append(true).open(&path).and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{line}")
+            });
+            written.unwrap_or_else(|e| panic!("TALK_OUT {path}: {e}"));
+        }
+        fits
     }
 
     /// A case's map and the thought said: threads given inline (`threads`: [id, title, last point, parent?],
@@ -2542,7 +2728,7 @@ mod tests {
             panic!("thought {id} isn't in {path}");
         }
         let mut world = World::default();
-        for t in case["threads"].as_array().unwrap() {
+        for t in case["threads"].as_array().into_iter().flatten() {
             let field = |i: usize| t[i].as_str().unwrap_or_default().to_string();
             world.apply(&Change::ThreadAdded {
                 thread: Thread { title: field(1), parent_id: Some(field(3)).filter(|p| !p.is_empty()), ..thread(&field(0)) },
@@ -2586,10 +2772,14 @@ mod tests {
             world.apply(&Change::ActiveChanged { thread_id: selected.into(), speaker: "you".into() });
         }
         let said = Thought {
-            text: case["text"].as_str().unwrap().into(),
+            text: case["text"].as_str().unwrap_or_default().into(),
             at_ms: now,
             ..thought(&format!("th-{}", uuid::Uuid::new_v4().simple()), "you", None, true)
         };
+        // `cut`: the words are the rest of the turn `before`, cut where it moved on (`settle`).
+        if case["cut"].as_bool() == Some(true) {
+            world.split_from.insert(said.id.clone(), "th-before".into());
+        }
         (world.clone(), Thought { thread_id: world.active_for("you").cloned(), ..said })
     }
 

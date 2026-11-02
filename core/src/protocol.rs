@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 // guest's script would ride along in every later model call (each placement lists every title).
 
 /// A typed thought, in characters: the placer's answer room grows with a turn to its ceiling at 6,000 bytes
-/// (placer.rs `room_for`, `MAX_ROOM`), so a longer one could lose its answer. Longest real thought: 302 (2026-11-01).
+/// (placer.rs `room_for`, `MAX_ROOM`), so a longer one could lose its answer. Longest real thoughts: dictated turns of
+/// 1,444, 1,405 and 1,266 characters (2026-11-02, 46 turns on one map, median 241); a 1,513-character routing case
+/// is placed in one round (no answer cut off at its room).
 pub const THOUGHT_MAX: usize = 6_000;
 /// What a window hears past `THOUGHT_MAX` (the page says it first and keeps the draft: ui/src/limits.ts).
 pub const THOUGHT_TOO_LONG: &str = "Too long for one thought: 6,000 characters at most. Send it in parts.";
@@ -102,6 +104,19 @@ pub enum ServerMsg {
         ms: u64,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         dropped: bool,
+    },
+    /// Someone pointing at a part of the screen, or saying a line as a caption (guide.rs): to every window but the one
+    /// it came from, as it comes; never journaled. `target`: the part's name (docs/guide.md), none for a caption or to
+    /// take `by`'s point down; `text`: the point's caption, or the caption.
+    Guide {
+        kind: crate::guide::Kind,
+        target: Option<String>,
+        text: String,
+        by: String,
+        at_ms: u64,
+        /// The window it came from (guide.rs `window`), which doesn't get it back; not sent.
+        #[serde(skip)]
+        from: u64,
     },
 }
 
@@ -232,4 +247,14 @@ pub enum ClientMsg {
     ImportStart { id: String },
     /// Stop the running import; what already landed stays.
     ImportCancel,
+    /// Show the other windows one part of the screen by its name (docs/guide.md), with a short caption beside the
+    /// arrow; no `target` takes this speaker's point down (guide.rs).
+    Point {
+        #[serde(default)]
+        target: Option<String>,
+        #[serde(default)]
+        caption: Option<String>,
+    },
+    /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
+    Caption { text: String },
 }

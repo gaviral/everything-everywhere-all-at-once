@@ -42,7 +42,7 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
       event.stopPropagation();
       event.currentTarget.open = false;
       event.currentTarget.querySelector("summary")?.focus();
-    }}>
+    }} data-guide="room">
       <summary aria-label="Room details">Room <span aria-hidden="true">⌄</span></summary>
       <div ref={panel} className="room-panel">
         <div className="room-panel-title">This room</div>
