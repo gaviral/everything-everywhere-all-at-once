@@ -473,6 +473,7 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
     let now = now_ms();
     changes.extend(last_points(&world, &ids, &on, &back, false, now).into_iter().filter(|c| !matches!(c, Change::ThreadTouched { thread_id, .. } if Some(thread_id) == emptied.as_ref())));
     if let Some(id) = &emptied {
+        changes.extend(crate::catalog::set_aside(&world, id));
         changes.push(Change::ThreadRemoved { thread_id: id.clone() });
     }
     let follow = u.back.is_some() && (world.active_for(speaker) == Some(&on) || emptied.is_some());
