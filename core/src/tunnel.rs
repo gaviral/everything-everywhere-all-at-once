@@ -18,7 +18,7 @@ pub const VISITOR: axum::http::HeaderName = axum::http::HeaderName::from_static(
 /// Codes shorter than this are refused in tunnel mode: the link is on the internet, not a home network.
 const SHORTEST_CODE: usize = 10;
 
-/// The public origin a tunnel serves this core at, e.g. "https://quiet-river-12.trycloudflare.com".
+/// The public HTTPS origin a tunnel serves this core at, e.g. quiet-river-12.trycloudflare.com over https.
 #[derive(Clone, Debug)]
 pub struct Tunnel {
     origin: String,
@@ -48,7 +48,7 @@ impl Tunnel {
         let url = url.trim().trim_end_matches('/').to_ascii_lowercase();
         let host = url.strip_prefix("https://").ok_or("it must start with https://")?;
         if host.is_empty() || host.contains(|c: char| matches!(c, '/' | '?' | '#' | '@' | '\\') || c.is_whitespace() || c.is_control()) {
-            return Err("it must be an origin only, like https://name.trycloudflare.com");
+            return Err("it must be an origin only: https, then a name such as name.trycloudflare.com");
         }
         Ok(Tunnel { origin: url.clone(), host: host.into() })
     }
