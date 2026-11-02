@@ -666,7 +666,7 @@ fn changes_on(world: &World, mut pass: Pass, today: &str) -> Vec<Change> {
         for raw in group.tags {
             let word: String = raw.trim().trim_start_matches('#').to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '-').collect();
             let tag = format!("#{word}");
-            if names.len() >= TAGS || word.is_empty() || names.contains(&tag) || titles.iter().any(|t| in_title(&word, t)) {
+            if names.len() >= TAGS || word.is_empty() || tag.chars().count() > crate::protocol::TAG_MAX || names.contains(&tag) || titles.iter().any(|t| in_title(&word, t)) {
                 continue;
             }
             names.push(tag.clone());
@@ -1296,6 +1296,8 @@ mod tests {
                 {"thread_id": "T1", "tags": ["#demo", "#Recording", "#video"]},
                 {"thread_id": "T1", "tags": ["#more"]},
                 {"thread_id": "T2", "tags": ["budget", "#money", "#plans", "#extra"]},
+                // Past crate::protocol::TAG_MAX with its #: left out; at it: kept.
+                {"thread_id": "T3", "tags": [format!("#{}", "w".repeat(crate::protocol::TAG_MAX)), format!("#{}", "v".repeat(crate::protocol::TAG_MAX - 1))]},
             ],
         }))
         .unwrap();
@@ -1315,7 +1317,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(tags, [("T1", "#recording"), ("T2", "#budget"), ("T2", "#money"), ("T2", "#plans")]);
+        let longest = format!("#{}", "v".repeat(crate::protocol::TAG_MAX - 1));
+        assert_eq!(tags, [("T1", "#recording"), ("T2", "#budget"), ("T2", "#money"), ("T2", "#plans"), ("T3", longest.as_str())]);
     }
 
     #[test]
