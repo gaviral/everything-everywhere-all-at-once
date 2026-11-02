@@ -956,7 +956,7 @@ export default function App() {
       {core.mapChange && (
         <div className="map-change">
           {core.mapChange.ai && <span aria-hidden="true" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦</span>} {core.mapChange.text}
-          {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
+          {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
@@ -1263,7 +1263,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
   // A point dragged by its Move lands on the card under it (Moves.tsx).
   const drop = useDropPoint(thread.id);
   // Live routing (route.ts): lit while the placer weighs it, or on the path a thought just took.
-  const route = useRouteMark(thread.id);
+  const route = useRouteMark(thread.id, active);
   const routeClasses = route ? `route-lit ${ROUTE_CLASS[route.kind]}${route.deep ? " route-deep" : ""}` : "";
   const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : "", routeClasses].join(" ");
 

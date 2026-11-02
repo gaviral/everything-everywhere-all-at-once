@@ -1,10 +1,11 @@
 /* Live routing (route.ts). An outline, never a border or a size: nothing on the map moves while a thought is placed.
    The outline fades in over 0.1 s, the edge of what still reads as instant, so a card the placer is weighing lights
-   as the calls go; a branch's card settles one fixation after its top thread (--route-delay, route.ts `LEVEL_MS`). */
+   as the calls go; a branch's card settles one fixation after its top thread (--route-delay, route.ts `LEVEL_MS`).
+   A card a point is dragged over keeps its drop outline (moves.css): where the point goes comes first. */
 .thread { outline: 2px solid transparent; outline-offset: 3px; }
-.thread.route-candidate { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
-.thread.route-here, .thread.route-via { outline-color: var(--accent); }
-.thread.route-via { outline-width: 1px; }
+.thread.route-candidate:not(.drop-over) { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
+.thread.route-here:not(.drop-over), .thread.route-via:not(.drop-over) { outline-color: var(--accent); }
+.thread.route-via:not(.drop-over) { outline-width: 1px; }
 .thread.route-here.route-deep { --route-delay: 0.2s; }
 
 /* On the card's top edge, left of where "this" sits: why the placer weighs it, then where the thought went and the rule
