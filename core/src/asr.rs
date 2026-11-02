@@ -206,6 +206,10 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
         return false;
     }
     let primer_turn = primer.turn.is_some() && turn == primer.turn;
+    // A new turn means the primer's is over, even if its end never came: later words are left as said.
+    if event["type"] == "speechStart" && !primer_turn {
+        primer.open = false;
+    }
     if primer.open && (event["type"] == "transcript" || primer_turn) {
         let rest = primer.strip(event["transcript"].as_str().unwrap_or_default()).to_string();
         if event["type"] == "speechComplete" {
@@ -436,6 +440,16 @@ mod tests {
         assert_eq!(uh.strip("Uhuh"), "Uhuh");
         assert_eq!(uh.strip("Okay"), "Okay");
         assert_eq!(Primer::default().strip("Uh, okay"), "Uh, okay");
+    }
+
+    /// A primer turn whose end never comes: the next turn closes it, so that turn's words stay as said.
+    #[test]
+    fn a_new_turn_closes_the_primers() {
+        let mut events = primer_start().to_vec();
+        events.push(serde_json::json!({"type": "speechStart", "audioProcessedMs": PRIMER_MS + 900, "turnId": 1}));
+        events.push(serde_json::json!({"type": "transcript", "transcript": "Uh, I mean rent", "final": false, "audioProcessedMs": PRIMER_MS + 1_500}));
+        let (shown, _) = heard(&events);
+        assert_eq!(shown, ["Uh, I mean rent"]);
     }
 
     #[test]
