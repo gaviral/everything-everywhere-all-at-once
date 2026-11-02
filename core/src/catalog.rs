@@ -736,8 +736,8 @@ fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
             core.send_to(speaker, ServerMsg::Notice { message: STALE.into() });
         }
         // A message no longer counting down was sent, stopped or a dry run's: nothing here takes it back.
-        Was::Request { undo: Some(Undo::Unsend { id }), .. } if !crate::messages::is_counting(core, id) => {
-            core.send_to(speaker, ServerMsg::Notice { message: "Can't undo that here: the message isn't counting down any more".into() });
+        Was::Request { undo: Some(undo), .. } if spent_unsend(core, &undo) => {
+            core.send_to(speaker, ServerMsg::Notice { message: SPENT.into() });
         }
         Was::Request { act, undo: Some(undo) } => {
             run_undo(core, speaker, &undo);
@@ -1158,6 +1158,9 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
 pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
     let current = core.catalog.last.lock().unwrap().get(speaker).filter(|l| l.id == id).cloned();
     match current {
+        Some(Last { was: Was::Request { undo: Some(undo), .. }, .. }) if spent_unsend(core, &undo) => {
+            core.send_to(speaker, ServerMsg::Notice { message: SPENT.into() });
+        }
         Some(Last { was: Was::Request { act, undo: Some(undo) }, .. }) if !stale(&core.snapshot(), &undo) => {
             run_undo(core, speaker, &undo);
             let message = if act == Act::Undo { "Put back".to_string() } else { format!("Undone: {}", def(act).does) };
@@ -1188,6 +1191,18 @@ pub fn undo_last(core: &Arc<Core>, speaker: &str) {
 }
 
 const STALE: &str = "That can't be undone any more: something newer happened";
+const SPENT: &str = "Can't undo that here: the message isn't counting down any more";
+
+/// Whether `undo` would take back a message that no longer counts down (sent, stopped or a dry run's), alone or as
+/// part of a turn ("No, I meant text Sam …" keeps its message inside `Undo::Each`): nothing here takes it back, so
+/// no notice may say it was undone.
+fn spent_unsend(core: &Core, undo: &Undo) -> bool {
+    match undo {
+        Undo::Unsend { id } => !crate::messages::is_counting(core, *id),
+        Undo::Each(parts) => parts.iter().any(|u| spent_unsend(core, u)),
+        _ => false,
+    }
+}
 
 /// Whether the map moved past what `undo` would take back: a moved thought moved again or merged back where it came
 /// from, a renamed thread renamed again or merged away (moves.rs). Any other undo still does what it says.
