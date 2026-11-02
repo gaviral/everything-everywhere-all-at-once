@@ -29,7 +29,7 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { staysUp, upFor } from "./notice-rules";
+import { micStopped, staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
@@ -342,11 +342,12 @@ export default function App() {
   const voiceRevisions = useRef({ status: 0, error: 0 });
   voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
   useEffect(() => {
-    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
+    const failed = core.voiceErrorRevision > voiceErrorStartedAt.current;
+    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || failed)) {
       stopMic();
       setStopMic(null);
       core.listen(false);
-      core.showNotice(core.noKey ? core.keyNotice : "The mic stopped. Tap it to keep talking.");
+      core.showNotice(core.noKey ? core.keyNotice : micStopped(failed ? core.voiceError : ""));
     }
   }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
 
@@ -757,8 +758,6 @@ export default function App() {
   const friendlyNotice = core.notice && (
     !core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)."
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
-    : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again."
-    : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again."
     : core.notice
   );
 

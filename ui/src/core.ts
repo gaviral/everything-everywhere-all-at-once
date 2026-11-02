@@ -540,6 +540,8 @@ export function useCore(speaker?: string) {
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
+  // The words of the last voice error, so the window can say why the mic stopped (notice-rules.ts `micStopped`).
+  const [voiceError, setVoiceError] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -668,6 +670,7 @@ export function useCore(speaker?: string) {
             break;
           case "error":
             if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
+              setVoiceError(msg.message);
               setVoiceErrorRevision((revision) => revision + 1);
               break;
             }
@@ -785,6 +788,7 @@ export function useCore(speaker?: string) {
     partial,
     handoff,
     voiceErrorRevision,
+    voiceError,
     listening,
     voiceStatusRevision,
     connected,

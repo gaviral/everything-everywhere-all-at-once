@@ -33,7 +33,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { staysUp, upFor, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { staysUp, upFor, SHORTEST_MS, micStopped } = await server.ssrLoadModule("/src/notice-rules.ts");
   const { readMs } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Each of these asks for something only the person can do, or says the core is gone: up until dismissed.
@@ -62,6 +62,16 @@ try {
   assert.equal(upFor(long), readMs(long));
   assert.ok(upFor(long) > SHORTEST_MS);
 
+  // The mic stopping on its own says why, when the core said, and stays up until the mic is tapped (bug hunt 26:
+  // every reason became the same "The mic stopped").
+  const quiet = micStopped("Speech service error: Voice Transcribe stopped answering");
+  assert.equal(quiet, "The mic stopped: the voice service stopped answering. Check the connection, then tap the mic.");
+  assert.equal(micStopped("Speech service error: IO error: Connection reset by peer (os error 54)"), quiet);
+  const busy = micStopped("Voice Transcribe: Too many requests");
+  assert.equal(busy, "The mic stopped: the voice service said “Too many requests”. Tap it to try again, or type below.");
+  assert.equal(micStopped(""), "The mic stopped. Tap it to keep talking.");
+  for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
+
   // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review).
   assert.ok(!staysUp("Back to Visa was refused"));
 
@@ -82,6 +92,12 @@ try {
   assert.ok(sockets.length, "useCore opened no socket within 5 s");
   await settle();
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
+
+  // The words of a voice error stay readable for the window's "The mic stopped" notice.
+  say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
+  await settle();
+  assert.equal(core.voiceError, "Speech service error: Voice Transcribe stopped answering");
+  assert.equal(core.notice, "", "a voice error isn't shown raw");
 
   // A notice made in the window is a newer answer: it clears the Undo an earlier one offered.
   say({ type: "notice", message: "Expanded everything." });
