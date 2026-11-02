@@ -942,6 +942,7 @@ img.slot-picture[data-instant] { transition: none; }
   .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .composer { position: sticky; bottom: 0; flex: none; }
-  .notice, .map-change { top: 8px; }
+  /* No header to clear: the lane (the notices on a phone) sticks at the top. */
+  .notice-lane, .notice, .map-change { top: 8px; }
   .notice ~ .map-change { top: 60px; }
 }
