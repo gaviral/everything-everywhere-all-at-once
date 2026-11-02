@@ -29,7 +29,9 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         "partialMode": "CUMULATIVE",
         "emitAudioProgress": false,
         "languageBias": ["English"],
-        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image"]
+        // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
+        // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
+        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
     });
     sink.send(Message::Text(handshake.to_string().into())).await?;
     let first = match stream.next().await {
