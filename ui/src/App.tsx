@@ -43,6 +43,9 @@ import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicBu
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
+import { useLanes, useRouteMark } from "./route";
+const ROUTE_CLASS = { candidate: "route-candidate", here: "route-here", via: "route-via" } as const;
+import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
@@ -1247,7 +1250,10 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
   // A point dragged by its Move lands on the card under it (Moves.tsx).
   const drop = useDropPoint(thread.id);
-  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
+  // Live routing (route.ts): lit while the placer weighs it, or on the path a thought just took.
+  const route = useRouteMark(thread.id);
+  const routeClasses = route ? `route-lit ${ROUTE_CLASS[route.kind]}${route.deep ? " route-deep" : ""}` : "";
+  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : "", routeClasses].join(" ");
 
   const toggle = (event: React.MouseEvent) => {
     if (held.has(thread.id)) return;
@@ -1271,6 +1277,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
       {...drop.props}
     >
       <ThisTag thread={thread.id} />
+      {route?.tag && <span key={route.tag} className={`route-tag ${route.kind}`} title={route.title ?? undefined}>{route.tag}{route.title && <span className="sr-only"> · {route.title}</span>}</span>}
       {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
       <div className="thread-head" onClick={(event) => {
         if (headClickToggles(event.target as Element, window.getSelection()?.toString())) toggle(event);
@@ -1512,8 +1519,11 @@ function PendingThought({ thought, placing, noKey, refused, resting, reducedMoti
   }, [noKey, refused]);
   const retryAt = placing.retryAt[thought.id];
   const label = pendingLabel(thought, placing, now, noKey, refused, resting);
+  // The race (placer.rs `RACE`): one dot a call, while they run; the first good answer places it.
+  const lanes = useLanes(thought.id);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
-    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
+    <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span>
+    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} {thought.text}
   </motion.span>;
 }
 

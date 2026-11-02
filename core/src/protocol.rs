@@ -69,6 +69,9 @@ pub enum ServerMsg {
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
     /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
     Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
+    /// A placement deciding, for the map to show it (ui/src/route.ts): the threads the prompt names while the calls
+    /// race, then where the thought went, the model's pick, and the rule that changed it, if any (placer.rs `Route`).
+    Route { route: crate::placer::Route },
     /// One step of the work, for the window's model line (ui/src/model-line.ts): the step (the trace's feature:
     /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
     /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
