@@ -8,6 +8,25 @@ For people who think out loud and lose their threads. You talk (or type), and E2
 
 Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
 
+## Meta models it runs on
+
+Every model the app calls at runtime is Meta's, through the Meta Model API; `scripts/precheck.sh` fails on any other model SDK, endpoint or model name in the app's code.
+
+| Model | Feature and when it runs | Reasoning effort | Measured number in the README or repo |
+|---|---|---|---|
+| Muse Voice Transcribe 1.0 | Live speech to text while the mic is on; one session per window | — | — |
+| Muse Spark 1.2 Contributor (`PLACER_MODEL`) | Place each finished thought; Did you mean and auto-fix use its placement result. Explain runs when you select words and press Explain. Reads a spoken correction (“No, the bills”) that no rule reads. Falls back to Muse Spark 1.2 if the key cannot use Contributor mode. | minimal | End of speech to map: median 3.6 s, slowest 5.1 s (n = 9, one take through the real speech path, 2026-11-01); placing alone: median 2.8 s over 1,015 turns (2026-10-27 to 11-01, core/src/placer.rs `first_try`) |
+| Muse Spark 1.3 (`REFINER_MODEL`, default) | Refiner at a pause or when you return; composer when you ask to make an app; Search-first when enabled; app prompts when a watcher fires. | low | — |
+| Muse Spark 1.3 (`REFINER_MODEL`) | Take me there, with minimal effort, only when local word search finds no match | minimal | 62 paraphrases that share no word with their target: median 1.1 s, p90 1.7 s, slowest 2.8 s; 51 found it (2026-11-01, core/src/find.rs `PATIENCE`) |
+| Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | When you ask for Recap or press Recap | low | — |
+| Muse Spark 1.2 (`IMPORT_EXTRACT_MODEL`, default) | Chat import: extracts ideas from message parts | minimal | — |
+| Muse Spark 1.3 (`IMPORT_MERGE_MODEL`, default) | Chat import: groups the extracted ideas into threads | low | — |
+| Muse Image 1.0 | Draws a thread picture after it has settled | — | — |
+
+Chat models use `https://api.meta.ai/v1/chat/completions`; speech uses `wss://api.meta.ai/v1/asr/realtime`; pictures use `https://api.meta.ai/v1/images/generations`. Settings go in `.env`; see `.env.example`.
+
+Every model request has a time limit: 12 s for placing's first try and 20 s for later ones (more for a long turn), 20 s for Explain, 12 s for reading a correction, 8 s for Take me there's model check (about twice the slowest answer measured; “Looking through your threads…” stays up until then), and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet.
+
 ## Try it
 
 Tested on macOS. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs); run `rustup update` if yours is older) and Node.js 22.12 or newer. On a Mac with no developer tools, run `xcode-select --install` first.
@@ -28,11 +47,11 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 ./run.sh sample
 ```
 
-- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a real “Did you mean BC Hydro?” question for “BC Hydra.” Recap needs a key; with one, a bare "recap" covers the sample's last session (once its Nov 3, 2026 date has passed).
+- A prepared map of a student's week, dated Nov 3, 2026: 8 branched threads, 30 thoughts, tags, two suggestions, two reminders, one unfinished thread and a picture per thread. The app's picture pipeline drew them once and saved them in `samples/images/`, so the Palace is full without a key. It starts fresh from `samples/` each run and includes a working “Did you mean BC Hydro?” question for “BC Hydra” (written into the sample; Yes and No work as on a live map). Recap needs a key; with one, a bare "recap" covers the sample's last session (once its Nov 3, 2026 date has passed).
 - Try: show and hide threads (`j`/`k`, Enter, Esc), search with `/`, keep a ✦ tag, try the unfinished card (see [How it works](#how-it-works)), open the Palace and the Apps panel.
 - Without a key, the header says “No AI key”; you can still browse the map and use search and navigation. New typed thoughts stay marked “Needs the AI key,” and the mic and model features are off. “Add to Reminders” still works and really adds to your Reminders (macOS asks first).
 - With a wrong or expired key, the first model call is refused and the app stops calling: the header says “AI key refused” and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart. If the service is busy (rate limited), it backs off and says so once.
-- The core makes at most 400 model calls in any hour (`MODEL_CALLS_PER_HOUR` in `.env`; 0 turns it off), twice the busiest hour on a real map, so an app or loop nobody is watching can't run up the bill. Past it, it says once “AI paused up to N min”: placing, the refiner, pictures, apps, Explain, Recap and search by meaning rest until the oldest call is an hour old, while the mic keeps listening and new thoughts wait, saved, to be placed then.
+- The core makes at most 400 model calls in any hour (`MODEL_CALLS_PER_HOUR` in `.env`; 0 turns it off), about twice what the busiest hour on a real map needed (≈ 200 calls, counted from its journal), so an app or loop nobody is watching can't run up the bill. Past it, it says once “AI paused up to N min”: placing, the refiner, pictures, apps, Explain, Recap and search by meaning rest until the oldest call is an hour old, while the mic keeps listening and new thoughts wait, saved, to be placed then.
 - A second map, a founder's day: `./run.sh sample founder`.
 
 **With a key: watch a map build itself.**
@@ -51,11 +70,11 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - To talk: `./run.sh` (its map is in `data/`), press the mic and allow it, then speak; or type and press Enter.
 - To start from your past chats, see [How it works](#how-it-works).
 
-**Things to try (with a key):** With `./run.sh demo` running and its page open, say or type each line. Allow about 3 s after speech for a thought to land.
+**Things to try (with a key):** With `./run.sh demo` running and its page open, say or type each line. Allow about 4 s after speech for a thought to land.
 
-1. `I need to plan the hackathon demo, the deadline is tomorrow at nine PM.` → a thought lands in about 3 s after you finish speaking.
-2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a new topic gets a thread of its own, next to the first (an aside that belongs to a thread branches off it instead); allow about 3 s.
-3. `I'll order the cookbook tonight. And the electric bill, I should set up autopay before the due date.` → a turn can split across two threads; allow about 3 s per part.
+1. `I need to plan the hackathon demo, the deadline is tomorrow at nine PM.` → a thought lands about 3 to 4 s after you finish speaking.
+2. `Oh wait, Mom's birthday is Friday. I should book that cooking class she mentioned.` → a new topic gets a thread of its own, next to the first (an aside that belongs to a thread branches off it instead); allow about 4 s.
+3. `I'll order the cookbook tonight. And the electric bill, I should set up autopay before the due date.` → a turn can split across two threads; allow about 4 s per part.
 4. `Um, so, anyway.` → filler is set aside; nothing lands.
 5. `Where did I talk about the electric bill?` → the map jumps to a matching thread; an exact word match is immediate.
 6. Select a phrase on the map and press **Explain** → one sentence of context after the model call.
@@ -165,23 +184,6 @@ Choose Import chats (top right), then a ChatGPT or Claude `conversations.json` e
 
 Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then sent to every window; on start the core replays it, so the map opens where you left it. `./run.sh NAME` uses `data/NAME`; plain `./run.sh` uses `data/`.
 
-## Models and endpoints
-
-| Model | Feature and when it runs | Reasoning effort | Measured number in the README or repo |
-|---|---|---|---|
-| Muse Voice Transcribe 1.0 | Live speech to text while the mic is on; one session per window | — | — |
-| Muse Spark 1.2 Contributor (`PLACER_MODEL`) | Place each finished thought; Did you mean and auto-fix use its placement result. Explain runs when you select words and press Explain. Falls back to Muse Spark 1.2 if the key cannot use Contributor mode. | minimal | About 3 s from speech to map (README; includes transcription and placement) |
-| Muse Spark 1.3 (`REFINER_MODEL`, default) | Refiner at a pause or when you return; composer when you ask to make an app; Search-first when enabled; app prompts when a watcher fires. | low | — |
-| Muse Spark 1.3 (`REFINER_MODEL`) | Take me there, with minimal effort, only when local word search finds no match | minimal | 62 paraphrases that share no word with their target: median 1.1 s, p90 1.7 s, slowest 2.8 s; 51 found it (2026-11-01, core/src/find.rs `PATIENCE`) |
-| Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | When you ask for Recap or press Recap | low | — |
-| Muse Spark 1.2 (`IMPORT_EXTRACT_MODEL`, default) | Chat import: extracts ideas from message parts | minimal | — |
-| Muse Spark 1.3 (`IMPORT_MERGE_MODEL`, default) | Chat import: groups the extracted ideas into threads | low | — |
-| Muse Image 1.0 | Draws a thread picture after it has settled | — | — |
-
-Chat models use `https://api.meta.ai/v1/chat/completions`; speech uses `wss://api.meta.ai/v1/asr/realtime`; pictures use `https://api.meta.ai/v1/images/generations`. Settings go in `.env`; see `.env.example`.
-
-Every model request has a time limit: 20 s for placing (more for a turn over 1,000 characters) and Explain, 8 s for Take me there's model check (about twice the slowest answer measured; “Looking through your threads…” stays up until then), and 30 s to 4 minutes for the rest; the speech stream has no read timeout yet.
-
 ## Privacy and data
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
@@ -190,6 +192,7 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
   - **Placing:** the full new thought; every thread's id, title, status and last point; the active thread id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text. It also sends your own previous thought's full text and its thread id, if you said it in the last 2 minutes and it isn't that question.
   - **Refiner:** today's date; each thread's id, title, parent, tags and last point; the latest 8 full thoughts from recently active threads; the latest 30 suggestions and actions. In a room with multiple speakers, each recent thought includes its speaker name.
   - **Take me there:** only if local word search finds no thread containing every query word, the query (up to 400 characters) and up to 48 thread titles (100 characters each) with their latest 3 points (320 characters each).
+  - **Fixing a turn:** only when no rule reads a correction, your previous turn's words, what it did, the correction, up to 40 thread titles and the list of actions the app can take.
   - **Explain:** the selected phrase (up to 160 characters), up to 600 characters around it, up to 12 points from its thread, its parent's title, up to 40 other thread titles, and up to 8 thoughts from other threads that name the selected words.
   - **Recap:** up to 24 threads, with up to 16 thoughts per thread (each includes the speaker and up to 700 characters of text), plus up to 64 actions.
   - **Pictures:** the thread's title, its first point, and up to 18 other thread titles (so two threads don't get the same object); nothing with `PICTURES=off` in `.env`.
@@ -212,7 +215,7 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
 
 - One person, User, directed AI coding agents, mostly overnight; he set the scope and made the keep-or-cut calls. Claude Code (Claude Opus 5.5) led: the architecture and first version, reviews and merges. Claude subagents built rooms, chat import, the confident auto-fix and later picture and Explain work; Codex agents built the composer and Recap (Sol), and the Palace and the UI passes (Terra); a Cursor agent (Claude Opus 4.6) reviewed code and drafted docs.
 - The merge gate: each agent worked in its own git worktree. A script merged a branch into a scratch copy of main and ran `cargo test`, the UI build and `scripts/precheck.sh`; main moved only if all three passed.
-- The lesson: an agent's review sounds just as sure when it's wrong. About half the bugs the Cursor reviewer flagged weren't real (it said Reminders has no all-day due date; Apple's scripting dictionary has one), and of its 28 claims about the UI, 4 held up. So every claim was checked against the code before anything changed.
+- The lesson: an agent's review sounds just as sure when it's wrong. The Cursor reviewer said Reminders has no all-day due date (Apple's scripting dictionary has one), and of its 28 claims about the UI, 4 held up. So every claim was checked against the code before anything changed.
 
 ## What existed before the event
 
@@ -225,10 +228,10 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
 - Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
-- From speech to the map is about 3 seconds, measured with `scripts/voice.mjs`.
+- From the end of speech to the map: median 3.6 s, slowest 5.1 s (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, or undo the refiner's renames and merges.
 - A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
-- Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land 20 to 30 seconds after you stop (three speakers at once in a room, measured with `scripts/voice.mjs`); talking alone at a normal pace keeps up (about 3 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.
+- Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land long after you stop (27 s in one measured run: three speakers at once in a room, with `scripts/voice.mjs`); talking alone at a normal pace keeps up (3 to 4 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - The loudness scale for volume apps comes from synthesized speech played through Chrome's processing, not yet from a real microphone. There, the browser's automatic gain lifted normal speech and left a raised voice only about 1.3 times as loud, so a raised voice can take a few seconds to set off a volume app.
@@ -236,4 +239,4 @@ Every model request has a time limit: 20 s for placing (more for a turn over 1,0
 - In a room, a name belongs to one laptop at a time, ignoring case; the host keeps theirs until the core stops.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
-- The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a real “Did you mean” suggestion; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).
+- The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a hand-written “Did you mean” question that works as a live one; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).
