@@ -52,6 +52,7 @@ Browser, one page per window (ui/src)
   Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
   bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
+    bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)

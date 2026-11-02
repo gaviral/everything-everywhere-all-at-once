@@ -240,7 +240,7 @@ An app is a watcher (a new thought, a phrase, a topic, loud voices for some seco
 
 ### Bricks
 
-Parts of the app can be bricks: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. Apps › Catalog lists them, each with its line and an on/off switch kept in this browser. The first is the Level meter (also `?level`), off until switched on. Each brick sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [docs/bricks.md](docs/bricks.md).
+Parts of the app can be bricks: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. Apps › Catalog lists them, each with its line and an on/off switch kept in this browser. Two so far, both off until switched on: Bubbles, a view beside Map and Palace that shows each thread as a bubble sized by its points, and the Level meter (also `?level`). Each brick sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [docs/bricks.md](docs/bricks.md).
 
 ### Recap
 

@@ -12,6 +12,8 @@
 // 6. In the built app (all bricks): at their defaults they add nothing to the first screen; the Catalog lists every
 //    brick; each view brick switched on joins Map and Palace, shows in the map's place and hands back to the map, and
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
+// Bubbles, beyond that: one bubble per thread, a landing ripples only its bubble (in the playground and from the core)
+//    and moves none, and a bubble opens its thread on the map, moving your place there.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -183,13 +185,26 @@ try {
       if (state.sideways > 1) fail(where, `the page scrolls sideways by ${state.sideways} px`);
     }
   }
-  // The template does what it says: it hears the thought it added land.
+  // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
   await width(1280, 860);
   if (checked.includes("_template")) {
     await go(`${base}/bricks.html?brick=_template&sample=student-week`);
     await until(`!!document.querySelector(".template")`, 8000);
     await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
     if (!await until(`document.querySelector(".template")?.textContent.includes("last landed on")`, 4000)) fail("_template", "never heard the thought it added land");
+  }
+  if (checked.includes("bubbles")) {
+    await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
+    await until(`!!document.querySelector(".bubbles-bubble")`, 8000);
+    const n = await evaluate(`({ bubbles: document.querySelectorAll(".bubbles-bubble").length, threads: Number(document.querySelector(".playground-map").textContent.match(/(\\d+) threads/)[1]) })`);
+    if (n.bubbles !== n.threads) fail("bubbles", `${n.bubbles} bubbles for ${n.threads} threads`);
+    const before = await evaluate(`[...document.querySelectorAll(".bubbles-bubble")].map((b) => b.style.left + b.style.top).join("|")`);
+    await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
+    if (!await until(`!!document.querySelector(".bubbles-ripple")`, 4000)) fail("bubbles", "no ripple where the thought landed");
+    const after = await evaluate(`[...document.querySelectorAll(".bubbles-bubble")].map((b) => b.style.left + b.style.top).join("|")`);
+    if (before !== after) fail("bubbles", "a landing moved bubbles (each keeps its place)");
+    await evaluate(`document.querySelector(".bubbles-face").click()`);
+    if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread")`, 2000)) fail("bubbles", "a bubble doesn't open its thread");
   }
   if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
@@ -231,6 +246,18 @@ try {
   for (const { id, name } of viewBricks) {
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)}).click()`);
     if (!await until(`!!document.querySelector('main.brick-view[data-brick="${id}"]')?.textContent.trim() && !document.querySelector("main.map")`, 4000)) fail(name, "doesn't show in the map's place");
+    if (id === "bubbles") {
+      const drawn = await evaluate(`document.querySelectorAll("[data-brick=bubbles] .bubbles-bubble").length`);
+      if (drawn !== full.threads.length) fail("Bubbles", `${drawn} bubbles for ${full.threads.length} threads`);
+      // A thought the core places reaches the brick as `landed` (the app's host, not the playground's): its bubble ripples.
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-1", "Flights to Lisbon booked", "T3") } });
+      if (!await until(`!!document.querySelector('[data-brick="bubbles"] [data-thread="T3"] .bubbles-ripple')`, 3000)) fail("Bubbles", "a thought landing in the app doesn't ripple its bubble");
+      if (await evaluate(`document.querySelectorAll(".bubbles-ripple").length`) !== 1) fail("Bubbles", "a landing rippled more than its own bubble");
+      const target = await evaluate(`(() => { const face = document.querySelectorAll(".bubbles-face")[2]; face.click(); return face.dataset.thread; })()`);
+      if (!await until(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent === "Map" && !!document.getElementById(${JSON.stringify(`thread-${target}`)})`, 3000)) fail("Bubbles", "a bubble doesn't open the map at its thread");
+      await sleep(200);
+      if (!core.heard.some((m) => m.type === "focus" && m.thread_id === target)) fail("Bubbles", `opening ${target} didn't move your place there (no focus sent)`);
+    }
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Map").click()`);
     if (!await until(`!!document.querySelector("main.map .thread")`, 3000)) fail(name, "Map doesn't bring the map back");
   }

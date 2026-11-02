@@ -22,7 +22,7 @@ ui/src/bricks/<id>/
 | `flag` | Optional. `?<flag>` in the address switches it on for that visit (`?level`). |
 
 Where each kind shows:
-- **view**: another way to see the map. Its name joins the Map and Palace switch, and it shows in the map's place, padded clear of the dock as the Palace is.
+- **view**: another way to see the map. Its name joins the Map and Palace switch, and it shows in the map's place, padded clear of the dock as the Palace is. Bubbles is one.
 - **card**: a small card in the dock, above the composer, where the unfinished card shows. Its height counts with the dock's cards, so a thought just shown moves clear of it. The template is one.
 - **input**: a new way in (gestures, a pedal). It mounts with the page, draws at most a small mark of its own, and acts through `actions`.
 - **panel**: floats over the page and places itself. The Level meter is one.
@@ -70,4 +70,5 @@ The Catalog lists every brick by kind, each with its name, its line and its swit
 ## The bricks so far
 
 - `level` (panel, off): the `?level` meter of the loudness readings the core hears, for setting a volume app's level. Moved here from `Level.tsx` unchanged: `?level` shows it, and without it nothing loads.
+- `bubbles` (view, off, demo-safe): every thread as a bubble in a place of its own, sized by its points, floating gently; a landing ripples its bubble. A bubble opens its thread on the map.
 - `_template` (card): the brick to copy.
