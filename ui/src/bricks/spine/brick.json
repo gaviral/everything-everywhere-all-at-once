@@ -1,0 +1,8 @@
+{
+  "id": "spine",
+  "name": "Spine",
+  "does": "Your talk as a canvas: each topic a spine, tangents beside the point they came from.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

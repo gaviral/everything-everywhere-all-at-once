@@ -1,0 +1,146 @@
+/* The Spine (index.tsx, nodes.tsx, shelf.tsx). Colors keep the app's meanings: the room's color is a topic's own (its
+   line, dots, tile and its tangents' edges); blue is where you are; amber dashes what was left off. Words sit on the
+   page's own color, so a line passing behind them never crosses them. Sizes are layout.ts's (G). */
+
+.spine-empty { margin: 48px auto; color: var(--muted); text-align: center; }
+
+/* The canvas fills the window under the tools; the dock floats over its foot, as over the map. */
+.spine { position: relative; }
+.spine-anchor { height: 0; }
+.spine-frame { position: fixed; right: 0; bottom: 0; left: 0; opacity: 0; transition: opacity .2s ease; }
+.spine-frame.spine-ready { opacity: 1; }
+.spine-flow { position: absolute; inset: 0; --xy-background-color: transparent; mask-image: linear-gradient(to bottom, transparent, #000 18px); }
+
+/* Lines: behind everything, the same width on screen at any zoom. */
+.spine-links { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.spine-link { fill: none; stroke: var(--muted); stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spine-link-spine { stroke-width: 2; opacity: .5; }
+.spine-link-branch { stroke-width: 1.5; opacity: .6; }
+.spine-link-pulled { stroke-width: 1.25; stroke-dasharray: 3 5; opacity: .6; }
+.spine-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: spine-draw .6s cubic-bezier(.2, .8, .2, 1) forwards; }
+
+/* A topic's head: its picture (or first letter) on the line, its title beside it. */
+.spine-head, .spine-point, .spine-card { position: relative; width: 100%; height: 100%; color: var(--ink); }
+.spine-tile { position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 32px; height: 32px; overflow: hidden; border-radius: 9px;
+  background: var(--spine-room-soft, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--spine-room, var(--line)) 30%, transparent); }
+.spine-letter { color: var(--spine-room, var(--muted)); font: 600 16px/1 Georgia, serif; }
+.spine-picture { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s ease; }
+.spine-picture.spine-picture-shown { opacity: 1; }
+.spine-frame .spine-title { position: absolute; top: 50%; display: -webkit-box; overflow: hidden; margin: 0; padding: 0; transform: translateY(-50%); -webkit-box-orient: vertical;
+  border: 0; border-radius: 4px; background: var(--bg); color: var(--ink); font-family: inherit; font-size: 17px; font-weight: 650; line-height: 22px; letter-spacing: -.01em;
+  text-align: left; overflow-wrap: anywhere; cursor: inherit; }
+.spine-head.spine-on .spine-tile { box-shadow: 0 0 0 2px var(--accent); }
+.spine-head.spine-left .spine-tile { outline: 2px dashed var(--amber); outline-offset: 2px; }
+/* Far out, the title keeps its size on screen (--spine-k is 1 / zoom), over the top of its own spine: no wider than a
+   column, so neighbours' titles never meet. */
+.spine-label { position: absolute; top: 0; left: 0; display: -webkit-box; overflow: hidden; max-width: 380px; padding: calc(3px * var(--spine-k, 1)) calc(6px * var(--spine-k, 1));
+  -webkit-box-orient: vertical; border-radius: calc(7px * var(--spine-k, 1)); background: var(--bg);
+  box-shadow: 0 0 0 calc(1px * var(--spine-k, 1)) color-mix(in srgb, var(--spine-room, var(--line)) 40%, transparent); color: var(--ink);
+  font-size: calc(13px * var(--spine-k, 1)); font-weight: 650; line-height: calc(16px * var(--spine-k, 1)); overflow-wrap: anywhere; pointer-events: none; }
+
+/* A point: a dot on the line, its words beside it. */
+.spine-dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--spine-room, var(--muted)); }
+.spine-dot.spine-dot-decided { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--spine-room, var(--muted)); }
+.spine-on .spine-dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+.spine-frame .spine-text { position: absolute; top: 0; display: -webkit-box; overflow: hidden; margin: 0; padding: 0; -webkit-box-orient: vertical; border: 0; border-radius: 4px;
+  background: var(--bg); color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 400; line-height: 22px; text-align: left; overflow-wrap: anywhere; cursor: inherit; }
+.spine-decided { color: var(--muted); }
+.spine-frame .spine-point-mini .spine-text { background: var(--card); font-size: 13px; }
+.spine-point-mini .spine-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; }
+.spine-point-mini.spine-on .spine-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Placed by hand: a piece of its own, lifted off the canvas a little. */
+.spine-point.spine-pinned::before { position: absolute; inset: -7px -10px -7px -7px; z-index: -1; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); content: ""; }
+.spine-frame .spine-point.spine-pinned .spine-text { background: var(--card); }
+/* Where a point was before it was placed elsewhere, or shelved: a hollow mark on the line. */
+.spine-notch { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border: 1.5px solid var(--spine-room, var(--muted)); border-radius: 50%; background: var(--bg); }
+
+/* A tangent's card. */
+.spine-card { border: 1px solid color-mix(in srgb, var(--spine-room, var(--line)) 32%, var(--line)); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); }
+.spine-card.spine-on { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.spine-card.spine-left { border: 1.5px dashed var(--amber); }
+.spine-card.spine-card-open { box-shadow: 0 2px 6px rgba(0, 0, 0, .06), 0 14px 36px rgba(0, 0, 0, .1); }
+.spine-card.spine-card-open.spine-on { box-shadow: 0 0 0 2px var(--accent), 0 14px 36px rgba(0, 0, 0, .1); }
+.spine-frame .spine-card-face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; padding: 12px; border: 0; border-radius: 13px;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: inherit; }
+.spine-card-open .spine-card-face { bottom: auto; }
+.spine-card-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; font-size: 15px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.spine-card-latest { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; color: color-mix(in srgb, var(--ink) 82%, var(--muted)); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; animation: spine-in .4s ease-out; }
+.spine-card-recap { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 16px; }
+.spine-card-line { position: absolute; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--spine-room, var(--muted)); opacity: .5; }
+
+/* Words too small to read, far out: soft bars as long as their lines. */
+.spine-bars > span { position: absolute; height: 7px; margin-top: -3.5px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 16%, transparent); }
+.spine-bars.spine-bars-thick > span { height: 10px; margin-top: -5px; background: color-mix(in srgb, var(--ink) 30%, transparent); }
+
+/* Pointed at or focused: open on the map, shelve, unpin. */
+.spine-tools { position: absolute; top: -12px; right: -8px; display: none; gap: 4px; }
+.spine-head:hover .spine-tools, .spine-point:hover .spine-tools, .spine-card:hover .spine-tools,
+.spine-head:focus-within .spine-tools, .spine-point:focus-within .spine-tools, .spine-card:focus-within .spine-tools { display: flex; }
+.spine-frame .spine-tool { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--card);
+  box-shadow: var(--shadow); color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; }
+.spine-tool:hover { color: var(--ink); }
+.spine-tool.spine-tool-pin { color: var(--accent); }
+.spine-title:focus-visible, .spine-text:focus-visible, .spine-card-face:focus-visible, .spine-tool:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.spine-picked .spine-title, .spine-picked .spine-text, .spine-card.spine-picked { outline: 2px solid color-mix(in srgb, var(--ink) 22%, transparent); outline-offset: 3px; }
+
+/* A landing: one ring in the room's color, out and gone; something new arrives softly. */
+.spine-ring { position: absolute; inset: -5px; border: 2px solid var(--spine-room, var(--accent)); border-radius: 50%; opacity: 0; animation: spine-ring 1.4s ease-out; }
+.spine-card-ring { position: absolute; inset: -4px; border: 2px solid var(--spine-room, var(--accent)); border-radius: 17px; opacity: 0; pointer-events: none; animation: spine-glow 1.4s ease-out; }
+.spine-fresh { animation: spine-in .45s cubic-bezier(.2, .8, .2, 1); }
+
+/* The camera's controls, at the right above the shelf, clear of the row of titles at the top; Follow, over the dock,
+   where your eyes come back to when you talk. */
+.spine-corner { position: absolute; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100% - 32px); pointer-events: none; }
+.spine-corner > * { pointer-events: auto; }
+.spine-controls { display: flex; flex-direction: column; gap: 6px; }
+.spine-frame .spine-control, .spine-frame .spine-follow { min-height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.spine-frame .spine-control { width: 36px; padding: 0; font-size: 16px; line-height: 1; }
+.spine-control:hover, .spine-follow:hover { border-color: var(--accent); color: var(--ink); }
+.spine-control:focus-visible, .spine-follow:focus-visible, .spine-cue:focus-visible, .spine-shelf-head:focus-visible, .spine-shelf-back:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.spine-frame .spine-follow { position: absolute; left: 50%; display: flex; align-items: center; gap: 8px; max-width: min(420px, calc(100% - 32px)); padding: 0 14px; overflow: hidden;
+  border-radius: 999px; box-shadow: var(--shadow); color: var(--ink); white-space: nowrap; text-overflow: ellipsis; translate: -50% 0; animation: spine-in .25s ease-out; }
+.spine-follow-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* Something new out of view: an arrow at the edge, toward it, with its thread's title. */
+.spine-cues { position: absolute; inset: 0; pointer-events: none; }
+.spine-frame .spine-cue { position: absolute; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px 5px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit; font-size: 12px; pointer-events: auto; cursor: pointer; translate: -50% -50%; animation: spine-in .3s ease-out; }
+.spine-cue-arrow { flex: none; color: var(--muted); font-size: 12px; line-height: 1; }
+.spine-cue-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* The shelf: on the screen, not the canvas; above the dock at the right. Empty, a small tab. */
+.spine-shelf { position: relative; width: min(260px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); box-shadow: var(--shadow); font-size: 13px; transition: border-color .15s ease, background-color .15s ease; }
+.spine-shelf.spine-shelf-empty { width: auto; border-radius: 999px; }
+.spine-shelf.spine-shelf-ready { width: min(260px, calc(100vw - 32px)); border: 1.5px dashed var(--accent); border-radius: 14px; background: var(--accent-soft); }
+.spine-shelf.spine-shelf-hot { border-style: solid; }
+.spine-shelf-tab { margin: 0; padding: 7px 12px; color: var(--muted); }
+.spine-shelf-ready .spine-shelf-tab { padding: 14px; color: var(--accent); text-align: center; }
+.spine-frame .spine-shelf-head { display: flex; justify-content: space-between; width: 100%; padding: 9px 12px; border: 0; border-radius: 14px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.spine-shelf-list { max-height: 40vh; margin: 0; padding: 0 6px 6px; overflow-y: auto; list-style: none; }
+.spine-shelf-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 8px; border-radius: 9px; cursor: grab; touch-action: none; }
+.spine-shelf-item:hover { background: var(--bg); }
+.spine-shelf-item.spine-shelf-lifted { opacity: .4; }
+.spine-shelf-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--spine-room, var(--muted)); }
+.spine-shelf-text { display: -webkit-box; flex: 1; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 18px; overflow-wrap: anywhere; }
+.spine-shelf-text.spine-shelf-thread { font-weight: 600; }
+.spine-frame .spine-shelf-back { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.spine-shelf-back:hover { background: var(--card); color: var(--ink); }
+.spine-shelf-ghost { position: fixed; z-index: 30; display: flex; align-items: center; gap: 8px; max-width: 240px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); box-shadow: 0 8px 28px rgba(0, 0, 0, .16); font-size: 13px; pointer-events: none; translate: -12px -50%; }
+
+@keyframes spine-in { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes spine-draw { to { stroke-dashoffset: 0; } }
+@keyframes spine-ring { from { opacity: .8; scale: .6; } to { opacity: 0; scale: 2.4; } }
+@keyframes spine-glow { from { opacity: .7; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spine-fresh, .spine-follow, .spine-cue, .spine-card-latest { animation-name: spine-fade; }
+  .spine-draw { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .spine-ring { animation-name: spine-glow; }
+}
+@keyframes spine-fade { from { opacity: 0; } }
+
+@media (max-width: 560px) {
+  .spine-corner { right: 12px; }
+}

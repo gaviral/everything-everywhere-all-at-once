@@ -55,6 +55,7 @@ function Playground() {
   const said = (line: string) => setLog((was) => [line, ...was].slice(0, 40));
   const title = (thread: string | null) => world.threads.find((t) => t.id === thread)?.title ?? thread ?? "none";
   const count = useRef(0);
+  const placedLog = useRef(0);
 
   // The address keeps what's picked, so a reload (Vite's, after an edit) comes back to it.
   useEffect(() => {
@@ -83,8 +84,10 @@ function Playground() {
   const add = (text: string) => {
     const words = text.trim();
     if (!words || words.length > 2000) { setNotice("That thought is empty or too long."); return false; }
+    // Said now, so the newest on the map, even on a sample whose times run ahead of this clock.
+    const newest = world.thoughts.reduce((at, t) => Math.max(at, t.at_ms + 1), Date.now());
     const thought: Thought = { id: `pg-${++count.current}`, speaker: "you", text: words, point: words, thread_id: null, placed: false, unclear: "",
-      complete: true, at_ms: Date.now(), place_ms: null };
+      complete: true, at_ms: newest, place_ms: null };
     setWorld((w) => apply(w, { type: "thought_added", thought }));
     window.setTimeout(() => setWorld((w) => {
       let thread = w.active_by.you ?? w.active;
@@ -107,6 +110,13 @@ function Playground() {
     },
     select: (thread) => said(`select ${title(thread)} → in the app: “this” for what's said next`),
     notify: (text) => { said(`notify “${text}”`); setNotice(text); },
+    // Placed as the core places it: the change comes back through the window's own reducer, with `by` you. A drag's
+    // steps are logged once, at its last.
+    position: (id, x, y) => {
+      setWorld((w) => apply(w, { type: "positioned", id, x, y, by: "you", at_ms: Date.now() }));
+      window.clearTimeout(placedLog.current);
+      placedLog.current = window.setTimeout(() => said(x === null || y === null ? `position ${id} → back to the layout` : `position ${id} → placed at ${Math.round(x)}, ${Math.round(y)}`), 250);
+    },
     listen: (on) => said(`listen ${on === undefined ? "(switch)" : on ? "on" : "off"} → in the app: as a tap on the mic`),
   });
   const hum = () => VOICES.forEach((level, i) => window.setTimeout(() => received(level), i * 320));
