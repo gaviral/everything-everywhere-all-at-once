@@ -1,0 +1,16 @@
+/* Brick chip (index.tsx): first in a point's own row of tools, left of Delete and Move, which keep their places, and
+   their height, so the words line up. It shows as they do, with their fade (moves.css): pointing at the point, or a tap
+   on a phone, where the row has a line of its own under the words. At rest nothing shows, and nothing on the card moves
+   for it. */
+.brick-chip {
+  display: inline-block; max-width: 120px; overflow: hidden; margin-right: 4px; padding: 1px 6px; border: 1px solid transparent; border-radius: 6px;
+  background: var(--ai-soft); color: var(--ai); font-size: 10px; line-height: 18px; white-space: nowrap; text-overflow: ellipsis;
+  vertical-align: top; opacity: 0; transition: opacity .2s;
+}
+li:is(:hover, :focus-within) .brick-chip { opacity: 1; }
+@media (hover: none) {
+  .brick-chip { align-self: center; margin-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brick-chip { transition: none; }
+}

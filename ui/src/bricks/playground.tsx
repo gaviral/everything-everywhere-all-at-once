@@ -90,7 +90,7 @@ function Playground() {
   /** A thought on its way, then placed on the thread you're on (else a new one) 1.2 s later, as the placer would. */
   const add = (text: string) => {
     const words = text.trim();
-    if (!words || words.length > 2000) { setNotice("That thought is empty or too long."); return false; }
+    if (!words || words.length > 2000) { showNotice("That thought is empty or too long."); return false; }
     // Said now, so the newest on the map, even on a sample whose times run ahead of this clock.
     const newest = world.thoughts.reduce((at, t) => Math.max(at, t.at_ms + 1), Date.now());
     const thought: Thought = { id: `pg-${++count.current}`, speaker: "you", text: words, point: words, thread_id: null, placed: false, unclear: "",
@@ -127,7 +127,7 @@ function Playground() {
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
     },
     select: (thread) => said(`select ${title(thread)} → in the app: “this” for what's said next`),
-    notify: (text) => { said(`notify “${text}”`); setNotice(text); },
+    notify: (text) => { said(`notify “${text}”`); showNotice(text); },
     // Placed as the core places it: the change comes back through the window's own reducer, with `by` you. A drag's
     // steps are logged once, at its last.
     position: (id, x, y) => {
@@ -137,6 +137,11 @@ function Playground() {
     },
     listen: (on) => said(`listen ${on === undefined ? "(switch)" : on ? "on" : "off"} → in the app: as a tap on the mic`),
   });
+  // Said in the notice lane and heard by the brick, as the app does: the same words again are another notice.
+  const showNotice = (text: string) => {
+    setNotice(text);
+    if (text) host.emit("notice", { text, kind: "notice", time: Date.now() });
+  };
   const hum = () => VOICES.forEach((level, i) => window.setTimeout(() => received(level), i * 320));
 
   return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
@@ -153,6 +158,7 @@ function Playground() {
       <button type="button" onClick={() => add(LINES[count.current % LINES.length])}>Add a thought</button>
       <button type="button" onClick={() => say(LINES[count.current % LINES.length])}>Say a thought</button>
       <button type="button" onClick={hum}>Talk, then shout</button>
+      <button type="button" onClick={() => showNotice("A notice to come back to.")}>Show a notice</button>
       <label className="playground-check"><input type="checkbox" checked={!connected} onChange={(event) => setConnected(!event.target.checked)} /> Core away</label>
     </div>
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>

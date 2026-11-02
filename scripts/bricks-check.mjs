@@ -175,6 +175,73 @@ const width = (w, h) => cdp("Emulation.setDeviceMetricsOverride", { width: w, he
 // from inside the try (process.exit skips a `finally` and would leave a headless Chrome running).
 const cleanup = async () => { try { await page.close(); } finally { core.close(); } };
 try {
+  // Notice timeline: a panel fed by the app's notices (on("notice")), so it's checked in the app. On an empty map and a
+  // full one: no clock before a notice; your ask opens the list (empty, it says so) and leaves focus where you typed,
+  // someone else's doesn't; a burst keeps each one, the same words twice and an error in the lane's words; the newest 50;
+  // a map update; Esc (focus back to the clock) and a click outside close it; at 320, 390 and 1280 px, dark, with
+  // reduced motion, the list stays in the window, scrolls and opens without motion.
+  if (checked.includes("notice-timeline")) {
+    if (infos["./bricks/notice-timeline/brick.json"].kind !== "panel") fail("notice-timeline", "brick.json: a panel, as its spec says");
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "notice-timeline": true }))`);
+    const ask = (id, speaker = "you") => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "What just happened?", null), placed: false, speaker } } });
+    const entries = `[...document.querySelectorAll(".notice-timeline-entry")].map((li) => ({ text: li.querySelector(".notice-timeline-text").textContent, kind: li.dataset.kind }))`;
+    for (const [label, seed] of [["empty", empty], ["full", full]]) {
+      const where = `notice-timeline (${label} map)`;
+      shown = seed;
+      await go(`${base}/`);
+      if (!await until(`!!document.querySelector(".notice-timeline")`, 8000)) { fail(where, "never mounted"); continue; }
+      if (await evaluate(`!!document.querySelector(".notice-timeline-clock")`)) fail(where, "a clock before any notice");
+      await evaluate(`document.querySelector(".composer textarea, .composer input")?.focus()`);
+      ask(`ask-${label}`);
+      if (!await until(`!!document.querySelector(".notice-timeline-empty")`, 3000)) fail(where, "your ask before any notice doesn't open the list, saying it's empty");
+      if (!await evaluate(`!!document.activeElement?.closest(".composer")`)) fail(where, "your ask took focus from the composer");
+      await evaluate(`document.querySelector(".notice-timeline-close").click()`);
+      core.send({ type: "notice", message: "First notice" });
+      if (!await until(`!!document.querySelector(".notice-timeline-clock") && !document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "× doesn't close the list, or a notice brings no clock");
+      // One burst, one render: none may be lost, the same words twice included.
+      for (const message of ["Repeated notice", "Repeated notice"]) core.send({ type: "notice", message });
+      core.send({ type: "error", message: "Couldn't place a thought: the model timed out" });
+      await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
+      if (!await until(`document.querySelectorAll(".notice-timeline-entry").length === 4 && document.activeElement === document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "the clock opens no list, or the list doesn't take focus");
+      const burst = JSON.stringify(await evaluate(entries));
+      if (burst !== JSON.stringify([{ text: "Couldn't place a thought. It's saved and will retry automatically.", kind: "error" },
+        { text: "Repeated notice", kind: "notice" }, { text: "Repeated notice", kind: "notice" }, { text: "First notice", kind: "notice" }])) fail(where, `a burst kept as ${burst}`);
+      await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      if (!await until(`!document.querySelector(".notice-timeline-panel") && document.activeElement === document.querySelector(".notice-timeline-clock")`, 2000)) fail(where, "Esc doesn't close the list, focus back on the clock");
+      for (let i = 0; i < 55; i++) core.send({ type: "notice", message: `Kept ${i}` });
+      await until(`document.querySelector(".notice > span")?.textContent === "Kept 54"`, 3000);
+      ask(`ask-other-${label}`, "Sam");
+      await settle();
+      if (await evaluate(`!!document.querySelector(".notice-timeline-panel")`)) fail(where, "someone else's ask opens your list");
+      ask(`ask-again-${label}`);
+      if (!await until(`!!document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "your ask doesn't open the list");
+      const kept = (await evaluate(entries)).map((entry) => entry.text);
+      if (kept.length !== 50 || kept[0] !== "Kept 54" || kept.at(-1) !== "Kept 5") fail(where, `keeps ${kept.length}, ${kept[0]} to ${kept.at(-1)}, not the newest 50`);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+      for (const [w, h] of [[320, 568], [390, 844], [1280, 860]]) {
+        await width(w, h);
+        await settle();
+        const box = await evaluate(`(() => { const p = document.querySelector(".notice-timeline-panel"), r = p.getBoundingClientRect(), s = getComputedStyle(p);
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, scrolls: p.scrollHeight > p.clientHeight, sideways: document.documentElement.scrollWidth - innerWidth,
+            animation: s.animationName, transition: s.transitionDuration }; })()`);
+        if (box.left < 15 || box.right > w - 15 || box.top < 0 || box.bottom > h || box.sideways > 1) fail(where, `the list leaves the window at ${w} px: ${JSON.stringify(box)}`);
+        if (!box.scrolls || box.animation !== "none" || box.transition !== "0s") fail(where, `at ${w} px the list doesn't scroll, or moves as it opens`);
+      }
+      await evaluate(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`);
+      if (!await until(`!document.querySelector(".notice-timeline-panel")`, 2000)) fail(where, "a click outside doesn't close the list");
+      if (seed === full) {
+        core.send({ type: "change", change: { type: "thread_retitled", thread_id: "T1", was: titles[0], title: "Rent paid" } });
+        await until(`document.querySelector(".map-change")?.textContent.includes("Rent paid")`, 3000);
+        await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
+        if (!await until(`document.querySelector('.notice-timeline-entry[data-kind="map-change"]')?.textContent.includes("Rent paid")`, 3000)) fail(where, "a map update isn't kept");
+      }
+      if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail(where, "it broke");
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+    }
+    await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+    shown = full;
+  }
   for (const folder of checked) {
     const info = infos[`./bricks/${folder}/brick.json`];
     for (const [sample, w] of [["student-week", 1280], ["empty", 1280], ["student-week", 390]]) {
@@ -380,6 +447,69 @@ try {
     }
     await evaluate(`document.querySelector('[aria-label="Open Hackathon plan on the map"]').click()`);
     if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread Hackathon plan")`, 2000)) fail("spine", "a thread doesn't open on the map");
+  }
+  // Brick chip: a panel that marks the app's points (the playground draws none), so it's checked in the app. Nothing on
+  // the map that was there, nor on an empty one; a chip naming the brick on each point that lands after, anyone's,
+  // first in the point's tools; quiet at rest; pointed at, it shows clear of Delete, Move and the placing time; on a
+  // phone (touch, dark, reduced motion) a tap shows it in the row under the words, at once; a card folded and opened
+  // gets its chips back; switched off, none stay.
+  if (checked.includes("brick-chip")) {
+    if (infos["./bricks/brick-chip/brick.json"].kind !== "panel") fail("brick-chip", "brick.json: a panel, as its spec says");
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    const switched = (on) => evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "brick-chip": ${on} })); window.dispatchEvent(new StorageEvent("storage", { key: "e2a2o.bricks" }))`);
+    const chips = `document.querySelectorAll(".brick-chip").length`;
+    await switched(true);
+    shown = full;
+    await go(`${base}/`);
+    if (!await until(`!!document.querySelector('[data-brick="brick-chip"]') && !!document.querySelector(".points li")`, 8000)) fail("brick-chip", "never mounted on a full map");
+    else {
+      await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+      await settle();
+      if (await evaluate(chips)) fail("brick-chip", "chips on points that were on the map before");
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("chip-1", "Ask the landlord about the broken heater before the weekend", "T1") } });
+      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("chip-2", "The bike is fine", "T1"), speaker: "Sam" } } });
+      if (!await until(`${chips} === 2`, 4000)) fail("brick-chip", "no chip on each new point, yours and someone else's");
+      const chip = (id) => `document.querySelector("#point-${id} .brick-chip")`;
+      const marks = await evaluate(`[...document.querySelectorAll(".brick-chip")].map((c) => ({ text: c.textContent, first: c === c.parentElement.firstElementChild && c.parentElement.matches(".move-point"), opacity: getComputedStyle(c).opacity }))`);
+      if (marks.some((m) => m.text !== "Brick chip" || !m.first || m.opacity !== "0")) fail("brick-chip", `not the brick's name, first in the point's tools and quiet at rest: ${JSON.stringify(marks)}`);
+      const at = await evaluate(`(() => { const r = document.getElementById("point-chip-1").getBoundingClientRect(); return { x: r.left + 20, y: r.top + 6 }; })()`);
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+      if (!await until(`getComputedStyle(${chip("chip-1")}).opacity === "1"`, 2000)) fail("brick-chip", "pointing at the point doesn't show its chip");
+      // Clear of the point's own tools and its time: the chip's box crosses none of theirs.
+      const clear = `(() => { const c = ${chip("chip-1")}.getBoundingClientRect(), p = document.getElementById("point-chip-1");
+        return [...p.querySelectorAll(".move-button, .speed")].every((o) => { const r = o.getBoundingClientRect(); return c.right <= r.left + 0.5 || c.left >= r.right - 0.5 || c.bottom <= r.top + 0.5 || c.top >= r.bottom - 0.5; })
+          && c.left >= 0 && c.right <= innerWidth; })()`;
+      if (!await evaluate(clear)) fail("brick-chip", "the chip covers Delete, Move or the placing time, or leaves the window");
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+      if (!await until(`getComputedStyle(${chip("chip-1")}).opacity === "0"`, 2000)) fail("brick-chip", "the pointer gone, its chip stays");
+      await evaluate(`document.querySelector("#thread-T1 > .thread-head .thread-toggle").click()`);
+      await until(`!document.getElementById("point-chip-1")`, 3000);
+      await evaluate(`document.querySelector("#thread-T1 > .thread-head .thread-toggle").click()`);
+      if (!await until(`${chips} === 2`, 3000)) fail("brick-chip", "a card folded and opened doesn't get exactly its chips back");
+      await width(390, 844);
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+      await settle();
+      await evaluate(`document.getElementById("point-chip-1").focus()`);
+      const phone = await evaluate(`(() => { const c = ${chip("chip-1")}, s = getComputedStyle(c), words = document.querySelector("#point-chip-1 > span:not(.sr-only)").getBoundingClientRect();
+        return { touch: matchMedia("(hover: none)").matches, shown: s.opacity, instant: s.transitionDuration === "0s", color: s.color, below: c.getBoundingClientRect().top >= words.bottom - 1,
+          sideways: document.documentElement.scrollWidth - innerWidth }; })()`);
+      if (!phone.touch || phone.shown !== "1" || !phone.instant || phone.color !== "rgb(196, 165, 255)" || !phone.below || phone.sideways > 1 || !await evaluate(clear)) fail("brick-chip", `a tap on a dark phone, reduced motion: ${JSON.stringify(phone)}`);
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await width(1280, 860);
+      await switched(false);
+      if (!await until(`!document.querySelector('[data-brick="brick-chip"]') && ${chips} === 0`, 3000)) fail("brick-chip", "switched off, chips stay");
+      await switched(true);
+      await until(`!!document.querySelector('[data-brick="brick-chip"]')`, 3000);
+      await settle();
+      if (await evaluate(chips)) fail("brick-chip", "switched off and on, the old chips come back");
+      core.send({ type: "snapshot", world: empty });
+      await until(`!!document.querySelector(".empty h1")`, 3000);
+      if (await evaluate(`${chips} || document.querySelector('[data-brick="brick-chip"]').textContent.trim().length`)) fail("brick-chip", "shows something on an empty map");
+      if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail("brick-chip", "it broke");
+    }
+    await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
   }
   if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); await cleanup(); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
