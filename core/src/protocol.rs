@@ -59,7 +59,8 @@ pub enum ServerMsg {
 /// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
 /// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
 /// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), its Finish it
-/// ("finish"), and the mic, off ("stop listening").
+/// ("finish"), and the mic, off ("stop listening"). Export: the window saves the map as Markdown ("export my map"),
+/// made from the map it already holds, so nothing but the file the person saves leaves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -72,6 +73,7 @@ pub enum View {
     Forget,
     Finish,
     Pause,
+    Export,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's

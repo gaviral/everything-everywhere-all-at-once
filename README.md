@@ -282,5 +282,5 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
 - In a room, a name belongs to one laptop at a time, ignoring case; the host keeps theirs until the core stops.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
-- One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction), and there's no export beyond it.
+- One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction). Export (or “export my map”) saves the map as Markdown, made in the window: threads as headings, points with their times, decisions marked; the words behind each point stay in the journal.
 - The sample maps were written by hand, timings included, and are dated the week of Nov 3, 2026. They include a hand-written “Did you mean” question that works as a live one; Recap needs a key; with one, "recap" opens the sample's last session once Nov 3, 2026 has passed (before then the sample is dated ahead and Recap finds nothing).
