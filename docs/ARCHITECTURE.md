@@ -38,6 +38,7 @@ Browser, one page per window (ui/src)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
   Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
   level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
+  save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
