@@ -2,10 +2,11 @@
 
 /** Whether a click on a card's head opens or folds the card. The whole head is the target (Fitts: a 550 × 38 px head
  *  instead of a 51 × 33 px "Show" at its far end; Jakob: cards open where you click them, as Things' rows do), except
- *  where the click already means something else (a tag, a button, a field) or ends selecting text to copy. */
+ *  where the click already means something else (a tag, a button, a field, a ✦ or dot whose tap shows its tip, as
+ *  the point-click handler already skips) or ends selecting text to copy. */
 export function headClickToggles(target: { closest(selector: string): unknown } | null, selected = ""): boolean {
   if (!target || selected.trim()) return false;
-  return !target.closest("button, a, input, textarea, select, label, [role='button'], [contenteditable='true']");
+  return !target.closest("button, a, input, textarea, select, label, [role='button'], [contenteditable='true'], [data-tip]");
 }
 
 /** Whether the dock shows its live line. Words always show; with none yet, the map shows "Listening…" to hold the

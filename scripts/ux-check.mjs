@@ -48,9 +48,11 @@ try {
   // 4. The whole head opens the card, except where a click already means something else or ends a selection.
   const at = (inside) => ({ closest: (selector) => (inside && selector.split(",").some((s) => s.trim() === inside) ? {} : null) });
   assert.equal(headClickToggles(at(null)), true, "the title, the picture or the empty head toggles");
-  for (const control of ["button", "a", "input", "[role='button']"]) assert.equal(headClickToggles(at(control)), false, `a click on ${control} stays its own`);
+  for (const control of ["button", "a", "input", "[role='button']", "[data-tip]"]) assert.equal(headClickToggles(at(control)), false, `a click on ${control} stays its own`);
   assert.equal(headClickToggles(at(null), "Rent is due"), false, "selecting the title to copy it doesn't fold the card");
   assert.equal(headClickToggles(null), false);
+  // A tap on the picture's ✦ or the unseen dot (both in the head) shows its tip; the card must stay open under it.
+  assert.match(app, /className="picture-mark"[^>]*data-tip=/, "the head's picture mark carries a tip, so the rule must skip it");
   assert.match(app, /className="thread-head" onClick=\{\(event\) => \{\s*if \(headClickToggles\(/, "the card's head is wired to the rule");
   assert.match(app, /className="collapse thread-toggle"[^>]*onClick=\{toggle\}/, "the head and the button toggle the same way");
 
