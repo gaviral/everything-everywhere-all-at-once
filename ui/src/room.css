@@ -50,6 +50,8 @@
   width: min(290px, calc(100vw - 32px)); padding: 18px;
   border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow);
   color: var(--ink); font-size: 14px; overflow-wrap: anywhere;
+  /* onscreen.ts shifts it into view and sets the room it has; past that it scrolls. */
+  max-height: var(--fit-height, none); overflow-y: auto; overscroll-behavior: contain;
 }
 .room-panel-title { margin-bottom: 12px; font-size: 15px; font-weight: 650; }
 .room-you, .room-panel ul { margin: 0; }

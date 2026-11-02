@@ -3,6 +3,7 @@ import type { Thought, Thread } from "./core";
 import { clipTitle } from "./limits";
 import { moveTargets, typedTitle } from "./moves-core";
 import { titleTap } from "./ux-rules";
+import { mapEdges, useOnScreen } from "./onscreen";
 import "./moves.css";
 
 // Move, rename and delete on the map (core/src/moves.rs): a point's Move opens a list of threads to send it to (type to
@@ -101,6 +102,8 @@ export function MovePoint({ thought }: { thought: Thought }) {
 function MoveMenu({ current, threads, pick, close }: { current: string | null; threads: Thread[]; pick: (to: string | null) => void; close: (refocus: boolean) => void }) {
   const [query, setQuery] = useState("");
   const menu = useRef<HTMLDivElement>(null);
+  // On the map: clear of the sticky header and tools above and the dock below; near the dock it opens upward.
+  useOnScreen(menu, { edges: mapEdges });
   const targets = moveTargets(threads, current, query);
   useEffect(() => {
     const outside = (event: PointerEvent) => { if (!menu.current?.contains(event.target as Node)) close(false); };
