@@ -226,15 +226,23 @@ fn notice(core: &Core, speaker: &str, message: String) {
 /// What "that" is in "move that to …": the speaker's latest thought while it's still finding its place (they just
 /// said it, and it's on no card to point at yet); else the newest point on the card "this" means (catalog.rs: the one
 /// selected, pointed at or just left by the pointer, else the thread they're on); else their latest. `last` ("my
-/// last thought") is always their latest. Of a card, its newest point, whoever said it: the one it shows last.
-fn that<'a>(core: &Core, world: &'a World, speaker: &str, last: bool) -> Option<&'a Thought> {
+/// last thought") is always their latest. Of a card, its newest point, whoever said it: the one it shows last. A card
+/// with no point of its own (a parent whose points all moved) has nothing to move: Err with its title, never some
+/// other thought of theirs.
+fn that<'a>(core: &Core, world: &'a World, speaker: &str, last: bool) -> Result<Option<&'a Thought>, String> {
     let now = now_ms();
     let latest = world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now));
     if last || latest.is_some_and(|t| !t.placed) {
-        return latest;
+        return Ok(latest);
     }
     let card = crate::catalog::pointed_at(core, world, speaker).or_else(|| world.active_for(speaker).map(|id| world.resolve(id)));
-    card.and_then(|card| newest(world, now, |t| on(world, t, &card))).or(latest)
+    match card {
+        Some(card) => match newest(world, now, |t| on(world, t, &card)) {
+            Some(t) => Ok(Some(t)),
+            None => Err(world.thread(&card).map(|t| t.title.clone()).unwrap_or_default()),
+        },
+        None => Ok(latest),
+    }
 }
 
 /// "Move that to …": see `that`. Still finding its place, it moves once it lands, unless the speaker says something
@@ -255,9 +263,16 @@ fn move_that(core: &Arc<Core>, speaker: &str, said: &str, place: Place, sure: bo
             },
         },
     };
-    let Some(latest) = that(core, &world, speaker, last) else {
-        notice(core, speaker, "Nothing to move yet: say a thought first".into());
-        return Some(Done::missed(Act::Move));
+    let latest = match that(core, &world, speaker, last) {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            notice(core, speaker, "Nothing to move yet: say a thought first".into());
+            return Some(Done::missed(Act::Move));
+        }
+        Err(title) => {
+            notice(core, speaker, format!("Nothing on {title} to move: point at one of its points"));
+            return Some(Done::missed(Act::Move));
+        }
     };
     if !latest.placed {
         let id = latest.id.clone();

@@ -516,3 +516,18 @@ async fn that_is_the_newest_point_of_the_card_this_means() {
     f.say("Move that to pottery").await;
     assert_eq!(serde_json::to_value(&*f.core.snapshot()).unwrap(), serde_json::to_value(&f.replayed(base)).unwrap());
 }
+
+/// A card can be left with no point of its own (a parent whose only point moved keeps its children). Pointed at,
+/// "move that" has nothing to take from it, and says so: it never reaches for the speaker's latest thought elsewhere.
+#[tokio::test]
+async fn that_on_a_card_with_no_point_moves_nothing() {
+    let mut world = slipped();
+    let mut child = thread("T4", "Electric bill", 4);
+    child.parent_id = Some("T5".into());
+    world.threads.push(child);
+    world.threads.push(thread("T5", "Money", 5));
+    let f = Fixture::new(world);
+    catalog::attend(&f.core, "you", None, Some("T5".into()));
+    assert_eq!(f.say("Move that to pottery").await, ["notice Nothing on Money to move: point at one of its points"]);
+    assert_eq!(f.on("w"), "T1", "the latest thought, on Garden, stays");
+}

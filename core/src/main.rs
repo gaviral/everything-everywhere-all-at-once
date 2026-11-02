@@ -81,6 +81,8 @@ pub struct Core {
     service: model::Service,
     /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
     hosts: Mutex<std::collections::HashSet<String>>,
+    /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
+    came_back: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
 }
@@ -175,13 +177,20 @@ impl Core {
     /// "Where was I?": see `way_back`. With nowhere to go back to it still answers, as every request does (the
     /// tour teaches it on an empty map): where the speaker is, shown as Take me there shows a point, or why
     /// there's nothing yet.
+    /// Sent back once, asking again before they speak or move shows where they are: going back to B from a thread
+    /// reached without speaking leaves the map looking like one line said away from A, and it mustn't bounce on.
     fn go_back(&self, speaker: &str) {
         let world = self.snapshot();
-        if let Some(id) = way_back(&world, speaker, now_ms()) {
+        let mark = |w: &World| {
+            (w.active_by.get(speaker).map(|id| w.resolve(id)), w.thoughts.iter().rev().find(|t| t.speaker == speaker).map(|t| t.id.clone()))
+        };
+        let back_already = self.came_back.lock().unwrap().get(speaker) == Some(&mark(&world));
+        if let Some(id) = way_back(&world, speaker, now_ms()).filter(|_| !back_already) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
             drop(world);
             self.move_to(speaker, &id);
+            self.came_back.lock().unwrap().insert(speaker.into(), mark(&self.snapshot()));
             return;
         }
         // Nothing to go back to: they're where they were. Their newest point on the thread they're on, else the
@@ -825,6 +834,7 @@ async fn main() -> anyhow::Result<()> {
         placer_queue,
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
+        came_back: Default::default(),
         placing: placer::Placing::default(),
         room: room.as_deref().map(|code| Room { tunnel: tunnel.clone(), ..Room::from(code) }),
         key,
@@ -1412,6 +1422,7 @@ impl Core {
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
             hosts: Default::default(),
+            came_back: Default::default(),
             placing: Default::default(),
             room: None,
             key: None,
@@ -2344,6 +2355,17 @@ mod tests {
         assert_eq!(ask(&core), ["Back to Groceries"]);
         assert_eq!(ask(&core), ["Groceries: You're on Groceries: “Eggs and dish soap”"]);
         assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Groceries"));
+        let _ = std::fs::remove_file(&path);
+        // Two lines on Groceries, one on Cake, then to Maya without speaking: back to Cake, where you last spoke;
+        // asked again, you stay on Cake (it now looks like one line away from Groceries, but you just came back).
+        let (core, _queue, path) = keyless(map(
+            vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
+                line("c", "Cake", 10_000, "Cake from Safeway or bake one")],
+            "Maya",
+        ));
+        assert_eq!(ask(&core), ["Back to Cake"]);
+        assert_eq!(ask(&core), ["Cake: You're on Cake: “Cake from Safeway or bake one”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Cake"));
         let _ = std::fs::remove_file(&path);
     }
 
