@@ -60,6 +60,11 @@ try {
   w = apply(w, { type: "thread_merged", from: "T2", into: "T1" });
   assert.equal(waitingByThread(w.proposals).size, 0, "merged anyway: the proposal is done");
 
+  // A new proposal marks its thread as changed out of sight, pointing at its row.
+  const { changes } = await server.ssrLoadModule("/src/attention-core.ts");
+  const proposed = apply(world, { type: "tidy_proposed", proposal: rename });
+  assert.deepEqual(changes(world, proposed, "you"), [{ thread: "T4", element: "item-p1", line: "Rename to “Grocery list”?" }]);
+
   // The map shows them, the note offers Undo, and every tip fits.
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /<ProposalRows thread=\{thread\.id\} \/>/);
