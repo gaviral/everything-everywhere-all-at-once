@@ -166,6 +166,10 @@ pub struct World {
     /// threads a move set apart are never merged by the refiner (`apart`); an undone move takes its record back.
     #[serde(default, skip_serializing)]
     pub moves: Vec<(String, String, String)>,
+    /// How many threads left the map without a merge (scratch that, Unfile, an undone move), so their ids stay
+    /// spent: a reused id would file a new topic into another thread, or hand it a late picture. Rebuilt on replay.
+    #[serde(default, skip_serializing)]
+    pub removed: usize,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -360,7 +364,9 @@ impl World {
                 let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
                 if !held {
+                    let before = self.threads.len();
                     self.threads.retain(|t| &t.id != thread_id);
+                    self.removed += before - self.threads.len();
                     if self.active.as_ref() == Some(thread_id) {
                         self.active = None;
                     }
@@ -659,9 +665,21 @@ impl World {
         self.threads.iter_mut().find(|t| t.id == id)
     }
 
-    /// Never reuses an id, even after merges remove threads.
+    /// How many thread ids have been handed out, counting threads merged away or removed since.
+    pub fn ids_spent(&self) -> usize {
+        self.threads.len() + self.merged.len() + self.removed
+    }
+
+    /// Never reuses an id, even after merges or removals take threads off the map.
     pub fn next_thread_id(&self) -> String {
-        format!("T{}", self.threads.len() + self.merged.len() + 1)
+        let mut n = self.ids_spent() + 1;
+        loop {
+            let id = format!("T{n}");
+            if self.thread(&id).is_none() && !self.merged.contains_key(&id) {
+                return id;
+            }
+            n += 1;
+        }
     }
 }
 
@@ -806,6 +824,30 @@ mod tests {
         assert_eq!(replayed.active_for("you").map(String::as_str), Some("T2"));
         assert_eq!(replayed.active_for("Guest").map(String::as_str), Some("T3"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_removed_threads_id_is_never_handed_out_again() {
+        // Scratch that on Sam's first thread removes T3 while User's T4 stays: the next new topic must not get T4,
+        // or it lands in User's thread; nor T3, or a late picture drawn for the old T3 lands on it.
+        let line = |id: &str| format!(r#"{{"type":"thread_added","thread":{{"id":"{id}","title":"{id}","parent_id":null,"status":"open","last_point":"","touched_ms":1}}}}"#);
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3", "T4"] {
+            world.apply(&serde_json::from_str::<Change>(&line(id)).unwrap());
+        }
+        world.apply(&Change::ThreadRemoved { thread_id: "T3".into() });
+        let next = world.next_thread_id();
+        assert!(!["T1", "T2", "T3", "T4"].contains(&next.as_str()), "reused {next}");
+        assert!(!["S1", "S2", "S3", "S4"].contains(&crate::spoken::fresh_id(&world).as_str()));
+        // Removing a thread that isn't there changes nothing, and a merged id is skipped too.
+        let mut merged = World::default();
+        merged.apply(&serde_json::from_str::<Change>(&line("T1")).unwrap());
+        merged.merged.insert("T2".into(), "T1".into());
+        merged.apply(&Change::ThreadRemoved { thread_id: "T9".into() });
+        assert_eq!(merged.next_thread_id(), "T3");
+        merged.merged.insert("T3".into(), "T1".into());
+        merged.merged.remove("T2");
+        assert_eq!(merged.next_thread_id(), "T4");
     }
 
     #[test]
