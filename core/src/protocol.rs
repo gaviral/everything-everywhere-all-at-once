@@ -23,6 +23,10 @@ pub enum ServerMsg {
     /// The notice just sent answers a request that can be taken back: the window shows Undo beside it, which sends
     /// this id back (catalog.rs).
     Undoable { id: u64 },
+    /// The speaker's last turn can be corrected ("No, I meant …") for `for_ms` more (0: no longer), and undoing it,
+    /// which a correction does first, moves them to `back_to` (none: they stay). The window's "this" mark previews a
+    /// correction with it, so it marks the card the redo will act on, and none when nothing would (catalog.rs).
+    Correctable { for_ms: u64, back_to: Option<String> },
     /// Undo of a view or a fold asked by voice: the window puts back what it showed before that ask (its view, Focus,
     /// and which threads were open), which only it knows (catalog.rs).
     Revert,

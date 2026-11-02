@@ -132,7 +132,7 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::Fold, does: "fold a thread and every branch under it", template: Some("collapse <thread title>"), phrases: &["Collapse this", "Fold the garden"], needs: Needs::Thread, answers: "the thread folds: “Folded …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Hide") },
     Def { act: Act::Palace, does: "switch to the Palace of pictures", template: Some("palace"), phrases: &["Palace", "Go to the palace"], needs: Needs::Nothing, answers: "the Palace shows", undo: UndoBy::ViewBack, external: false, button: Some("Palace") },
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
-    Def { act: Act::Focus, does: "show only the thread you're on", template: Some("focus"), phrases: &["Focus", "Let's focus"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
+    Def { act: Act::Focus, does: "show only one thread", template: Some("focus"), phrases: &["Focus", "Let's focus", "Focus on this"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
     Def { act: Act::All, does: "show every thread again", template: Some("show all"), phrases: &["Show all", "Unfocus"], needs: Needs::Nothing, answers: "the map shows every thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
     Def { act: Act::Recap, does: "recap what was decided today or this session", template: Some("recap"), phrases: &["Recap", "Recap this session", "What did I decide today?"], needs: Needs::Key, answers: "the Recap sheet", undo: UndoBy::Not("say “map” or press Esc"), external: false, button: Some("Recap") },
     Def { act: Act::Compose, does: "build a small app from a sentence", template: Some("make an app that <does what>"), phrases: &["Make an app that pings me about bills"], needs: Needs::Key, answers: "the app builds in the dock, then Keep app or Discard", undo: UndoBy::Not("“discard it”, or Discard"), external: false, button: Some("compose_app") },
@@ -358,8 +358,23 @@ pub fn kept(core: &Core, speaker: &str, said: &str, ids: Vec<String>) {
 
 fn remember(core: &Core, speaker: &str, said: &str, was: Was) -> u64 {
     let id = core.catalog.ids.fetch_add(1, Ordering::Relaxed) + 1;
+    let back_to = match &was {
+        Was::Request { undo: Some(undo), .. } => back_to(undo),
+        _ => None,
+    };
     core.catalog.last.lock().unwrap().insert(speaker.into(), Last { at_ms: now_ms(), said: said.into(), was, id });
+    core.send_to(speaker, ServerMsg::Correctable { for_ms: JUST_BEFORE_MS, back_to });
     id
+}
+
+/// Where undoing `undo` moves the speaker (`run_undo`: the last move among its parts wins), if anywhere.
+fn back_to(undo: &Undo) -> Option<String> {
+    match undo {
+        Undo::Move { to } => Some(to.clone()),
+        Undo::Unfile { to, .. } => to.clone(),
+        Undo::Each(parts) => parts.iter().filter_map(back_to).last(),
+        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread => None,
+    }
 }
 
 /// The speaker's previous turn, if it was just before.
@@ -888,6 +903,7 @@ pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
             let message = if act == Act::Undo { "Put back".to_string() } else { format!("Undone: {}", def(act).does) };
             core.send_to(speaker, ServerMsg::Notice { message });
             core.catalog.last.lock().unwrap().remove(speaker);
+            core.send_to(speaker, ServerMsg::Correctable { for_ms: 0, back_to: None });
         }
         _ => core.send_to(speaker, ServerMsg::Notice { message: "That can't be undone any more: something newer happened".into() }),
     }
