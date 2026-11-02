@@ -429,7 +429,11 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let placement = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
-        let mut calls: futures_util::stream::FuturesUnordered<_> = (0..core.placer_race.max(1))
+        // Only while the hourly cap has room for every lane: at the cap, one call goes, so the extra one can't be the
+        // call refused there and show "AI paused" while the first places the thought.
+        let lanes = core.placer_race.max(1);
+        let lanes = if core.calls_left() >= lanes { lanes } else { 1 };
+        let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
             .map(|lane| {
                 core.ask_model(
                     &core.placer_model,
@@ -1636,6 +1640,66 @@ mod tests {
         // Both fail: the error, and it waits to be placed again.
         let (result, _, placed, _) = race(vec![(10, 500, json!({"error": {"message": "boom"}}))]).await;
         assert!(result.is_err() && !placed);
+    }
+
+    /// At the hourly cap's edge one call goes, not two: the extra one would be the call refused there, and "AI paused"
+    /// would show while the first placed the thought. The slower of two racing calls is still in the trace, marked
+    /// dropped, so what was spent can be counted from it.
+    #[tokio::test]
+    async fn the_race_stays_under_the_cap_and_its_loser_is_traced() {
+        async fn race(limit: usize, delays: [u64; 2]) -> (usize, bool, Vec<String>, Vec<serde_json::Value>) {
+            let asked = Arc::new(Mutex::new(0usize));
+            let seen = asked.clone();
+            let service = move |_: axum::Json<serde_json::Value>| {
+                let delay = {
+                    let mut asked = seen.lock().unwrap();
+                    *asked += 1;
+                    delays[(*asked - 1).min(1)]
+                };
+                async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    axum::Json(body(json!("stop"), json!(WHOLE)))
+                }
+            };
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+            let dir = std::env::temp_dir().join(format!("e2a2o-race-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let (journal, world) = crate::world::Journal::open(&dir.join("journal.jsonl")).unwrap();
+            let core = Core {
+                key: Some("good".into()),
+                placer_race: 2,
+                service: crate::model::Service::with_limit(limit),
+                trace: crate::trace::Trace::to(&dir),
+                ..Core::test(journal, world)
+            };
+            let mut updates = core.updates.subscribe();
+            core.keep("you", "Pay rent before Friday");
+            let id = core.snapshot().thoughts[0].id.clone();
+            super::place(&core, &id, &url, super::patience).await.unwrap();
+            let placed = core.snapshot().thoughts[0].placed;
+            let said = std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|o| match o.message {
+                    crate::protocol::ServerMsg::Notice { message } => Some(message),
+                    _ => None,
+                })
+                .collect();
+            drop(core);
+            let calls = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap_or_default().lines()
+                .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).filter(|l| l["kind"] == "call").collect();
+            let asked = *asked.lock().unwrap();
+            (asked, placed, said, calls)
+        }
+        let (asked, placed, said, _) = race(1, [10, 10]).await;
+        assert_eq!((asked, placed), (1, true), "one call left: one call");
+        assert!(said.iter().all(|s| !s.starts_with("AI paused")), "{said:?}");
+        let (asked, placed, said, calls) = race(400, [2_000, 10]).await;
+        assert_eq!((asked, placed), (2, true));
+        assert!(said.is_empty(), "{said:?}");
+        let errors: Vec<&str> = calls.iter().filter_map(|c| c["error"].as_str()).collect();
+        assert_eq!((calls.len(), errors.len()), (2, 1), "both calls traced: {calls:?}");
+        assert!(errors[0].starts_with("dropped before its answer"), "{errors:?}");
     }
 
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
