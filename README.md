@@ -28,6 +28,10 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 
 <!-- end of the first screen -->
 
+![A real 16-second run at normal speed. A synthesized voice speaks through the app's speech path; its words show live above the composer, then as “Finding a thread”. “Mom's birthday is Saturday…” becomes a new thread, Mom's Birthday Saturday, beside the earlier Rent Due Friday. “Okay, decided: if it's under eighty dollars, I'm booking it tonight” lands about 4 seconds after the line ends, as a branch under it: Pottery Class Booking. The next line, about a stats midterm, is already being placed.](docs/screens/loop.gif)
+
+*Real time, real models, no edits, only cropped; the voice is synthesized.*
+
 ### Every model call, with its setting
 
 Every model the app calls at runtime is Meta's, through the Meta Model API; `scripts/precheck.sh` fails on any other model SDK, endpoint or model name in the app's code.
