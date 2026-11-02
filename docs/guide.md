@@ -48,6 +48,6 @@ Each part carries its name as `data-guide`.
 | `away` | While you were away | while it's up |
 | `pending` | the thoughts finding their place | while any is |
 | `send-card` | the message about to send | while it counts down |
-| `thread:<id>` | a thread: its card on the Map, its picture in the Palace | when its card or picture is |
+| `thread:<id>` | a thread: its card on the Map, its picture in the Palace, in a view brick its topmost `data-thread` mark | when its card, picture or mark is |
 | `point:<id>` | a thought: its point in its card (while it finds its place, `pending` is shown instead) | while its card is open |
 | `view:<id>` | a view brick's button in the view switch | while that brick is on |

@@ -395,6 +395,30 @@ try {
   assert.ok(await until(`!document.querySelector(".guide-caption")`, captionMs("Said while you were in another window.") + 1000), "then it goes");
   await evaluate(`delete document.hidden`);
 
+  step("a view brick");
+  // A view brick marks its threads `data-thread` (bricks/contract.ts): with Bubbles on, a thread is its bubble.
+  await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ bubbles: true }))`);
+  await cdp("Page.reload", {});
+  assert.ok(await until(`!!document.querySelector('[data-guide="view:bubbles"]')`, 8000), "Bubbles is on");
+  await sleep(500);
+  await click('[data-guide="view:bubbles"]');
+  assert.ok(await until(`!!document.querySelector('[data-thread="T3"]')`, 4000), "the bubbles show");
+  await sleep(800);
+  guide("point", "thread:T3", "Your midterm is this bubble.");
+  assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on the bubble");
+  await sleep(600);
+  const bubble = await evaluate(`(() => { const r = document.querySelector('[data-thread="T3"]').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
+  const at3 = await tip();
+  assert.ok(Math.min(Math.abs(at3.y - (bubble.top - TIP_GAP)), Math.abs(at3.y - (bubble.bottom + TIP_GAP)), Math.abs(at3.x - (bubble.left - TIP_GAP)), Math.abs(at3.x - (bubble.right + TIP_GAP))) <= 1.5,
+    `the arrow lands on the bubble (${JSON.stringify({ at3, bubble })})`);
+  assert.equal(await words(), "Claude Your midterm is this bubble.");
+  await shot("5b-point-bubble");
+  await key("Escape", 27);
+  await evaluate(`localStorage.removeItem("e2a2o.bricks")`);
+  await cdp("Page.reload", {});
+  assert.ok(await until(`!!document.querySelector('[data-guide="thread:T1"]') && !document.querySelector('[data-guide="view:bubbles"]')`, 8000), "back to the Map, Bubbles off");
+  await sleep(600);
+
   step("Reduce Motion");
   // Reduce Motion: the far thread comes into view at once, and the arrow doesn't move in.
   await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }, { name: "prefers-color-scheme", value: "light" }] });

@@ -40,6 +40,12 @@ function find(name: string): HTMLElement | null {
     const id = name.slice(6);
     for (const li of document.querySelectorAll<HTMLElement>("li[data-heads]")) if (li.dataset.heads!.split(" ").includes(id) && drawn(li)) return li;
   }
+  // In a view brick, a thread is what it marks `data-thread` (bricks/contract.ts: what "this" means there too): its
+  // topmost, as a spine's head sits above its points.
+  if (name.startsWith("thread:")) {
+    const marked = [...document.querySelectorAll<HTMLElement>(`[data-thread="${CSS.escape(name.slice(7))}"]`)].filter(drawn);
+    return marked.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0] ?? null;
+  }
   return null;
 }
 
