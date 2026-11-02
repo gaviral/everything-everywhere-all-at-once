@@ -335,6 +335,31 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [core.notice, core.answerRevision, core.clearNotice, noticeFocused]);
 
+  // The running mic's stop, as effects of one render see it: the first to stop the mic clears it at once, so the
+  // next effect in the same render finds the mic off (`stopMic` there is still the render's value).
+  const liveStop = useRef<(() => void) | null>(null);
+  liveStop.current = stopMic;
+  /** Stops the mic if it runs; false if it was already off. */
+  const releaseMic = () => {
+    const stop = liveStop.current;
+    liveStop.current = null;
+    setStopMic(null);
+    stop?.();
+    return !!stop;
+  };
+
+  // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
+  // would need it to keep listening). The core has ended the stream already and drops anything heard after. Before
+  // the stream's end below: both often arrive in one render, and then "Paused" is the answer, not "The mic stopped".
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (core.viewAsk?.view !== "pause") return;
+    if (!releaseMic()) { core.showNotice("The mic is already off.", core.viewAsk); return; }
+    core.listen(false);
+    setPaused(true);
+    core.showNotice("Paused: nothing is heard until you tap the mic.", core.viewAsk);
+  }, [core.viewAsk]);
+
   // Stop local audio when the service reports a stop or the connection drops, and tell the core,
   // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
@@ -343,33 +368,16 @@ export default function App() {
   voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
   useEffect(() => {
     const failed = core.voiceErrorRevision > voiceErrorStartedAt.current;
-    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || failed)) {
-      stopMic();
-      setStopMic(null);
+    if (liveStop.current && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || failed)) {
+      releaseMic();
       core.listen(false);
       core.showNotice(core.noKey ? core.keyNotice : micStopped(failed ? core.voiceError : ""));
     }
   }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
 
   useEffect(() => {
-    if (stopMic && core.notice.includes("MODEL_API_KEY")) {
-      stopMic();
-      setStopMic(null);
-    }
+    if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
   }, [core.notice, stopMic]);
-
-  // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
-  // would need it to keep listening). The core has ended the stream already and drops anything heard after.
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    if (core.viewAsk?.view !== "pause") return;
-    if (!stopMic) { core.showNotice("The mic is already off.", core.viewAsk); return; }
-    stopMic();
-    setStopMic(null);
-    core.listen(false);
-    setPaused(true);
-    core.showNotice("Paused: nothing is heard until you tap the mic.", core.viewAsk);
-  }, [core.viewAsk]);
 
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;

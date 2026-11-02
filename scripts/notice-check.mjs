@@ -119,6 +119,16 @@ try {
   assert.equal(core.answerRevision, before + 2);
   const app = readFileSync(new URL("src/App.tsx", ui), "utf8");
   assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.answerRevision,/);
+  // "Stop listening" said: the core sends the pause, then the stream's end, often taken in one render. The pause
+  // effect runs first and stops the mic through the shared ref, so the stream-end effect after it in that render
+  // finds the mic off: the answer is "Paused", not a sticky "The mic stopped" (bug hunt 12; wiring, as no check
+  // here renders App).
+  const pauseAt = app.indexOf('core.viewAsk?.view !== "pause"');
+  const streamEndAt = app.indexOf("core.voiceStatusRevision > voiceStartedAt.current");
+  assert.ok(pauseAt > 0 && pauseAt < streamEndAt, "the pause effect is declared before the stream-end effect");
+  assert.match(app.slice(pauseAt, streamEndAt), /if \(!releaseMic\(\)\)/);
+  assert.match(app.slice(streamEndAt - 200, streamEndAt), /if \(liveStop\.current &&/);
+  assert.match(app, /const releaseMic = \(\) => \{\s*const stop = liveStop\.current;\s*liveStop\.current = null;/);
 
   // "No, I meant stop listening": the core sends the view, then "Did … instead" with its Undo. Arriving in one render,
   // the correction's answer and Undo stay; the window's "already off" stands down (review).
