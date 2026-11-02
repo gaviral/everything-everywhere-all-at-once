@@ -368,7 +368,9 @@ export default function App() {
   // Your own thoughts on their way; in a room the other person's land on the map with their name.
   const pending = useMemo(() => world.thoughts.filter((t) => !t.placed && t.speaker === me), [world.thoughts, me]);
   // While you talk the map quiets all but where you are (legible.css); at a natural pause everything reads again.
-  const talking = useTalking({ heard: core.partial || core.handoff, inFlight: pending.length });
+  // On its way means about to land: not a thought waiting for a key or for a retry, which can wait for minutes.
+  const onItsWay = core.noKey || core.keyRefused ? 0 : pending.filter((t) => core.placing.retryAt[t.id] === undefined).length;
+  const talking = useTalking({ heard: core.partial || core.handoff, inFlight: onItsWay });
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
