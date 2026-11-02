@@ -115,10 +115,15 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         // Placement is already in progress; don't pay for a second placement call,
         // or summarize a thought on the provisional branch it may soon leave. Without a key that works now (none,
         // refused, or the hour's calls used up) nothing is placing: the answer says why at once, not after 10 s.
+        // Woken by each change sent (a landing commits the thought before it is sent), so the recap goes on the moment
+        // the thought lands, not up to a quarter second later; still looked at every 250 ms, for a key refused or the
+        // cap reached without a change, and at most 10 s in all.
         let can_place = || core.key().is_ok();
-        for _ in 0..40 {
-            if !can_place() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        let mut changes = core.updates.subscribe();
+        let until = tokio::time::Instant::now() + Duration::from_secs(10);
+        while can_place() && placing(&core.snapshot(), since, crate::now_ms()) && tokio::time::Instant::now() < until {
+            let look = until.min(tokio::time::Instant::now() + Duration::from_millis(250));
+            if let Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) = tokio::time::timeout_at(look, changes.recv()).await { break; }
         }
         let world = core.snapshot();
         if can_place() && placing(&world, since, crate::now_ms()) {
@@ -1044,6 +1049,34 @@ mod tests {
         let (message, recap) = ready(&mut rx).await;
         assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
         assert!(recap.is_none() && !message.contains("still finding"), "{message}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Recap" said right after a thought waits for it to land, then goes on at once: the landing wakes it, not the
+    /// next look a quarter second later. No model call: the recap of the map after the landing is already saved.
+    #[tokio::test(start_paused = true)]
+    async fn a_recap_waiting_on_a_thought_goes_on_the_moment_it_lands() {
+        let path = std::env::temp_dir().join(format!("e2a2o-recap-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core { key: Some("test".into()), ..Core::test(journal, world) });
+        let now = crate::now_ms();
+        let mut landed = sample(now);
+        landed.thoughts.push(thought(7, "T1", now));
+        let source = slice(&landed, Period::Today, now);
+        let key = source.key();
+        let mut world = landed.clone();
+        world.thoughts.last_mut().unwrap().placed = false;
+        world.recaps.push(finish(source, answer(), key));
+        *core.world.lock().unwrap() = world.into();
+        let mut rx = core.updates.subscribe();
+        request(core.clone(), "you".into(), Period::Today);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let lands = tokio::time::Instant::now();
+        core.commit(vec![Change::ThoughtPlaced { thought_id: "th-7".into(), thread_id: "T1".into(), point: "Point 7".into(), unclear: String::new(),
+            guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 10, decided: false }]);
+        let (message, recap) = ready(&mut rx).await;
+        assert!(message.is_empty() && recap.is_some(), "{message}");
+        assert!(lands.elapsed() < Duration::from_millis(50), "went on {:?} after the landing", lands.elapsed());
         let _ = std::fs::remove_file(&path);
     }
 
