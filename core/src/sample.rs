@@ -79,10 +79,13 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str) -
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter_map(|mut v| { rebase(&mut v, made); serde_json::from_value(v).ok() })
         // The person who opens it owns it: a hosted visitor or a room guest isn't "you", and only their own words and
-        // drops give them the unfinished card and "where was I?".
+        // drops give them the unfinished card and "where was I?". Only the sample's own "you" lines become theirs:
+        // the others in it (Sam and Lena at the team meeting) keep their words.
         .map(|change| match change {
             Change::ThoughtAdded { mut thought } => {
-                thought.speaker = speaker.into();
+                if thought.speaker == "you" {
+                    thought.speaker = speaker.into();
+                }
                 Change::ThoughtAdded { thought }
             }
             Change::ThreadStatus { thread_id, status, .. } => Change::ThreadStatus { thread_id, status, speaker: speaker.into() },
@@ -214,6 +217,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
         assert!(card.is_some(), "the unfinished card is offered to Dana");
         assert_eq!(crate::way_back(&world, "Dana", crate::now_ms()), card, "“where was I?” goes where the card points");
+    }
+
+    /// The meeting sample is a meeting: whoever opens it takes the sample's own "you" lines, and Sam's and Lena's
+    /// stay theirs, so their names show on their points and the model still sees who said what.
+    #[test]
+    fn the_opener_takes_the_samples_own_lines_and_the_others_keep_theirs() {
+        for opener in ["you", "Dana"] {
+            let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+            let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+            let core = Core::test(journal, world);
+            load(&core, opener, &samples(), &dir.join("images"), "team-sync").unwrap();
+            let world = core.snapshot();
+            let _ = std::fs::remove_dir_all(&dir);
+            let speakers: std::collections::BTreeSet<&str> = world.thoughts.iter().map(|t| t.speaker.as_str()).collect();
+            assert_eq!(speakers, std::collections::BTreeSet::from([opener, "Lena", "Sam"]), "opened by {opener}");
+        }
     }
 
     #[test]
