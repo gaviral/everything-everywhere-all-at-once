@@ -27,7 +27,11 @@ command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs" >
 command -v node >/dev/null 2>&1 || { echo "Node.js 22.12 or newer is needed: https://nodejs.org" >&2; exit 1; }
 
 # The friend's words go through this laptop's key: the same sources as run.sh (the core reads .env itself).
-if [ -z "${MODEL_API_KEY:-}" ] && ! grep -q '^MODEL_API_KEY=.' .env 2>/dev/null && command -v security >/dev/null 2>&1; then
+# --no-key means no key at all: an empty MODEL_API_KEY also stops the core from loading one from .env.
+if [ -n "$keyless" ]; then
+  MODEL_API_KEY=""
+  export MODEL_API_KEY
+elif [ -z "${MODEL_API_KEY:-}" ] && ! grep -q '^MODEL_API_KEY=.' .env 2>/dev/null && command -v security >/dev/null 2>&1; then
   MODEL_API_KEY=$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${KEYCHAIN_ACCOUNT:-e2a2o}" -w 2>/dev/null || true)
   export MODEL_API_KEY
 fi
@@ -93,7 +97,7 @@ done
 [ -n "$url" ] || { echo "cloudflared gave no link; see $data/tunnel.log" >&2; exit 1; }
 
 # A private model (not Contributor mode), whatever .env says: the friend's words aren't kept for training.
-(cd core && exec env PUBLIC_URL="$url" ROOM_CODE="$code" PORT="$port" E2A2O_DATA="$data" PLACER_MODEL=muse-spark-1.2 \
+(cd core && exec env MODEL_API_KEY="${MODEL_API_KEY:-}" PUBLIC_URL="$url" ROOM_CODE="$code" PORT="$port" E2A2O_DATA="$data" PLACER_MODEL=muse-spark-1.2 \
   "$bin") >"$data/core.log" 2>&1 &
 core_pid=$!
 link="$url/?room=$code"
