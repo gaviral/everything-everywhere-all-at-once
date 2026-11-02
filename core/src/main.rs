@@ -6,6 +6,7 @@ mod apple;
 mod apps;
 mod asr;
 mod catalog;
+mod chunks;
 mod clock;
 mod explain;
 mod find;
@@ -18,6 +19,7 @@ mod trace;
 mod recap;
 mod protocol;
 mod spoken;
+mod tidy;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -316,8 +318,26 @@ impl Core {
             return Some(Done::new(Act::Compose));
         }
         if let Some(view) = view(text) {
+            // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
+            // back too. Bare "focus" stays on the thread you're on, as its button does.
+            let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
+            if view == View::Focus && to.is_none() && before.is_none() {
+                let empty = self.snapshot().threads.is_empty();
+                let message = if empty { "Nothing on the map yet: say a thought first" } else { "Point at a thread, then say “focus on this”" };
+                self.send_to(speaker, ServerMsg::Notice { message: message.into() });
+                return Some(Done::missed(Act::Focus));
+            }
+            let moved = to.filter(|to| before.as_ref() != Some(to));
+            if let Some(to) = &moved {
+                self.focus(speaker, to);
+            }
             self.send_to(speaker, ServerMsg::View { view });
-            return Some(Done::view(view));
+            let mut done = Done::view(view);
+            if let (Some(_), Some(from)) = (moved, before) {
+                done.undo = Some(Undo::Each(done.undo.into_iter().chain([Undo::Move { to: from }]).collect()));
+            }
+            return Some(done);
         }
         if is_new_thread(text) {
             self.new_thread(speaker);
@@ -684,7 +704,8 @@ fn view(text: &str) -> Option<View> {
         "map", "the map", "go to the map", "go back to the map", "back to the map", "show the map", "show me the map", "open the map",
         "switch to the map", "take me back to the map", "let s go back to the map", "let s see the map",
     ];
-    let focus = ["focus", "let s focus", "focus on this", "focus on this thread", "focus on this one", "turn on focus"];
+    let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
+    let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -700,6 +721,22 @@ fn view(text: &str) -> Option<View> {
     } else {
         None
     }
+}
+
+/// What "focus on …" points at as "this" (catalog.rs `this`: selected, else pointed, else the card the pointer just
+/// left, else the thread you're on). ui/src/attention-core.ts mirrors it for the "this" mark (attention-check reads it).
+const FOCUS_ON: [&str; 8] = ["this", "this one", "this thread", "this card", "that", "that one", "that thread", "that card"];
+
+/// "Focus on this" and its kin, with "let's" too: a whole-turn focus on the card "this" means. "Focus on the budget"
+/// stays a thought: only a pointing word focuses.
+fn focus_this_asks() -> Vec<String> {
+    ["focus on", "let s focus on"].iter().flat_map(|verb| FOCUS_ON.map(|on| format!("{verb} {on}"))).collect()
+}
+
+/// Whether the whole turn focuses "this" rather than the thread you're on ("Focus", "let's focus").
+fn focuses_this(text: &str) -> bool {
+    let asks = focus_this_asks();
+    is_command(text, &asks.iter().map(String::as_str).collect::<Vec<_>>(), &["mode"])
 }
 
 /// True when the whole utterance is one of the asks, after words that lead into it (`lead_in`: "Okay, where was
@@ -1181,8 +1218,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
                 Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
+                Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
                 Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
+                Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
+                Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1566,6 +1606,11 @@ mod tests {
             ("Cool, palace.", View::Palace),
             ("Can you show me the palace?", View::Palace),
             ("Please focus.", View::Focus),
+            ("Let's focus on this.", View::Focus),
+            ("Okay, focus on that one", View::Focus),
+            ("Focus on this please", View::Focus),
+            ("Please focus on this mode please", View::Focus),
+            ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
         ] {
@@ -1576,6 +1621,8 @@ mod tests {
             "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
             "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
+            // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
+            "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1964,6 +2011,8 @@ mod tests {
         let change = received(&mut window).await;
         assert_eq!((change["type"].as_str(), change["change"]["type"].as_str()), (Some("change"), Some("thought_added")));
         assert_eq!(core.snapshot().thoughts[0].text, "the rent is due Friday");
+        // How long that turn can be corrected, and that undoing it moves nobody (catalog.rs `Correctable`).
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "correctable", "for_ms": 120_000, "back_to": null}));
         window.send(Message::Text(r#"{"type":"listen","on":true}"#.into())).await.unwrap();
         assert_eq!(received(&mut window).await["message"], "Speech service error: MODEL_API_KEY is not set");
         let status = received(&mut window).await;
@@ -2226,20 +2275,24 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought.
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. Focus
+    /// on an empty map says why nothing changes.
     #[test]
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
         core.add_thought("Sam", "Let's go to the palace!");
         core.add_thought("Sam", "Okay, focus.");
-        let views: Vec<(Option<String>, View)> = std::iter::from_fn(|| updates.try_recv().ok())
-            .map(|out| match out.message {
-                ServerMsg::View { view } => (out.to, view),
-                _ => panic!("only views"),
+        let views: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::View { view } => Some((out.to, format!("{view:?}"))),
+                ServerMsg::Notice { message } => Some((out.to, message)),
+                ServerMsg::Correctable { .. } => None,
+                _ => panic!("only views and answers"),
             })
             .collect();
-        assert_eq!(views, [(Some("Sam".into()), View::Palace), (Some("Sam".into()), View::Focus)]);
+        let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
+        assert_eq!(views, [sam("Palace"), sam("Nothing on the map yet: say a thought first")]);
         assert!(core.snapshot().thoughts.is_empty());
         core.add_thought("Sam", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);
@@ -2326,6 +2379,26 @@ mod tests {
         assert!(Seat::take(&alone, "you", host).is_some());
         for path in [path, alone_path] {
             let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// The sample is a judge's first map, and its tour says to type "where was I?": that goes where the unfinished
+    /// card points, before and after the sample's own date. (Its last line once trailed off on another thread, so
+    /// the card said "Rent is due" and "where was I?" went to "Electric bill autopay".)
+    #[test]
+    fn in_each_sample_where_was_i_goes_where_the_unfinished_card_points() {
+        for sample in ["student-week", "founder-day"] {
+            let text = std::fs::read_to_string(format!("{}/../samples/{sample}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let mut world = World::default();
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                world.apply(&serde_json::from_str(line).unwrap());
+            }
+            let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "you")
+                .max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
+            assert!(card.is_some(), "{sample}: the sample shows an unfinished card");
+            for now in [1, u64::MAX / 2] {
+                assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
+            }
         }
     }
 }

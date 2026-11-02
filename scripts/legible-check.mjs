@@ -74,10 +74,11 @@ try {
   assert.match(read("legible.css"), /\.said-toggle \{[^}]*user-select: none/, "its name stays out of words selected to explain");
 
   // Numbers that live in two files say the same thing.
-  const css = read("legible.css"), app = read("App.tsx");
+  const css = read("legible.css");
   assert.match(TWO_COLUMNS, /min-width: 1100px/);
   assert.ok(css.includes("@media (min-width: 1100px)"), "legible.css switches to two columns where legible.ts does");
-  assert.ok(app.includes(`now - lastActivity > ${NATURAL_PAUSE_MS}`), "the talking state ends at the pull-back's pause");
+  const { PAUSE_MS } = await server.ssrLoadModule("/src/unfinished.ts");
+  assert.equal(PAUSE_MS, NATURAL_PAUSE_MS, "the talking state ends at the pull-back's pause");
 
   // No ellipsis or clamp cuts text, except these, each with why.
   const allowed = {

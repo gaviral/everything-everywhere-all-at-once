@@ -131,10 +131,17 @@ fn spoken_app_requests_can_open_with_filler_and_ask_for_me() {
         ("Um, so, hey, could you please create an app that... plays a tune", "plays a tune"),
         ("Make an app, that pings me", "pings me"),
         ("MAKE US AN APP TO SHOUT", "SHOUT"),
+        // Beat 5's sentence as people say it differently, and as speech-to-text writes it.
+        ("Make a app which plays a silly tune if we get loud", "plays a silly tune if we get loud"),
+        ("Make an app for when we get loud.", "for when we get loud."),
+        ("Make an app: if we get loud, play a tune.", "if we get loud, play a tune."),
+        ("Build an application that pings me", "pings me"),
+        ("Can you make me a new app whenever we shout to play a tune?", "whenever we shout to play a tune?"),
     ] {
         assert_eq!(command(said).as_deref(), Some(request), "{said}");
     }
-    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps"] {
+    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps",
+        "Make an app store page", "Make a happy face", "Build an apple pie that tastes good"] {
         assert_eq!(command(said), None, "{said}");
     }
 }
@@ -202,6 +209,104 @@ async fn keep_it_said_aloud_keeps_the_app_waiting_and_is_a_thought_otherwise() {
     fixture.core.add_thought("you", "Yes, keep it");
     assert_eq!(fixture.core.snapshot().apps.len(), 1);
     assert_eq!(thoughts(&fixture.core), ["Keep it"]);
+}
+
+/// Beat 5 as the take does it, with the Volume watcher removed: the sentence said aloud builds a new app through every
+/// stage, Keep starts it, normal speech doesn't set it off, and a raised voice held for its seconds plays the silly
+/// tune once, with nothing on the map (a sound needs no thread).
+#[tokio::test]
+async fn beat_five_said_aloud_builds_an_app_that_plays_the_silly_tune_on_a_raised_voice() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.commit(vec![Change::AppRemoved { id: "app-volume".into() }]);
+    let (loud, held) = loud_voices();
+    fixture.core.apps.answers.lock().unwrap().extend([json!({"match_id":"", "text":"No app plays a tune for loud voices."}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
+            "watcher":{"kind":"volume","level":loud,"seconds":2}, "prompt":null, "publishers":[{"kind":"sound"}], "cooldown_secs":60}})]);
+    let mut messages = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", "Okay, make an app that plays a silly tune if we get loud.");
+    tokio::task::yield_now().await;
+    let mut stages = Vec::new();
+    while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsBuild { build } = message.message { stages.push(build.stage); } }
+    assert_eq!(stages, ["searching", "composing", "validating", "ready"]);
+    assert!(fixture.core.snapshot().thoughts.is_empty(), "a request is never a thought");
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.request, "plays a silly tune if we get loud.");
+    decide(&fixture.core, &b.id, true);
+    let app = fixture.core.snapshot().apps.iter().find(|a| a.name == "Loud tune").cloned().expect("kept");
+    assert!(app.enabled && matches!(app.watcher, Watcher::Volume { seconds, .. } if seconds == held));
+    let tunes = |messages: &mut tokio::sync::broadcast::Receiver<Outgoing>| {
+        let mut playful = Vec::new();
+        while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsSound { playful: p, .. } = message.message { playful.push(p); } }
+        playful
+    };
+    // Normal speech, read after read, never sets it off; a raised voice that has held its seconds does.
+    for _ in 0..20 { volume(&fixture.core, "mic", NORMAL_VOICE); }
+    tokio::task::yield_now().await;
+    assert!(tunes(&mut messages).is_empty(), "normal speech never sets it off");
+    volume(&fixture.core, "mic", RAISED_VOICE);
+    tokio::task::yield_now().await;
+    assert!(tunes(&mut messages).is_empty(), "not on the first loud reading");
+    let now = now_ms();
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), app.id.clone()), (now - held * 1000, now - 320, false));
+    volume(&fixture.core, "mic", RAISED_VOICE);
+    for _ in 0..3 { tokio::task::yield_now().await; }
+    assert_eq!(tunes(&mut messages), [true], "the silly tune, once, within its seconds");
+    assert!(fixture.core.snapshot().suggestions.is_empty() && fixture.core.snapshot().threads.is_empty());
+}
+
+/// Search-first is one model call before the composer; when it fails, the composer, which checks the catalog too,
+/// still makes the app instead of the build failing on camera.
+#[tokio::test]
+async fn a_failed_search_still_makes_the_app() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([json!({"unexpected": true}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Demo nudge", "purpose":"Show a card when the demo comes up.",
+            "watcher":{"kind":"phrase","phrase":"demo"}, "prompt":null, "publishers":[{"kind":"card","text":"Rehearse."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::task::yield_now().await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "{:?}", b.steps);
+    assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "the search, then the composition");
+}
+
+/// A search slower than its patience doesn't hold the build: the composition, asked at the same time, is shown once
+/// the search is cut at `SEARCH_PATIENCE`, not when the search would have answered.
+#[tokio::test(start_paused = true)]
+async fn a_search_past_its_patience_is_cut_and_the_composition_is_shown() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 16_200, "answer": {"match_id":"app-volume", "text":"Too late to count."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Demo nudge", "purpose":"Show a card when the demo comes up.",
+            "watcher":{"kind":"phrase","phrase":"demo"}, "prompt":null, "publishers":[{"kind":"card","text":"Rehearse."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::time::sleep(SEARCH_PATIENCE - Duration::from_millis(100)).await;
+    assert_eq!(build(&fixture.core).unwrap().stage, "searching", "the search still has its time");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "{:?}", b.steps);
+    assert_eq!(b.draft.unwrap().name, "Demo nudge");
+    assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "asked at once: no composer call after the cut");
+}
+
+/// A composition that answers first waits for the search: a match the search finds within its patience is offered
+/// instead, and the composition is thrown away.
+#[tokio::test(start_paused = true)]
+async fn a_search_match_wins_over_a_composition_that_answered_first() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 3_000, "answer": {"match_id":"app-volume", "text":"A quiet pause for loud voices."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud card", "purpose":"Show a card when voices get loud.",
+            "watcher":{"kind":"phrase","phrase":"loud"}, "prompt":null, "publishers":[{"kind":"card","text":"Pause."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "help us take a pause when our voices get loud".into());
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "matched", "{:?}", b.steps);
+    assert_eq!(b.match_id.as_deref(), Some("app-volume"));
+    assert!(b.draft.is_none() && b.steps.len() == 2, "the composition is never shown: {:?}", b.steps);
 }
 
 #[test]
@@ -380,7 +485,7 @@ async fn semantic_search_offers_a_disabled_app_before_any_composition() {
     tokio::task::yield_now().await;
     let b = build(&fixture.core).unwrap();
     assert_eq!(b.stage, "matched");
-    assert_eq!(b.steps.len(), 2, "the composer never runs for a search match");
+    assert_eq!(b.steps.len(), 2, "a search match shows no composing step");
     assert_eq!(b.match_id.as_deref(), Some("app-volume"));
     assert_eq!(fixture.core.snapshot().apps.len(), 3);
     decide(&fixture.core, &b.id, true);

@@ -8,7 +8,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, direction } = await server.ssrLoadModule("/src/attention-core.ts");
+  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, thisBase, direction } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Reading time: one look over, then the words at 238 a minute. Never a fixed clock.
   assert.equal(readMs(""), LOOK_MS);
@@ -52,32 +52,65 @@ try {
   assert.equal(newestSaid([thought("a", "T1", "User", { at_ms: 5 }), thought("s", "T1", "User", { at_ms: 500 })], "User", 100), "a");
   assert.equal(newestSaid([thought("c", "T1", "Sam")], "User", 100), null);
 
-  // "This": only a whole command the core acts on the thread you're on with (spoken.rs `unfold`, main.rs focus).
+  // "This": only a whole command the core acts on "this" with (spoken.rs `unfold`, main.rs `FOCUS_ON`), also after a
+  // correction's lead (catalog.rs `correction`).
   for (const said of ["Collapse this", "expand this one", "Okay, collapse that thread.", "focus on this", "Um, so, can you unfold it please?",
-    "Let's collapse this card", "Collapse it all", "Focus on this thread"])
+    "Let's collapse this card", "Collapse it all", "Focus on this thread", "Let's focus on this", "Okay, focus on that one", "focus on this mode",
+    "No, I meant collapse this", "I was asking you to focus on that one", "Sorry, I meant expand this", "No, I mean open everything under it",
+    "I meant to say focus on this", "That's not what I meant, collapse this"])
     assert.ok(pointsAtThis(said), said);
   // Not: talk with "this" in it; a named thread that starts with "this" (the core folds "This weekend"); "open", "show",
-  // "hide", "close" and "fold" with "this", which the core leaves as thoughts; a verb the core has no command for.
+  // "hide", "close" and "fold" with "this", which the core leaves as thoughts; a verb the core has no command for; bare
+  // "Collapse" and "Focus" (nothing in them points); "focus on" a name; "add this to Reminders" (it adds an action, not
+  // a card, and its notice names it); talk after a correction's lead; a bare "No, …" (the live words can't tell it from
+  // talk); a correction of a correction.
   for (const said of ["Okay, this is actually working! This is so exciting", "Rent is due Friday", "Show me the garden", "this weekend I'll fix it",
-    "It's due Friday", "collapse this weekend", "Expand this thread about rent", "Hide it", "Let's open this card", "move this thread up", "Collapse", "Let's focus on this"])
+    "It's due Friday", "collapse this weekend", "Expand this thread about rent", "Hide it", "Let's open this card", "move this thread up", "Collapse",
+    "Focus", "Let's focus", "Focus on the budget", "Focus on it", "Add this to Reminders", "No, I meant this is great", "I meant to collapse this",
+    "No, I said this is great", "I mean this is great", "No, collapse this", "No, I meant no, I meant collapse this", "No, I meant",
+    // Focus takes only the core's own tail ("mode", main.rs `focuses_this`) and "please": these stay thoughts there
+    // (Sol's review: the mark showed for them).
+    "Let's focus on that card now", "Focus on this for me", "No, I meant focus on this now", "Focus on this please mode"])
     assert.ok(!pointsAtThis(said), said);
-  // Which card: opening or folding takes the card you selected or point at (this-card.ts `resolveThis`, as catalog.rs
-  // picks it); focus is always the thread you're on.
-  for (const said of ["Collapse this", "Um, so, can you unfold it please?", "Let's collapse this card"]) assert.equal(thisKind(said), "card", said);
-  for (const said of ["focus on this", "Focus on this thread"]) assert.equal(thisKind(said), "active", said);
+  for (const said of ["Focus on this please", "Please focus on this mode please", "Let's focus on that card, please."])
+    assert.equal(thisKind(said), "card", said);
+  // One rule for every kind: opening, folding and focusing all take the card you selected or point at (this-card.ts
+  // `resolveThis`, as catalog.rs `this`), else your active thread.
+  for (const said of ["Collapse this", "Um, so, can you unfold it please?", "Let's collapse this card", "focus on this", "Focus on this thread"])
+    assert.equal(thisKind(said), "card", said);
+  // A correction is its own kind: it acts only while the core has a turn to correct, and from where undoing that turn
+  // takes you (catalog.rs `redo` undoes it first; Sol's review: after "Next one" the mark named Bills, Garden folded).
+  for (const said of ["No, I meant focus on this", "No, I meant collapse this please", "Wait, I meant collapse this", "Actually no, I mean collapse this"])
+    assert.equal(thisKind(said), "correction", said);
+  assert.deepEqual(thisBase("card", null, "T2", 5), { active: "T2" });
+  assert.deepEqual(thisBase("correction", { until: 10, back_to: "T1" }, "T2", 5), { active: "T1" }, "where the undo takes you");
+  assert.deepEqual(thisBase("correction", { until: 10, back_to: null }, "T2", 5), { active: "T2" }, "an undo that doesn't move you");
+  assert.equal(thisBase("correction", { until: 10, back_to: "T1" }, "T2", 11), null, "past the core's window: no mark");
+  assert.equal(thisBase("correction", null, "T2", 5), null, "no turn to correct (a restarted core): no mark");
+  assert.equal(thisBase(null, { until: 10, back_to: "T1" }, "T2", 5), null);
   // Everything under a pointing word is "this" too, with any open or fold verb (spoken.rs `unfold`, catalog); the first
-  // "everything" phrase that fits decides, so "open all of it" is every thread, and "on the map" names no card.
+  // "everything" word that fits counts, so "open all of it" is every thread, and so is "open all this" (no link word).
   for (const said of ["Open everything under it", "Hide everything inside of it", "Open all of this", "Show me all the branches of that one",
     "Can we expand everything in this thread"])
     assert.equal(thisKind(said), "card", said);
   for (const said of ["Open all of it", "Show me everything on the map", "Expand everything", "Open everything under the garden", "Open all this"])
     assert.equal(thisKind(said), null, said);
-
-  // Which way to look for a held-back landing.
-  const band = { top: 100, bottom: 700 };
-  assert.equal(direction({ top: 800, bottom: 830 }, band), "↓");
-  assert.equal(direction({ top: 20, bottom: 90 }, band), "↑");
-  assert.equal(direction({ top: 300, bottom: 330 }, band), null);
+  // The lists mirrored from the core are the core's, word for word: a phrase added there and not here would act with
+  // no mark, or one added here would mark a card the core leaves alone.
+  const core = (name) => readFileSync(new URL(`../core/src/${name}`, import.meta.url), "utf8");
+  // A top-level const (yes_or_no has its own `NO` inside it).
+  const list = (source, name) => {
+    const found = source.match(new RegExp(`^const ${name}: \\[&str; (\\d+)\\] =\\s*\\[([^\\]]*)\\]`, "m"));
+    assert.ok(found, `${name} in the core`);
+    const items = [...found[2].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    assert.equal(items.length, Number(found[1]), name);
+    return items;
+  };
+  const mirror = await server.ssrLoadModule("/src/attention-core.ts");
+  assert.deepEqual(mirror.FOCUS_ON, list(core("main.rs"), "FOCUS_ON"), "main.rs FOCUS_ON");
+  assert.deepEqual(mirror.CORRECTION, list(core("catalog.rs"), "STRONG"), "catalog.rs STRONG");
+  assert.deepEqual(mirror.AFTER_NO, list(core("catalog.rs"), "AFTER_NO"), "catalog.rs AFTER_NO");
+  assert.deepEqual(mirror.NO, list(core("catalog.rs"), "NO"), "catalog.rs NO");
   // Beside legibility (legible.ts, legible.css): a highlight's reading time counts the words on screen only, so a
   // point's words said stay out while closed; the live line rolls up as one block, so "· this: …" runs on after the
   // words instead of taking one of its two lines.

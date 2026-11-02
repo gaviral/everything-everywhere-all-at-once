@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-/** The app's natural pause: the quiet after which the unfinished card rises (App.tsx, the pull-back). The map stays
+/** The app's natural pause: the quiet after which the unfinished card rises (unfinished.ts). The map stays
  *  in its talking state until the same length of quiet has passed, counted from your last landing as well as your
  *  last words, so for a moment after the card rises the map still holds the active and left-off threads forward. */
 export const NATURAL_PAUSE_MS = 2500;
