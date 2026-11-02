@@ -336,3 +336,22 @@ fn stop_listening_ends_a_turn_only_after_a_pause() {
     }
     assert!(stops_listening("Rent is due. Stop listening.") && stops_listening("Stop listening") && !stops_listening("Stop listening to him"));
 }
+
+#[test]
+fn without_apples_apps_only_a_dated_item_is_sent_to_download_ics() {
+    let action = |when: &str| Action {
+        id: "a".into(),
+        thread_id: "T1".into(),
+        kind: "event".into(),
+        title: "Demo day".into(),
+        when: when.into(),
+        status: ItemStatus::New,
+        done_ms: None,
+    };
+    assert_eq!(file_words(&action("2026-11-04")), "To add “Demo day”, choose Download .ics on its row: your calendar app opens it.");
+    for when in ["", "tomorrow", "2026-11-31"] {
+        let words = file_words(&action(when));
+        assert!(!words.contains("Download"), "{when}: {words}");
+        assert!(words.contains("no day") && words.contains('×'), "{when}: {words}");
+    }
+}

@@ -13,6 +13,10 @@ export const TIPS = {
   action: (app: string) => `AI proposal from your words. Nothing reaches ${app} until you press Add to ${app}; × dismisses it.`,
   adding: (app: string) => `You approved this; it's being added to ${app}.`,
   added: (app: string) => `Added to ${app}. Change or remove it there.`,
+  // Off a Mac, or hosted: a calendar file instead of Reminders or Calendar (site.ts).
+  file: (saved: boolean, dated: boolean) => saved ? "Saved as a calendar file. Open it to add it to your calendar."
+    : dated ? "AI proposal from your words. Download .ics saves it as a calendar file that Apple, Google and Outlook calendars open; × dismisses it."
+    : "AI proposal from your words. It has no day to put on a calendar; × dismisses it.",
   tag: "Tag suggested by AI. Tap to keep it.",
   picture: "Picture drawn by AI as a memory anchor for this thread.",
   guess: "The AI thinks a word was misheard. Yes swaps in its guess; No keeps what was heard.",

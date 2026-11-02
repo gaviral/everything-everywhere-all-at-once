@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { onReading } from "./apps-audio";
+import { keyWords, useSite } from "./site";
 import "./micbutton.css";
 
 // The mic is the main control, and doubt about being heard makes people stop or say it again. So each state it can be
@@ -43,8 +44,8 @@ export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
   listening: { tip: "Listening. The ring swells as it hears you. Tap to stop.", label: "Stop listening" },
   hearing: { tip: "Hearing you. Tap to stop.", label: "Stop listening, hearing you" },
   paused: { tip: "Paused by “stop listening”: nothing is heard. Tap to talk again.", label: "Start listening, paused" },
-  nokey: { tip: "No AI key: listening needs MODEL_API_KEY in .env. You can still type.", label: "Start listening, needs an AI key" },
-  refused: { tip: "The AI key was refused: check MODEL_API_KEY in .env. You can still type.", label: "Start listening, AI key refused" },
+  nokey: { tip: keyWords(false, false, "mic"), label: "Start listening, needs an AI key" },
+  refused: { tip: keyWords(false, true, "mic"), label: "Start listening, AI key refused" },
 };
 
 /** The composer's placeholder, which sits where your eyes are while you talk. */
@@ -78,7 +79,9 @@ export function MicButton({ state, capturing, disabled, onClick }: { state: MicS
     const stop = onReading((level) => el.style.setProperty("--fill", ringFill(level).toFixed(3)));
     return () => { stop(); el.style.removeProperty("--fill"); };
   }, [on]);
-  const words = MIC_WORDS[state];
+  const { hosted } = useSite();
+  // Hosted, the key is the site's: its words say so, never .env.
+  const words = hosted && (state === "nokey" || state === "refused") ? { ...MIC_WORDS[state], tip: keyWords(true, state === "refused", "mic") } : MIC_WORDS[state];
   return (
     <button
       ref={button}

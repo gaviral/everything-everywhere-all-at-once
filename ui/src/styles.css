@@ -711,6 +711,12 @@ header {
 .empty h1 { margin-bottom: 12px; font-size: 26px; line-height: 1.2; }
 .empty p { margin: 0; }
 .empty .empty-hint { margin-top: 8px; font-size: 13px; }
+.empty .empty-sample { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; }
+.empty .sample-button { padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.empty .sample-button:hover:not(:disabled) { border-color: var(--accent); }
+.empty .sample-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.empty .sample-button:disabled { opacity: .5; cursor: default; }
+.empty .empty-models { margin-top: 24px; font-size: 12px; }
 .pullback-text { overflow-wrap: anywhere; }
 .pullback-title, .pullback-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; }

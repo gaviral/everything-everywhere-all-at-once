@@ -1187,7 +1187,7 @@ mod tests {
             Change::ActiveChanged { thread_id: "T3".into(), speaker: "Sam".into() },
             Change::ThoughtNoted {
                 thought_id: "b".into(),
-                note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into() },
+                note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into(), later: false },
             },
             Change::ThoughtRepointed { thought_id: "b".into(), point: "Ask Muse Spark about b".into() },
             Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "Ana".into() },

@@ -27,10 +27,12 @@ Browser, one page per window (ui/src)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
+  whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
   unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
+  site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
@@ -51,6 +53,7 @@ Core, one process (core/src: axum, tokio)
   tidy.rs        the refiner's renames and merges: sure ones land with Undo, the rest wait on the card as proposals
   pictures.rs    one picture per thread
   explain.rs     one sentence on a selected phrase
+  whyhere.rs     why a thought is on its thread, on request: from the map (move, first thought), else one fast call kept as its note
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
@@ -60,7 +63,8 @@ Core, one process (core/src: axum, tokio)
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
-  apple.rs       AppleScript into Reminders and Calendar
+  apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
+  sample.rs      "Try a sample map": an empty map filled with the student's week from samples/
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
   perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
