@@ -3,6 +3,7 @@ import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
+import { usePicture } from "./pictures";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -681,7 +682,7 @@ export default function App() {
         <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
-      <Explain explanations={core.explanations} explain={core.explain} />
+      <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
       <div id="tour-tools" />
       <Apps core={core} />
@@ -787,7 +788,7 @@ export default function App() {
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1021,15 +1022,15 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
 }
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
- *  arrives later fades in over it and moves nothing. A card used to grow 5–19 px when its picture came, its title
- *  sliding right. ✦ marks a picture only once one shows. */
+ *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
+ *  rule in pictures.ts). A card used to grow 5–19 px when its picture came, its title sliding right, and a picture
+ *  that failed showed a broken-image glyph. ✦ marks a picture only once one shows. */
 function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
-  const [loaded, setLoaded] = useState<string | null>(null);
-  const shown = !!thread.picture && loaded === thread.picture;
+  const { shown, img } = usePicture(thread.picture ? [thread.picture] : []);
   return (
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
-      {thread.picture && <img key={thread.picture} className={shown ? "picture is-shown" : "picture"} src={thread.picture} alt="" onLoad={() => setLoaded(thread.picture)} />}
+      {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
       {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
     </span>
   );

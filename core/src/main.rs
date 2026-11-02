@@ -105,6 +105,14 @@ impl Core {
         }
     }
 
+    /// Journals a change that only the record keeps (an Explain answer, a mark on one): the world and the windows
+    /// don't change.
+    pub fn record(&self, change: Change) {
+        if let Err(e) = self.journal.lock().unwrap().append(&change) {
+            tracing::error!("journal write failed: {e:#}");
+        }
+    }
+
     /// To every window.
     pub fn send(&self, message: ServerMsg) {
         let _ = self.updates.send(Outgoing { to: None, message });
@@ -701,7 +709,7 @@ async fn main() -> anyhow::Result<()> {
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
-        service: model::Service::default(),
+        service: model::Service::from_env(),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
@@ -1020,6 +1028,15 @@ fn speaker_name(name: &str, here: bool) -> String {
     }
 }
 
+/// Journals a window's "off" mark on an Explain or a Recap. Anything else, or an id no answer could have, is
+/// ignored: a mark is a label for later, never an instruction.
+fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
+    let fits = !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if matches!(kind.as_str(), "explain" | "recap") && fits {
+        core.record(Change::AnswerMarked { kind, id, off, speaker: speaker.into(), at_ms: now_ms() });
+    }
+}
+
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
@@ -1029,6 +1046,8 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
         messages.push(ServerMsg::Notice { message: model::REFUSED.into() });
+    } else if let Some(message) = core.capped_message() {
+        messages.push(ServerMsg::Notice { message });
     }
     messages
 }
@@ -1093,6 +1112,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
                     core.commit(vec![change]);
                 }
+                Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
                 Ok(ClientMsg::Correct { thought_id, accept }) => {
                     core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
                 }
@@ -1232,6 +1252,32 @@ mod tests {
         let (journal, _) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = mpsc::unbounded_channel();
         (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
+    }
+
+    #[test]
+    fn an_off_mark_is_journaled_for_later_and_changes_nothing_else() {
+        let (core, _queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        super::mark(&core, "User", "explain".into(), "x1a2b".into(), true);
+        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), true);
+        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), false);
+        // Only the two kinds, with an id an answer could have.
+        super::mark(&core, "User", "thread".into(), "T1".into(), true);
+        super::mark(&core, "User", "explain".into(), "../../etc".into(), true);
+        super::mark(&core, "User", "explain".into(), "x".repeat(81), true);
+        let lines: Vec<serde_json::Value> =
+            std::fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let marks: Vec<(&str, &str, bool)> = lines
+            .iter()
+            .filter(|l| l["type"] == "answer_marked")
+            .map(|l| (l["kind"].as_str().unwrap(), l["id"].as_str().unwrap(), l["off"].as_bool().unwrap()))
+            .collect();
+        assert_eq!(marks, [("explain", "x1a2b", true), ("recap", "today-1793547629176", true), ("recap", "today-1793547629176", false)]);
+        assert!(lines.iter().all(|l| l["speaker"] == "User" && l["at_ms"].as_u64().is_some()));
+        assert!(updates.try_recv().is_err(), "no window is sent a mark");
+        let (_, reopened) = crate::Journal::open(&path).unwrap();
+        assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
+        let _ = std::fs::remove_file(&path);
     }
 
     fn thread(id: &str, touched_ms: u64, dropped_by: &str) -> Thread {

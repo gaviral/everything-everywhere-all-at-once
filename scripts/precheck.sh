@@ -25,6 +25,9 @@ check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_so
 check "core refuses other sites (Origin and Host)" "grep -q 'header::ORIGIN' core/src/main.rs && grep -q 'header::HOST' core/src/main.rs && grep -q 'from_fn_with_state(core.clone(), gate)' core/src/main.rs"
 check "a room keeps the map behind its code (tested)" "grep -q 'fn a_room_lets_the_other_laptop_in_with_the_code' core/src/main.rs"
 check "model calls have a timeout (test fixtures aside)" "python3 -c 'import glob, sys; sys.exit(any(\"reqwest::Client::new()\" in open(f).read().split(\"#[cfg(test)]\")[0] for f in glob.glob(\"core/src/**/*.rs\", recursive=True) if not f.endswith(\"tests.rs\")))'"
+check "model guards catch what they should (self-test)" "python3 scripts/model-guards.py self-test > /dev/null"
+check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
+check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
 # A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.

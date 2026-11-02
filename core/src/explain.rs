@@ -1,7 +1,7 @@
 //! Explain: select a word or phrase and get one plain sentence on what it means in its thread,
 //! from the fastest Muse setting, so it reads like a tooltip rather than a chat.
 
-use crate::world::World;
+use crate::world::{Change, World};
 use crate::{protocol::ServerMsg, Core};
 use anyhow::bail;
 use serde_json::json;
@@ -22,18 +22,35 @@ const PATIENCE: Duration = Duration::from_secs(20);
 
 pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, thread_id: Option<String>) {
     let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
+    let started = crate::now_ms();
     let message = match ask(&core, &phrase, &notes).await {
-        Ok(text) => ServerMsg::Explanation { id, text, failed: false },
+        Ok(text) => {
+            // Kept with what it was asked and how long it took, so a later change to the prompt is judged on real
+            // answers and the person's "off" marks (C42).
+            core.record(Change::ExplainAnswered {
+                id: id.clone(),
+                phrase: phrase.chars().take(200).collect(),
+                context: context.chars().take(600).collect(),
+                thread_id,
+                model: core.placer_model.name().into(),
+                ms: crate::now_ms().saturating_sub(started),
+                text: text.clone(),
+                at_ms: started,
+            });
+            ServerMsg::Explanation { id, text, failed: false }
+        }
         Err(e) => {
             tracing::warn!("explain failed: {e:#}");
-            let text = if core.key.is_none() {
-                "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart."
+            let text: String = if core.key.is_none() {
+                "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart.".into()
             } else if core.key_refused() {
-                crate::model::REFUSED
+                crate::model::REFUSED.into()
+            } else if let Some(capped) = core.capped_message() {
+                capped
             } else {
-                "Couldn't explain that just now."
+                "Couldn't explain that just now.".into()
             };
-            ServerMsg::Explanation { id, text: text.into(), failed: true }
+            ServerMsg::Explanation { id, text, failed: true }
         }
     };
     core.send(message);
