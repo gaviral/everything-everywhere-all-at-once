@@ -23,10 +23,12 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 # composer-check needs a live core and real model calls, so it isn't one of them.
 if [ -d ui/node_modules ]; then
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs) continue ;; esac
     check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
+# links-check needs only node, so a fresh clone runs it too.
+check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
 [ -f LICENSE ] || warn "no LICENSE file yet (User's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "no code or paths from the author's other projects (hackathon rule: new work only)" "[ -z \"\$(tracked '/code/(e2a2o|e2a2o|canvas)|e2a2o-memory|e2a2o|e2a2o (codex|muse|cursor)')\" ]"
@@ -40,13 +42,11 @@ check "model guards catch what they should (self-test)" "python3 scripts/model-g
 check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
 check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
-# Claims stay modest and non-medical: the app helps people keep their threads; it doesn't diagnose or treat anything,
-# so nothing a judge or user reads may say or suggest it (README, docs, UI copy, sample maps, demo talk, prompts).
-# Allowed: "treat ... as" (model output is treated as data) and a refusal ("never give medical advice", Explain's guard).
+# Claims stay modest and non-medical (README, docs, UI copy, sample maps, demo talk, prompts): scripts/health-words.pl.
+check "health-wording guard catches what it should (self-test)" "perl scripts/health-words.pl --self-test"
 medical_wording() {
   git ls-files -z -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src |
-    xargs -0 perl -nle 'BEGIN { $re = qr/\b(adhd|neurodivergent|mental health|diagnos(e|es|ed|is|ing)|treat(s|ed|ing|ments?)?|therap(y|ies|ist|ists|eutic)|cur(e|es|ed|ing)|medical(ly)?|symptoms?|clinical(ly)?)\b/i }
-      ($l = $_) =~ s/\btreat(s|ed|ing)?\b[^.]{0,60}?\bas\b//gi; $l =~ s/\b(never|not|no)(\s+\S+){0,3}?\s+medical\b//gi; print "$ARGV:$.: " . substr($_, 0, 140) if $l =~ $re; close ARGV if eof'
+    xargs -0 perl scripts/health-words.pl
 }
 claims=$(medical_wording)
 if [ -z "$claims" ]; then pass "no medical or diagnosis wording in README, docs, UI copy or samples"
