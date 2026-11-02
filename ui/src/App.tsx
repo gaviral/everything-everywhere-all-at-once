@@ -1283,8 +1283,24 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const due = days == null || action.status === "done" ? "" : days < 0 ? "overdue" : days === 0 ? "today" : days === 1 ? "tomorrow" : "";
   const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
   const line = actionLine(action, app);
+  // Add pressed from the keyboard: its button goes while Apple's side runs, so focus waits on the row instead of
+  // falling to the page, and goes to "Try again" if it comes back (unless you've moved on). A click's isn't moved.
+  const row = useRef<HTMLDivElement>(null);
+  const add = useRef<HTMLButtonElement>(null);
+  const keyed = useRef(false);
+  const approve = () => {
+    keyed.current = !!add.current?.matches(":focus-visible");
+    if (keyed.current) row.current?.focus({ preventScroll: true });
+    on.approve(action.id);
+  };
+  useEffect(() => {
+    if (action.status === "kept" || !keyed.current) return;
+    keyed.current = false;
+    const focused = document.activeElement;
+    if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
+  }, [action.status]);
   return (
-    <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
         data-tip={action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
@@ -1295,7 +1311,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
       </span>
       {line.button && (
         <span className="ai-actions">
-          <button aria-label={line.label} onClick={() => on.approve(action.id)}>{line.button}</button>
+          <button ref={add} aria-label={line.label} onClick={approve}>{line.button}</button>
           <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
             ×
           </button>
