@@ -1,11 +1,11 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { onReading } from "./apps-audio";
-import type { MiniApp } from "./apps-core";
-import { READING_MS, SECOND, splitTalk, type Stretch } from "./level-stretches";
+import type { BrickProps } from "../contract";
+import { READING_MS, SECOND, splitTalk, type Stretch } from "./stretches";
 import "./level.css";
 
-// `?level` in the address (App.tsx): every loudness reading the core receives, big, so a minute of talk on the
-// recording mic (normal, raised, shout) gives the three voices in apps.rs. Loaded only with the flag.
+// `?level` in the address (brick.json's flag), or its switch in the Catalog: every loudness reading the core receives,
+// big, so a minute of talk on the recording mic (normal, raised, shout) gives the three voices in apps.rs. Its code
+// loads only once it's on.
 
 // 10 s on the chart: a 3 s loud stretch (the Volume watcher's) with room around it, and long enough to see the
 // browser's auto gain pull a raised voice back down.
@@ -18,7 +18,8 @@ const KEPT = 5;
 const height = (level: number) => `${Math.min(1, Math.max(0, (Math.log10(level) + 2) / 2)) * 100}%`;
 const shown = (level: number) => level.toFixed(3);
 
-export default function LevelMeter({ apps }: { apps: MiniApp[] }) {
+export default function LevelMeter({ map, on }: BrickProps) {
+  const apps = map.apps;
   const [readings, setReadings] = useState<{ n: number; level: number }[]>([]);
   const [current, setCurrent] = useState<Stretch | null>(null);
   const [stretches, setStretches] = useState<Stretch[]>([]);
@@ -27,7 +28,7 @@ export default function LevelMeter({ apps }: { apps: MiniApp[] }) {
     let n = 0;
     let stale: number | undefined;
     const split = splitTalk((stretch) => setStretches((kept) => [stretch, ...kept].slice(0, KEPT)));
-    const stop = onReading((level) => {
+    const stop = on("loudness", (level) => {
       setLive(true);
       window.clearTimeout(stale);
       // A second of missed readings: the mic is off or the connection dropped, so the stretch is over.
@@ -37,7 +38,7 @@ export default function LevelMeter({ apps }: { apps: MiniApp[] }) {
       setCurrent(split.current());
     });
     return () => { stop(); window.clearTimeout(stale); };
-  }, []);
+  }, [on]);
 
   const volumeApps = apps.flatMap((app) => app.watcher.kind === "volume" ? [{ id: app.id, name: app.name, level: app.watcher.level, on: app.enabled }] : []);
   // Readings at or above the lowest level of a volume app that's on show in the accent color: loud enough to count.

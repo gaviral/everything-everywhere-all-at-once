@@ -1,4 +1,4 @@
-// Stretches of talk in the `?level` meter's readings (Level.tsx), so a minute of normal talk, a raised voice and a
+// Stretches of talk in the `?level` meter's readings (index.tsx), so a minute of normal talk, a raised voice and a
 // shout gives each voice's typical reading. Where a voice starts and ends is found relative to the voice and to the
 // room between voices, not at a fixed level: after the browser's processing, a room can read above 0.01.
 

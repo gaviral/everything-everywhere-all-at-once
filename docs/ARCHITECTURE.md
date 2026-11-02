@@ -27,6 +27,8 @@ Browser, one page per window (ui/src)
   feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
+  positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
+  onscreen.ts    keeps a popover anchored to a button (Room, the ? list, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
   route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
@@ -45,9 +47,14 @@ Browser, one page per window (ui/src)
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
-  Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
-  level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
+  bricks-core.ts the bricks (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
+  BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
+  Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
+  bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
+    level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
+    bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
+    _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
@@ -68,6 +75,7 @@ Core, one process (core/src: axum, tokio)
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
   moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
+  positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
@@ -86,8 +94,8 @@ Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept besid
 
 ## State and the journal
 
-- `World`: threads, thoughts, `active` (where the talk is), `active_by` (each speaker's thread), suggestions, actions, `merged` (old thread id to its successor), apps, recaps.
-- Every change goes through `Core::commit`: under the world and journal locks, each `Change` is applied to the `World` and appended to `data/<map>/journal.jsonl` as one JSON line (`#[serde(tag = "type")]`); then each is broadcast as `ServerMsg::Change`. Nothing else changes the `World`.
+- `World`: threads, thoughts, `active` (where the talk is), `active_by` (each speaker's thread), suggestions, actions, `merged` (old thread id to its successor), apps, recaps, `positions` (thread or thought id to where it was put on the canvas, by whom and when).
+- Every change goes through `Core::commit`: under the world and journal locks, each `Change` is applied to the `World` and appended to `data/<map>/journal.jsonl` as one JSON line (`#[serde(tag = "type")]`); then each is broadcast as `ServerMsg::Change`. Nothing else changes the `World`, but a place on the canvas (`positions::set`): applied and broadcast the same way, under the same locks, while its journal line may wait up to 250 ms for a newer step of the same item to take its place (a drag sends one every frame). A commit drops a waiting line whose item it takes off the map, so replay matches what windows were sent.
 - `Core::record` appends a change that only the journal keeps (`ExplainAnswered`, `AnswerMarked`): the `World` ignores it and no window is sent it. These are labels for judging Explain and Recap prompts later.
 - On start, `Journal::open` replays the file. A line it can't parse is skipped with a warning; a missing final newline (a crash mid-write) is added, so the next change starts on its own line. Fields added later carry `#[serde(default)]`, so old journals keep loading.
 - A merge moves thoughts, branches, suggestions, actions and each speaker's place, and records `from → into`; later changes aimed at `from` follow it, with a hop limit so a cycle can't loop.

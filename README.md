@@ -207,7 +207,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 
 ## More detail
 
-- [docs/FEATURES.md](docs/FEATURES.md): everything in full: every model call and its setting, what you'll see, placing, the left-off card, Did you mean, the refiner, pictures and the Palace, apps, Recap, import, rooms, presets and Messages, hosting, privacy, security.
+- [docs/FEATURES.md](docs/FEATURES.md): everything in full: every model call and its setting, what you'll see, placing, the left-off card, Did you mean, the refiner, pictures and the Palace, apps, bricks, Recap, import, rooms, places on the canvas, presets and Messages, hosting, privacy, security.
 - [docs/COMMANDS.md](docs/COMMANDS.md): every spoken command, with its variants.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the parts, the journal, the life of a thought, every model call.
 - [docs/trace.md](docs/trace.md): every model call in one real run.

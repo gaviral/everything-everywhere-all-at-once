@@ -22,7 +22,7 @@ export function volumeReporter(report: (level: number) => void) {
 
 const readings = new Set<(level: number) => void>();
 
-/** Each reading the core received, for the `?level` meter (Level.tsx); without it nothing listens. */
+/** Each reading the core received, for the `?level` meter (bricks/level); without it on, nothing listens. */
 export function received(level: number) { readings.forEach((listener) => listener(level)); }
 
 export function onReading(listener: (level: number) => void) {

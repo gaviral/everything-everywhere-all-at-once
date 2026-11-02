@@ -1,0 +1,8 @@
+{
+  "id": "bubbles",
+  "name": "Bubbles",
+  "does": "Each thread floats as a bubble in a place of its own, sized by its points.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

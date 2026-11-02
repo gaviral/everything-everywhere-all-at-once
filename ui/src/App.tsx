@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -41,6 +41,7 @@ import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { useOnScreen } from "./onscreen";
 import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { useLanes, useRouteMark } from "./route";
@@ -51,11 +52,12 @@ import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 import { SendCard } from "./SendCard";
+import { BRICKS, useBricksOn } from "./bricks-core";
+import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
+import { Catalog } from "./Catalog";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
-// `?level` adds a meter of the loudness readings the core receives, for tuning volume apps; without it, it isn't loaded.
-const LevelMeter = typeof location !== "undefined" && new URLSearchParams(location.search).has("level") ? lazy(() => import("./Level")) : null;
 
 export default function App() {
   const me = useMe();
@@ -81,7 +83,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
-  const [view, setView] = useState<"map" | "palace">("map");
+  // "map", "palace", or the id of a view brick that's on (bricks-core.ts): its name joins the Map and Palace switch.
+  const [view, setView] = useState<string>("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
   // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
   const jumps = useRef(jumpTracker()).current;
@@ -95,6 +98,9 @@ export default function App() {
   // The "?" list of what you can say, opened by its button or by asking ("What can I say?"). It closes on your next
   // turn, Esc or a click outside it, never on a timer: what you say next is your own sign you're done reading.
   const [helpOpen, setHelpOpen] = useState(false);
+  // On a phone the "?" sits mid-header: the list shifts into view rather than run past an edge (onscreen.ts).
+  const helpList = useRef<HTMLDivElement>(null);
+  useOnScreen(helpList);
   // Ahead of the view effect: a spoken turn's end and the list it asked for can arrive in one render.
   useEffect(() => { if (core.handoff) setHelpOpen(false); }, [core.handoff]);
   useEffect(() => {
@@ -110,12 +116,14 @@ export default function App() {
   // end left its room, which the Palace's own top gives back, so the map came back on a shorter page, 74 px down.
   const mapRoom = useRef(0);
   const restoreMap = useRef(false);
-  const showView = (next: "map" | "palace") => {
+  // Leaving the map keeps its place; coming back to it, from the Palace or a view brick, puts it back.
+  const showView = (next: string) => {
     if (next === view) return;
-    if (next === "palace") {
+    if (view === "map") {
       mapScroll.current = window.scrollY;
       mapRoom.current = dockRoom.now();
-    } else restoreMap.current = true;
+    }
+    if (next === "map") restoreMap.current = true;
     setView(next);
   };
   // Export, or "export my map": the whole map as a Markdown file, made here from the map this window holds (export-md.ts).
@@ -290,7 +298,7 @@ export default function App() {
       if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
-      const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
+      const top = mapTop();
       const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
       if (bottom <= top) return;
       // Your words landing, also when your place moved with them to a new topic. Your place moving on its own
@@ -347,6 +355,32 @@ export default function App() {
   const toolsRef = useRef<HTMLElement>(null);
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
+  const laneRef = useRef<HTMLDivElement>(null);
+  useLaneRoom(laneRef, headerRef, dockRef);
+
+  // A point tapped or tabbed to on a phone or a short window shows whole with its Delete and Move: not under the stack
+  // of notices, the header or the dock (at 320 × 568 the notices covered a focused point's words and buttons). The
+  // laptop's notices are a narrow column of no height in the flow: there the browser's own scroll to focus stays.
+  useEffect(() => {
+    const stacked = window.matchMedia("(max-width: 560px), (max-height: 560px)");
+    const showPoint = (event: FocusEvent) => {
+      const point = stacked.matches ? (event.target as Element | null)?.closest?.(".points li") : null;
+      if (!point) return;
+      // A frame on, once its Delete and Move have their row.
+      requestAnimationFrame(() => {
+        if (!point.contains(document.activeElement) || following.current) return;
+        const top = mapTop();
+        const bottom = Math.min(window.innerHeight, dockRef.current?.getBoundingClientRect().top ?? window.innerHeight);
+        const rect = point.getBoundingClientRect();
+        if (bottom <= top || (rect.top >= top && rect.bottom <= bottom)) return;
+        // Too tall for the band, or above it: its first line goes to the band's top; below it, its foot to the band's foot.
+        const delta = rect.top < top || rect.height > bottom - top - 16 ? rect.top - top - 8 : rect.bottom - bottom + 8;
+        scrollForMap(following, delta, !!reducedMotion);
+      });
+    };
+    document.addEventListener("focusin", showPoint);
+    return () => document.removeEventListener("focusin", showPoint);
+  }, [reducedMotion]);
 
   // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
   // kept every later notice up for good: on each change, look where focus is now.
@@ -853,6 +887,20 @@ export default function App() {
     });
   };
 
+  // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
+  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does.
+  const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, {
+    addThought: core.sendText,
+    openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
+    select: core.select,
+    notify: (text) => core.showNotice(text),
+  });
+  const bricksOn = useBricksOn();
+  const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
+  const viewBrick = viewBricks.find((brick) => brick.info.id === view);
+  // A view brick switched off while it's shown hands the window back to the map.
+  useEffect(() => { if (view !== "map" && view !== "palace" && !viewBrick) showView("map"); }, [view, viewBrick]);
+
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
@@ -883,7 +931,7 @@ export default function App() {
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         {/* What you can say comes first: asking for this list by voice is how most people open it. */}
-        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div className="keyboard-hint">
+        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div ref={helpList} className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
           <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
@@ -930,7 +978,7 @@ export default function App() {
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
-      <div className="notice-lane">
+      <div ref={laneRef} className="notice-lane">
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -969,6 +1017,7 @@ export default function App() {
           <div className="palace-switch" role="group" aria-label="View">
             <button aria-pressed={view === "map"} onClick={() => showView("map")}>Map</button>
             <button aria-pressed={view === "palace"} onClick={() => showView("palace")}>Palace</button>
+            {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)}>{brick.info.name}</button>)}
           </div>
           {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
@@ -979,7 +1028,8 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1055,6 +1105,7 @@ export default function App() {
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
+          <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
@@ -1079,8 +1130,10 @@ export default function App() {
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
-      {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
+      <BrickSlot kind="panel" host={brickHost} />
+      <BrickSlot kind="input" host={brickHost} />
       <Tips />
+      <Catalog />
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
@@ -1165,6 +1218,83 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
     observer.observe(element);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
   }, [present]);
+}
+
+/** Where the map shows clear of what's pinned over it: under the header, the tools row and, on a phone or a short
+ *  window, the stack of notices (a lane of its own height there; the laptop's lane has no height, so it's left out). */
+function mapTop() {
+  const bars = Array.from(document.querySelectorAll<HTMLElement>("header, .map-tools, .notice-lane"))
+    .filter((bar) => !bar.classList.contains("notice-lane") || (bar.offsetHeight > 0 && bar.childElementCount > 0));
+  return Math.max(0, ...bars.map((bar) => bar.getBoundingClientRect().bottom));
+}
+
+/** The least height a notice shows whole in: its own, but for the message card, whose words scroll (send-card.css), its
+ *  heading, Stop and one line of words. Read from its parts: its own height may be what the lane's cap left it. */
+function leastHeight(notice: HTMLElement) {
+  const text = notice.querySelector<HTMLElement>(":scope > .send-card-text");
+  if (!text) return notice.offsetHeight;
+  const px = (value: string) => parseFloat(value) || 0;
+  const card = getComputedStyle(notice), words = getComputedStyle(text);
+  let total = px(card.paddingTop) + px(card.paddingBottom) + px(card.borderTopWidth) + px(card.borderBottomWidth);
+  for (const part of Array.from(notice.children) as HTMLElement[]) {
+    if (part === text) total += px(words.lineHeight) + px(words.marginTop) + px(words.marginBottom);
+    else if (getComputedStyle(part).position !== "absolute") total += part.offsetHeight;
+  }
+  return Math.ceil(total);
+}
+
+/** Where the notice lane may be on a phone or a short window (styles.css): --lane-top, just under the header or 8 px
+ *  from the top once a short window's header has scrolled away (there the lane is fixed: in the flow, the tour above
+ *  it left it 22 px), and --lane-room, from where the lane is to the dock's top, so a stack of notices never runs
+ *  under the composer (at 320 × 568 the message card's Stop was under the mic), and at most half of that, so the map
+ *  keeps a band to show a point in. The laptop's lane reads neither. A fixed lane also goes below the tour's tip while
+ *  it's on screen (scripts/phone-check.mjs). */
+function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const lane = ref.current;
+    if (!lane) return;
+    let frame = 0;
+    const set = (name: string, px: number) => { if (lane.style.getPropertyValue(name) !== `${px}px`) lane.style.setProperty(name, `${px}px`); };
+    const measure = () => {
+      frame = 0;
+      const dock = dockRef.current?.getBoundingClientRect().top ?? window.innerHeight;
+      const fixed = getComputedStyle(lane).position === "fixed";
+      let laneTop = Math.max(8, Math.round((headerRef.current?.getBoundingClientRect().bottom ?? 0) + 6));
+      // A fixed lane goes under the tour's tip while you're in it (focus is: each step focuses its Next) and it's on
+      // screen: on its side, the stack covered its words and Next. Where both don't fit, the first notice stays whole
+      // and covers only the tip's foot. Once you're on the map (a point tapped), the map's band comes first.
+      // The first notice as it's drawn (the message card comes first by its CSS order), and the least it shows whole in.
+      const first = (Array.from(lane.children) as HTMLElement[]).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      const least = first ? leastHeight(first) : 0;
+      const tip = fixed ? document.querySelector(".tour-tip") : null;
+      const tour = tip?.contains(document.activeElement) ? tip.getBoundingClientRect() : undefined;
+      if (tour && tour.bottom > laneTop && tour.top < dock) laneTop = Math.max(laneTop, Math.round(Math.min(tour.bottom + 6, dock - 16 - least)));
+      set("--lane-top", laneTop);
+      const top = fixed ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
+      // The stack gets at most half of what's left above the dock, the map the rest: at 320 × 568 and on its side three
+      // notices took it all, and a point tapped or landing had nowhere to show. The first notice always shows whole
+      // (the message card's Stop), and the rest scroll in the lane.
+      const left = Math.max(0, Math.floor(dock - top - 8));
+      set("--lane-room", Math.min(left, Math.max(least + 16, Math.floor(left / 2))));
+    };
+    const soon = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    // What moves the lane, the header or the dock without a scroll: the Apps panel, the tour, a dock card, a notice.
+    const observer = new ResizeObserver(soon);
+    for (const element of [document.body, lane, headerRef.current, dockRef.current]) if (element) observer.observe(element);
+    window.addEventListener("scroll", soon, { passive: true });
+    window.addEventListener("resize", soon);
+    document.addEventListener("focusin", soon);
+    document.addEventListener("focusout", soon);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("scroll", soon);
+      window.removeEventListener("resize", soon);
+      document.removeEventListener("focusin", soon);
+      document.removeEventListener("focusout", soon);
+    };
+  }, []);
 }
 
 /** The room the page's end leaves for the dock, as --dock-room: the map and the Palace pad their ends with it. It
