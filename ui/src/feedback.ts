@@ -198,7 +198,7 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },
   { at: ["App.tsx", "onBlur={() => setNoticeFocused(false)}"], why: "a notice keeps up while it has focus: no change you see" },
   { at: ["PullsCard.tsx", "onBlur={(event) =>"], why: "the GitHub card keeps up while it has focus: no change you see" },
-  { at: ["NoteCard.tsx", "onBlur={() => setHeld(false)}"], why: "the note card keeps up while it has focus: no change you see" },
+  { at: ["NoteCard.tsx", "onBlur={(event) =>"], why: "the note card keeps up while it has focus: no change you see" },
   { at: ["App.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the shortcuts list closes it: the list going is the feedback" },
   { at: ["App.tsx", `window.addEventListener("pointerdown", down, true)`], why: "notes that you're moving around the map, so the map stops following landings" },
   { at: ["App.tsx", `window.addEventListener("pointerup", up, true)`], why: "as above, on letting go" },

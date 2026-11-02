@@ -6,8 +6,14 @@ import { announcement, cardWords, lingerMs, pointWords, STATE_CLASS, type NoteCa
 import "./note-card.css";
 
 export function NoteCard({ card, onOpen, onGone }: { card: Card | null; onOpen: (id: number) => void; onGone: (id: number) => void }) {
-  // The pointer on it or focus in it holds it up: someone reading the points or reaching for Open isn't done.
-  const [held, setHeld] = useState(false);
+  // The pointer on it or focus in it holds it up: someone reading the points or reaching for Open isn't done. Each kept
+  // apart, as the GitHub card's: the pointer crossing it on the way to that card leaves a focused note up.
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
+  // A card that goes (its ×, its time up) takes the pointer and focus with it, and no leave or blur ever comes: the next
+  // one starts unheld, or it stayed up for good (connectors, 2026-11-02; App.tsx's notice had the same).
+  useEffect(() => { if (!card) { setHovered(false); setFocused(false); } }, [card]);
   useEffect(() => {
     if (!card || held) return;
     const linger = lingerMs(card);
@@ -22,10 +28,10 @@ export function NoteCard({ card, onOpen, onGone }: { card: Card | null; onOpen: 
     <section
       className={`note-card ${STATE_CLASS[card.state]}`}
       aria-label={`${words.heading}: ${card.title}`}
-      onMouseEnter={() => setHeld(true)}
-      onMouseLeave={() => setHeld(false)}
-      onFocus={() => setHeld(true)}
-      onBlur={() => setHeld(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
     >
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="note-card-head">

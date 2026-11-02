@@ -343,6 +343,9 @@ export default function App() {
   // you when they go.
   useHeightVar(dockRef, "--dock-height");
   const dockRoom = useDockRoom(dockRef);
+  // The notice lane's cards share the room down to the dock (useLaneRoom).
+  const laneRef = useRef<HTMLDivElement>(null);
+  useLaneRoom(laneRef, dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
   // (Back to active, Finish it, a Palace tile) stops under both.
   const headerRef = useRef<HTMLElement>(null);
@@ -931,8 +934,10 @@ export default function App() {
       <div id="tour-map" />
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
-      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
+      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. Its notices
+          and cards are one column (styles.css .notice-stack), so they stack instead of covering each other. */}
       <div className="notice-lane">
+      <div className="notice-stack" ref={laneRef}>
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -964,6 +969,7 @@ export default function App() {
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
+      </div>
       </div>
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -1169,6 +1175,39 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
     observer.observe(element);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
   }, [present]);
+}
+
+/** The room the notice lane's cards share, as --lane-room on its column: from where the column starts now (under the
+ *  Apps pill at the page's top, under the header once the map scrolls) down to the dock, less 8 px of air. On a wide
+ *  screen styles.css bounds the column by it, and past it the GitHub list and the note's points scroll inside their
+ *  cards: with ten pull requests, a note and a message up at once, the note card ran 335 px past a 900 px window and
+ *  the GitHub card covered the composer (connectors, 2026-11-02). Measured on scroll too, as the lane moves up to stick. */
+function useLaneRoom(ref: RefObject<HTMLElement | null>, dock: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const column = ref.current;
+    if (!column) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const foot = dock.current?.getBoundingClientRect().top ?? window.innerHeight;
+      const room = `${Math.max(0, Math.floor(foot - column.getBoundingClientRect().top - 8))}px`;
+      if (column.style.getPropertyValue("--lane-room") !== room) column.style.setProperty("--lane-room", room);
+    };
+    const soon = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    // The lane moves with the page above it (the header wraps, the Apps panel opens) and the dock grows with its cards.
+    const observer = new ResizeObserver(soon);
+    observer.observe(document.body);
+    if (dock.current) observer.observe(dock.current);
+    window.addEventListener("scroll", soon, { passive: true });
+    window.addEventListener("resize", soon);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("scroll", soon);
+      window.removeEventListener("resize", soon);
+    };
+  }, [ref, dock]);
 }
 
 /** The room the page's end leaves for the dock, as --dock-room: the map and the Palace pad their ends with it. It

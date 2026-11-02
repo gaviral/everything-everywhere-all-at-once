@@ -11,6 +11,9 @@ export function PullsCard({ card, onGone }: { card: Card | null; onGone: (id: nu
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const held = hovered || focused;
+  // A card that goes (its ×, Esc, its time up) takes the pointer and focus with it, and no leave or blur ever comes:
+  // the next one starts unheld, or it stayed up for good (connectors, 2026-11-02; App.tsx's notice had the same).
+  useEffect(() => { if (!card) { setHovered(false); setFocused(false); } }, [card]);
   // "Updated 3 h ago" is read against when the answer came; the card is up a minute or two, so it stays true enough.
   const now = useMemo(() => Date.now(), [card]);
 

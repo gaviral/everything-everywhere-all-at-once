@@ -35,7 +35,8 @@
 @media (prefers-reduced-motion: reduce) {
   .send-card-bar span { animation: none; transform: scaleX(var(--left, 1)); }
 }
+/* On a phone the lane's column sticks under the header and spaces its cards (styles.css .notice-stack). */
 @media (max-width: 560px) {
-  .send-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; }
+  .send-card { width: auto; }
 }
 @media (hover: none) { .send-card-stop kbd { display: none; } }
