@@ -4,7 +4,7 @@
 // Point measured its box only when its thread's thoughts changed (layoutDependency), so when its card moved, Motion
 // projected it from its old box and the card's move counted twice. This plays that moment on the built UI (ui/dist),
 // served with a stand-in core (a snapshot, then the core's changes), in headless Chrome, and measures every point
-// against its card while the cards move. Exit 3 (precheck's WARN) when this machine has no Chrome or ui/dist.
+// against its card on every frame while the cards move, and every point once they settle. Exit 3 (precheck's WARN) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
@@ -125,15 +125,22 @@ try {
   // "Show" on Rent, above Stats: Stats and its branch move down. Then "Hide": they move back up.
   for (const [step, expect] of [["Show", 1], ["Hide", -1]]) {
     const from = await top("thread-T4");
+    // The moved cards' points are measured on every animation frame, from before the click until well after the
+    // springs settle (well inside a second; a stray point stayed out for 13–15 s on camera), so a point that strays
+    // mid-move and comes back fails too. Rent's own points are checked once it settles: while a card opens or closes
+    // its points slide with it and may sit outside it for a moment (43 px here, 0.1–0.4 s in takes), by design.
+    await evaluate(`(() => { window.__worst = new Map(); window.__frames = 0; const tick = () => {
+      window.__frames++;
+      for (const p of ${probe}) if (p.card !== "thread-T1" && p.out > 2 && !(window.__worst.get(p.point)?.out >= p.out)) window.__worst.set(p.point, p);
+      window.__raf = requestAnimationFrame(tick); }; tick(); })()`);
     await evaluate(`document.querySelector("#thread-T1 > .thread-head > button.thread-toggle").click()`);
-    // Springs settle well inside a second; a stray point stayed out for 13–15 s on camera.
-    await sleep(1200);
+    await sleep(2000);
+    const { worst, frames } = await evaluate(`(cancelAnimationFrame(window.__raf), { worst: [...window.__worst.values()], frames: window.__frames })`);
     const moved = (await top("thread-T4")) - from;
     assert.ok(moved * expect > 30, `${step} on Rent moves the branch card (moved ${Math.round(moved)} px)`);
-    const out = [];
-    for (let i = 0; i < 8; i++) { out.push(...stray(await evaluate(probe))); await sleep(100); }
-    const worst = new Map(out.map((p) => [p.point, p]));
-    assert.deepEqual([...worst.values()], [], `after ${step} on the card above, every point stays inside its card (px outside)`);
+    assert.ok(frames > 30, `${step}: measured on every frame (${frames} frames in 2 s)`);
+    assert.deepEqual(worst, [], `during and after ${step} on the card above, every point of the cards it moves stays inside its card (px outside, worst frame)`);
+    assert.deepEqual(stray(await evaluate(probe)), [], `after ${step} settles, every point is inside its card`);
   }
   browser.close();
 } catch (error) {
@@ -148,4 +155,4 @@ try {
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the OS clears its temp folder */ }
 }
 if (failed) { console.error(failed.message); process.exit(1); }
-console.log("points-check: every point stays inside its card while the cards around it move");
+console.log("points-check: every point of a moving card stays inside it on every frame, and every point once the cards settle");
