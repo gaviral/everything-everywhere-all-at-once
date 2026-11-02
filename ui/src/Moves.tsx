@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Thought, Thread } from "./core";
+import { clipTitle } from "./limits";
 import { moveTargets, typedTitle } from "./moves-core";
 import { titleTap } from "./ux-rules";
 import "./moves.css";
@@ -207,6 +208,11 @@ export function ThreadTitle({ thread, depth, onOpen }: { thread: Thread; depth: 
       <div {...heading}>
         <input className="title-input" autoFocus defaultValue={thread.title} aria-label={`Rename “${thread.title}”`}
           onFocus={(event) => event.currentTarget.select()}
+          onInput={(event) => {
+            const box = event.currentTarget;
+            const clipped = clipTitle(box.value);
+            if (clipped !== box.value) box.value = clipped;
+          }}
           onKeyDown={(event) => {
             event.stopPropagation();
             if (event.key === "Enter") { event.preventDefault(); refocus.current = true; finish(event.currentTarget.value); }

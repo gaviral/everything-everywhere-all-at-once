@@ -72,6 +72,8 @@ samples_have_pictures() {
 check "samples: every thread has its picture shipped (no blank Palace without a key)" samples_have_pictures
 
 port=${PORT:-4321}
+# Another local server's port for the Origin probe: never the core's own, which is rightly let in.
+other=3000; [ "$port" = 3000 ] && other=3001
 # Local room probes accept our self-signed certificate; this does not install trust anywhere.
 code() { curl -ks --max-time 2 -o /dev/null -w '%{http_code}' "$@"; }
 ws() { code -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$@"; }
@@ -91,6 +93,7 @@ elif [ "$(code http://127.0.0.1:$port/)" = 403 ]; then
   warn "the core on :$port refuses this laptop (a trial's?): run again with PUBLIC_URL set to probe it"
 elif curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
   check "live: another site's WebSocket is refused" "[ \"\$(ws -H 'Origin: https://example.com' http://127.0.0.1:$port/ws)\" = 403 ]"
+  check "live: another local server's page is refused" "[ \"\$(ws -H 'Origin: http://localhost:$other' http://127.0.0.1:$port/ws)\" = 403 ]"
   check "live: a rebinding Host is refused" "[ \"\$(code -H 'Host: example.com' http://127.0.0.1:$port/)\" = 403 ]"
   check "live: the app's own page still connects" "[ \"\$(ws -H 'Origin: http://localhost:$port' http://127.0.0.1:$port/ws)\" = 101 ]"
   # Through this laptop's network address, the way another laptop comes in.

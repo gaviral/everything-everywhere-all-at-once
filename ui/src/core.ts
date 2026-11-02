@@ -8,6 +8,7 @@ import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
 import { failureNotice } from "./action-line";
+import { tooBig, tooLongThought } from "./limits";
 import { applyMove, type MoveChange } from "./moves-core";
 import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
@@ -814,6 +815,9 @@ export function useCore(speaker?: string) {
   }, [receiveApps, resetApps, receiveRecap, recapDisconnected, closeRecap, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
+    const big = tooBig(data);
+    // Past the core's cap it would end this window's connection (core/src/protocol.rs `FRAME_MAX`).
+    if (big) { setNotice(big); answered(); return false; }
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
     socket.current.send(data);
     return true;
@@ -904,6 +908,9 @@ export function useCore(speaker?: string) {
     },
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }
+      // Kept in the composer, to cut into parts.
+      const long = tooLongThought(text);
+      if (long) { setNotice(long); answered(); return false; }
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
