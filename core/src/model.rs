@@ -309,23 +309,19 @@ impl Core {
             answer(response).await
         }
         .await;
-        self.step_ended(step, body, &extra, started, result.is_ok());
+        step.end(result.is_ok());
         self.trace.call(body, started, result.as_ref(), extra);
         result
     }
 
-    /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The id
-    /// pairs it with its end (`step_ended`).
-    fn step_began(&self, sent: &Value, extra: &Value) -> u64 {
+    /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The
+    /// guard tells its end, sharing the id: `end` with the answer, or as failed when the call is dropped unanswered
+    /// (a search past its patience, an import stopped), so no window waits on it forever.
+    fn step_began(&self, sent: &Value, extra: &Value) -> StepGuard<'_> {
         let id = STEP_IDS.fetch_add(1, Ordering::Relaxed);
-        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(Into::into));
-        self.send(ServerMsg::Step { id, step, model, done: false, ok: false, ms: 0 });
-        id
-    }
-
-    fn step_ended(&self, id: u64, sent: &Value, extra: &Value, started: std::time::Instant, ok: bool) {
-        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(Into::into));
-        self.send(ServerMsg::Step { id, step, model, done: true, ok, ms: started.elapsed().as_millis() as u64 });
+        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(String::from));
+        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0 });
+        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false }
     }
 
     /// A step a rule did, with no model ("Where was I?", an app's tune): to `speaker`'s windows, or every window.
@@ -366,7 +362,7 @@ impl Core {
         let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
         if let (Some(status), Some(base)) = (turned_away, setting.base.as_deref().filter(|base| *base != model)) {
             tracing::info!("{model} answered {status}: asking {base} instead");
-            self.step_ended(step, &sent, &extra, started, false);
+            step.end(false);
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
             (sent, started) = (body(base), std::time::Instant::now());
@@ -384,7 +380,7 @@ impl Core {
             answer(response).await
         }
         .await;
-        self.step_ended(step, &sent, &extra, started, result.is_ok());
+        step.end(result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result
     }
@@ -392,6 +388,35 @@ impl Core {
 
 /// Ids for `ServerMsg::Step`, one per step, shared by every core in the process (tests run several).
 pub static STEP_IDS: AtomicU64 = AtomicU64::new(1);
+
+/// A model call the windows were told began (`Core::step_began`): tells its end exactly once, from `end`, or as
+/// failed when dropped first (the call's future canceled before an answer).
+struct StepGuard<'a> {
+    core: &'a Core,
+    id: u64,
+    step: String,
+    model: Option<String>,
+    started: std::time::Instant,
+    ended: bool,
+}
+
+impl StepGuard<'_> {
+    fn end(mut self, ok: bool) {
+        self.tell(ok);
+    }
+
+    fn tell(&mut self, ok: bool) {
+        if std::mem::replace(&mut self.ended, true) { return; }
+        let ms = self.started.elapsed().as_millis() as u64;
+        self.core.send(ServerMsg::Step { id: self.id, step: self.step.clone(), model: self.model.clone(), done: true, ok, ms });
+    }
+}
+
+impl Drop for StepGuard<'_> {
+    fn drop(&mut self) {
+        self.tell(false);
+    }
+}
 
 /// The JSON of a model's answer, once `check` has read its status. Any other failure ends the call with the
 /// service's own words, such as "400 Bad Request: …".
@@ -738,6 +763,13 @@ mod tests {
         let told: Vec<_> = steps(&mut updates).into_iter().map(|(_, step, model, done, ok)| (step, model.unwrap_or_default(), done, ok)).collect();
         let placer = |model: &str, done, ok| ("placer".to_string(), model.to_string(), done, ok);
         assert_eq!(told, [placer(CONTRIBUTOR, false, false), placer(CONTRIBUTOR, true, false), placer(BASE, false, false), placer(BASE, true, true)]);
+        // A call dropped before it answers (Search-first past its patience, an import stopped) still ends, failed.
+        let slow = json!({"model": "muse-spark-1.3", "status": 200, "answer": reply, "wait_ms": 2000});
+        let dropped = core.call_model_noting(&url, &slow, std::time::Duration::from_secs(5), json!({"feature": "app search"}));
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), dropped).await.is_err());
+        let told = steps(&mut updates);
+        assert_eq!(told.len(), 2, "{told:?}");
+        assert_eq!((told[0].0, told[1].0, told[1].1.as_str(), told[1].3, told[1].4), (told[0].0, told[0].0, "app search", true, false));
         // A rule's step names no model.
         core.rule_step(None, "tune");
         assert_eq!(steps(&mut updates).into_iter().map(|(_, s, m, d, _)| (s, m, d)).collect::<Vec<_>>(), [("tune".to_string(), None, true)]);
