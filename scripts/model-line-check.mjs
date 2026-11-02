@@ -81,6 +81,15 @@ try {
   state = stepped(EMPTY_LINE, tried, 0);
   state = stepped(stepped(state, end(tried, 200, false), 200), start("placer", "muse-spark-1.2"), 200);
   assert.equal(lineFor(state, 300, false).model, "Muse Spark 1.2");
+  // A placement's racing calls (placer.rs): the winner answers, the loser is cut off and told as dropped. That
+  // isn't a failure: the line says the winner's time, never "didn't answer", and nothing is left "placing".
+  const raceA = start("placer", "muse-spark-1.2-contributor"), raceB = start("placer", "muse-spark-1.2-contributor");
+  state = stepped(stepped(EMPTY_LINE, raceA, 0), raceB, 0);
+  state = stepped(state, end(raceB, 3200), 3200);
+  state = stepped(state, { ...end(raceA, 3201, false), dropped: true }, 3201);
+  assert.deepEqual(state.running, [], "the dropped lane no longer runs");
+  assert.deepEqual([lineFor(state, 3201, true).model, lineFor(state, 3201, true).text], ["Muse Spark 1.2", "answered · 3.2 s"],
+    "a race's loser never covers the winner's time");
   // A call that failed says so, with its model.
   const failed = start("picture", "muse-image-1.0");
   state = stepped(stepped(EMPTY_LINE, failed, 0), end(failed, 40000, false), 40000);

@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
-import type { Note, Thought } from "./core";
+import type { Note, Thought, World } from "./core";
+import { resolveMerged } from "./merges";
 import "./chunks.css";
 
 /** Each thought's note from the placer (core chunks.rs), by thought id; the map's cards read it from here. */
@@ -50,6 +51,24 @@ export function carriedIds(thoughts: Thought[], notes: Record<string, Note>, car
   if (!byCard.size) return new Set();
   for (const t of thoughts) byCard.get(card(t) ?? "")?.push(t);
   return new Set([...byCard.values()].flatMap((list) => asIdeas(list, notes).flatMap((idea) => idea.heads.map((h) => h.id))));
+}
+
+/** Thoughts and threads said from `since` through `until` (ms), counted as the cards show them: a part said before a
+ *  pause and the one carrying it on are one thought. The header and Recap both count with this, so they agree. */
+export function ideaCounts(world: Pick<World, "thoughts" | "threads" | "merged" | "notes">, since: number, until: number) {
+  const threadIds = new Set(world.threads.map((thread) => thread.id));
+  const card = (thought: Thought) => thought.thread_id && resolveMerged(world, thought.thread_id);
+  // Only the period's own thoughts join up: a part carried on after it still counts in it (review countsundo).
+  const said = world.thoughts.filter((thought) => thought.placed && thought.thread_id && thought.at_ms >= since && thought.at_ms <= until);
+  const carried = carriedIds(said, world.notes ?? {}, card);
+  const threads = new Set<string>();
+  let thoughts = 0;
+  for (const thought of said) {
+    if (carried.has(thought.id)) continue;
+    const id = card(thought)!;
+    if (threadIds.has(id)) { thoughts++; threads.add(id); }
+  }
+  return { thoughts, threads: threads.size };
 }
 
 /** A card's ideas, recomputed only when its thoughts or the notes change. */
