@@ -21,19 +21,7 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         .context("couldn't reach Voice Transcribe")?;
     let (mut sink, mut stream) = socket.split();
 
-    let handshake = json!({
-        "authorization": {"accessToken": format!("Bearer {key}")},
-        "audioEncoding": "PCM_24KHZ",
-        "model": "muse-voice-transcribe-1.0",
-        "mode": "ENDPOINTING",
-        "partialMode": "CUMULATIVE",
-        "emitAudioProgress": false,
-        "languageBias": ["English"],
-        // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
-        // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
-        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
-    });
-    sink.send(Message::Text(handshake.to_string().into())).await?;
+    sink.send(Message::Text(handshake(&key).to_string().into())).await?;
     let first = match stream.next().await {
         Some(Ok(Message::Text(t))) => serde_json::from_str::<Value>(t.as_str())?,
         other => return Err(anyhow!("Voice Transcribe refused the session: {other:?}")),
@@ -76,6 +64,22 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     writer.abort();
     core.send_to(&speaker, ServerMsg::Partial { text: String::new() });
     Ok(ended?)
+}
+
+/// The session's first message: how to listen, and the words to expect.
+fn handshake(key: &str) -> Value {
+    json!({
+        "authorization": {"accessToken": format!("Bearer {key}")},
+        "audioEncoding": "PCM_24KHZ",
+        "model": "muse-voice-transcribe-1.0",
+        "mode": "ENDPOINTING",
+        "partialMode": "CUMULATIVE",
+        "emitAudioProgress": false,
+        "languageBias": ["English"],
+        // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
+        // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
+        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
+    })
 }
 
 /// One event from the service; true when it was a spoken "stop listening", which ends the stream.
@@ -128,7 +132,7 @@ fn sentence_case(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle, sentence_case};
+    use super::{handle, handshake, sentence_case};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Journal, World};
     use crate::Core;
@@ -150,6 +154,17 @@ mod tests {
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["I should stop listening to podcasts at night"]);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Palace." and "Recap." said alone act only if the transcriber hears them: without its keywords they came back
+    /// as "Palis" or "Alice" (the handshake's comment).
+    #[test]
+    fn the_transcriber_is_told_to_expect_palace_and_recap() {
+        let sent = handshake("k");
+        let keywords: Vec<&str> = sent["keywords"].as_array().expect("keywords").iter().filter_map(|w| w.as_str()).collect();
+        for word in ["Palace", "Recap"] {
+            assert!(keywords.contains(&word), "{word} isn't among the keywords {keywords:?}");
+        }
     }
 
     #[test]

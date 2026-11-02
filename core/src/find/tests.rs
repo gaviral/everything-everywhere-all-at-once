@@ -282,6 +282,8 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
             }
             ServerMsg::Change { change: Change::ActiveChanged { speaker, .. } } => assert_eq!(speaker, "User"),
             ServerMsg::Change { change: Change::ThreadStatus { .. } } => {}
+            // Where a correction of this turn would start from (catalog.rs), to the asker alone.
+            ServerMsg::Correctable { .. } => assert_eq!(out.to.as_deref(), Some("User")),
             _ => panic!("unexpected message"),
         }
     }

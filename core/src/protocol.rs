@@ -23,6 +23,10 @@ pub enum ServerMsg {
     /// The notice just sent answers a request that can be taken back: the window shows Undo beside it, which sends
     /// this id back (catalog.rs).
     Undoable { id: u64 },
+    /// The speaker's last turn can be corrected ("No, I meant …") for `for_ms` more (0: no longer), and undoing it,
+    /// which a correction does first, moves them to `back_to` (none: they stay). The window's "this" mark previews a
+    /// correction with it, so it marks the card the redo will act on, and none when nothing would (catalog.rs).
+    Correctable { for_ms: u64, back_to: Option<String> },
     /// Undo of a view or a fold asked by voice: the window puts back what it showed before that ask (its view, Focus,
     /// and which threads were open), which only it knows (catalog.rs).
     Revert,
@@ -104,6 +108,8 @@ pub enum ClientMsg {
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.
     Correct { thought_id: String, accept: bool },
+    /// "Not one idea": the thought stops carrying on the words before a pause (chunks.rs).
+    Unlink { thought_id: String },
     /// What "this" means here: the thread the person selected (keyboard focus they moved there, or words selected
     /// in it) and the one under their pointer, sent when either changes (catalog.rs `this`).
     Attention {
@@ -114,6 +120,10 @@ pub enum ClientMsg {
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
+    /// A rename or merge the refiner proposed: Rename or Merge applies it, × (`apply` false) keeps things as they are.
+    Tidy { id: String, apply: bool },
+    /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
+    Untidy { kind: crate::tidy::Kind, thread_id: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

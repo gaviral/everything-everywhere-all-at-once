@@ -3,7 +3,7 @@
 // card a spoken "this" acts on. App.tsx feeds it the world and tells it what the map showed or held back.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Landing, World } from "./core";
-import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, thisKind, type Unseen } from "./attention-core";
+import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, thisBase, thisKind, type Unseen } from "./attention-core";
 import { POINTER_MS, resolveThis, type AttentionTeller } from "./this-card";
 import "./attention.css";
 
@@ -109,13 +109,15 @@ type Value = {
 const Context = createContext<Value>({ latest: null, unseen: new Map(), thisThread: null, thisTitle: "", note: null, known: { current: null } });
 
 /** The attention state for the map, from the world as it changes. */
-export function useAttention({ world, revision, me, view, covered: sheet, words, reveal, attending }: {
+export function useAttention({ world, revision, me, view, covered: sheet, words, reveal, attending, correctable }: {
   world: World; revision: number; me: string; view: string;
   /** A sheet is over the map (Recap): the checks run again when it goes. */
   covered: boolean;
   words: string;
   /** Where your attention is, as told to the core (core.ts, this-card.ts): what a spoken "this" picks from. */
   attending: Pick<AttentionTeller, "attending" | "watch">;
+  /** Whether your last turn can still be corrected, and where undoing it takes you (core.ts): a correction's "this". */
+  correctable: { until: number; back_to: string | null } | null;
   reveal: (thread: string, thought: string | null) => void;
 }) {
   const [latest, setLatest] = useState<string | null>(null);
@@ -233,26 +235,32 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
   const titleOf = (thread: string) => world.threads.find((t) => t.id === thread)?.title ?? "";
   const titles = useRef(titleOf);
   titles.current = titleOf;
-  // "This" as the core will pick it when the command arrives: focus is always your active thread; opening or folding
-  // takes the card you selected, else the one under the pointer, else the one it left within POINTER_MS, else your
-  // active thread (this-card.ts `resolveThis`). While the words point at a card, a change in what's selected or pointed
-  // at, or the card the pointer left running out of time, moves the mark with it.
+  // "This" as the core will pick it when the command arrives, for opening, folding and focusing alike: the card you
+  // selected, else the one under the pointer, else the one it left within POINTER_MS, else your active thread
+  // (this-card.ts `resolveThis`). A correction ("No, I meant collapse this") picks the same way from where undoing
+  // your last turn takes you, and shows nothing once the core has no turn to correct (attention-core.ts `thisBase`).
+  // While the words point at a card, a change in what's selected or pointed at, or the card the pointer left or the
+  // turn to correct running out of time, moves the mark with it.
   const pointing = thisKind(words);
   const [, moved] = useState(0);
   useEffect(() => {
-    if (pointing !== "card") return;
+    if (!pointing) return;
     let timer = 0;
     const expire = () => {
       window.clearTimeout(timer);
+      const now = Date.now();
       const left = attending.attending().left;
-      const wait = left ? left.at + POINTER_MS - Date.now() : -1;
-      if (wait >= 0) timer = window.setTimeout(() => moved((n) => n + 1), wait + 1);
+      const ends = [left ? left.at + POINTER_MS : -1, pointing === "correction" && correctable ? correctable.until : -1];
+      const next = Math.min(...ends.filter((at) => at >= now));
+      if (Number.isFinite(next)) timer = window.setTimeout(() => moved((n) => n + 1), next - now + 1);
     };
     const stop = attending.watch(() => { moved((n) => n + 1); expire(); });
     expire();
     return () => { stop(); window.clearTimeout(timer); };
-  }, [pointing, attending]);
-  const thisThread = pointing === "active" ? world.active : pointing === "card" ? resolveThis(attending.attending(), world, world.active, Date.now()) : null;
+  }, [pointing, attending, correctable]);
+  const now = Date.now();
+  const base = thisBase(pointing, correctable, world.active, now);
+  const thisThread = base ? resolveThis(attending.attending(), world, base.active, now) : null;
   const thisTitle = (thisThread && world.threads.find((t) => t.id === thisThread)?.title) || "";
   const value = useMemo<Value>(() => ({ latest, unseen: new Map(unseen.map((m) => [m.thread, m])), thisThread, thisTitle, note, known }), [latest, unseen, thisThread, thisTitle, note]);
   return {
