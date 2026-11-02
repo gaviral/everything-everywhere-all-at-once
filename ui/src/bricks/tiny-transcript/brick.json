@@ -1,0 +1,8 @@
+{
+  "id": "tiny-transcript",
+  "name": "Tiny transcript",
+  "does": "Your latest words, quietly above the dock, with a size you can adjust on first use.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

@@ -187,6 +187,28 @@ try {
   }
   // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
   await width(1280, 860);
+  // Tiny transcript: a panel; nothing without a thought of yours on its way; one added shows, inside a 320 px screen's
+  // edges, and stays with its first-use hint after it's placed (time to try the slider) until a click dismisses both.
+  if (checked.includes("tiny-transcript")) {
+    const where = "tiny-transcript (empty map, 320 px)";
+    if (infos["./bricks/tiny-transcript/brick.json"].kind !== "panel") fail("tiny-transcript", "brick.json: a panel, as its spec says");
+    await width(320, 844);
+    await go(`${base}/bricks.html?brick=tiny-transcript&sample=empty`);
+    await until(`document.querySelector(".playground")?.dataset.brickShown === "tiny-transcript"`, 8000);
+    await settle();
+    if (await evaluate(`!!document.querySelector(".tiny-transcript")`)) fail(where, "shows a transcript without a thought on its way");
+    await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
+    if (!await until(`!!document.querySelector(".tiny-transcript-text")`, 1000)) fail(where, "doesn't show your thought on its way");
+    else {
+      const box = await evaluate(`(() => { const r = document.querySelector(".tiny-transcript-text").getBoundingClientRect(); return { left: r.left, right: r.right, width: innerWidth }; })()`);
+      if (box.left < 7.5 || box.right > box.width - 7.5) fail(where, "the transcript runs past the screen's edges");
+      await sleep(1600);
+      if (!await evaluate(`!!document.querySelector(".tiny-transcript-hint input[type=range]") && !!document.querySelector(".tiny-transcript-text")`)) fail(where, "the first-use hint left before it was dismissed");
+      await evaluate(`document.body.click()`);
+      if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail(where, "keeps showing words once its thought is placed and the hint dismissed");
+    }
+    await width(1280, 860);
+  }
   if (checked.includes("_template")) {
     await go(`${base}/bricks.html?brick=_template&sample=student-week`);
     await until(`!!document.querySelector(".template")`, 8000);
