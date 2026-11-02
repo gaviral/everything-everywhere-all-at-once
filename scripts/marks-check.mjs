@@ -10,7 +10,7 @@ const server = await createServer({ root: new URL("../ui", import.meta.url).path
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
   const { micState, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
-  const { TIPS } = await server.ssrLoadModule("/src/Tips.tsx");
+  const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");
   const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
 
   const base = { connected: true, capturing: false, starting: false, serviceOn: false, words: false, paused: false, noKey: false, refused: false };
@@ -53,6 +53,25 @@ try {
   assert.match(TIPS.suggestion, /×/);
   assert.match(TIPS.action("Calendar"), /Add to Calendar/);
 
+  // A kept suggestion has no Keep or × left, so its tip names neither; the map picks the tip by status.
+  assert.doesNotMatch(TIPS.kept, /Keep saves|×/);
+  assert.match(TIPS.kept, /no undo/);
+  assert.match(readFileSync(new URL("App.tsx", src), "utf8"), /s\.status === "kept" \? TIPS\.kept : TIPS\.suggestion/);
+
+  // An open tip follows its mark: new words replace the old (the mic just stopped), and a mark that loses its words
+  // (a kept tag) or leaves the page takes the tip with it.
+  const el = { isConnected: true, dataset: { tip: MIC_WORDS.listening.tip } };
+  const open = { text: MIC_WORDS.listening.tip, el };
+  assert.equal(follow(open), open, "unchanged words keep the same tip");
+  el.dataset.tip = MIC_WORDS.off.tip;
+  assert.equal(follow(open)?.text, MIC_WORDS.off.tip, "stopping the mic updates its open tip");
+  assert.equal(follow(open)?.el, el);
+  el.dataset.tip = undefined;
+  assert.equal(follow(open), null, "a mark that loses its tip hides it");
+  el.dataset.tip = TIPS.tag;
+  el.isConnected = false;
+  assert.equal(follow(open), null, "a mark that leaves the page hides it");
+
   // The away card's rule matches the code's.
   assert.match(AWAY_WHEN, new RegExp(`${AWAY_AFTER_MS / 1000} s`));
   assert.match(AWAY_WHAT, /thoughts landed/);
@@ -78,7 +97,7 @@ try {
     }
   }
   assert.deepEqual(missing, [], "a ✦ without a tip");
-  console.log("Marks checks passed: mic states (never off while capturing), each with its own words and placeholder, the ring's scale, every tip, the away card's rule, and every ✦ in the UI has a tip.");
+  console.log("Marks checks passed: mic states (never off while capturing), each with its own words and placeholder, the ring's scale, every tip, the away card's rule, open tips that follow their mark, and every ✦ in the UI has a tip.");
 } finally {
   await server.close();
 }

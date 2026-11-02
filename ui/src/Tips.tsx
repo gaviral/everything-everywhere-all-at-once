@@ -9,6 +9,7 @@ import "./tips.css";
 /** What each ✦ says: what the AI did, then how to undo or answer it where there is a way. */
 export const TIPS = {
   suggestion: "AI suggestion from what you said here. Keep saves it; × dismisses it.",
+  kept: "AI suggestion you kept in this thread. There's no undo yet.",
   action: (app: string) => `AI proposal from your words. Nothing reaches ${app} until you press Add to ${app}; × dismisses it.`,
   adding: (app: string) => `You approved this; it's being added to ${app}.`,
   added: (app: string) => `Added to ${app}. Change or remove it there.`,
@@ -24,6 +25,13 @@ export const TIPS = {
 } as const;
 
 type Shown = { text: string; el: HTMLElement };
+
+/** What an open tip becomes when its mark changes: gone with the mark or its words, the mark's new words, or as is. */
+export function follow(shown: Shown, el: { isConnected: boolean; dataset: { tip?: string } } = shown.el): Shown | null {
+  const text = el.isConnected ? el.dataset.tip : undefined;
+  if (!text) return null;
+  return text === shown.text ? shown : { ...shown, text };
+}
 
 export function Tips() {
   const [shown, setShown] = useState<Shown | null>(null);
@@ -71,12 +79,18 @@ export function Tips() {
     };
   }, []);
 
-  // A mark that leaves the page (a dismissed proposal) takes its tip with it.
+  // An open tip follows its mark: a mark that leaves the page (a dismissed proposal) or loses its words (a kept tag)
+  // takes the tip with it, and a mark whose words change (the mic you just stopped) shows the new ones.
   useEffect(() => {
     if (!shown) return;
-    const gone = new MutationObserver(() => { if (!shown.el.isConnected) { current.current = null; setShown(null); } });
-    gone.observe(document.body, { childList: true, subtree: true });
-    return () => gone.disconnect();
+    const watch = new MutationObserver(() => {
+      const next = follow(shown);
+      if (next === shown) return;
+      if (!next) current.current = null;
+      setShown(next);
+    });
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tip"] });
+    return () => watch.disconnect();
   }, [shown]);
 
   // Screen readers hear the tip as the focused mark's description.

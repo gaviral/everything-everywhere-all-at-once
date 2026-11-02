@@ -1102,7 +1102,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       </ul>
       {ideas.map((s) => (
         <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.suggestion}>✦</span>
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
             <span className="ai-actions">
