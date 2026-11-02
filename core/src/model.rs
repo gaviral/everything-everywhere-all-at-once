@@ -253,7 +253,7 @@ impl Core {
         self.service.capped_for(crate::now_ms()).map(|wait| capped(self.service.limit, wait))
     }
 
-    /// True while this hour has calls to spare: under half the cap, which is about User's busiest hour (see
+    /// True while this hour has calls to spare: under half the cap, which is about the busiest hour measured (see
     /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
     pub fn calls_to_spare(&self) -> bool {
         self.service.spare(crate::now_ms())

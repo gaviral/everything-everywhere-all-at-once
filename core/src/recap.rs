@@ -204,7 +204,7 @@ fn moves_the_recap(message: &ServerMsg) -> bool {
 
 /// One background draft, when there is something new to say and a model to say it. True when it called the model.
 /// How often: at most once per settled change that moves the recap, so about once per landing plus the refiner's
-/// passes (one per two thoughts): ≤ ≈ 115 in User's busiest hour, ≈ US$0.16 at ≈ US$0.0014 a call. Only while the
+/// passes (one per two thoughts): ≤ ≈ 115 in the busiest hour measured, ≈ US$0.16 at ≈ US$0.0014 a call. Only while the
 /// hour has calls to spare, so drafts never take one placing needs; past that, asking makes the recap as before.
 async fn draft(core: &Arc<Core>) -> bool {
     // No key, a refused one, or the hour's calls needed elsewhere: a draft is never worth a notice or a call a person asked for.
