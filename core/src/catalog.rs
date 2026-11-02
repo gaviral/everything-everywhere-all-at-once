@@ -49,6 +49,8 @@ pub enum Act {
     Pause,
     Approve,
     Message,
+    GitHub,
+    Note,
     KeepApp,
     DiscardApp,
     Yes,
@@ -73,6 +75,10 @@ pub enum Needs {
     Proposal,
     /// The Full preset, a contact on the Messages list, and the host's laptop (messages.rs).
     Contact,
+    /// The Full preset, `gh` signed in on the host's laptop, and not a hosted core (github.rs).
+    GitHub,
+    /// The Full preset on a core that isn't hosted, a thread with points, and the host's laptop (notes.rs).
+    Notes,
     /// An app just built, waiting for keep or discard.
     Build,
     /// The model (a key).
@@ -127,7 +133,7 @@ pub struct Def {
     /// How it answers, where the person sees it.
     pub answers: &'static str,
     pub undo: UndoBy,
-    /// Reaches outside the app (Reminders, Calendar, Messages): only its own words or its button do it.
+    /// Reaches outside the app (Reminders, Calendar, Messages, Notes): only its own words or its button do it.
     pub external: bool,
     /// The control that does the same, when there is one (its `ClientMsg`, or the window's own).
     pub button: Option<&'static str>,
@@ -161,6 +167,8 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::Pause, does: "stop listening", template: Some("stop listening"), phrases: &["Stop listening", "Mic off"], needs: Needs::Nothing, answers: "the header says Paused", undo: UndoBy::Not("tap the mic"), external: false, button: Some("listen") },
     Def { act: Act::Approve, does: "add the proposed reminder or event to Reminders or Calendar", template: None, phrases: &["Add it to Reminders", "Add that to my calendar"], needs: Needs::Proposal, answers: "“Adding …”, then “Added to Reminders” once Apple confirms", undo: UndoBy::Not("delete it in Reminders or Calendar"), external: true, button: Some("approve") },
     Def { act: Act::Message, does: "send a short message to someone on your Messages list, after a countdown you can stop", template: None, phrases: &["Ask Mia to confirm what to bring", "Text Sam that I'm running late"], needs: Needs::Contact, answers: "a card with the message, who it's to and a 5-second countdown, then “Sent to …” (a dry run says what it would have sent)", undo: UndoBy::Unsend, external: true, button: Some("stop_send") },
+    Def { act: Act::GitHub, does: "show your GitHub pull requests on a card, read-only", template: None, phrases: &["Show me the open pull requests", "What's happening with PR 42"], needs: Needs::GitHub, answers: "a card with each pull request's number, title, state, checks and when it last changed; a click opens it on GitHub", undo: UndoBy::Not("it only showed a card; close it with ×"), external: false, button: None },
+    Def { act: Act::Note, does: "save a thread as a new note in Apple Notes: its points, decisions and unfinished ones marked", template: None, phrases: &["Save this thread as a note", "Save this to Notes", "Put this in Apple Notes"], needs: Needs::Notes, answers: "a card with the note's title and points, then “Saved to Notes” and Open in Notes (a dry run says what it would write)", undo: UndoBy::Not("the note is yours: delete it in Notes; the app never deletes one"), external: true, button: Some("open_note") },
     Def { act: Act::KeepApp, does: "keep the app just built", template: None, phrases: &["Keep it", "Keep the app"], needs: Needs::Build, answers: "“Your app is on.”", undo: UndoBy::Not("switch it off in Apps"), external: false, button: Some("decide_app") },
     Def { act: Act::DiscardApp, does: "discard the app just built", template: None, phrases: &["Discard it"], needs: Needs::Build, answers: "the build card goes", undo: UndoBy::Not("ask for it again"), external: false, button: Some("decide_app") },
     Def { act: Act::Yes, does: "take the AI's guess on your latest thought", template: None, phrases: &["Yes", "Yeah", "That's right"], needs: Needs::Question, answers: "the words change: “Changed to …”", undo: UndoBy::Not("edit the words"), external: false, button: Some("correct") },
@@ -193,6 +201,12 @@ pub fn classify(text: &str) -> Option<Act> {
         return Some(Act::NewThread);
     }
     if let Some(act) = crate::messages::kind(text) {
+        return Some(act);
+    }
+    if let Some(act) = crate::github::kind(text) {
+        return Some(act);
+    }
+    if let Some(act) = crate::notes::kind(text) {
         return Some(act);
     }
     if let Some(act) = crate::spoken::kind(text) {
@@ -1343,8 +1357,12 @@ async fn ask(core: &Core, previous: &Last, said: &str) -> anyhow::Result<Option<
     Ok(checked(&verdict))
 }
 
-/// The model's answer, only when it names an act the safety net may pick and its phrase reads as that act by rule.
+/// The model's answer, only when it names an act the safety net may pick and its phrase reads as that act by rule. Never
+/// words Notes would take as a save ("put this in Notes" reads as a move by rule, but in Full it writes a note).
 fn checked(verdict: &Verdict) -> Option<(Act, String)> {
+    if crate::notes::takes(&verdict.say) {
+        return None;
+    }
     let act = CATALOG.iter().find(|d| d.template.is_some() && !d.external && name(d.act) == verdict.act)?.act;
     (classify(&verdict.say) == Some(act)).then(|| (act, verdict.say.clone()))
 }
