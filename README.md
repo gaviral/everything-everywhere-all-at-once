@@ -62,6 +62,7 @@ cp .env.example .env                           # then open .env and paste your M
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- On a Mac, the key can live in the login Keychain instead of `.env`: `security add-generic-password -s e2a2o -a e2a2o -w` asks for it once, and `run.sh` reads it when there's no `.env`.
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
@@ -211,7 +212,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Alone, the core listens on 127.0.0.1 only. A gate checks every request: the Host must name this machine (stops DNS rebinding), and an Origin, when sent, must be the app's own page, so another site open in your browser can't use the WebSocket (browsers always send Origin on one). Responses carry `Cross-Origin-Resource-Policy: same-origin`.
 - In a room, the Host must be this laptop's own address, and the map and pictures need the code (a query on the WebSocket, a `SameSite=Strict` cookie for pictures), compared in constant time. `./run.sh room` makes 8 characters from 31 letters and digits; a shorter `ROOM_CODE` starts with a warning. Approving actions and importing work only from the host's own window.
 - Model output is data: the placer trusts only existing thread ids; app specs must match a closed set of blocks (`deny_unknown_fields`, range and template checks); app prompts are told the conversation is data and that they can't act. The UI renders text only, never raw HTML.
-- `scripts/precheck.sh` runs before anything goes public, and on every merge (below). It fails on: `.env` or data files in git, key-like strings, home-directory paths, paths from the author's other projects, a core not limited to 127.0.0.1 when alone, a missing Origin and Host gate or room test, a model client without a timeout, `dangerouslySetInnerHTML`, a non-Meta model SDK, endpoint or model name in the app's code (the hackathon requires every model called at runtime to be Meta's) or any outside host but `api.meta.ai` in the core or UI, a model call that bypasses the hourly cap, or a failing `cargo test`. `scripts/model-guards.py` holds the last three, with a self-test that plants each kind of breach. With the app running, it also probes it: another site's WebSocket and a rebinding Host must get 403, and so must the map without the code in a room. It warns about open decisions: the Contributor default, `run.sh`'s Keychain lookup, the speech stream's missing read timeout, and numbers in the code marked `stand-in:` until a measurement replaces them.
+- `scripts/precheck.sh` runs before anything goes public, and on every merge (below). It fails on: `.env` or data files in git, key-like strings, home-directory paths, paths from the author's other projects, a core not limited to 127.0.0.1 when alone, a missing Origin and Host gate or room test, a model client without a timeout, `dangerouslySetInnerHTML`, a non-Meta model SDK, endpoint or model name in the app's code (the hackathon requires every model called at runtime to be Meta's) or any outside host but `api.meta.ai` in the core or UI, a model call that bypasses the hourly cap, or a failing `cargo test`. `scripts/model-guards.py` holds the last three, with a self-test that plants each kind of breach. With the app running, it also probes it: another site's WebSocket and a rebinding Host must get 403, and so must the map without the code in a room. It warns about open decisions: the Contributor default, the speech stream's missing read timeout, and numbers in the code marked `stand-in:` until a measurement replaces them.
 
 ## How it was built
 
@@ -223,7 +224,6 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 
 - Before the event: the idea and design notes. No code.
 - Written during the event (Oct 26 to Nov 4, 2026): everything in this repository; the first commit is from Oct 31. No code from the author's other projects; `scripts/precheck.sh` fails on their paths.
-- One link to an older project: with no `.env`, `run.sh` looks for the key in a macOS Keychain entry saved by the author's earlier app, Canvas. It's a key lookup only; on other Macs it finds nothing.
 
 ## Known limits
 
