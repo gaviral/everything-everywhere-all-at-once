@@ -47,13 +47,20 @@ pub enum ServerMsg {
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
     /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
     Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
+    /// One step of the work, for the window's model line (ui/src/model-line.ts): the step (the trace's feature:
+    /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
+    /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
+    /// `ms` and `ok`), sharing `id`. Sent from where every call goes through (model.rs), so the name shown is the
+    /// name asked, never a label kept by hand.
+    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64 },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
 /// thread and its branches (Focus), or with every thread again (Show all); or the "?" list of what you
 /// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
 /// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), its Finish it
-/// ("finish"), and the mic, off ("stop listening").
+/// ("finish"), and the mic, off ("stop listening"). Export: the window saves the map as Markdown ("export my map"),
+/// made from the map it already holds, so nothing but the file the person saves leaves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -66,6 +73,7 @@ pub enum View {
     Forget,
     Finish,
     Pause,
+    Export,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
