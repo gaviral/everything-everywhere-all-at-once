@@ -10,13 +10,24 @@ use std::time::Instant;
 static CLAIMING: Mutex<()> = Mutex::new(());
 
 pub async fn approve(core: Arc<Core>, action_id: String) {
+    approve_with(core, action_id, |script| {
+        let mut osascript = tokio::process::Command::new("osascript");
+        osascript.arg("-e").arg(script);
+        osascript
+    }).await
+}
+
+/// Approve with the command that runs the AppleScript (`osascript` in `approve`; a stand-in in tests, so no test
+/// ever writes to a real Reminders list or calendar). The row says "Added" only once that command answers success,
+/// which `osascript` does only after Reminders or Calendar has made the item.
+async fn approve_with(core: Arc<Core>, action_id: String, command: impl FnOnce(&str) -> tokio::process::Command) {
     let Some(action) = claim(&core, &action_id) else { return };
     // An event without a usable date goes to Reminders instead of an invented day.
     let is_event = action.kind == "event" && date_lines(&action.when).is_some();
     let script = if is_event { event(&action.title, &action.when) } else { reminder(&action.title, &action.when) };
     let app = if is_event { "Calendar" } else { "Reminders" };
     let started = Instant::now();
-    let output = tokio::process::Command::new("osascript").arg("-e").arg(&script).output().await;
+    let output = command(&script).output().await;
     let ms = started.elapsed().as_millis() as u64;
     match output {
         Ok(o) if o.status.success() => {
@@ -24,14 +35,22 @@ pub async fn approve(core: Arc<Core>, action_id: String) {
             core.send(ServerMsg::Notice { message: format!("Added to {app} in {:.1} s", ms as f64 / 1000.0) });
         }
         failed => {
-            // Not added: offer it again.
-            core.commit(vec![Change::ItemStatus { id: action.id, status: ItemStatus::New, done_ms: None }]);
-            let message = match failed {
-                Ok(_) => format!("Couldn't add to {app}. Check permission to control {app} in macOS settings, then try again."),
-                Err(_) => format!("Couldn't reach {app}. Check that it is available on this Mac, then try again."),
-            };
-            core.send(ServerMsg::Error { message });
+            if let Ok(o) = &failed { tracing::warn!("{app} didn't add it: {}", String::from_utf8_lossy(&o.stderr).trim()); }
+            // Not added: offer it again, with why on its own row, where the click was.
+            core.commit(vec![Change::ItemStatus { id: action.id.clone(), status: ItemStatus::New, done_ms: None }]);
+            core.send(ServerMsg::ActionFailed { id: action.id, message: failure(app, &failed) });
         }
+    }
+}
+
+/// Why an item wasn't added, in words a person can act on. macOS refuses with error -1743 until you allow the app
+/// running E2A2O (your terminal, say) to control Reminders or Calendar; anything else is the app's own refusal.
+fn failure(app: &str, output: &std::io::Result<std::process::Output>) -> String {
+    match output {
+        Ok(o) if String::from_utf8_lossy(&o.stderr).contains("-1743") =>
+            format!("Not added: macOS blocked it. In System Settings › Privacy & Security › Automation, let the app you started E2A2O from control {app}, then try again."),
+        Ok(_) => format!("Not added: {app} didn't accept it. Try again; if it keeps failing, open {app} and check that it works."),
+        Err(_) => format!("Not added: {app} can only be reached on a Mac."),
     }
 }
 
@@ -107,9 +126,68 @@ fn event(title: &str, when: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{claim, date_lines, event, recover, reminder};
+    use super::{approve_with, claim, date_lines, event, recover, reminder};
+    use crate::protocol::ServerMsg;
     use crate::world::{Action, Change, ItemStatus, Journal};
     use crate::Core;
+    use std::sync::{Arc, Mutex};
+
+    /// "Add to Reminders" clicked, with a stand-in for `osascript` (a shell line), so no test writes to a real
+    /// Reminders list: the status the row shows at each step, and what the windows were told.
+    async fn click(stand_in: &'static str) -> (Vec<ItemStatus>, Option<u64>, Vec<String>, String) {
+        let path = std::env::temp_dir().join(format!("e2a2o-apple-approve-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        core.commit(vec![Change::ActionProposed { action: Action { id: "a".into(), thread_id: "T1".into(), kind: "reminder".into(),
+            title: "Send rent".into(), when: "2026-11-06".into(), status: ItemStatus::New, done_ms: None } }]);
+        let mut messages = core.updates.subscribe();
+        let ran = Arc::new(Mutex::new(String::new()));
+        let script = ran.clone();
+        approve_with(core.clone(), "a".into(), move |s| {
+            *script.lock().unwrap() = s.to_string();
+            let mut sh = tokio::process::Command::new("sh");
+            sh.arg("-c").arg(stand_in);
+            sh
+        }).await;
+        let (mut statuses, mut told) = (Vec::new(), Vec::new());
+        while let Ok(m) = messages.try_recv() {
+            match m.message {
+                ServerMsg::Change { change: Change::ItemStatus { status, .. } } => statuses.push(status),
+                ServerMsg::Notice { message } => told.push(format!("notice: {message}")),
+                ServerMsg::ActionFailed { id, message } => told.push(format!("failed {id}: {message}")),
+                ServerMsg::Error { message } => told.push(format!("error: {message}")),
+                _ => {}
+            }
+        }
+        let done_ms = core.snapshot().actions[0].done_ms;
+        std::fs::remove_file(&path).unwrap();
+        let script = ran.lock().unwrap().clone();
+        (statuses, done_ms, told, script)
+    }
+
+    #[tokio::test]
+    async fn added_shows_only_once_apple_answers_and_a_failure_says_why_on_its_row() {
+        // Apple's side answers after 0.3 s: "Adding…" (kept) until then, then added with how long it took.
+        let (statuses, done_ms, told, script) = click("sleep 0.3").await;
+        assert_eq!(statuses, [ItemStatus::Kept, ItemStatus::Done]);
+        assert!(done_ms.is_some_and(|ms| (300..3000).contains(&ms)), "{done_ms:?}");
+        assert!(told.len() == 1 && told[0].starts_with("notice: Added to Reminders in 0."), "{told:?}");
+        assert!(script.contains("tell list \"E2A2O\"") && script.contains("\"Send rent\""), "the reminder's own script: {script}");
+
+        // macOS refuses until the terminal may control Reminders (error -1743): offered again, with what to allow.
+        let (statuses, done_ms, told, _) = click("echo 'execution error: Not authorized to send Apple events to Reminders. (-1743)' >&2; exit 1").await;
+        assert_eq!((statuses, done_ms), (vec![ItemStatus::Kept, ItemStatus::New], None));
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert!(told[0].starts_with("failed a: Not added: macOS blocked it.") && told[0].contains("Automation"), "{told:?}");
+
+        // Any other refusal: offered again, never "Added".
+        let (statuses, _, told, _) = click("exit 1").await;
+        assert_eq!(statuses, [ItemStatus::Kept, ItemStatus::New]);
+        assert_eq!(told, ["failed a: Not added: Reminders didn't accept it. Try again; if it keeps failing, open Reminders and check that it works."]);
+        // No osascript at all (not a Mac).
+        let missing = tokio::process::Command::new("/nonexistent/osascript").output().await;
+        assert_eq!(super::failure("Calendar", &missing), "Not added: Calendar can only be reached on a Mac.");
+    }
 
     #[test]
     fn an_action_is_added_once_and_offered_again_if_adding_never_finished() {

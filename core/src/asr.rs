@@ -14,24 +14,14 @@ use tokio_tungstenite::tungstenite::Message;
 const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 
 pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
-    let key = core.key()?.to_string();
+    let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio_tungstenite::connect_async(format!("{URL}?sessionId={session}"))
         .await
         .context("couldn't reach Voice Transcribe")?;
     let (mut sink, mut stream) = socket.split();
 
-    let handshake = json!({
-        "authorization": {"accessToken": format!("Bearer {key}")},
-        "audioEncoding": "PCM_24KHZ",
-        "model": "muse-voice-transcribe-1.0",
-        "mode": "ENDPOINTING",
-        "partialMode": "CUMULATIVE",
-        "emitAudioProgress": false,
-        "languageBias": ["English"],
-        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image"]
-    });
-    sink.send(Message::Text(handshake.to_string().into())).await?;
+    sink.send(Message::Text(handshake(&key).to_string().into())).await?;
     let first = match stream.next().await {
         Some(Ok(Message::Text(t))) => serde_json::from_str::<Value>(t.as_str())?,
         other => return Err(anyhow!("Voice Transcribe refused the session: {other:?}")),
@@ -60,7 +50,12 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     // only start listening again once that closes. The caller says listening stopped.
     let ended = loop {
         match stream.next().await {
-            Some(Ok(Message::Text(t))) => handle(&core, &speaker, t.as_str()),
+            // "Stop listening": nothing after it is heard, kept or sent on, even words the service still had.
+            Some(Ok(Message::Text(t))) => {
+                if handle(&core, &speaker, t.as_str()) {
+                    break Ok(());
+                }
+            }
             Some(Ok(Message::Close(_))) | None => break Ok(()),
             Some(Ok(_)) => {}
             Some(Err(e)) => break Err(e),
@@ -71,8 +66,25 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     Ok(ended?)
 }
 
-fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
-    let Ok(event) = serde_json::from_str::<Value>(text) else { return };
+/// The session's first message: how to listen, and the words to expect.
+fn handshake(key: &str) -> Value {
+    json!({
+        "authorization": {"accessToken": format!("Bearer {key}")},
+        "audioEncoding": "PCM_24KHZ",
+        "model": "muse-voice-transcribe-1.0",
+        "mode": "ENDPOINTING",
+        "partialMode": "CUMULATIVE",
+        "emitAudioProgress": false,
+        "languageBias": ["English"],
+        // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
+        // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
+        "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
+    })
+}
+
+/// One event from the service; true when it was a spoken "stop listening", which ends the stream.
+fn handle(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
+    let Ok(event) = serde_json::from_str::<Value>(text) else { return false };
     // Turn boundaries with their audio position, to see how long endpointing takes (scripts/voice.mjs):
     // RUST_LOG=info,e2a2o_core::asr=debug. Drafts are left out, one per word.
     if event["type"] != "transcript" {
@@ -85,10 +97,14 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {
-            let words = sentence_case(event["transcript"].as_str().unwrap_or_default().trim());
+            let raw = event["transcript"].as_str().unwrap_or_default();
+            let words = sentence_case(raw.trim());
+            // As heard and as kept, to tell the transcriber's punctuation from ours.
+            core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);
+                return crate::spoken::is_stop_listening(&words);
             }
         }
         Some("error") => {
@@ -100,6 +116,7 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) {
         }
         _ => {}
     }
+    false
 }
 
 /// A finished turn reads as a sentence: the transcriber sometimes starts one in lowercase ("oh and the
@@ -115,7 +132,40 @@ fn sentence_case(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sentence_case;
+    use super::{handle, handshake, sentence_case};
+    use crate::protocol::{ServerMsg, View};
+    use crate::world::{Journal, World};
+    use crate::Core;
+    use std::sync::Arc;
+
+    /// A spoken "stop listening" pauses the window's mic and ends the stream (the caller stops reading it), so words
+    /// the service still sends after it are never kept; a turn that only mentions it is a thought, and the stream goes on.
+    #[test]
+    fn stop_listening_ends_the_stream_and_keeps_nothing_after_it() {
+        let path = std::env::temp_dir().join(format!("e2a2o-asr-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, World::default()));
+        let mut updates = core.updates.subscribe();
+        let turn = |words: &str| serde_json::json!({"type": "speechComplete", "transcript": words}).to_string();
+        assert!(!handle(&core, "you", &turn("i should stop listening to podcasts at night")));
+        assert!(handle(&core, "you", &turn("okay stop listening")));
+        let paused = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Pause }));
+        assert!(paused);
+        let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
+        assert_eq!(texts, ["I should stop listening to podcasts at night"]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Palace." and "Recap." said alone act only if the transcriber hears them: without its keywords they came back
+    /// as "Palis" or "Alice" (the handshake's comment).
+    #[test]
+    fn the_transcriber_is_told_to_expect_palace_and_recap() {
+        let sent = handshake("k");
+        let keywords: Vec<&str> = sent["keywords"].as_array().expect("keywords").iter().filter_map(|w| w.as_str()).collect();
+        for word in ["Palace", "Recap"] {
+            assert!(keywords.contains(&word), "{word} isn't among the keywords {keywords:?}");
+        }
+    }
 
     #[test]
     fn a_finished_turn_starts_with_a_capital() {

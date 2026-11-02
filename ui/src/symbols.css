@@ -1,0 +1,20 @@
+/* The ? list's Symbols (Symbols.tsx): a sample column the width of the widest sample (the due shades), then its
+   meaning in the list's muted text, as the commands above it read. */
+.symbols { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; margin: 6px 0 0; padding: 0; list-style: none; color: var(--muted); }
+.symbols li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
+.symbol { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-self: start; color: var(--ink); }
+.symbol-due { flex-direction: column; align-items: flex-start; gap: 0; }
+.symbol-rooms { gap: 3px; }
+.symbol-rooms i { width: 10px; height: 10px; border-radius: 50%; }
+/* The mic's samples, smaller than the button and still: a legend shows a state, it doesn't perform one. */
+.symbol-mic { gap: 6px; }
+.symbol-mic .mic-sample { position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.symbol-mic .mic-sample svg { width: 13px; height: 13px; }
+.symbol-mic .mic-sample[data-state="listening"] { background: var(--accent); color: var(--accent-button-ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.symbol-mic .mic-sample[data-state="nokey"] { background: var(--amber-soft); color: var(--amber); }
+.symbol-mic .mic-badge { right: -4px; bottom: -4px; width: 12px; height: 12px; gap: 1.5px; }
+.symbol-mic .mic-badge i { width: 1.5px; height: 5px; }
+/* The attention marks (attention.css): the unseen dot in the sample column instead of a card's margin, and the bar
+   your newest point carries. */
+.symbol .unseen-dot { position: static; margin: 0; }
+.symbol-latest { width: 2px; height: 14px; border-radius: 2px; background: var(--accent); opacity: .6; }

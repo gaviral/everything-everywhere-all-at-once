@@ -3,7 +3,9 @@
   --card: #ffffff;
   --ink: #1d1d1f;
   --muted: #696970;
-  --line: #e7e6e1;
+  /* Card edges have to survive video compression: #e7e6e1 was 1.15:1 on the page and cards turned into floating text
+     in the demo's frames; this is 1.35:1, still a hairline (UX audit fix 3). */
+  --line: #d9d7cf;
   --accent: #245fbd;
   --accent-soft: #e8f0fe;
   --amber: #95600f;
@@ -13,7 +15,13 @@
   --ai-button-ink: #fff;
   --accent-button-ink: #fff;
   --amber-button-ink: #fff;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
+  /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
+  --room-red: #b4253f; --room-red-soft: #fbe1e5;
+  --room-green: #1d7a43; --room-green-soft: #dcf2e3;
+  --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
+  --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
+  --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.07);
   color-scheme: light;
 }
 
@@ -33,6 +41,11 @@
     --ai-button-ink: #20152f;
     --accent-button-ink: #102344;
     --amber-button-ink: #30200b;
+    --room-red: #ff8a9c; --room-red-soft: #3a1d23;
+    --room-green: #76d39c; --room-green-soft: #1b3125;
+    --room-pink: #f293d2; --room-pink-soft: #341c2e;
+    --room-teal: #6fd2ca; --room-teal-soft: #17302f;
+    --room-lime: #c2da6a; --room-lime-soft: #2b3117;
     --shadow: 0 2px 12px rgba(0, 0, 0, .24);
     color-scheme: dark;
   }
@@ -147,6 +160,12 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
+}
+
+/* The head opens the card (ux-rules.ts), so its "Show" answers a hover anywhere on it. */
+.thread-head:hover > .thread-toggle {
+  color: var(--ink);
 }
 
 .picture {
@@ -194,9 +213,11 @@ header {
   background: var(--accent-soft);
 }
 
+/* A thread's name has to win over its thoughts (15 px/400) at a glance: 17 px/650, two steps up, as a list title in
+   Things is; counts and "Show" stay 13 px and quiet (UX audit fix 4). */
 .title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 650;
 }
 
 .chip {
@@ -330,7 +351,7 @@ header {
   transition: opacity 0.2s;
 }
 
-.points li:hover .speed {
+.points li:is(:hover, :focus-visible) .speed {
   opacity: 1;
 }
 
@@ -352,8 +373,11 @@ header {
 
 .ai.kept { background: var(--card); border: 1px solid var(--line); }
 .ai-mark, .action-icon { color: var(--ai); }
+.action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .action { border: 1px dashed color-mix(in srgb, var(--ai) 55%, var(--line)); background: var(--ai-soft); }
 .action.done { border: 1px solid var(--line); background: var(--card); }
+/* Amber is what needs you: an approval that didn't add its item, and what to do about it. */
+.action-failed { display: block; margin-top: 4px; color: var(--amber); font-size: 13px; }
 
 .when {
   color: var(--muted);
@@ -466,6 +490,24 @@ header {
   min-height: 22px;
   color: var(--muted);
   font-style: italic;
+}
+
+/* ?recording (main.tsx): the words being said read as captions, every placing time shows, and a take clock runs. */
+.recording .live.words {
+  font-size: 22px;
+  line-height: 1.35;
+  font-style: normal;
+  color: var(--ink);
+}
+
+.recording .speed {
+  opacity: 1;
+}
+
+.take-clock {
+  margin-left: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .pending {
@@ -592,6 +634,19 @@ header {
   cursor: pointer;
 }
 
+/* An "off" mark on this answer: quiet until pressed, a toggle so it can be taken back. */
+.explain-actions button.explain-off {
+  margin-right: auto;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.explain-actions button.explain-off[aria-pressed="true"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
 .explain-actions button.quiet {
   background: transparent;
   color: var(--muted);
@@ -621,8 +676,7 @@ header {
 }
 
 /* Keep the map readable as content and controls grow. */
-.map { scroll-padding-block: 70px 240px; }
-.thread { scroll-margin-block: 76px 240px; min-width: 0; }
+.thread { min-width: 0; }
 .thread.active { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
 .thread.active.dropped { box-shadow: 0 0 0 3px var(--accent-soft); }
 .head-text { flex: 1; }
@@ -674,8 +728,11 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */
-.map { padding-bottom: calc(var(--dock-height, 150px) + 32px); }
-.thread { scroll-margin-top: 145px; scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
+/* The page's end leaves the dock its room (--dock-room, App.tsx useDockRoom): the last card can rise above the dock,
+   and the page never gets shorter under you when a dock card goes. */
+.map { padding-bottom: calc(var(--dock-room, var(--dock-height, 150px)) + 32px); }
+/* A card brought to the top stops under the header and tools, as measured, one card gap (12px) below them. */
+.thread { scroll-margin-top: calc(var(--header-height, 64px) + var(--tools-height, 50px) + 12px); scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
 .thread.collapsed { padding-block: 10px; }
 .thread.collapsed .picture { width: 38px; height: 38px; border-radius: 9px; }
 .thread-count { color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -699,6 +756,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .live { color: var(--ink); font-style: normal; font-size: 14px; }
 .first-hint { color: var(--muted); font-size: 13px; }
 .pending-label { color: var(--accent); font-weight: 600; }
+/* A retry is said calmly: it's saved and will land, nothing to act on. */
+.pending-label.retrying { color: var(--muted); }
 .pill { border-style: solid; color: var(--ink); }
 .notice { display: flex; align-items: flex-start; gap: 12px; width: max-content; max-width: min(90vw, 540px); cursor: default; }
 .notice button { flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
@@ -707,7 +766,6 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .map-tools { padding-inline: 16px; }
   .map-tools-inner { flex-wrap: wrap; }
   .search { flex-basis: 100%; }
-  .thread { scroll-margin-top: 240px; }
   .branches { padding-left: 6px; }
 }
 .shortcuts { position: relative; flex: none; }
@@ -715,10 +773,17 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .shortcuts summary::-webkit-details-marker { display: none; }
 .shortcuts summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .keyboard-hint { position: absolute; z-index: 8; right: 0; top: calc(100% + 6px); width: min(310px, 80vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 12px; }
+/* The list you asked for goes over the notice under the header (a missing key's stays up), until you move on. */
+header:has(.shortcuts[open]) { z-index: 11; }
 .keyboard-hint div + div { margin-top: 6px; color: var(--muted); }
 .keyboard-hint strong { display: block; margin-top: 10px; }
+.keyboard-hint strong:first-child { margin-top: 0; }
 .keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
-.picture-wrap { position: relative; flex: none; display: flex; }
+/* The picture slot: the thread's first letter in its room's soft color, so the picture fades in over the same color. */
+.picture-wrap { position: relative; flex: none; display: grid; }
+.picture-wrap > .picture { grid-area: 1 / 1; }
+.picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
+.thread.collapsed .picture-letter { font-size: 16px; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
 .point-mark { font-size: 11px; }
 .map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
@@ -800,7 +865,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .dock { max-height: 50dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .pullback { flex-wrap: nowrap; gap: 4px; padding: 2px 4px 2px 10px; }
-  .pullback .picture { display: none; }
+  .pullback .picture-wrap { display: none; }
   .pullback-title { font-size: 13px; line-height: 18px; }
   .pullback-quote { margin-top: 0; font-size: 12px; line-height: 18px; }
   .pullback-actions { margin-left: 0; gap: 0; }
@@ -810,3 +875,22 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .composer { position: sticky; bottom: 0; flex: none; }
   .away-items { max-height: 15dvh; }
 }
+
+/* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
+   ink, so color stays scarce enough to mean something. */
+.branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
+/* A folded thread's proposals still waiting for you: a quiet count, as Things' metadata is gray. Amber is kept for what
+   can slip away (left off, Finish it, due dates), so "left off" is the one warm mark on the map; with amber here it was
+   on 5 of 8 cards (UX audit fix 5, von Restorff). */
+.chip.waiting { color: var(--muted); background: var(--bg); }
+/* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
+.when.due { color: var(--amber); }
+.when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
+.when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
+
+/* Every picture slot (pictures.ts): hidden until it decodes, then a short fade over its letter tile; one already
+   decoded when it mounts (a card back from the Palace) shows at once. A failed picture is never shown, so no
+   broken-image glyph. The fade stays under Reduce Motion: it moves nothing. */
+img.slot-picture { opacity: 0; transition: opacity .2s ease-out; }
+img.slot-picture.is-shown { opacity: 1; }
+img.slot-picture[data-instant] { transition: none; }

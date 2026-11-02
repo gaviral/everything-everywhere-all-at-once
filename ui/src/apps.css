@@ -57,7 +57,10 @@
 @keyframes apps-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 760px) { .apps-panel { margin: 8px 24px 16px; } }
 @media (max-width: 400px) { .apps-panel { margin-inline: 12px; } .apps-form > div { flex-wrap: wrap; } .apps-form input { flex-basis: 100%; } }
-@media (prefers-reduced-motion: reduce) { .apps-progress li { animation: none; } }
+/* The step it is on now turns, so a build that is working looks it (a still ring with Reduce Motion). */
+.apps-progress .apps-spinner { flex: none; align-self: center; width: 11px; height: 11px; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: apps-spin .8s linear infinite; }
+@keyframes apps-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .apps-progress li, .apps-progress .apps-spinner { animation: none; } }
 
 /* The closed panel is a map tool; its contents only take space when requested. */
 .apps-panel { box-shadow: none; }
@@ -76,3 +79,43 @@
 .apps-decisions button, .apps-form button, .apps-sound button { color: var(--accent-button-ink); }
 .apps-panel summary, .apps-output, .apps-blocks li, .apps-panel .apps-prompt, .apps-panel .apps-remove, .apps-panel .apps-help { font-size: 13px; }
 .apps-blocks small { font-size: 11px; }
+
+/* An app asked for by voice or in the composer builds in the dock (DockBuild), a card like the unfinished one: its
+   steps in a row while it works; then the app's name and purpose in a line, its blocks under it, Keep or Discard
+   beside them; a short line after the choice. ✦: the AI composed it. Its two lines keep one height from the first
+   step to "on", so the unfinished card above it doesn't shift as the build moves on. */
+.dock-build { display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 10px 12px 10px 14px; border: 1px solid color-mix(in srgb, var(--ai) 35%, var(--line)); border-radius: 14px; background: var(--card); overflow-wrap: anywhere; }
+/* A tune that just played: which app and why, one quiet line in the dock (Apps.tsx DockTune). Accent, as a kept app's
+   mark is: the app is yours, not an AI proposal. */
+.dock-tune { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--muted); }
+.dock-tune strong { color: var(--ink); font-weight: 600; }
+.dock-tune-mark { color: var(--accent); font-size: 15px; }
+.dock-build:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dock-build button { font: inherit; cursor: pointer; }
+.dock-build button:disabled { opacity: .5; cursor: default; }
+.dock-build-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--ai-soft); color: var(--ai); font-size: 16px; }
+.dock-build.kept .dock-build-mark { background: var(--accent-soft); color: var(--accent); }
+.dock-build-text { flex: 1; min-width: 0; }
+.dock-build-title { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
+.dock-build-title strong { font-weight: 600; }
+.dock-build-title span { color: var(--muted); }
+.dock-build .apps-progress { flex-direction: row; flex-wrap: wrap; gap: 0 14px; margin-top: 4px; line-height: 20px; color: var(--muted); }
+.dock-build .apps-progress li:last-child { color: var(--ink); }
+.dock-build .apps-blocks { margin: 4px 0 0; gap: 4px; }
+.dock-build .apps-blocks li { flex-direction: row; align-items: baseline; gap: 5px; padding: 0 9px; border-radius: 99px; background: var(--bg); font-size: 12px; line-height: 18px; }
+.dock-build-instead { margin: 0; font-size: 13px; line-height: 20px; }
+.dock-build .apps-decisions { flex: none; flex-wrap: nowrap; margin: 0; }
+.dock-build .apps-decisions button { padding: 7px 14px; border-radius: 10px; font-weight: 600; }
+.dock-build .apps-decisions button.quiet { color: var(--muted); }
+.dock-build .apps-decisions button.quiet:hover { background: var(--accent-soft); color: var(--ink); }
+@media (max-width: 560px) {
+  .dock-build { flex-wrap: wrap; gap: 4px 8px; min-height: 0; padding: 6px 6px 6px 10px; }
+  .dock-build-mark { display: none; }
+  .dock-build-text { flex-basis: 100%; }
+  .dock-build .apps-decisions { margin-left: auto; gap: 0; }
+  .dock-build-title { font-size: 13px; line-height: 18px; }
+  .dock-build .apps-progress { font-size: 12px; }
+  /* A phone's dock is half the screen at most: the step it's on, not the list. */
+  .dock-build .apps-progress li:not(:last-child) { display: none; }
+  .dock-build .apps-decisions button { padding-inline: 10px; }
+}

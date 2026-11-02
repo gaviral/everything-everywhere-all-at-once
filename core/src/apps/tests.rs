@@ -21,6 +21,7 @@ impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_file(&self.
 fn app() -> MiniApp {
     let mut app = seeds(true).remove(1);
     app.id = "test-app".into();
+    app.enabled = true;
     app.watcher = Watcher::Phrase { phrase: "demo".into() };
     app.publishers = vec![Publisher::Card { text: "Take a quiet moment.".into() }];
     app
@@ -48,13 +49,94 @@ fn seed_defaults_are_journaled_once_and_removal_survives_restart() {
         seed(&fixture.core, demo);
         seed(&fixture.core, !demo);
         assert_eq!(fixture.core.snapshot().apps.len(), 3);
-        assert!(fixture.core.snapshot().apps.iter().all(|a| a.enabled == demo));
+        assert!(fixture.core.snapshot().apps.iter().all(|a| a.enabled == (demo && a.id == "app-search")), "only Search-first, in demo mode");
         fixture.core.commit(vec![Change::AppRemoved { id: "app-volume".into() }]);
         let (_, loaded) = Journal::open(&fixture.path).unwrap();
         *fixture.core.world.lock().unwrap() = loaded.into();
         seed(&fixture.core, demo);
         assert_eq!(fixture.core.snapshot().apps.len(), 2);
     }
+}
+
+/// Nothing acts unasked (the final take, 2026-11-01: the seeded Argument resolver ran at 66.8 s when T6 got its second
+/// point, though no line asked for it). On a fresh map, demo or not, thoughts piling into one thread and voices held
+/// loud run no app and ask the model nothing; once the person switches one on, the same thoughts do run it.
+#[tokio::test]
+async fn nothing_runs_unasked_until_the_person_switches_an_app_on() {
+    for demo in [false, true] {
+        let fixture = Fixture::new();
+        seed(&fixture.core, demo);
+        for app in fixture.core.snapshot().apps.iter().filter(|a| a.enabled) {
+            assert!(matches!(app.watcher, Watcher::AppRequest {}), "{} starts on but fires without a request", app.id);
+        }
+        let mut messages = fixture.core.updates.subscribe();
+        let said = |id: &str| Thought { id: id.into(), speaker: "you".into(), text: format!("I never finish my sentences {id}"),
+            point: id.into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(),
+            fixed: String::new(), complete: true, at_ms: 1, place_ms: None };
+        let pile = |fixture: &Fixture, ids: &[&str]| for id in ids {
+            fixture.core.commit(vec![Change::ThoughtAdded { thought: said(id) }]);
+            on_thought(&fixture.core, id);
+        };
+        pile(&fixture, &["a", "b", "c"]);
+        let now = now_ms();
+        for app in fixture.core.snapshot().apps.iter() {
+            fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), app.id.clone()), (now - 60_000, now - 100, false));
+        }
+        volume(&fixture.core, "mic", 1.0);
+        for _ in 0..5 { tokio::task::yield_now().await; }
+        let world = fixture.core.snapshot();
+        assert!(world.apps.iter().all(|a| a.last_run_ms == 0), "an app ran unasked (demo {demo}): {:?}",
+            world.apps.iter().filter(|a| a.last_run_ms > 0).map(|a| &a.id).collect::<Vec<_>>());
+        assert!(fixture.core.apps.asked.lock().unwrap().is_empty(), "the model was asked unasked (demo {demo})");
+        assert!(world.suggestions.is_empty());
+        while let Ok(message) = messages.try_recv() {
+            assert!(!matches!(message.message, ServerMsg::AppsSound { .. }), "a tune played unasked (demo {demo})");
+        }
+        // The person's switch is a standing rule: from then on the same kind of thought runs it.
+        toggle(&fixture.core, "app-argument".into(), true);
+        fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
+        pile(&fixture, &["d"]);
+        for _ in 0..5 { tokio::task::yield_now().await; }
+        assert!(fixture.core.snapshot().apps.iter().any(|a| a.id == "app-argument" && a.last_run_ms > 0), "switched on, it runs");
+    }
+}
+
+#[test]
+fn an_earlier_builds_volume_watcher_moves_to_this_scale_and_keeps_its_choices() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    // As a build before the measured scale left it, switched off and set to the card alone.
+    let mut old = seeds(true).remove(1);
+    old.watcher = Watcher::Volume { level: 0.15, seconds: 3 };
+    fixture.core.commit(vec![Change::AppRemoved { id: old.id.clone() }, Change::AppRegistered { app: old },
+        Change::AppEnabled { id: "app-volume".into(), enabled: false }, Change::AppOutput { id: "app-volume".into(), sound: false }]);
+    seed(&fixture.core, true);
+    let (_, loaded) = Journal::open(&fixture.path).unwrap();
+    let app = loaded.apps.iter().find(|a| a.id == "app-volume").unwrap();
+    let (loud, held) = loud_voices();
+    assert!(matches!(app.watcher, Watcher::Volume { level, seconds } if (level - loud).abs() < 1e-9 && seconds == held), "{:?}", app.watcher);
+    assert!(!app.enabled && !app.purpose.contains("tune"), "still off, still the card alone");
+    assert_eq!(loaded.apps.len(), 3);
+    // After a restart, read back from the journal, it has nothing more to move.
+    let lines = std::fs::read_to_string(&fixture.path).unwrap().lines().count();
+    *fixture.core.world.lock().unwrap() = loaded.into();
+    seed(&fixture.core, true);
+    assert_eq!(std::fs::read_to_string(&fixture.path).unwrap().lines().count(), lines);
+}
+
+#[test]
+fn loud_voices_are_held_long_enough_that_normal_speech_cant_set_them_off() {
+    let held = |level: f64, seconds: u64| {
+        let answer = json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
+            "watcher":{"kind":"volume","level":level,"seconds":seconds}, "prompt":null, "publishers":[{"kind":"sound"}], "cooldown_secs":60}});
+        let Watcher::Volume { seconds, .. } = draft(&answer).unwrap().watcher else { panic!("a volume watcher") };
+        seconds
+    };
+    let (loud, _) = loud_voices();
+    assert_eq!(held(loud, 2), LOUD_SECONDS, "beat 5's sentence, as the composer answered it before it was told");
+    assert_eq!(held(loud, 10), 10);
+    assert_eq!(held(0.05, 1), 1, "an app for any talk");
+    assert_eq!(held(between(RAISED_VOICE, SHOUT), 1), 1, "shouting is well over normal speech");
 }
 
 #[test]
@@ -93,23 +175,49 @@ fn spoken_app_requests_can_open_with_filler_and_ask_for_me() {
         ("Um, so, hey, could you please create an app that... plays a tune", "plays a tune"),
         ("Make an app, that pings me", "pings me"),
         ("MAKE US AN APP TO SHOUT", "SHOUT"),
+        // Beat 5's sentence as people say it differently, and as speech-to-text writes it.
+        ("Make a app which plays a silly tune if we get loud", "plays a silly tune if we get loud"),
+        ("Make an app for when we get loud.", "for when we get loud."),
+        ("Make an app: if we get loud, play a tune.", "if we get loud, play a tune."),
+        ("Build an application that pings me", "pings me"),
+        ("Can you make me a new app whenever we shout to play a tune?", "whenever we shout to play a tune?"),
     ] {
         assert_eq!(command(said).as_deref(), Some(request), "{said}");
     }
-    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps"] {
+    for said in ["You make an app that people love", "We should make an app to track this", "Make an app.", "Let's make an app that helps",
+        "Make an app store page", "Make a happy face", "Build an apple pie that tastes good"] {
         assert_eq!(command(said), None, "{said}");
     }
 }
 
 #[test]
-fn volume_needs_continuous_readings_from_one_source() {
-    let mut state = (1000, 1000);
-    for now in (1000..4000).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
-    assert!(feed_volume(&mut state, 4200, true, 3));
-    assert!(!feed_volume(&mut state, 4300, false, 3));
-    assert!(!feed_volume(&mut state, 4500, true, 3));
-    assert!(!feed_volume(&mut state, 8000, true, 3), "a missing mic report resets the duration");
+fn volume_needs_a_sustained_stretch_from_one_source() {
+    // A reading every 320 ms, as the UI sends them.
+    let mut state = (0, 0, false);
+    for now in (320..=3200).step_by(320) { assert!(!feed_volume(&mut state, now, true, 3)); }
+    assert!(feed_volume(&mut state, 3520, true, 3), "3 s after the first loud reading");
+    let mut state = (0, 0, false);
+    for now in (320..=3200).step_by(320) { assert!(!feed_volume(&mut state, now, now != 1600, 3)); }
+    assert!(feed_volume(&mut state, 3520, true, 3), "one low reading, a breath between sentences, is ridden out");
+    let mut state = (0, 0, false);
+    for now in (320..=3520).step_by(320) { assert!(!feed_volume(&mut state, now, !(1600..=1920).contains(&now), 3)); }
+    assert_eq!(state.0, 2240, "two low readings in a row start the stretch again");
+    assert!(!feed_volume(&mut state, 8000, true, 3), "a missing mic report starts it again too");
     assert_eq!(state.0, 8000);
+}
+
+#[test]
+fn the_composer_the_seed_and_the_voice_script_share_one_volume_scale() {
+    let prompt = compose_prompt();
+    let Watcher::Volume { level, seconds } = seeds(true)[1].watcher else { panic!("the Volume watcher is the second seed") };
+    assert!(prompt.contains(&format!("use {level} for loud voices")) && !prompt.contains("{volume}"), "{prompt}");
+    assert!(prompt.contains(&format!("at least {seconds} for loud voices")), "{prompt}");
+    assert!(NORMAL_VOICE < level && level < RAISED_VOICE && RAISED_VOICE < SHOUT);
+    assert_eq!(seconds, LOUD_SECONDS);
+    // scripts/voice.mjs speaks at normal speech's level, so its talks can't set off the Volume watcher.
+    let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/voice.mjs")).expect("voice.mjs");
+    let spoken = script.lines().find_map(|line| line.strip_prefix("const LEVEL = ")?.strip_suffix(';')?.parse::<f64>().ok());
+    assert_eq!(spoken, Some(NORMAL_VOICE));
 }
 
 #[tokio::test]
@@ -128,6 +236,142 @@ async fn keep_and_discard_are_explicit_and_idempotent() {
     decide(&fixture.core, "b", true);
     assert_eq!(fixture.core.snapshot().apps.len(), 1);
     assert!(fixture.core.snapshot().apps[0].enabled);
+}
+
+/// "Keep it" and "discard it" are the build's buttons by voice, only while it waits for one; otherwise they're talk.
+#[tokio::test]
+async fn keep_it_said_aloud_keeps_the_app_waiting_and_is_a_thought_otherwise() {
+    let fixture = Fixture::new();
+    let thoughts = |core: &Core| core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect::<Vec<_>>();
+    fixture.core.add_thought("you", "Keep it");
+    assert_eq!(thoughts(&fixture.core), ["Keep it"]);
+    let ready = || Some(Build { id: "b".into(), request: "quiet".into(), stage: "ready".into(), steps: Vec::new(), draft: Some(app()), match_id: None, ..Build::default() });
+    fixture.core.apps.state.lock().unwrap().build = ready();
+    fixture.core.add_thought("you", "Okay, discard it.");
+    assert!(fixture.core.snapshot().apps.is_empty() && waiting(&fixture.core).is_none());
+    fixture.core.apps.state.lock().unwrap().build = ready();
+    fixture.core.add_thought("you", "Yes, keep it");
+    assert_eq!(fixture.core.snapshot().apps.len(), 1);
+    assert_eq!(thoughts(&fixture.core), ["Keep it"]);
+}
+
+/// Beat 5 as the take does it, with the Volume watcher removed: the sentence said aloud builds a new app through every
+/// stage, Keep starts it, normal speech doesn't set it off, and a raised voice held for its seconds plays the silly
+/// tune once, with nothing on the map (a sound needs no thread).
+#[tokio::test]
+async fn beat_five_said_aloud_builds_an_app_that_plays_the_silly_tune_on_a_raised_voice() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.commit(vec![Change::AppRemoved { id: "app-volume".into() }]);
+    let (loud, held) = loud_voices();
+    fixture.core.apps.answers.lock().unwrap().extend([json!({"match_id":"", "text":"No app plays a tune for loud voices."}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
+            "watcher":{"kind":"volume","level":loud,"seconds":2}, "prompt":null, "publishers":[{"kind":"sound"}], "cooldown_secs":60}})]);
+    let mut messages = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", "Okay, make an app that plays a silly tune if we get loud.");
+    tokio::task::yield_now().await;
+    let mut stages = Vec::new();
+    while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsBuild { build } = message.message { stages.push(build.stage); } }
+    assert_eq!(stages, ["searching", "composing", "validating", "ready"]);
+    assert!(fixture.core.snapshot().thoughts.is_empty(), "a request is never a thought");
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.request, "plays a silly tune if we get loud.");
+    decide(&fixture.core, &b.id, true);
+    let app = fixture.core.snapshot().apps.iter().find(|a| a.name == "Loud tune").cloned().expect("kept");
+    assert!(app.enabled && matches!(app.watcher, Watcher::Volume { seconds, .. } if seconds == held));
+    let tunes = |messages: &mut tokio::sync::broadcast::Receiver<Outgoing>| {
+        let mut played = Vec::new();
+        while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsSound { playful, name, why } = message.message { played.push((playful, name, why)); } }
+        played
+    };
+    // Normal speech, read after read, never sets it off; a raised voice that has held its seconds does.
+    for _ in 0..20 { volume(&fixture.core, "mic", NORMAL_VOICE); }
+    tokio::task::yield_now().await;
+    assert!(tunes(&mut messages).is_empty(), "normal speech never sets it off");
+    volume(&fixture.core, "mic", RAISED_VOICE);
+    tokio::task::yield_now().await;
+    assert!(tunes(&mut messages).is_empty(), "not on the first loud reading");
+    let now = now_ms();
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), app.id.clone()), (now - held * 1000, now - 320, false));
+    volume(&fixture.core, "mic", RAISED_VOICE);
+    for _ in 0..3 { tokio::task::yield_now().await; }
+    // Which app played it, and why, for the window's line under the tune (onrecord).
+    assert_eq!(tunes(&mut messages), [(true, "Loud tune".to_string(), format!("voices stayed loud for {held} s"))], "the silly tune, once, within its seconds");
+    assert!(fixture.core.snapshot().suggestions.is_empty() && fixture.core.snapshot().threads.is_empty());
+}
+
+/// Search-first is one model call before the composer; when it fails, the composer, which checks the catalog too,
+/// still makes the app instead of the build failing on camera.
+#[tokio::test]
+async fn a_failed_search_still_makes_the_app() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([json!({"unexpected": true}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Demo nudge", "purpose":"Show a card when the demo comes up.",
+            "watcher":{"kind":"phrase","phrase":"demo"}, "prompt":null, "publishers":[{"kind":"card","text":"Rehearse."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::task::yield_now().await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "{:?}", b.steps);
+    assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "the search, then the composition");
+}
+
+/// A tune says what set it off, from the watcher that fired it: a stray tune with no reason reads as a glitch on camera.
+#[test]
+fn a_tune_says_what_set_it_off() {
+    let (loud, held) = loud_voices();
+    let cases = [
+        (Watcher::Volume { level: loud, seconds: held }, format!("voices stayed loud for {held} s")),
+        (Watcher::Volume { level: SHOUT, seconds: 2 }, "voices stayed at a shout for 2 s".into()),
+        (Watcher::Phrase { phrase: " deadline ".into() }, "you said “deadline”".into()),
+        (Watcher::Topic { topic: "rent".into() }, "rent came up".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 1800 }, "its timer, every 30 min".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 86_400 }, "its timer, every day".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 45 }, "its timer, every 45 s".into()),
+        (Watcher::NewThought { min_points: 0 }, "a new thought landed".into()),
+        (Watcher::NewThought { min_points: 5 }, "a thread reached 5 points".into()),
+    ];
+    for (watcher, expected) in cases { assert_eq!(why(&watcher), expected); }
+    let once = why(&Watcher::Time { at_ms: 1_793_800_000_000, every_secs: 0 });
+    assert!(once.starts_with("it was set for ") && once.len() == "it was set for 12:00".len(), "{once}");
+}
+
+/// A search slower than its patience doesn't hold the build: the composition, asked at the same time, is shown once
+/// the search is cut at `SEARCH_PATIENCE`, not when the search would have answered.
+#[tokio::test(start_paused = true)]
+async fn a_search_past_its_patience_is_cut_and_the_composition_is_shown() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 16_200, "answer": {"match_id":"app-volume", "text":"Too late to count."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Demo nudge", "purpose":"Show a card when the demo comes up.",
+            "watcher":{"kind":"phrase","phrase":"demo"}, "prompt":null, "publishers":[{"kind":"card","text":"Rehearse."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::time::sleep(SEARCH_PATIENCE - Duration::from_millis(100)).await;
+    assert_eq!(build(&fixture.core).unwrap().stage, "searching", "the search still has its time");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "{:?}", b.steps);
+    assert_eq!(b.draft.unwrap().name, "Demo nudge");
+    assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "asked at once: no composer call after the cut");
+}
+
+/// A composition that answers first waits for the search: a match the search finds within its patience is offered
+/// instead, and the composition is thrown away.
+#[tokio::test(start_paused = true)]
+async fn a_search_match_wins_over_a_composition_that_answered_first() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 3_000, "answer": {"match_id":"app-volume", "text":"A quiet pause for loud voices."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud card", "purpose":"Show a card when voices get loud.",
+            "watcher":{"kind":"phrase","phrase":"loud"}, "prompt":null, "publishers":[{"kind":"card","text":"Pause."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "help us take a pause when our voices get loud".into());
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "matched", "{:?}", b.steps);
+    assert_eq!(b.match_id.as_deref(), Some("app-volume"));
+    assert!(b.draft.is_none() && b.steps.len() == 2, "the composition is never shown: {:?}", b.steps);
 }
 
 #[test]
@@ -306,7 +550,7 @@ async fn semantic_search_offers_a_disabled_app_before_any_composition() {
     tokio::task::yield_now().await;
     let b = build(&fixture.core).unwrap();
     assert_eq!(b.stage, "matched");
-    assert_eq!(b.steps.len(), 2, "the composer never runs for a search match");
+    assert_eq!(b.steps.len(), 2, "a search match shows no composing step");
     assert_eq!(b.match_id.as_deref(), Some("app-volume"));
     assert_eq!(fixture.core.snapshot().apps.len(), 3);
     decide(&fixture.core, &b.id, true);
@@ -425,7 +669,7 @@ fn phrases_and_topics_match_whole_words() {
 #[tokio::test]
 async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_a_card() {
     let fixture = Fixture::new();
-    let a = seeds(true).remove(0);
+    let a = MiniApp { enabled: true, ..seeds(true).remove(0) };
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     fixture.core.apps.answers.lock().unwrap().extend([
         json!({"publish":false,"text":"","when":""}),
@@ -441,7 +685,7 @@ async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_
 #[tokio::test]
 async fn an_app_hears_the_newest_thought_once() {
     let fixture = Fixture::new();
-    let resolver = seeds(true).remove(0);
+    let resolver = MiniApp { enabled: true, ..seeds(true).remove(0) };
     let said = |id: &str, text: &str, at_ms| Thought { id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
         complete: true, at_ms, place_ms: None };
@@ -466,7 +710,7 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
         tune
     };
     let now = now_ms();
-    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-a".into(), "app-volume".into()), (now - 4000, now));
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-a".into(), "app-volume".into()), (now - 4000, now, false));
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
     assert!(fixture.core.snapshot().suggestions.is_empty(), "another tab cannot complete this mic's loud streak");
@@ -479,7 +723,7 @@ async fn volume_uses_separate_sources_and_the_selected_publisher() {
     volume_output(&fixture.core, "app-volume".into(), false);
     assert!(!fixture.core.snapshot().apps.iter().find(|a| a.id == "app-volume").unwrap().purpose.contains("tune"), "the purpose says what it does");
     fixture.core.commit(vec![Change::AppRan { id: "app-volume".into(), at_ms: 0 }]);
-    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-b".into(), "app-volume".into()), (now - 4000, now));
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic-b".into(), "app-volume".into()), (now - 4000, now, false));
     volume(&fixture.core, "mic-b", 0.2);
     tokio::task::yield_now().await;
     assert_eq!(playful(), None, "the card alone is quiet");
@@ -504,7 +748,7 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
 #[tokio::test]
 async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
     let fixture = Fixture::new();
-    let asks = seeds(true).remove(0);
+    let asks = MiniApp { enabled: true, ..seeds(true).remove(0) };
     assert!(asks.prompt.is_some());
     fixture.core.commit(vec![Change::AppRegistered { app: asks.clone() }]);
     let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);

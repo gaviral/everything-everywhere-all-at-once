@@ -1005,7 +1005,8 @@ async fn ask(
     Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
-/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't one.
+/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't
+/// one, and neither is the hour's cap, which lasts minutes.
 async fn retry<T, F, Fut>(tries: u64, mut call: F) -> anyhow::Result<T>
 where
     F: FnMut() -> Fut,
@@ -1015,7 +1016,8 @@ where
     loop {
         match call().await {
             Ok(value) => return Ok(value),
-            Err(e) if attempt < tries && crate::model::Verdict::of(&e) != Some(crate::model::Verdict::Refused) => {
+            Err(e) if attempt < tries
+                && !matches!(crate::model::Verdict::of(&e), Some(crate::model::Verdict::Refused | crate::model::Verdict::Capped)) => {
                 tracing::warn!("import call failed (try {attempt}): {e:#}");
                 tokio::time::sleep(Duration::from_millis(800 * attempt)).await;
                 attempt += 1;
@@ -1746,7 +1748,7 @@ mod tests {
             let failing = futures_util::stream::once(async { Err::<axum::body::Bytes, std::io::Error>(std::io::Error::other("read")) });
             Request::new(axum::body::Body::from_stream(failing))
         };
-        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+        let link = |from: &str| ConnectInfo(crate::Link { from: from.parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
         let name = || Query(FileName { name: "conversations.json".into() });
         let guest = prepare(State(f.core.clone()), link("192.168.1.9:51000"), name(), unread()).await;
         assert_eq!(guest.status(), StatusCode::FORBIDDEN);
@@ -1761,7 +1763,7 @@ mod tests {
         let file = r#"[{"role": "user", "content": "I want to move in January.", "timestamp": 1791000000},
                        {"role": "user", "content": "thanks!", "timestamp": 1791000000}]"#;
         let upload = || async {
-            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() });
+            let link = ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false });
             let name = Query(FileName { name: "chats.json".into() });
             prepare(State(f.core.clone()), link, name, Request::new(axum::body::Body::from(file))).await
         };
@@ -1827,7 +1829,7 @@ mod tests {
                        {"role":"user","content":"thanks!","timestamp":1791000100}]"#;
         let response = prepare(
             State(f.core.clone()),
-            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap() }),
+            ConnectInfo(crate::Link { from: "127.0.0.1:51000".parse().unwrap(), to: "192.168.1.5:4321".parse().unwrap(), tls: false }),
             Query(FileName { name: "chats.json".into() }),
             Request::new(axum::body::Body::from(file)),
         ).await;

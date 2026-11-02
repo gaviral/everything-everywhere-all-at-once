@@ -17,14 +17,21 @@ function rememberTour() {
 
 type Step = { slot: string; title: string; text: string };
 
-export function Tour({ populated }: { populated: boolean }) {
+export function Tour({ populated, noKey }: { populated: boolean; noKey: boolean }) {
   // The initial snapshot determines the path, even if the map changes during the tour.
-  const [steps] = useState<Step[]>(() => {
-    const composer = { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" };
-    const map = { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." };
-    const tools = { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary." };
-    return populated ? [map, composer, tools] : [composer, map, tools];
-  });
+  const [order] = useState(() => populated ? ["tour-map", "tour-composer", "tour-tools"] : ["tour-composer", "tour-map", "tour-tools"]);
+  // Without a key the tour teaches what works (a sample map is for exploring), never the mic or a model's answer.
+  // Read each render: the core's word about the key comes right after the snapshot that mounts the tour.
+  const copy: Record<string, Step> = {
+    "tour-composer": noKey
+      ? { slot: "tour-composer", title: "Type to move around", text: "Without an AI key, this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter. To talk and add thoughts, put MODEL_API_KEY in .env." }
+      : { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" },
+    "tour-map": { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." },
+    "tour-tools": noKey
+      ? { slot: "tour-tools", title: "Try these", text: "Palace shows a picture for every thread, and search finds the words you used. Press ? for everything you can say." }
+      : { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary. Press ? for everything you can say." },
+  };
+  const steps = order.map((slot) => copy[slot]);
   const [step, setStep] = useState(() => hasToured() ? -1 : 0);
   const nextRef = useRef<HTMLButtonElement>(null);
   const focusNext = useRef(true);

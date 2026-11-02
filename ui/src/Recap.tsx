@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
 import "./recap.css";
+import { TIPS } from "./Tips";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -65,16 +66,22 @@ export function useRecap() {
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, noKey, onRequest, onClose, onFocus }: {
+export function Recap({ view, world, connected, noKey, listening, onRequest, onMark, onClose, onFocus }: {
   view: View | null;
   world: World;
   connected: boolean;
   noKey: boolean;
+  /** The mic is on, so a spoken command reaches the core. */
+  listening: boolean;
   onRequest: (period: RecapPeriod) => void;
+  /** Marks a recap as off, or takes the mark back; false when it couldn't be sent. */
+  onMark: (kind: "recap", id: string, off: boolean) => boolean;
   onClose: () => void;
   onFocus: (id: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // Recaps marked off in this window, by period and when each was made.
+  const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   const open = !!view;
   useEffect(() => {
     if (!open) return;
@@ -92,6 +99,7 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
   }, [open]);
   if (!view) return null;
   const recap = noKey ? null : view.recap;
+  const recapId = recap ? `${recap.period}-${recap.generated_ms}` : "";
   const resolve = (id: string) => {
     for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     return id;
@@ -120,7 +128,7 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
   return <dialog ref={dialog} className="recap-sheet" aria-labelledby="recap-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}>
     <div className="recap-top">
-      <span className="recap-eyebrow"><span aria-hidden="true">✦</span> Recap <span className="sr-only">by AI</span></span>
+      <span className="recap-eyebrow"><span aria-hidden="true" data-tip={TIPS.recap}>✦</span> Recap <span className="sr-only">by AI</span></span>
       <button className="recap-close" onClick={onClose} aria-label="Close recap">×</button>
     </div>
     <div className="recap-intro">
@@ -142,17 +150,18 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
       {recap?.limited && <p className="recap-limit">A long stretch: showing up to 24 recent threads, 16 recent points per thread, and 64 actions. Long points are shortened.</p>}
     </div>
     {recap && <div className="recap-content" aria-busy={view.loading}>
+      {/* The answer to "what did I decide?" comes first, and says so when there is none. */}
+      <div className="recap-columns">
+        <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{recap.decisions.length ? rows(recap.decisions) : <p className="recap-empty">None yet</p>}</section>
+        {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
+        {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
+      </div>
       <section className="recap-work" aria-labelledby="recap-work-title">
         <h2 id="recap-work-title">What you worked on <span>Newest first</span></h2>
         {recap.worked_on.length ? <ol>{recap.worked_on.map((item) => <li key={item.thread_id}>
           {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p>{item.text}</p>
         </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
       </section>
-      {(recap.decisions.length > 0 || plans.length > 0 || recap.questions.length > 0) && <div className="recap-columns">
-        {recap.decisions.length > 0 && <section aria-labelledby="recap-decisions"><h2 id="recap-decisions">Decisions made</h2>{rows(recap.decisions)}</section>}
-        {plans.length > 0 && <section aria-labelledby="recap-plans"><h2 id="recap-plans">Plans</h2>{rows(plans)}</section>}
-        {recap.questions.length > 0 && <section aria-labelledby="recap-questions"><h2 id="recap-questions">Open questions</h2>{rows(recap.questions)}</section>}
-      </div>}
       {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
         <h2 id="recap-unfinished-title">Room to return</h2>
         <ul>{recap.unfinished.map((item) => {
@@ -171,7 +180,16 @@ export function Recap({ view, world, connected, noKey, onRequest, onClose, onFoc
       </section>}
     </div>}
     <footer className="recap-footer">
-      <span>{recap?.thought_count ? "Pick up any thread when you're ready." : "Your thoughts will be here."}</span>
+      {/* Saying "map" works only while the mic listens: the composer sits behind the sheet. */}
+      <span>{listening ? "Say “map” to close, or press Esc" : "Press Esc to close"}</span>
+      {recapId && !view.loading && <button className="recap-off" aria-pressed={off.has(recapId)} disabled={!connected}
+        onClick={() => {
+          const next = !off.has(recapId);
+          if (onMark("recap", recapId, next)) setOff((marked) => { const copy = new Set(marked); if (next) copy.add(recapId); else copy.delete(recapId); return copy; });
+        }}
+        title={off.has(recapId) ? "Marked off. Click to take it back." : "Off the mark? Note it, so recaps improve."}>
+        {off.has(recapId) ? "Marked off" : "Off?"}
+      </button>}
       <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
     </footer>
   </dialog>;

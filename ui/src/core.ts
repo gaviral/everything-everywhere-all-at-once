@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
-import { volumeReporter } from "./apps-audio";
+import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
+import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
+import { attentionTeller, watchAttention } from "./this-card";
+import { failureNotice } from "./action-line";
+import { applyMove, type MoveChange } from "./moves-core";
+import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -37,6 +42,14 @@ export interface Thought {
   place_ms: number | null;
 }
 
+/** What the placer read into a thought (chunks.tsx): the words it carries on across a pause, an assumption that moved
+ * it, and why it went where it went. Empty fields are left out. */
+export interface Note {
+  continues?: string;
+  assumed?: string;
+  why?: string;
+}
+
 /** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
  * has a capital inside ("iPhone", "eBay") is a name, and stays as it is. */
 export function capitalized(point: string): string {
@@ -44,10 +57,28 @@ export function capitalized(point: string): string {
     /\p{Lu}/u.test(rest) ? word : lead + first.toUpperCase() + rest);
 }
 
+/** What stands in for a thread's picture until it has one, on the map and in the Palace. */
+export function firstLetter(title: string): string {
+  return Array.from(title.trim())[0]?.toLocaleUpperCase() || "?";
+}
+
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
+
+// A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
+// say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
+// mic off ("stop listening"). The revision makes the same one asked twice a new ask.
+// `answers`: how many answers had been shown when it came (see showNotice).
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number; answers: number };
+
+// "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
+export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
+
+// Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
+// when something newer stops the search.
+export const LOOKING = "Looking through your threads…";
 
 export interface Suggestion {
   id: string;
@@ -64,6 +95,9 @@ export interface Action {
   when: string;
   status: ItemStatus;
   done_ms: number | null;
+  /** This window only: why the last "Add to …" didn't add it (the core's `action_failed`), shown on its row until
+   *  it is tried again. A reload drops it; the row still offers the button. */
+  failed?: string;
 }
 
 // How an import of past chats is going (core/src/import.rs).
@@ -92,11 +126,16 @@ export interface World extends AppsWorld {
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
+  /** Thought id → its note (chunks.tsx). */
+  notes?: Record<string, Note>;
+  /** Renames and merges the AI wasn't sure of, waiting on their cards (tidy-core.ts). */
+  proposals?: Proposal[];
 }
 
 type Change =
   | { type: "recap_saved"; recap: RecapData }
   | AppChange
+  | TidyChange
   | { type: "thought_added"; thought: Thought }
   | { type: "thread_added"; thread: Thread }
   | {
@@ -111,14 +150,18 @@ type Change =
       complete: boolean;
       place_ms: number;
     }
-  | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "thought_noted"; thought_id: string; note: Note }
+  | { type: "thought_repointed"; thought_id: string; point: string }
+  | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
+  | MoveChange
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
@@ -137,12 +180,68 @@ type ServerMsg =
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
+  | { type: "action_failed"; id: string; message: string }
   | { type: "notice"; message: string }
+  | { type: "undoable"; id: number }
+  | { type: "correctable"; for_ms: number; back_to: string | null }
+  | { type: "revert" }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
+  | { type: "view"; view: ViewAsk["view"] }
+  | { type: "unfold"; thread_id: string | null; open: boolean }
   | { type: "explanation"; id: string; text: string; failed: boolean }
-  | { type: "import"; status: ImportStatus };
+  | { type: "import"; status: ImportStatus }
+  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false };
+/** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
+ *  with when it tries again, on this window's clock. Any other is waiting in line. */
+export type Placing = { now: string | null; retryAt: Record<string, number> };
+
+/** What a pending thought's pill says: waiting in line, being placed, or retrying after a failed try (with when).
+ *  Seconds count from when it was said, after the first 5. */
+export function pendingLabel(thought: Thought, placing: Placing, now: number, noKey: boolean, refused: boolean) {
+  if (refused) return "Waiting for a working key";
+  if (noKey) return "Needs the AI key";
+  const since = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
+  const after = since > 5 ? ` · ${since}s` : "";
+  if (placing.now === thought.id) return `Finding a thread${after}`;
+  const retryAt = placing.retryAt[thought.id];
+  if (retryAt !== undefined) {
+    const left = Math.ceil((retryAt - now) / 1000);
+    return left >= 2 ? `Couldn't place yet · retrying in ${left}s` : "Couldn't place yet · retrying";
+  }
+  // Behind another being placed, or the whole line waiting out a busy service: "Finding a thread" only while a call
+  // for this one is running.
+  return `Waiting${after}`;
+}
+
+export type Landing = { thread: string; thought: string; mine: boolean };
+
+/**
+ * The landing the map follows among thoughts just placed (`added`, in list order): the newest, except a late one of
+ * yours. A thought of yours that failed a try (`retried`) and lands after you moved on (newer words of yours landed,
+ * or you went elsewhere) doesn't move your place (placer.rs `decide`), so it doesn't move the map either: it's
+ * returned as `held`, and followed only if the next message moves your place to its thread (`held` passed back).
+ * The rest of a late thought cut in two lands just as late, so it joins `retried` (placer.rs `Placing::placed`).
+ */
+export function landingToFollow(world: World, added: Thought[], me: string, moved: boolean, retried: Set<string>, held: Landing | null) {
+  let landing: Landing | null = null;
+  let late: Landing | null = null;
+  for (const thought of added) {
+    if (!thought.thread_id) continue;
+    const at = { thread: thought.thread_id, thought: thought.id, mine: thought.speaker === me };
+    if (!at.mine || moved || at.thread === world.active || !retried.has(thought.id)) {
+      landing = at;
+      continue;
+    }
+    late = at;
+    const rest = world.thoughts[world.thoughts.findIndex((t) => t.id === thought.id) + 1];
+    if (rest && !rest.placed && rest.speaker === thought.speaker && rest.at_ms === thought.at_ms) retried.add(rest.id);
+  }
+  if (!landing && moved && held?.thread === world.active) landing = held;
+  return { landing, held: late };
+}
+
+const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Follows merges, as the core does, so late changes land on the surviving thread.
 function resolve(world: World, id: string): string {
@@ -165,8 +264,15 @@ function swap(text: string, from: string, to: string): string {
   return text;
 }
 
-function apply(world: World, raw: Change): World {
+/** An approval that didn't add its action: the core has offered it again (status new); its row says why. */
+export function actionFailed(world: World, id: string, message: string): World {
+  return { ...world, actions: world.actions.map((a) => (a.id === id ? { ...a, failed: message } : a)) };
+}
+
+export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
+  if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
+  if (raw.type === "thought_moved") return applyMove(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -201,7 +307,7 @@ function apply(world: World, raw: Change): World {
     case "messages_read":
       return world;
     case "thread_renamed":
-      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)) };
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, title: c.title } : t)), proposals: settle(world, "rename", c.thread_id) };
     case "thread_merged": {
       // As the core: never into itself, or into a thread that isn't there (its thoughts would vanish).
       if (c.from === c.into || !world.threads.some((t) => t.id === c.into)) return world;
@@ -215,6 +321,8 @@ function apply(world: World, raw: Change): World {
         active: move(world.active),
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
+        // Left behind, as the core does (`tidy::record`): a rename meant for `from` would rename `into`.
+        proposals: settle(world, null, c.from),
       };
     }
     case "suggestion_added":
@@ -227,7 +335,9 @@ function apply(world: World, raw: Change): World {
       return {
         ...world,
         suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: c.status } : s)),
-        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms } : a)),
+        // Trying again (being added), added or dismissed: the last failure no longer applies.
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms, failed: c.status === "new" ? a.failed : undefined } : a)),
+        proposals: (world.proposals ?? []).map((p) => (p.id === c.id ? { ...p, status: c.status } : p)),
       };
     case "thought_added":
       return world.thoughts.some((t) => t.id === c.thought.id)
@@ -243,6 +353,25 @@ function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thought_noted": {
+      // As the core: an empty note takes it away; a note only for a thought that's there.
+      const notes = { ...world.notes };
+      if (!c.note.continues && !c.note.assumed && !c.note.why) delete notes[c.thought_id];
+      else if (world.thoughts.some((t) => t.id === c.thought_id)) notes[c.thought_id] = c.note;
+      return { ...world, notes };
+    }
+    case "thought_repointed":
+      return repoint(world, c.thought_id, () => c.point);
+    case "thread_removed": {
+      // As the core: only an empty thread, and nobody stays on it.
+      if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
+      return {
+        ...world,
+        threads: world.threads.filter((t) => t.id !== c.thread_id),
+        active: world.active === c.thread_id ? null : world.active,
+        active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
+      };
+    }
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
@@ -289,7 +418,9 @@ function apply(world: World, raw: Change): World {
       if (!t) return world;
       const undo = !c.accept && !!t.heard && !!t.fixed;
       const correct = (text: string) => {
-        if (c.accept && t.unclear && t.guess) return swap(text, t.unclear, t.guess);
+        // A yes in your own words ("No, Muse Spark") puts those in instead of the guess.
+        const to = c.with || t.guess;
+        if (c.accept && t.unclear && to) return swap(text, t.unclear, to);
         if (!c.accept && t.heard && t.fixed) return swap(text, t.fixed, t.heard);
         return text;
       };
@@ -302,27 +433,71 @@ function apply(world: World, raw: Change): World {
         heard: undo ? "" : t.heard,
         fixed: undo ? "" : t.fixed,
       };
-      return {
+      const corrected = {
         ...world,
         thoughts: world.thoughts.map((x) => (x.id === t.id ? next : x)),
         threads: world.threads.map((th) =>
           th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next.point } : th,
         ),
       };
+      // As the core: a point that carries these words on across a pause (chunks.tsx) takes the same swap.
+      const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
+      return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
     }
   }
+}
+
+/** Thought `id`'s point becomes `point(old)`; the thread's last point, a copy, keeps in step (the core's `repoint`). */
+function repoint(world: World, id: string, point: (old: string) => string): World {
+  const t = world.thoughts.find((x) => x.id === id);
+  if (!t) return world;
+  const next = point(t.point);
+  return {
+    ...world,
+    thoughts: world.thoughts.map((x) => (x.id === id ? { ...x, point: next } : x)),
+    threads: world.threads.map((th) => (th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next } : th)),
+  };
+}
+
+/**
+ * Picks out the messages that answer a move you asked for: a view said aloud, a search's jump, "where was I?",
+ * "next one" or "last one". An open Recap makes way for those, so you see where you went. Your own words landing
+ * on another thread move you too, but that's talk, not a request: the sheet stays while you read. `speaker` is
+ * you; each message comes with the map as it was before it.
+ */
+export function movesAsked(speaker?: string) {
+  // The thread your words just landed on, until the rest of that commit is in: the placer sends the landing, its
+  // ThreadTouched and any drops, then the move (placer.rs `decide`).
+  let landing: string | null = null;
+  return (world: World, msg: ServerMsg) => {
+    const change = msg.type === "change" ? msg.change : null;
+    const landed = landing;
+    if (change?.type !== "thread_touched" && change?.type !== "thread_status") landing = null;
+    // Not Later or the mic: they leave the map as it is.
+    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause"].includes(msg.view))) return true;
+    if (!speaker || !change) return false;
+    if (change.type === "thought_placed" && world.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
+      landing = change.thread_id;
+    }
+    // The placer decides the move on the map from before the model answered, so it comes even when you've gone
+    // there yourself meanwhile (a click): still talk. An import's end opens you on its newest thread when you had
+    // no place yet (import.rs `land`): not asked for either.
+    return change.type === "active_changed" && change.speaker === speaker && change.thread_id !== landed
+      && (world.active_by[speaker] ?? world.active) !== null;
+  };
 }
 
 export function useCore(speaker?: string) {
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
+  const closeRecap = recap.close;
   const apps = useApps();
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
-  const [mapChange, setMapChange] = useState<{ id: number; text: string } | null>(null);
+  const [mapChange, setMapChange] = useState<(TidyNote & { id: number }) | null>(null);
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
@@ -330,11 +505,31 @@ export function useCore(speaker?: string) {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // The notice up now, for the socket handler, whose `notice` would be the one from when it connected.
+  const noticeShown = useRef("");
+  useEffect(() => { noticeShown.current = notice; }, [notice]);
+  // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
+  const [undoId, setUndoId] = useState<number | null>(null);
+  // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
+  // answer the window makes for a view request stands down when the core has answered since (showNotice).
+  const answers = useRef(0);
+  const [answerRevision, setAnswerRevision] = useState(0);
+  const answered = () => setAnswerRevision(++answers.current);
+  // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
+  const [revertAsk, setRevertAsk] = useState(0);
+  // Whether your last turn can still be corrected, until when here, and where undoing it takes you (catalog.rs
+  // `Correctable`): the "this" mark previews a correction from it (attention-core.ts `thisBase`).
+  const [correctable, setCorrectable] = useState<{ until: number; back_to: string | null } | null>(null);
+  // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
+  const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
+  const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
+  const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
   const [queuedCount, setQueuedCount] = useState(0);
+  const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
@@ -349,6 +544,7 @@ export function useCore(speaker?: string) {
     let lastPartial = "";
     let awaitingThought = false;
     let handoffTimer: number | undefined;
+    const asked = movesAsked(speaker);
 
     const open = () => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -359,12 +555,16 @@ export function useCore(speaker?: string) {
         resetApps();
         setConnected(true);
         retry = 500;
-        // Thoughts typed while the connection was down go out now.
+        // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        attention.current.resend((message) => ws.send(message));
+        coreBack();
         setQueuedCount(0);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
+        // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
+        if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         switch (msg.type) {
@@ -382,13 +582,11 @@ export function useCore(speaker?: string) {
             break;
           case "change": {
             const change = msg.change;
-            if (change.type === "thread_renamed") {
-              const old = currentWorld.threads.find((thread) => thread.id === resolve(currentWorld, change.thread_id));
-              if (old && old.title !== change.title) setMapChange({ id: ++changeId, text: `AI renamed “${old.title}” to “${change.title}”` });
-            } else if (change.type === "thread_merged") {
-              const from = currentWorld.threads.find((thread) => thread.id === change.from);
-              const into = currentWorld.threads.find((thread) => thread.id === change.into);
-              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+            // An AI rename, a merge, or one undone: said above the map, with Undo where it can be taken back.
+            const note = tidyNote(currentWorld, change);
+            if (note) {
+              const id = ++changeId;
+              setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -398,6 +596,18 @@ export function useCore(speaker?: string) {
             }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
+            break;
+          }
+          case "action_failed": {
+            const action = currentWorld.actions.find((a) => a.id === msg.id);
+            currentWorld = actionFailed(currentWorld, msg.id, msg.message);
+            setWorld(currentWorld);
+            if (!action) break;
+            // Its row says why when it's on screen; else the notice does (action-line.ts `failureNotice`).
+            const row = document.getElementById(`item-${msg.id}`)?.getBoundingClientRect();
+            const inView = !!row && row.height > 0 && row.bottom > 0 && row.top < window.innerHeight;
+            const say = failureNotice(action.title, msg.message, inView, noticeShown.current);
+            if (say) { setNotice(say); setUndoId(null); answered(); }
             break;
           }
           case "partial":
@@ -425,11 +635,36 @@ export function useCore(speaker?: string) {
           // Other errors and notices use the same notice area.
           case "notice":
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
-            setNotice(msg.message);
+            setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
+            // A newer answer: the Undo shown was for the one before.
+            if (msg.message) { setUndoId(null); answered(); }
+            break;
+          case "undoable":
+            setUndoId(msg.id);
+            break;
+          case "correctable":
+            setCorrectable(msg.for_ms > 0 ? { until: Date.now() + msg.for_ms, back_to: msg.back_to } : null);
+            break;
+          case "revert":
+            setRevertAsk((n) => n + 1);
+            break;
+          case "placing":
+            setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
+            setUndoId(null);
+            answered();
+            break;
+          case "view": {
+            // Counted now, not in the updater: React may run that only at render, after answers that came later.
+            const shown = answers.current;
+            setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1, answers: shown }));
+            break;
+          }
+          case "unfold":
+            setUnfoldAsk((previous) => ({ thread_id: msg.thread_id, open: msg.open, revision: (previous?.revision ?? 0) + 1 }));
             break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
@@ -445,6 +680,10 @@ export function useCore(speaker?: string) {
         awaitingThought = false;
         setPartial("");
         setHandoff("");
+        // No answer comes on a closed connection.
+        setNotice((shown) => (shown === LOOKING ? "" : shown));
+        // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
+        setCorrectable(null);
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -459,7 +698,7 @@ export function useCore(speaker?: string) {
       window.clearTimeout(handoffTimer);
       socket.current?.close();
     };
-  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, speaker]);
+  }, [receiveApps, resetApps, receiveRecap, recapDisconnected, closeRecap, speaker]);
 
   const send = useCallback((data: string | ArrayBuffer) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
@@ -469,13 +708,20 @@ export function useCore(speaker?: string) {
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
+    answered();
     return false;
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  // "This" for spoken requests: the card you selected or point at (this-card.ts).
+  useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
+  const unlink = useCallback((thought_id: string) => sendOrWarn(JSON.stringify({ type: "unlink", thought_id })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
-  const volume = useMemo(() => volumeReporter((level) => send(JSON.stringify({ type: "app_volume", level }))), [send]);
+  // A point to another thread (null: a new one of its own), and a title typed on a card (core moves.rs).
+  const move = useCallback((thought_id: string, thread_id: string | null) => sendOrWarn(JSON.stringify({ type: "move", thought_id, thread_id })), [sendOrWarn]);
+  const rename = useCallback((thread_id: string, title: string) => sendOrWarn(JSON.stringify({ type: "rename", thread_id, title })), [sendOrWarn]);
+  const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
   const noKey = keyNotice !== "";
   const requestRecap = (requested?: RecapPeriod) => {
@@ -504,29 +750,54 @@ export function useCore(speaker?: string) {
     voiceStatusRevision,
     connected,
     notice,
+    answerRevision,
     noKey,
     keyRefused: keyNotice.includes("refused"),
     keyNotice,
     found,
+    viewAsk,
+    unfoldAsk,
     queuedCount,
+    placing,
     clearNotice: useCallback(() => setNotice(""), []),
-    showNotice: (message: string) => setNotice(message),
+    undoId,
+    revertAsk,
+    correctable,
+    // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
+    attending: attention.current,
+    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
+    tidy: useCallback((id: string, apply: boolean) => sendOrWarn(JSON.stringify({ type: "tidy", id, apply })), [sendOrWarn]),
+    // Newest first, so each puts back the title or thread from before it.
+    untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
+    hideMapChange: useCallback(() => setMapChange(null), []),
+    // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
+    // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
+    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review of judgeseye, Sol).
+    showNotice: (message: string, asked?: ViewAsk | null) => {
+      if (asked && answers.current > asked.answers) return;
+      setNotice(message);
+      setUndoId(null);
+      answered();
+    },
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); return false; }
+      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false; }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem, approve, correct, tag,
+    setItem, approve, correct, unlink, tag, move, rename,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.
+    mark: (kind: "explain" | "recap", id: string, off: boolean) => send(JSON.stringify({ type: "mark", kind, id, off })),
     importStatus,
     startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
     cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),

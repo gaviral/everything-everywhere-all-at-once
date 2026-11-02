@@ -1,7 +1,7 @@
 //! Explain: select a word or phrase and get one plain sentence on what it means in its thread,
 //! from the fastest Muse setting, so it reads like a tooltip rather than a chat.
 
-use crate::world::World;
+use crate::world::{Change, World};
 use crate::{protocol::ServerMsg, Core};
 use anyhow::bail;
 use serde_json::json;
@@ -22,18 +22,35 @@ const PATIENCE: Duration = Duration::from_secs(20);
 
 pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, thread_id: Option<String>) {
     let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
+    let started = crate::now_ms();
     let message = match ask(&core, &phrase, &notes).await {
-        Ok(text) => ServerMsg::Explanation { id, text, failed: false },
+        Ok(text) => {
+            // Kept with what it was asked and how long it took, so a later change to the prompt is judged on real
+            // answers and the person's "off" marks (C42).
+            core.record(Change::ExplainAnswered {
+                id: id.clone(),
+                phrase: phrase.chars().take(200).collect(),
+                context: context.chars().take(600).collect(),
+                thread_id,
+                model: core.placer_model.name().into(),
+                ms: crate::now_ms().saturating_sub(started),
+                text: text.clone(),
+                at_ms: started,
+            });
+            ServerMsg::Explanation { id, text, failed: false }
+        }
         Err(e) => {
             tracing::warn!("explain failed: {e:#}");
-            let text = if core.key.is_none() {
-                "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart."
+            let text: String = if core.key.is_none() {
+                "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart.".into()
             } else if core.key_refused() {
-                crate::model::REFUSED
+                crate::model::REFUSED.into()
+            } else if let Some(capped) = core.capped_message() {
+                capped
             } else {
-                "Couldn't explain that just now."
+                "Couldn't explain that just now.".into()
             };
-            ServerMsg::Explanation { id, text: text.into(), failed: true }
+            ServerMsg::Explanation { id, text, failed: true }
         }
     };
     core.send(message);
@@ -121,25 +138,21 @@ fn names(text: &str, term: &str) -> bool {
 }
 
 async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
-    let key = core.key()?;
     let phrase: String = phrase.chars().take(200).collect();
-    let response = core
-        .ask_model(&core.placer_model, |model| {
-            let body = json!({
-                "model": model,
-                "reasoning_effort": "minimal",
-                // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
-                "max_tokens": 1200,
-                "prompt_cache_key": "e2a2o-explain",
-                "messages": [
-                    {"role": "system", "content": SYSTEM},
-                    {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
-                ],
-            });
-            core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send()
+    let body = |model: &str| {
+        json!({
+            "model": model,
+            "reasoning_effort": "minimal",
+            // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
+            "max_tokens": 1200,
+            "prompt_cache_key": "e2a2o-explain",
+            "messages": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
+            ],
         })
-        .await?;
-    let value = crate::model::answer(response).await?;
+    };
+    let value = core.ask_model(&core.placer_model, URL, PATIENCE, body, serde_json::Value::Null).await?;
     let text = value["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
     if text.is_empty() {
         bail!("no answer ({})", value["choices"][0]["finish_reason"].as_str().unwrap_or("no reason given"));
@@ -333,7 +346,7 @@ mod tests {
             cores.insert(map, Arc::new(Core {
                 key: Some(key.clone()),
                 // As main.rs.
-                placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
+                placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
                 http: reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build().unwrap(),
                 ..Core::test(journal, world)
             }));

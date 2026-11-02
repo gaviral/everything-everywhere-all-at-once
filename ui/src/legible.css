@@ -1,0 +1,84 @@
+/* Legibility (loaded after styles.css): words wrap instead of being cut, one column edge and one spacing scale, and
+   how much the map says at once follows what you are doing. Measured at 1440×900 and 390×844 on the sample map and
+   the demo's rough cut; the numbers below come from those measurements (docs/ARCHITECTURE.md, "Legibility"). */
+
+/* ── Words are never cut where they matter ─────────────────────────────────────────────────────────────────────── */
+
+/* Live words roll up like captions: the newest words stay in view and older ones leave at the top, two lines at most
+   (two is the caption norm: more covers the map, less cuts a sentence mid-thought). An ellipsis cut the newest words
+   instead, the ones being said: 21 of 86 captions in the rough cut on a phone, and every turn past ≈ 65 characters at
+   1440 (≈ 40% of real turns run past 20 s). */
+.live { display: flex; flex-direction: column; justify-content: flex-end; max-height: 2lh; overflow: hidden; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* The unfinished card's half-sentence is the card's whole job: it shows all of it. It was cut at ≈ 88 characters. */
+.pullback-title, .pullback-quote { overflow: visible; white-space: normal; text-overflow: clip; }
+
+/* An app's name and purpose, or the request it was asked for, wrap rather than lose their end. */
+.dock-build-title { overflow: visible; white-space: normal; text-overflow: clip; }
+
+/* The Palace: a room's name wraps under a narrow room, and a tile's last thought shows whole (two lines held 46 of 54
+   tiles, none needed more than three, and tiles in a row stay level whatever their captions). */
+.palace-room-heading > span:first-child { overflow: visible; white-space: normal; text-overflow: clip; }
+.palace-point { display: block; overflow: visible; -webkit-line-clamp: unset; }
+
+/* A point is a short version of what was said; the words behind it open under it by click, tap or Enter
+   (App.tsx Point), where hover alone used to show them, and never on a phone. */
+.points li.has-said { cursor: pointer; border-radius: 6px; }
+.points li.has-said:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.said { flex-basis: 100%; color: var(--muted); font-size: 13px; line-height: 1.45; }
+/* Its keyboard and screen-reader control is a real button ("Words said", expanded or not), out of sight like
+   .sr-only so the point's words don't shift; when it has focus the whole point shows the focus ring a focused point
+   has (styles.css), since that is what it opens. Its name stays out of words you select to explain or copy. */
+.said-toggle { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; user-select: none; }
+.points li:has(> .said-toggle:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* A point's placing time sits at the right of its first line, in room the point always leaves it (the widest,
+   "12.3 s" at 11 px, is ≈ 31 px, plus the 8 px gap between a point's parts). In the flow it dropped to a line of its
+   own under any point that wrapped: one wasted line per point on a phone, where the time always shows. */
+.points li { padding-right: 40px; }
+.points li .speed { position: absolute; top: 0; right: 0; margin: 0; line-height: calc(15px * 1.45); }
+
+/* ── One column edge, one spacing scale ────────────────────────────────────────────────────────────────────────── */
+
+/* The dock shares the map's edges: its cards and the composer were 24 px wider on each side than the cards above
+   them (760 vs 712 px at 1440). */
+.dock-inner { max-width: 712px; }
+
+/* Spacing on a 4 px scale: card to card is 12 everywhere (a branch is a card too, it was 10), a card's inside is 12
+   by 16 (was 14 by 16), points are 8 apart (was 7). */
+.thread { padding: 12px 16px; }
+.thread.collapsed { padding-block: 8px; }
+.points { gap: 8px; }
+.branches { gap: 12px; margin-top: 12px; padding-left: 12px; }
+@media (max-width: 560px) { .thread { padding: 12px; } .thread.collapsed { padding-block: 8px; } .branches { padding-left: 8px; } }
+
+/* Two columns once both fit: at 1440 the one 712 px column left half the screen empty and the map scrolled after
+   six threads. A column is at least 520 px, what the longest sample point needs on one line inside a branch (436 px
+   of words, 47 px of card, 36 px of branch indent), so two start at 2 × 520 + 12 + 48 = 1100 px (TWO_COLUMNS in
+   legible.ts); they stop growing at 584 px each (≈ 75 characters a line, the top of a comfortable measure), 1180 px
+   in all. Threads alternate left and right in the map's order and each column stacks on its own (MapCards), so a tall
+   card leaves no hole beside it; a lone thread stays in the middle at the one-column width. */
+@media (min-width: 1100px) {
+  .map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; max-width: 1228px; }
+  .map > :not(.map-column) { grid-column: 1 / -1; }
+  .map-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .map-column:empty { display: none; }
+  .map-column:first-child:has(+ .map-column:empty) { grid-column: 1 / -1; justify-self: center; width: min(100%, 712px); }
+  .map-tools-inner, .search-summary { max-width: 1180px; }
+  .palace { max-width: 1228px; padding-inline: 24px; }
+}
+
+/* ── Density follows what you are doing ───────────────────────────────────────────────────────────────────────── */
+
+/* While you talk (useTalking: words heard, a thought on its way, until the natural pause after the last landing),
+   the thread you are in and anything that needs you (left off, to review) keep full strength; the rest goes quiet:
+   flat, its words in the secondary ink. Nothing moves or hides, so the map never shifts under you, and quiet text
+   still reads (≥ 5:1 in both themes). A card you point at or tab into is the one you're reading: it stays full. At
+   the pause everything reads again. The 0.3 s is the card's own border and shadow change. */
+.thread, .thread .title, .thread .points, .thread .thread-count { transition: color .3s, background-color .3s, border-color .3s, box-shadow .3s; }
+.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) {
+  background-color: color-mix(in srgb, var(--card) 45%, var(--bg));
+  box-shadow: none;
+}
+.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) > .thread-head .title,
+.map.talking .thread:not(.active):not(.dropped):not(:has(.thread.active)):not(:hover):not(:focus-within) > div:not(.branches) .points { color: var(--muted); }

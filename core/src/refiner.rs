@@ -2,6 +2,7 @@
 //! better titles, merges of threads that are really one, one suggestion per branch,
 //! and the tasks or events the talk decided on. Results arrive as ordinary changes.
 
+use crate::tidy::{Kind, Proposal};
 use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
 use anyhow::Context;
@@ -17,13 +18,24 @@ Given the threads and their points, return JSON with: \
 titles: better thread titles (up to 5 words), only where clearly better; a thread several people spoke on keeps a title that fits all their points; \
 merges: threads that are really the same topic, merging the later id into the earlier; \
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
+never one about a point marked (trailed off): the app brings unfinished thoughts back itself; \
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
 tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
 #hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
 Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
+/// What the answer's `questions` are, said in its schema rather than the rules above: there, it made the other ideas
+/// half as many (decisions/refinersure.md).
+const QUESTIONS: &str = "For a point that flags a problem or a to-do without saying what it is (\"the budget part needs work\", \
+\"the intro still bugs me\"): one concrete question that asks what (\"Which part of the budget needs work?\"), at most one per thread, \
+never for a point marked (trailed off). Empty when no point is like that.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
+/// How long a pass gets, its whole answer included: twice what filling its 6,000-token room takes, by the placer's rule
+/// (4 s and 8 ms a token), so a big first pass over an imported map still finishes. The 8 normal passes in the
+/// 2026-11-01 log took 5–13 s; a pass still out at 52 s is hung: it fails and is redone at the next pause (`run`),
+/// not two minutes on.
+const PATIENCE: Duration = Duration::from_secs(52);
 
 #[derive(Deserialize, Default)]
 struct Pass {
@@ -33,6 +45,9 @@ struct Pass {
     merges: Vec<Merge>,
     #[serde(default)]
     suggestions: Vec<Idea>,
+    /// What a vague point meant, asked (C222): one concrete question, which takes its thread's one idea.
+    #[serde(default)]
+    questions: Vec<Idea>,
     #[serde(default)]
     actions: Vec<Task>,
     #[serde(default)]
@@ -162,8 +177,7 @@ fn rest_ms(failures: u32) -> u64 {
 
 async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
     let body = request(world, since, &chrono_today());
-    // A pass runs in the background, so it can wait: two minutes is far past any real answer.
-    let value = core.call_model(URL, &body, Duration::from_secs(120)).await?;
+    let value = core.call_model(URL, &body, PATIENCE).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     serde_json::from_str(content).context("answer wasn't the expected JSON")
 }
@@ -177,7 +191,27 @@ fn existing(world: &World) -> Vec<String> {
         .iter()
         .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
         .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
+        .chain(world.proposals[world.proposals.len().saturating_sub(30)..].iter().map(|p| match p.kind {
+            Kind::Rename => format!("title proposed for {}: {}", p.thread_id, p.title),
+            Kind::Merge => format!("merge proposed: {} into {}", p.thread_id, p.into),
+        }))
+        .chain(world.titled.iter().filter(|id| world.thread(id).is_some()).map(|id| format!("title the person chose: {id}")))
+        .chain(kept_apart(world).into_iter().map(|(a, b)| format!("threads the person keeps apart (never merge): {a} and {b}")))
         .collect()
+}
+
+/// Pairs of threads on the map that the person set apart by moving a thought between them (`World::apart`), each
+/// once, in the order they were made.
+fn kept_apart(world: &World) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for (_, from, to) in &world.moves {
+        let (a, b) = (world.resolve(from), world.resolve(to));
+        let on_map = a != b && world.thread(&a).is_some() && world.thread(&b).is_some();
+        if on_map && world.apart(&a, &b) && !pairs.iter().any(|(x, y)| (*x == a && *y == b) || (*x == b && *y == a)) {
+            pairs.push((a, b));
+        }
+    }
+    pairs
 }
 
 /// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on it.
@@ -199,10 +233,11 @@ fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
                 "titles": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "title": {"type": "string"}}, "required": ["thread_id", "title"]}},
                 "merges": {"type": "array", "items": {"type": "object", "properties": {"from": {"type": "string"}, "into": {"type": "string"}}, "required": ["from", "into"]}},
                 "suggestions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
+                "questions": {"type": "array", "description": QUESTIONS, "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
                 "actions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "kind": {"type": "string", "enum": ["reminder", "event"]}, "title": {"type": "string"}, "when": {"type": "string"}}, "required": ["thread_id", "kind", "title", "when"]}},
                 "tags": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["thread_id", "tags"]}}
             },
-            "required": ["titles", "merges", "suggestions", "actions", "tags"]
+            "required": ["titles", "merges", "suggestions", "questions", "actions", "tags"]
         }}}
     })
 }
@@ -230,7 +265,8 @@ fn describe(world: &World, since: u64, today: &str) -> String {
     };
     let line = |p: &Thought| {
         let who = if named { format!("{}: ", p.speaker) } else { String::new() };
-        format!("  - {who}{}{}", p.text, dated(p))
+        // A thought that trailed off is the unfinished card's to bring back, so the model is told which ones did.
+        format!("  - {who}{}{}{}", p.text, if p.complete { "" } else { " (trailed off)" }, dated(p))
     };
     let quiet: Vec<String> = world
         .threads
@@ -280,32 +316,44 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
             words(&t.title) == words(&th.title)
                 || last_named(&th.title).is_some_and(|old| !last_named(&t.title).is_some_and(|new| new > old))
         };
-        if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) {
+        // A title the person chose is theirs (tidy.rs).
+        if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) || world.titled.contains(&t.thread_id) {
             continue;
         }
         let current = world.thread(&t.thread_id).map(|th| th.title.as_str());
-        if exists(&t.thread_id) && !t.title.trim().is_empty() && current != Some(t.title.trim()) && !names_an_id(&t.title) {
-            out.push(Change::ThreadRenamed { thread_id: t.thread_id, title: t.title.trim().into() });
+        let title = t.title.trim();
+        if exists(&t.thread_id) && !title.is_empty() && current != Some(title) && !names_an_id(title) {
+            if sure_title(world, &t.thread_id, title) {
+                out.push(Change::ThreadRetitled { thread_id: t.thread_id, title: title.into(), was: current.unwrap_or_default().into() });
+            } else if !world.proposals.iter().any(|p| p.kind == Kind::Rename && p.thread_id == t.thread_id && (p.status == ItemStatus::New || words(&p.title) == words(title))) {
+                out.push(proposal(Kind::Rename, &t.thread_id, title, ""));
+            }
         }
     }
-    // Each merge is checked against the map the earlier ones leave: a chain (T3 into T1, then T5 into T3)
-    // lands on the thread that's left, and a thread never goes into its own branch, which would make the
-    // branch its own parent and drop it from the map. Two threads with no word in common aren't one topic.
-    let mut merged = world.clone();
+    // A merge is never sure (decisions/refinersure.md): each is proposed on the card of the thread that would go, once
+    // per pair and one at a time. A thread never goes into its own branch, which would make the branch its own parent
+    // and drop it from the map, and two threads with no word in common aren't one topic. Two threads the person set
+    // apart by moving a thought from one to the other stay apart (moves.rs).
+    let mut proposed: Vec<(String, String)> = world.proposals.iter().filter(|p| p.kind == Kind::Merge).map(|p| (p.thread_id.clone(), world.resolve(&p.into))).collect();
+    let mut waits = HashSet::new();
     for m in pass.merges {
-        let into = merged.resolve(&m.into);
-        let shared = || !vocabulary(&merged, &m.from).is_disjoint(&vocabulary(&merged, &into));
-        if m.from != into && merged.thread(&m.from).is_some() && merged.thread(&into).is_some() && !above(&merged, &m.from, &into) && shared() {
-            let change = Change::ThreadMerged { from: m.from, into };
-            merged.apply(&change);
-            out.push(change);
+        let (from, into) = (world.resolve(&m.from), world.resolve(&m.into));
+        let shared = || !vocabulary(world, &from).is_disjoint(&vocabulary(world, &into));
+        let waiting = world.proposals.iter().any(|p| p.kind == Kind::Merge && p.thread_id == from && p.status == ItemStatus::New) || waits.contains(&from);
+        let asked = proposed.iter().any(|(a, b)| (*a == from && *b == into) || (*a == into && *b == from));
+        if from != into && exists(&from) && exists(&into) && !above(world, &from, &into) && !world.apart(&from, &into) && shared() && !waiting && !asked {
+            proposed.push((from.clone(), into.clone()));
+            waits.insert(from.clone());
+            out.push(proposal(Kind::Merge, &from, "", &into));
         }
     }
     // One idea per thread, an app's card included, and one per thread in a pass too.
     let mut suggested = HashSet::new();
-    for s in pass.suggestions {
-        // Never an idea that only says again what the person said on that thread.
-        if said_in(world, &s.thread_id).any(|text| repeats(&s.text, text)) {
+    let questions = pass.questions.into_iter().filter(|q| q.text.trim_end().ends_with('?')).map(|q| (q, true));
+    for (s, asks) in questions.chain(pass.suggestions.into_iter().map(|s| (s, false))) {
+        // Never an idea that only says again what the person said on that thread; the question asking what a vague
+        // point meant ("What feels off about the first screen?") reuses its words by nature.
+        if !asks && said_in(world, &s.thread_id).any(|text| repeats(&s.text, text)) {
             continue;
         }
         let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
@@ -357,7 +405,8 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         // Its title and any this pass gives it: a tag of only their words (#demo on "Demo Opening Hook") adds nothing.
         let titles: Vec<String> = std::iter::once(thread.title.clone())
             .chain(out.iter().filter_map(|c| match c {
-                Change::ThreadRenamed { thread_id, title } if *thread_id == thread.id => Some(title.clone()),
+                Change::ThreadRetitled { thread_id, title, .. } if *thread_id == thread.id => Some(title.clone()),
+                Change::TidyProposed { proposal: p } if p.thread_id == thread.id && p.kind == Kind::Rename => Some(p.title.clone()),
                 _ => None,
             }))
             .collect();
@@ -374,8 +423,34 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     out
 }
 
+/// A rename the refiner makes on its own, without asking: the person's own words for the thread. Every word of the new
+/// title that carries meaning was said on the thread, and on a thread of two or more points they come from at least
+/// two of them, so the title speaks for the thread and not for one point; or the person named it so in so many words.
+/// Measured on the refiner's own answers (decisions/refinersure.md): of the 24 different renames it gave on sample,
+/// crafted and real maps, this makes 8 at once (7 a person would keep, 1 neither better nor worse) and asks the other
+/// 16, all 8 a person would undo among them ("Year-end admin tasks" for taxes and a car registration, "Everything App
+/// Demo Vision" for eye tracking): those used words nobody said, or spoke for one point of ten.
+pub(crate) fn sure_title(world: &World, thread: &str, title: &str) -> bool {
+    let points: Vec<&str> = said_in(world, thread).collect();
+    // Named so in the last point that names anything ("call it Falcon", not "call it Falcon … actually, call it Eagle").
+    let naming = |p: &&str| words(p).iter().any(|w| CUES.contains(&w.as_str()));
+    if points.iter().rposition(naming).is_some_and(|i| named_at(title, points[i]).is_some_and(|at| !words(points[i])[at..].iter().skip(1).any(|w| CUES.contains(&w.as_str())))) {
+        return true;
+    }
+    let wanted = content(title);
+    let said: HashSet<String> = points.iter().flat_map(|p| content(p)).collect();
+    let speaking = points.iter().filter(|p| !content(p).is_disjoint(&wanted)).count();
+    !wanted.is_empty() && wanted.is_subset(&said) && (points.len() < 2 || speaking >= 2)
+}
+
+fn proposal(kind: Kind, thread: &str, title: &str, into: &str) -> Change {
+    Change::TidyProposed {
+        proposal: Proposal { id: new_id("tp"), kind, thread_id: thread.into(), title: title.into(), into: into.into(), status: ItemStatus::New },
+    }
+}
+
 /// True when `id` is `of`'s parent, or its parent's, and so on up.
-fn above(world: &World, id: &str, of: &str) -> bool {
+pub(crate) fn above(world: &World, id: &str, of: &str) -> bool {
     let mut parent = world.thread(of).and_then(|t| t.parent_id.clone());
     // At most one step per thread, so a corrupt journal with a cycle can't loop forever.
     for _ in 0..world.threads.len() {
@@ -395,8 +470,9 @@ fn said_in<'a>(world: &'a World, id: &'a str) -> impl Iterator<Item = &'a str> +
 
 /// The last cue for a name they gave in so many words: "we're calling this Project Falcon", "call it Garden Project",
 /// "it's called Falcon"; not just words they used ("I need to file the quarterly taxes").
+const CUES: [&str; 7] = ["call", "calling", "called", "name", "named", "title", "titled"];
+
 fn named_at(title: &str, text: &str) -> Option<usize> {
-    const CUES: [&str; 7] = ["call", "calling", "called", "name", "named", "title", "titled"];
     let (title, text) = (words(title), words(text));
     if title.is_empty() {
         return None;
@@ -573,10 +649,81 @@ fn chrono_today() -> String {
 #[cfg(test)]
 mod tests {
     use super::{changes, changes_on, day, describe, drop_stale_titles, existing, named_at, rest_ms, Pass};
+    use crate::tidy::Kind;
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
     /// A Sunday, as `chrono_today` writes it.
     const TODAY: &str = "2026-11-01 (Sunday)";
+
+    #[test]
+    fn a_rename_is_made_at_once_only_in_the_persons_own_words() {
+        let world = map(&[
+            ("T1", "Never Finishing Tasks", &["My biggest problem is that I never finish my", "Sentences. I never finish my sentences."]),
+            ("T2", "Quarterly taxes", &["I need to file the quarterly taxes by January fifteenth.", "And renew the car registration before the new year."]),
+            ("T3", "Work anniversary", &["It's the company's tenth anniversary party next week."]),
+            ("T4", "Mom's birthday", &["Oh wait, Mom's birthday is Friday. I need to book that cooking class.", "The one on Main Street."]),
+            ("T5", "Codename", &["We need a name for this.", "Let's call it Falcon.", "The prototype ships Friday."]),
+            ("T6", "Bird project", &["Let's call it Falcon.", "Eagle sounds better, the prototype is fast.", "Actually, call it Eagle."]),
+        ]);
+        let rows = [
+            ("T1", "Never Finishing Sentences", true),
+            ("T2", "Taxes and car registration", true),
+            // Words nobody said: asked.
+            ("T2", "Year-end admin tasks", false),
+            ("T3", "Company anniversary party", true),
+            // All said, but from one point of the two: it doesn't speak for the thread.
+            ("T4", "Mom's birthday class", false),
+            // A name they gave in so many words, the latest they gave.
+            ("T5", "Falcon", true),
+            ("T6", "Falcon", false),
+            ("T6", "Eagle", true),
+        ];
+        for (id, title, sure) in rows {
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "titles": [{"thread_id": id, "title": title}] })).unwrap();
+            let expected = if sure { format!("{id} title {title}") } else { format!("{id} proposes title {title}") };
+            assert_eq!(shown(&changes_on(&world, pass, TODAY)), [expected]);
+        }
+    }
+
+    #[test]
+    fn a_title_the_person_chose_is_left_alone_and_a_rename_is_asked_once() {
+        let mut world = map(&[("T1", "Topic", &["Buy oat milk."]), ("T2", "Rent", &["Pay rent by Friday."])]);
+        let ask = |world: &World, id: &str, title: &str| {
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "titles": [{"thread_id": id, "title": title}] })).unwrap();
+            changes_on(world, pass, TODAY)
+        };
+        let first = ask(&world, "T1", "Grocery list");
+        assert_eq!(shown(&first), ["T1 proposes title Grocery list"]);
+        first.iter().for_each(|c| world.apply(c));
+        // Waiting on the card: no second proposal, whatever its words.
+        assert!(ask(&world, "T1", "Grocery list").is_empty() && ask(&world, "T1", "Shopping").is_empty());
+        // The person renamed it (or undid an AI rename, or said no to one): never touched again, even in their words.
+        world.apply(&Change::TitleChosen { thread_id: "T2".into(), title: "Rent".into() });
+        assert!(ask(&world, "T2", "Pay rent").is_empty());
+        assert!(existing(&world).iter().any(|l| l == "title the person chose: T2"), "the model is told");
+    }
+
+    #[test]
+    fn a_vague_point_gets_one_question_that_may_reuse_its_words() {
+        let world = map(&[
+            ("T1", "Onboarding", &["Something about the first screen feels off."]),
+            ("T2", "Rent", &["Pay rent by Friday."]),
+        ]);
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "questions": [
+                {"thread_id": "T1", "text": "What feels off about the first screen?"},
+                {"thread_id": "T2", "text": "Pay rent by Friday"},
+            ],
+            "suggestions": [
+                {"thread_id": "T1", "text": "Try a lighter background"},
+                {"thread_id": "T2", "text": "When will you pay rent by Friday?"},
+            ],
+        }))
+        .unwrap();
+        // The question takes its thread's one idea; an idea still never just says a point again, and a "question"
+        // that isn't one is left out.
+        assert_eq!(shown(&changes_on(&world, pass, TODAY)), ["T1 idea What feels off about the first screen?"]);
+    }
 
     #[test]
     fn a_name_turned_down_is_not_a_name_given() {
@@ -681,6 +828,40 @@ mod tests {
     }
 
     #[test]
+    fn two_threads_the_person_set_apart_by_a_move_are_never_proposed_as_one() {
+        let thought = |id: &str, thread: &str, text: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: text.into(),
+            point: text.into(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        let mut world = World {
+            threads: vec![thread("T1", None), thread("T2", None)],
+            thoughts: vec![thought("a", "T1", "pottery wheel"), thought("b", "T2", "pottery glaze"), thought("c", "T1", "pottery kiln")],
+            ..World::default()
+        };
+        let merge = |world: &World| {
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "merges": [{"from": "T2", "into": "T1"}] })).unwrap();
+            changes(world, pass).iter().filter(|c| matches!(c, Change::TidyProposed { .. })).count()
+        };
+        assert_eq!(merge(&world), 1, "before the move, the two read as one topic");
+        world.apply(&Change::ThoughtMoved { thought_id: "c".into(), thread_id: "T2".into(), from: "T1".into(), undo: false });
+        assert_eq!(merge(&world), 0, "the person's move says they're two");
+        assert!(existing(&world).iter().any(|line| line == "threads the person keeps apart (never merge): T1 and T2"));
+        world.apply(&Change::ThoughtMoved { thought_id: "c".into(), thread_id: "T1".into(), from: "T2".into(), undo: true });
+        assert_eq!(merge(&world), 1, "a move undone takes its reason back");
+    }
+
+    #[test]
     fn merges_follow_the_ones_before_and_never_fold_a_thread_into_its_own_branch() {
         let thought = |id: &str, thread: &str| Thought {
             id: id.into(),
@@ -712,24 +893,39 @@ mod tests {
             changes
                 .iter()
                 .filter_map(|c| match c {
-                    Change::ThreadMerged { from, into } => Some((from.clone(), into.clone())),
+                    Change::TidyProposed { proposal: p } if p.kind == Kind::Merge => Some((p.thread_id.clone(), p.into.clone())),
+                    Change::ThreadMerged { .. } => panic!("a merge is never made without asking"),
                     _ => None,
                 })
                 .collect()
         };
         let to = |from: &str, into: &str| (from.to_string(), into.to_string());
 
-        // A chain lands on the thread that's left, and every thought stays on the map.
+        // A chain, applied as proposed, lands on the thread that's left, and every thought stays on the map.
         let chain = merges(&[("T3", "T1"), ("T5", "T3")]);
-        assert_eq!(pairs(&chain), [to("T3", "T1"), to("T5", "T1")]);
+        assert_eq!(pairs(&chain), [to("T3", "T1"), to("T5", "T3")]);
         let mut after = world.clone();
-        chain.iter().for_each(|c| after.apply(c));
+        for (from, into) in pairs(&chain) {
+            let into = after.resolve(&into);
+            after.apply(&Change::ThreadMerged { from, into });
+        }
         assert!(after.thoughts.iter().all(|t| after.thread(t.thread_id.as_deref().unwrap()).is_some()));
         assert_eq!(after.thread("T7").unwrap().parent_id.as_deref(), Some("T1"));
         // Never into its own branch, however far down.
         assert!(pairs(&merges(&[("T5", "T7"), ("T5", "T9")])).is_empty());
-        // Nor into itself, nor from a thread that isn't there or was just merged away.
+        // Nor into itself, nor from a thread that isn't there, and one proposal at a time on a card.
         assert_eq!(pairs(&merges(&[("T1", "T1"), ("T2", "T1"), ("T3", "T1"), ("T3", "T5")])), [to("T3", "T1")]);
+        // Once per pair, either way round, whatever the answer was; a card's next proposal waits for an answer.
+        let mut asked = world.clone();
+        merges(&[("T3", "T1")]).iter().for_each(|c| asked.apply(c));
+        let again = |world: &World, pairs_: &[(&str, &str)]| {
+            let list: Vec<_> = pairs_.iter().map(|(from, into)| serde_json::json!({"from": from, "into": into})).collect();
+            pairs(&changes(world, serde_json::from_value(serde_json::json!({ "merges": list })).unwrap()))
+        };
+        assert!(again(&asked, &[("T3", "T1"), ("T1", "T3"), ("T3", "T5")]).is_empty());
+        let id = asked.proposals[0].id.clone();
+        asked.apply(&Change::ItemStatus { id, status: ItemStatus::Dismissed, done_ms: None });
+        assert_eq!(again(&asked, &[("T3", "T1"), ("T3", "T5")]), [to("T3", "T5")]);
         // A branch into a thread above it is fine.
         assert_eq!(pairs(&merges(&[("T9", "T5")])), [to("T9", "T5")]);
     }
@@ -791,7 +987,7 @@ mod tests {
         let texts: Vec<String> = changes(&world, pass)
             .into_iter()
             .map(|c| match c {
-                Change::ThreadRenamed { title, .. } => title,
+                Change::TidyProposed { proposal } => proposal.title,
                 Change::SuggestionAdded { suggestion } => suggestion.text,
                 Change::ActionProposed { action } => action.title,
                 other => panic!("{other:?}"),
@@ -827,6 +1023,8 @@ mod tests {
         world.thoughts.push(said("b", "Sam"));
         let room = describe(&world, 0, TODAY);
         assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
+        world.thoughts.push(Thought { complete: false, ..said("c", "you") });
+        assert!(describe(&world, 0, TODAY).contains("  - you: c said (trailed off)"), "a trailed-off point is marked");
     }
 
     #[test]
@@ -953,8 +1151,9 @@ mod tests {
     fn shown(out: &[Change]) -> Vec<String> {
         out.iter()
             .filter_map(|c| match c {
-                Change::ThreadRenamed { thread_id, title } => Some(format!("{thread_id} title {title}")),
-                Change::ThreadMerged { from, into } => Some(format!("{from} into {into}")),
+                Change::ThreadRetitled { thread_id, title, .. } => Some(format!("{thread_id} title {title}")),
+                Change::TidyProposed { proposal: p } if p.kind == Kind::Rename => Some(format!("{} proposes title {}", p.thread_id, p.title)),
+                Change::TidyProposed { proposal: p } => Some(format!("{} proposes into {}", p.thread_id, p.into)),
                 Change::SuggestionAdded { suggestion: s } => Some(format!("{} idea {}", s.thread_id, s.text)),
                 Change::ActionProposed { action: a } => Some(format!("{} {} {} {}", a.thread_id, a.kind, a.title, a.when)),
                 Change::TagSuggested { thread_id, tag } => Some(format!("{thread_id} {tag}")),
@@ -1011,12 +1210,13 @@ mod tests {
             drop_stale_titles(&mut pass, &sent, now);
             shown(&changes_on(now, pass, TODAY))
         };
-        assert_eq!(titles(&sent), ["T1 title Falcon", "T2 title Grocery list"], "nothing new: the pass stands");
+        // Falcon is the name they gave; "grocery list" are words nobody said, so it's asked.
+        assert_eq!(titles(&sent), ["T1 title Falcon", "T2 proposes title Grocery list"], "nothing new: the pass stands");
         // Placed since, or still being placed there: the next pass sees it.
         for placed in [true, false] {
             let mut now = sent.clone();
             now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
-            assert_eq!(titles(&now), ["T2 title Grocery list"], "placed: {placed}");
+            assert_eq!(titles(&now), ["T2 proposes title Grocery list"], "placed: {placed}");
         }
     }
 
@@ -1080,7 +1280,7 @@ mod tests {
             assert!(rename(&world, proposed).is_empty(), "{proposed}");
         }
         let world = map(&[("T1", "Project Falcon", &["We're discussing Project Falcon."])]);
-        assert_eq!(rename(&world, "Launch plan"), ["T1 title Launch plan"], "unnamed titles still allow model improvements");
+        assert_eq!(rename(&world, "Launch plan"), ["T1 proposes title Launch plan"], "unnamed titles still allow model improvements, asked");
         assert!(rename(&world, "   ").is_empty());
         assert!(rename(&World::default(), "Quick Launch").is_empty(), "a missing thread is still rejected");
     }
@@ -1121,11 +1321,12 @@ mod tests {
         assert_eq!(
             shown(&changes_on(&world, pass, TODAY)),
             [
-                // Not the name the person gave, a change of case, or over five words; words they only used are fine.
-                "T5 title Mom's birthday class",
+                // Not the name the person gave, a change of case, or over five words; words they only used are fine,
+                // made at once when they speak for the thread (both points), else asked.
+                "T5 proposes title Mom's birthday class",
                 "T8 title Taxes and car registration",
-                // Lease and electric bill share no word; the rent threads do.
-                "T7 into T6",
+                // Lease and electric bill share no word; the rent threads do, and a merge is always asked.
+                "T7 proposes into T6",
                 // Not a point said again; a next step that reuses some words is fine.
                 "T5 idea Check Main Street class availability for Friday?",
                 // Not the title's words, nor those of the title this pass gives it.
