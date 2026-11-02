@@ -2439,7 +2439,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let world = core.snapshot();
         assert!(world.threads.is_empty() && world.thoughts.is_empty() && world.active.is_none(), "{:?}", world.threads);
-        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new(), dismissed: Vec::new(), merged: Vec::new() });
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new(), dismissed: Vec::new(), merged: Vec::new(), on: Vec::new(), active: None });
         until(Duration::from_secs(2), || core.snapshot().thoughts.iter().any(|t| t.id == id && t.placed)).await;
         assert_eq!(core.snapshot().threads.len(), 1);
         let _ = std::fs::remove_file(&path);
