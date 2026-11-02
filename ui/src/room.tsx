@@ -7,7 +7,8 @@ import "./room.css";
 type Seat = { me: string; code: string };
 // What the core says at /room: is a room open, may this page use the map, and (asked with a name) does
 // another laptop hold that name? Private things (live words, the mic, notices) go to every window with a name.
-type Door = { room: boolean; member: boolean; taken?: boolean };
+// `tunnel`: a trial link (scripts/trial.sh), a fresh map for one person that whoever sent it may watch.
+type Door = { room: boolean; member: boolean; taken?: boolean; tunnel?: boolean };
 
 const ALONE: Seat = { me: "you", code: "" };
 const NAME = "e2a2o.name";
@@ -210,9 +211,19 @@ export function Room({ children }: { children: ReactNode }) {
     <main className="join">
       <div className="join-brand">E2A2O <span>threads</span></div>
       <form className="join-card" onSubmit={join}>
-        <div className="join-kicker">A shared map</div>
-        <h1>Think together.</h1>
-        <p className="join-intro">Two people, one map. Your thoughts find their place together.</p>
+        {door.tunnel ? (
+          <>
+            <div className="join-kicker">Your own map</div>
+            <h1>Think out loud.</h1>
+            <p className="join-intro">A fresh map, just for you. Talk, and your thoughts sort themselves into threads as you go.</p>
+          </>
+        ) : (
+          <>
+            <div className="join-kicker">A shared map</div>
+            <h1>Think together.</h1>
+            <p className="join-intro">Two people, one map. Your thoughts find their place together.</p>
+          </>
+        )}
         {!door.member && (
           <label className="join-field">
             <span>Room code</span>
@@ -239,11 +250,13 @@ export function Room({ children }: { children: ReactNode }) {
             autoFocus={door.member}
             aria-describedby={note ? "join-note" : "name-hint"}
           />
-          <small id="name-hint">The other person will see this next to your thoughts.</small>
+          <small id="name-hint">
+            {door.tunnel ? "Shown next to your thoughts. Whoever sent you this link can watch along." : "The other person will see this next to your thoughts."}
+          </small>
         </label>
         {note && <div id="join-note" className="join-note" role="status">{note}</div>}
         <button type="submit" disabled={busy || !cleanName(name) || (!door.member && !normal(code))}>
-          {busy ? "Joining…" : "Join the map"}
+          {busy ? "Joining…" : door.tunnel ? "Start" : "Join the map"}
         </button>
       </form>
     </main>

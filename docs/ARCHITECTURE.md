@@ -52,6 +52,7 @@ Core, one process (core/src: axum, tokio)
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
+  tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
   perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
   refiner_live.rs  the refiner against the real model, on maps built to tempt it (`--ignored refiner_live`)
 ```
@@ -124,6 +125,8 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - Each outgoing message goes to every window or to one speaker's windows: live words, mic status, "Back to …" notes, Recap progress and import progress go only to their speaker.
 - Per speaker: the active thread (`active_by`), who dropped a thread (`dropped_by`), the way back, and what the placer sees as "active".
 - Another laptop that asks for no name, or for "you" (the host's own name), joins as "Guest" and is told so.
+- Tunnel mode (`PUBLIC_URL`, set by `scripts/trial.sh`; it needs `ROOM_CODE` of at least 10 characters): the core binds `127.0.0.1` only and a Cloudflare quick tunnel on this machine forwards to it, so every request arrives from `127.0.0.1`. The gate then takes only requests whose Host is the tunnel's, whose Origin (when present) is `PUBLIC_URL`, and whose `cf-connecting-ip` names a visitor that isn't this machine; anything else, this laptop's own `localhost` included, gets 403. The map still needs the code. After the gate the request counts as coming from the visitor's address, so no one is the host: no approving into this laptop's apps, no imports, and "you" is renamed "Guest". `/room` says `tunnel: true`, and the join card reads as one person's own map.
+- Every window gets a WebSocket ping every 30 s: a Cloudflare tunnel cut a silent socket at 125 s and held one with a 30 s ping.
 - A name is the host's or a guest's, never both: another laptop can't take a name this machine's windows joined with (until the core stops), and this machine can't take one another laptop's window is using. `/room?name=` says so (`taken`), the WebSocket is refused (409), and the page asks for another name. Only the host stops an import.
 
 ## Import
