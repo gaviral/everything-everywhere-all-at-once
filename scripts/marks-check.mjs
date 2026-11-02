@@ -44,6 +44,11 @@ try {
   const tipsSource = readFileSync(new URL("../ui/src/Tips.tsx", import.meta.url), "utf8");
   assert.match(tipsSource, /window\.addEventListener\("keydown", key, true\)/);
   assert.match(tipsSource, /if \(event\.key !== "Escape" \|\| !current\.current\) return;\s*hide\(\);[^]*?if \(!typing\) event\.stopPropagation\(\);/);
+  // A pressed button's tip goes for every pointer, a tap as well as a click: on iPhone the mic's tip stayed over the
+  // live words it had just started hearing (spec-mobile 1, WebKit). Marks that aren't buttons (✦, dots) keep tap-to-show.
+  const down = tipsSource.match(/const down = \(event: PointerEvent\) => \{[^]*?\n    \};/)?.[0] ?? "";
+  assert.match(down, /else if \(el && el\.matches\("button"\)\) \{ pressed\.current = el; hide\(\); \}/, "a pressed button's tip goes");
+  assert.doesNotMatch(down, /pointerType/, "a tap hides a pressed button's tip as a click does");
 
   const base = { connected: true, capturing: false, starting: false, serviceOn: false, words: false, paused: false, noKey: false, refused: false };
   const state = (extra) => micState({ ...base, ...extra });

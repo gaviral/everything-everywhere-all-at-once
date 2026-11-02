@@ -1238,7 +1238,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
-            <ThreadTitle thread={thread} depth={depth} />
+            <ThreadTitle thread={thread} depth={depth} onOpen={toggle} />
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
