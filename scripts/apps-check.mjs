@@ -97,7 +97,7 @@ try {
   // Played: the dock says which app played it and why (the core's `why`, from the watcher that fired), so a tune out
   // of nowhere doesn't read as a glitch on camera.
   const tuneHtml = render(DockTune, { core: core(null, false, null, { name: "Loud Silly Tune", why, id: 1 }) });
-  assert.ok(tuneHtml.includes('role="status"') && text(tuneHtml).replace(" :", ":") === `♪ Loud Silly Tune: ${why}`, tuneHtml);
+  assert.ok(tuneHtml.includes('role="status"') && text(tuneHtml).startsWith("♪ Loud Silly Tune") && tuneHtml.includes(`<strong>Loud Silly Tune</strong>: ${why}`), tuneHtml);
   assert.equal(render(DockTune, { core: core(null) }), "", "nothing played: no line");
   // The first click, tap or key press lets the page play (useApps listens for it); then the message plays the silly
   // tune: three quick hops up and a sliding whistle, done in under a second.

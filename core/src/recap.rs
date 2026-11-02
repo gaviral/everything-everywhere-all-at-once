@@ -332,9 +332,9 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
     // where the time went ("You circled around …"), so the summary leads with them when there are any.
     let summary = if source.threads.is_empty() { "No thoughts in this period yet. Start wherever you like.".into() }
         else if !decisions.is_empty() {
-            if leads_with_decisions(&answer.summary, &decisions) { short(&answer.summary, 280) } else { decided(&decisions) }
+            if leads_with_decisions(&answer.summary, &decisions) { sentence(&answer.summary) } else { decided(&decisions) }
         }
-        else if names_a_thread(&answer.summary, &source.threads) { short(&answer.summary, 280) }
+        else if names_a_thread(&answer.summary, &source.threads) { sentence(&answer.summary) }
         else { main_threads(&source) };
     Recap {
         period: source.period, since_ms: source.since_ms, through_ms: source.through_ms,
@@ -350,6 +350,13 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
 fn names_a_thread(summary: &str, threads: &[SourceThread]) -> bool {
     let said = content_words(summary);
     threads.iter().any(|t| content_words(&t.title).iter().any(|w| said.contains(w)))
+}
+
+/// The model's summary as one line ending like a sentence: it sometimes leaves off the full stop ("…if under $80"),
+/// which shows as the sheet's first line.
+fn sentence(summary: &str) -> String {
+    let line = short(summary, 280);
+    if line.ends_with(['.', '!', '?', '…']) { line } else { format!("{line}.") }
 }
 
 /// Words of four letters or more, lowercased, for telling whether two lines talk about the same thing.
@@ -559,6 +566,8 @@ mod tests {
         };
         let led = "You decided to book the pottery class if it's under $80 and to study with Priya on Wednesday.";
         assert_eq!(with(led, decisions()), led, "the model's line, when it leads with a decision");
+        assert_eq!(with("You decided to study with Priya and book pottery if under $80", decisions()),
+            "You decided to study with Priya and book pottery if under $80.", "ends like a sentence");
         let ours = "You decided: Study with Priya on Wednesday night for stats midterm. Book pottery class tonight if it is under $80.";
         assert_eq!(with("You circled around Topic T1, Topic T2 and Topic T3 today.", decisions()), ours, "names threads, not decisions");
         assert_eq!(with("You decided a few things today.", decisions()), ours, "says decided, but none of them");

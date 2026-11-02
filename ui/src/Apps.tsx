@@ -192,7 +192,7 @@ export function DockTune({ core }: { core: Core }) {
   }, [played?.id]);
   return <AnimatePresence>
     {played && <motion.div key="dock-tune" className="dock-tune" role="status" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
-      <span className="dock-tune-mark" aria-hidden="true">♪</span><strong>{played.name}</strong><span>{played.why ? `: ${played.why}` : " played its tune"}</span>
+      <span className="dock-tune-mark" aria-hidden="true">♪</span><span><strong>{played.name}</strong>{played.why ? `: ${played.why}` : " played its tune"}</span>
     </motion.div>}
   </AnimatePresence>;
 }
