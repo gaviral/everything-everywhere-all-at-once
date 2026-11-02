@@ -1,7 +1,10 @@
 // No extra dependencies: run with `node scripts/recap-check.mjs`.
 // Which messages close an open Recap (`movesAsked` in ui/src/core.ts): fed one at a time, each with the map as it
-// was before it, the way a window gets them from the core.
+// was before it, the way a window gets them from the core. And the sheet's order (ui/src/Recap.tsx, rendered with
+// React's server renderer): the answer to "What did I decide today?" comes first.
 import assert from "node:assert/strict";
+import React from "../ui/node_modules/react/index.js";
+import ReactDOMServer from "../ui/node_modules/react-dom/server.node.js";
 import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 
 // room.tsx reads the page's address as it loads: this is the app opened alone.
@@ -64,7 +67,23 @@ try {
   // placed) leaves nothing behind: the next move to that thread is asked for.
   assert.deepEqual(closes([said("x"), placed("x", "T2"), touched("T2"), notice("Back to Topic T2"), moved("T2")]),
     [false, false, false, false, true], "a move asked for after a landing that didn't move you");
-  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't.");
+
+  // The sheet after "What did I decide today?": decisions first, then plans and open questions, then what you worked on.
+  const { Recap } = await server.ssrLoadModule("/src/Recap.tsx");
+  const item = (thread_id, text) => ({ thread_id, text });
+  const recap = { period: "today", since_ms: 0, through_ms: 1, generated_ms: 2, source_key: "", summary: "A day of demo planning.",
+    decisions: [item("T1", "Open with the mic turning on")], plans: [item("T2", "Book the cooking class")],
+    questions: [item("T3", "Which room do we record in?")], worked_on: [item("T1", "How the demo opens")], unfinished: [],
+    actions: [], thought_count: 4, thread_count: 3, limited: false };
+  const sheet = (shown) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading: false,
+    message: "", recap: shown }, world: map, connected: true, noKey: false, listening: true, onRequest() {}, onMark: () => true,
+    onClose() {}, onFocus() {} })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const order = (shown, words) => words.map((w) => shown.indexOf(w)).every((at, i, all) => at >= 0 && (i === 0 || at > all[i - 1]));
+  assert.ok(order(sheet(recap), ["Decisions made", "Open with the mic turning on", "Plans", "Open questions", "What you worked on"]),
+    "decisions first, then plans, open questions and what you worked on");
+  // None decided: it says so, still first.
+  assert.ok(order(sheet({ ...recap, decisions: [] }), ["Decisions made", "None yet", "Plans", "What you worked on"]), "no decisions yet");
+  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't; the sheet puts decisions first.");
 } finally {
   await server.close();
 }
