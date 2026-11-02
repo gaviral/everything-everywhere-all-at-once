@@ -99,6 +99,18 @@ pub(crate) fn note(head: Option<&Thought>, assumed: &str, why: &str, moved: bool
     }
 }
 
+/// The "why here" worth showing: none for a new topic (its own thread is the answer; the model's reason there was
+/// "new topic not rent birthday pottery"), and none that names a thread by id ("matches T9 landing", 1 of 31 on
+/// 2026-11-01): ids mean nothing to the person.
+pub(crate) fn why_here(why: &str, changes: &[Change]) -> String {
+    let top = changes.iter().any(|c| matches!(c, Change::ThreadAdded { thread } if thread.parent_id.is_none()));
+    let id = why.split(|c: char| !c.is_alphanumeric()).any(|w| {
+        let mut chars = w.chars();
+        matches!(chars.next(), Some('T' | 'S' | 'I')) && w.len() > 1 && chars.all(|c| c.is_ascii_digit())
+    });
+    if top || id { String::new() } else { why.to_string() }
+}
+
 /// Whether landing on `landed` takes the speaker away from `was`: another thread, or a new one that isn't a branch
 /// of it (a branch of the thread you're on is where you were, a level down).
 pub(crate) fn moved(world: &World, changes: &[Change], landed: &str, was: Option<&String>) -> bool {
@@ -119,7 +131,7 @@ pub fn unlink(core: &Core, thought_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{heads, moved, note, Note};
+    use super::{heads, moved, note, why_here, Note};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
 
     fn thread(id: &str) -> Thread {
@@ -244,6 +256,19 @@ mod tests {
         assert!(!moved(&w, &branch(Some("T1")), "T4", here.as_ref()), "a branch of it");
         assert!(moved(&w, &branch(Some("T2")), "T4", here.as_ref()) && moved(&w, &branch(None), "T4", here.as_ref()));
         assert!(moved(&w, &[], "T1", None), "nowhere before");
+    }
+
+    #[test]
+    fn why_here_is_left_out_for_a_new_topic_and_for_thread_ids() {
+        let added = |parent: Option<&str>| {
+            vec![Change::ThreadAdded { thread: crate::world::Thread { parent_id: parent.map(Into::into), ..thread("T4") } }]
+        };
+        assert_eq!(why_here("names the lease", &[]), "names the lease");
+        assert_eq!(why_here("the budget part of the trip", &added(Some("T1"))), "the budget part of the trip", "a branch says why");
+        assert_eq!(why_here("new topic not rent", &added(None)), "");
+        assert_eq!(why_here("\"takes three seconds\" matches T9 landing", &[]), "");
+        assert_eq!(why_here("finishes 'never finish my' from S2", &[]), "");
+        assert_eq!(why_here("names Thursday and I-95 traffic", &[]), "names Thursday and I-95 traffic");
     }
 
     /// Taken back ("not one idea"): the link goes, the why stays; a note with nothing left goes entirely.

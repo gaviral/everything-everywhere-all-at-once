@@ -36,7 +36,7 @@ or can't stand alone without it (\"the one on Main Street\" right after naming a
 else \"none\". A sentence that stands on its own, or a decision, is \"none\", even on the same topic. On a join, point says the whole idea, both parts. \
 assumed: if where it goes rests on a reading the words leave open (what \"it\" or \"that\" means, which of two threads is meant), \
 that reading in at most 8 words, such as \"'it' is the pottery class\", else an empty string. \
-why: why it goes there, in at most 10 words, naming the words that show it, such as \"names the lease\". Answer with JSON only.";
+why: why it goes there, in at most 10 words, naming the words that show it, such as \"names the lease\", never an id. Answer with JSON only.";
 
 /// A skip never sets aside a turn longer than this, whatever the model says: filler is short.
 const SKIP_MAX_WORDS: usize = 8;
@@ -864,7 +864,8 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         complete: p.complete,
         place_ms,
     });
-    let note = crate::chunks::note(head.as_ref(), &p.assumed, &p.why, crate::chunks::moved(world, &changes, &thread_id, was.as_ref()));
+    let why = crate::chunks::why_here(&p.why, &changes);
+    let note = crate::chunks::note(head.as_ref(), &p.assumed, &why, crate::chunks::moved(world, &changes, &thread_id, was.as_ref()));
     if !note.is_empty() {
         changes.push(Change::ThoughtNoted { thought_id: thought.id.clone(), note });
     }
