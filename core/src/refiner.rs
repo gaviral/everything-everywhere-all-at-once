@@ -3,7 +3,7 @@
 //! and the tasks or events the talk decided on. Results arrive as ordinary changes.
 
 use crate::tidy::{Kind, Proposal};
-use crate::world::{Action, Change, ItemStatus, Suggestion, Thread, Thought, World};
+use crate::world::{Action, Change, ItemState, ItemStatus, Suggestion, Thread, Thought, World};
 use crate::Core;
 use anyhow::Context;
 use serde::Deserialize;
@@ -30,6 +30,15 @@ Never repeat an existing suggestion or action, including the cards apps leave (t
 const QUESTIONS: &str = "For a point that flags a problem or a to-do without saying what it is (\"the budget part needs work\", \
 \"the intro still bugs me\"): one concrete question that asks what (\"Which part of the budget needs work?\"), at most one per thread, \
 never for a point marked (trailed off). Empty when no point is like that.";
+/// What `retire` and `revise` are, said in the schema as `QUESTIONS` is. A plan said once and changed later
+/// ("midterm is Wednesday, not Tuesday", "forget Lisbon, it got cancelled", "sent it, done") left its old idea or task
+/// on the card and in Recap, in all four persona runs of 2026-11-01: the pass could only add.
+const RETIRE: &str = "Open ideas and tasks (listed by id) that a later point cancels (\"forget Lisbon, the trip is off\"), \
+reports done (\"sent the take-home\") or makes untrue (\"Dev dropped out\" for one with Dev): id, and why in the person's \
+words, under 8 words. Never one only because it is old or not mentioned again. Empty when nothing applies.";
+const REVISE: &str = "Open tasks and ideas (listed by id) whose day or words a later point corrects (\"midterm is Wednesday, \
+not Tuesday\", \"launch moved to the 21st\"): id, the corrected title (an idea's whole text), when as YYYY-MM-DD (empty \
+keeps its day), and why in under 8 words. Correct the open one rather than adding a new one. Empty when nothing applies.";
 /// Tags on one thread, counting the ones it has: a pass only fills the gap.
 const TAGS: usize = 3;
 /// How long a pass gets, its whole answer included: twice what filling its 6,000-token room takes, by the placer's rule
@@ -53,6 +62,30 @@ struct Pass {
     actions: Vec<Task>,
     #[serde(default)]
     tags: Vec<Tags>,
+    /// Open ideas and tasks a later point cancelled, did or made untrue.
+    #[serde(default)]
+    retire: Vec<Retire>,
+    /// Open ideas and tasks a later point corrected.
+    #[serde(default)]
+    revise: Vec<Revise>,
+}
+
+#[derive(Deserialize, Clone)]
+struct Retire {
+    id: String,
+    #[serde(default)]
+    why: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct Revise {
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    when: String,
+    #[serde(default)]
+    why: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -160,6 +193,8 @@ pub async fn run(core: Arc<Core>) {
 /// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
 /// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
 /// merged, a thread heard more (see `drop_stale_titles`), or words it read were taken back (see `drop_taken_back`).
+/// An idea or task the person approved or dismissed while this was worked out is theirs: its correction is dropped,
+/// checked under the commit's lock, so it never puts back a row that's being added (`as_left`).
 fn land(core: &Core, answer: Pass, sent: &World, when: &str) {
     land_racing(core, answer, sent, when, || {});
 }
@@ -184,24 +219,43 @@ fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: imp
         between();
         let still = |now: &World| {
             let on: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
-            read.iter().all(|id| on.contains(id.as_str()))
+            read.iter().all(|id| on.contains(id.as_str())) && changes.iter().all(|c| as_left(now, c))
         };
-        if core.commit_if(still, changes) {
+        if core.commit_if(still, changes.clone()) {
             return;
         }
     }
-    // Words keep being taken back: the next pass reads the map as it is then.
-    tracing::warn!("refiner pass {when}: dropped, words were taken back while it landed");
+    // Words keep being taken back, or items keep changing: the next pass reads the map as it is then.
+    tracing::warn!("refiner pass {when}: dropped, words were taken back or its items changed while it landed");
+}
+
+/// True unless `c` corrects an idea or task that is no longer as the pass saw it.
+fn as_left(world: &World, c: &Change) -> bool {
+    match c {
+        Change::ItemRefined { id, was, .. } => world.item_state(id).as_ref() == Some(was),
+        _ => true,
+    }
 }
 
 /// Leaves out titles for threads that heard words the pass didn't see: placed there since it was sent, or still
 /// being placed (on the thread that was active when they were said). Those words may name the thread anew ("call
-/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them.
+/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them. So do withdrawals and
+/// corrections of ideas and tasks on those threads ("Wednesday", then "no, Thursday" while the pass was out).
 fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
     let seen: HashSet<&str> = sent.thoughts.iter().filter(|t| t.placed).map(|t| t.id.as_str()).collect();
     let heard: HashSet<&str> =
         now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
     pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
+    // A short or full id; one on a thread that heard more, or any of two that share a short id, waits.
+    let fresh = |given: &str| {
+        let given = given.trim();
+        let named = |id: &str| id == given || short(id) == given;
+        !now.suggestions.iter().filter(|s| named(&s.id)).map(|s| &s.thread_id)
+            .chain(now.actions.iter().filter(|a| named(&a.id)).map(|a| &a.thread_id))
+            .any(|t| heard.contains(t.as_str()))
+    };
+    pass.retire.retain(|r| fresh(&r.id));
+    pass.revise.retain(|r| fresh(&r.id));
 }
 
 /// Leaves out all a pass says about a thread whose words it read were taken back while it was out ("scratch that",
@@ -243,10 +297,12 @@ async fn pass(core: &Core, body: serde_json::Value) -> anyhow::Result<Pass> {
 fn existing(world: &World) -> Vec<String> {
     let suggestions = &world.suggestions[world.suggestions.len().saturating_sub(30)..];
     let actions = &world.actions[world.actions.len().saturating_sub(30)..];
+    // One the refiner withdrew was no "no" from the person: it may come back corrected.
+    let withdrawn = |id: &str| if withdrawn_by_ai(world, id) { " (withdrawn)" } else { "" };
     suggestions
         .iter()
-        .map(|s| format!("suggestion on {}: {}", s.thread_id, s.text))
-        .chain(actions.iter().map(|a| format!("action on {}: {} {}", a.thread_id, a.kind, a.title)))
+        .map(|s| format!("suggestion on {}: {}{}", s.thread_id, s.text, withdrawn(&s.id)))
+        .chain(actions.iter().map(|a| format!("action on {}: {} {}{}", a.thread_id, a.kind, a.title, withdrawn(&a.id))))
         .chain(world.proposals[world.proposals.len().saturating_sub(30)..].iter().map(|p| match p.kind {
             Kind::Rename => format!("title proposed for {}: {}", p.thread_id, p.title),
             Kind::Merge => format!("merge proposed: {} into {}", p.thread_id, p.into),
@@ -254,6 +310,39 @@ fn existing(world: &World) -> Vec<String> {
         .chain(world.titled.iter().filter(|id| world.thread(id).is_some()).map(|id| format!("title the person chose: {id}")))
         .chain(kept_apart(world).into_iter().map(|(a, b)| format!("threads the person keeps apart (never merge): {a} and {b}")))
         .collect()
+}
+
+/// True for an idea or task the refiner withdrew and nobody put back.
+fn withdrawn_by_ai(world: &World, id: &str) -> bool {
+    world.refined.get(id).is_some_and(|(now, _)| now.status == ItemStatus::Dismissed)
+        && world.item_state(id).is_some_and(|s| s.status == ItemStatus::Dismissed)
+}
+
+/// The ideas and tasks a pass may withdraw or correct, each with a short id (`short`): the latest 30 of each still
+/// waiting on the person (new), minus those the person put back after an earlier change. A task shows its day with
+/// the weekday, which is what a correction names ("Wednesday, not Tuesday").
+fn open_items(world: &World) -> Vec<String> {
+    let open = |id: &str, status: ItemStatus| status == ItemStatus::New && !world.restored.contains(id);
+    let ideas: Vec<&Suggestion> = world.suggestions.iter().filter(|s| open(&s.id, s.status)).collect();
+    let tasks: Vec<&Action> = world.actions.iter().filter(|a| open(&a.id, a.status)).collect();
+    let weekday = |when: &str| day_number(when).map(|n| {
+        let d = WEEK[n.rem_euclid(7) as usize];
+        format!(" on {when} ({}{})", d[..1].to_uppercase(), &d[1..])
+    });
+    ideas[ideas.len().saturating_sub(30)..].iter().map(|s| format!("{} on {}: idea \"{}\"", short(&s.id), s.thread_id, s.text))
+        .chain(tasks[tasks.len().saturating_sub(30)..].iter().map(|a| {
+            format!("{} on {}: {} \"{}\"{}", short(&a.id), a.thread_id, a.kind, a.title, weekday(&a.when).unwrap_or_default())
+        }))
+        .collect()
+}
+
+/// An item's id as the model sees it: its prefix and 6 of its hex digits ("ac-1a2b3c"), ≈ 4 tokens instead of ≈ 20;
+/// two items share one 1 time in 16 million, and then neither is changed (`refine`).
+fn short(id: &str) -> &str {
+    match id.split_once('-') {
+        Some((prefix, rest)) if rest.len() > 6 && rest.is_ascii() => &id[..prefix.len() + 7],
+        _ => id,
+    }
 }
 
 /// Pairs of threads on the map that the person set apart by moving a thought between them (`World::apart`), each
@@ -296,7 +385,7 @@ fn request_in(world: &World, window: &Window, today: &str) -> (serde_json::Value
         "prompt_cache_key": "e2a2o-refiner",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Today is {today}.\n{map}\nAlready on the map:\n{}", existing.join("\n"))},
+            {"role": "user", "content": format!("Today is {today}.\n{map}\nAlready on the map:\n{}\nOpen ideas and tasks (id on thread: what):\n{}", existing.join("\n"), open_items(world).join("\n"))},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Pass", "schema": {
             "type": "object",
@@ -306,9 +395,11 @@ fn request_in(world: &World, window: &Window, today: &str) -> (serde_json::Value
                 "suggestions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
                 "questions": {"type": "array", "description": QUESTIONS, "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["thread_id", "text"]}},
                 "actions": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "kind": {"type": "string", "enum": ["reminder", "event"]}, "title": {"type": "string"}, "when": {"type": "string"}}, "required": ["thread_id", "kind", "title", "when"]}},
-                "tags": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["thread_id", "tags"]}}
+                "tags": {"type": "array", "items": {"type": "object", "properties": {"thread_id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["thread_id", "tags"]}},
+                "retire": {"type": "array", "description": RETIRE, "items": {"type": "object", "properties": {"id": {"type": "string"}, "why": {"type": "string"}}, "required": ["id", "why"]}},
+                "revise": {"type": "array", "description": REVISE, "items": {"type": "object", "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "when": {"type": "string"}, "why": {"type": "string"}}, "required": ["id", "title", "when", "why"]}}
             },
-            "required": ["titles", "merges", "suggestions", "questions", "actions", "tags"]
+            "required": ["titles", "merges", "suggestions", "questions", "actions", "tags", "retire", "revise"]
         }}}
     });
     (body, later)
@@ -448,11 +539,20 @@ fn changes(world: &World, pass: Pass) -> Vec<Change> {
 }
 
 /// The answer as changes, keeping only what a person wouldn't undo; `today` is "YYYY-MM-DD (Weekday)".
-fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
+fn changes_on(world: &World, mut pass: Pass, today: &str) -> Vec<Change> {
     let exists = |id: &str| world.thread(id).is_some();
     // Ids are the map's internals: an idea, task or title that names one ("before recording T3 setup") is left out.
     let names_an_id = |text: &str| text.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && world.thread(&world.resolve(w)).is_some());
-    let mut out = Vec::new();
+    // Ideas and tasks a later point withdrew or corrected go first, so the card reads in the order it changed.
+    let mut out = refine(world, std::mem::take(&mut pass.retire), std::mem::take(&mut pass.revise), today, &names_an_id);
+    // Withdrawn in this pass or an earlier one by the refiner: no "no" from the person, so a corrected one may follow.
+    let withdrawn: HashSet<String> = out.iter()
+        .filter_map(|c| match c {
+            Change::ItemRefined { id, now, .. } if now.status == ItemStatus::Dismissed => Some(id.clone()),
+            _ => None,
+        })
+        .chain(world.suggestions.iter().map(|s| &s.id).chain(world.actions.iter().map(|a| &a.id)).filter(|id| withdrawn_by_ai(world, id)).cloned())
+        .collect();
     for t in pass.titles {
         // A new title is short and more than a change of case, and a name the person gave stays theirs
         // ("we're calling this Project Falcon"), unless they later gave it the proposed name.
@@ -504,7 +604,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         if !asks && said_in(world, &s.thread_id).any(|text| repeats(&s.text, text)) {
             continue;
         }
-        let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed);
+        let repeated = world.suggestions.iter().any(|x| x.thread_id == s.thread_id && x.status != ItemStatus::Dismissed && !withdrawn.contains(x.id.as_str()));
         if exists(&s.thread_id) && !s.text.trim().is_empty() && !repeated && !names_an_id(&s.text) && suggested.insert(s.thread_id.clone()) {
             out.push(Change::SuggestionAdded {
                 suggestion: Suggestion { id: new_id("sg"), thread_id: s.thread_id, text: s.text.trim().into(), status: ItemStatus::New },
@@ -521,7 +621,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         // The map and earlier actions in this pass share one guard, across reminders and events.
         let normalized = |text: &str| words(&text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>());
         let title = normalized(&a.title);
-        let repeated = world.actions.iter().chain(out.iter().filter_map(|c| match c {
+        let repeated = world.actions.iter().filter(|x| !withdrawn.contains(x.id.as_str())).chain(out.iter().filter_map(|c| match c {
             Change::ActionProposed { action } => Some(action),
             _ => None,
         })).any(|x| {
@@ -569,6 +669,84 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         }
     }
     out
+}
+
+/// Open ideas and tasks brought in line with what was said after them: withdrawn (`retire`: cancelled, done, no
+/// longer true) or corrected in place (`revise`: a new day or wording, the same row, so the card doesn't grow a
+/// second one beside the stale one). Only while an item still waits on the person (new: not kept, being added, added
+/// or dismissed by them), never one they put back after an earlier change, each once a pass, and each with its
+/// reason, which the note shows beside Undo: a change without one is a guess. A corrected day is checked as a new
+/// task's is (`day`); a correction that would make it the same as another open task on its thread withdraws it.
+fn refine(world: &World, retire: Vec<Retire>, revise: Vec<Revise>, today: &str, names_an_id: &dyn Fn(&str) -> bool) -> Vec<Change> {
+    // The open item a short or full id names, with its thread and whether it's a task; none when two share it.
+    let find = |given: &str| -> Option<(String, String, bool, ItemState)> {
+        let given = given.trim();
+        let open = |id: &str, status: ItemStatus| status == ItemStatus::New && !world.restored.contains(id) && (id == given || short(id) == given);
+        let mut found = world.suggestions.iter().filter(|s| open(&s.id, s.status)).map(|s| (s.id.clone(), s.thread_id.clone(), false))
+            .chain(world.actions.iter().filter(|a| open(&a.id, a.status)).map(|a| (a.id.clone(), a.thread_id.clone(), true)));
+        let (id, thread, task) = found.next()?;
+        if found.next().is_some() {
+            return None;
+        }
+        let was = world.item_state(&id)?;
+        Some((id, thread, task, was))
+    };
+    let reason = |why: &str| Some(why.trim().to_string()).filter(|w| !w.is_empty() && !names_an_id(w));
+    let mut out: Vec<Change> = Vec::new();
+    let mut touched: HashSet<String> = HashSet::new();
+    let normalized = |text: &str| words(&text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>());
+    for r in retire {
+        let (Some((id, _, _, was)), Some(why)) = (find(&r.id), reason(&r.why)) else { continue };
+        if touched.insert(id.clone()) {
+            out.push(Change::ItemRefined { id, now: ItemState { status: ItemStatus::Dismissed, ..was.clone() }, was, why });
+        }
+    }
+    for r in revise {
+        let (Some((id, thread, task, was)), Some(why)) = (find(&r.id), reason(&r.why)) else { continue };
+        if touched.contains(&id) {
+            continue;
+        }
+        let text = Some(r.title.trim()).filter(|t| !t.is_empty() && !names_an_id(t)).unwrap_or(&was.text).to_string();
+        let when = match r.when.trim() {
+            "" => was.when.clone(),
+            asked if task => {
+                let (said, point) = corrected_in(world, &thread, &[&text, &was.text]);
+                let said_on = point.and_then(said_on);
+                match day(asked, &said, today, said_on.as_deref().unwrap_or(today)) {
+                    d if crate::apps::valid_date(&d) => d,
+                    // Not a day they named: left as it was rather than shown wrong.
+                    _ => continue,
+                }
+            }
+            _ => String::new(),
+        };
+        if text == was.text && when == was.when {
+            continue;
+        }
+        // Against each task as this pass leaves it: two rows corrected to the same day in one pass are twins too.
+        let twin = task && world.actions.iter().any(|a| {
+            let after = out.iter().rev().find_map(|c| match c {
+                Change::ItemRefined { id, now, .. } if *id == a.id => Some(now.clone()),
+                _ => None,
+            });
+            let ItemState { status, text: title, when: day } = after.unwrap_or(ItemState { status: a.status, text: a.title.clone(), when: a.when.clone() });
+            a.id != id && a.thread_id == thread && status != ItemStatus::Dismissed && day == when && normalized(&title) == normalized(&text)
+        });
+        let now = if twin { ItemState { status: ItemStatus::Dismissed, ..was.clone() } } else { ItemState { status: was.status, text, when } };
+        touched.insert(id.clone());
+        out.push(Change::ItemRefined { id, now, was, why });
+    }
+    out
+}
+
+/// The Undo on the note about a withdrawn or corrected idea or task: it is as it was before, and the refiner leaves
+/// it alone after. Only while it's still as the refiner left it: one kept, added or dismissed since is the person's
+/// own call already.
+pub fn restore(core: &Core, id: &str) {
+    let Some(left) = core.snapshot().refined.get(id).cloned() else { return };
+    // Checked under the commit's lock: an approval or a newer correction between the look and the commit stays.
+    let as_left = |w: &World| w.refined.get(id) == Some(&left) && w.item_state(id).as_ref() == Some(&left.0);
+    core.commit_if(as_left, vec![Change::ItemRestored { id: id.into(), to: left.1.clone() }]);
 }
 
 /// A rename the refiner makes on its own, without asking: the person's own words for the thread. Every word of the new
@@ -658,6 +836,18 @@ fn about<'a>(world: &'a World, thread: &'a str, title: &'a str) -> (Vec<&'a str>
     let point = sentences.iter().find(|(_, n, _)| most > 0 && *n == most).map(|(_, _, p)| *p);
     let said = std::iter::once(title).chain(sentences.into_iter().filter(|(_, n, _)| most > 0 && *n == most).map(|(s, _, _)| s)).collect();
     (said, point)
+}
+
+/// What a correction of a task is checked against: its title and the latest point on its thread that shares a word
+/// with its old or new title, the correcting one ("midterm is Wednesday, not Tuesday" after "Biology midterm is
+/// Tuesday", which `about` would pick for having more of the words), with that point.
+fn corrected_in<'a>(world: &'a World, thread: &str, titles: &[&'a str]) -> (Vec<&'a str>, Option<&'a Thought>) {
+    let words: HashSet<String> = titles.iter().flat_map(|t| content(t)).collect();
+    let point = world.thoughts.iter().enumerate()
+        .filter(|(_, p)| p.placed && p.thread_id.as_deref() == Some(thread) && !content(&p.text).is_disjoint(&words))
+        .max_by_key(|(i, p)| (p.at_ms, *i))
+        .map(|(_, p)| p);
+    (titles.iter().take(1).copied().chain(point.map(|p| p.text.as_str())).collect(), point)
 }
 
 /// The thought's local calendar day; a missing timestamp leaves the old today-based behavior in place.
@@ -1764,6 +1954,226 @@ mod tests {
         assert_eq!(day("2026-11-06", &["I paid it last Friday, the next one is Friday"], TODAY, TODAY), "2026-11-06");
         assert_eq!(day("2026-11-07", &["I paid it last Friday"], TODAY, TODAY), "2026-11-07", "a day gone names nothing ahead");
     }
+
+    /// The four kinds of stale card in the persona runs of 2026-11-01, each said after its idea or task was made.
+    fn stale_map() -> World {
+        let mut world = map(&[
+            ("T1", "Midterm", &["Midterm is on Tuesday.", "Midterm is Wednesday, not Tuesday."]),
+            ("T2", "Lisbon conference", &["Thinking about the Lisbon conference.", "Forget Lisbon, the conference got cancelled."]),
+            ("T3", "Take-home", &["Need to send the take-home to Priya.", "Sent the take-home, done."]),
+            ("T4", "Study group", &["Study with Maya and Dev on Thursday.", "Dev dropped out, it's just Maya now."]),
+        ]);
+        let task = |id: &str, thread: &str, kind: &str, title: &str, when: &str| Action {
+            id: id.into(), thread_id: thread.into(), kind: kind.into(), title: title.into(), when: when.into(), status: ItemStatus::New, done_ms: None,
+        };
+        world.actions = vec![
+            task("ac-0a1b2c3d4e5f", "T1", "event", "Midterm", "2026-11-03"),
+            task("ac-1b2c3d4e5f6a", "T3", "reminder", "Send take-home to Priya", ""),
+        ];
+        let idea = |id: &str, thread: &str, text: &str| Suggestion { id: id.into(), thread_id: thread.into(), text: text.into(), status: ItemStatus::New };
+        world.suggestions = vec![idea("sg-2c3d4e5f6a7b", "T2", "Book Lisbon flights"), idea("sg-3d4e5f6a7b8c", "T4", "Plan a session with Maya and Dev")];
+        world
+    }
+
+    fn item(world: &World, id: &str) -> crate::world::ItemState {
+        world.item_state(id).unwrap()
+    }
+
+    #[test]
+    fn a_later_point_withdraws_or_corrects_its_stale_idea_or_task() {
+        let mut world = stale_map();
+        let open = super::open_items(&world);
+        assert!(open.contains(&"ac-0a1b2c on T1: event \"Midterm\" on 2026-11-03 (Tuesday)".to_string()), "{open:?}");
+        assert!(open.contains(&"sg-2c3d4e on T2: idea \"Book Lisbon flights\"".to_string()), "{open:?}");
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "revise": [
+                {"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "midterm is Wednesday"},
+                {"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"},
+            ],
+            "retire": [
+                {"id": "sg-2c3d4e", "why": "conference cancelled"},
+                {"id": "ac-1b2c3d", "why": "take-home sent"},
+            ],
+        })).unwrap();
+        let out = changes_on(&world, pass, TODAY);
+        assert_eq!(out.len(), 4, "{out:?}");
+        out.iter().for_each(|c| world.apply(c));
+        // Date moved and a person dropped out: the same row, corrected.
+        assert_eq!((item(&world, "ac-0a1b2c3d4e5f").when.as_str(), item(&world, "ac-0a1b2c3d4e5f").status), ("2026-11-04", ItemStatus::New));
+        assert_eq!(item(&world, "sg-3d4e5f6a7b8c").text, "Plan a session with Maya");
+        // Cancelled and done: off the card.
+        assert_eq!(item(&world, "sg-2c3d4e5f6a7b").status, ItemStatus::Dismissed);
+        assert_eq!(item(&world, "ac-1b2c3d4e5f6a").status, ItemStatus::Dismissed);
+        // Told to the model as withdrawn, not as the person's "no"; and no longer open.
+        assert!(existing(&world).contains(&"suggestion on T2: Book Lisbon flights (withdrawn)".to_string()));
+        assert_eq!(super::open_items(&world).len(), 2);
+    }
+
+    #[test]
+    fn only_what_still_waits_on_the_person_is_changed_and_each_needs_its_reason() {
+        let mut world = stale_map();
+        world.actions[1].status = ItemStatus::Done;
+        world.suggestions[1].status = ItemStatus::Kept;
+        let pass = |v: serde_json::Value| serde_json::from_value::<Pass>(v).unwrap();
+        let none = pass(serde_json::json!({
+            "retire": [
+                {"id": "ac-1b2c3d", "why": "sent"},
+                {"id": "sg-3d4e5f", "why": "Dev dropped out"},
+                {"id": "sg-2c3d4e", "why": " "},
+                {"id": "sg-ffffff", "why": "no such idea"},
+                {"id": "sg-2c3d4e", "why": "see T1"},
+            ],
+            // Not a day they named (Friday), or no change at all.
+            "revise": [{"id": "ac-0a1b2c", "title": "", "when": "2026-11-06", "why": "moved"}, {"id": "ac-0a1b2c", "title": "Midterm", "when": "", "why": "same"}],
+        }));
+        assert!(changes_on(&world, none, TODAY).is_empty(), "added, kept, unexplained, unknown, naming an id, or wrong day");
+        // Once the person put one back, it's theirs.
+        let withdraw = || pass(serde_json::json!({ "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}] }));
+        let out = changes_on(&world, withdraw(), TODAY);
+        out.iter().for_each(|c| world.apply(c));
+        let Some(Change::ItemRefined { was, .. }) = out.first() else { panic!("{out:?}") };
+        world.apply(&Change::ItemRestored { id: "sg-2c3d4e5f6a7b".into(), to: was.clone() });
+        assert_eq!(item(&world, "sg-2c3d4e5f6a7b").status, ItemStatus::New);
+        assert!(changes_on(&world, withdraw(), TODAY).is_empty());
+        assert!(!super::open_items(&world).iter().any(|l| l.contains("Lisbon")));
+    }
+
+    #[test]
+    fn a_withdrawn_task_may_come_back_corrected_and_a_correction_never_doubles_a_row() {
+        let mut world = stale_map();
+        let pass = |v: serde_json::Value| serde_json::from_value::<Pass>(v).unwrap();
+        // Withdrawn and proposed anew in one pass: the new day isn't blocked by the old row's title.
+        let out = changes_on(&world, pass(serde_json::json!({
+            "retire": [{"id": "ac-0a1b2c", "why": "midterm is Wednesday"}],
+            "actions": [{"thread_id": "T1", "kind": "event", "title": "Midterm", "when": "2026-11-04"}],
+        })), TODAY);
+        assert_eq!(shown(&out), ["T1 event Midterm 2026-11-04"]);
+        out.iter().for_each(|c| world.apply(c));
+        // A later pass doesn't take the withdrawn one for the person's "no" either.
+        let mut later = stale_map();
+        changes_on(&later.clone(), pass(serde_json::json!({ "retire": [{"id": "ac-0a1b2c", "why": "moved"}] })), TODAY).iter().for_each(|c| later.apply(c));
+        let again = changes_on(&later, pass(serde_json::json!({ "actions": [{"thread_id": "T1", "kind": "event", "title": "Midterm", "when": "2026-11-04"}] })), TODAY);
+        assert_eq!(shown(&again), ["T1 event Midterm 2026-11-04"]);
+        // Correcting the old row to the day a newer row already has withdraws it instead of showing two.
+        world.actions[0].status = ItemStatus::New;
+        world.refined.clear();
+        let twin = changes_on(&world, pass(serde_json::json!({ "revise": [{"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "Wednesday"}] })), TODAY);
+        assert!(matches!(twin.as_slice(), [Change::ItemRefined { now, .. }] if now.status == ItemStatus::Dismissed), "{twin:?}");
+    }
+
+    #[test]
+    fn a_correction_is_checked_against_the_point_that_corrects_it() {
+        // "Biology midterm is Tuesday" has more of the title's words; the later point names the day.
+        let mut world = map(&[("T1", "Biology midterm", &["Biology midterm is Tuesday.", "Midterm is Wednesday, not Tuesday."])]);
+        world.actions = stale_map().actions[..1].to_vec();
+        world.actions[0].title = "Biology midterm".into();
+        let pass = serde_json::json!({ "revise": [{"id": "ac-0a1b2c", "title": "", "when": "2026-11-04", "why": "midterm is Wednesday"}] });
+        let out = changes_on(&world, serde_json::from_value(pass).unwrap(), TODAY);
+        assert!(matches!(out.as_slice(), [Change::ItemRefined { now, .. }] if now.when == "2026-11-04"), "{out:?}");
+    }
+
+    #[test]
+    fn two_rows_corrected_to_one_day_in_one_pass_leave_one() {
+        let mut world = map(&[("T1", "Midterm", &["Midterm is on Tuesday.", "Midterm is Wednesday.", "Both midterms are Thursday now."])]);
+        world.actions = stale_map().actions[..1].to_vec();
+        world.actions.push(Action { id: "ac-9f8e7d6c5b4a".into(), when: "2026-11-04".into(), ..world.actions[0].clone() });
+        let pass = serde_json::json!({ "revise": [
+            {"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-05", "why": "Thursday now"},
+            {"id": "ac-9f8e7d", "title": "Midterm", "when": "2026-11-05", "why": "Thursday now"},
+        ] });
+        changes_on(&world.clone(), serde_json::from_value(pass).unwrap(), TODAY).iter().for_each(|c| world.apply(c));
+        let open: Vec<_> = world.actions.iter().filter(|a| a.status == ItemStatus::New).map(|a| a.when.as_str()).collect();
+        assert_eq!(open, ["2026-11-05"]);
+    }
+
+    #[test]
+    fn a_correction_waits_when_its_thread_heard_more_or_its_item_was_acted_on() {
+        let sent = stale_map();
+        let mut now = sent.clone();
+        now.thoughts.push(Thought { id: "thu".into(), text: "No, the midterm is Thursday.".into(), ..sent.thoughts[1].clone() });
+        let mut pass: Pass = serde_json::from_value(serde_json::json!({
+            "revise": [{"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "Wednesday"}],
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
+        })).unwrap();
+        drop_stale_titles(&mut pass, &sent, &now);
+        assert_eq!((pass.revise.len(), pass.retire.len()), (0, 1), "T1 heard Thursday; T2 heard nothing");
+        // Approved while the pass was worked out: the correction would put the row back to new.
+        let out = changes_on(&sent, pass, TODAY);
+        let mut kept = sent.clone();
+        kept.suggestions[0].status = ItemStatus::Kept;
+        assert!(out.iter().all(|c| super::as_left(&sent, c)) && !out.iter().all(|c| super::as_left(&kept, c)), "{out:?}");
+    }
+
+    #[test]
+    fn a_pass_is_asked_for_withdrawals_and_corrections_with_short_ids() {
+        assert_eq!(super::short("ac-0a1b2c3d4e5f"), "ac-0a1b2c");
+        assert_eq!(super::short("a7"), "a7");
+        let body = super::request(&stale_map(), 0, TODAY);
+        let schema = &body["response_format"]["json_schema"]["schema"];
+        assert!(schema["required"].as_array().unwrap().iter().any(|r| r == "retire") && schema["properties"]["revise"]["items"]["required"][3] == "why");
+        let user = body["messages"][1]["content"].as_str().unwrap();
+        assert!(user.contains("Open ideas and tasks (id on thread: what):\nsg-2c3d4e on T2: idea \"Book Lisbon flights\""), "{user}");
+    }
+
+    /// The four stale cards against the real model, and the same map before anything changed (none may move):
+    ///   MODEL_API_KEY=… RUNS=3 cargo test -- --ignored refiner_stale_live --nocapture
+    #[tokio::test]
+    #[ignore = "calls the real model; needs MODEL_API_KEY"]
+    async fn refiner_stale_live() {
+        let key = std::env::var("MODEL_API_KEY").ok().filter(|k| !k.trim().is_empty()).expect("MODEL_API_KEY");
+        let runs: usize = std::env::var("RUNS").ok().and_then(|r| r.parse().ok()).unwrap_or(3);
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)).build().unwrap();
+        let stale = stale_map();
+        // Before the later points: each thread's first point only.
+        let mut calm = stale.clone();
+        let firsts: HashSet<String> = calm.threads.iter().filter_map(|t| calm.thoughts.iter().find(|p| p.thread_id.as_deref() == Some(&t.id)).map(|p| p.id.clone())).collect();
+        calm.thoughts.retain(|p| firsts.contains(&p.id));
+        for (name, world) in [("stale", &stale), ("calm", &calm)] {
+            for run in 0..runs {
+                let body = super::request(world, 0, TODAY);
+                let value = crate::model::answer(http.post(super::URL).bearer_auth(&key).json(&body).send().await.unwrap()).await.unwrap();
+                let pass: Pass = serde_json::from_str(value["choices"][0]["message"]["content"].as_str().unwrap()).unwrap();
+                let out = changes_on(world, pass, TODAY);
+                let mut after = world.clone();
+                out.iter().for_each(|c| after.apply(c));
+                let row = |id: &str| { let s = item(&after, id); format!("{:?} {} {}", s.status, s.text, s.when) };
+                let refined = out.iter().filter(|c| matches!(c, Change::ItemRefined { .. })).count();
+                println!("{name} run {run}: {refined} refined; added {:?}", shown(&out).iter().filter(|l| !l.contains('#')).collect::<Vec<_>>());
+                for id in ["ac-0a1b2c3d4e5f", "sg-2c3d4e5f6a7b", "ac-1b2c3d4e5f6a", "sg-3d4e5f6a7b8c"] {
+                    println!("  {}", row(id));
+                }
+                for c in &out {
+                    if let Change::ItemRefined { why, .. } = c { println!("  why: {why}"); }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_undo_puts_back_what_the_latest_change_replaced_and_replay_agrees() {
+        let mut world = stale_map();
+        let revise = |when: &str| serde_json::from_value::<Pass>(serde_json::json!({ "revise": [{"id": "ac-0a1b2c", "title": "", "when": when, "why": "moved"}] })).unwrap();
+        let mut journal = Vec::new();
+        for when in ["2026-11-04"] {
+            let out = changes_on(&world, revise(when), TODAY);
+            out.iter().for_each(|c| world.apply(c));
+            journal.extend(out);
+        }
+        let (now, was) = world.refined["ac-0a1b2c3d4e5f"].clone();
+        assert_eq!((now.when.as_str(), was.when.as_str()), ("2026-11-04", "2026-11-03"));
+        let undo = Change::ItemRestored { id: "ac-0a1b2c3d4e5f".into(), to: was };
+        world.apply(&undo);
+        journal.push(undo);
+        assert_eq!(item(&world, "ac-0a1b2c3d4e5f").when, "2026-11-03");
+        // The journal's lines rebuild the same map.
+        let mut replayed = stale_map();
+        for line in journal.iter().map(|c| serde_json::to_string(c).unwrap()) {
+            replayed.apply(&serde_json::from_str(&line).unwrap());
+        }
+        assert_eq!(serde_json::to_string(&replayed).unwrap(), serde_json::to_string(&world).unwrap());
+        assert!(replayed.restored.contains("ac-0a1b2c3d4e5f") && replayed.refined.is_empty());
+    }
+
 }
 
 /// Live checks against the real model (ignored unless asked for; see the file).

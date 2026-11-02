@@ -1371,6 +1371,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
+                Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
