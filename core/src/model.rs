@@ -293,38 +293,66 @@ impl Core {
     /// One model call: posts `body` to `url` with the key and waits at most `patience` for the whole answer,
     /// its body included. The answer's status goes through `check`, then its JSON through `answer`.
     pub async fn call_model(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
-        let key = self.key()?;
-        self.spend()?;
-        let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
-        self.check(response.status())?;
-        answer(response).await
+        self.call_model_noting(url, body, patience, Value::Null).await
     }
 
-    /// Asks a feature's model: `send` posts the request for one model name, and the answer's status is read as
-    /// `check` reads it; the caller reads the rest with `answer`. When the key can't use a default model in
-    /// Contributor mode (401, 403 or 404), the same request goes once to the model without it; if that one
-    /// works, the feature keeps it until a restart, said once. The key counts as refused only if that model
-    /// refuses it too.
-    pub async fn ask_model<F, R>(&self, setting: &Setting, send: F) -> anyhow::Result<reqwest::Response>
-    where
-        F: Fn(&str) -> R,
-        R: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
-    {
-        let model = setting.name();
+    /// `call_model`, with `extra` fields on its trace line: a call with no prompt cache key names its feature
+    /// here, and says what it was for.
+    pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
+        let key = self.key()?;
         self.spend()?;
-        let mut response = send(model).await?;
-        if let Some(base) = setting.base.as_deref().filter(|base| *base != model && cant_use(response.status())) {
-            tracing::info!("{model} answered {}: asking {base} instead", response.status());
+        let started = std::time::Instant::now();
+        let result = async {
+            let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
+            self.check(response.status())?;
+            answer(response).await
+        }
+        .await;
+        self.trace.call(body, started, result.as_ref(), extra);
+        result
+    }
+
+    /// Asks a feature's model at `url`: `body` builds the request for one model name, posted with the key and
+    /// `patience` for the whole answer, its status read as `check` reads it and its JSON as `answer` does. When
+    /// the key can't use a default model in Contributor mode (401, 403 or 404), the same request goes once to the
+    /// model without it; if that one works, the feature keeps it until a restart, said once. The key counts as
+    /// refused only if that model refuses it too. Each request sent is one trace line, `extra` added, so a
+    /// turned-away try shows beside the one that answered.
+    pub async fn ask_model(
+        &self,
+        setting: &Setting,
+        url: &str,
+        patience: Duration,
+        body: impl Fn(&str) -> Value,
+        extra: Value,
+    ) -> anyhow::Result<Value> {
+        let key = self.key()?;
+        let model = setting.name();
+        let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
+        self.spend()?;
+        let (mut sent, mut started) = (body(model), std::time::Instant::now());
+        let mut response = post(&sent).await;
+        let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
+        if let (Some(status), Some(base)) = (turned_away, setting.base.as_deref().filter(|base| *base != model)) {
+            tracing::info!("{model} answered {status}: asking {base} instead");
+            self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
-            response = send(base).await?;
+            (sent, started) = (body(base), std::time::Instant::now());
+            response = post(&sent).await;
             // Two features finding out at once say it once.
-            if response.status().is_success() && !setting.on_base.swap(true, Ordering::Relaxed) {
+            if response.as_ref().is_ok_and(|r| r.status().is_success()) && !setting.on_base.swap(true, Ordering::Relaxed) {
                 tracing::warn!("this key can't use {model}: {base} from now on, until a restart");
                 self.send(ServerMsg::Notice { message: format!("Using {base} (this key can't use the contributor model).") });
             }
         }
-        self.check(response.status())?;
-        Ok(response)
+        let result = async {
+            let response = response?;
+            self.check(response.status())?;
+            answer(response).await
+        }
+        .await;
+        self.trace.call(&sent, started, result.as_ref(), extra);
+        result
     }
 }
 
@@ -546,13 +574,14 @@ mod tests {
         assert!(call(&core, &url, 200, reply.clone(), 0).await.is_ok());
         // Placing and Explain count each model they ask: here the default and then the one without Contributor mode.
         let asked = Mutex::new(Vec::new());
-        assert_eq!(ask(&core, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap(), StatusCode::OK);
+        assert_eq!(ask(&core, &url, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap(), StatusCode::OK);
         assert!(core.capped_message().is_some());
         for _ in 0..3 {
             assert_eq!(Verdict::of(&call(&core, &url, 200, reply.clone(), 0).await.unwrap_err()), Some(Verdict::Capped));
-            assert_eq!(Verdict::of(&ask(&core, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap_err()), Some(Verdict::Capped));
+            assert_eq!(Verdict::of(&ask(&core, &url, &Setting::from(CONTRIBUTOR), &[], &asked).await.unwrap_err()), Some(Verdict::Capped));
         }
-        assert_eq!(keys.lock().unwrap().len(), 1, "nothing more reached the service");
+        // The ask goes to the same stand-in as the call: those two reached the service, and nothing after them.
+        assert_eq!(keys.lock().unwrap().len(), 2, "nothing more reached the service");
         assert_eq!(asked.lock().unwrap().len(), 1);
         assert_eq!(Verdict::of(&core.key().unwrap_err()), Some(Verdict::Capped), "the refiner, pictures and search rest");
         assert_eq!(core.listening_key().unwrap(), "good", "the microphone still works: what's heard is kept");
@@ -570,25 +599,22 @@ mod tests {
     const CONTRIBUTOR: &str = "muse-spark-1.2-contributor";
     const BASE: &str = "muse-spark-1.2";
 
-    /// Asks `setting` through a stand-in for the service that answers each model with its status in `statuses`
-    /// (else 200), after a yield, so two asks overlap the way placing and Explain can. `asked` records the models.
-    async fn ask(core: &Core, setting: &Setting, statuses: &[(&str, u16)], asked: &Mutex<Vec<String>>) -> anyhow::Result<StatusCode> {
-        let response = core
-            .ask_model(setting, |model| {
-                asked.lock().unwrap().push(model.to_string());
-                let status = statuses.iter().find(|(m, _)| *m == model).map_or(200, |(_, s)| *s);
-                async move {
-                    tokio::task::yield_now().await;
-                    let answer = axum::http::Response::builder().status(status).body(String::new()).unwrap();
-                    Ok::<_, reqwest::Error>(reqwest::Response::from(answer))
-                }
-            })
-            .await?;
-        Ok(response.status())
+    /// Asks `setting` through a stand-in for the service (`url`, from `stand_in`) that answers each model with
+    /// its status in `statuses` (else 200). `asked` records the models; two asks at once overlap on the wire,
+    /// the way placing and Explain can.
+    async fn ask(core: &Core, url: &str, setting: &Setting, statuses: &[(&str, u16)], asked: &Mutex<Vec<String>>) -> anyhow::Result<StatusCode> {
+        let body = |model: &str| {
+            asked.lock().unwrap().push(model.to_string());
+            let status = statuses.iter().find(|(m, _)| *m == model).map_or(200, |(_, s)| *s);
+            serde_json::json!({"model": model, "status": status, "answer": {}})
+        };
+        core.ask_model(setting, url, std::time::Duration::from_secs(5), body, serde_json::json!({"thought": "th-1"})).await?;
+        Ok(StatusCode::OK)
     }
 
     #[tokio::test]
     async fn a_key_that_cant_use_contributor_mode_gets_the_same_model_without_it_said_once() {
+        let (url, _) = stand_in().await;
         for status in [401, 403, 404] {
             let fixture = Fixture::new(Some("good"));
             let core = &fixture.core;
@@ -596,7 +622,7 @@ mod tests {
             let setting = Setting::new(None, CONTRIBUTOR);
             let (statuses, asked) = ([(CONTRIBUTOR, status)], Mutex::new(Vec::new()));
             // Placing and Explain at once: both find out, one says so.
-            let (a, b) = tokio::join!(ask(core, &setting, &statuses, &asked), ask(core, &setting, &statuses, &asked));
+            let (a, b) = tokio::join!(ask(core, &url, &setting, &statuses, &asked), ask(core, &url, &setting, &statuses, &asked));
             assert_eq!((a.unwrap(), b.unwrap()), (StatusCode::OK, StatusCode::OK), "{status}");
             assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR, CONTRIBUTOR, BASE, BASE], "{status}");
             assert_eq!(setting.name(), BASE);
@@ -604,7 +630,7 @@ mod tests {
             assert_eq!(notices(&mut updates), ["Using muse-spark-1.2 (this key can't use the contributor model)."], "{status}");
             // From then on, only the base is asked, and nothing more is said.
             asked.lock().unwrap().clear();
-            assert_eq!(ask(core, &setting, &statuses, &asked).await.unwrap(), StatusCode::OK);
+            assert_eq!(ask(core, &url, &setting, &statuses, &asked).await.unwrap(), StatusCode::OK);
             assert_eq!(*asked.lock().unwrap(), [BASE]);
             assert!(notices(&mut updates).is_empty());
         }
@@ -612,16 +638,17 @@ mod tests {
 
     #[tokio::test]
     async fn the_key_counts_as_refused_only_if_the_model_without_contributor_mode_refuses_it_too() {
+        let (url, _) = stand_in().await;
         let fixture = Fixture::new(Some("wrong"));
         let core = &fixture.core;
         let mut updates = core.updates.subscribe();
         let setting = Setting::new(None, CONTRIBUTOR);
         let asked = Mutex::new(Vec::new());
         // Busy: nothing is switched or refused, and the next call starts from the default again.
-        let busy = ask(core, &setting, &[(CONTRIBUTOR, 403), (BASE, 429)], &asked).await.unwrap_err();
+        let busy = ask(core, &url, &setting, &[(CONTRIBUTOR, 403), (BASE, 429)], &asked).await.unwrap_err();
         assert_eq!(Verdict::of(&busy), Some(Verdict::Busy));
         assert!(!core.key_refused());
-        let refused = ask(core, &setting, &[(CONTRIBUTOR, 403), (BASE, 401)], &asked).await.unwrap_err();
+        let refused = ask(core, &url, &setting, &[(CONTRIBUTOR, 403), (BASE, 401)], &asked).await.unwrap_err();
         assert_eq!(Verdict::of(&refused), Some(Verdict::Refused));
         assert!(core.key_refused());
         assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR, BASE, CONTRIBUTOR, BASE]);
@@ -631,13 +658,36 @@ mod tests {
         assert!(!said.iter().any(|s| s.starts_with("Using")), "{said:?}");
     }
 
+    /// A turned-away try is a model call too: the trace has a line for it and one for the try that answered,
+    /// each with the model it asked and its own time, never the key.
+    #[tokio::test]
+    async fn the_trace_has_a_line_for_each_try_the_turned_away_one_included() {
+        let (url, _) = stand_in().await;
+        let dir = std::env::temp_dir().join(format!("e2a2o-model-trace-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("journal.jsonl");
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core { key: Some("good".into()), trace: crate::trace::Trace::to(&dir), ..Core::test(journal, world) };
+        let setting = Setting::new(None, CONTRIBUTOR);
+        ask(&core, &url, &setting, &[(CONTRIBUTOR, 403)], &Mutex::new(Vec::new())).await.unwrap();
+        let text = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
+        let lines: Vec<serde_json::Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(lines.len(), 2, "{text}");
+        assert_eq!((lines[0]["model"].as_str(), lines[0]["error"].as_str()), (Some(CONTRIBUTOR), Some("403 Forbidden: asked muse-spark-1.2 instead")));
+        assert_eq!((lines[1]["model"].as_str(), lines[1]["error"].as_str()), (Some(BASE), None));
+        assert!(lines.iter().all(|l| l["thought"] == "th-1" && l["ms"].is_u64()));
+        assert!(!text.contains("good") && !text.to_lowercase().contains("bearer"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[tokio::test]
     async fn the_persons_own_model_and_a_working_default_are_asked_once_as_before() {
+        let (url, _) = stand_in().await;
         // PLACER_MODEL set, even to the default: never switched; a refusal stops every call, as before.
         let fixture = Fixture::new(Some("good"));
         let chosen = Setting::new(Some(CONTRIBUTOR.into()), CONTRIBUTOR);
         let asked = Mutex::new(Vec::new());
-        let refused = ask(&fixture.core, &chosen, &[(CONTRIBUTOR, 403)], &asked).await.unwrap_err();
+        let refused = ask(&fixture.core, &url, &chosen, &[(CONTRIBUTOR, 403)], &asked).await.unwrap_err();
         assert_eq!(Verdict::of(&refused), Some(Verdict::Refused));
         assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR]);
         assert_eq!(chosen.name(), CONTRIBUTOR);
@@ -646,10 +696,14 @@ mod tests {
             let fixture = Fixture::new(Some("good"));
             let setting = Setting::new(None, CONTRIBUTOR);
             let asked = Mutex::new(Vec::new());
-            let answer = ask(&fixture.core, &setting, &[(CONTRIBUTOR, status)], &asked).await;
-            match verdict {
-                None => assert_eq!(answer.unwrap().as_u16(), status, "the caller reads it, as before"),
-                Some(verdict) => assert_eq!(Verdict::of(&answer.unwrap_err()), Some(verdict)),
+            let answer = ask(&fixture.core, &url, &setting, &[(CONTRIBUTOR, status)], &asked).await;
+            match (status, verdict) {
+                (200, _) => assert_eq!(answer.unwrap(), StatusCode::OK),
+                (_, None) => {
+                    let failed = answer.unwrap_err();
+                    assert_eq!((Verdict::of(&failed), failed.to_string()), (None, "500 Internal Server Error: no message".into()), "in the service's words, as before");
+                }
+                (_, Some(verdict)) => assert_eq!(Verdict::of(&answer.unwrap_err()), Some(verdict)),
             }
             assert_eq!(*asked.lock().unwrap(), [CONTRIBUTOR], "{status}");
             assert_eq!(setting.name(), CONTRIBUTOR);

@@ -3,8 +3,9 @@ meta-only: the hackathon rule, from the organizers in writing: every model the p
   Meta model. Fails when the app's code names a non-Meta model SDK, a non-Meta model endpoint or a non-Meta model, or
   when the core or the UI talks to any outside host but Meta's API. Coding tools used while building are allowed and
   aren't checked here; names of other chat apps (an import reads ChatGPT and Claude exports) are words, not calls.
-counted: every model call counts toward the core's hourly cap (model.rs CALLS_PER_HOUR): only `call_model` and
-  `ask_model` send the key, and both spend first. Voice Transcribe is left out on purpose (model.rs `listening_key`).
+counted: every model call counts toward the core's hourly cap (model.rs CALLS_PER_HOUR): only `call_model_noting`
+  (which `call_model` wraps) and `ask_model` send the key, and both spend first. Voice Transcribe is left out on
+  purpose (model.rs `listening_key`).
   python3 scripts/model-guards.py meta-only   # this repo's tracked files
   python3 scripts/model-guards.py counted
   python3 scripts/model-guards.py self-test   # plants each kind of breach and checks it's caught
@@ -165,7 +166,7 @@ def uncounted(files):
         lines = runtime_part(path, text).splitlines()
         if path == "core/src/model.rs":
             if sum("self.spend()?;" in line for line in lines) < 3:
-                found.append(f"{path}: call_model and ask_model (both of its sends) must spend before sending")
+                found.append(f"{path}: call_model_noting and ask_model (both of its sends) must spend before sending")
             continue
         for n, line in enumerate(lines, 1):
             # Outside model.rs, the key goes out only from inside an ask_model closure (placing, Explain).

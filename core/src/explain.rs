@@ -138,25 +138,21 @@ fn names(text: &str, term: &str) -> bool {
 }
 
 async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
-    let key = core.key()?;
     let phrase: String = phrase.chars().take(200).collect();
-    let response = core
-        .ask_model(&core.placer_model, |model| {
-            let body = json!({
-                "model": model,
-                "reasoning_effort": "minimal",
-                // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
-                "max_tokens": 1200,
-                "prompt_cache_key": "e2a2o-explain",
-                "messages": [
-                    {"role": "system", "content": SYSTEM},
-                    {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
-                ],
-            });
-            core.http.post(URL).bearer_auth(key).timeout(PATIENCE).json(&body).send()
+    let body = |model: &str| {
+        json!({
+            "model": model,
+            "reasoning_effort": "minimal",
+            // Spark's reasoning counts here too (about 200 to 300 tokens): a tight cap leaves no answer.
+            "max_tokens": 1200,
+            "prompt_cache_key": "e2a2o-explain",
+            "messages": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": format!("{notes}\nPhrase: \"{phrase}\"")},
+            ],
         })
-        .await?;
-    let value = crate::model::answer(response).await?;
+    };
+    let value = core.ask_model(&core.placer_model, URL, PATIENCE, body, serde_json::Value::Null).await?;
     let text = value["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
     if text.is_empty() {
         bail!("no answer ({})", value["choices"][0]["finish_reason"].as_str().unwrap_or("no reason given"));
