@@ -316,8 +316,19 @@ impl Core {
             return Some(Done::new(Act::Compose));
         }
         if let Some(view) = view(text) {
+            // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
+            // back too. Bare "focus" stays on the thread you're on, as its button does.
+            let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            let moved = to.filter(|to| before.as_ref() != Some(to));
+            if let Some(to) = &moved {
+                self.focus(speaker, to);
+            }
             self.send_to(speaker, ServerMsg::View { view });
-            return Some(Done::view(view));
+            let mut done = Done::view(view);
+            if let (Some(_), Some(from)) = (moved, before) {
+                done.undo = Some(Undo::Each(done.undo.into_iter().chain([Undo::Move { to: from }]).collect()));
+            }
+            return Some(done);
         }
         if is_new_thread(text) {
             self.new_thread(speaker);
@@ -684,7 +695,8 @@ fn view(text: &str) -> Option<View> {
         "map", "the map", "go to the map", "go back to the map", "back to the map", "show the map", "show me the map", "open the map",
         "switch to the map", "take me back to the map", "let s go back to the map", "let s see the map",
     ];
-    let focus = ["focus", "let s focus", "focus on this", "focus on this thread", "focus on this one", "turn on focus"];
+    let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
+    let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -700,6 +712,22 @@ fn view(text: &str) -> Option<View> {
     } else {
         None
     }
+}
+
+/// What "focus on …" points at as "this" (catalog.rs `this`: selected, else pointed, else the card the pointer just
+/// left, else the thread you're on). ui/src/attention-core.ts mirrors it for the "this" mark (attention-check reads it).
+const FOCUS_ON: [&str; 8] = ["this", "this one", "this thread", "this card", "that", "that one", "that thread", "that card"];
+
+/// "Focus on this" and its kin, with "let's" too: a whole-turn focus on the card "this" means. "Focus on the budget"
+/// stays a thought: only a pointing word focuses.
+fn focus_this_asks() -> Vec<String> {
+    ["focus on", "let s focus on"].iter().flat_map(|verb| FOCUS_ON.map(|on| format!("{verb} {on}"))).collect()
+}
+
+/// Whether the whole turn focuses "this" rather than the thread you're on ("Focus", "let's focus").
+fn focuses_this(text: &str) -> bool {
+    let asks = focus_this_asks();
+    is_command(text, &asks.iter().map(String::as_str).collect::<Vec<_>>(), &["mode"])
 }
 
 /// True when the whole utterance is one of the asks, after words that lead into it (`lead_in`: "Okay, where was
@@ -1566,6 +1594,8 @@ mod tests {
             ("Cool, palace.", View::Palace),
             ("Can you show me the palace?", View::Palace),
             ("Please focus.", View::Focus),
+            ("Let's focus on this.", View::Focus),
+            ("Okay, focus on that one", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
         ] {

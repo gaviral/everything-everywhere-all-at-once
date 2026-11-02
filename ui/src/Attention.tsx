@@ -233,9 +233,9 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
   const titleOf = (thread: string) => world.threads.find((t) => t.id === thread)?.title ?? "";
   const titles = useRef(titleOf);
   titles.current = titleOf;
-  // "This" as the core will pick it when the command arrives: focus is always your active thread; opening or folding
-  // takes the card you selected, else the one under the pointer, else the one it left within POINTER_MS, else your
-  // active thread (this-card.ts `resolveThis`). While the words point at a card, a change in what's selected or pointed
+  // "This" as the core will pick it when the command arrives, for opening, folding and focusing alike: the card you
+  // selected, else the one under the pointer, else the one it left within POINTER_MS, else your active thread
+  // (this-card.ts `resolveThis`). While the words point at a card, a change in what's selected or pointed
   // at, or the card the pointer left running out of time, moves the mark with it.
   const pointing = thisKind(words);
   const [, moved] = useState(0);
@@ -252,7 +252,7 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
     expire();
     return () => { stop(); window.clearTimeout(timer); };
   }, [pointing, attending]);
-  const thisThread = pointing === "active" ? world.active : pointing === "card" ? resolveThis(attending.attending(), world, world.active, Date.now()) : null;
+  const thisThread = pointing === "card" ? resolveThis(attending.attending(), world, world.active, Date.now()) : null;
   const thisTitle = (thisThread && world.threads.find((t) => t.id === thisThread)?.title) || "";
   const value = useMemo<Value>(() => ({ latest, unseen: new Map(unseen.map((m) => [m.thread, m])), thisThread, thisTitle, note, known }), [latest, unseen, thisThread, thisTitle, note]);
   return {

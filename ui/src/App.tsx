@@ -773,7 +773,7 @@ export default function App() {
           <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
-          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
+          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>

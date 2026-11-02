@@ -370,6 +370,31 @@ async fn expand_this_opens_the_card_under_the_pointer() {
     assert_eq!(f.say("Expand this").await[0], "open T1");
 }
 
+/// "Focus on this" focuses the card "this" means, as "collapse this" folds it; bare "Focus" stays on yours, as its
+/// button does. Scratching it puts back both the view and the thread you were on.
+#[tokio::test]
+async fn focus_on_this_focuses_the_card_this_means() {
+    let f = Fixture::new(garden());
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(f.say("Focus").await, ["view focus"]);
+    assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "on T1", "notice Undone: show only one thread"]);
+    // The card the pointer left just now still counts, and "let's" leads in as it does for "let's focus".
+    attend(&f.core, "you", None, None);
+    assert_eq!(f.say("Let's focus on that one").await, ["on T2", "view focus"]);
+    // Already there: only the view, and its undo is the view's alone.
+    let done = f.core.request("you", "Focus on this thread", true).unwrap();
+    assert!(matches!(done.undo, Some(Undo::View)), "{:?}", done.undo);
+    // A correction redoes it the same way ("Palace", then "No, I meant focus on this"; the new view replaces Palace).
+    let f = Fixture::new(garden());
+    attend(&f.core, "you", None, Some("T2".into()));
+    f.say("Palace").await;
+    assert_eq!(f.say("No, I meant focus on this").await, ["on T2", "view focus"]);
+    // Nothing pointed or selected: the thread you're on, so nothing moves.
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Focus on this").await, ["view focus"]);
+}
+
 /// The latest thought asks "Did you mean “Muse Spark”?".
 fn asked() -> World {
     let mut world = garden();
