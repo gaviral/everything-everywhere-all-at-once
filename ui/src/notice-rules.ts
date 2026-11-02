@@ -47,6 +47,14 @@ export function isUndoKey(event: { key: string; metaKey: boolean; ctrlKey: boole
   return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 
+/** What a press of the Undo key does: "app" takes back the last turn, "none" swallows it (a held key's repeats, so
+ *  holding ⌘Z can't undo the undo), "browser" leaves the field's own undo of typing. The empty composer is the app's
+ *  only while nothing was typed there since the last thought went: a draft typed and cleared is the browser's to restore. */
+export function undoKeyGoesTo(press: { repeat: boolean; field: boolean; composer: boolean; composerEmpty: boolean; typedSinceSend: boolean }): "app" | "none" | "browser" {
+  if (press.field && !(press.composer && press.composerEmpty && !press.typedSinceSend)) return "browser";
+  return press.repeat ? "none" : "app";
+}
+
 /** The Undo shortcut, as this platform writes it. */
 export function undoKeyLabel(mac: boolean): string {
   return mac ? "⌘Z" : "Ctrl+Z";

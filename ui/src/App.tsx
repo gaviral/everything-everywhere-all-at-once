@@ -29,7 +29,7 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { isUndoKey, staysUp, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+import { isUndoKey, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -157,6 +157,8 @@ export default function App() {
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLInputElement>(null);
+  // Typed in the composer since the last thought went: ⌘Z there then restores the typing, not the last turn.
+  const typedSinceSend = useRef(false);
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -420,7 +422,7 @@ export default function App() {
     if (draft.trim()) {
       setHelpOpen(false);
       if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
-      if (core.sendText(draft.trim())) setDraft("");
+      if (core.sendText(draft.trim())) { setDraft(""); typedSinceSend.current = false; }
     }
   };
 
@@ -612,9 +614,11 @@ export default function App() {
       // ⌘Z / Ctrl+Z: "undo that", the last turn, with or without the notice up. A field with words in it keeps the
       // browser's own undo of typing; the empty composer after sending a thought doesn't (persona run 2026-11-01).
       const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
-      if (isUndoKey(event, MAC) && (!field || (target === composerRef.current && !composerRef.current.value))) {
+      const goesTo = isUndoKey(event, MAC) ? undoKeyGoesTo({ repeat: event.repeat, field, composer: target === composerRef.current,
+        composerEmpty: !composerRef.current?.value, typedSinceSend: typedSinceSend.current }) : "browser";
+      if (goesTo !== "browser") {
         event.preventDefault();
-        core.undoLast();
+        if (goesTo === "app") core.undoLast();
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
@@ -947,7 +951,7 @@ export default function App() {
             <input
               ref={composerRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />

@@ -138,8 +138,19 @@ try {
   // outside a field with words in it is the app's undo (the key handler skipped every modifier key before).
   assert.match(app, /core\.undoId \? undoUpFor\(/);
   assert.match(app, /onMouseEnter=\{\(\) => setNoticeHeld\(true\)\}/);
-  assert.match(app, /isUndoKey\(event, MAC\)[^]*?core\.undoLast\(\)/);
-  const { isUndoKey } = await server.ssrLoadModule("/src/notice-rules.ts");
+  assert.match(app, /isUndoKey\(event, MAC\)[^]*?undoKeyGoesTo\([^]*?if \(goesTo === "app"\) core\.undoLast\(\)/);
+  assert.match(app, /typedSinceSend\.current = true; setDraft/);
+  assert.match(app, /setDraft\(""\); typedSinceSend\.current = false;/);
+  const { isUndoKey, undoKeyGoesTo } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const press = (over) => ({ repeat: false, field: false, composer: false, composerEmpty: false, typedSinceSend: false, ...over });
+  assert.equal(undoKeyGoesTo(press({})), "app", "on the map");
+  assert.equal(undoKeyGoesTo(press({ field: true, composer: true, composerEmpty: true })), "app", "the composer a thought just left");
+  assert.equal(undoKeyGoesTo(press({ field: true, composer: true, composerEmpty: true, typedSinceSend: true })), "browser",
+    "a draft typed then cleared is restored, not the last thought taken back");
+  assert.equal(undoKeyGoesTo(press({ field: true, composer: true })), "browser", "words in the composer");
+  assert.equal(undoKeyGoesTo(press({ field: true, composerEmpty: true })), "browser", "the search field");
+  assert.equal(undoKeyGoesTo(press({ repeat: true })), "none", "holding ⌘Z doesn't undo the undo");
+  assert.equal(undoKeyGoesTo(press({ repeat: true, field: true, composer: true, composerEmpty: true })), "none");
   const key = (over) => ({ key: "z", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over });
   assert.ok(isUndoKey(key({ metaKey: true }), true) && isUndoKey(key({ ctrlKey: true }), false));
   assert.ok(isUndoKey(key({ key: "Z", metaKey: true }), true), "Caps Lock on");
