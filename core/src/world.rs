@@ -827,6 +827,30 @@ mod tests {
     }
 
     #[test]
+    fn a_removed_threads_id_is_never_handed_out_again() {
+        // Scratch that on Sam's first thread removes T3 while Ana's T4 stays: the next new topic must not get T4,
+        // or it lands in Ana's thread; nor T3, or a late picture drawn for the old T3 lands on it.
+        let line = |id: &str| format!(r#"{{"type":"thread_added","thread":{{"id":"{id}","title":"{id}","parent_id":null,"status":"open","last_point":"","touched_ms":1}}}}"#);
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3", "T4"] {
+            world.apply(&serde_json::from_str::<Change>(&line(id)).unwrap());
+        }
+        world.apply(&Change::ThreadRemoved { thread_id: "T3".into() });
+        let next = world.next_thread_id();
+        assert!(!["T1", "T2", "T3", "T4"].contains(&next.as_str()), "reused {next}");
+        assert!(!["S1", "S2", "S3", "S4"].contains(&crate::spoken::fresh_id(&world).as_str()));
+        // Removing a thread that isn't there changes nothing, and a merged id is skipped too.
+        let mut merged = World::default();
+        merged.apply(&serde_json::from_str::<Change>(&line("T1")).unwrap());
+        merged.merged.insert("T2".into(), "T1".into());
+        merged.apply(&Change::ThreadRemoved { thread_id: "T9".into() });
+        assert_eq!(merged.next_thread_id(), "T3");
+        merged.merged.insert("T3".into(), "T1".into());
+        merged.merged.remove("T2");
+        assert_eq!(merged.next_thread_id(), "T4");
+    }
+
+    #[test]
     fn old_journals_load_as_one_speaker() {
         // From before rooms: no speaker on a move or a drop, no dropped_by on a thread.
         let lines = [

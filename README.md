@@ -279,7 +279,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Only one app can be built at a time. A new request while a build is waiting or running is refused; keep or discard the current app first.
 - Pictures come only during pauses, so a busy session gets them late.
 - The loudness scale for volume apps comes from synthesized speech played through Chrome's processing, not yet from a real microphone. There, the browser's automatic gain lifted normal speech and left a raised voice only about 1.3 times as loud, so a raised voice can take a few seconds to set off a volume app.
-- Rooms work on one local network only. The room code is the only check: anyone on the network who has it can join.
+- `./run.sh room` works on one local network only; `scripts/trial.sh` reaches the internet through a tunnel link. The room code is the only check: anyone who can reach the core and has it can join.
 - In a room, a name belongs to one laptop at a time, ignoring case; the host keeps theirs until the core stops.
 - If both room microphones pick up both people, the same speech can be transcribed twice.
 - One map per data folder, shared by every window on it; no accounts. The journal only grows (no compaction). Export (or “export my map”) saves the map as Markdown, made in the window: threads as headings, points with their times, decisions marked; the words behind each point stay in the journal.
