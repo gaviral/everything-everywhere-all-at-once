@@ -45,6 +45,13 @@ function socketFor(speaker) {
     const query = params.toString();
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws${query ? `?${query}` : ""}`);
     ws.onerror = () => reject(new Error(`Couldn't reach the core on port ${port} as ${speaker || "the host"}. Start it with ${port === 4321 ? "" : `PORT=${port} `}./run.sh ${room ? "room" : "demo"}`));
+    // Without a working key nothing gets placed: say so and stop, rather than typing into a map that won't move.
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type !== "notice" || !/MODEL_API_KEY/.test(message.message)) return;
+      console.error(`${message.message}\nPut your Meta Model API key after MODEL_API_KEY= in .env, stop the core (Ctrl+C) and start it again.`);
+      process.exit(1);
+    };
     ws.onopen = () => {
       sockets.set(speaker, ws);
       resolve(ws);
