@@ -2,7 +2,7 @@
    win over the base .mic rules in styles.css whatever order the files load in. */
 .composer .mic { position: relative; }
 
-/* Listening: no idle pulse any more (motion only when something changed, decisions/visual.md); a thin ring that is
+/* Listening: no idle pulse any more (motion only when something changed); a thin ring that is
    whole while the mic hears silence and swells with each loudness reading, up to the composer's own 6 px padding,
    so it never crosses the composer's edge. It eases over one reading's 320 ms, so it moves as a voice does, not in
    steps. */
