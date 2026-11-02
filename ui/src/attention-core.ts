@@ -2,6 +2,7 @@
 // highlight, the "latest" mark, "New in X ↓", unseen marks and the "this" a spoken command points at. The timings
 // come from reading, not from a clock: a highlight lasts as long as it takes to look over and read what it marks.
 import type { World } from "./core";
+import { resolveMerged as resolve } from "./merges";
 
 /** Silent reading of English non-fiction, words per minute (Brysbaert 2019, a meta-analysis of 190 studies: 238). */
 export const READ_WPM = 238;
@@ -16,11 +17,6 @@ export function readMs(text: string): number {
 
 /** A thread changed while you weren't looking: the element that shows the change, and the words that say it. */
 export type Unseen = { thread: string; element: string; line: string };
-
-function resolve(world: World, id: string): string {
-  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
-  return id;
-}
 
 /** Threads that changed between two worlds, other than by your own words landing (your landing has its own
  *  highlight and the "latest" mark): someone else's thought, a thought moved in by a merge, a new proposal or

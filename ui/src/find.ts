@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useReducedMotion } from "motion/react";
 import type { World } from "./core";
+import { resolveMerged } from "./merges";
 import "./find.css";
 import { look, wordsIn } from "./Attention";
 
@@ -27,8 +28,7 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
     const found = requested;
     if (!found) return;
     const world = currentWorld.current;
-    let id = found.thread_id;
-    for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+    const id = resolveMerged(world, found.thread_id);
     if (!world.threads.some((thread) => thread.id === id)) return;
     setView("map");
     setQuery("");
