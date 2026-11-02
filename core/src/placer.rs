@@ -14,11 +14,18 @@ use tokio::sync::mpsc;
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
 
 // Stable text first, so the API's prompt cache can reuse it.
+// An update stays on its thread, and a branch's parent is the thread it is one part of: "a different part of a thread"
+// made a price or a moved date its own branch, and "the thread it branched from" hung a cafe shift under a midterm it
+// clashed with. Replaying 48 recorded placements twice (2026-11-01, Spark 1.2, minimal): updates on their thread 28 →
+// 55 of 68, branches under an unrelated thread 13 → 0 of 16; a party's invite list and cake still branch (12 of 12).
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
-For each NEW THOUGHT decide: \"continue\" if it says more about the active thread's last point (a detail, an answer, a correction), \
-\"return\" if it says more about an earlier thread's, \
-or \"new\" if it starts a new topic, a tangent, or a different part of a thread with its own detail, such as the budget of a trip \
-(set parent_id to the thread it branched from or is part of, or leave it empty). Being about the same project is not enough to continue. \
+For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
+news that something is done), \"return\" if it says more about an earlier thread, \
+or \"new\" if it starts a new topic or a tangent (parent_id: the thread whose own subject it is one part of, such as the hostel for a trip; \
+never one it only clashes with, shares a day or a word with, or was said after; else empty). \
+An update on what a thread is about goes on that thread, even with a new detail; \
+which thread that is goes by what the words mean, read with what was said just before, never by a word shared with a title. \
+Being about the same project is not enough to continue. \
 Place by what the words are about, not by how they are said or a word they share with a title: \
 a thought that trails off belongs with its own topic, never with a thread about unfinished thoughts. \
 \"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
@@ -469,7 +476,8 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     };
     // From when the thought arrived, so time waiting in the queue counts too.
     let place_ms = now_ms().saturating_sub(thought.at_ms);
-    tracing::info!("placed in {place_ms} ms: {} {}", placement.action, placement.thread_id);
+    // The parent asked for too: a branch that shouldn't be one shows here, not only in a trace file.
+    tracing::info!("placed in {place_ms} ms: {} {} parent {:?}", placement.action, placement.thread_id, placement.parent_id);
 
     let answer = (placement.action.clone(), placement.thread_id.clone(), placement.title.clone(), placement.split.clone());
     // Landing after the speaker moved on (newer words of theirs landed, or they moved while it retried), it
@@ -890,7 +898,10 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
             } else {
                 fix(p.title.trim())
             };
-            let parent_id = Some(p.parent_id.clone()).filter(|x| exists(x));
+            // One level only: the model picks a parent from a flat list, so a second level is picked blind (all 6
+            // branches of branches in the threads trace, 2026-11-01, sat under the wrong top thread: a flight home under a
+            // cafe shift under a midterm). Naming a branch as its parent makes a thread of its own.
+            let parent_id = Some(p.parent_id.clone()).filter(|x| world.thread(x).is_some_and(|t| t.parent_id.is_none()));
             changes.push(Change::ThreadAdded {
                 thread: Thread {
                     id: id.clone(),
@@ -1856,6 +1867,31 @@ mod tests {
             world.apply(&change);
         }
         assert!(world.thoughts[0].decided, "the map keeps it");
+    }
+
+    /// A new thread branches one level at most: under a top thread as asked, at the top when the parent named is
+    /// itself a branch (the flight home under the cafe shift under the midterm, threads trace 2026-11-01) or isn't there.
+    #[test]
+    fn a_new_thread_branches_only_from_a_top_thread() {
+        let world = World {
+            threads: vec![thread("T1"), Thread { parent_id: Some("T1".into()), ..thread("T2") }],
+            active: Some("T2".into()),
+            ..World::default()
+        };
+        let parent = |parent_id: &str| {
+            let answer = reply(json!({"action": "new", "title": "Flight home", "parent_id": parent_id}));
+            decide(&world, &turn("Mom asked when my flight home is, it's December 18."), answer, 0, false, true)
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::ThreadAdded { thread } => Some(thread.parent_id),
+                    _ => None,
+                })
+                .expect("a new thread")
+        };
+        assert_eq!(parent("T1"), Some("T1".into()), "a top thread keeps its branch");
+        assert_eq!(parent("T2"), None, "a branch named as parent: a thread of its own");
+        assert_eq!(parent("T9"), None, "a parent that isn't on the map");
+        assert_eq!(parent(""), None);
     }
 
     #[test]
