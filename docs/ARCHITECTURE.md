@@ -18,6 +18,7 @@ Browser, one page per window (ui/src)
   Undo.tsx       Undo on a notice that answers a request you can take back
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
   ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
+  search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo

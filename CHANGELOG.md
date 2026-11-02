@@ -30,7 +30,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - "make an app that…" (at the start of what you say) or the Apps panel builds an app from blocks: a watcher (new thought, phrase, topic, volume, time), an optional prompt, publishers (card, tune, proposed reminder).
 - It looks for an existing app first; a draft runs only once kept; unknown blocks, fields and out-of-range values are rejected, and a draft that doesn't check out gets one more try, told what was wrong.
 - A timer app with a prompt runs only when something new was said since its last run.
-- Three seed apps, on by default only in demo mode: Argument resolver, Volume watcher, Search-first.
+- Three seed apps: Argument resolver, Volume watcher, Search-first. Nothing acts unasked: the first two start off everywhere until you switch them on in Apps; Search-first, which runs only inside a build you asked for, starts on in demo mode.
 
 ### Recap
 - "what did I decide today?", "recap this session", or the Recap button: a summary that names your threads, what you worked on, decisions, plans ("I want to…"), open questions, unfinished threads, actions.

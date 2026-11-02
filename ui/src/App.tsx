@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
@@ -31,6 +31,7 @@ import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, This
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
+import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -502,8 +503,13 @@ export default function App() {
     previousSearchIndex.current = next;
     return entries;
   }, [world.threads, thoughtsByThread]);
-  const search = query.trim().toLocaleLowerCase();
-  const matches = useMemo(() => new Set(search ? searchIndex.filter(({ fields }) => fields.some((text) => text.includes(search))).map(({ id }) => id) : []), [search, searchIndex]);
+  // The box shows each letter at once; the map follows a moment later and gives way to the next letter
+  // (useDeferredValue), so typing never waits on the cards. At 1,000 threads a letter used to freeze the page ≈ 1 s.
+  const deferredQuery = useDeferredValue(query);
+  const search = mapQuery(query, deferredQuery).trim().toLocaleLowerCase();
+  const matches = useMemo(() => searchMatches(searchIndex, search), [search, searchIndex]);
+  const held = useMemo(() => heldOpen(matches), [matches]);
+  const previousChildren = useRef<Map<string | null, Thread[]> | undefined>(undefined);
   const children = useMemo(() => {
     const visibleIds = new Set<string>();
     const addWithParents = (id: string) => {
@@ -526,7 +532,7 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
-    return grouped;
+    return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
   const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
@@ -851,7 +857,7 @@ export default function App() {
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
           <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
-          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider>
           </TidyProvider>
           </NotesContext.Provider>
@@ -1066,7 +1072,8 @@ type MapProps = {
   active: string | null; on: Handlers; activePath: Set<string>; rooms: Map<string, string>;
   childrenByParent: Map<string | null, Thread[]>; thoughtsByThread: Map<string, Thought[]>;
   ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
-  matches: Set<string>; searching: boolean; expanded: Record<string, boolean>;
+  /** Found cards search holds open (search-rules.ts). */
+  held: Set<string>; expanded: Record<string, boolean>;
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   keptOpen: React.MutableRefObject<Set<string>>;
 };
@@ -1081,7 +1088,8 @@ const MapCards = memo(function MapCards(props: MapProps) {
   return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
 });
 
-function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
+// A card skips re-rendering while nothing it shows changed (sameCard), so a letter that leaves it as it was costs it nothing.
+const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, held, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   // Two parts said across a pause show as one point (chunks.tsx).
@@ -1091,7 +1099,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length + useWaitingProposals(thread.id);
   const branches = childrenByParent.get(thread.id) ?? [];
   const isActive = active === thread.id;
-  const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
+  const collapsed = held.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
   // Your own unfinished thread is flagged; someone else's tag just says whose it is.
   const me = useMe();
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
@@ -1100,7 +1108,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
 
   const toggle = (event: React.MouseEvent) => {
-    if (searching && matches.has(thread.id)) return;
+    if (held.has(thread.id)) return;
     // Option-click opens or folds every branch under it too, as "expand …" does.
     const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
     const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
@@ -1155,7 +1163,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={held.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -1187,13 +1195,13 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
           ))}
         </div>
       )}
     </motion.section>
   );
-}
+}, sameCard);
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
  *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
