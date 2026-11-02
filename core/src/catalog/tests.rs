@@ -393,7 +393,7 @@ async fn focus_on_this_focuses_the_card_this_means() {
     // Nothing pointed or selected: the thread you're on, so nothing moves.
     let f = Fixture::new(garden());
     assert_eq!(f.say("Focus on this").await, ["view focus"]);
-    // Nothing to focus on: said, not a silent view the window can't show (Sol's review); bare "Focus" too.
+    // Nothing to focus on: said, not a silent view the window can't show (review); bare "Focus" too.
     let f = Fixture::new(World::default());
     for said in ["Let's focus on that one", "Focus"] {
         assert_eq!(f.say(said).await, ["notice Nothing on the map yet: say a thought first"], "{said}");
@@ -424,7 +424,7 @@ async fn correctable(f: &Fixture, act: impl FnOnce()) -> Vec<(u64, Option<String
 #[tokio::test]
 async fn the_window_learns_where_a_correction_starts_from() {
     // "Next one" took you to Bills; "No, I meant collapse this" undoes the move first, so "this" is Garden, and the
-    // window's mark must say so (Sol's review: it marked Bills).
+    // window's mark must say so (review: it marked Bills).
     let f = Fixture::new(garden());
     let next = correctable(&f, || f.core.add_thought("you", "Next one")).await;
     assert_eq!(next, [(JUST_BEFORE_MS, Some("T1".into()))]);
