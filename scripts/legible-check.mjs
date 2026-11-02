@@ -70,7 +70,9 @@ try {
   const point = read("App.tsx").match(/const Point = memo[\s\S]*?\n\}\);/)[0];
   assert.match(point, /<button type="button" className="said-toggle" aria-expanded=\{open\} aria-controls=\{`said-\$\{thought\.id\}`\}[^>]*>(Words said|\{differ \? "Words said" : "Why here"\})<\/button>/, "a Words said button (Why here when the words only repeat the point)");
   assert.match(point, /id=\{`said-\$\{thought\.id\}`\}/, "the words it controls carry the id");
-  assert.doesNotMatch(point, /onKeyDown/, "no key handler on the <li>: the button is the keyboard path");
+  // The button stays the screen readers' path; Enter or Space on the focused point itself does what a click does, as
+  // the README says (a11y review, 2026-11-02: Enter left it closed). Only on the point: its own buttons keep their keys.
+  assert.match(point, /onKeyDown=\{said \? \(event\) => \{ if \(togglesPoint\(\{ key: event\.key, onPoint: event\.target === event\.currentTarget \}\)\)/, "the point's own keys only");
   // A mark inside the point (Tips.tsx) keeps its own job: a tap shows its tip, not the words, and the point's title
   // doesn't add a second tip over it.
   assert.match(point, /closest\(POINT_OWN\)/, "a tap on a point's ✦ or ? shows its tip without opening the words");

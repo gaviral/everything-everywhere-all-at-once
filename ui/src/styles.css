@@ -913,3 +913,21 @@ header:has(.shortcuts[open]) { z-index: 11; }
 img.slot-picture { opacity: 0; transition: opacity .2s ease-out; }
 img.slot-picture.is-shown { opacity: 1; }
 img.slot-picture[data-instant] { transition: none; }
+
+/* The page's first Tab stop (App.tsx): off screen until focused, then above everything at the top left. */
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 20; padding: 8px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; text-decoration: none; translate: 0 -200%; }
+.skip-link:focus { translate: none; outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* A short window (200–400% zoom, a phone on its side): pinned, the header, tools and dock took 284 of 256 px at 400%
+   and left no map. The header and tools scroll away with the page; the dock keeps only the composer pinned, its cards
+   scrolling inside a dock capped at 40% of the window (scripts/a11y-check.mjs). 560 px covers 200% of 1280 × 1024
+   (512) and leaves a 600 px laptop window as it was. */
+@media (max-height: 560px) {
+  header, .map-tools { position: static; }
+  .thread, .palace-tile { scroll-margin-top: 12px; }
+  .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
+  .dock-inner { gap: 4px; }
+  .composer { position: sticky; bottom: 0; flex: none; }
+  .notice, .map-change { top: 8px; }
+  .notice ~ .map-change { top: 60px; }
+}
