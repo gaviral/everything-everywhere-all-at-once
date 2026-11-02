@@ -33,7 +33,7 @@ try {
   assert.equal(s.weighing, null);
   assert.equal(markFor(s, "T3", 1_000), null);
   assert.deepEqual(markFor(s, "T1", 1_000), { kind: "via", tag: null, title: null, deep: false });
-  assert.deepEqual(markFor(s, "T2", 1_000), { kind: "here", tag: "here", title: "Names the flight. First of 2 calls to answer, in 2.1 s", deep: true });
+  assert.deepEqual(markFor(s, "T2", 1_000), { kind: "here", tag: "here", title: "Names the flight. First good answer of 2 calls, in 2.1 s", deep: true });
 
   // The tag stays as long as noticing it and reading it take (200 words a minute), then gives way.
   assert.equal(READ_MS_PER_WORD, 300);

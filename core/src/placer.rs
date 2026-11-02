@@ -419,8 +419,8 @@ pub enum Route {
     Weighing { thought_id: String, candidates: Vec<Candidate>, lanes: usize },
     /// Placed (or set aside as filler, `skipped`): `path` runs from the top thread down to the one it landed on (a
     /// branch has its parent first), `new` when that thread was made for it. `pick` is what the model answered, and
-    /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` answered first, `ms`
-    /// after the calls went. Sent only once the changes are on the map.
+    /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` gave the first good
+    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the calls went. Sent only once the changes are on the map.
     Decided {
         thought_id: String,
         path: Vec<String>,
@@ -469,21 +469,25 @@ pub(crate) fn candidates(world: &World, thought: &Thought) -> Vec<Candidate> {
     out
 }
 
-/// The path to where `changes` placed a thought: its thread's parent first when it's a branch, then the thread.
+/// The path to where `changes` placed a thought: its thread's parent first when it's a branch, then the thread. Read
+/// against the map after they landed: a merge while the model thought moves the thought (and a branch's parent) to the
+/// thread it went into (`World::apply`), so the path names the cards it's really on. `new` when the thread was made
+/// for it.
 fn path_of(world: &World, changes: &[Change]) -> (Vec<String>, bool) {
-    let Some(id) = changes.iter().find_map(|c| match c {
+    let Some(placed) = changes.iter().find_map(|c| match c {
         Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
         _ => None,
     }) else {
         return (Vec::new(), false);
     };
     let added = changes.iter().find_map(|c| match c {
-        Change::ThreadAdded { thread } if thread.id == id => Some(thread.parent_id.clone()),
+        Change::ThreadAdded { thread } if thread.id == placed => Some(thread.parent_id.clone()),
         _ => None,
     });
-    let parent = match &added {
-        Some(parent) => parent.clone(),
-        None => world.thread(&id).and_then(|t| t.parent_id.clone()),
+    let id = world.resolve(&placed);
+    let parent = match world.thread(&id) {
+        Some(thread) => thread.parent_id.clone(),
+        None => added.clone().flatten(),
     };
     let mut path: Vec<String> = parent.map(|p| world.resolve(&p)).into_iter().collect();
     path.push(id);
@@ -573,11 +577,11 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let now = now_ms();
     let moves = !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
     let (changes, rest, rule) = settle_ruled(&world, &thought, placement, place_ms, new_thread, moves);
-    let (path, new) = path_of(&world, &changes);
-    let decided = Route::Decided {
+    // The path is filled in once the changes are on the map (`path_of`).
+    let mut decided = Route::Decided {
         thought_id: thought_id.into(),
-        path,
-        new,
+        path: Vec::new(),
+        new: false,
         skipped: changes.iter().any(|c| matches!(c, Change::ThoughtSkipped { .. })),
         pick,
         rule: rule.map(String::from),
@@ -611,6 +615,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     drop(world);
     // The ask for a new thread is spent only when the words land: placed again, they still start it.
     let landed = if new_thread { changes.clone() } else { Vec::new() };
+    let placing: Vec<Change> = changes.iter().filter(|c| matches!(c, Change::ThoughtPlaced { .. } | Change::ThreadAdded { .. })).cloned().collect();
     if !core.commit_if(|w| waiting(w) && there(w), changes) {
         let now = core.snapshot();
         if waiting(&now) && !there(&now) {
@@ -621,6 +626,9 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     }
     if new_thread {
         core.new_threads.placed(thought_id, &landed, rest.as_deref());
+    }
+    if let Route::Decided { path, new, .. } = &mut decided {
+        (*path, *new) = path_of(&core.snapshot(), &placing);
     }
     // After the changes, so the map never shows a place the thought didn't take (taken back, its thread deleted).
     core.send(ServerMsg::Route { route: decided });
@@ -744,7 +752,7 @@ fn settle_ruled(
         let mut rule = None;
         if p.action == "skip" && !clean(&p.split).is_empty() {
             p.action = "continue".into();
-            rule = Some(rules::NOT_FILLER);
+            rule = Some(rules::FILLER_UNCLEAR);
         }
         let (changes, decided) = decide_ruled(world, thought, p, place_ms, new_thread, moves);
         return (changes, None, decided.or(rule));
@@ -1005,6 +1013,8 @@ pub(crate) mod rules {
     pub const ONE_LEVEL: &str = "one level of branches";
     pub const NO_SUCH: &str = "unknown thread: stays put";
     pub const NOT_FILLER: &str = "too long to be filler";
+    pub const SAYS_DECIDED: &str = "says a decision: kept";
+    pub const FILLER_UNCLEAR: &str = "unclear what was filler";
 }
 
 /// `decide`, with the rule that put the thought somewhere other than the model's pick, if one did (`rules`).
@@ -1014,7 +1024,10 @@ fn decide_ruled(world: &World, thought: &Thought, p: Placement, place_ms: u64, n
     if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
         return (vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }], None);
     }
-    let mut rule = (p.action == "skip").then_some(rules::NOT_FILLER);
+    // Kept for one of two reasons, and the map says which: it's long, or it says a decision.
+    let mut rule = (p.action == "skip").then(|| {
+        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS { rules::NOT_FILLER } else { rules::SAYS_DECIDED }
+    });
     let now = now_ms();
     let speaker = &thought.speaker;
     let exists = |id: &str| world.thread(id).is_some();

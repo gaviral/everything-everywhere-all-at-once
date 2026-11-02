@@ -155,3 +155,63 @@ fn a_branch_landing_has_its_parent_first() {
     let (path, new) = super::path_of(&world, &changes);
     assert_eq!((path.len(), path[0].as_str(), new), (2, "T3", true));
 }
+
+/// A merge while the model thinks: the thought lands on the thread its pick went into, and so does the path the map
+/// lights, never the card the merge took away. Placed on T1 (merged into T3) it's [T3]; on T1's branch T2, [T3, T2].
+#[tokio::test]
+async fn a_merge_while_the_model_thinks_moves_the_path_too() {
+    for (pick, want) in [("T1", vec!["T3"]), ("T2", vec!["T3", "T2"])] {
+        let placement = json!({"action": "return", "thread_id": pick, "point": "The rent went up", "why": "rent"});
+        let body = json!({"choices": [{"finish_reason": "stop", "message": {"content": placement.to_string()}}]});
+        let (asked, merged) = (std::sync::Arc::new(tokio::sync::Notify::new()), std::sync::Arc::new(tokio::sync::Notify::new()));
+        let (asked_s, merged_s) = (asked.clone(), merged.clone());
+        let service = move |_: axum::Json<serde_json::Value>| {
+            let (body, asked, merged) = (body.clone(), asked_s.clone(), merged_s.clone());
+            async move {
+                asked.notify_one();
+                merged.notified().await;
+                axum::Json(body)
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+
+        let path = std::env::temp_dir().join(format!("e2a2o-route-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let core = Core { key: Some("good".into()), placer_race: 1, ..Core::test(journal, map(vec![])) };
+        let mut updates = core.updates.subscribe();
+        let id = core.keep("you", "The rent went up");
+        let merge = async {
+            asked.notified().await;
+            core.commit(vec![Change::ThreadMerged { from: "T1".into(), into: "T3".into() }]);
+            merged.notify_one();
+        };
+        let (placed, ()) = tokio::join!(super::place(&core, &id, &url, super::patience), merge);
+        placed.unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        let landed = core.snapshot().thoughts.iter().find(|t| t.id == id).and_then(|t| t.thread_id.clone());
+        assert_eq!(landed.as_deref(), want.last().copied(), "pick {pick}");
+        let mut decided = None;
+        while let Ok(out) = updates.try_recv() {
+            if let ServerMsg::Route { route: Route::Decided { path, new, .. } } = out.message {
+                decided = Some((path, new));
+            }
+        }
+        let want: Vec<String> = want.into_iter().map(Into::into).collect();
+        assert_eq!(decided, Some((want, false)), "pick {pick}");
+    }
+}
+
+/// A skip the rules keep says why it was kept: long, a decision, or a quote that cut nothing.
+#[test]
+fn a_kept_skip_says_why() {
+    let world = map(vec![]);
+    let turn = |text: &str| said("n", text, None, 5_000, true);
+    let skip = |split: &str| json!({"action": "skip", "thread_id": "T1", "split": split});
+    let ruled = |text: &str, split: &str| super::settle_ruled(&world, &turn(text), answer(skip(split)), 0, false, true).2;
+    assert_eq!(ruled("Okay, decided:", ""), Some(rules::SAYS_DECIDED));
+    assert_eq!(ruled("so anyway I was thinking about the rent and the lease and the deposit", ""), Some(rules::NOT_FILLER));
+    assert_eq!(ruled("Okay so the rent", "nothing like this"), Some(rules::FILLER_UNCLEAR));
+}

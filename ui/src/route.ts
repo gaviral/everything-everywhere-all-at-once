@@ -41,7 +41,7 @@ export function landTag(d: Decided): string {
  *  first good answer took). */
 export function raceLine(d: Decided): string {
   const secs = `${(d.ms / 1000).toFixed(1)} s`;
-  const race = d.lanes > 1 ? `First of ${d.lanes} calls to answer, in ${secs}` : `Answered in ${secs}`;
+  const race = d.lanes > 1 ? `First good answer of ${d.lanes} calls, in ${secs}` : `Answered in ${secs}`;
   return d.why ? `${d.why[0].toUpperCase()}${d.why.slice(1)}. ${race}` : race;
 }
 
@@ -107,7 +107,8 @@ export function routePlacing(now: string | null) {
   set(placingNow(state, now));
 }
 
-/** On reconnecting: the core forgets the placement it was making, so the window does too. */
+/** On reconnecting: the window clears its own route state (lit cards, landing tag). The core keeps placing; its
+ *  landing still arrives, but the candidates it named before the reconnect stay dark (they're sent once, as the calls go). */
 export function resetRoute() {
   set(EMPTY_ROUTE);
 }
