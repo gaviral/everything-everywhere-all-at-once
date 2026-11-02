@@ -22,9 +22,9 @@ globalThis.addEventListener ??= noop;
 globalThis.removeEventListener ??= noop;
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
-globalThis.WebSocket = class { static OPEN = 1; readyState = 1;
+globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
   constructor() { sockets.push(this); queueMicrotask(() => this.onopen?.()); }
-  send() {} close() {} addEventListener() {} removeEventListener() {} };
+  send(data) { this.sent.push(data); } close() {} addEventListener() {} removeEventListener() {} };
 const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;
 const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
@@ -33,7 +33,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { staysUp, upFor, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { staysUp, upFor, SHORTEST_MS, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const { readMs } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Each of these asks for something only the person can do, or says the core is gone: up until dismissed.
@@ -61,6 +61,14 @@ try {
   const long = "Did “Expand the garden” instead. Your earlier words are off the map, and the journal keeps them if you want them back later.";
   assert.equal(upFor(long), readMs(long));
   assert.ok(upFor(long) > SHORTEST_MS);
+
+  // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
+  // reach for the button (persona run 2026-11-01, friction 4: Undo was gone in 5 s, reached at ≈ 8 s).
+  for (const notice of ["Moved to Health", "Removed “Buy more stakes for the beans”", long]) {
+    assert.equal(undoUpFor(notice), Math.max(upFor(notice), slowReadMs(`${notice} Undo ⌘Z`) + slowReadMs(notice) + DECIDE_MS + REACH_MS), notice);
+    assert.ok(undoUpFor(notice) > upFor(notice), `acting on “${notice}” takes longer than reading it`);
+  }
+  assert.ok(slowReadMs("Moved to Health") > readMs("Moved to Health"), "a deadline is set for the slow reader, not the mean");
 
   // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review).
   assert.ok(!staysUp("Back to Visa was refused"));
@@ -121,7 +129,31 @@ try {
   await settle();
   assert.equal(core.notice, "Did “stop listening” instead.");
   assert.equal(core.undoId, 8);
+  // ⌘Z (or Ctrl+Z) asks the core for "undo that": the last turn, whether or not the notice is still up.
+  core.undoLast();
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
   root.unmount();
+
+  // The window: a notice with Undo gets the time to act, holds while the pointer or focus is on it, and ⌘Z / Ctrl+Z
+  // outside a field with words in it is the app's undo (the key handler skipped every modifier key before).
+  assert.match(app, /core\.undoId \? undoUpFor\(/);
+  assert.match(app, /onMouseEnter=\{\(\) => setNoticeHeld\(true\)\}/);
+  assert.match(app, /isUndoKey\(event, MAC\)[^]*?core\.undoLast\(\)/);
+  const { isUndoKey } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const key = (over) => ({ key: "z", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over });
+  assert.ok(isUndoKey(key({ metaKey: true }), true) && isUndoKey(key({ ctrlKey: true }), false));
+  assert.ok(isUndoKey(key({ key: "Z", metaKey: true }), true), "Caps Lock on");
+  assert.ok(!isUndoKey(key({ metaKey: true, shiftKey: true }), true), "⇧⌘Z is redo, which this app doesn't have");
+  assert.ok(!isUndoKey(key({ ctrlKey: true }), true), "on a Mac, Ctrl+Z isn't undo");
+  assert.ok(!isUndoKey(key({ metaKey: true }), false), "elsewhere, ⌘ is the Windows key");
+
+  // The button says what it takes back and how else to reach it.
+  const { renderToStaticMarkup } = (await import(new URL("node_modules/react-dom/server.node.js", ui))).default;
+  const { UndoButton } = await server.ssrLoadModule("/src/Undo.tsx");
+  const button = renderToStaticMarkup(React.createElement(UndoButton, { id: 3, onUndo: () => {}, what: "Moved to Health", mac: true }));
+  assert.match(button, /aria-label="Undo “Moved to Health”"/);
+  assert.match(button, />Undo <kbd[^>]*>⌘Z<\/kbd>/);
+  assert.match(button, /title="[^"]*say “undo that”/);
 
   // Every answer the window makes for a view request passes the request, so each can stand down the same way.
   const viewAnswers = app.match(/core\.showNotice\([^;]*core\.viewAsk\)/g) ?? [];

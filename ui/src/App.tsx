@@ -29,7 +29,10 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { staysUp, upFor } from "./notice-rules";
+import { isUndoKey, staysUp, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+
+/** ⌘ or Ctrl: which one Undo uses here. */
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
@@ -158,6 +161,8 @@ export default function App() {
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const [noticeFocused, setNoticeFocused] = useState(false);
+  // The pointer on the notice: on its way to Undo or ×, so the notice waits for it.
+  const [noticeHeld, setNoticeHeld] = useState(false);
   const lastNavigation = useRef(0);
   const following = useRef(false);
   useEffect(() => {
@@ -326,14 +331,16 @@ export default function App() {
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
-  useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
+  useEffect(() => { if (!core.notice) { setNoticeFocused(false); setNoticeHeld(false); } }, [core.notice]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
-    if (!core.notice || noticeFocused || core.notice === LOOKING || staysUp(core.notice)) return;
-    const timer = window.setTimeout(core.clearNotice, upFor(friendlyNotice || core.notice));
+    if (!core.notice || noticeFocused || noticeHeld || core.notice === LOOKING || staysUp(core.notice)) return;
+    // With Undo, long enough to act on it, not just read it (notice-rules.ts `undoUpFor`).
+    const shown = friendlyNotice || core.notice;
+    const timer = window.setTimeout(core.clearNotice, core.undoId ? undoUpFor(shown) : upFor(shown));
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.answerRevision, core.clearNotice, noticeFocused]);
+  }, [core.notice, core.answerRevision, core.clearNotice, core.undoId, noticeFocused, noticeHeld]);
 
   // Stop local audio when the service reports a stop or the connection drops, and tell the core,
   // so the next tap starts a fresh session.
@@ -602,6 +609,14 @@ export default function App() {
         document.querySelector<HTMLElement>(".shortcuts summary")?.focus();
         return;
       }
+      // ⌘Z / Ctrl+Z: "undo that", the last turn, with or without the notice up. A field with words in it keeps the
+      // browser's own undo of typing; the empty composer after sending a thought doesn't (persona run 2026-11-01).
+      const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+      if (isUndoKey(event, MAC) && (!field || (target === composerRef.current && !composerRef.current.value))) {
+        event.preventDefault();
+        core.undoLast();
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
@@ -622,7 +637,7 @@ export default function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [world.threads, activePath, hasAway, away.dismiss]);
+  }, [world.threads, activePath, hasAway, away.dismiss, core.undoLast]);
 
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
@@ -794,6 +809,7 @@ export default function App() {
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
           <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
+          <div>{undoKeyLabel(MAC)} · undoes your last turn, as “Scratch that” does, after its notice has gone too</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
@@ -817,12 +833,14 @@ export default function App() {
             className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
+            onMouseEnter={() => setNoticeHeld(true)}
+            onMouseLeave={() => setNoticeHeld(false)}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
-            <UndoButton id={core.undoId} onUndo={core.undo} />
+            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}

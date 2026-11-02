@@ -942,6 +942,15 @@ pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
     }
 }
 
+/// The Undo key (⌘Z / Ctrl+Z): "undo that" without words. A new turn as the words would be (a search still looking
+/// stops, a late safety-net answer is dropped), and the same take-back, within the same `JUST_BEFORE_MS`.
+pub fn undo_last(core: &Arc<Core>, speaker: &str) {
+    core.touch();
+    crate::find::stop(core, speaker);
+    newer(core, speaker);
+    correct(core, speaker, "undo that", false);
+}
+
 const STALE: &str = "That can't be undone any more: something newer happened";
 
 /// Whether the map moved past what `undo` would take back: a moved thought moved again or merged back where it came
