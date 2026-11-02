@@ -1741,7 +1741,7 @@ mod tests {
                 let (journal, _) = crate::world::Journal::open(&dir.join("journal.jsonl")).unwrap();
                 let core = Core {
                     key: Some(key.clone()),
-                    placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
+                    placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
                     ..Core::test(journal, world.clone())
                 };
                 // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.

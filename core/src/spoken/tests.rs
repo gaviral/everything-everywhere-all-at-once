@@ -54,6 +54,11 @@ fn add_to_x_cuts_at_the_last_to_and_names_new_words() {
     for none in ["Put this in perspective", "Add it to the list", "Put that in the shopping list", "Save money on groceries", "I need to add milk to the list", "Add milk"] {
         assert_eq!(filing(none), None, "{none}");
     }
+    // Nor is any thought a move points at ("put my last thought in …"): moves.rs's to move, not new words to file.
+    for pointing in crate::moves::POINTING {
+        let said = format!("Put {pointing} in the pottery thread");
+        assert_eq!(filing(&said), None, "{said}");
+    }
 }
 
 #[test]

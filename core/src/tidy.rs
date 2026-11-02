@@ -3,7 +3,9 @@
 //! - anything else is a proposal on the card: Rename or Merge applies it, × keeps things as they are;
 //! - a merge applied can be undone exactly: the thread comes back with what it held (`Unmerge`);
 //! - a title the person chose (a rename of theirs, an AI rename they undid, a rename they turned down) is theirs:
-//!   the refiner leaves it alone.
+//!   the refiner leaves it alone;
+//! - a thought the person moved stays where they put it: an undone merge leaves it there (`World::moved`), and the
+//!   refiner never merges the two threads the move set apart, nor keeps a card asking to (`follow`).
 
 use crate::protocol::ServerMsg;
 use crate::world::{Change, ItemStatus, Thread, World};
@@ -135,6 +137,19 @@ pub fn follow(world: &mut World, change: &Change) {
                 world.titled.insert(thread_id.clone());
             }
             for p in world.proposals.iter_mut().filter(|p| p.kind == Kind::Rename && p.thread_id == *thread_id && p.status == ItemStatus::New) {
+                p.status = ItemStatus::Done;
+            }
+        }
+        // A thought the person moved between two threads says they're two topics: a merge of the two still waiting
+        // on a card is past (done), as a rename is once the person titles the thread.
+        Change::ThoughtMoved { thread_id, from, undo: false, .. } => {
+            let (a, b) = (world.resolve(from), world.resolve(thread_id));
+            let pair = |p: &Proposal| {
+                let (x, y) = (world.resolve(&p.thread_id), world.resolve(&p.into));
+                (x == a && y == b) || (x == b && y == a)
+            };
+            let settled: Vec<String> = world.proposals.iter().filter(|p| p.kind == Kind::Merge && p.status == ItemStatus::New && pair(p)).map(|p| p.id.clone()).collect();
+            for p in world.proposals.iter_mut().filter(|p| settled.contains(&p.id)) {
                 p.status = ItemStatus::Done;
             }
         }

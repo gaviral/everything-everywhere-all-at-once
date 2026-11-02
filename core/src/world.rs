@@ -162,6 +162,10 @@ pub struct World {
     /// Merged thread id → what its merge moved, to undo it exactly.
     #[serde(default, skip_serializing)]
     pub unmerge: std::collections::HashMap<String, crate::tidy::Unmerge>,
+    /// The person's moves of thoughts, oldest first, as (thought, from, to) with the ids they named (moves.rs). Two
+    /// threads a move set apart are never merged by the refiner (`apart`); an undone move takes its record back.
+    #[serde(default, skip_serializing)]
+    pub moves: Vec<(String, String, String)>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -213,6 +217,16 @@ pub enum Change {
     ThreadRetitled { thread_id: String, title: String, was: String },
     /// A title the person chose (a proposal's Rename, or an AI rename undone): the refiner leaves it alone (tidy.rs).
     TitleChosen { thread_id: String, title: String },
+    /// The person moved a thought to another thread (moves.rs), said or clicked: it stays where they put it, and the
+    /// refiner never merges `from` and `thread_id` (`World::apart`). `undo`: a move of theirs taken back (then
+    /// `thread_id` is where it was, `from` where they had put it), which drops what that move set apart.
+    ThoughtMoved {
+        thought_id: String,
+        thread_id: String,
+        from: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        undo: bool,
+    },
     /// A merge undone: the thread comes back with what it held (tidy.rs).
     ThreadUnmerged { unmerge: crate::tidy::Unmerge },
     /// A rename or merge the refiner wasn't sure of, proposed on the card (tidy.rs).
@@ -417,6 +431,7 @@ impl World {
                 }
             }
             Change::ThoughtCorrected { thought_id, accept, with } => self.correct(thought_id, *accept, with),
+            Change::ThoughtMoved { thought_id, thread_id, from, undo } => self.moved(thought_id, thread_id, from, *undo),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
                     self.suggestions.push(suggestion.clone());
@@ -494,6 +509,43 @@ impl World {
         }
         self.threads.retain(|t| t.id != from);
         self.merged.insert(from.into(), into.into());
+    }
+
+    /// A person's move (`Change::ThoughtMoved`): the thought goes to `to` (or the thread it was merged into), and only
+    /// to a thread on the map. An undone merge brings back what that merge moved, never a thought the person moved
+    /// since; one moved back to a thread merged away since comes back with that thread if its merge is undone.
+    fn moved(&mut self, thought_id: &str, to: &str, from: &str, undo: bool) {
+        let on = self.resolve(to);
+        if self.thread(&on).is_none() {
+            return;
+        }
+        let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
+        t.thread_id = Some(on.clone());
+        for u in self.unmerge.values_mut() {
+            u.thoughts.retain(|id| id != thought_id);
+        }
+        if on != to {
+            if let Some(u) = self.unmerge.get_mut(to) {
+                u.thoughts.push(thought_id.into());
+            }
+        }
+        if undo {
+            if let Some(i) = self.moves.iter().rposition(|(id, f, t)| id == thought_id && f == to && t == from) {
+                self.moves.remove(i);
+            }
+        } else {
+            self.moves.push((thought_id.into(), from.into(), to.into()));
+        }
+    }
+
+    /// Whether the person set threads `a` and `b` apart by moving a thought from one to the other: the refiner never
+    /// merges them, nor proposes to (refiner.rs). Followed through merges.
+    pub fn apart(&self, a: &str, b: &str) -> bool {
+        let (a, b) = (self.resolve(a), self.resolve(b));
+        a != b && self.moves.iter().any(|(_, f, t)| {
+            let (f, t) = (self.resolve(f), self.resolve(t));
+            (f == a && t == b) || (f == b && t == a)
+        })
     }
 
     /// A "Did you mean …?" answered: see `Change::ThoughtCorrected`.
@@ -1128,6 +1180,9 @@ mod tests {
             },
             Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() },
             Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() },
+            Change::ThoughtMoved { thought_id: "b".into(), thread_id: "T3".into(), from: "T2".into(), undo: false },
+            Change::ThoughtMoved { thought_id: "b".into(), thread_id: "T2".into(), from: "T3".into(), undo: true },
+            Change::ThoughtMoved { thought_id: "a".into(), thread_id: "T3".into(), from: "T1".into(), undo: false },
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
@@ -1198,6 +1253,7 @@ mod tests {
                 | Change::TagRemoved { .. }
                 | Change::ThreadPicture { .. }
                 | Change::ThoughtCorrected { .. }
+                | Change::ThoughtMoved { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
                 | Change::ThoughtNoted { .. }
@@ -1216,7 +1272,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 35, "one of each kind of change");
+        assert_eq!(kinds.len(), 36, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1254,6 +1310,9 @@ mod tests {
         assert_eq!(w.thoughts[0].text, "ask Muse Spark about a", "yes to Did you mean");
         assert_eq!(w.thoughts[1].text, "ask muse bark about b", "no to a sure fix puts the words back");
         assert!(!w.thoughts[0].complete && w.thoughts[1].complete);
+        assert_eq!(w.thoughts[0].thread_id.as_deref(), Some("T3"), "a person's move holds on replay");
+        assert_eq!(w.moves, [("a".to_string(), "T1".to_string(), "T3".to_string())], "a move undone takes its record back");
+        assert!(w.apart("T1", "T3") && w.apart("T2", "T1") && !w.apart("T1", "T4"), "set apart, followed through a merge");
         assert_eq!((w.suggestions[0].thread_id.as_str(), w.actions[0].thread_id.as_str()), ("T3", "T3"));
         assert_eq!((w.actions[0].status, w.actions[0].done_ms), (super::ItemStatus::Done, Some(300)));
         assert_eq!(w.apps.len(), 1);

@@ -96,7 +96,7 @@ pub fn kind(text: &str) -> Option<Act> {
 }
 
 /// `text` after the words that lead into a request (`lead_in`), without the marks and "please" that may end it.
-fn plain(text: &str) -> &str {
+pub(crate) fn plain(text: &str) -> &str {
     let mut t = crate::lead_in(text).trim_start_matches(|c: char| !c.is_alphanumeric()).trim_end();
     loop {
         let before = t.len();
@@ -115,7 +115,7 @@ fn plain(text: &str) -> &str {
 }
 
 /// The first letter in capitals, as a point reads ("milk and eggs" → "Milk and eggs").
-fn capital(text: &str) -> String {
+pub(crate) fn capital(text: &str) -> String {
     let text = text.trim();
     let mut chars = text.chars();
     chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
@@ -334,12 +334,12 @@ fn as_said(text: &str, part: &str) -> String {
 /// Words that name a kind of place rather than which one ("the shopping list", "the garden thread").
 const CONTAINERS: [&str; 12] = ["list", "thread", "topic", "card", "notes", "page", "board", "folder", "one", "branch", "stuff", "section"];
 
-fn kinds() -> HashSet<String> {
+pub(crate) fn kinds() -> HashSet<String> {
     CONTAINERS.iter().map(|c| find::stem(c)).collect()
 }
 
 /// A name's words, without the small words and the kind of place: "the shopping list" → "shop".
-fn name_words(name: &str) -> HashSet<String> {
+pub(crate) fn name_words(name: &str) -> HashSet<String> {
     let kinds = kinds();
     find::words(name).into_iter().filter(|w| !kinds.contains(w)).collect()
 }
@@ -428,7 +428,8 @@ fn descendants(world: &World, id: &str) -> Vec<String> {
 /// "throw", which mostly start errands ("Save money on groceries", "File taxes in April").
 const VERBS: [&str; 5] = ["add", "put", "jot down", "write down", "note down"];
 const INTO: [&str; 6] = ["to", "in", "into", "on", "onto", "under"];
-/// A thought these name is on the map already: moving one is the catalog's job (plan step 15), so they stay thoughts.
+/// A thought these name is on the map already: moving one is moves.rs's job ("put that in the bills thread"), as is
+/// one its `POINTING` names ("put my last thought in …").
 const POINTING: [&str; 14] =
     ["this", "that", "it", "these", "those", "them", "this one", "that one", "this thought", "that thought", "everything", "all that", "all of this", "all of that"];
 
@@ -442,7 +443,7 @@ fn filing(text: &str) -> Option<(&str, &str)> {
     let (body, lower) = (&t[verb.len() + 1..], &l[verb.len() + 1..]);
     let named = |what: &str| {
         let words = crate::words(what).join(" ");
-        !words.is_empty() && !POINTING.contains(&words.as_str())
+        !words.is_empty() && !POINTING.contains(&words.as_str()) && !crate::moves::POINTING.contains(&words.as_str())
     };
     if let Some(into) = INTO.iter().find(|p| lower.starts_with(&format!("{p} "))) {
         let rest = &body[into.len() + 1..];
@@ -456,7 +457,7 @@ fn filing(text: &str) -> Option<(&str, &str)> {
 }
 
 #[derive(Debug, PartialEq)]
-enum Destination {
+pub(crate) enum Destination {
     Thread(String),
     /// No thread by that name, said as a kind of place ("the packing list"): a new thread with that title.
     New(String),
@@ -468,7 +469,7 @@ enum Destination {
 /// and no thread sharing a word with it, a new thread titled X. "The list" alone is the latest thread with "list" in
 /// its title. Anything less sure is the placer's to judge, as a thought: "Put the kids in the car" stays one unless
 /// a thread is titled "Car".
-fn destination(world: &World, place: &str) -> Destination {
+pub(crate) fn destination(world: &World, place: &str) -> Destination {
     let mut place = place.trim();
     for article in ["the ", "my ", "our ", "a ", "an "] {
         // `get`: "日本語" has no char boundary at 4, where "the " would end.
@@ -526,7 +527,7 @@ enum Landing {
 /// A title for a thread "new thread about …" starts, until the refiner finds a better one: its words without the
 /// sounds that lead in and a leading "the", at most 5, as the placer's own fallback ("The garden shed" → "Garden
 /// shed").
-fn title_for(first: &str) -> String {
+pub(crate) fn title_for(first: &str) -> String {
     let words = crate::lead(first, false).trim_matches(|c: char| !c.is_alphanumeric());
     let mut words: Vec<&str> = words.split_whitespace().collect();
     if words.len() > 1 && ["the", "my", "our", "a", "an"].contains(&words[0].to_ascii_lowercase().as_str()) {
@@ -543,7 +544,7 @@ fn title_for(first: &str) -> String {
 /// An id for a thread the pack starts, apart from the placer's "T…": a placement still waiting on the model counts
 /// from the map it was asked with, so "T" + the next number could be the one it's about to make, and the thought it
 /// places would land in this thread (review of 88ace4d). Imports keep "I…" apart the same way.
-fn fresh_id(world: &World) -> String {
+pub(crate) fn fresh_id(world: &World) -> String {
     let mut n = world.threads.len() + world.merged.len() + 1;
     loop {
         let id = format!("S{n}");
