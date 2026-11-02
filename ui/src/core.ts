@@ -63,6 +63,8 @@ export function firstLetter(title: string): string {
 }
 
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
+/** An idea's text or a task's title, its day, and where it stands: what the refiner made it, or what it was (`item_refined`). */
+export type ItemState = { status: ItemStatus; text: string; when: string };
 
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
@@ -165,6 +167,9 @@ type Change =
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  // The refiner brought a waiting idea or task in line with something said later; restored is its Undo (refiner.rs).
+  | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string }
+  | { type: "item_restored"; id: string; to: ItemState }
   | { type: "tag_suggested"; thread_id: string; tag: string }
   | { type: "tag_kept"; thread_id: string; tag: string }
   | { type: "tag_removed"; thread_id: string; tag: string }
@@ -370,6 +375,16 @@ export function apply(world: World, raw: Change): World {
         : { ...world, suggestions: [...world.suggestions, c.suggestion] };
     case "action_proposed":
       return world.actions.some((a) => a.id === c.action.id) ? world : { ...world, actions: [...world.actions, c.action] };
+    case "item_refined":
+    case "item_restored": {
+      // As the core's `World::set_item`: the same row, with its new words, day or status.
+      const to = c.type === "item_refined" ? c.now : c.to;
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: to.status, text: to.text } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: to.status, title: to.text, when: to.when } : a)),
+      };
+    }
     case "item_status":
       return {
         ...world,
@@ -809,6 +824,8 @@ export function useCore(speaker?: string) {
     tidy: useCallback((id: string, apply: boolean) => sendOrWarn(JSON.stringify({ type: "tidy", id, apply })), [sendOrWarn]),
     // Newest first, so each puts back the title or thread from before it.
     untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
+    // The Undo on a note about ideas or tasks the AI withdrew or corrected: each as it was, newest first.
+    restore: (ids: string[]) => [...ids].reverse().forEach((id) => sendOrWarn(JSON.stringify({ type: "restore", id }))),
     hideMapChange: useCallback(() => setMapChange(null), []),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"

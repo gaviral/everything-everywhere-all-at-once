@@ -830,8 +830,8 @@ export default function App() {
 
       {core.mapChange && (
         <div className="map-change">
-          {core.mapChange.ai && <span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span>} {core.mapChange.text}
-          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); core.hideMapChange(); }}>Undo</button>}
+          {core.mapChange.ai && <span aria-hidden="true" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦</span>} {core.mapChange.text}
+          {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}

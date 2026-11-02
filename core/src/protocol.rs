@@ -127,6 +127,8 @@ pub enum ClientMsg {
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
     Untidy { kind: crate::tidy::Kind, thread_id: String },
+    /// The Undo on the note about an idea or task the refiner withdrew or corrected: it is as it was (refiner.rs).
+    Restore { id: String },
     /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
     /// (moves.rs).
     Move {

@@ -1,7 +1,7 @@
 // The refiner's renames and merges as the window shows them (core/src/tidy.rs): a rename it was sure of lands with a
 // note and Undo; anything else waits on its card as a proposal (Rename or Merge applies it, × keeps things as they
 // are); a merge applied can be undone from its note too.
-import type { ItemStatus, Thread, World } from "./core";
+import type { ItemState, ItemStatus, Thread, World } from "./core";
 
 export interface Proposal {
   id: string;
@@ -90,17 +90,48 @@ export function settle(world: World, kind: Proposal["kind"] | null, thread: stri
 /** What one Undo takes back. */
 export type TidyUndo = { kind: Proposal["kind"]; thread_id: string };
 
-/** The note a change gets above the map, and what its Undo takes back; `ai` when the AI did it on its own (✦), and
- * `renamed` the AI's renames it tells of ([was, title]). */
-export type TidyNote = { text: string; ai: boolean; undo?: TidyUndo[]; renamed?: [string, string][] };
+/** The note a change gets above the map, and what its Undo takes back; `ai` when the AI did it on its own (✦),
+ * `renamed` the AI's renames it tells of ([was, title]), and `refined` the ideas and tasks it withdrew or corrected
+ * (`restore`: their ids, which Undo puts back). */
+export type TidyNote = { text: string; ai: boolean; undo?: TidyUndo[]; renamed?: [string, string][]; restore?: string[]; refined?: Refined[] };
 
-/** Renames by one refiner pass arrive one by one: while a note of them is up, the next joins it, so every one keeps
- * its Undo (one Undo takes them all back). Any other note replaces what was up. */
+/** An idea or task the refiner brought in line with something said later: what it was, what it became, and why. */
+export type Refined = { was: ItemState; now: ItemState; why: string };
+
+/** A refiner pass's renames and corrections arrive one by one: while a note of them is up, the next joins it, so
+ * every one keeps its Undo (one Undo takes them all back). Any other note replaces what was up. */
 export function joinNotes(shown: TidyNote | null, note: TidyNote): TidyNote {
-  if (!shown?.renamed || !note.renamed) return note;
-  const renamed = [...shown.renamed, ...note.renamed];
-  const undo = [...(shown.undo ?? []), ...(note.undo ?? [])].filter((u, i, all) => all.findIndex((x) => x.thread_id === u.thread_id) === i);
-  return { text: renamedText(renamed), ai: true, undo, renamed };
+  const ofPass = (n: TidyNote | null) => !!(n?.renamed || n?.refined);
+  if (!ofPass(shown) || !ofPass(note)) return note;
+  const renamed = [...(shown!.renamed ?? []), ...(note.renamed ?? [])];
+  const refined = [...(shown!.refined ?? []), ...(note.refined ?? [])];
+  const undo = [...(shown!.undo ?? []), ...(note.undo ?? [])].filter((u, i, all) => all.findIndex((x) => x.thread_id === u.thread_id) === i);
+  const restore = [...new Set([...(shown!.restore ?? []), ...(note.restore ?? [])])];
+  if (!refined.length) return { text: renamedText(renamed), ai: true, undo, renamed };
+  const text = [renamed.length ? renamedText(renamed) : "", refinedText(refined)].filter(Boolean).join(" · ");
+  return { text, ai: true, ...(undo.length ? { undo } : {}), ...(renamed.length ? { renamed } : {}), restore, refined };
+}
+
+/** A task's day as its row shows it ("Wed, Nov 11"). */
+function shownDay(when: string): string {
+  const [y, m, d] = when.split("-").map(Number);
+  return when ? new Date(y, m - 1, d, 9).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "no day";
+}
+
+/** What happened to one item, in a few words. */
+function refinedWords({ was, now }: Refined): string {
+  if (now.status === "dismissed") return `took back “${was.text}”`;
+  if (now.text === was.text) return `moved “${was.text}” to ${shownDay(now.when)}`;
+  return `changed “${was.text}” to “${now.text}”${now.when !== was.when ? `, ${shownDay(now.when)}` : ""}`;
+}
+
+/** One is said with its reason (the words that changed it); two without; more by their old words only, so the note
+ * stays on one line of a phone. */
+function refinedText(refined: Refined[]): string {
+  if (refined.length === 1) return `AI ${refinedWords(refined[0])}${refined[0].why ? `: ${refined[0].why}` : ""}`;
+  if (refined.length === 2) return `AI ${refinedWords(refined[0])} and ${refinedWords(refined[1])}`;
+  const old = refined.map((r) => `“${r.was.text}”`);
+  return `AI updated ${refined.length} ideas and tasks to what you said: ${old.slice(0, -1).join(", ")} and ${old[old.length - 1]}`;
 }
 
 /** Two renames are said in full; more would run past a phone's width, so only their new titles are. */
@@ -112,7 +143,7 @@ function renamedText(renamed: [string, string][]): string {
 }
 
 export function tidyNote(world: World, change: Change): TidyNote | null {
-  const c = change as TidyChange | { type: "thread_merged"; from: string; into: string };
+  const c = change as TidyChange | { type: "thread_merged"; from: string; into: string } | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string };
   const title = (id: string) => world.threads.find((t) => t.id === resolve(world, id))?.title;
   switch (c.type) {
     case "thread_retitled": {
@@ -129,6 +160,15 @@ export function tidyNote(world: World, change: Change): TidyNote | null {
     }
     case "thread_unmerged":
       return { text: `Put back “${c.unmerge.thread.title}”`, ai: false };
+    case "item_refined": {
+      // Said only for an item on the map (a replayed or repeated one says nothing).
+      const idea = world.suggestions.find((s) => s.id === c.id);
+      const task = world.actions.find((a) => a.id === c.id);
+      const shown = idea ? { status: idea.status, text: idea.text, when: "" } : task ? { status: task.status, text: task.title, when: task.when } : null;
+      if (!shown || shown.status !== c.was.status || shown.text !== c.was.text || shown.when !== c.was.when) return null;
+      const refined: Refined[] = [{ was: c.was, now: c.now, why: c.why.trim() }];
+      return { text: refinedText(refined), ai: true, restore: [c.id], refined };
+    }
     default:
       return null;
   }

@@ -620,6 +620,22 @@ mod tests {
     }
 
     #[test]
+    fn a_task_the_refiner_moved_or_withdrew_moves_or_leaves_in_the_recap() {
+        use crate::world::ItemState;
+        let now = crate::now_ms();
+        let mut world = sample(now);
+        world.actions.push(Action { id: "a".into(), thread_id: "T1".into(), kind: "event".into(), title: "Midterm".into(), when: "2026-11-10".into(), status: ItemStatus::New, done_ms: None });
+        let state = |status, when: &str| ItemState { status, text: "Midterm".into(), when: when.into() };
+        let before = slice(&world, Period::Today, now);
+        world.apply(&Change::ItemRefined { id: "a".into(), now: state(ItemStatus::New, "2026-11-11"), was: state(ItemStatus::New, "2026-11-10"), why: "Wednesday".into() });
+        let moved = slice(&world, Period::Today, now);
+        assert_eq!(moved.actions[0].when, "2026-11-11");
+        assert_ne!(before.key(), moved.key(), "a saved recap with the old day isn't reused");
+        world.apply(&Change::ItemRefined { id: "a".into(), now: state(ItemStatus::Dismissed, "2026-11-11"), was: state(ItemStatus::New, "2026-11-11"), why: "cancelled".into() });
+        assert!(slice(&world, Period::Today, now).actions.is_empty());
+    }
+
+    #[test]
     fn cache_ignores_the_clock_but_tracks_new_thoughts_corrections_and_approval() {
         let now = crate::now_ms();
         let mut world = sample(now);

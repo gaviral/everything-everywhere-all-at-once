@@ -105,6 +105,17 @@ pub struct Suggestion {
     pub status: ItemStatus,
 }
 
+/// What an idea or task says and where it stands: what the refiner made it, or what it was before (`Change::ItemRefined`).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ItemState {
+    pub status: ItemStatus,
+    /// An idea's text, or a task's title.
+    pub text: String,
+    /// A task's day (YYYY-MM-DD), or empty.
+    #[serde(default)]
+    pub when: String,
+}
+
 /// A task or event the talk decided on; waits for approval before it touches an app.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Action {
@@ -170,6 +181,13 @@ pub struct World {
     /// threads a move set apart are never merged by the refiner (`apart`); an undone move takes its record back.
     #[serde(default, skip_serializing)]
     pub moves: Vec<(String, String, String)>,
+    /// Ideas and tasks the refiner withdrew or corrected, with what its latest change made each (`now`) and what it
+    /// was before (`was`), for Undo (refiner.rs `refine`).
+    #[serde(default, skip_serializing)]
+    pub refined: std::collections::HashMap<String, (ItemState, ItemState)>,
+    /// Ideas and tasks the person put back after the refiner changed them: theirs now, never changed by it again.
+    #[serde(default, skip_serializing)]
+    pub restored: std::collections::HashSet<String>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -238,6 +256,12 @@ pub enum Change {
     SuggestionAdded { suggestion: Suggestion },
     ActionProposed { action: Action },
     ItemStatus { id: String, status: ItemStatus, done_ms: Option<u64> },
+    /// The refiner brought a waiting idea or task in line with something said after it (refiner.rs `refine`): `now`
+    /// is what it became (dismissed when cancelled, done or no longer true; else a new day or wording), `was` what
+    /// it was, for Undo, and `why` the later words in short ("conference cancelled").
+    ItemRefined { id: String, now: ItemState, was: ItemState, why: String },
+    /// That change's Undo: the idea or task is `to` again, and the refiner leaves it alone after.
+    ItemRestored { id: String, to: ItemState },
     TagSuggested { thread_id: String, tag: String },
     TagKept { thread_id: String, tag: String },
     TagRemoved { thread_id: String, tag: String },
@@ -298,6 +322,25 @@ pub enum Change {
 }
 
 impl World {
+    /// Sets an idea's or a task's words, day and status; false when there's no such item.
+    fn set_item(&mut self, id: &str, to: &ItemState) -> bool {
+        if let Some(s) = self.suggestions.iter_mut().find(|s| s.id == id) {
+            (s.status, s.text) = (to.status, to.text.clone());
+            return true;
+        }
+        if let Some(a) = self.actions.iter_mut().find(|a| a.id == id) {
+            (a.status, a.title, a.when) = (to.status, to.text.clone(), to.when.clone());
+            return true;
+        }
+        false
+    }
+
+    /// An idea's or a task's state now, if it exists.
+    pub fn item_state(&self, id: &str) -> Option<ItemState> {
+        let idea = self.suggestions.iter().find(|s| s.id == id).map(|s| ItemState { status: s.status, text: s.text.clone(), when: String::new() });
+        idea.or_else(|| self.actions.iter().find(|a| a.id == id).map(|a| ItemState { status: a.status, text: a.title.clone(), when: a.when.clone() }))
+    }
+
     /// Follows merges, so a change aimed at a merged thread lands on its successor.
     /// At most one hop per merge, so a corrupt journal with a cycle can't loop forever.
     pub fn resolve(&self, id: &str) -> String {
@@ -373,6 +416,18 @@ impl World {
                 }
             }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
+            Change::ItemRefined { id, now, was, .. } => {
+                if self.set_item(id, now) {
+                    // The latest change's: its Undo puts back what the person saw just before it.
+                    self.refined.insert(id.clone(), (now.clone(), was.clone()));
+                }
+            }
+            Change::ItemRestored { id, to } => {
+                if self.set_item(id, to) {
+                    self.refined.remove(id);
+                    self.restored.insert(id.clone());
+                }
+            }
             Change::MessagesRead { at_ms, keys } => {
                 self.read_ms.extend(at_ms);
                 self.read_keys.extend(keys.iter().cloned());
@@ -1168,6 +1223,16 @@ mod tests {
                 },
             },
             Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
+            Change::ItemRefined {
+                id: "sg-1".into(),
+                now: super::ItemState { status: super::ItemStatus::New, text: "Ask Sam and Ana".into(), when: String::new() },
+                was: super::ItemState { status: super::ItemStatus::New, text: "Ask Sam".into(), when: String::new() },
+                why: "Ana joins".into(),
+            },
+            Change::ItemRestored {
+                id: "sg-1".into(),
+                to: super::ItemState { status: super::ItemStatus::New, text: "Ask Sam".into(), when: String::new() },
+            },
             Change::TidyProposed {
                 proposal: crate::tidy::Proposal {
                     id: "tp-1".into(),
@@ -1266,6 +1331,8 @@ mod tests {
                 | Change::SuggestionAdded { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
+                | Change::ItemRefined { .. }
+                | Change::ItemRestored { .. }
                 | Change::TagSuggested { .. }
                 | Change::TagKept { .. }
                 | Change::TagRemoved { .. }
@@ -1290,7 +1357,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 36, "one of each kind of change");
+        assert_eq!(kinds.len(), 38, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1333,6 +1400,7 @@ mod tests {
         assert!(w.apart("T1", "T3") && w.apart("T2", "T1") && !w.apart("T1", "T4"), "set apart, followed through a merge");
         assert_eq!((w.suggestions[0].thread_id.as_str(), w.actions[0].thread_id.as_str()), ("T3", "T3"));
         assert_eq!((w.actions[0].status, w.actions[0].done_ms), (super::ItemStatus::Done, Some(300)));
+        assert!(w.suggestions[0].text == "Ask Sam" && w.restored.contains("sg-1") && w.refined.is_empty(), "an AI correction undone");
         assert_eq!(w.apps.len(), 1);
         assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}, crate::apps::Publisher::Card { .. }]) && !w.apps[0].enabled);
         assert!(w.apps[0].purpose.contains("tune"), "the purpose says what it does");

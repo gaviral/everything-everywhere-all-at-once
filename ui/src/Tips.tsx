@@ -18,6 +18,7 @@ export const TIPS = {
   guess: "The AI thinks a word was misheard. Yes swaps in its guess; No keeps what was heard.",
   unclear: (heard: string) => `Might be misheard: “${heard}”.`,
   mapChange: "The AI renamed this on its own, in your words. Undo puts the old title back; × hides this note.",
+  mapRefined: "The AI updated this to match what you said later. Undo puts it back as it was; × hides this note.",
   tidyRename: "The AI isn't sure this title is better, so it asks. Rename applies it; × keeps yours.",
   tidyMerge: "The AI thinks these are one topic, so it asks. Merge joins them, with Undo after; × keeps them apart.",
   explanation: "AI explanation of the words you selected. Off? notes one that misses the point.",
