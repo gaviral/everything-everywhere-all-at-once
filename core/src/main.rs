@@ -184,10 +184,14 @@ impl Core {
             self.move_to(speaker, &id);
             return;
         }
-        // Nothing else to go back to: every point of theirs is on the thread they're on. Their latest, by when it
-        // was said (a split turn's rest, said at the same time, comes later in the list).
+        // Nothing to go back to: they're where they were. Their newest point on the thread they're on, else the
+        // newest anyone made there, else their latest anywhere, by when it was said (a split turn's rest, said at the
+        // same time, comes later in the list).
         let now = now_ms();
-        let latest = world.thoughts.iter().filter(|t| t.placed && t.speaker == speaker).max_by_key(|t| t.said_at(now));
+        let newest = |keep: &dyn Fn(&Thought) -> bool| world.thoughts.iter().filter(|t| t.placed && keep(t)).max_by_key(|t| t.said_at(now));
+        let here = world.active_by.get(speaker).map(|id| world.resolve(id));
+        let on_here = |t: &Thought| here.is_some() && t.thread_id.as_deref().map(|id| world.resolve(id)) == here;
+        let latest = newest(&|t| t.speaker == speaker && on_here(t)).or_else(|| newest(&on_here)).or_else(|| newest(&|t| t.speaker == speaker));
         match latest.and_then(|t| Some((t, world.thread(&world.resolve(t.thread_id.as_deref()?))?))) {
             Some((thought, thread)) => self.send_to(
                 speaker,
@@ -626,10 +630,15 @@ fn starts(text: &str) -> Vec<usize> {
 
 /// Where "where was I?" takes a speaker: where their last line trailed off, even the thread they're on (that's
 /// where they left off; moving them away would also keep it from being marked unfinished when they move on);
-/// else the thread they most recently dropped; else the last other one they spoke on. Never the other
+/// else the thread they most recently dropped; else back from a detour: one line said away from where they were
+/// ("sorry, Leo spilled juice") goes back to where they were, and a thread they went to without speaking ("next
+/// one") goes back to where they last spoke. Otherwise nowhere: they're where they were ("this" with nothing
+/// pointed at, catalog.rs `this`), and `go_back` shows where on it: two lines on the thread they're on is staying,
+/// not a detour, and back from one already, asking again doesn't send them away again. Not the card they point at:
+/// the question has no pointing word, and what you look at is as often what took you away. Never the other
 /// person's: in a room each has their own way back.
 fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
-    let current = world.active_by.get(speaker);
+    let current = world.active_by.get(speaker).map(|id| world.resolve(id));
     // Newest first by when it was said (see `Thought::said_at`). Reversed first, so the stable sort keeps
     // a split turn's rest (same time) ahead of its first part.
     let mut theirs: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker).collect();
@@ -643,7 +652,19 @@ fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
             .max_by_key(|t| t.touched_ms)
             .map(|t| t.id.clone())
     };
-    trailed_off.or_else(dropped).or_else(|| theirs.iter().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
+    let thread = |t: &Thought| t.thread_id.as_deref().map(|id| world.resolve(id));
+    let detour = || {
+        // Where their newest line is, how many lines in a row they said there, and where they spoke before that.
+        let last = theirs.first().and_then(|t| thread(t))?;
+        let run = theirs.iter().take_while(|t| thread(t).as_ref() == Some(&last)).count();
+        let before = theirs.iter().filter_map(|t| thread(t)).find(|id| *id != last);
+        match &current {
+            Some(here) if *here == last => (run == 1).then_some(before).flatten(),
+            Some(here) if run == 1 && before.as_ref() == Some(here) => None,
+            _ => Some(last),
+        }
+    };
+    trailed_off.or_else(dropped).or_else(detour)
 }
 
 /// Why "where was I?", "next one" or "last one" has nowhere to go: an empty map, or nothing of the speaker's on it
@@ -1797,14 +1818,15 @@ mod tests {
     #[tokio::test]
     async fn every_documented_request_acts_alone_and_after_each_lead_in() {
         let now = super::now_ms();
-        // Two threads you spoke on, you on the first; one point to find.
+        // Two threads you spoke on, you on the second after one line there (so "where was I?" goes back); one point
+        // to find.
         let world = || World {
             threads: vec![thread("Garden", 1, ""), thread("Bills", 2, "")],
             thoughts: vec![
                 Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 120_000) },
                 Thought { point: "The electric bill is due Friday".into(), ..said("b", "you", "Bills", now - 60_000) },
             ],
-            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            active_by: HashMap::from([("you".into(), "Bills".into())]),
             ..World::default()
         };
         // A recap that names no period covers today, or the last session when nothing landed today.
@@ -2277,6 +2299,52 @@ mod tests {
         world.thoughts.push(Thought { complete: false, ..said("e", "Lee", "T4") });
         assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T4"));
         assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
+    }
+
+    /// "Where was I?" means the thread you're on ("this" with nothing pointed at: catalog.rs `this`) unless you
+    /// detoured: a line that trailed off, a thread you dropped, or one line said away from where you were. The
+    /// persona runs of 2026-11-01 (synthetic): a parent's two finished lines on Maya's shoes went "Back to" the cake
+    /// thread before; a PM asking twice was sent back and forth.
+    #[test]
+    fn where_was_i_stays_on_this_thread_unless_you_detoured() {
+        let now = super::now_ms();
+        let line = |id: &str, thread: &str, ago: u64, point: &str| Thought { point: point.into(), ..said(id, "you", thread, now - ago) };
+        let ask = |core: &Arc<Core>| -> Vec<String> {
+            let mut updates = core.updates.subscribe();
+            core.add_thought("you", "Where was I?");
+            std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|out| match out.message {
+                    ServerMsg::Notice { message } => Some(message),
+                    ServerMsg::Found { thread_id, message, .. } => Some(format!("{thread_id}: {message}")),
+                    _ => None,
+                })
+                .collect()
+        };
+        let map = |thoughts: Vec<Thought>, on: &str| World {
+            threads: vec![thread("Groceries", 1, ""), thread("Cake", 2, ""), thread("Maya", 3, "")],
+            thoughts,
+            active_by: HashMap::from([("you".into(), on.into())]),
+            ..World::default()
+        };
+        // Two finished lines on Maya's shoes: you're there, so it shows where, and doesn't move you to the cake.
+        let (core, _queue, path) = keyless(map(
+            vec![line("g", "Groceries", 60_000, "Eggs and dish soap"), line("c", "Cake", 40_000, "Cake from Safeway or bake one"),
+                line("m1", "Maya", 20_000, "Maya needs gym shoes"), line("m2", "Maya", 10_000, "Gym shoes on the Target run")],
+            "Maya",
+        ));
+        assert_eq!(ask(&core), ["Maya: You're on Maya: “Gym shoes on the Target run”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Maya"));
+        let _ = std::fs::remove_file(&path);
+        // One line away from Groceries ("sorry, Leo spilled juice"): back; asked again, you stay (no back and forth).
+        let (core, _queue, path) = keyless(map(
+            vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
+                line("j", "Cake", 10_000, "Leo spilled juice")],
+            "Cake",
+        ));
+        assert_eq!(ask(&core), ["Back to Groceries"]);
+        assert_eq!(ask(&core), ["Groceries: You're on Groceries: “Eggs and dish soap”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Groceries"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

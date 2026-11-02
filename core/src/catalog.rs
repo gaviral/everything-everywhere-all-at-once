@@ -136,7 +136,7 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::File, does: "add words to a thread named by its title", template: Some("add <words> to <thread title>"), phrases: &["Add milk to the shopping list", "Put the receipt in the bills thread"], needs: Needs::Thread, answers: "the words land there: “Added to …”", undo: UndoBy::Unfile, external: false, button: None },
     Def { act: Act::Unfold, does: "open a thread and every branch under it", template: Some("expand <thread title>"), phrases: &["Expand the garden", "Expand everything", "Expand this"], needs: Needs::Thread, answers: "the thread opens at the top: “Opened …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Show") },
     Def { act: Act::Fold, does: "fold a thread and every branch under it", template: Some("collapse <thread title>"), phrases: &["Collapse this", "Fold the garden"], needs: Needs::Thread, answers: "the thread folds: “Folded …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Hide") },
-    Def { act: Act::Move, does: "move a thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there: “Moved to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
+    Def { act: Act::Move, does: "move a thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there, named: “Moved “…” to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
     Def { act: Act::Rename, does: "rename a thread", template: Some("rename this to <words>"), phrases: &["Rename this to Pottery class", "Rename the garden thread to Backyard", "Call this thread Pottery class"], needs: Needs::Thread, answers: "the title changes: “Renamed to …”", undo: UndoBy::Retitle, external: false, button: Some("rename") },
     Def { act: Act::Palace, does: "switch to the Palace of pictures", template: Some("palace"), phrases: &["Palace", "Go to the palace"], needs: Needs::Nothing, answers: "the Palace shows", undo: UndoBy::ViewBack, external: false, button: Some("Palace") },
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
@@ -423,12 +423,23 @@ pub fn this(core: &Core, world: &World, speaker: &str) -> Option<String> {
 }
 
 fn resolve_this(world: &World, speaker: &str, a: &Attention, now: u64) -> Option<String> {
+    attended(world, a, now).or_else(|| world.active_for(speaker).cloned())
+}
+
+/// The card the speaker's attention picks out, before "this" falls back to their active thread: the one they
+/// selected, else the one under their pointer, else the one it left within `POINTER_MS`. "Move that" acts on its
+/// newest point (moves.rs `that`).
+pub fn pointed_at(core: &Core, world: &World, speaker: &str) -> Option<String> {
+    let attention = core.catalog.attention.lock().unwrap().get(speaker).cloned().unwrap_or_default();
+    attended(world, &attention, now_ms())
+}
+
+fn attended(world: &World, a: &Attention, now: u64) -> Option<String> {
     let on_map = |id: &String| world.thread(&world.resolve(id)).map(|t| t.id.clone());
     let left = a.left.as_ref().filter(|(_, at)| now.saturating_sub(*at) <= POINTER_MS).map(|(id, _)| id);
     a.selected.as_ref().and_then(on_map)
         .or_else(|| a.pointed.as_ref().and_then(on_map))
         .or_else(|| left.and_then(on_map))
-        .or_else(|| world.active_for(speaker).cloned())
 }
 
 // --- The AI's one open question -------------------------------------------------------------------------------
@@ -851,7 +862,7 @@ fn took_off(core: &Arc<Core>, speaker: &str, turn: u64, ids: &[String], rest: &s
 }
 
 /// At most 8 words of `text`, for a notice.
-fn short(text: &str) -> String {
+pub(crate) fn short(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let cut = words.iter().take(8).copied().collect::<Vec<_>>().join(" ");
     let cut = cut.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();

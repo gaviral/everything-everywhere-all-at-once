@@ -18,9 +18,10 @@ use std::sync::Arc;
 /// What a turn asks, from its words alone.
 #[derive(Debug, PartialEq)]
 enum Ask {
-    /// The speaker's latest thought to `place`. `sure`: the words can only be about the map ("… the pottery thread",
-    /// "… a new thread"), so a place that isn't there is answered, not kept as talk.
-    Move { place: Place, sure: bool },
+    /// "That" to `place` (see `that`). `sure`: the words can only be about the map ("… the pottery thread",
+    /// "… a new thread"), so a place that isn't there is answered, not kept as talk. `last`: the words name the
+    /// speaker's latest thought ("my last thought"), not what "this" means.
+    Move { place: Place, sure: bool, last: bool },
     /// A thread's new title; each way to read which thread, in the order they're tried (`Target`).
     Rename { targets: Vec<(Target, String)> },
 }
@@ -73,12 +74,14 @@ pub struct Retitle {
 // --- Reading the words --------------------------------------------------------------------------------------------
 
 const VERBS: [&str; 3] = ["move", "put", "file"];
-/// What "that" can be in "move that to …": the speaker's latest thought. Filing (spoken.rs) reads none of these as
-/// new words to add, since "put my last thought in …" is a move.
+/// What "that" can be in "move that to …" (see `that`). Filing (spoken.rs) reads none of these as new words to add,
+/// since "put my last thought in …" is a move.
 pub(crate) const POINTING: [&str; 13] = [
     "that last thought", "my last thought", "the last thought", "the last one", "this thought", "that thought", "this point", "that point",
     "this one", "that one", "this", "that", "it",
 ];
+/// The ones of `POINTING` that name the speaker's latest thought, whatever they point at.
+const LAST: [&str; 4] = ["that last thought", "my last thought", "the last thought", "the last one"];
 /// "That goes in the pottery thread", "this belongs under bills": said of a thought, never "that's".
 const BELONGS: [&str; 3] = ["should go", "goes", "belongs"];
 const INTO: [&str; 7] = ["into", "onto", "under", "with", "to", "in", "on"];
@@ -117,8 +120,12 @@ fn read(text: &str) -> Option<Ask> {
 }
 
 fn read_move(t: &str, l: &str) -> Option<Ask> {
+    let mut last = false;
     let mut at = match lead(l, &VERBS, false) {
-        Some(n) => n + lead(&l[n..], &POINTING, false)?,
+        Some(n) => {
+            last = lead(&l[n..], &LAST, false).is_some();
+            n + lead(&l[n..], &POINTING, false)?
+        }
         None => {
             let n = lead(l, &["this one", "that one", "this", "that", "it"], false)?;
             n + lead(&l[n..], &BELONGS, false)?
@@ -131,11 +138,11 @@ fn read_move(t: &str, l: &str) -> Option<Ask> {
         return None;
     }
     if NEW.contains(&lower) {
-        return Some(Ask::Move { place: Place::New, sure: true });
+        return Some(Ask::Move { place: Place::New, sure: true, last });
     }
     let kinds = spoken::kinds();
     let sure = crate::find::words(place).last().is_some_and(|w| kinds.contains(w) && w != "one");
-    Some(Ask::Move { place: Place::Named(place.into()), sure })
+    Some(Ask::Move { place: Place::Named(place.into()), sure, last })
 }
 
 fn read_rename(t: &str, l: &str) -> Option<Ask> {
@@ -207,7 +214,7 @@ fn titled(world: &World, name: &str) -> Option<String> {
 /// talk ("put it in the fridge"). A move or rename plainly about the map that can't act says why.
 pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     match read(text)? {
-        Ask::Move { place, sure } => move_latest(core, speaker, text, place, sure),
+        Ask::Move { place, sure, last } => move_that(core, speaker, text, place, sure, last),
         Ask::Rename { targets } => Some(rename_said(core, speaker, targets)),
     }
 }
@@ -216,9 +223,23 @@ fn notice(core: &Core, speaker: &str, message: String) {
     core.send_to(speaker, ServerMsg::Notice { message });
 }
 
-/// "Move that to …": the speaker's latest thought, by when it was said. Still finding its place, it moves once it
-/// lands, unless the speaker says something else first.
-fn move_latest(core: &Arc<Core>, speaker: &str, said: &str, place: Place, sure: bool) -> Option<Done> {
+/// What "that" is in "move that to …": the speaker's latest thought while it's still finding its place (they just
+/// said it, and it's on no card to point at yet); else the newest point on the card "this" means (catalog.rs: the one
+/// selected, pointed at or just left by the pointer, else the thread they're on); else their latest. `last` ("my
+/// last thought") is always their latest. Of a card, its newest point, whoever said it: the one it shows last.
+fn that<'a>(core: &Core, world: &'a World, speaker: &str, last: bool) -> Option<&'a Thought> {
+    let now = now_ms();
+    let latest = world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now));
+    if last || latest.is_some_and(|t| !t.placed) {
+        return latest;
+    }
+    let card = crate::catalog::pointed_at(core, world, speaker).or_else(|| world.active_for(speaker).map(|id| world.resolve(id)));
+    card.and_then(|card| newest(world, now, |t| on(world, t, &card))).or(latest)
+}
+
+/// "Move that to …": see `that`. Still finding its place, it moves once it lands, unless the speaker says something
+/// else first.
+fn move_that(core: &Arc<Core>, speaker: &str, said: &str, place: Place, sure: bool, last: bool) -> Option<Done> {
     let world = core.snapshot();
     let to = match place {
         Place::New => To::New(None),
@@ -234,8 +255,7 @@ fn move_latest(core: &Arc<Core>, speaker: &str, said: &str, place: Place, sure: 
             },
         },
     };
-    let now = now_ms();
-    let Some(latest) = world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now)) else {
+    let Some(latest) = that(core, &world, speaker, last) else {
         notice(core, speaker, "Nothing to move yet: say a thought first".into());
         return Some(Done::missed(Act::Move));
     };
@@ -319,8 +339,8 @@ fn with_heads(world: &World, id: &str, on: &str) -> Vec<String> {
 }
 
 /// Moves a placed thought (with the words it carries on) to `to`, as the person asked: its "why here" goes (the
-/// person's reason is theirs), both threads' last points stay true, and if it's the speaker's latest thought and they
-/// were on its thread, they go with it, so what they say next follows it there.
+/// person's reason is theirs), both threads' last points stay true, and if it's the speaker's newest on the thread
+/// they're on, they go with it, so what they say next follows it there.
 pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -> Done {
     let world = core.snapshot();
     let Some(thought) = world.thoughts.iter().find(|t| t.id == thought_id && t.placed) else {
@@ -383,8 +403,9 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     let emptied = !world.thoughts.iter().any(|t| on(&world, t, &from) && !ids.contains(&t.id))
         && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(from.as_str()));
     changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now).into_iter().filter(|c| !emptied || !matches!(c, Change::ThreadTouched { thread_id, .. } if *thread_id == from)));
-    let latest = world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now)).is_some_and(|t| ids.contains(&t.id));
-    let back = (latest && world.active_for(speaker) == Some(&from)).then(|| from.clone());
+    // Their newest words on the thread they're on: "that" there, said last of what they said on it.
+    let latest = newest(&world, now, |t| t.speaker == speaker && on(&world, t, &from)).is_some_and(|t| ids.contains(&t.id));
+    let back = (latest && world.active_for(speaker).map(|id| world.resolve(id)).as_deref() == Some(from.as_str())).then(|| from.clone());
     if back.is_some() {
         changes.push(Change::ActiveChanged { thread_id: target.clone(), speaker: speaker.into() });
         // Taken along, the speaker is somewhere again: a "new thread" asked for before ends, as on any move (`focus`).
@@ -393,9 +414,11 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     if emptied {
         changes.push(Change::ThreadMerged { from: from.clone(), into: target.clone() });
     }
+    // It names what moved: "that" may be a card's point, not the words just said (`that`).
+    let what = crate::catalog::short(if thought.point.is_empty() { &thought.text } else { &thought.point });
     drop(world);
     core.commit(changes);
-    notice(core, speaker, if started.is_some() { format!("Moved to a new thread: {title}") } else { format!("Moved to {title}") });
+    notice(core, speaker, if started.is_some() { format!("Moved “{what}” to a new thread: {title}") } else { format!("Moved “{what}” to {title}") });
     Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, back })))
 }
 
