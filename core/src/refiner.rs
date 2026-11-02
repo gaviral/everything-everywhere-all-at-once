@@ -843,6 +843,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut world = World {
             threads: vec![thread("T1", None), thread("T2", None)],
@@ -877,6 +878,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         // T7 branches from T5, and T9 from T7.
         let world = World {
@@ -1015,6 +1017,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         world.thoughts.push(said("a", "you"));
         let alone = describe(&world, 0, TODAY);
@@ -1054,6 +1057,7 @@ mod tests {
             complete: true,
             at_ms: n,
             place_ms: None,
+            decided: false,
         };
         let world = World {
             threads: vec![thread("T1", 5), thread("T2", 100)],
@@ -1142,6 +1146,7 @@ mod tests {
                     complete: true,
                     at_ms,
                     place_ms: None,
+                    decided: false,
                 });
             }
         }

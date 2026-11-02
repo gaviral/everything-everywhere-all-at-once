@@ -76,6 +76,9 @@ pub struct Thought {
     pub at_ms: u64,
     /// How long placement took, for the speed readout.
     pub place_ms: Option<u64>,
+    /// The words say a decision was made ("Decided: …", decided.rs): marked on the point and led with in Recap.
+    #[serde(default)]
+    pub decided: bool,
 }
 
 impl Thought {
@@ -196,6 +199,9 @@ pub enum Change {
         #[serde(default = "yes")]
         complete: bool,
         place_ms: u64,
+        /// The words say a decision was made (decided.rs); placements journaled before this have none.
+        #[serde(default)]
+        decided: bool,
     },
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
     /// `speaker`: whose move it was; a thread is dropped for the person who left it.
@@ -377,7 +383,7 @@ impl World {
                     self.threads.push(thread.clone());
                 }
             }
-            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, heard, fixed, complete, place_ms } => {
+            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, heard, fixed, complete, place_ms, decided } => {
                 if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
                     t.thread_id = Some(thread_id.clone());
                     t.point = point.clone();
@@ -392,6 +398,7 @@ impl World {
                     t.complete = *complete;
                     t.placed = true;
                     t.place_ms = Some(*place_ms);
+                    t.decided = *decided;
                 }
             }
             Change::ThreadTouched { thread_id, last_point, at_ms } => {
@@ -867,6 +874,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut world = World { thoughts: vec![thought("a"), thought("b")], ..World::default() };
         world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() });
@@ -938,6 +946,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let path = std::env::temp_dir().join(format!("e2a2o-split-{}.jsonl", std::process::id()));
         let (mut journal, mut world) = super::Journal::open(&path).unwrap();
@@ -1070,6 +1079,7 @@ mod tests {
             complete: true,
             at_ms: 2,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1104,6 +1114,7 @@ mod tests {
             fixed: fixed.into(),
             complete,
             place_ms: 2400,
+            decided: false,
         };
         let changes = vec![
             Change::AppsSeeded,

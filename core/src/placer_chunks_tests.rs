@@ -34,6 +34,7 @@ fn said(id: &str, text: &str, thread: &str, at_s: u64, complete: bool) -> Though
         complete,
         at_ms: at_s * 1000,
         place_ms: Some(1),
+        decided: false,
     }
 }
 

@@ -9,6 +9,7 @@ mod asr;
 mod catalog;
 mod chunks;
 mod clock;
+mod decided;
 mod explain;
 mod find;
 mod import;
@@ -389,6 +390,7 @@ impl Core {
             complete: true,
             at_ms: now_ms(),
             place_ms: None,
+            decided: false,
         };
         let id = thought.id.clone();
         // Before it's queued, so the placer knows when it's the first after "new thread".
@@ -1493,6 +1495,7 @@ mod tests {
             complete: true,
             at_ms,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -2492,6 +2495,7 @@ mod tests {
                     fixed: String::new(),
                     complete: true,
                     place_ms: 900,
+                    decided: false,
                 }]),
                 Job::Back(speaker) => core.go_back(&speaker),
                 Job::Next(speaker) => core.go_next(&speaker),

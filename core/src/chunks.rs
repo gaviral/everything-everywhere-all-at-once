@@ -177,6 +177,7 @@ mod tests {
             complete,
             at_ms: at_s * 1000,
             place_ms: Some(1),
+            decided: false,
         }
     }
 

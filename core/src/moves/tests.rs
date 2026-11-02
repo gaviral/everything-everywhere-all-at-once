@@ -112,6 +112,7 @@ fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         complete: true,
         at_ms,
         place_ms: Some(1_000),
+        decided: false,
     }
 }
 
@@ -336,6 +337,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -353,6 +355,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -369,6 +372,7 @@ async fn no_that_goes_in_another_thread_moves_the_words_and_keeps_them() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: id.clone(), thread_id: "T1".into(), point: "Learn to center the clay".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     let lines = f.say("No, that goes in the pottery thread").await;
     assert!(lines.contains(&format!("moved {id} to T2")), "{lines:?}");

@@ -1351,6 +1351,8 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
                 complete: true,
                 at_ms: idea.at_ms,
                 place_ms: None,
+                // What the chat import read as a decision (`EXTRACT`, kind "decision") is one on the map too.
+                decided: idea.kind == "decision",
             },
         });
     }
@@ -1789,6 +1791,7 @@ mod tests {
             complete: true,
             at_ms: 1_791_000_000_000,
             place_ms: None,
+            decided: false,
         };
         let mut updates = f.core.updates.subscribe();
         f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);

@@ -851,6 +851,8 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         }
     };
 
+    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said.
+    let decided = crate::decided::said(&fix(&thought.text));
     let (unclear, guess, heard, fixed) =
         if sure { (String::new(), String::new(), unclear, guess) } else { (unclear, guess, String::new(), String::new()) };
     changes.push(Change::ThoughtPlaced {
@@ -863,6 +865,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         fixed,
         complete: p.complete,
         place_ms,
+        decided,
     });
     let why = crate::chunks::why_here(&p.why, &changes);
     let note = crate::chunks::note(head.as_ref(), &p.assumed, &why, crate::chunks::moved(world, &changes, &thread_id, was.as_ref()));
@@ -948,6 +951,7 @@ mod tests {
             complete,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1599,6 +1603,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut answer = json!({"action": "new", "title": "Muse Bark speed", "point": text});
         answer.as_object_mut().unwrap().extend(misheard.as_object().unwrap().clone());
@@ -1620,6 +1625,31 @@ mod tests {
         });
         let [point, unclear, guess, heard, fixed] = placed.unwrap();
         [title.unwrap(), point, unclear, guess, heard, fixed]
+    }
+
+    /// Line 3 of the demo is placed as a decision, whatever the model titles its thread; talk about deciding isn't.
+    #[test]
+    fn a_decision_said_is_placed_as_one_and_talk_about_deciding_is_not() {
+        let decided = |text: &str| {
+            decide(&map(), &turn(text), reply(json!({"action": "new", "title": "Pottery Class Cost"})), 0, false, true)
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::ThoughtPlaced { decided, .. } => Some(decided),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert!(decided("Okay, decided: if it's under eighty dollars, I'm booking it tonight."));
+        assert!(decided("Decided: I'll study with Priya on Wednesday night."));
+        assert!(!decided("I can't decide whether to book the pottery class."));
+        assert!(!decided("We'll decide later about the pottery class."));
+        let mut world = World::default();
+        let thought = turn("Let's go with the Thursday slot.");
+        world.thoughts.push(thought.clone());
+        for change in decide(&World::default(), &thought, reply(json!({"action": "new", "title": "Slot"})), 0, false, true) {
+            world.apply(&change);
+        }
+        assert!(world.thoughts[0].decided, "the map keeps it");
     }
 
     #[test]

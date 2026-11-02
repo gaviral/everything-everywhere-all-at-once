@@ -22,7 +22,7 @@ Return JSON: summary (one short sentence, under 25 words; when there are decisio
 in the person's words; otherwise it names the two or three threads they spent the most on, by title; never a general line, and never a list of every thread), \
 worked_on (one line per supplied thread), plans, decisions, questions. \
 Every list item has thread_id and text (under 22 words). Plans are clear intentions stated in the points and not yet settled \
-(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points, \
+(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points; a thread's \"decided\" lists ones the person said they decided, each a decision. \
 never suggestions, intentions, or AI proposals; an intention goes in plans, never in both. Questions must be unresolved in these points. \
 Do not infer that an action was added: the app reports approval separately. \
 Use only supplied thread IDs, no markdown, and empty lists when there is no evidence. \
@@ -178,6 +178,11 @@ struct SourceThread {
     unfinished: bool,
     clipped: bool,
     points: Vec<String>,
+    /// The points where the person said they decided (decided.rs), short, in their voice: each is one of the period's
+    /// decisions whatever the model reads, so Recap can lead with it. Left out when there are none, so a period
+    /// without one sends the same prompt as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    decided: Vec<String>,
 }
 
 /// A projection of the journal's ThoughtAdded/Placed/Corrected changes, using
@@ -219,6 +224,7 @@ fn slice(world: &World, period: Period, through_ms: u64) -> Source {
             // The original words preserve explicit choices and question wording.
             points: thoughts[thoughts.len().saturating_sub(MAX_POINTS)..].iter()
                 .map(|t| short(&format!("{}: {}{}", t.speaker, t.text, if t.unclear.is_empty() { "" } else { " [may be misheard]" }), 700)).collect(),
+            decided: thoughts.iter().filter(|t| t.decided).map(|t| short(if t.point.trim().is_empty() { &t.text } else { &t.point }, 240)).collect(),
         })
     }).collect();
     threads.sort_by(|a, b| b.touched_ms.cmp(&a.touched_ms).then_with(|| a.thread_id.cmp(&b.thread_id)));
@@ -327,7 +333,13 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
     let unfinished = source.threads.iter().filter(|t| t.unfinished).map(|t| Item {
         thread_id: t.thread_id.clone(), text: format!("{} still has a loose end.", t.title),
     }).collect();
-    let decisions = clean(answer.decisions);
+    let mut decisions = clean(answer.decisions);
+    // A decision the person said in so many words is one even when the model leaves it out: its point goes in.
+    for t in &source.threads {
+        if !t.decided.is_empty() && !decisions.iter().any(|d| d.thread_id == t.thread_id) {
+            decisions.extend(t.decided.iter().map(|point| Item { thread_id: t.thread_id.clone(), text: point.clone() }));
+        }
+    }
     // The day's decisions are what a person wants back first ("What did I decide today?"), and they read better than
     // where the time went ("You circled around …"), so the summary leads with them when there are any.
     let summary = if source.threads.is_empty() { "No thoughts in this period yet. Start wherever you like.".into() }
@@ -426,7 +438,7 @@ mod tests {
     fn thought(id: u64, thread_id: &str, at_ms: u64) -> Thought {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
             thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
-            complete: true, at_ms, place_ms: None }
+            complete: true, at_ms, place_ms: None, decided: false }
     }
     #[test]
     fn a_bare_recap_looks_back_at_the_last_session_when_nothing_landed_today() {
@@ -579,6 +591,31 @@ mod tests {
         assert_eq!(with("You circled around Topic T1.", vec![Item { thread_id: "invented".into(), text: "Book it".into() }]),
             "You circled around Topic T1.");
         assert!(SYSTEM.contains(r#"starts "You decided""#), "the model is asked for it, not only corrected");
+    }
+
+    /// The demo's line 3 ("Okay, decided: if it's under eighty dollars, I'm booking it tonight") is recorded as a
+    /// decision when placed: the model is told so, and if it still lists none, the point leads the Recap anyway.
+    #[test]
+    fn a_decision_said_out_loud_leads_the_recap_even_when_the_model_misses_it() {
+        let mut world = sample(1000);
+        world.thoughts[0].text = "Okay, decided: if it's under eighty dollars, I'm booking it tonight.".into();
+        world.thoughts[0].point = "If it's under $80, I'm booking it tonight".into();
+        world.thoughts[0].decided = true;
+        let source = slice(&world, Period::Session, 1000);
+        let sent = serde_json::to_string(&model_body(&source).unwrap()).unwrap();
+        assert!(sent.contains(r#"\"decided\":[\"If it's under $80, I'm booking it tonight\"]"#), "{sent}");
+        assert_eq!(sent.matches(r#"\"decided\":"#).count(), 1, "a thread with no decision sends none");
+        let mut a = answer();
+        a.summary = "You circled around Topic T1 and Topic T2 today.".into();
+        let recap = finish(source, a, "key".into());
+        assert_eq!(recap.decisions.len(), 1);
+        assert_eq!((recap.decisions[0].thread_id.as_str(), recap.decisions[0].text.as_str()), ("T1", "If it's under $80, I'm booking it tonight"));
+        assert!(recap.summary.starts_with("You decided"), "{}", recap.summary);
+        // The model's own words for it win; the point isn't added twice.
+        let source = slice(&world, Period::Session, 1000);
+        let mut a = answer();
+        a.decisions = vec![Item { thread_id: "T1".into(), text: "Book the pottery class tonight if it's under $80.".into() }];
+        assert_eq!(finish(source, a, "key".into()).decisions.len(), 1);
     }
 
     #[test]

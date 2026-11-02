@@ -40,6 +40,8 @@ export interface Thought {
   complete: boolean;
   at_ms: number;
   place_ms: number | null;
+  /** The words say a decision was made (the core's decided.rs); placements before it have none. */
+  decided?: boolean;
 }
 
 /** What the placer read into a thought (chunks.tsx): the words it carries on across a pause, an assumption that moved
@@ -149,6 +151,7 @@ type Change =
       fixed?: string;
       complete: boolean;
       place_ms: number;
+      decided?: boolean;
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
@@ -394,6 +397,7 @@ export function apply(world: World, raw: Change): World {
                 complete: c.complete,
                 placed: true,
                 place_ms: c.place_ms,
+                decided: c.decided ?? false,
               }
             : t,
         ),
