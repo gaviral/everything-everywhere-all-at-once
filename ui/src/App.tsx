@@ -1270,7 +1270,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
       <ul className="points">
         {points.map(({ thought: t, heads }) => (
-          <Point key={t.id} thought={t} heads={heads} on={on} layoutDependency={thoughts} />
+          <Point key={t.id} thought={t} heads={heads} on={on} />
         ))}
       </ul>
       {ideas.map((s) => (
@@ -1319,7 +1319,7 @@ function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: bo
   );
 }
 
-const Point = memo(function Point({ thought, heads, on, layoutDependency }: { thought: Thought; heads: Thought[]; on: Handlers; layoutDependency: Thought[] }) {
+const Point = memo(function Point({ thought, heads, on }: { thought: Thought; heads: Thought[]; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
@@ -1344,8 +1344,11 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
     flip();
   } : undefined;
+  // No layoutDependency: a point measures its box every time it renders. Measuring only when its thread's thoughts
+  // changed left a point that had just landed in a branch drawn ≈ 100 px under its card for 13–15 s after "Show" on a
+  // card above (its card moved, Motion projected it from its old box: the move counted twice). scripts/points-check.mjs.
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
