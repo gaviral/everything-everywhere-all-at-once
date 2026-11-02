@@ -27,6 +27,7 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { staysUp, upFor } from "./notice-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -312,13 +313,13 @@ export default function App() {
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
   useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
-  // A new find result restarts the timeout even if its notice text is unchanged.
+  // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
-    if (!core.notice || noticeFocused || core.notice === LOOKING || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
-    const timer = window.setTimeout(core.clearNotice, 5000);
+    if (!core.notice || noticeFocused || core.notice === LOOKING || staysUp(core.notice)) return;
+    const timer = window.setTimeout(core.clearNotice, upFor(friendlyNotice || core.notice));
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.found, core.clearNotice, noticeFocused]);
+  }, [core.notice, core.answerRevision, core.clearNotice, noticeFocused]);
 
   // Stop local audio when the service reports a stop or the connection drops, and tell the core,
   // so the next tap starts a fresh session.
@@ -347,12 +348,12 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (core.viewAsk?.view !== "pause") return;
-    if (!stopMic) { core.showNotice("The mic is already off."); return; }
+    if (!stopMic) { core.showNotice("The mic is already off.", core.viewAsk); return; }
     stopMic();
     setStopMic(null);
     core.listen(false);
     setPaused(true);
-    core.showNotice("Paused: nothing is heard until you tap the mic.");
+    core.showNotice("Paused: nothing is heard until you tap the mic.", core.viewAsk);
   }, [core.viewAsk]);
 
   const toggleMic = async () => {
@@ -656,19 +657,19 @@ export default function App() {
     const yours = mine.find((t) => !hidden.dismissed.includes(dropKey(t)));
     if (asked === "finish") {
       const card = dropped ?? mine[0];
-      if (!card) { core.showNotice("Nothing unfinished to finish."); return; }
+      if (!card) { core.showNotice("Nothing unfinished to finish.", core.viewAsk); return; }
       goBack(card);
-      core.showNotice(`Back to ${card.title}`);
+      core.showNotice(`Back to ${card.title}`, core.viewAsk);
       return;
     }
     const card = asked === "later" ? dropped : dropped ?? yours;
-    if (!card) { core.showNotice("Nothing unfinished to set aside."); return; }
+    if (!card) { core.showNotice("Nothing unfinished to set aside.", core.viewAsk); return; }
     if (asked === "later") {
       later(card);
-      core.showNotice(`Later: ${card.title} comes back after a while.`);
+      core.showNotice(`Later: ${card.title} comes back after a while.`, core.viewAsk);
     } else {
       setHidden((was) => dismiss(was, [dropKey(card)]));
-      core.showNotice(`Set aside: ${card.title}. What you said stays on the map.`);
+      core.showNotice(`Set aside: ${card.title}. What you said stays on the map.`, core.viewAsk);
     }
   }, [core.viewAsk]);
   // A card rising in the dock (the unfinished card, a build's) grows it upward; the thought the map just showed you

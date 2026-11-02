@@ -105,6 +105,6 @@
 {"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Priya","at_ms":1793749500000}
 {"type":"thread_picture","thread_id":"T1","path":"/images/T1-bd42b23eb79442baa2cf8a2033608b11-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
-{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet I think the","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":false,"at_ms":1793749560000,"place_ms":1500}}
+{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749560000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T7","last_point":"Electric bill can wait until after hackathon","at_ms":1793749560000}
 {"type":"thread_picture","thread_id":"T7","path":"/images/T7-af024ca151fb4e07987c5401e59646e5-small.webp"}
