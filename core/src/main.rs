@@ -1029,8 +1029,11 @@ fn reached(host: &str, link: Link) -> bool {
 }
 
 /// The app's own files, which hold nothing of the map. Everything else needs the code in a room.
+/// The manifest and icons too: a browser fetches them as the page loads, before a guest has typed the code.
 fn public(path: &str) -> bool {
-    matches!(path, "/" | "/index.html" | "/room" | "/pcm-worklet.js") || path.starts_with("/assets/")
+    matches!(path, "/" | "/index.html" | "/room" | "/pcm-worklet.js" | "/manifest.webmanifest" | "/icon.svg")
+        || path.starts_with("/assets/")
+        || path.starts_with("/icons/")
 }
 
 /// The room codes a request carries: `?room=` on the WebSocket, or the `room` cookie the page sets
@@ -2188,6 +2191,8 @@ mod tests {
         assert_eq!(access(true, guest, host, page, false), Access::Page);
         assert!(public("/") && public("/assets/index-abc.js") && public("/room") && public("/pcm-worklet.js"));
         assert!(!public("/ws") && !public("/images/T1-x.webp") && !public("/anything-else"));
+        // Installing from a guest's page: the browser fetches the manifest and icons without the code.
+        assert!(public("/manifest.webmanifest") && public("/icon.svg") && public("/icons/icon-512.png"));
         // Other sites stay out, code or not: their own Origin, or a name pointed at this laptop.
         assert_eq!(access(true, guest, host, Some("https://example.com"), true), Access::None);
         assert_eq!(access(true, guest, host, Some("http://192.168.1.5:3000"), true), Access::None);

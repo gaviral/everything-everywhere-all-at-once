@@ -35,6 +35,7 @@ import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-ru
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
+import { InstallHint, useInstallHint } from "./Install";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -656,6 +657,12 @@ export default function App() {
   const dropped = leftOff(world.threads, me, hidden, now);
   const pullBack = cardAt(dropped, now, lastActivity);
   const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
+  // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
+  // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
+  const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).length, [world.thoughts, me]);
+  const install = useInstallHint(placedMine, view === "map" && !hasAway && !pullBack && !core.apps.build && !firstHint
+    && !core.partial && !core.handoff && !pending.length && !core.listening && !stopMic && !startingMic && !draft && core.queuedCount === 0 && !attention.value.note?.title,
+    core.snapshotRevision > 0);
   // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
   // acts on the card you see (or would see at the next pause); with none, "forget it" takes the one hidden for now
   // and "finish it" the newest you left. Your words stay on the map either way.
@@ -906,6 +913,7 @@ export default function App() {
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
+          {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
