@@ -407,8 +407,16 @@ export default function App() {
     }
     setStartingMic(true);
     try {
-      const stopAudio = await startMic(core.sendAudio);
       let stopped = false;
+      // The browser ended the mic itself (another app took it, it was unplugged): off, and said so.
+      const ended = () => {
+        if (stopped || !mounted.current) return;
+        stopped = true;
+        setStopMic(null);
+        core.listen(false);
+        core.showNotice("The microphone stopped. Tap the mic to listen again, or type below.");
+      };
+      const stopAudio = await startMic(core.sendAudio, ended);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = voiceRevisions.current.status;
