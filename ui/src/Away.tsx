@@ -177,6 +177,8 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
   onDismissFocus: () => void;
 }) {
   const [why, setWhy] = useState<ReadonlySet<string>>(new Set());
+  // A card gone forgets what it had open: a later card's row on the same thread would otherwise open (and ask) at once.
+  useEffect(() => { if (!items.length) setWhy((open) => (open.size ? new Set() : open)); }, [items.length]);
   if (!items.length) return null;
   const flip = (key: string) => setWhy((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
   const close = () => { onDismiss(); onDismissFocus(); };

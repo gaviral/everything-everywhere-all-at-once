@@ -10,7 +10,7 @@ const ui = (path) => readFileSync(new URL(`../ui/src/${path}`, import.meta.url),
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { whyLine, hoverTitle, WhyHere, WhyContext } = await server.ssrLoadModule("/src/whyhere.tsx");
+  const { whyLine, hoverTitle, WhyHere, WhyContext, whysAfter } = await server.ssrLoadModule("/src/whyhere.tsx");
   const { NotesContext } = await server.ssrLoadModule("/src/chunks.tsx");
   const { awayItems } = await server.ssrLoadModule("/src/Away.tsx");
   const h = React.createElement;
@@ -24,6 +24,17 @@ try {
   assert.equal(whyLine(undefined, { text: "you moved it here", failed: false }).text, "Why here: you moved it here");
   assert.equal(whyLine(undefined, { text: "", failed: false, pending: true }).pending, true);
   assert.equal(whyLine(undefined, { text: "Couldn't say why just now.", failed: true }).failed, true);
+
+  // An answer is about where the thought was when asked: its move, or that move's Undo, drops it (no stale reason,
+  // the ask comes back); a fresh map keeps only asks still out.
+  const kept = { a: { text: "names the lease", failed: false }, b: { text: "", failed: false, pending: true } };
+  const move = (thought_id, undo = false) => ({ type: "change", change: { type: "thought_moved", thought_id, thread_id: "T2", from: "T1", undo } });
+  assert.deepEqual(whysAfter(kept, move("a")), { b: kept.b }, "a move drops its answer");
+  assert.deepEqual(whysAfter(kept, move("a", true)), { b: kept.b }, "so does its Undo");
+  assert.equal(whysAfter(kept, move("z")), kept, "another thought's move keeps all");
+  assert.equal(whysAfter(kept, { type: "change", change: { type: "thread_renamed", thread_id: "T1" } }), kept);
+  assert.deepEqual(whysAfter(kept, { type: "snapshot" }), { b: kept.b }, "a snapshot keeps only asks still out");
+  assert.match(ui("core.ts"), /setWhys\(\(w\) => whysAfter\(w, msg\)\);[^]*setWhys\(\(w\) => whysAfter\(w, msg\)\);/, "wired on snapshot and change");
 
   // The hover card adds a known reason, never a pending or failed one.
   assert.equal(hoverTitle("“words”", whyLine({ why: "names the lease" })), "“words”\nWhy here: names the lease");
@@ -62,6 +73,8 @@ try {
   const away = ui("Away.tsx");
   assert.match(away, /<\/a>\s*\{\/\*[^]*?\*\/\}\s*\{item\.why && item\.thoughtId && <button type="button" className="away-why" aria-expanded/);
   assert.match(away, /<WhyHere thoughtId=\{item\.thoughtId\} auto \/>/);
+  // A dismissed card forgets its open rows, so a later card never opens one (and asks the model) by itself.
+  assert.match(away, /useEffect\(\(\) => \{ if \(!items\.length\) setWhy\([^]*\}, \[items\.length\]\);\s*if \(!items\.length\) return null;/);
   const app = ui("App.tsx");
   assert.match(app, /const said = differ \|\| thought\.placed/);
   assert.match(app, /\{differ \? "Words said" : "Why here"\}/, "the toggle says what it opens");

@@ -8,6 +8,7 @@ import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
 import { failureNotice } from "./action-line";
 import { applyMove, type MoveChange } from "./moves-core";
+import { whysAfter } from "./whyhere";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
@@ -586,6 +587,7 @@ export function useCore(speaker?: string) {
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
+            setWhys((w) => whysAfter(w, msg));
             break;
           case "change": {
             const change = msg.change;
@@ -603,6 +605,7 @@ export function useCore(speaker?: string) {
             }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
+            setWhys((w) => whysAfter(w, msg));
             break;
           }
           case "action_failed": {

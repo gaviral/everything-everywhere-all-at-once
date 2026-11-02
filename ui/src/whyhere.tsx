@@ -20,6 +20,19 @@ export function whyLine(note: Note | undefined, answer: WhyAnswer | undefined): 
   return { text: `Why here: ${answer.text}` };
 }
 
+/** Answers kept after a change: one is about where the thought sat when asked, so its move (or that move's Undo)
+ *  drops it; the core says what holds now when asked again. A snapshot keeps only asks still out. */
+export function whysAfter(whys: Record<string, WhyAnswer>, msg: { type: "snapshot" } | { type: "change"; change: { type: string; thought_id?: string } }): Record<string, WhyAnswer> {
+  if (msg.type === "snapshot") {
+    const out = Object.entries(whys).filter(([, a]) => a.pending);
+    return out.length === Object.keys(whys).length ? whys : Object.fromEntries(out);
+  }
+  const id = msg.change.type === "thought_moved" ? msg.change.thought_id : undefined;
+  if (!id || !(id in whys)) return whys;
+  const { [id]: _, ...rest } = whys;
+  return rest;
+}
+
 /** A point's hover card: its words said, then its reason when one is known (C225: "the reason in the hover card"). */
 export function hoverTitle(words: string, line: WhyLine | null): string {
   return line && !line.pending && !line.failed ? (words ? `${words}\n${line.text}` : line.text) : words;
