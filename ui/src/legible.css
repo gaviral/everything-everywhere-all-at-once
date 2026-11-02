@@ -27,6 +27,12 @@
 .points li.has-said:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
 .said { flex-basis: 100%; color: var(--muted); font-size: 13px; line-height: 1.45; }
 
+/* A point's placing time sits at the right of its first line, in room the point always leaves it (the widest,
+   "12.3 s" at 11 px, is ≈ 31 px, plus the 8 px gap between a point's parts). In the flow it dropped to a line of its
+   own under any point that wrapped: one wasted line per point on a phone, where the time always shows. */
+.points li { padding-right: 40px; }
+.points li .speed { position: absolute; top: 0; right: 0; margin: 0; line-height: calc(15px * 1.45); }
+
 /* ── One column edge, one spacing scale ────────────────────────────────────────────────────────────────────────── */
 
 /* The dock shares the map's edges: its cards and the composer were 24 px wider on each side than the cards above
