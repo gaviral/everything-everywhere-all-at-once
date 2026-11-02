@@ -20,6 +20,13 @@ export function received(shown: NoteCard | null, msg: NoteCardMsg): NoteCard | n
   return card;
 }
 
+/** Whether the card answers a save just asked for (saving, or a dry run's one card): it comes before Recap, which
+ *  closes so the card isn't left behind it, as a message counting down does (send-card.ts `comesFirst`). A card's end
+ *  never closes it: Recap opened after asking stays. */
+export function comesFirst(card: { state: NoteState } | null): boolean {
+  return card?.state === "saving" || card?.state === "dry_run";
+}
+
 /** The card's class for its state: whole words, so the stylesheet check can see each one used. */
 export const STATE_CLASS: Record<NoteState, string> = { saving: "is-saving", saved: "is-saved", dry_run: "is-dry-run", failed: "is-failed" };
 

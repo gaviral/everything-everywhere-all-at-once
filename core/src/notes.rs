@@ -184,6 +184,8 @@ struct State {
     saving: bool,
     /// Card id → the id Notes gave the note, for Open in Notes: only notes this run wrote.
     written: HashMap<u64, String>,
+    /// Each speaker's latest card and when it ended, so a window that reconnects gets it back (`shown_card`).
+    shown: HashMap<String, (ServerMsg, Option<std::time::Instant>)>,
 }
 
 impl Default for Runtime {
@@ -295,6 +297,21 @@ fn says_thread(target: &Target) -> bool {
     }
 }
 
+/// Whether the words are filing, not a note: "add milk to my notes" or "put the receipt in notes" (a bare "notes" after
+/// "add" or "put", naming something that doesn't say it's a thread). They stay filing's, as before Notes was on, even
+/// when a thread's points mention milk: matching them to a thread would export that whole thread.
+fn files(text: &str, ask: &Ask) -> bool {
+    let words = crate::words(crate::spoken::plain(text));
+    let moves = words.first().is_some_and(|v| v == "put" || v == "add");
+    ask.bare && moves && !says_thread(&ask.target)
+}
+
+/// Whether Notes, when on, would take these words as a save. The safety net never redoes one (catalog.rs `checked`):
+/// only the person's own words write outside the app, and "put this in Notes" reads as a move by the rules.
+pub fn takes(text: &str) -> bool {
+    read(text).is_some_and(|ask| !files(text, &ask))
+}
+
 /// The shape of the request, without the map, as the catalog reads it (`Act::Note`). "Put this in Notes" and "add
 /// milk to my notes" are left to the rules that read them in the Demo preset (a move, filing): only `act`, with the
 /// map and the preset, takes them as a note.
@@ -312,6 +329,9 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         return None;
     }
     let ask = read(text)?;
+    if files(text, &ask) {
+        return None;
+    }
     let world = core.snapshot();
     // "Put this in Notes" with a thread called Notes on the map: that thread is meant, as it was before Notes was on.
     if ask.bare && world.threads.iter().any(|t| matches!(crate::words(&t.title).join(" ").as_str(), "notes" | "my notes")) {
@@ -327,7 +347,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         Target::Named(said) => crate::spoken::named_thread(&world, name(said), false),
     };
     let Some(id) = id else {
-        // "Add milk to my notes" names no thread: filing's, as before. A thread asked for plainly gets an answer.
+        // "Save milk to my notes" names no thread: left to the other rules. A thread asked for plainly gets an answer.
         if ask.bare && !says_thread(&ask.target) {
             return None;
         }
@@ -356,10 +376,10 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         state.next
     };
     if !live {
-        core.send_to(speaker, card(card_id, &note, NoteState::DryRun, false, &dry_run(core.notes.write)));
+        show(core, speaker, card(card_id, &note, NoteState::DryRun, false, &dry_run(core.notes.write)));
         return Some(Done::new(Act::Note));
     }
-    core.send_to(speaker, card(card_id, &note, NoteState::Saving, true, "Saving to Notes…"));
+    show(core, speaker, card(card_id, &note, NoteState::Saving, true, "Saving to Notes…"));
     let core = core.clone();
     let speaker = speaker.to_string();
     tokio::spawn(async move {
@@ -372,17 +392,45 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
                     state.written.insert(card_id, note_id);
                 }
                 drop(state);
-                core.send_to(&speaker, card(card_id, &note, NoteState::Saved, true, "Saved to Notes"));
+                show(&core, &speaker, card(card_id, &note, NoteState::Saved, true, "Saved to Notes"));
             }
             Err(error) => {
                 drop(state);
                 // Only the error's number: Notes' own words can carry the note's text, which never goes to the log.
                 tracing::warn!("Notes didn't save it (error {})", crate::messages::error_number(&error));
-                core.send_to(&speaker, card(card_id, &note, NoteState::Failed, true, &failure(&error)));
+                show(&core, &speaker, card(card_id, &note, NoteState::Failed, true, &failure(&error)));
             }
         }
     });
     Some(Done::new(Act::Note))
+}
+
+/// Sends a card to the speaker's windows and keeps it as their latest, for one that reconnects.
+fn show(core: &Core, speaker: &str, message: ServerMsg) {
+    let ended = matches!(message, ServerMsg::NoteCard { state, .. } if state != NoteState::Saving).then(std::time::Instant::now);
+    core.notes.state.lock().unwrap().shown.insert(speaker.to_string(), (message.clone(), ended));
+    core.send_to(speaker, message);
+}
+
+/// The speaker's card for a window that (re)connects (main.rs `catch_up`): one still saving, so its end reaches the
+/// window, or one that ended no longer ago than a window would still show it (`linger_ms`), so a window that dropped
+/// while Notes wrote still gets "Saved" and Open in Notes. Older, it's gone, as it would be on a window that stayed.
+pub fn shown_card(core: &Core, speaker: &str) -> Option<ServerMsg> {
+    let state = core.notes.state.lock().unwrap();
+    let (message, ended) = state.shown.get(speaker)?;
+    match ended {
+        None => Some(message.clone()),
+        Some(at) => (at.elapsed().as_millis() < u128::from(linger_ms(message))).then(|| message.clone()),
+    }
+}
+
+/// How long a window shows an ended card (ui/src/note-card.ts `lingerMs`): one look over and its heading, title and
+/// status read at the slow end (175 words a minute), 1.35 s to decide, 1.5 s to reach Open in Notes.
+fn linger_ms(message: &ServerMsg) -> u64 {
+    let ServerMsg::NoteCard { title, live, message, .. } = message else { return 0 };
+    let heading = if *live { "Note in Notes" } else { "Note in Notes · dry run" };
+    let words = format!("{heading} {title} {message}").split_whitespace().count() as u64;
+    200 + words * 60_000 / 175 + 1_350 + 1_500
 }
 
 fn card(id: u64, note: &Note, state: NoteState, live: bool, message: &str) -> ServerMsg {

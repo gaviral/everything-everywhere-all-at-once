@@ -304,3 +304,56 @@ fn the_default_runtime_writes_nothing() {
     assert!(!r.write, "a dry run unless NOTES_WRITE is on");
     assert!(!r.live());
 }
+
+/// "Add milk to my notes" stays filing even when a thread mentions milk: matching it would export that whole thread
+/// into Notes. A guest saying it hears nothing about the host's Notes either.
+#[tokio::test]
+async fn filing_words_never_export_a_thread_that_mentions_them() {
+    let mut world = picnic();
+    world.thoughts.push(thought("m", "T2", "Buy milk and eggs", crate::now_ms() - 50_000));
+    let mut f = Fixture::new(Preset::Full, true, world.clone());
+    f.core.add_thought("me", "Add milk to my notes");
+    settle().await;
+    assert!(f.told().iter().all(|t| !t.starts_with("card")), "no note card");
+    assert!(f.ran().is_empty(), "nothing written");
+    assert!(!takes("Add milk to my notes") && !takes("put the receipt in notes"));
+    assert!(takes("Put this in Notes") && takes("Add the bills thread to my notes") && takes("Save milk to my notes"));
+    let mut f = Fixture::with(Preset::Full, true, world, Ok("id".into()), |core| Core { room: Some(crate::Room::from("k7m2x9qp")), ..core });
+    f.core.add_thought("guest", "Add milk to my notes");
+    settle().await;
+    assert!(f.told().iter().all(|t| !t.contains("Only the host")), "filing, not a refused save");
+}
+
+/// A window that reconnects gets the card back: one still saving, or one ended no longer ago than a window shows it,
+/// so "Saved" and Open in Notes reach a window that dropped while Notes wrote. Older, it's gone.
+#[tokio::test]
+async fn a_window_that_reconnects_gets_the_current_card_back() {
+    let mut f = Fixture::new(Preset::Full, false, picnic());
+    assert!(shown_card(&f.core, "me").is_none());
+    f.core.add_thought("me", "Save this thread as a note");
+    settle().await;
+    f.told();
+    let card_in = |messages: Vec<ServerMsg>| messages.into_iter().find_map(|m| match m {
+        ServerMsg::NoteCard { state, .. } => Some(state),
+        _ => None,
+    });
+    assert_eq!(card_in(crate::catch_up(&f.core, "me")), Some(NoteState::DryRun));
+    assert_eq!(card_in(crate::catch_up(&f.core, "someone else")), None, "only the asker's windows");
+    // Ended longer ago than a window shows it: not sent again.
+    {
+        let mut state = f.core.notes.state.lock().unwrap();
+        let (message, ended) = state.shown.get_mut("me").unwrap();
+        let linger = linger_ms(message);
+        assert!(linger >= 5_000, "at least as long as any notice: {linger}");
+        *ended = Some(std::time::Instant::now() - std::time::Duration::from_millis(linger + 1));
+    }
+    assert_eq!(card_in(crate::catch_up(&f.core, "me")), None);
+    if crate::apple::reachable() {
+        // Live: the saved card (and with it Open in Notes) comes back, whichever message the window missed.
+        let mut f = Fixture::new(Preset::Full, true, picnic());
+        f.core.add_thought("me", "Save this thread as a note");
+        settle().await;
+        f.told();
+        assert_eq!(card_in(crate::catch_up(&f.core, "me")), Some(NoteState::Saved));
+    }
+}

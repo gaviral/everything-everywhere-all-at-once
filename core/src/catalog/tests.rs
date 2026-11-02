@@ -144,6 +144,11 @@ fn the_safety_net_runs_only_an_act_it_may_pick_written_as_the_rules_read_it() {
     no("yes", "yes");
     no("thought", "");
     no("delete_everything", "expand Garden");
+    // Words Notes takes as a save never come from the model, though the rules read "put this in Notes" as a move: in
+    // Full it would write a note no one said.
+    assert_eq!(classify("put this in Notes"), Some(Act::Move));
+    no("move", "put this in Notes");
+    no("move", "put that in my notes");
     // The prompt offers only those acts, and the schema only their names and "thought".
     let body = body("m", &prompt("expand the garden", "did this", "no, the bills", &["Garden", "Bills"]));
     let names = body["response_format"]["json_schema"]["schema"]["properties"]["act"]["enum"].as_array().unwrap().clone();

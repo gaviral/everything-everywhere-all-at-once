@@ -1329,8 +1329,12 @@ async fn ask(core: &Core, previous: &Last, said: &str) -> anyhow::Result<Option<
     Ok(checked(&verdict))
 }
 
-/// The model's answer, only when it names an act the safety net may pick and its phrase reads as that act by rule.
+/// The model's answer, only when it names an act the safety net may pick and its phrase reads as that act by rule. Never
+/// words Notes would take as a save ("put this in Notes" reads as a move by rule, but in Full it writes a note).
 fn checked(verdict: &Verdict) -> Option<(Act, String)> {
+    if crate::notes::takes(&verdict.say) {
+        return None;
+    }
     let act = CATALOG.iter().find(|d| d.template.is_some() && !d.external && name(d.act) == verdict.act)?.act;
     (classify(&verdict.say) == Some(act)).then(|| (act, verdict.say.clone()))
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
-import { received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
+import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -684,6 +684,9 @@ export function useCore(speaker?: string) {
         attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
+        // A new connection, maybe to a restarted core whose note ids start again at 1: the card from before it goes, and
+        // the core's catch-up sends the one still current (notes.rs `shown_card`).
+        setNoteCard(null);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -822,6 +825,7 @@ export function useCore(speaker?: string) {
           }
           case "note_card":
             setNoteCard((shown) => noteReceived(shown, msg));
+            if (noteFirst(msg)) closeRecap();
             break;
         }
       };

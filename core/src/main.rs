@@ -413,7 +413,8 @@ impl Core {
         if let Some(done) = messages::act(self, speaker, text) {
             return Some(done);
         }
-        // Before filing and moves: in Full, "put this in Notes" is a note, not a thread called Notes (notes.rs).
+        // Before filing and moves: in Full, "put this in Notes" is a note, unless a thread called Notes is on the map;
+        // "add milk to my notes" stays filing (notes.rs).
         if let Some(done) = notes::act(self, speaker, text) {
             return Some(done);
         }
@@ -1375,14 +1376,16 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
     }
 }
 
-/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
-/// message counting down.
+/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress,
+/// message counting down and note card.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
     // A reload mid-count gets the card back, with its Stop: it still sends when the count ends.
     messages.extend(crate::messages::counting_card(core, speaker));
+    // A note card still saving, or just ended, comes back too: its end and Open in Notes reach a window that dropped.
+    messages.extend(crate::notes::shown_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {

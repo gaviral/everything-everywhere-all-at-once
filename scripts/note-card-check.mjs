@@ -12,7 +12,7 @@ const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url)
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { received, cardWords, pointCount, pointWords, announcement, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/note-card.ts");
+  const { received, comesFirst, cardWords, pointCount, pointWords, announcement, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/note-card.ts");
   const { slowReadMs, DECIDE_MS, REACH_MS, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const sections = [
     { title: "", points: [
@@ -49,6 +49,15 @@ try {
   const newer = received(card, msg("dry_run", { id: 2, title: "Bills" }));
   assert.equal(newer.title, "Bills");
   assert.equal(received(newer, msg("saved")), newer);
+
+  // The answer to a save just asked for comes before Recap; a card's end doesn't close it.
+  assert.equal(comesFirst(msg("saving")), true);
+  assert.equal(comesFirst(msg("dry_run")), true);
+  assert.equal(comesFirst(msg("saved")), false);
+  assert.equal(comesFirst(msg("failed")), false);
+  assert.match(src("core.ts"), /case "note_card":\n\s*setNoteCard\(\(shown\) => noteReceived\(shown, msg\)\);\n\s*if \(noteFirst\(msg\)\) closeRecap\(\);/);
+  // A new connection drops the card from before it (a restarted core's ids start again at 1); catch-up sends the current one.
+  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{[^]*?setNoteCard\(null\);\n\s*\};/);
 
   // Who said a point shows only in a room (the core sends it then).
   assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");
