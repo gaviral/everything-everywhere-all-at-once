@@ -39,7 +39,7 @@ const code = readdirSync(root + "core/src").filter((f) => f.endsWith(".rs")).map
 const called = new Set([...code.matchAll(/"(muse-[a-z0-9.-]+)"/g)].map((m) => m[1]));
 const named = {
   "Muse Voice Transcribe 1.0": "muse-voice-transcribe-1.0",
-  "Muse Spark 1.2 Contributor": "muse-spark-1.2-contributor",
+  "Muse Spark 1.2": "muse-spark-1.2",
   "Muse Spark 1.3": "muse-spark-1.3",
   "Muse Image 1.0": "muse-image-1.0",
 };
@@ -56,7 +56,8 @@ for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)
 // none at all). Removing a row, its link or its evidence fails here.
 const ROLES = [
   { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /"kind":"heard"/ },
-  { anchor: "placer", model: "Muse Spark 1.2 Contributor", proof: /"feature":"placer","model":"muse-spark-1\.2-contributor"/ },
+  // Contributor mode is opt-in; a trace taken with it on still proves Muse Spark 1.2 places.
+  { anchor: "placer", model: "Muse Spark 1.2", proof: /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/ },
   { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
   { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"composer","model":"muse-spark-1\.3"/ },
   { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap","model":"muse-spark-1\.3"/ },
@@ -80,8 +81,8 @@ for (const { anchor, model, when, proof, none } of ROLES) {
   assert.match(section, proof, `docs/trace.md#${anchor} shows no evidence for its row (${proof})`);
   if (none) assert.doesNotMatch(section, none, `docs/trace.md#${anchor} says no model, but shows a model call`);
 }
-for (const id of ["muse-spark-1.2-contributor", "muse-spark-1.3", "muse-image-1.0"]) {
-  assert.ok(trace.includes(`"model":"${id}"`), `docs/trace.md shows no call by ${id}`);
+for (const id of ["muse-spark-1.2", "muse-spark-1.3", "muse-image-1.0"]) {
+  assert.ok(trace.includes(`"model":"${id}`), `docs/trace.md shows no call by ${id}`);
 }
 assert.ok(/"kind":"heard"|Voice turns heard: [1-9]/.test(trace), "docs/trace.md shows no turn heard by Voice Transcribe");
 assert.ok(!/MODEL_API_KEY=\S|Bearer |\/Users\/|\/home\//.test(trace), "docs/trace.md carries a key or a home path");
