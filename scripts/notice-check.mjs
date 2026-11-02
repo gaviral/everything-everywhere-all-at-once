@@ -42,6 +42,7 @@ try {
     "Couldn't start the mic. Tap it to try again, or type below.",
     "The browser is blocking the microphone for this site. Allow it from the icon beside the address, then tap the mic. You can type meanwhile.",
     "Safari is blocking the microphone for this site. Allow it in Safari › Settings for This Website, then tap the mic. You can type meanwhile.",
+    "Safari is blocking the microphone for this site. Allow it in Website Settings, from the page menu in the address bar, then tap the mic. You can type meanwhile.",
     "Your Mac is blocking the microphone for this browser. Turn it on in System Settings › Privacy & Security › Microphone, then reopen the browser.",
     "Windows is blocking the microphone for this browser. Turn it on in Settings › Privacy & security › Microphone, then reopen the browser.",
     "No microphone found. Connect one, then tap the mic, or type below.",
@@ -130,6 +131,10 @@ try {
   say({ type: "notice", message: "Today's free tries are used up; back tomorrow. Your map is still here to read." });
   await settle();
   assert.ok(core.noKey && core.resting && !core.keyRefused);
+  // Asking for an app then: the core has no key, so it says making one needs it. Still the day's limit, not a missing key.
+  say({ type: "notice", message: "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart." });
+  await settle();
+  assert.ok(core.noKey && core.resting && !core.keyRefused, "an app's key notice keeps back tomorrow");
   say({ type: "snapshot", world: {} });
   await settle();
   assert.ok(!core.noKey && !core.resting, "a new snapshot: the core says again if it still holds");

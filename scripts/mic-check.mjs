@@ -186,6 +186,17 @@ try {
     const safari = fail("NotAllowedError", "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.", { safari: true });
     assert.match(safari.words, /^Safari is blocking the microphone for this site\. Allow it in Safari › Settings for This Website/);
     assert.equal(safari.blocked, "site");
+    // An iPhone or iPad has no Safari › Settings menu: its line names the page menu's Website Settings.
+    const { micPlace } = await server.ssrLoadModule("/src/mic.ts");
+    const iphoneUa = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+    assert.deepEqual(micPlace(iphoneUa, "iPhone", 5), { safari: true, os: "ios" });
+    const ipadUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+    assert.deepEqual(micPlace(ipadUa, "MacIntel", 5), { safari: true, os: "ios" }, "an iPad says it's a Mac");
+    assert.deepEqual(micPlace(ipadUa, "MacIntel", 0), { safari: true, os: "mac" });
+    const phone = fail("NotAllowedError", "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.", micPlace(iphoneUa, "iPhone", 5));
+    assert.match(phone.words, /^Safari is blocking the microphone for this site\. Allow it in Website Settings, from the page menu in the address bar/);
+    assert.doesNotMatch(phone.words, /Safari › Settings/);
+    assert.equal(phone.blocked, "site");
     // A prompt closed without an answer isn't a block: asked again on the next tap.
     const dismissed = fail("NotAllowedError", "Permission dismissed");
     assert.match(dismissed.words, /^The microphone wasn't allowed\. Tap the mic and choose Allow/);

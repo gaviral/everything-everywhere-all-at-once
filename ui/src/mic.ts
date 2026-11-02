@@ -11,12 +11,13 @@ export class MicUnavailable extends Error {}
 
 /** Where to send someone whose mic is blocked: the browser's own settings differ by browser, and a block by the
  *  computer itself is lifted in its system settings. */
-export type MicPlace = { safari: boolean; os: "mac" | "windows" | "other" };
+export type MicPlace = { safari: boolean; os: "mac" | "windows" | "ios" | "other" };
 
-export function micPlace(): MicPlace {
-  const ua = navigator.userAgent;
+/** An iPad says it's a Mac; its touch points tell them apart (as Install.tsx does). */
+export function micPlace(ua = navigator.userAgent, platform = navigator.platform || ua, touchPoints = navigator.maxTouchPoints ?? 0): MicPlace {
   const safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|OPR\/|Android/.test(ua);
-  const os = /Mac/.test(navigator.platform || ua) ? "mac" : /Win/.test(navigator.platform || ua) ? "windows" : "other";
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Mac/.test(platform) && touchPoints > 1);
+  const os = ios ? "ios" : /Mac/.test(platform) ? "mac" : /Win/.test(platform) ? "windows" : "other";
   return { safari, os };
 }
 
@@ -35,6 +36,8 @@ export function micFailure(error: unknown, place: MicPlace): { words: string; bl
     }
     // The prompt closed without an answer: the next tap asks again.
     if (/dismissed/i.test(message)) return { words: "The microphone wasn't allowed. Tap the mic and choose Allow, or type below.", blocked: "" };
+    // Safari on an iPhone or iPad has no Settings menu: its site settings are in the page menu in the address bar.
+    if (place.safari && place.os === "ios") return { words: "Safari is blocking the microphone for this site. Allow it in Website Settings, from the page menu in the address bar, then tap the mic. You can type meanwhile.", blocked: "site" };
     if (place.safari) return { words: "Safari is blocking the microphone for this site. Allow it in Safari › Settings for This Website, then tap the mic. You can type meanwhile.", blocked: "site" };
     return { words: "The browser is blocking the microphone for this site. Allow it from the icon beside the address, then tap the mic. You can type meanwhile.", blocked: "site" };
   }

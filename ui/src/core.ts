@@ -735,7 +735,9 @@ export function useCore(speaker?: string) {
             }
           // Other errors and notices use the same notice area.
           case "notice":
-            if (aboutKey(msg.message)) setKeyNotice(msg.message);
+            // Past the daily limit the core has no key, so a later "needs MODEL_API_KEY" (making an app) is the same
+            // limit: the window keeps saying back tomorrow until the next snapshot.
+            if (aboutKey(msg.message)) setKeyNotice((held) => (isResting(held) && !isResting(msg.message) ? held : msg.message));
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             // A newer answer: the Undo shown was for the one before.
             if (msg.message) { setUndoId(null); answered(); }
