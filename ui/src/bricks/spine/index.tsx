@@ -176,7 +176,7 @@ function Canvas({ map, actions, on }: BrickProps) {
   const anchor = useRef<HTMLDivElement>(null);
   const shelfRef = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
-  const [corner, setCorner] = useState({ bottom: 12, row: 12 });
+  const [corner, setCorner] = useState({ bottom: 12, row: 12, shell: false });
   const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
   const [following, setFollowing] = useState(true);
   const [picked, setPicked] = useState<string | null>(null);
@@ -237,7 +237,8 @@ function Canvas({ map, actions, on }: BrickProps) {
         ? (chrome.stage.left - (chrome.frame?.left ?? 0) >= CORNER_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
         : docked + 12;
       const row = chrome.stage ? bottomEdge - chrome.stage.top + 8 : docked + 8;
-      setCorner((was) => (was.bottom === bottom && was.row === row ? was : { bottom, row }));
+      const shell = !!chrome.stage;
+      setCorner((was) => (was.bottom === bottom && was.row === row && was.shell === shell ? was : { bottom, row, shell }));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -703,12 +704,14 @@ function Canvas({ map, actions, on }: BrickProps) {
       </ActsContext.Provider>
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
         send={(text) => { notes.add(picking.thoughtId, picking.quote, text); unpick(); getSelection()?.removeAllRanges(); }} />}
-      {!narrow && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
+      {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
+          shelf at the right, where the left is the notice timeline's. */}
+      {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
         <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottom }}>
         {narrow && <Cues cues={cues} layout={layout} area={area} width={width} narrow go={goTo} seen={seenCues} />}
-        {narrow && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
+        {(narrow || !corner.shell) && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}
           place={(id, x, y) => {
