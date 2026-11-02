@@ -30,6 +30,20 @@ export const links = (markdown) => [...markdown.replace(/```[\s\S]*?```/g, "").r
   .matchAll(/\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)|<(?:img|a|source)\b[^>]*?\b(?:src|href|srcset)="([^"]+)"/g)]
   .map((m) => m[1] ?? m[2]);
 
+// A clone has only what git tracks: an ignored build (ui/dist) or a file never added exists here but 404s on GitHub,
+// and GitHub's paths are case-sensitive where macOS isn't. So a target must be a tracked file or a folder holding one.
+export const inGit = (files) => {
+  const all = new Set(files);
+  for (const f of files) for (let d = dirname(f); d !== "."; d = dirname(d)) all.add(d);
+  return (target) => target === "." || all.has(target.replace(/\/+$/, ""));
+};
+{
+  const has = inGit(["README.md", "ui/src/App.tsx", "samples/images/a/1.png"]);
+  assert.ok(has("ui/src/App.tsx") && has("samples/images") && has("samples/images/") && has("."), "tracked paths land");
+  assert.ok(!has("ui/dist/index.html") && !has("readme.md") && !has("ui/sr"), "untracked, wrong-case or partial paths don't");
+}
+const tracked = inGit(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
+
 const broken = [];
 for (const page of pages) {
   const text = readFileSync(join(root, page), "utf8");
@@ -38,6 +52,7 @@ for (const page of pages) {
     const [path, hash] = link.split("#");
     const target = path ? normalize(join(dirname(page), decodeURIComponent(path))) : page;
     if (!existsSync(join(root, target))) { broken.push(`${page}: ${link} (no ${target})`); continue; }
+    if (!tracked(target)) { broken.push(`${page}: ${link} (${target} isn't in git, so a clone and GitHub lack it)`); continue; }
     if (hash && target.endsWith(".md") && !anchors(readFileSync(join(root, target), "utf8")).has(hash.toLowerCase())) {
       broken.push(`${page}: ${link} (no heading "#${hash}" in ${target})`);
     }
