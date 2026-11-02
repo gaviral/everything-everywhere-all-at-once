@@ -19,3 +19,16 @@ export function showsLiveLine(state: { words: boolean; pending: number; listenin
   if (state.starting) return true;
   return state.listening && state.view === "map";
 }
+
+/** How long a touch on a title is held to rename it: iOS's own long press (UILongPressGestureRecognizer's
+ *  minimumPressDuration, 0.5 s), so it feels like every other long press on the phone. */
+export const LONG_PRESS_MS = 500;
+
+/** What a press on a card's title does. A tap opens or folds the card, as the rest of the head does: on a phone the
+ *  title is the biggest target in a folded head, and tap = open is the convention (Things on iPhone opens a to-do on
+ *  tap and edits its title inside). A click, Enter or Space (`detail` 0), a long press or a double tap renames; so does
+ *  "rename this to …". `pointerType` is the press's ("" when none was seen), `heldMs` how long it was held. */
+export function titleTap(pointerType: string, detail: number, heldMs: number): "open" | "rename" {
+  const touch = pointerType === "touch" || pointerType === "pen";
+  return touch && detail === 1 && heldMs < LONG_PRESS_MS ? "open" : "rename";
+}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
+import { ideaCounts } from "./chunks";
 import { resolveMerged } from "./merges";
 import "./recap.css";
 import { TIPS } from "./Tips";
@@ -137,6 +138,8 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
   </li>)}</ul>;
   const plans = recap?.plans ?? [];
   // Only thoughts that arrived since, not ones dated ahead of this clock (the samples are dated Nov 3, 2026).
+  // Counted as the header and the cards count (chunks.tsx): the core's `thought_count` counts a joined pair twice.
+  const counted = recap ? ideaCounts(world, recap.since_ms, recap.through_ms).thoughts : 0;
   const newer = recap && world.thoughts.some((t) => t.at_ms > recap.through_ms && t.at_ms <= Date.now());
   const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
@@ -153,7 +156,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
           <button aria-pressed={view.period === "session"} disabled={view.loading} onClick={() => onRequest("session")}>This session</button>
           <button aria-pressed={view.period === "today"} disabled={view.loading} onClick={() => onRequest("today")}>Today</button>
         </div>
-        {recap && <span className="recap-meta">{recap.thought_count} {recap.thought_count === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "thread" : "threads"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
+        {recap && <span className="recap-meta">{counted} {counted === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "thread" : "threads"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">

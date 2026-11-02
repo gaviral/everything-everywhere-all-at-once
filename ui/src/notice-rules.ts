@@ -27,6 +27,11 @@ export function staysUp(notice: string): boolean {
   return STAYS.test(notice);
 }
 
+/** The sticky notices the mic owns: the tap that starts it again clears them (a failed start says its own). */
+export function micNotice(notice: string): boolean {
+  return staysUp(notice) && !/^The AI key was refused/i.test(notice);
+}
+
 /** How long an answer is up: its reading time (238 words a minute, plus a look over), never less than before. */
 export function upFor(shown: string): number {
   return Math.max(SHORTEST_MS, readMs(shown));

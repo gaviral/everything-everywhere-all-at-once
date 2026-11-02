@@ -533,6 +533,9 @@ export function apply(world: World, raw: Change): World {
       const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
       return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
     }
+    // A change this window doesn't know (a newer core, a tab open across a redeploy): the map as it was, not undefined.
+    default:
+      return world;
   }
 }
 
@@ -746,6 +749,9 @@ export function useCore(speaker?: string) {
             setUndoId(msg.id);
             break;
           case "correctable":
+            // The core now remembers a newer turn, not the one an Undo shown was for: that Undo can't work, so it goes
+            // (a turn's own `correctable` comes before its `undoable`).
+            setUndoId(null);
             setCorrectable(msg.for_ms > 0 ? { until: Date.now() + msg.for_ms, back_to: msg.back_to } : null);
             break;
           case "revert":

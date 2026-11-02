@@ -54,6 +54,20 @@ try {
   assert.match(app, /className="picture-mark"[^>]*data-tip=/, "the head's picture mark carries a tip, so the rule must skip it");
   assert.match(app, /className="thread-head" onClick=\{\(event\) => \{\s*if \(headClickToggles\(/, "the card's head is wired to the rule");
   assert.match(app, /className="collapse thread-toggle"[^>]*onClick=\{toggle\}/, "the head and the button toggle the same way");
+  // A tap on the title opens the card, as the rest of the head does (phone convention: Things on iPhone opens a to-do
+  // on tap). A click, Enter, a long press or a double tap renames (spec-mobile 2).
+  const { titleTap, LONG_PRESS_MS } = await server.ssrLoadModule("/src/ux-rules.ts");
+  assert.equal(titleTap("touch", 1, 80), "open", "a tap opens");
+  assert.equal(titleTap("pen", 1, 80), "open", "a pen's tap opens");
+  assert.equal(titleTap("mouse", 1, 80), "rename", "a click renames, as before");
+  assert.equal(titleTap("touch", 0, 0), "rename", "Enter or Space (a keyboard click) renames");
+  assert.equal(titleTap("", 1, 0), "rename", "no pointer seen: as a click");
+  assert.equal(titleTap("touch", 1, LONG_PRESS_MS), "rename", "a long press renames");
+  assert.equal(titleTap("touch", 2, 80), "rename", "a double tap renames");
+  assert.equal(LONG_PRESS_MS, 500, "iOS's long press (UILongPressGestureRecognizer's 0.5 s)");
+  const moves = src("Moves.tsx");
+  assert.match(moves, /if \(titleTap\(press\.current\.type, event\.detail, performance\.now\(\) - press\.current\.at\) === "open"\) \{ onOpen\?\.\(event\); return; \}/, "the title is wired to the rule");
+  assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\} onOpen=\{toggle\} \/>/, "a tapped title opens the card the head opens");
 
   // 5. The Palace's last frame: the dock is the composer and what needs you, nothing more.
   const line = (s) => showsLiveLine({ words: false, pending: 0, listening: true, starting: false, view: "map", ...s });
