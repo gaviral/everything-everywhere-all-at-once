@@ -51,6 +51,8 @@
 .recap-columns > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 .recap-items, .recap-actions { display: grid; gap: 13px; }
 .recap-item-link { color: var(--ink); font-size: 14px; line-height: 1.55; }
+/* The map's ✓ Decided mark, in its color, before each decision. */
+.recap-items .decided { margin-right: 6px; font-size: 14px; }
 .recap-source { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .recap-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .recap-content .recap-unfinished { padding: 18px 20px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--amber) 25%, var(--line)); border-radius: 12px; background: var(--amber-soft); }

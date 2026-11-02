@@ -43,7 +43,7 @@ try {
   // Listening: the model hearing the words; anything you wait on takes the line, then it comes back.
   const mic = start("listen", "muse-voice-transcribe-1.0");
   let state = stepped(EMPTY_LINE, mic, 0);
-  assert.deepEqual(lineFor(state, 0, false), { model: "Muse Voice Transcribe 1.0", id: "muse-voice-transcribe-1.0", text: "listening" });
+  assert.deepEqual(lineFor(state, 0, false), { model: "Muse Voice Transcribe 1.0", id: "muse-voice-transcribe-1.0", text: "mic on" });
   assert.equal(lineFor(state, 0, true).text, "hearing you");
   // Placing and a picture at once (a new thread's picture starts as the next line is placed): never the wrong model.
   const place = start("placer", "muse-spark-1.2-contributor");

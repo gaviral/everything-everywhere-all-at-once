@@ -62,10 +62,16 @@ export function modelName(id: string): string {
     .map((part) => (/^\d/.test(part) ? part : part[0].toUpperCase() + part.slice(1))).join(" ");
 }
 
-/** The first screen's line: which Meta model does what, as the core asks them; empty without a key (none runs). */
+/** The first screen's line: which Meta model does what, as the core asks them, in the end card's words (one model, its
+ *  steps together: "Tidies, builds, recaps: Muse Spark 1.3"), so the video's first and last frames name them alike.
+ *  Empty without a key (none runs). */
 export function modelsLine(models: Model[]): string {
-  if (!models.length) return "";
-  return `Runs on Meta's models: ${models.map((m) => `${modelName(m.model)} ${m.step}`).join(" · ")}`;
+  const groups = new Map<string, string[]>();
+  for (const m of models) groups.set(modelName(m.model), [...(groups.get(modelName(m.model)) ?? []), m.step]);
+  return [...groups].map(([name, steps]) => {
+    const said = steps.join(", ");
+    return `${said[0].toUpperCase()}${said.slice(1)}: ${name}`;
+  }).join(" · ");
 }
 
 /** A dated item as a calendar file: one all-day event, which Apple, Google and Outlook calendars open. Null without a

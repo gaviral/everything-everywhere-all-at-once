@@ -71,7 +71,7 @@ try {
 
   // 5. The Palace's last frame: the dock is the composer and what needs you, nothing more.
   const line = (s) => showsLiveLine({ words: false, pending: 0, listening: true, starting: false, view: "map", ...s });
-  assert.equal(line({}), true, "on the map, \"Listening…\" holds the live line's place");
+  assert.equal(line({}), true, "on the map, the live line holds its place, empty until words come");
   assert.equal(line({ view: "palace" }), false, "in the Palace the composer already says it");
   assert.equal(line({ view: "palace", words: true }), true, "words always show, in the Palace too");
   assert.equal(line({ view: "palace", starting: true, listening: false }), true, "starting the mic still answers the click");

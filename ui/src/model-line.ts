@@ -92,7 +92,7 @@ export function lineFor(state: LineState, now: number, hearing: boolean): Line |
   }
   const behind = running(latest(state.running));
   if (behind) return behind;
-  if (state.listening) return { model: modelName(state.listening.model), id: state.listening.model, text: hearing ? "hearing you" : "listening" };
+  if (state.listening) return { model: modelName(state.listening.model), id: state.listening.model, text: hearing ? "hearing you" : "mic on" };
   return null;
 }
 

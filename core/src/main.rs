@@ -858,14 +858,18 @@ pub fn hosted() -> bool {
 }
 
 /// The Meta models this core asks, by step, for the first screen: the same settings each step reads (a test below
-/// holds the fixed names to the files that send them). Pictures only while they're on.
+/// holds the fixed names to the files that send them). The steps are the end card's words; the window puts one
+/// model's steps together ("Tidies, builds, recaps: Muse Spark 1.3", site.ts). Pictures only while they're on.
 fn models(core: &Core) -> serde_json::Value {
     let tidy = std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into());
+    let recap = std::env::var("RECAP_MODEL").unwrap_or_else(|_| tidy.clone());
     let pictures = !std::env::var("PICTURES").is_ok_and(|value| value.eq_ignore_ascii_case("off"));
     let mut models = vec![
-        serde_json::json!({ "step": "listens", "model": "muse-voice-transcribe-1.0" }),
+        serde_json::json!({ "step": "hears", "model": "muse-voice-transcribe-1.0" }),
         serde_json::json!({ "step": "places", "model": core.placer_model.name() }),
         serde_json::json!({ "step": "tidies", "model": tidy }),
+        serde_json::json!({ "step": "builds", "model": tidy }),
+        serde_json::json!({ "step": "recaps", "model": recap }),
     ];
     if pictures {
         models.push(serde_json::json!({ "step": "draws", "model": "muse-image-1.0" }));
@@ -2802,7 +2806,8 @@ mod tests {
         let models = super::models(&core);
         let named = |step: &str| models.as_array().unwrap().iter().find(|m| m["step"] == step).map(|m| m["model"].as_str().unwrap().to_string());
         assert_eq!(named("places").as_deref(), Some(core.placer_model.name()));
-        let sources = [("listens", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("draws", include_str!("pictures.rs"))];
+        let sources = [("hears", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("builds", include_str!("apps.rs")),
+            ("recaps", include_str!("recap.rs")), ("draws", include_str!("pictures.rs"))];
         for (step, source) in sources {
             let Some(model) = named(step) else {
                 assert!(step == "draws" && std::env::var("PICTURES").is_ok_and(|v| v.eq_ignore_ascii_case("off")), "{step} is named");

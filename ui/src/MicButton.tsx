@@ -55,7 +55,7 @@ export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
 
 /** The composer's placeholder, which sits where your eyes are while you talk. */
 export function composerHint(state: MicState): string {
-  return state === "listening" || state === "hearing" ? "Listening… or type"
+  return state === "listening" || state === "hearing" ? "Or type a thought"
     : state === "starting" ? "Starting the microphone… or type"
     : state === "paused" ? "Paused · tap the mic to talk, or type"
     : state === "nokey" ? "Type a thought · the mic needs an AI key"
