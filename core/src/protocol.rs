@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 // guest's script would ride along in every later model call (each placement lists every title).
 
 /// A typed thought, in characters: the placer's answer room grows with a turn to its ceiling at 6,000 bytes
-/// (placer.rs `room_for`, `MAX_ROOM`), so a longer one could lose its answer. Longest real thought: 302 (2026-11-01).
+/// (placer.rs `room_for`, `MAX_ROOM`), so a longer one could lose its answer. Longest real thoughts: dictated turns of
+/// 1,444, 1,405 and 1,266 characters (2026-11-02, 46 turns on one map, median 241); a 1,513-character routing case
+/// is placed in one round (no answer cut off at its room).
 pub const THOUGHT_MAX: usize = 6_000;
 /// What a window hears past `THOUGHT_MAX` (the page says it first and keeps the draft: ui/src/limits.ts).
 pub const THOUGHT_TOO_LONG: &str = "Too long for one thought: 6,000 characters at most. Send it in parts.";

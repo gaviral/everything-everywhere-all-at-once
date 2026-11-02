@@ -25,27 +25,43 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 // one lane, batches of 12 side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698 → 528 with this
 // wording; 743 → 538 and 813 → 479 with an earlier one ("a bill not paid, a message not sent"); the same line after
 // a finished sentence took 365–499.
+// Thinking out loud about one project, one thread took idea after idea: in a real talk (2026-11-02), 9 turns on 3 ideas
+// landed on one thread, and over 31 of its turns three blind readers' majority (2 of 3) kept apart 40 pairs the app had
+// put together (89.5% of 465 pairs agreed). So the model finds the main subject first (the point is often at the end),
+// a thread takes it only if its title covers it as it is, words that announce a move usually start a topic, and a
+// point names what "it" is and keeps "not" and "maybe" instead of clipping the words. The talk replayed through the
+// placer alone (82 turns, Contributor models, two runs each), pairs agreeing with the readers: Spark 1.2 85.8% and
+// 86.0% before → 89.5% and 89.9% after; Spark 1.3 86.5% and 85.8% → 87.5% and 90.1%; pairs put together that the
+// readers keep apart, the main error, 57–62 → 32–49. The routing cases ran as fast as before, run side by side (median
+// 4.0 → 4.1 s on 1.3, 3.3 → 3.2 s on 1.2).
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
 For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
 news that something is done), \"return\" if it says more about an earlier thread, \
 or \"new\" if it starts a new topic or a tangent (parent_id: the thread whose own subject it is one part of, such as the hostel for a trip; \
 never one it only clashes with, shares a day or a word with, or was said after; else empty). \
+First find its main subject, reading to the end: the point often comes last (a closing ask, or what an example was given for). \
 An update on what a thread is about goes on that thread, even with a new detail; \
 which thread that is goes by what the words mean, read with what was said just before, never by a word shared with a title. \
-Being about the same project is not enough to continue. \
+Continue or return only if that subject fits under the thread's title as it is: one that would need a wider title is a new topic, \
+even on the same project, as usually is what follows words that announce a move (\"another idea\", \"anyway\", \"then I was thinking\"). \
+A thought that mostly repeats a point on the map returns to that point's thread. \
 Place by what the words are about, not by how they are said or a word they share with a title: \
 a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
 never with a thread about unfinished thoughts or habits. \
-\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
-split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked, or only talks about pasting or saying the next part \
+(\"here's the next one\"); never skip \"yes\", \"no\" or any other answer. \
+split: if it moves on to another topic partway (often at such words), the exact words where that starts \
+(the other fields describe only the words before), else an empty string; \
 never between two sentences about one thing, such as a deadline and what is due by then. \
-thread_id: the existing thread for continue or return. title: up to 5 words, for a new thread. \
-point: the thought in at most 12 words, in the speaker's own voice; a question they ask stays a question, one they quote keeps who asked. \
+thread_id: the existing thread for continue or return. title: up to 5 words naming its subject, for a new thread, with a misheard word as its guess. \
+point: what the thought means in at most 12 words, in the speaker's own voice, naming its subject instead of \"it\" or \"this\" (\"The lease ends in May\", not \"It ends in May\"), \
+with negations and hedges (\"not\", \"maybe\") kept as said: not a clipped copy, no fillers or exclamations; \
+a question they ask stays a question, one they quote keeps who asked. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
-unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
+unclear: words that look mistranscribed, such as a near miss of a name on the map or an everyday word where a known name fits (\"ocean\" for Notion), else an empty string. \
 guess: what those words most likely were, judging by the context, else an empty string. \
-sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. \
+sure: true only if the context leaves no doubt about the guess (the right name is on the map, or the words around it fit that name alone), else false. \
 joins: \"before\" if the new thought carries on the words said just before, cut off from them by a pause: it finishes that sentence, \
 or can't stand alone without it (\"the one on Main Street\" right after naming a class); \"unfinished\" if it finishes the words left unfinished; \
 else \"none\". A sentence that stands on its own, or a decision, is \"none\", even on the same topic. On a join, point says the whole idea, both parts. \
@@ -99,6 +115,13 @@ pub fn race_from_env() -> usize {
 
 /// The most room a placement is asked for: as much as the chat import asks for.
 const MAX_ROOM: u32 = 12_000;
+
+/// How many of a thread's latest points the prompt shows, oldest first, for the threads touched last (`RECENT`); the
+/// others show their last point. A tool-calling placer tried on a real talk (2026-11-02, 14 runs, scored against a
+/// blind jury's 2-of-3 gold) showed each thread's last 4 points and put together about half as many pairs the gold
+/// keeps apart (23 vs 56) as this prompt did with the last point only.
+const POINTS: usize = 3;
+const RECENT: usize = 20;
 
 /// What the placer works through, in the order it was said: a thought to place, or a speaker's spoken
 /// command. A command waits behind the thoughts said before it, so their placements can't undo it.
@@ -902,6 +925,17 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // (scale-2026-11-01.md). Ties (an import, a map made at once) keep the order they were made in.
     let mut ordered: Vec<&Thread> = world.threads.iter().collect();
     ordered.sort_by_key(|t| t.touched_ms);
+    // A thread shows its latest points (`POINTS`), not only its last: by its title and last point, a thread that had
+    // taken in a few ideas looked like the place for any of them, or for anything near its title. Only the threads
+    // touched last (`RECENT`) do, so a map of hundreds stays the length it was; their lines are the list's end, the
+    // part a placement rewrites anyway.
+    let recent: HashSet<&str> = ordered.iter().rev().take(RECENT).map(|t| t.id.as_str()).collect();
+    let mut points: HashMap<&str, Vec<&str>> = HashMap::new();
+    for t in world.thoughts.iter().filter(|t| t.placed && !t.point.trim().is_empty()) {
+        if let Some(on) = t.thread_id.as_deref().filter(|on| recent.contains(on)) {
+            points.entry(on).or_default().push(t.point.trim());
+        }
+    }
     let threads = if ordered.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -909,7 +943,11 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
             .into_iter()
             .map(|t| {
                 let status = if t.status == ThreadStatus::Dropped { "dropped" } else { "open" };
-                format!("{}: {} [{status}] last: {}", t.id, t.title, t.last_point)
+                let last = match points.get(t.id.as_str()) {
+                    Some(said) => said[said.len().saturating_sub(POINTS)..].join(" | "),
+                    None => t.last_point.clone(),
+                };
+                format!("{}: {} [{status}] last: {last}", t.id, t.title)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -931,6 +969,16 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     let quote = |label: &str, t: &Thought| Some(format!("{label} (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim()));
     let before = heads.before.and_then(|t| quote("Said just before", t)).unwrap_or_default();
     let left = heads.left.and_then(|t| quote("Left unfinished", t)).unwrap_or_default();
+    // The rest of a turn cut where it moved on (`settle`): placed alone, with its first part quoted just before it, a
+    // rest about a summary card read as more of the watch-sync thread its first part went to (its routing case: 0 of 3
+    // runs on Spark 1.3 Contributor, 1 of 3 on 1.2; with this line and the prompt's subject check, 2 of 3 on each).
+    let moved_on = world
+        .split_from
+        .get(&thought.id)
+        .and_then(|first| world.thoughts.iter().find(|t| &t.id == first))
+        .and_then(|first| first.thread_id.as_deref().map(|on| world.resolve(on)))
+        .map(|on| format!("It is the rest of the turn just before, cut there because it moves on from {on} to another topic: return to another thread or start a new one.\n"))
+        .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
@@ -943,7 +991,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{before}{left}{starts}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads (last: their latest points, oldest first):\n{threads}\nActive thread: {active}\n{names}{asked}{before}{left}{moved_on}{starts}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
