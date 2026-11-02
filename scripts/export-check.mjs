@@ -71,6 +71,9 @@ try {
   assert.equal(decided.match(/Decided:\*\* Book the Saturday/g).length, 1, "a decision in both recaps is said once");
   assert.match(decided, /## Trip\n\n- \*\*Decided:\*\* Hotel near the station\n- Nov 1, 10:00 AM · \*\*Decided:\*\* I decided to take the train/);
   assert.equal(decidedAt("Book the Saturday pottery class", [thought("q", "T1", "pottery is fun", 1)]), null, "one shared word isn't the same decision");
+  // The core's mark (decided.rs, as the card shows it) counts even where this file's rule finds no decision.
+  const marked = md({ threads: [thread("T1", "Plans")], thoughts: [thought("m1", "T1", "let's go with Thursday", at(1, 9, 0), { decided: true })] }).text;
+  assert.match(marked, /\*\*Decided:\*\* Let's go with Thursday/);
   // A recap made before a thought was scratched spoke of a map that's gone: its decisions don't come back.
   const undone = md({ threads: [thread("T1", "Trip")], thoughts: [thought("u1", "T1", "trip in June", at(1, 9, 0))],
     recaps: [{ period: "today", since_ms: at(1, 0, 0), through_ms: at(1, 23, 0), thought_count: 2, decisions: [{ thread_id: "T1", text: "Rent the van" }] }] }).text;

@@ -57,6 +57,7 @@ fn thought(n: usize, thread: &str, text: &str, point: &str) -> Thought {
         complete: true,
         at_ms: 1_000 * (n as u64 + 1),
         place_ms: Some(1_500),
+        decided: false,
     }
 }
 

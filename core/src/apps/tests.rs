@@ -72,7 +72,7 @@ async fn nothing_runs_unasked_until_the_person_switches_an_app_on() {
         let mut messages = fixture.core.updates.subscribe();
         let said = |id: &str| Thought { id: id.into(), speaker: "you".into(), text: format!("I never finish my sentences {id}"),
             point: id.into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(),
-            fixed: String::new(), complete: true, at_ms: 1, place_ms: None };
+            fixed: String::new(), complete: true, at_ms: 1, place_ms: None, decided: false };
         let pile = |fixture: &Fixture, ids: &[&str]| for id in ids {
             fixture.core.commit(vec![Change::ThoughtAdded { thought: said(id) }]);
             on_thought(&fixture.core, id);
@@ -429,7 +429,7 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     let thought = Thought { id: "th-test".into(), speaker: "you".into(), text: "Record the demo before lunch".into(),
         point: "Record the demo".into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
-        complete: true, at_ms: now_ms(), place_ms: Some(10) };
+        complete: true, at_ms: now_ms(), place_ms: Some(10), decided: false };
     fixture.core.commit(vec![Change::ThoughtAdded { thought }]);
     on_thought(&fixture.core, "th-test");
     tokio::task::yield_now().await;
@@ -455,7 +455,7 @@ async fn thought_and_timer_watchers_fire_once_and_respect_switches() {
 fn a_timer_with_a_prompt_waits_for_something_new_to_look_at() {
     let said = |at_ms| Thought { id: format!("th-{at_ms}"), speaker: "you".into(), text: "rent is due".into(), point: "Rent is due".into(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
-        complete: true, at_ms, place_ms: None };
+        complete: true, at_ms, place_ms: None, decided: false };
     let mut timer = app();
     timer.watcher = Watcher::Time { at_ms: 1, every_secs: 10 };
     timer.last_run_ms = 1_000;
@@ -688,7 +688,7 @@ async fn an_app_hears_the_newest_thought_once() {
     let resolver = MiniApp { enabled: true, ..seeds(true).remove(0) };
     let said = |id: &str, text: &str, at_ms| Thought { id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
-        complete: true, at_ms, place_ms: None };
+        complete: true, at_ms, place_ms: None, decided: false };
     fixture.core.commit(vec![Change::AppRegistered { app: resolver.clone() },
         Change::ThoughtAdded { thought: said("a", "rent is due friday", 1) }, Change::ThoughtAdded { thought: said("b", "pay it from savings", 2) }]);
     fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
@@ -762,7 +762,7 @@ async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
 #[test]
 fn in_a_room_an_app_hears_who_said_what() {
     let said_by = |speaker: &str, text: &str| Thought { id: text.into(), speaker: speaker.into(), text: text.into(), point: String::new(),
-        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None };
+        thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None, decided: false };
     let (rent, friday, agree) = (said_by("Ana", "rent is due"), said_by("Ana", "pay it friday"), said_by("Sam", "friday works"));
     // One speaker: the prompt reads exactly as it did before rooms.
     assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));

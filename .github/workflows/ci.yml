@@ -1,0 +1,46 @@
+# Every push and pull request runs what a merge needs: the offline tests (scripts/test.sh) and the release
+# precheck. macOS, because the app is tested there and Reminders and Calendar are macOS-only.
+# While the repo is private, macOS minutes count 10x against the free 2,000 a month, so pushes run it only once
+# the repo is public; a manual run (Actions > CI > Run workflow, or `gh workflow run ci.yml`) works either way.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # precheck scans all of git history for keys
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22" # the README asks for 22.12 or newer; the latest 22 is what a judge installs
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Rust (stable, 1.89 or newer)
+        run: rustup update stable --no-self-update && rustup default stable && rustc --version
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Install UI dependencies
+        run: npm ci --no-audit --no-fund
+        working-directory: ui
+      - name: Tests (Rust, UI build, offline UI checks)
+        run: sh scripts/test.sh
+      - name: Release precheck (keys, paths, Meta-only models, claims, links)
+        run: sh scripts/precheck.sh
