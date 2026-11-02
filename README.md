@@ -49,7 +49,7 @@ Every model the app calls at runtime is Meta's, through the Meta Model API; `scr
 
 Chat models use `https://api.meta.ai/v1/chat/completions`; speech uses `wss://api.meta.ai/v1/asr/realtime`; pictures use `https://api.meta.ai/v1/images/generations`. Settings go in `.env`; see `.env.example`.
 
-Every model request has a time limit: 12 s for placing's first try and 20 s for later ones (more for a long turn), 20 s for Explain, 12 s for reading a correction, 8 s for Take me there's model check (about twice the slowest answer measured; “Looking through your threads…” stays up until then), and 40 s to 4 minutes for the rest; the speech stream has no read timeout yet.
+Every model request has a time limit: 12 s for placing's first try and 20 s for later ones (more for a long turn), 20 s for Explain, 12 s for reading a correction, 8 s for Take me there's model check (about twice the slowest answer measured; “Looking through your threads…” stays up until then), and 40 s to 4 minutes for the rest; the speech stream ends once it has been quiet for 3.8 s (no word and no progress report).
 
 ## Try it
 

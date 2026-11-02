@@ -150,16 +150,13 @@ pub async fn run(core: Arc<Core>) {
                 held = Some((waiting, sent));
                 continue;
             }
-            land(&core, waiting, &sent, "held back until this pause");
+            owed.extend(land(&core, waiting, &sent, "held back until this pause"));
         }
         // The map's time: anything that changes after it is the next pass's.
         let at = crate::now_ms();
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
-        // A thought deleted since the last pass: the next ones count as new from here.
-        seen_thoughts = seen_thoughts.min(placed);
-        let new_thoughts = placed.saturating_sub(seen_thoughts);
-        let new_threads = world.threads.len() > seen_threads;
+        let (new_thoughts, new_threads) = new_since(&mut seen_thoughts, &mut seen_threads, placed, world.threads.len());
         let quiet = core.quiet_ms() >= 4_000;
         let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
         let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
@@ -182,7 +179,7 @@ pub async fn run(core: Arc<Core>) {
                 tracing::info!("refiner pass in {took} ms: held back, talk resumed");
                 held = Some((answer, world));
             }
-            Ok(answer) => land(&core, answer, &world, &format!("in {took} ms")),
+            Ok(answer) => owed.extend(land(&core, answer, &world, &format!("in {took} ms"))),
             // Redo it at the next pause rather than waiting for more talk.
             Err(e) => {
                 tracing::warn!("refiner pass failed: {e:#}");
@@ -197,26 +194,36 @@ pub async fn run(core: Arc<Core>) {
 /// merged, a thread heard more (see `drop_stale_titles`), or words it read were taken back (see `drop_taken_back`).
 /// An idea or task the person approved or dismissed while this was worked out is theirs: its correction is dropped,
 /// checked under the commit's lock, so it never puts back a row that's being added (`as_left`).
-fn land(core: &Core, answer: Pass, sent: &World, when: &str) {
-    land_racing(core, answer, sent, when, || {});
+/// Returns the threads whose results it dropped (words read were taken back): the next pass reads them in full.
+fn land(core: &Core, answer: Pass, sent: &World, when: &str) -> HashSet<String> {
+    land_racing(core, answer, sent, when, || {})
+}
+
+/// How many placed thoughts are new since the last pass, and whether a thread is: a delete or merge since lowers
+/// both counts, so the next ones count as new from there.
+fn new_since(seen_thoughts: &mut usize, seen_threads: &mut usize, placed: usize, threads: usize) -> (usize, bool) {
+    *seen_thoughts = (*seen_thoughts).min(placed);
+    *seen_threads = (*seen_threads).min(threads);
+    (placed - *seen_thoughts, threads > *seen_threads)
 }
 
 /// `land`, with `between` run after the check and before the commit (a test takes words back there). The check
 /// is made on a snapshot, so words can be taken back before the commit: the commit holds only while every word the
 /// pass read and the check kept is still on the map (`commit_if`), else the pass is checked again on the new map.
-fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: impl Fn()) {
+fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: impl Fn()) -> HashSet<String> {
+    let mut dropped = HashSet::new();
     for _ in 0..3 {
         let world = core.snapshot();
         let mut pass = answer.clone();
         drop_stale_titles(&mut pass, sent, &world);
-        drop_taken_back(&mut pass, sent, &world);
+        dropped.extend(drop_taken_back(&mut pass, sent, &world));
         let present: HashSet<&str> = world.thoughts.iter().map(|t| t.id.as_str()).collect();
         let read: Vec<String> =
             sent.thoughts.iter().filter(|t| t.placed && present.contains(t.id.as_str())).map(|t| t.id.clone()).collect();
         let changes = changes(&world, pass);
         tracing::info!("refiner pass {when}: {} changes", changes.len());
         if changes.is_empty() {
-            return;
+            return dropped;
         }
         between();
         let still = |now: &World| {
@@ -224,11 +231,12 @@ fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: imp
             read.iter().all(|id| on.contains(id.as_str())) && changes.iter().all(|c| as_left(now, c))
         };
         if core.commit_if(still, changes.clone()) {
-            return;
+            return dropped;
         }
     }
     // Words keep being taken back, or items keep changing: the next pass reads the map as it is then.
     tracing::warn!("refiner pass {when}: dropped, words were taken back or its items changed while it landed");
+    dropped
 }
 
 /// True unless `c` corrects an idea or task that is no longer as the pass saw it.
@@ -264,8 +272,10 @@ fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
 /// ("scratch that", or a point's Delete, catalog.rs): its reminder, idea, question, title, tags or merge may come from
 /// those words alone. A first user said "I'm getting her the Breville one", then "scratch that", and "Buy Breville
 /// espresso machine · Add to Reminders"
-/// landed anyway (win audit, 2026-11-01). The thread's other words are read again by the next pass.
-fn drop_taken_back(pass: &mut Pass, sent: &World, now: &World) {
+/// landed anyway (win audit, 2026-11-01). Its withdrawals and corrections of ideas and tasks on that thread go too
+/// ("Forget Lisbon, the conference got cancelled", then deleted, withdrew "Book Lisbon flights"). Returns the threads
+/// (as they are now) whose results it dropped: their other words are read again, in full, by the next pass.
+fn drop_taken_back(pass: &mut Pass, sent: &World, now: &World) -> Vec<String> {
     let kept: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
     // The thread as sent and as merged since, so a merge while the pass was out doesn't let it through.
     let gone: HashSet<String> = sent.thoughts.iter()
@@ -274,15 +284,29 @@ fn drop_taken_back(pass: &mut Pass, sent: &World, now: &World) {
         .flat_map(|id| [id.to_string(), sent.resolve(id), now.resolve(id)])
         .collect();
     if gone.is_empty() {
-        return;
+        return Vec::new();
     }
     let on = |id: &str| gone.contains(id);
+    // An idea or task by its short or full id, on a thread that lost words.
+    let on_gone = |given: &str| {
+        let given = given.trim();
+        let named = |id: &str| id == given || short(id) == given;
+        now.suggestions.iter().filter(|s| named(&s.id)).map(|s| &s.thread_id)
+            .chain(now.actions.iter().filter(|a| named(&a.id)).map(|a| &a.thread_id))
+            .any(|t| on(t) || on(&now.resolve(t)))
+    };
+    pass.retire.retain(|r| !on_gone(&r.id));
+    pass.revise.retain(|r| !on_gone(&r.id));
     pass.titles.retain(|t| !on(&t.thread_id));
     pass.merges.retain(|m| !on(&m.from) && !on(&m.into));
     pass.suggestions.retain(|s| !on(&s.thread_id));
     pass.questions.retain(|q| !on(&q.thread_id));
     pass.actions.retain(|a| !on(&a.thread_id));
     pass.tags.retain(|t| !on(&t.thread_id));
+    let mut threads: Vec<String> = gone.iter().map(|id| now.resolve(id)).filter(|id| now.thread(id).is_some()).collect();
+    threads.sort();
+    threads.dedup();
+    threads
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -993,7 +1017,7 @@ fn chrono_today() -> String {
 mod tests {
     use super::{
         changes, changes_on, day, describe, describe_in, drop_stale_titles, drop_taken_back, existing, land, land_racing, named_at,
-        request_in, rest_ms, Pass, Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
+        new_since, request_in, rest_ms, Pass, Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
     };
     use std::collections::HashSet;
     use crate::tidy::Kind;
@@ -2126,6 +2150,30 @@ mod tests {
         changes_on(&world.clone(), serde_json::from_value(pass).unwrap(), TODAY).iter().for_each(|c| world.apply(c));
         let open: Vec<_> = world.actions.iter().filter(|a| a.status == ItemStatus::New).map(|a| a.when.as_str()).collect();
         assert_eq!(open, ["2026-11-05"]);
+    }
+
+    #[test]
+    fn a_withdrawal_or_correction_read_from_deleted_words_does_not_land() {
+        let sent = stale_map();
+        let mut now = sent.clone();
+        // "Forget Lisbon, the conference got cancelled" and "Midterm is Wednesday, not Tuesday" deleted mid-pass.
+        now.thoughts.retain(|t| !t.text.starts_with("Forget Lisbon") && !t.text.starts_with("Midterm is Wednesday"));
+        let mut pass: Pass = serde_json::from_value(serde_json::json!({
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}, {"id": "ac-1b2c3d", "why": "sent"}],
+            "revise": [{"id": "ac-0a1b2c3d4e5f", "title": "Midterm", "when": "2026-11-04", "why": "Wednesday"}],
+        })).unwrap();
+        let dropped = drop_taken_back(&mut pass, &sent, &now);
+        assert_eq!(pass.retire.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["ac-1b2c3d"], "T3 lost nothing");
+        assert!(pass.revise.is_empty());
+        assert_eq!(dropped, ["T1", "T2"], "the next pass reads them in full");
+    }
+
+    #[test]
+    fn a_delete_or_merge_lowers_what_the_next_pass_counts_from() {
+        let (mut thoughts, mut threads) = (5, 3);
+        // A merge took a thread off: the next new one still counts as new.
+        assert_eq!(new_since(&mut thoughts, &mut threads, 4, 2), (0, false));
+        assert_eq!(new_since(&mut thoughts, &mut threads, 5, 3), (1, true));
     }
 
     #[test]

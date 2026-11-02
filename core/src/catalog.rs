@@ -237,8 +237,9 @@ pub enum Undo {
     Unfile { thought: String, started: Option<String>, to: Option<String> },
     /// `thoughts` come back, and `threads`, every thread they were on as it was: one off the map by then comes back
     /// first (it left with them, or a later delete emptied it), so none comes back to a card that isn't there.
-    /// `order`: the map's ids as they stood, so each comes back where it was (`places`).
-    Restore { thoughts: Vec<Thought>, threads: Vec<Thread>, order: Vec<String> },
+    /// `order`: the map's ids as they stood, so each comes back where it was (`places`). `dismissed`: the AI's
+    /// waiting ideas and reminders set aside with a thread that left (`set_aside`), open again if still set aside.
+    Restore { thoughts: Vec<Thought>, threads: Vec<Thread>, order: Vec<String>, dismissed: Vec<String> },
     /// The window puts its folds back as they were before this open or fold (it keeps them).
     Refold,
     /// The window puts back the view it showed before this one was asked.
@@ -644,14 +645,17 @@ pub fn correct(core: &Arc<Core>, speaker: &str, text: &str, search: bool) -> boo
     let previous = last(core, speaker);
     let (rest, strong) = match correction {
         Correction::Scratch => {
+            // Right after a delete, "delete that" is the next delete, never "scratch that" (which brought the first
+            // point back and left this one); "scratch that" and "undo that" still undo it.
+            let after_delete = matches!(&previous, Some(Last { was: Was::Request { act: Act::Delete, .. }, .. }));
             match previous {
-                Some(previous) => scratch(core, speaker, text, previous),
                 // "Delete that" with nothing just before to take back: a thought, as "delete this" reads it (the
                 // point you're on, else your latest), with Undo.
-                None if deletes(text) => {
+                _ if deletes(text) && (previous.is_none() || after_delete) => {
                     let done = crate::moves::delete_said(core, speaker, false);
                     did(core, speaker, text, done);
                 }
+                Some(previous) => scratch(core, speaker, text, previous),
                 None => core.send_to(speaker, ServerMsg::Notice { message: "Nothing to undo: nothing said just before".into() }),
             }
             return true;
@@ -753,7 +757,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let mut emptied: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
     emptied.sort();
     emptied.dedup();
-    let (mut threads, mut kept) = (Vec::new(), Vec::new());
+    let (mut threads, mut kept, mut dismissed) = (Vec::new(), Vec::new(), Vec::new());
     for id in emptied {
         let Some(thread) = world.thread(&id) else { continue };
         if !empty_without(&world, &id, &gone) {
@@ -761,7 +765,9 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
             kept.push(id);
             continue;
         }
-        changes.extend(set_aside(&world, &id));
+        let aside = set_aside(&world, &id);
+        dismissed.extend(set_aside_ids(&aside));
+        changes.extend(aside);
         match before.as_ref().filter(|into| **into != id) {
             Some(into) => changes.push(Change::ThreadMerged { from: id, into: into.clone() }),
             None => {
@@ -774,7 +780,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads, order })
+    Some(Undo::Restore { thoughts, threads, order, dismissed })
 }
 
 /// Takes exactly these thoughts off the map, a delete by hand (moves.rs): `ThoughtSkipped`, so the journal keeps their
@@ -792,10 +798,15 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
     let mut on: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
     on.sort();
     on.dedup();
-    let (mut threads, mut kept) = (Vec::new(), Vec::new());
+    let (mut threads, mut kept, mut dismissed) = (Vec::new(), Vec::new(), Vec::new());
     for id in on {
         let Some(thread) = world.thread(&id) else { continue };
         if empty_without(&world, &id, &gone) {
+            // Its waiting reminder or idea goes with it, as with every other way off the map: none is left for
+            // "add it to Reminders" said elsewhere to put into the host's Reminders.
+            let aside = set_aside(&world, &id);
+            dismissed.extend(set_aside_ids(&aside));
+            changes.extend(aside);
             changes.push(Change::ThreadRemoved { thread_id: id });
         } else {
             kept.push(id);
@@ -806,7 +817,7 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
     let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads, order })
+    Some(Undo::Restore { thoughts, threads, order, dismissed })
 }
 
 /// Every thread's and thought's id in map order, for an Undo to put back what it brings back where it was.
@@ -838,9 +849,18 @@ pub(crate) fn set_aside(world: &World, thread_id: &str) -> Vec<Change> {
         .collect()
 }
 
-/// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other thought, no branch.
+/// The ids `set_aside` dismissed, for an Undo to open again.
+fn set_aside_ids(changes: &[Change]) -> Vec<String> {
+    changes.iter().filter_map(|c| match c {
+        Change::ItemStatus { id, .. } => Some(id.clone()),
+        _ => None,
+    }).collect()
+}
+
+/// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other placed thought, no branch.
+/// Words still finding their place only name the thread they were said on; they don't keep an empty card up.
 fn empty_without(world: &World, id: &str, gone: &dyn Fn(&Thought) -> bool) -> bool {
-    !world.thoughts.iter().any(|t| t.thread_id.as_deref() == Some(id) && !gone(t))
+    !world.thoughts.iter().any(|t| t.placed && t.thread_id.as_deref() == Some(id) && !gone(t))
         && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(id))
 }
 
@@ -992,7 +1012,7 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 core.focus(speaker, &to);
             }
         }
-        Undo::Restore { thoughts, threads, order } => {
+        Undo::Restore { thoughts, threads, order, dismissed } => {
             // Each thread they were on: back on the map if it left it, else they come back where its id leads now.
             // Both stand where they stood.
             let world = core.snapshot();
@@ -1011,6 +1031,10 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 }))
                 .collect();
             back.extend(places(&world, order, &returning));
+            // What was set aside with them waits again, unless someone answered it since.
+            back.extend(dismissed.iter()
+                .filter(|id| world.item_state(id).is_some_and(|s| s.status == ItemStatus::Dismissed))
+                .map(|id| Change::ItemStatus { id: id.clone(), status: ItemStatus::New, done_ms: None }));
             drop(world);
             core.commit(back);
             // Words not placed yet go back in line: the placer let go of them while they were off the map.
@@ -1058,6 +1082,15 @@ pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
 
 /// The Undo key (⌘Z / Ctrl+Z): "undo that" without words. A new turn as the words would be (a search still looking
 /// stops, a late safety-net answer is dropped), and the same take-back, within the same `JUST_BEFORE_MS`.
+/// A click that acts and records no turn of its own (Did you mean …? Yes, a merge's Merge, an app's Keep): the turn
+/// before it is no longer "just before", so ⌘Z or "scratch that" can't reach past the click and take back the older
+/// words, which the person never asked for.
+pub fn clicked(core: &Core, speaker: &str) {
+    if core.catalog.last.lock().unwrap().remove(speaker).is_some() {
+        core.send_to(speaker, ServerMsg::Correctable { for_ms: 0, back_to: None });
+    }
+}
+
 pub fn undo_last(core: &Arc<Core>, speaker: &str) {
     core.touch();
     crate::find::stop(core, speaker);

@@ -23,6 +23,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { landedNow } from "./landed";
 import { resolveMerged } from "./merges";
 import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
@@ -214,6 +215,8 @@ export default function App() {
     };
   }, []);
   const seenThoughts = useRef<Set<string> | null>(null);
+  // Every thought ever placed here: one an Undo brings back isn't a landing to follow (landed.ts).
+  const everPlaced = useRef(new Set<string>());
   const seenSnapshot = useRef(0);
   const seenActive = useRef<string | null>(null);
   // What the map shows next: the newest landing, or your own place when it moves without one ("where was I?").
@@ -243,7 +246,7 @@ export default function App() {
     const held = heldLanding.current;
     heldLanding.current = null;
     if (seenThoughts.current && seenSnapshot.current === core.snapshotRevision) {
-      const added = placed.filter((thought) => !seenThoughts.current!.has(thought.id));
+      const added = landedNow(placed, seenThoughts.current, everPlaced.current);
       moved = !!world.active && world.active !== seenActive.current;
       if (added.length) {
         const thought = added[added.length - 1];
@@ -255,6 +258,7 @@ export default function App() {
       if (heldLanding.current) attention.held(heldLanding.current);
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
+    for (const thought of placed) everPlaced.current.add(thought.id);
     seenSnapshot.current = core.snapshotRevision;
     seenActive.current = world.active;
     const answered = moved && jumps.moved(world.active!);

@@ -35,6 +35,7 @@ Browser, one page per window (ui/src)
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
   merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
+  landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays

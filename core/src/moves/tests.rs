@@ -4,7 +4,7 @@
 use super::*;
 use crate::world::fixtures::{thought, thread};
 use crate::catalog::{self, Act};
-use crate::world::Journal;
+use crate::world::{Action, ItemStatus, Journal, Suggestion};
 use std::collections::HashMap;
 
 struct Fixture {
@@ -628,4 +628,80 @@ async fn that_on_a_card_with_no_point_moves_nothing() {
     catalog::attend(&f.core, "you", None, Some("T5".into()));
     assert_eq!(f.say("Move that to pottery").await, ["notice Nothing on Money to move: point at one of its points"]);
     assert_eq!(f.on("w"), "T1", "the latest thought, on Garden, stays");
+}
+
+/// A reminder waiting on a thread whose only point is deleted: set aside with it (as every other way off the map does),
+/// so "add it to Reminders" said on another card can't put it into the host's Reminders; Undo brings both back.
+#[tokio::test]
+async fn deleting_a_threads_last_point_sets_its_waiting_reminder_aside_and_undo_reopens_it() {
+    let mut world = slipped();
+    world.actions.push(Action { id: "r1".into(), thread_id: "T3".into(), kind: "reminder".into(), title: "Pay the electric bill".into(), when: String::new(), status: ItemStatus::New, done_ms: None });
+    let f = Fixture::new(world);
+    let status = |f: &Fixture| f.core.snapshot().actions[0].status;
+    let lines = f.watch(|core| click_delete(core, "you", "c"));
+    assert_eq!(status(&f), ItemStatus::Dismissed, "no reminder left waiting on a card that's gone");
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert_eq!(status(&f), ItemStatus::New, "Undo reopens it with its thread");
+}
+
+/// "Scratch that" on words that alone started a card sets its waiting idea aside; Undo puts the words and the idea back.
+#[tokio::test]
+async fn scratch_that_then_undo_reopens_the_idea_it_set_aside() {
+    let mut world = slipped();
+    world.suggestions.push(Suggestion { id: "s1".into(), thread_id: "T3".into(), text: "Set up autopay".into(), status: ItemStatus::New });
+    let f = Fixture::new(world);
+    catalog::kept(&f.core, "you", "The electric bill is due Friday", vec!["c".into()]);
+    let lines = f.say("Scratch that").await;
+    assert_eq!(f.core.snapshot().suggestions[0].status, ItemStatus::Dismissed);
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert!(has(&f, "c"));
+    assert_eq!(f.core.snapshot().suggestions[0].status, ItemStatus::New, "the AI's idea isn't left as your no");
+}
+
+/// "Delete that" right after a delete deletes the point you're on now; it never reads as "scratch that" and brings
+/// the first one back. "Scratch that" still undoes the delete.
+#[tokio::test]
+async fn delete_that_after_a_delete_deletes_the_next_point() {
+    let f = Fixture::new(slipped());
+    f.watch(|core| click_delete(core, "you", "a"));
+    catalog::attend_point(&f.core, "you", Some("b".into()));
+    f.say("Delete that").await;
+    assert!(!has(&f, "a") && !has(&f, "b"), "both deleted, the first not brought back");
+    // A spoken one, then another.
+    let f = Fixture::new(slipped());
+    catalog::attend_point(&f.core, "you", Some("a".into()));
+    f.say("Delete that").await;
+    catalog::attend_point(&f.core, "you", Some("b".into()));
+    f.say("Delete that").await;
+    assert!(!has(&f, "a") && !has(&f, "b"));
+    // "Scratch that" after a delete still undoes it.
+    let f = Fixture::new(slipped());
+    f.watch(|core| click_delete(core, "you", "a"));
+    f.say("Scratch that").await;
+    assert!(has(&f, "a"));
+}
+
+/// ⌘Z after a click that records no turn (Did you mean …? Yes, Merge, Keep) says there's nothing to undo; it never
+/// takes back the words said before the click.
+#[tokio::test]
+async fn the_undo_key_after_a_click_never_takes_back_the_words_before_it() {
+    let f = Fixture::new(slipped());
+    catalog::kept(&f.core, "you", "Learn to throw on the wheel", vec!["w".into()]);
+    catalog::clicked(&f.core, "you");
+    let lines = f.watch(|core| catalog::undo_last(core, "you"));
+    assert!(has(&f, "w"), "{lines:?}");
+}
+
+/// Deleting a card's last point while your next words are still finding their place (said on that card): the card
+/// goes, not left empty with its title; the words land on the map as it is then.
+#[tokio::test]
+async fn a_card_whose_last_point_is_deleted_goes_even_while_words_said_there_are_placed() {
+    let mut world = slipped();
+    let mut placing = thought("p", "T3", "And the water bill too", now_ms());
+    placing.placed = false;
+    world.thoughts.push(placing);
+    let f = Fixture::new(world);
+    f.watch(|core| click_delete(core, "you", "c"));
+    assert!(f.core.snapshot().thread("T3").is_none(), "no empty card");
+    assert!(has(&f, "p"), "the words being placed stay");
 }

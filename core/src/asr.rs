@@ -24,6 +24,13 @@ const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 /// 150 frames, 2026-11-01).
 const QUIET_MAX: Duration = Duration::from_millis(3_800);
 
+/// A refused handshake as the window shows it: the service's own message, else a plain line; never its raw JSON or
+/// Rust's debug text (the raw answer goes to the log).
+fn refused(answer: &Value) -> String {
+    let message = answer["message"].as_str().map(str::trim).filter(|m| !m.is_empty() && !m.starts_with('{'));
+    format!("Voice Transcribe refused the session: {}", message.unwrap_or("it didn't start"))
+}
+
 pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
     let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
@@ -36,7 +43,10 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     sink.send(Message::Text(handshake(&key).to_string().into())).await?;
     let first = match tokio::time::timeout(QUIET_MAX, stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => serde_json::from_str::<Value>(t.as_str())?,
-        Ok(other) => return Err(anyhow!("Voice Transcribe refused the session: {other:?}")),
+        Ok(other) => {
+            tracing::warn!("voice handshake answered {other:?}");
+            return Err(anyhow!("{}", refused(&Value::Null)));
+        }
         Err(_) => return Err(anyhow!("Voice Transcribe didn't answer")),
     };
     // A session starts with its id. A refusal carries one too, as an error event, and a wrong key there is
@@ -45,7 +55,8 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         if let Some(status) = first["errorType"].as_str().and_then(crate::model::status_of) {
             core.check(status)?;
         }
-        return Err(anyhow!("Voice Transcribe refused the session: {first}"));
+        tracing::warn!("voice handshake refused: {first}");
+        return Err(anyhow!("{}", refused(&first)));
     }
     core.send_to(&speaker, ServerMsg::Status { listening: true, note: "Listening".into() });
     let step = crate::model::STEP_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -302,7 +313,7 @@ fn sentence_case(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle, handshake, hear, primer, relay, sentence_case, Primer, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, QUIET_MAX, RATE};
+    use super::{handle, handshake, hear, primer, refused, relay, sentence_case, Primer, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, QUIET_MAX, RATE};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Journal, World};
     use crate::Core;
@@ -494,6 +505,15 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_refused_handshake_says_the_services_words_never_raw_json() {
+        assert_eq!(refused(&serde_json::json!({"type": "error", "message": "Session limit reached"})), "Voice Transcribe refused the session: Session limit reached");
+        for answer in [serde_json::json!({"type": "hello"}), serde_json::Value::Null, serde_json::json!({"message": "{\"a\":1}"})] {
+            let shown = refused(&answer);
+            assert!(!shown.contains('{') && !shown.contains("Some(") && shown.ends_with("it didn't start"), "{shown}");
+        }
+    }
+
     /// "Stop listening" after other words in one turn (the transcriber joins them when the pause is short): the words
     /// before it are a thought, the mic pauses and the stream ends, so nothing after it is heard.
     #[test]
@@ -510,6 +530,12 @@ mod tests {
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["Call mom tomorrow about the flight."]);
         assert!(handle(&core, "you", &mut primer, &turn("That's all for today, okay, stop listening, thanks.")));
+        // Only courtesy before it: no thought.
+        let before = core.snapshot().thoughts.len();
+        for said in ["Thanks, stop listening.", "Okay thank you. Stop listening.", "Hey Muse, mic off."] {
+            assert!(handle(&core, "you", &mut primer, &turn(said)), "{said}");
+        }
+        assert_eq!(core.snapshot().thoughts.len(), before, "{:?}", core.snapshot().thoughts.iter().map(|t| &t.text).collect::<Vec<_>>());
         let _ = std::fs::remove_file(&path);
     }
 

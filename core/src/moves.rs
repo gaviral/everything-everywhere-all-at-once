@@ -486,7 +486,7 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     // (catalog.rs `unkeep`): most often the AI started a thread for a thought that belonged to another, and that
     // thread was the mistake. A merge, so anything late aimed at it lands where its words went, and an undo puts it
     // back where it stood in the list.
-    let emptied = !world.thoughts.iter().any(|t| on(&world, t, &from) && !ids.contains(&t.id))
+    let emptied = !world.thoughts.iter().any(|t| t.placed && on(&world, t, &from) && !ids.contains(&t.id))
         && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(from.as_str()));
     changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now).into_iter().filter(|c| !emptied || !matches!(c, Change::ThreadTouched { thread_id, .. } if *thread_id == from)));
     // Their newest words on the thread they're on: "that" there, said last of what they said on it.
