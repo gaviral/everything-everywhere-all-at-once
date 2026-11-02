@@ -1647,7 +1647,7 @@ mod tests {
     /// dropped, so what was spent can be counted from it.
     #[tokio::test]
     async fn the_race_stays_under_the_cap_and_its_loser_is_traced() {
-        async fn race(limit: usize, delays: [u64; 2]) -> (usize, bool, Vec<String>, Vec<serde_json::Value>) {
+        async fn race(limit: usize, delays: [u64; 2]) -> (usize, bool, Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>) {
             let asked = Arc::new(Mutex::new(0usize));
             let seen = asked.clone();
             let service = move |_: axum::Json<serde_json::Value>| {
@@ -1679,27 +1679,37 @@ mod tests {
             let id = core.snapshot().thoughts[0].id.clone();
             super::place(&core, &id, &url, super::patience).await.unwrap();
             let placed = core.snapshot().thoughts[0].placed;
-            let said = std::iter::from_fn(|| updates.try_recv().ok())
-                .filter_map(|o| match o.message {
-                    crate::protocol::ServerMsg::Notice { message } => Some(message),
+            let messages: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).map(|o| o.message).collect();
+            let said = messages.iter()
+                .filter_map(|m| match m {
+                    crate::protocol::ServerMsg::Notice { message } => Some(message.clone()),
                     _ => None,
                 })
+                .collect();
+            // How each call ended, as the windows' model line hears it.
+            let ends: Vec<serde_json::Value> = messages.iter()
+                .map(|m| serde_json::to_value(m).unwrap())
+                .filter(|m| m["type"] == "step" && m["done"] == true)
                 .collect();
             drop(core);
             let calls = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap_or_default().lines()
                 .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).filter(|l| l["kind"] == "call").collect();
             let asked = *asked.lock().unwrap();
-            (asked, placed, said, calls)
+            (asked, placed, said, calls, ends)
         }
-        let (asked, placed, said, _) = race(1, [10, 10]).await;
+        let (asked, placed, said, _, _) = race(1, [10, 10]).await;
         assert_eq!((asked, placed), (1, true), "one call left: one call");
         assert!(said.iter().all(|s| !s.starts_with("AI paused")), "{said:?}");
-        let (asked, placed, said, calls) = race(400, [2_000, 10]).await;
+        let (asked, placed, said, calls, ends) = race(400, [2_000, 10]).await;
         assert_eq!((asked, placed), (2, true));
         assert!(said.is_empty(), "{said:?}");
         let errors: Vec<&str> = calls.iter().filter_map(|c| c["error"].as_str()).collect();
         assert_eq!((calls.len(), errors.len()), (2, 1), "both calls traced: {calls:?}");
         assert!(errors[0].starts_with("dropped before its answer"), "{errors:?}");
+        // The windows hear the winner answered and the loser superseded, never that a placing call failed: the model
+        // line would say "didn't answer" over every placed thought.
+        let told: Vec<_> = ends.iter().map(|m| (m["step"].as_str(), m["ok"].as_bool(), m["superseded"].as_bool())).collect();
+        assert_eq!(told, [(Some("placer"), Some(true), Some(false)), (Some("placer"), Some(false), Some(true))], "{ends:?}");
     }
 
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
