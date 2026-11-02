@@ -1,32 +1,49 @@
 // Where everything goes on the Spine (index.tsx draws it), from the map alone. Pure: the same map, placements and
 // choices give the same places, and what a new thought adds goes below or beside what's there.
-//  - A topic (a thread with no parent) is a spine: its head (picture, title), then its points down a line, oldest
-//    first. Topics stand side by side in the order they started, apart: unrelated until someone connects them.
+//  - A topic (a thread with no parent) is a spine: its head (picture, title, a line of who and when), then its points
+//    down a line, oldest first. Topics stand in columns in the order they started, apart: unrelated until someone
+//    connects them.
+//  - A lone aside (a topic of one point and nothing off it, not the one you're on) floats as a bubble of its words.
 //  - A tangent (a branch) hangs beside the point it came from, the parent's latest point when it started; tangents
 //    alternate right and left, and a tangent's own go further out on its side. Each is a card: title, latest point
-//    and a recap line; open, its points as a small spine of their own.
+//    and a recap line (a short one, two points or fewer, sits unframed, as a note); open, its points as a small spine.
+//  - A margin note (words picked in a point and answered) sits beside those words in the right-hand column, tied to
+//    them by a string; a question folds to "…?" after its words until opened. On a narrow screen it tucks under them.
+//  - A slot (dashed) is where your thought on its way is expected: under the tip of the thread you're on.
 //  - Whatever someone placed by hand stays exactly there; the rest flows around it, never under it. What's on the
 //    shelf is off the canvas; where a point was, its line keeps a small mark.
 import type { Note, Position, Thought, Thread } from "../contract";
-import { wrap, type FontKey } from "./measure";
+import { wrap, wrapEnd, type FontKey } from "./measure";
 
 export type Box = { x: number; y: number; w: number; h: number };
 export type Side = 1 | -1;
 
 /** Sizes in the canvas's own units (px at zoom 1). */
 export const G = {
-  // A topic's column: the line at 16 (the middle of its 32 px tile), words from 40. The measure, 256, holds 98% of
+  // A topic's column: the line at 20 (the middle of its 40 px picture), words from 44. The measure, 256, holds 98% of
   // points in two lines at 15 px (median 44 characters, p98 61, max 70; five sample maps and a live one, n = 234).
-  lineX: 16, tile: 32, textX: 40, textW: 256, colW: 296,
-  // The head's title, 17/22 beside the tile, up to three lines (titles: median 22 characters, max 42).
-  titleX: 44, titleW: 252, titleLine: 22, titleMax: 3,
+  lineX: 20, tile: 40, textX: 44, textW: 256, colW: 300,
+  // The head's title, 18/22 beside the picture, up to three lines (titles: median 22 characters, max 42), and under it
+  // one 11/16 line of how many points and when (or who, in a call).
+  titleX: 52, titleW: 248, titleLine: 22, titleMax: 3, headMeta: 16,
   // Points at 15/22, up to three lines, 12 apart, the first 16 under the head; a point's dot sits on its first line.
   pointLine: 22, pointMax: 3, pointGap: 12, headGap: 16, dotY: 11,
+  // Under a point's words: a row of marks (✓ Decided, Left off: 20 px chips, 5 above), then the landing note (11/16).
+  chips: 25, landLine: 18,
+  // Where your thought on its way is expected: a dashed box as tall as a line with room around it.
+  slotH: 28,
   // Where a point now placed elsewhere, or shelved, was: a small hollow mark that keeps the line's order.
   notch: 14,
-  // A tangent's card: 232 wide (26 characters of its 15 px title a line, so most titles take one), 12 inside; its
-  // latest point at 13/18, up to two lines; a recap line at 12/16.
-  cardW: 232, pad: 12, cardTitleLine: 20, cardTitleMax: 2, smallLine: 18, cardPointMax: 2, recapLine: 16,
+  // A tangent's card: 232 wide, 12 inside; its title at 13/18 (two lines), its latest point at 13/18 (two lines), a
+  // recap line at 11/16. Two points or fewer: unframed, as a margin note.
+  cardW: 232, pad: 12, cardTitleLine: 18, cardTitleMax: 2, smallLine: 18, cardPointMax: 2, recapLine: 16, noteMax: 2,
+  // A margin note: 220 wide; each entry an initial (20) and 13/18 words, three lines at most; two entries shown (the
+  // note and its latest reply), the rest counted on an 11/16 line.
+  marginW: 220, marginText: 194, marginLine: 18, marginMax: 3, marginGap: 6, marginShown: 2, marginMore: 16,
+  // Tucked under its words on a narrow screen: 6 above, a 12 px rule.
+  tuckTop: 6, tuckIn: 12,
+  // A lone aside: one or two lines of 13/18 in a pill, 14 in from its ends.
+  asideLine: 18, asidePad: 9, asideIn: 14, asideMax: 300,
   // The gutter between a column and its cards holds the curve from a point to its card; topics stand twice that
   // apart, so a topic's own cards read as its own (closer = belongs together).
   gutter: 48, laneGap: 96, stack: 12,
@@ -57,13 +74,57 @@ const CARD_ROW = G.pad + G.cardTitleLine / 2;
 /** The least room left around anything placed by hand, so what flows past never touches it. */
 const CLEAR = 12;
 
-export type Kind = "head" | "point" | "card" | "notch";
+/** Someone on the map, as a point or a note shows them: yours plain, another's by an initial, the Friend's by ✦. */
+export interface Who {
+  name: string;
+  initial: string;
+  ai: boolean;
+  me: boolean;
+}
+// contract: nothing in the map says which speaker is an AI yet; the Friend joins a room under that name (the guide's
+// `by`), so the name stands in until the contract carries it.
+const AI_NAME = /^(✦\s*)?(the\s+)?friend$/i;
+export function whoIs(name: string, me: string): Who {
+  const mine = name === me || name === "you";
+  const ai = !mine && AI_NAME.test(name.trim());
+  return { name: mine ? "you" : ai ? "Friend" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
+}
+
+export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin";
+
+/** Words picked in a point, answered in a margin note: where they are in its words, and whether the note is folded. */
+export interface Quote {
+  start: number;
+  end: number;
+  margin: string;
+  folded: boolean;
+  /** Where a folded question's "…?" goes: after the words and the stop that ends them. */
+  fold: number;
+}
+
+/** What's tucked under a point's words on a narrow screen: a margin note's entries, or a short tangent (its title and
+ *  latest point), so a phone needn't pan sideways for either. */
+export interface Tuck {
+  margin: string;
+  entries: Entry[];
+  /** A tangent's: its thread and title. */
+  thread?: string;
+  title?: string;
+}
+
+/** One entry of a margin note: who, and their words as they wrap. */
+export interface Entry {
+  who: Who;
+  text: string;
+  lines: number[];
+}
 
 /** A thing on the canvas. */
 export interface Item {
-  /** The canvas's id for it: "t:" a thread (head or card), "p:" a point, "n:" where a point was. */
+  /** The canvas's id for it: "t:" a thread (head, card or aside), "p:" a point, "n:" where a point was, "s:" a slot,
+   *  "m:" a margin note. */
   key: string;
-  /** What `positions` knows it by: a thread's id, or a point's first thought's. */
+  /** What `positions` knows it by: a thread's id, or a point's first thought's (a slot: its thought's). */
   id: string;
   kind: Kind;
   thread: string;
@@ -76,11 +137,13 @@ export interface Item {
   room?: string;
   /** 0 for a topic's own things; 1 for a tangent's, 2 for a tangent's tangent… */
   depth: number;
+  /** The topic it belongs to: what the focus keeps bright. */
+  topic: string;
   /** A topic's head: how far down the canvas is its own before the next topic under it starts (its title, far out,
    *  takes no more lines than fit there). */
   reach?: number;
   side?: Side;
-  // A head or a card.
+  // A head, a card or an aside.
   title?: string;
   titleLines?: number[];
   picture?: string | null;
@@ -90,11 +153,17 @@ export interface Item {
   latest?: string;
   latestLines?: number[];
   since?: number;
+  /** A head: everyone with a point on it, you first (in a call its meta line names them). */
+  speakers?: Who[];
+  /** A card of two points or fewer, closed: drawn unframed, as a note. */
+  slim?: boolean;
   /** An open card's own small line, from under its title to its last point's dot, in its own coordinates (drawn by the
    *  card: the canvas's lines go under cards). */
   line?: { x: number; y1: number; y2: number };
-  // A point.
+  // A point (an aside carries its one point's words and thoughts too).
   text?: string;
+  /** Its words as shown: a point left off is quoted, unfinished. */
+  shown?: string;
   lines?: number[];
   look?: Look;
   decided?: boolean;
@@ -103,6 +172,24 @@ export interface Item {
   at?: number;
   /** What the AI did here (corrected the words, saw a decision): the hook for notices on the line (later). */
   marks?: Mark[];
+  /** Said by someone else: their initial on the line instead of a dot (✦ for the Friend). */
+  who?: Who;
+  /** ✓ Agreed, and by whom (contract: the core's `agreed_by`); without it a decision reads "✓ Decided". */
+  agreed?: Who[];
+  /** Said and not finished: amber, quoted, "Left off". */
+  left?: boolean;
+  /** A row of marks under its words. */
+  chips?: boolean;
+  /** The landing note under the newest landing, until the next. */
+  landing?: string;
+  /** Words with a margin note. */
+  quotes?: Quote[];
+  /** A narrow screen's margin notes, under its words: each note's entries. */
+  tucks?: Tuck[];
+  // A margin note.
+  margin?: string;
+  entries?: Entry[];
+  more?: number;
 }
 
 export interface Mark {
@@ -117,13 +204,15 @@ export interface End {
   dy: number;
 }
 
-/** A line: a topic's spine, a tangent's curve from its point, or the dashed thread to a point placed elsewhere. */
+/** A line: a topic's spine, a tangent's curve from its point, the dashed thread to a point placed elsewhere, the dashed
+ *  run on to a slot, or a margin note's string from its words. */
 export interface Link {
   key: string;
-  kind: "spine" | "branch" | "pulled";
+  kind: "spine" | "branch" | "pulled" | "slot" | "note";
   from: End;
   to: End;
   room?: string;
+  topic?: string;
   /** A straight run along the start's row, to this x (from the start item's left), before the curve: it keeps the curve
    *  out of the column's words, in the gutter. */
   lead?: number;
@@ -144,10 +233,25 @@ export interface Layout {
   byKey: Map<string, Item>;
   /** Each thread's tip: what the view follows while it's yours (its latest point shown, else its card or head). */
   tips: Map<string, string>;
+  /** The slots open under a thread's tip, in order: what the view keeps in sight with the tip. */
+  slots: Map<string, string[]>;
   /** What's on the shelf, newest first. */
   shelf: Shelved[];
   /** Topics laid out in a row, in order (not those placed by hand). */
   lanes: string[];
+}
+
+/** A margin note as the layout takes it (index.tsx gathers them from the map). */
+export interface MarginInput {
+  id: string;
+  /** The point's thought its words are in. */
+  thoughtId: string;
+  /** The words, as picked. */
+  quote: string;
+  /** The note, then its replies, oldest first. */
+  entries: readonly { by: string; text: string }[];
+  /** It asks: folded to "…?" until opened. */
+  question: boolean;
 }
 
 export interface LayoutInput {
@@ -160,6 +264,20 @@ export interface LayoutInput {
   shelf: ReadonlyMap<string, number>;
   /** The tangent shown open (its points), or none. */
   open: string | null;
+  /** Who's at this window (the map's `me`). */
+  me?: string;
+  /** The thread you're on: its tip takes the slots, and it never floats as an aside. */
+  active?: string | null;
+  /** Your thoughts on their way, oldest first: a slot each under the active thread's tip. */
+  slots?: readonly string[];
+  /** The newest landing, by its thought, with the note it shows under the point until the next. */
+  landing?: { thought: string; text: string } | null;
+  /** Margin notes. */
+  margins?: readonly MarginInput[];
+  /** Folded questions this viewer opened. */
+  opened?: ReadonlySet<string>;
+  /** A phone's width: margin notes tuck under their words. */
+  narrow?: boolean;
 }
 
 /** One point: a thought, with the parts before a pause it carries on (chunks.tsx `asIdeas`: the card shows them as one,
@@ -225,8 +343,33 @@ function clear(s: Scene, box: Box): Box {
   return { ...box, y };
 }
 
+/** A point's shape: its words as shown and wrapped, the words with margin notes, what's under them, and its height. */
+interface Shape {
+  shown: string;
+  lines: number[];
+  quotes: Quote[];
+  /** Where each open margin note's words end: the line, and how far along it. */
+  ends: Map<string, { line: number; x: number }>;
+  tucks: Tuck[];
+  /** Margin notes beside it, open. */
+  beside: MarginInput[];
+  chips: boolean;
+  landing?: string;
+  h: number;
+}
+
+/** What's under a point's words, in px: the marks row, the landing note, tucked notes. */
+const tuckHeight = (tucks: Tuck[]) =>
+  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
+    + 4 * Math.max(0, tuck.entries.length - 1), 0);
+
 export function layout(input: LayoutInput): Layout {
   const { threads, notes, rooms, positions, open } = input;
+  const me = input.me ?? "you";
+  const active = input.active ?? null;
+  const pendingSlots = input.slots ?? [];
+  const opened = input.opened ?? new Set<string>();
+  const narrow = !!input.narrow;
   const byId = new Map(threads.map((t) => [t.id, t]));
   const order = new Map(threads.map((t, i) => [t.id, i]));
 
@@ -274,6 +417,7 @@ export function layout(input: LayoutInput): Layout {
   for (const list of kids.values()) list.sort(byStart);
   roots.sort(byStart);
   const depthOf = (t: Thread) => { let d = 0; for (let p = parentOf(t); p; p = parentOf(byId.get(p)!)) d++; return d; };
+  const topicOf = (thread: string) => { let t = byId.get(thread)!; for (let p = parentOf(t); p; p = parentOf(t)) t = byId.get(p)!; return t.id; };
 
   // What was placed by hand, and what's on the shelf; either for something no longer on the map is left out.
   const known = (id: string) => byId.has(id) || ideaOwner.has(id);
@@ -285,15 +429,106 @@ export function layout(input: LayoutInput): Layout {
     if ((pins.get(id)?.at_ms ?? -Infinity) <= p.at_ms) pins.set(id, p);
   }
 
+  // Margin notes, by the point their words are in.
+  const marginsOn = new Map<string, MarginInput[]>();
+  for (const m of input.margins ?? []) {
+    const key = partOf.get(m.thoughtId);
+    if (key && m.entries.length) marginsOn.set(key, [...(marginsOn.get(key) ?? []), m]);
+  }
+  const landingOn = input.landing ? partOf.get(input.landing.thought) : undefined;
+
+  // On a narrow screen a short tangent off a topic (two points or fewer, nothing off it, shut, not the one you're on)
+  // tucks under the point it came from instead of hanging beside it, off the screen.
+  const tuckedOn = new Map<string, Thread[]>();
+  const tucked = new Set<string>();
+  if (narrow) for (const t of threads) {
+    const parent = parentOf(t);
+    if (!parent || parentOf(byId.get(parent)!) || kids.get(t.id)?.length || ideasIn(t.id).length > G.noteMax || open === t.id || t.id === active || pins.has(t.id) || shelved.has(t.id)) continue;
+    const start = started(t);
+    const list = ideasIn(parent);
+    const origin = [...list].reverse().find((idea) => idea.at <= start) ?? list[0];
+    if (!origin || pins.has(origin.key) || shelved.has(origin.key)) continue;
+    tuckedOn.set(origin.key, [...(tuckedOn.get(origin.key) ?? []), t]);
+    tucked.add(t.id);
+  }
+
+  /** A lone aside: one point, nothing off it, not the thread you're on, not left off or decided. */
+  const lone = (t: Thread) => {
+    const list = ideasIn(t.id);
+    const idea = list[0];
+    return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.status !== "dropped" && !idea.decided &&
+      idea.parts.at(-1)!.complete && !pins.has(idea.key) && !shelved.has(idea.key) && !marginsOn.has(idea.key) && landingOn !== idea.key;
+  };
+
   // Sizes, before anything is placed.
   const headLines = (t: Thread) => wrap(t.title, "title", G.titleW, G.titleMax);
-  const headHeight = (lines: number[]) => Math.max(G.tile, lines.length * G.titleLine);
-  const pointLines = (idea: Idea, look: Look) => wrap(idea.text, look.font, look.textW, look.max);
+  const headHeight = (lines: number[]) => Math.max(G.tile, lines.length * G.titleLine + G.headMeta);
+  const entryOf = (by: string, text: string, w: number): Entry => ({ who: whoIs(by, me), text, lines: wrap(text, "small", w, G.marginMax) });
+  const shapes = new Map<string, Shape>();
+  const shapeOf = (idea: Idea, look: Look): Shape => {
+    const cached = shapes.get(`${idea.key}|${look.variant}`);
+    if (cached) return cached;
+    const left = !idea.parts.at(-1)!.complete;
+    const shown = left ? `“${idea.text.replace(/[\s.,;:…—–-]+$/u, "")}…”` : idea.text;
+    // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
+    const found: { m: MarginInput; start: number; end: number }[] = [];
+    for (const m of marginsOn.get(idea.key) ?? []) {
+      const quote = m.quote.trim();
+      let start = quote ? shown.indexOf(quote) : -1;
+      if (start < 0 && quote) start = shown.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase());
+      if (start >= 0 && !found.some((f) => start < f.end && f.start < start + quote.length)) found.push({ m, start, end: start + quote.length });
+      else if (start < 0) found.push({ m, start: -1, end: -1 });
+    }
+    found.sort((a, b) => a.start - b.start);
+    const quotes: Quote[] = [];
+    const ends = new Map<string, { line: number; x: number }>();
+    const tucks: Shape["tucks"] = [];
+    const beside: MarginInput[] = [];
+    // What's measured: the words with each folded question's "…?" where it shows, after its words.
+    let measured = "";
+    let at = 0;
+    for (const { m, start, end } of found) {
+      const folded = m.question && !opened.has(m.id);
+      if (start >= 0) {
+        // The "…?" goes after the stop that ends the words, never between them and it.
+        const fold = folded ? end + (/^[.,;:!?…)”’"]*/u.exec(shown.slice(end))?.[0].length ?? 0) : end;
+        measured += shown.slice(at, fold);
+        at = fold;
+        quotes.push({ start, end, margin: m.id, folded, fold });
+        if (folded) measured += " …?";
+      }
+      if (folded && start >= 0) continue;
+      if (narrow || look.variant === "mini") {
+        const w = look.textW - G.tuckIn - 26;
+        tucks.push({ margin: m.id, entries: shownEntries(m).map((e) => entryOf(e.by, e.text, w)) });
+      } else {
+        beside.push(m);
+        ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
+      }
+    }
+    measured += shown.slice(at);
+    for (const t of tuckedOn.get(idea.key) ?? []) {
+      const latest = ideasIn(t.id).at(-1)?.text ?? "";
+      tucks.push({ margin: t.id, thread: t.id, title: t.title, entries: latest ? [entryOf(me, latest, look.textW - G.tuckIn - 26)] : [] });
+    }
+    // The ✦ after words the AI changed takes room on the line too.
+    if (idea.parts.some((p) => p.fixed && p.heard && p.fixed !== p.heard)) measured += " ✦";
+    const lines = wrap(measured, look.font, look.textW, look.max);
+    const chips = idea.decided || left;
+    const landing = landingOn === idea.key ? input.landing!.text : undefined;
+    const h = lines.length * look.line + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
+    const shape = { shown, lines, quotes, ends, tucks, beside, chips, landing, h };
+    shapes.set(`${idea.key}|${look.variant}`, shape);
+    return shape;
+  };
+  /** A note's entries as shown: the note and its latest reply. */
+  const shownEntries = (m: MarginInput) => (m.entries.length <= G.marginShown ? [...m.entries] : [m.entries[0], m.entries[m.entries.length - 1]]);
   const lookFor = (thread: string) => (byId.get(thread) && parentOf(byId.get(thread)!) ? MINI_LOOK : SPINE_LOOK);
   // While sides are decided, every card counts as closed and nothing as placed or shelved: opening, moving or shelving one
   // never sends another to the other side.
   let deciding = false;
   const isOpen = (t: Thread) => !deciding && open === t.id && !!parentOf(t);
+  const slotsFor = (t: Thread) => (!deciding && t.id === active ? pendingSlots : []);
   const card = (t: Thread) => {
     const titleLines = wrap(t.title, "cardTitle", G.cardW - 2 * G.pad, G.cardTitleMax);
     const list = ideasIn(t.id);
@@ -301,12 +536,17 @@ export function layout(input: LayoutInput): Layout {
     if (!isOpen(t)) {
       const latest = last ? last.text : "";
       const latestLines = latest ? wrap(latest, "small", G.cardW - 2 * G.pad, G.cardPointMax) : [];
-      const h = G.pad + titleLines.length * G.cardTitleLine + (latestLines.length ? 4 + latestLines.length * G.smallLine : 0) + 6 + G.recapLine + G.pad;
+      const h = G.pad + titleLines.length * G.cardTitleLine + (latestLines.length ? 4 + latestLines.length * G.smallLine : 0) + 4 + G.recapLine + G.pad;
       return { titleLines, latest, latestLines, h };
     }
     let h = G.pad + titleLines.length * G.cardTitleLine + 10;
-    for (const idea of list) h += (pins.has(idea.key) || shelved.has(idea.key) ? G.notch : pointLines(idea, MINI_LOOK).length * G.smallLine) + 8;
-    return { titleLines, latest: last?.text ?? "", latestLines: [], h: h - (list.length ? 8 : 0) + G.pad };
+    for (const idea of list) h += (pins.has(idea.key) || shelved.has(idea.key) ? G.notch : shapeOf(idea, MINI_LOOK).h) + 8;
+    h += slotsFor(t).length * (G.slotH + 8);
+    return { titleLines, latest: last?.text ?? "", latestLines: [], h: h - (list.length || slotsFor(t).length ? 8 : 0) + G.pad };
+  };
+  const asideSize = (idea: Idea) => {
+    const lines = wrap(idea.text, "small", G.asideMax - 2 * G.asideIn, 2);
+    return { lines, w: Math.ceil(Math.max(...lines) + 2 * G.asideIn + 4), h: lines.length * G.asideLine + 2 * G.asidePad };
   };
 
   const marksOf = (idea: Idea): Mark[] => {
@@ -321,21 +561,39 @@ export function layout(input: LayoutInput): Layout {
   const items = out.items;
   const byKey = new Map<string, Item>();
   const tips = new Map<string, string>();
+  const slotKeys = new Map<string, string[]>();
   const add = (s: Scene, item: Item, margin = 0) => {
     s.items.push(item);
     if (s === out) byKey.set(item.key, item);
     if (item.look?.variant !== "mini") s.taken.push({ box: item.box, margin: Math.max(margin, item.pinned ? CLEAR : 0) });
     return item;
   };
-  const threadItem = (t: Thread, box: Box, kind: "head" | "card", extra: Partial<Item>): Item => ({
-    key: `t:${t.id}`, id: t.id, kind, thread: t.id, box, pinned: pins.has(t.id), by: pins.get(t.id)?.by,
+  const speakersOf = (t: Thread): Who[] => {
+    const seen = new Map<string, Who>();
+    for (const idea of ideasIn(t.id)) for (const part of idea.parts) {
+      const who = whoIs(part.speaker || "you", me);
+      if (!seen.has(who.name)) seen.set(who.name, who);
+    }
+    return [...seen.values()].sort((a, b) => Number(b.me) - Number(a.me) || Number(a.ai) - Number(b.ai));
+  };
+  const threadItem = (t: Thread, box: Box, kind: "head" | "card" | "aside", extra: Partial<Item>): Item => ({
+    key: `t:${t.id}`, id: t.id, kind, thread: t.id, box, pinned: pins.has(t.id), by: pins.get(t.id)?.by, topic: topicOf(t.id),
     room: rooms.get(t.id), depth: depthOf(t), title: t.title, picture: t.picture, dropped: t.status === "dropped", ...extra,
   });
-  const pointItem = (idea: Idea, thread: string, box: Box, look: Look, up: string | undefined, depth: number): Item => ({
-    key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up,
-    room: rooms.get(thread), depth, text: idea.text, lines: pointLines(idea, look), look, decided: idea.decided,
-    thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea),
-  });
+  const pointItem = (idea: Idea, thread: string, box: Box, look: Look, up: string | undefined, depth: number): Item => {
+    const shape = shapeOf(idea, look);
+    const speaker = whoIs(idea.parts[0].speaker || "you", me);
+    // contract: who agreed comes with the core's rooms (`agreed_by`); until then a decision is "✓ Decided".
+    const agreedBy = idea.parts.flatMap((p) => (p as Thought & { agreed_by?: string[] }).agreed_by ?? []);
+    const agreed = [...new Map(agreedBy.map((name) => whoIs(name, me)).map((w) => [w.name, w])).values()].sort((a, b) => Number(b.me) - Number(a.me));
+    return {
+      key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
+      room: rooms.get(thread), depth, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
+      thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker.me ? undefined : speaker,
+      agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,
+      landing: shape.landing, quotes: shape.quotes.length ? shape.quotes : undefined, tucks: shape.tucks.length ? shape.tucks : undefined,
+    };
+  };
 
   // Where a tangent's curve starts, by the parent's point it came from: right of its words, or left of its dot.
   type Anchor = { right: End; left: End; rightLead?: number; leftLead?: number };
@@ -348,53 +606,116 @@ export function layout(input: LayoutInput): Layout {
   const pinnedCards: { t: Thread; parent: Parent | null }[] = [];
   const pulled: { idea: Idea; thread: string; from: End | null }[] = [];
 
-  /** A thread's points down its line, from `y`: in the spine's column at `x`, or inside an open card. */
+  /** A thread's points down its line, from `y`: in the spine's column at `x`, or inside an open card; then a slot for
+   *  each of your thoughts on its way, if it's the thread you're on. */
   function points(s: Scene, t: Thread, x: number, y: number, look: Look, up: string, depth: number, anchors: Map<string, Anchor>, fit: boolean) {
     const keys: string[] = [];
+    const gap = look.variant === "spine" ? G.pointGap : 8;
     for (const idea of ideasIn(t.id)) {
       if (!deciding && (pins.has(idea.key) || shelved.has(idea.key))) {
         const at = { x, y, w: look.w, h: G.notch };
         const box = fit ? clear(s, at) : at;
-        const notch = add(s, { key: `n:${idea.key}`, id: idea.key, kind: "notch", thread: t.id, box, pinned: false, up, room: rooms.get(t.id), depth, look });
+        const notch = add(s, { key: `n:${idea.key}`, id: idea.key, kind: "notch", thread: t.id, box, pinned: false, up, room: rooms.get(t.id), depth, look, topic: topicOf(t.id) });
         const mid = G.notch / 2;
         anchors.set(idea.key, { left: { key: notch.key, dx: look.lineX - 4, dy: mid }, right: { key: notch.key, dx: look.lineX + 4, dy: mid }, rightLead: look.w + 8, leftLead: -8 });
         if (pins.has(idea.key) && s === out) pulled.push({ idea, thread: t.id, from: { key: notch.key, dx: look.lineX + 4, dy: mid } });
         keys.push(notch.key);
-        y = box.y + box.h + (look.variant === "spine" ? G.pointGap : 8);
+        y = box.y + box.h + gap;
         continue;
       }
-      const lines = pointLines(idea, look);
-      const at = { x, y, w: look.w, h: lines.length * look.line };
+      const shape = shapeOf(idea, look);
+      const at = { x, y, w: look.w, h: shape.h };
       const box = fit ? clear(s, at) : at;
       const item = add(s, pointItem(idea, t.id, box, look, up, depth));
       const dot = look.line / 2;
       anchors.set(idea.key, {
         left: { key: item.key, dx: look.lineX - 6, dy: dot },
-        right: { key: item.key, dx: Math.min(look.textX + lines[0] + 8, look.w + 8), dy: dot },
+        right: { key: item.key, dx: Math.min(look.textX + shape.lines[0] + 8, look.w + 8), dy: dot },
         rightLead: look.w + 8, leftLead: -8,
       });
       keys.push(item.key);
-      y = box.y + box.h + (look.variant === "spine" ? G.pointGap : 8);
+      y = box.y + box.h + gap;
     }
-    return { keys, bottom: y };
+    const slots: string[] = [];
+    for (const id of slotsFor(t)) {
+      const at = { x, y, w: look.w, h: look.variant === "spine" ? G.slotH : G.smallLine + 6 };
+      const box = fit ? clear(s, at) : at;
+      const slot = add(s, { key: `s:${id}`, id, kind: "slot", thread: t.id, box, pinned: false, up, room: rooms.get(t.id), depth, look, topic: topicOf(t.id) });
+      slots.push(slot.key);
+      y = box.y + box.h + gap;
+    }
+    if (s === out && slots.length) slotKeys.set(t.id, slots);
+    return { keys, slots, bottom: y };
   }
 
-  /** A topic: its head at (x, y), its points, and its tangents beside them. */
+  /** The dashed run from a thread's last dot (or its head) on to its first slot. */
+  function slotLink(s: Scene, t: Thread, from: End, slots: string[], look: Look) {
+    const last = slots.length ? s.items.find((i) => i.key === slots.at(-1)) : undefined;
+    if (!last) return;
+    s.links.push({ key: `z:${t.id}`, kind: "slot", from, to: { key: last.key, dx: look.lineX, dy: last.box.h / 2 }, room: rooms.get(t.id), topic: topicOf(t.id) });
+  }
+
+  /** Margin notes beside a topic's points, in the right-hand column, level with their words, before tangents take it. */
+  function margins(s: Scene, t: Thread, keys: string[], owner: Parent["owner"]) {
+    if (deciding) return;
+    for (const key of keys) {
+      const point = s.items.find((i) => i.key === key);
+      const owned = point?.kind === "point" ? ideaOwner.get(point.id) : undefined;
+      if (!point || !owned) continue;
+      const shape = shapeOf(owned.idea, SPINE_LOOK);
+      for (const m of shape.beside) {
+        const end = shape.ends.get(m.id)!;
+        const from: End = end.x < 0
+          ? { key: point.key, dx: Math.min(G.textX + shape.lines[0] + 8, G.colW + 8), dy: G.dotY }
+          : { key: point.key, dx: G.textX + end.x + 3, dy: end.line * G.pointLine + G.pointLine / 2 + 2 };
+        const entries = shownEntries(m).map((e) => entryOf(e.by, e.text, G.marginText));
+        const more = m.entries.length - entries.length;
+        const h = entries.reduce((sum, e) => sum + Math.max(20, e.lines.length * G.marginLine), 0) + G.marginGap * (entries.length - 1) + (more > 0 ? G.marginMore : 0);
+        const column = columnKey(owner, 1, 1);
+        const want = Math.max(point.box.y + from.dy - 10, (s.columns.get(column) ?? -Infinity) + G.stack);
+        const box = clear(s, { x: owner.x1 + G.gutter, y: want, w: G.marginW, h });
+        const item = add(s, { key: `m:${m.id}`, id: m.id, kind: "margin", thread: t.id, box, pinned: false, up: point.key, room: rooms.get(t.id), depth: point.depth,
+          topic: topicOf(t.id), margin: m.id, entries, more: more > 0 ? more : undefined });
+        s.columns.set(column, box.y + box.h);
+        s.links.push({ key: `q:${m.id}`, kind: "note", from, to: { key: item.key, dx: -4, dy: 10 }, room: rooms.get(t.id), topic: topicOf(t.id) });
+      }
+    }
+  }
+
+  /** A topic: its head at (x, y), its points, its margin notes and its tangents beside them; or, alone, an aside. */
   function spine(s: Scene, t: Thread, x: number, y: number, exact: boolean) {
+    if (!deciding && lone(t)) {
+      const idea = ideasIn(t.id)[0];
+      const size = asideSize(idea);
+      const at = { x, y, w: size.w, h: size.h };
+      const box = exact ? at : clear(s, at);
+      const speaker = whoIs(idea.parts[0].speaker || "you", me);
+      add(s, threadItem(t, box, "aside", { text: idea.text, shown: idea.text, lines: size.lines, thoughts: idea.parts.map((p) => p.id), at: idea.at, count: 1, since: idea.at,
+        who: speaker.me ? undefined : speaker }));
+      if (s === out) tips.set(t.id, `t:${t.id}`);
+      return;
+    }
     const lines = headLines(t);
     const at = { x, y, w: G.colW, h: headHeight(lines) };
     const box = exact ? at : clear(s, at);
-    const head = add(s, threadItem(t, box, "head", { titleLines: lines, count: ideasIn(t.id).length, since: ideasIn(t.id).at(-1)?.at }));
+    const head = add(s, threadItem(t, box, "head", { titleLines: lines, count: ideasIn(t.id).length, since: ideasIn(t.id).at(-1)?.at, speakers: speakersOf(t) }));
     const anchors = new Map<string, Anchor>();
     const shown = points(s, t, box.x, box.y + box.h + G.headGap, SPINE_LOOK, head.key, 0, anchors, true);
+    const lastDot = (key: string): End => ({ key, dx: G.lineX, dy: key.startsWith("n:") ? G.notch / 2 : G.dotY });
     if (shown.keys.length) {
       const last = shown.keys.at(-1)!;
-      s.links.push({ key: `s:${t.id}`, kind: "spine", from: { key: head.key, dx: G.lineX, dy: G.tile }, to: { key: last, dx: G.lineX, dy: last.startsWith("n:") ? G.notch / 2 : G.dotY }, room: rooms.get(t.id) });
+      s.links.push({ key: `s:${t.id}`, kind: "spine", from: { key: head.key, dx: G.lineX, dy: G.tile }, to: lastDot(last), room: rooms.get(t.id), topic: topicOf(t.id) });
       if (s === out) tips.set(t.id, last.startsWith("n:") ? head.key : last);
-    } else if (s === out) tips.set(t.id, head.key);
+      slotLink(s, t, lastDot(last), shown.slots, SPINE_LOOK);
+    } else {
+      if (s === out) tips.set(t.id, head.key);
+      slotLink(s, t, { key: head.key, dx: G.lineX, dy: G.tile }, shown.slots, SPINE_LOOK);
+    }
+    const owner = { key: head.key, x0: box.x, x1: box.x + G.colW };
+    margins(s, t, shown.keys, owner);
     const titleEnd = G.titleX + Math.max(...lines.slice(0, 1), 0) + 8;
     const edge: Anchor = { left: { key: head.key, dx: 0, dy: G.tile / 2 }, right: { key: head.key, dx: Math.min(titleEnd, G.colW + 8), dy: G.tile / 2 }, rightLead: G.colW + 8, leftLead: -8 };
-    tangents(s, { key: head.key, anchors, edge, thread: t, owner: { key: head.key, x0: box.x, x1: box.x + G.colW }, level: 1 });
+    tangents(s, { key: head.key, anchors, edge, thread: t, owner, level: 1 });
   }
 
   /** The column for tangents at `level` on `side` of `owner`'s column. */
@@ -423,7 +744,7 @@ export function layout(input: LayoutInput): Layout {
     for (const t of kids.get(parent.thread.id) ?? []) {
       // One placed elsewhere or shelved still takes its turn: its siblings keep their sides when it leaves.
       const turn: Side = (lastSide.get(parent.key) ?? -1) > 0 ? -1 : 1;
-      if (!deciding && shelved.has(t.id)) { lastSide.set(parent.key, sides.get(t.id) ?? turn); continue; }
+      if (!deciding && (shelved.has(t.id) || tucked.has(t.id))) { lastSide.set(parent.key, sides.get(t.id) ?? turn); continue; }
       const origin = originOf(parent, t);
       if (!deciding && pins.has(t.id)) {
         lastSide.set(parent.key, sides.get(t.id) ?? turn);
@@ -451,23 +772,25 @@ export function layout(input: LayoutInput): Layout {
     const list = ideasIn(t.id);
     const item = add(s, threadItem(t, box, "card", {
       up: parent && !pins.has(t.id) ? parent.key : undefined, side, open: isOpen(t), titleLines: size.titleLines, latest: size.latest,
-      latestLines: size.latestLines, count: list.length, since: list.at(-1)?.at,
+      latestLines: size.latestLines, count: list.length, since: list.at(-1)?.at, slim: !isOpen(t) && list.length <= G.noteMax && !(kids.get(t.id)?.length),
     }));
     if (origin) {
       const from = side > 0 ? origin.right : origin.left;
       s.links.push({ key: `b:${t.id}`, kind: "branch", from, to: { key: item.key, dx: side > 0 ? 0 : G.cardW, dy: CARD_ROW }, room: rooms.get(t.id),
-        lead: side > 0 ? origin.rightLead : origin.leftLead });
+        lead: side > 0 ? origin.rightLead : origin.leftLead, topic: topicOf(t.id) });
     }
     const anchors = new Map<string, Anchor>();
     let tip = item.key;
     if (isOpen(t)) {
       const shown = points(s, t, box.x + MINI_LEFT, box.y + G.pad + size.titleLines.length * G.cardTitleLine + 10, MINI_LOOK, item.key, item.depth, anchors, false);
-      if (shown.keys.length) {
-        const last = shown.keys.at(-1)!;
+      const marks = [...shown.keys, ...shown.slots];
+      if (marks.length) {
+        const last = marks.at(-1)!;
         const lastItem = s.items.find((i) => i.key === last)!;
         item.line = { x: MINI_LEFT + MINI_LOOK.lineX, y1: G.pad + size.titleLines.length * G.cardTitleLine + 4,
-          y2: lastItem.box.y - box.y + (last.startsWith("n:") ? G.notch / 2 : MINI_LOOK.line / 2) };
-        if (!last.startsWith("n:")) tip = last;
+          y2: lastItem.box.y - box.y + (last.startsWith("n:") ? G.notch / 2 : last.startsWith("s:") ? lastItem.box.h / 2 : MINI_LOOK.line / 2) };
+        const lastPoint = shown.keys.at(-1);
+        if (lastPoint && !lastPoint.startsWith("n:")) tip = lastPoint;
       }
     }
     if (s === out) tips.set(t.id, tip);
@@ -484,16 +807,18 @@ export function layout(input: LayoutInput): Layout {
   const pinnedTopics = roots.filter((t) => pins.has(t.id) && !shelved.has(t.id));
   const pinBox = (id: string, p: Position): Box => {
     const t = byId.get(id);
-    if (t) return parentOf(t) ? { x: p.x, y: p.y, w: G.cardW, h: card(t).h } : { x: p.x, y: p.y, w: G.colW, h: headHeight(headLines(t)) };
+    if (t) {
+      if (parentOf(t)) return { x: p.x, y: p.y, w: G.cardW, h: card(t).h };
+      if (lone(t)) { const size = asideSize(ideasIn(t.id)[0]); return { x: p.x, y: p.y, w: size.w, h: size.h }; }
+      return { x: p.x, y: p.y, w: G.colW, h: headHeight(headLines(t)) };
+    }
     const owner = ideaOwner.get(id)!;
-    const look = lookFor(owner.thread);
-    return { x: p.x, y: p.y, w: look.w, h: pointLines(owner.idea, look).length * look.line };
+    return { x: p.x, y: p.y, w: lookFor(owner.thread).w, h: shapeOf(owner.idea, lookFor(owner.thread)).h };
   };
   for (const [id, p] of pins) out.taken.push({ box: pinBox(id, p), margin: CLEAR });
   // A topic placed by hand keeps its whole shape out of the columns' way; anything else placed, its own box. Each knows
   // its topic: a topic's own pieces never push the topic itself (moved beside its spine, a point stays its neighbour; the
   // points below it make room, nothing jumps).
-  const topicOf = (thread: string) => { let t = byId.get(thread)!; for (let p = parentOf(t); p; p = parentOf(t)) t = byId.get(p)!; return t.id; };
   const keepOut: { box: Box; topic: string }[] = [];
   for (const [id, p] of pins) {
     const topic = topicOf(byId.has(id) ? id : ideaOwner.get(id)!.thread);
@@ -513,7 +838,7 @@ export function layout(input: LayoutInput): Layout {
   //    what had been said by that moment), so a topic never changes column; under it, topics stand as tall as they are
   //    now. Spines in a column line up; a column is as wide as its widest topic; past anything placed by hand.
   const lanes: string[] = [];
-  const shapes = new Map<string, { shape: Box; history: { at: number; bottom: number }[]; head: number }>();
+  const rows = new Map<string, { shape: Box; history: { at: number; bottom: number }[]; head: number }>();
   const order2: Thread[] = roots.filter((t) => !pins.has(t.id) && !shelved.has(t.id));
   for (const t of order2) {
     const dry = scene();
@@ -521,10 +846,10 @@ export function layout(input: LayoutInput): Layout {
     const shape = bounds(dry.items.map((i) => i.box));
     const history = dry.items.filter((i) => i.kind === "point" && i.look?.variant === "spine" && i.at !== undefined)
       .map((i) => ({ at: i.at!, bottom: i.box.y + i.box.h })).sort((a, b) => a.at - b.at);
-    shapes.set(t.id, { shape, history, head: dry.items[0]?.box.h ?? G.tile });
+    rows.set(t.id, { shape, history, head: dry.items[0]?.box.h ?? G.tile });
   }
   const heightAt = (id: string, moment: number) => {
-    const { history, head } = shapes.get(id)!;
+    const { history, head } = rows.get(id)!;
     let bottom = head;
     for (const step of history) if (step.at <= moment) bottom = Math.max(bottom, step.bottom);
     return bottom;
@@ -543,12 +868,12 @@ export function layout(input: LayoutInput): Layout {
   let x0 = 0;
   for (const list of columns) {
     if (!list.length) continue;
-    const left = Math.max(...list.map((id) => -shapes.get(id)!.shape.x));
-    const right = Math.max(...list.map((id) => shapes.get(id)!.shape.x + shapes.get(id)!.shape.w));
+    const left = Math.max(...list.map((id) => -rows.get(id)!.shape.x));
+    const right = Math.max(...list.map((id) => rows.get(id)!.shape.x + rows.get(id)!.shape.w));
     const spineX = x0 + left;
     let y = 0;
     for (const id of list) {
-      const { shape } = shapes.get(id)!;
+      const { shape } = rows.get(id)!;
       // Past anything placed by hand that's in the way: down, keeping the column.
       let top = y;
       for (let moved = true, guard = 0; moved && guard < 100; guard++) {
@@ -596,11 +921,10 @@ export function layout(input: LayoutInput): Layout {
     const owner = ideaOwner.get(id);
     if (!owner) continue;
     const look = lookFor(owner.thread);
-    const lines = pointLines(owner.idea, look);
-    const item = add(out, pointItem(owner.idea, owner.thread, { x: p.x, y: p.y, w: look.w, h: lines.length * look.line }, look, undefined, depthOf(byId.get(owner.thread)!)));
+    const item = add(out, pointItem(owner.idea, owner.thread, { x: p.x, y: p.y, w: look.w, h: shapeOf(owner.idea, look).h }, look, undefined, depthOf(byId.get(owner.thread)!)));
     const shown = byKey.get(`t:${owner.thread}`);
     const from = pulledFrom.get(id) ?? (shown ? { key: shown.key, dx: shown.kind === "card" && shown.side !== 1 ? G.cardW : 0, dy: shown.kind === "card" ? CARD_ROW : G.tile / 2 } : null);
-    if (from) out.links.push({ key: `l:${id}`, kind: "pulled", from, to: { key: item.key, dx: look.lineX - 6, dy: look.line / 2 }, room: rooms.get(owner.thread) });
+    if (from) out.links.push({ key: `l:${id}`, kind: "pulled", from, to: { key: item.key, dx: look.lineX - 6, dy: look.line / 2 }, room: rooms.get(owner.thread), topic: topicOf(owner.thread) });
   }
 
   // The shelf, newest first.
@@ -616,7 +940,7 @@ export function layout(input: LayoutInput): Layout {
   shelf.sort((a, b) => b.at_ms - a.at_ms);
   // A link whose end isn't shown goes too (an origin on the shelf).
   const links = out.links.filter((link) => byKey.has(link.from.key) && byKey.has(link.to.key));
-  return { items, links, byKey, tips, shelf, lanes };
+  return { items, links, byKey, tips, slots: slotKeys, shelf, lanes };
 }
 
 /** The smallest box around `boxes`. */

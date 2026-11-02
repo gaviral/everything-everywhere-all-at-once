@@ -1,33 +1,45 @@
 // The Spine: the map as one canvas you can pan and zoom without end. Each topic is a spine of its points, oldest at
-// the top; each tangent hangs beside the point it came from (layout.ts). It follows what you're talking about, and
-// lets go the moment you move it. Anything can be dragged where you want it and stays there (map.positions), and the
-// shelf keeps things at hand while the canvas moves. A view brick (docs/bricks.md): its name joins Map and Palace.
+// the top; each tangent hangs beside the point it came from (layout.ts). The camera follows what you're talking about
+// and lets go the moment a hand moves the map (camera.ts). Your thought on its way has a dashed slot where it's
+// expected (`data-slot="slot:<thought id>"`, what the bubble flight aims at); the newest landing rings once and says what
+// put it there and how fast; what lands out of view gets an edge chip until you've seen it (cues.tsx). Words in a point
+// can be answered in a margin note (margin.tsx). Anything can be dragged where you want it and stays there
+// (map.positions), and the shelf keeps things at hand while the canvas moves. A view brick (docs/bricks.md): its name
+// joins Map and Palace.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
+import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { useBrickEvent, type BrickProps, type Position } from "../contract";
+import { useBrickEvent, type BrickEvents, type BrickProps, type Position } from "../contract";
+import { SPACING_MS, useCamera, type Area } from "./camera";
+import { Corner, type Stop } from "./corner";
+import { Cues, onScreen, type Cue } from "./cues";
 import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
+import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
 import "./spine.css";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
 const DRAG = 4;
-/** Things making room glide this long (Material's standard duration for elements moving on screen, 300 ms). */
+/** Things making room glide this long (Material's standard duration for elements moving on screen, 300 ms); under
+ *  Reduce Motion they cross-fade in half that. */
 const GLIDE_MS = 300;
-/** Reading, as the app's notices count it (notice-rules.ts): 238 words a minute (Brysbaert 2019), a 200 ms look first,
- *  and never under the 5 s every notice gets. */
+const FADE_MS = 150;
+/** Reading, as the app's notices count it (notice-rules.ts): 238 words a minute (Brysbaert 2019), a 200 ms look first. */
 const READ_WPM = 238;
 const LOOK_MS = 200;
-const SHORTEST_MS = 5000;
 const readMs = (text: string) => LOOK_MS + Math.round((text.trim().split(/\s+/).filter(Boolean).length * 60_000) / READ_WPM);
-/** Where the follow keeps your latest point: 55% down the free part of the screen, so what led to it shows above it
- *  and the next point has room below; it only moves once the point leaves the middle (8–92% across, 10–80% down). */
-const AIM = 0.55;
-const COMFORT = { left: 0.08, right: 0.92, top: 0.1, bottom: 0.8 };
-const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+/** A thought that landed while its bubble is still in the air keeps its slot open this long at most: the longest
+ *  flight (640 ms) and a frame. */
+const ARRIVE_MAX_MS = 700;
+/** Your thoughts on their way that get a slot each; more wait in the status line's count. */
+const SLOTS_MAX = 3;
+/** Narrower than this is a phone: notes tuck under their words, edge chips line up above the composer. */
+const NARROW = 560;
+/** The corners need this much beside the stage, else they sit above it. */
+const CORNER_W = 330;
 const cls = (...names: (string | false | undefined | null)[]) => names.filter(Boolean).join(" ");
-const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled" };
+const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
   if (!props.map.threads.length) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its spine starts here.</p>;
@@ -46,9 +58,12 @@ function useReducedMotion() {
   return reduced;
 }
 
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
 /** Things move to their new places together, over GLIDE_MS, instead of jumping; `held` are where a hand holds them now
- *  (a drag), and the next glide starts from there. */
-function useGlide(layout: Layout, reduced: boolean, held: Map<string, { x: number; y: number }> | null) {
+ *  (a drag), and the next glide starts from there. Under Reduce Motion they're at their new places at once and fade in
+ *  there (`fadeIn`), so nothing slides. */
+function useGlide(layout: Layout, reduced: boolean, held: Map<string, { x: number; y: number }> | null, fadeIn: (keys: string[]) => void) {
   const shown = useRef(new Map<string, { x: number; y: number }>());
   const [, tick] = useState(0);
   if (held) for (const [key, at] of held) shown.current.set(key, at);
@@ -61,14 +76,17 @@ function useGlide(layout: Layout, reduced: boolean, held: Map<string, { x: numbe
     });
     if (reduced || !moving.length) {
       shown.current = to;
-      if (moving.length) tick((n) => n + 1);
+      if (moving.length) {
+        tick((n) => n + 1);
+        if (!held) fadeIn(moving.map(([key]) => key));
+      }
       return;
     }
     const start = performance.now();
     let frame = 0;
     const step = (time: number) => {
       const t = Math.min(1, (time - start) / GLIDE_MS);
-      const e = ease(t);
+      const e = easeInOut(t);
       const next = new Map(to);
       for (const [key, at] of moving) {
         const was = from.get(key)!;
@@ -84,13 +102,14 @@ function useGlide(layout: Layout, reduced: boolean, held: Map<string, { x: numbe
   return shown.current;
 }
 
-/** A link's path, from where its two ends are shown. A tangent's curve runs straight along its point's row into the
- *  gutter first, then bends there, so it never crosses a column's words. */
+/** A link's path, from where its two ends are shown. A spine and its run on to a slot go straight down; a tangent's
+ *  curve runs straight along its point's row into the gutter first, then bends there, so it never crosses a column's
+ *  words; a note's string leaves its words sideways. */
 function pathOf(link: Link, at: (end: End) => { x: number; y: number } | null) {
   const a = at(link.from);
   const b = at(link.to);
   if (!a || !b) return null;
-  if (link.kind === "spine") return `M${a.x} ${a.y}V${b.y}`;
+  if (link.kind === "spine" || link.kind === "slot") return `M${a.x} ${a.y}V${b.y}`;
   let start = `M${a.x} ${a.y}`;
   let x0 = a.x;
   if (link.kind === "branch" && link.lead !== undefined) {
@@ -129,14 +148,33 @@ function useShelf(map: BrickProps["map"]) {
   };
 }
 
+/** "Muse Spark 1.3 put this here in 2.6 s": the landing note, from the model's id and the placing's time. */
+export function landingNote(model: string | undefined, ms: number | null | undefined) {
+  // "muse-spark-1.3-contributor" → "Muse Spark 1.3": the public name (contributor mode is how the key asks, not a model).
+  const name = model ? (model.includes(" ") ? model : model.split("-").filter((part) => part && part !== "contributor")
+    .map((part) => (/^\d/.test(part) ? part : part[0].toUpperCase() + part.slice(1))).join(" ")) : "";
+  const time = typeof ms === "number" && ms > 0 ? `${(ms / 1000).toFixed(1)} s` : "";
+  if (name) return time ? `${name} put this here in ${time}` : `${name} put this here`;
+  return time ? `Put here in ${time}` : "";
+}
+
+/** The shell's slots (contract: `data-slot` names), measured: where the stage starts, how tall the status line is. */
+function chromeOf(frameBox: DOMRect | undefined) {
+  const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
+  const status = document.querySelector('[data-slot="status"]')?.getBoundingClientRect();
+  return { stage: stage && stage.height ? stage : null, status: status?.height ?? 0, frame: frameBox };
+}
+
 function Canvas({ map, actions, on }: BrickProps) {
   const flow = useReactFlow<ItemNode>();
   const reduced = useReducedMotion();
   const shelf = useShelf(map);
+  const notes = useMargins(map, actions);
   const frame = useRef<HTMLDivElement>(null);
   const anchor = useRef<HTMLDivElement>(null);
   const shelfRef = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
+  const [corner, setCorner] = useState({ bottom: 12, row: 12 });
   const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
   const [following, setFollowing] = useState(true);
   const [picked, setPicked] = useState<string | null>(null);
@@ -146,18 +184,34 @@ function Canvas({ map, actions, on }: BrickProps) {
   // when the drag began (`grip`), and lands where it's dropped.
   const grip = useRef<{ id: string; was: Position | undefined } | null>(null);
   const [overShelf, setOverShelf] = useState(false);
+  const [shelfOpen, setShelfOpen] = useState(false);
   const [pulses, setPulses] = useState<Record<string, number>>({});
-  const [cues, setCues] = useState<{ key: string; title: string; until: number }[]>([]);
+  const [cues, setCues] = useState<Cue[]>([]);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
+  const [stop, setStop] = useState<Stop>("words");
+  const [landing, setLanding] = useState<{ thought: string; text: string } | null>(null);
+  const [arriving, setArriving] = useState<string | null>(null);
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const [selecting, setSelecting] = useState<{ key: string; thoughtId: string } | null>(null);
+  const [picking, setPicking] = useState<Picking | null>(null);
+  const [pointing, setPointing] = useState<{ thread: string } | null>(null);
   const touched = useRef(0);
+  const timers = useRef(new Set<number>());
+  useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
+  const later = (run: () => void, ms: number) => {
+    const timer = window.setTimeout(() => { timers.current.delete(timer); run(); }, ms);
+    timers.current.add(timer);
+    return timer;
+  };
 
-  // The canvas fills the window under what stays pinned at its top (the header and the tools), as wide as the place the
-  // page gives a view, and the dock floats over its foot. What scrolls above the view (the Apps panel) pushes it down
-  // until the page is scrolled; opening, the page scrolls so the canvas has the whole window.
+  // The canvas fills the window under what stays pinned at its top (the header and the tools, where the app has them),
+  // as wide as the place the page gives a view, and the dock or stage floats over its foot. What scrolls above the view
+  // (the Apps panel) pushes it down until the page is scrolled; opening, the page scrolls so the canvas has the whole
+  // window.
   const [box, setBox] = useState<{ top: number; left: number; right: number; tall: number } | null>(null);
-  const opened = useRef(false);
+  const opened_ = useRef(false);
   useLayoutEffect(() => {
     const measure = () => {
       const here = anchor.current;
@@ -166,12 +220,22 @@ function Canvas({ map, actions, on }: BrickProps) {
       const pinned = (parseFloat(root.getPropertyValue("--header-height")) || 0) + (parseFloat(root.getPropertyValue("--tools-height")) || 0);
       const pad = parseFloat(getComputedStyle(here.parentElement ?? here).paddingTop) || 0;
       const at = here.getBoundingClientRect().top - pad;
-      // With nothing pinned (the playground), the view's place is where it starts.
+      // With nothing pinned (the playground, the new shell), the view's place is where it starts.
       const under = pinned > 0 ? pinned : at + window.scrollY;
       const room = here.closest("main")?.parentElement?.getBoundingClientRect();
       const next = { top: Math.max(pinned > 0 ? pinned : 0, at), left: Math.max(0, room?.left ?? 0), right: Math.max(0, innerWidth - (room?.right ?? innerWidth)), tall: Math.max(0, innerHeight - under) };
       setBox((was) => was && Math.abs(was.top - next.top) < 0.5 && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.right - next.right) < 0.5 && Math.abs(was.tall - next.tall) < 0.5 ? was : next);
-      setDock(parseFloat(getComputedStyle(here).getPropertyValue("--dock-height")) || 0);
+      const docked = parseFloat(getComputedStyle(here).getPropertyValue("--dock-height")) || 0;
+      setDock(docked);
+      // The corners: beside the shell's stage, above its status line, when there's room; else above the stage (or the
+      // app's dock).
+      const chrome = chromeOf(frame.current?.getBoundingClientRect());
+      const bottomEdge = chrome.frame?.bottom ?? innerHeight;
+      const bottom = chrome.stage
+        ? (chrome.stage.left - (chrome.frame?.left ?? 0) >= CORNER_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
+        : docked + 12;
+      const row = chrome.stage ? bottomEdge - chrome.stage.top + 8 : docked + 8;
+      setCorner((was) => (was.bottom === bottom && was.row === row ? was : { bottom, row }));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -181,11 +245,13 @@ function Canvas({ map, actions, on }: BrickProps) {
     return () => { window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure); watch.disconnect(); };
   }, []);
   const top = box?.top ?? null;
+  const width = box ? innerWidth - box.left - box.right : innerWidth;
+  const narrow = width < NARROW;
   // Once the canvas has its height, the page scrolls (once) so it starts right under what's pinned: an open Apps panel
   // above it goes up out of the way, as it would over the map.
   useLayoutEffect(() => {
-    if (opened.current || !box?.tall || !anchor.current) return;
-    opened.current = true;
+    if (opened_.current || !box?.tall || !anchor.current) return;
+    opened_.current = true;
     const root = getComputedStyle(document.documentElement);
     const pinned = (parseFloat(root.getPropertyValue("--header-height")) || 0) + (parseFloat(root.getPropertyValue("--tools-height")) || 0);
     const pad = parseFloat(getComputedStyle(anchor.current.parentElement ?? anchor.current).paddingTop) || 0;
@@ -194,6 +260,18 @@ function Canvas({ map, actions, on }: BrickProps) {
   }, [box?.tall]);
   // A minute's tick keeps "12 min ago" true.
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 60_000); return () => window.clearInterval(timer); }, []);
+
+  /** The part of the canvas nothing covers, in its own pixels: above the stage (or the dock), left of a rail. */
+  const area = useCallback((): Area => {
+    const frameBox = frame.current?.getBoundingClientRect();
+    const w = frameBox?.width ?? innerWidth, h = frameBox?.height ?? innerHeight;
+    const chrome = chromeOf(frameBox);
+    // contract: `data-slot="rail"` (the shell's rail, right) isn't a contract name yet; the camera keeps clear of it once it is.
+    const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
+    const y1 = chrome.stage ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
+    const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
+    return { x0: 0, y0: 0, x1: Math.max(160, x1), y1: Math.max(120, y1) };
+  }, [dock]);
 
   // What's placed: the map's, with this window's last moves until the map has them (no jump back while it answers).
   const dragging = drag ? grip.current : null;
@@ -212,16 +290,20 @@ function Canvas({ map, actions, on }: BrickProps) {
     return Object.keys(next).length === Object.keys(was).length ? was : next;
   }), [map.positions]);
 
-  const layout = useMemo(() => place({ threads: map.threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null }),
-    [map.threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id]);
+  // Your thoughts on their way: a slot each, under the tip of the thread you're on.
+  const slots = useMemo(() => map.thoughts.filter((t) => !t.placed && !t.thread_id && t.speaker === map.me).slice(-SLOTS_MAX).map((t) => t.id), [map.thoughts, map.me]);
+  const slotKey = slots.join("|");
+  const threads = useMemo(() => (notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads), [map.threads, notes.anchored]);
+  const layout = useMemo(() => place({ threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
+    me: map.me, active: map.active, slots, landing, margins: notes.margins, opened, narrow }),
+  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.active, slotKey, landing, notes.margins, opened, narrow]);
   const hereKey = map.active ? layout.tips.get(map.active) : undefined;
   const here = hereKey ? layout.byKey.get(hereKey) : undefined;
+  const slotsHere = map.active ? layout.slots.get(map.active) ?? [] : [];
 
   // New things arrive softly (for as long as their arrival takes, 0.6 s at most); what was there when the view opened
   // doesn't.
   const seen = useRef<Set<string> | null>(null);
-  const timers = useRef(new Set<number>());
-  useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
   useEffect(() => {
     const keys = layout.items.map((item) => item.key).concat(layout.links.map((link) => link.key));
     if (!seen.current) { seen.current = new Set(keys); return; }
@@ -229,11 +311,7 @@ function Canvas({ map, actions, on }: BrickProps) {
     if (!added.length) return;
     for (const key of added) seen.current.add(key);
     setFresh((was) => new Set([...was, ...added]));
-    const timer = window.setTimeout(() => {
-      timers.current.delete(timer);
-      setFresh((was) => new Set([...was].filter((key) => !added.includes(key))));
-    }, 1000);
-    timers.current.add(timer);
+    later(() => setFresh((was) => new Set([...was].filter((key) => !added.includes(key)))), 1000);
   }, [layout]);
 
   // The tangent you're in opens while the view follows you; leaving it closes it again, unless you opened it.
@@ -266,94 +344,129 @@ function Canvas({ map, actions, on }: BrickProps) {
     }
     return out;
   }, [drag, group, layout]);
-  const shown = useGlide(layout, reduced, held);
+  const fadeIn = useCallback((keys: string[]) => requestAnimationFrame(() => {
+    for (const key of keys) frame.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(key)}"]`)?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: "ease-out" });
+  }), []);
+  const shown = useGlide(layout, reduced, held, fadeIn);
   const at = (item: Item) => held?.get(item.key) ?? shown.get(item.key) ?? item.box;
 
-  // The camera. `aim` puts a box where you'd look for it; `show` only when it isn't comfortably in view already.
-  const area = () => {
-    const box = frame.current?.getBoundingClientRect();
-    return { w: box?.width ?? innerWidth, h: Math.max(120, (box?.height ?? innerHeight) - dock) };
-  };
-  const glide = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const distance = Math.hypot(to.x - from.x, to.y - from.y);
-    return { duration: reduced ? 0 : Math.round(Math.min(900, 280 + distance * 0.35)), interpolate: distance > area().w ? "smooth" as const : "linear" as const, ease };
-  };
-  const aim = useCallback((box: Box, zoomTo?: number) => {
-    const { w, h } = area();
-    const was = flow.getViewport();
-    const zoom = zoomTo ?? (was.zoom < READ ? 1 : was.zoom);
-    const next = { x: w / 2 - (box.x + box.w / 2) * zoom, y: h * AIM - (box.y + box.h / 2) * zoom, zoom };
-    void flow.setViewport(next, glide(was, next));
-  }, [flow, dock, reduced]);
-  const show = useCallback((box: Box) => {
-    const { w, h } = area();
-    const { x, y, zoom } = flow.getViewport();
-    const sx = box.x * zoom + x, sy = box.y * zoom + y;
-    const inside = sx >= w * COMFORT.left && sx + box.w * zoom <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(box.h * zoom, h * 0.3) <= h * COMFORT.bottom;
-    if (!inside || zoom < READ) aim(box);
-  }, [aim, flow, dock]);
-  const seeAll = useCallback(() => {
-    const all = bounds(layout.items.map((item) => item.box));
-    const { w, h } = area();
-    const zoom = Math.max(0.05, Math.min(1, (w - 64) / Math.max(all.w, 1), (h - 64) / Math.max(all.h, 1)));
-    const was = flow.getViewport();
-    const next = { x: w / 2 - (all.x + all.w / 2) * zoom, y: h / 2 - (all.y + all.h / 2) * zoom, zoom };
-    void flow.setViewport(next, glide(was, next));
-  }, [layout, flow, dock, reduced]);
+  // The camera.
+  const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
+  const camera = useCamera(flow, area, reduced, pane);
+  const all = () => bounds(layout.items.map((item) => item.box));
   const minZoom = useMemo(() => {
-    const all = bounds(layout.items.map((item) => item.box));
-    const { w, h } = area();
-    return Math.max(0.04, Math.min(0.5, 0.8 * Math.min((w - 64) / Math.max(all.w, 1), (h - 64) / Math.max(all.h, 1))));
-  }, [layout, dock, top]);
+    const everything = all();
+    const a = area();
+    return Math.max(0.04, Math.min(0.5, 0.8 * Math.min((a.x1 - a.x0 - 64) / Math.max(everything.w, 1), (a.y1 - a.y0 - 64) / Math.max(everything.h, 1))));
+  }, [layout, dock, top, area]);
+  /** What the follow keeps in view: your latest point, with the slots under it. */
+  const goal = () => {
+    if (!here) return null;
+    const boxes = [here.box, ...slotsHere.map((key) => layout.byKey.get(key)?.box).filter((b): b is Box => !!b)];
+    return { box: bounds(boxes), ring: here.key };
+  };
+  const goalNow = useRef(goal);
+  goalNow.current = () => (following && !drag && !selecting ? goal() : null);
 
   // Opening: your latest point at reading size, or the whole map when you're nowhere yet; shown once it's there.
   useEffect(() => {
     if (ready || top === null) return;
-    if (here) aim(here.box, 1); else seeAll();
+    const g = goal();
+    if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
-  // Following: where you are stays in view as you talk.
+  // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
   useEffect(() => {
-    if (ready && following && here && !drag) show(here.box);
-  }, [ready, following, here?.key, here?.box.x, here?.box.y, here?.box.h]);
+    if (ready && following && here && !drag) camera.follow(() => goalNow.current());
+  }, [ready, following, here?.key, here?.box.x, here?.box.y, here?.box.h, slotsHere.join("|")]);
 
-  // A thought landing: its point (or its closed card) pulses once; off screen, an arrow at the edge says where.
-  useBrickEvent(on, "landed", ({ thoughtId, threadId, mine }) => {
-    const item = layout.items.find((i) => i.kind === "point" && i.thoughts?.includes(thoughtId)) ?? layout.byKey.get(`t:${threadId}`);
-    if (item) setPulses((was) => ({ ...was, [item.key]: (was[item.key] ?? 0) + 1 }));
-    const quiet = Date.now() - touched.current > quietFor();
-    if (mine && !following && quiet) setFollowing(true);
-    else if (item && !(mine && following) && !onScreen(item.box)) {
-      const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
-      setCues((was) => [...was.filter((cue) => cue.key !== item.key), { key: item.key, title, until: Date.now() + Math.max(SHORTEST_MS, readMs(title)) }].slice(-4));
-    }
-  });
+  // A tangent you opened comes into view if it's out of it (on a phone, a tucked one opens beside its topic).
   useEffect(() => {
-    if (!cues.length) return;
-    const next = Math.min(...cues.map((cue) => cue.until)) - Date.now();
-    const timer = window.setTimeout(() => setCues((was) => was.filter((cue) => cue.until > Date.now())), Math.max(50, next));
-    return () => window.clearTimeout(timer);
-  }, [cues]);
-  const onScreen = (box: Box) => {
-    const { w, h } = area();
-    const { x, y, zoom } = flow.getViewport();
-    const sx = box.x * zoom + x, sy = box.y * zoom + y;
-    return sx + box.w * zoom > 0 && sx < w && sy + box.h * zoom > 0 && sy < h;
+    if (open?.by !== "you" || !ready) return;
+    const card = layout.byKey.get(`t:${open.id}`);
+    if (card && !camera.comfortable(card.box)) camera.aim(card.box, { ring: card.key });
+  }, [open?.id, open?.by]);
+
+  const stopFollowing = () => { touched.current = Date.now(); setFollowing(false); camera.hold(); };
+  const startFollowing = () => {
+    setFollowing(true);
+    const g = goal();
+    if (g) camera.aim(g.box, { ring: g.ring });
   };
-  /** A quiet moment: long enough since you last moved the canvas to have read what's in the middle of it. */
-  const quietFor = () => {
-    const { w, h } = area();
+  /** The item nearest the middle of the view. */
+  const middle = () => {
+    const a = area();
     const { x, y, zoom } = flow.getViewport();
     let best: Item | undefined;
     let nearest = Infinity;
     for (const item of layout.items) {
-      const d = Math.hypot(item.box.x * zoom + x + (item.box.w * zoom) / 2 - w / 2, item.box.y * zoom + y + (item.box.h * zoom) / 2 - h / 2);
+      const d = Math.hypot(item.box.x * zoom + x + (item.box.w * zoom) / 2 - (a.x0 + a.x1) / 2, item.box.y * zoom + y + (item.box.h * zoom) / 2 - (a.y0 + a.y1) / 2);
       if (d < nearest) { nearest = d; best = item; }
     }
-    return readMs(`${best?.title ?? ""} ${best?.text ?? ""} ${best?.latest ?? ""}`);
+    return best;
   };
-  const stopFollowing = () => { touched.current = Date.now(); setFollowing(false); };
+  /** A quiet moment: long enough since a hand last moved the canvas to have read what's in the middle of it, and never
+   *  less than a pause in talk (the camera's spacing). */
+  const quietFor = () => { const best = middle(); return Math.max(SPACING_MS, readMs(`${best?.title ?? ""} ${best?.text ?? ""} ${best?.latest ?? ""}`)); };
+  const transform = (): [number, number, number] => { const v = flow.getViewport(); return [v.x, v.y, v.zoom]; };
+
+  // A thought landing: its slot fills once its flight is in (a ring), the newest landing says what put it there, and
+  // out of view an edge chip says where.
+  const ring = (key: string) => {
+    if (reduced) camera.flash(key);
+    else setPulses((was) => ({ ...was, [key]: (was[key] ?? 0) + 1 }));
+  };
+  useBrickEvent(on, "landed", (event: BrickEvents["landed"]) => {
+    const { thoughtId, threadId, mine } = event;
+    // contract: `model` and `ms` on `landed` (the placer's model and its time); until the host sends them, the time is
+    // the thought's own `place_ms`, and no model is named.
+    const extra = event as BrickEvents["landed"] & { model?: string; ms?: number };
+    const thought = map.thoughts.find((t) => t.id === thoughtId);
+    // Yours: the model put your thought there, and you're the one waiting on it; another's landing gets its initial.
+    if (mine) {
+      const text = landingNote(extra.model, extra.ms ?? thought?.place_ms);
+      setLanding(text ? { thought: thoughtId, text } : null);
+    }
+    const item = layout.items.find((i) => (i.kind === "point" || i.kind === "aside") && i.thoughts?.includes(thoughtId)) ?? layout.byKey.get(`t:${threadId}`);
+    if (item) {
+      // Its flight still in the air (the bubble flight's): the slot stays open until it's in, never longer than a flight.
+      const inAir = () => !!document.querySelector(`[data-flight="${CSS.escape(thoughtId)}"], [data-thought-id="${CSS.escape(thoughtId)}"]`);
+      if (mine && !reduced && inAir()) {
+        setArriving(thoughtId);
+        const began = Date.now();
+        const check = () => {
+          if (inAir() && Date.now() - began < ARRIVE_MAX_MS) { later(check, 40); return; }
+          setArriving((was) => (was === thoughtId ? null : was));
+          ring(item.key);
+        };
+        later(check, 40);
+      } else ring(item.key);
+    }
+    const quiet = Date.now() - touched.current > quietFor();
+    if (mine && !following && quiet) setFollowing(true);
+    else if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
+      const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
+      const thread = layout.items.find((i) => i.key === item.key)?.thread ?? threadId;
+      setCues((was) => [...was.filter((cue) => cue.thread !== thread), { key: item.key, thread, title, at: Date.now() }]);
+    }
+  });
+  // contract: `pointing` (the guide's): what the Friend points at, `{ thoughtId?, threadId? }`, or null when it stops.
+  // The Spine keeps the one dim (78%) for the rest, so a pointed-at thread never dims twice. Not in contract.ts yet.
+  useEffect(() => (on as unknown as (name: string, listener: (value: unknown) => void) => () => void)("pointing", (value) => {
+    const target = value as { thoughtId?: string; threadId?: string } | null;
+    const thread = target?.threadId ?? (target?.thoughtId ? map.thoughts.find((t) => t.id === target.thoughtId)?.thread_id : null);
+    setPointing(thread ? { thread } : null);
+  }), [on]);
+
+  const seenCues = useCallback((keys: string[]) => setCues((was) => was.filter((cue) => !keys.includes(cue.key))), []);
+  const goTo = (cue: Cue) => {
+    setCues((was) => was.filter((c) => c.key !== cue.key));
+    const item = layout.byKey.get(cue.key);
+    if (!item) return;
+    stopFollowing();
+    camera.aim(item.box, { ring: item.key });
+  };
 
   // A move, at once on screen, then on the map for every window. Offline it can't go: it says so and stays put.
   const put = useCallback((id: string, x: number | null, y: number | null) => {
@@ -364,26 +477,94 @@ function Canvas({ map, actions, on }: BrickProps) {
   }, [actions, map.me, map.connected]);
   const keep = (id: string) => shelf.add(id);
 
+  // Picking words for a margin note: the selection inside the point's words, and "Reply" under its end.
+  const unpick = () => { setSelecting(null); setPicking(null); };
+  useEffect(() => {
+    if (!selecting) return;
+    const changed = () => {
+      const selection = getSelection();
+      const text = frame.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(selecting.key)}"] .spine-text`);
+      if (!selection || !selection.rangeCount || selection.isCollapsed || !text || !text.contains(selection.anchorNode) || !text.contains(selection.focusNode)) {
+        setPicking((was) => (was?.typing ? was : null));
+        return;
+      }
+      const quote = selection.toString().replace(/\s+/g, " ").trim();
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      const frameBox = frame.current!.getBoundingClientRect();
+      if (quote) setPicking((was) => (was?.typing ? was : { key: selecting.key, thoughtId: selecting.thoughtId, quote, x: rect.right - frameBox.left - 40, y: rect.bottom - frameBox.top, typing: false }));
+    };
+    document.addEventListener("selectionchange", changed);
+    return () => document.removeEventListener("selectionchange", changed);
+  }, [selecting]);
+
   const acts = useMemo<Acts>(() => ({
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
     pick: (item) => { touched.current = Date.now(); setPicked(item.key); actions.select(item.thread); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
-    focus: (item) => { if (!onScreen(item.box)) { stopFollowing(); show(item.box); } },
+    focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
     openOnMap: (thread) => actions.openThread(thread),
     shelve: (item) => keep(item.id),
     unpin: (item) => { put(item.id, null, null); },
-  }), [actions, put, shelf.items]);
+    select: (item, x, y) => {
+      const thoughtId = item.thoughts?.at(-1);
+      if (!thoughtId) return;
+      camera.hold();
+      setSelecting({ key: item.key, thoughtId });
+      setPicking(null);
+      // Once its words can be picked: the word under the pointer, as a double click picks one.
+      requestAnimationFrame(() => {
+        const caret = document.caretRangeFromPoint?.(x, y);
+        const node = caret?.startContainer;
+        if (!caret || !node || node.nodeType !== Node.TEXT_NODE) return;
+        const words = node.textContent ?? "";
+        let start = caret.startOffset, end = start;
+        while (start > 0 && /[\p{L}\p{N}'’-]/u.test(words[start - 1])) start--;
+        while (end < words.length && /[\p{L}\p{N}'’-]/u.test(words[end])) end++;
+        if (end <= start) return;
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, end);
+        getSelection()?.removeAllRanges();
+        getSelection()?.addRange(range);
+      });
+    },
+    reply: (item, quote) => {
+      const frameBox = frame.current?.getBoundingClientRect();
+      const element = frame.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(item.key)}"]`)?.getBoundingClientRect();
+      if (!frameBox || !element) return;
+      if (item.kind === "margin") {
+        const note = notes.margins.find((m) => m.id === item.margin);
+        if (!note) return;
+        setSelecting(null);
+        setPicking({ key: item.key, thoughtId: note.thoughtId, quote: note.quote, x: element.left - frameBox.left, y: element.bottom - frameBox.top, typing: true });
+        return;
+      }
+      const thoughtId = item.thoughts?.at(-1);
+      if (!thoughtId) return;
+      camera.hold();
+      setPicking({ key: item.key, thoughtId, quote: quote ?? item.text ?? "", x: element.left - frameBox.left + G.textX, y: element.top - frameBox.top + (item.lines?.length ?? 1) * (item.look?.line ?? G.pointLine), typing: true });
+    },
+    unfold: (margin) => setOpened((was) => { const next = new Set(was); if (next.has(margin)) next.delete(margin); else next.add(margin); return next; }),
+  }), [actions, put, shelf.items, notes.margins, layout, area]);
 
-  const datas = useMemo(() => new Map(layout.items.map((item): [string, ItemData] =>
-    [item.key, { item, here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key }])),
-  [layout, hereKey, pulses, fresh, picked]);
+  // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
+  const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
+  const datas = useMemo(() => new Map(layout.items.map((item): [string, ItemData] => [item.key, {
+    item, here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
+    dim: pointing ? item.thread !== pointing.thread : !!focusTopic && item.topic !== focusTopic,
+    // A closed card is the slot of the tangent you're on (its points are folded inside it).
+    arriving: arriving && item.thoughts?.includes(arriving) ? arriving
+      : item.kind === "card" && !item.open && item.thread === map.active && slots.length ? slots[0] : null,
+    cut: camera.cut === item.key, selecting: selecting?.key === item.key,
+  }])), [layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey]);
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
     id: item.key, type: "item", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
-    draggable: item.kind !== "notch", selectable: false, focusable: false, connectable: false,
+    draggable: item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin", selectable: false, focusable: false, connectable: false,
     // Heads over points: far out, a topic's title covers the top of its own spine (in reach of a point, never at it).
-    zIndex: (item.kind === "notch" ? 0 : item.kind === "card" ? 1 : item.kind === "point" ? (item.look?.variant === "mini" ? 3 : 2) : 4) + (item.pinned ? 5 : 0) + (group?.has(item.key) ? 20 : 0),
+    zIndex: (item.kind === "notch" || item.kind === "slot" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)
+      + (item.pinned ? 5 : 0) + (group?.has(item.key) ? 20 : 0),
   }));
 
   // A drag: the thing follows the hand (with what's laid out from it), and every window sees each step.
@@ -413,23 +594,63 @@ function Canvas({ map, actions, on }: BrickProps) {
     return { x: p.x + end.dx, y: p.y + end.dy };
   };
 
+  // The zoom stops: one place at three distances. Words is reading size at what you follow (or the middle of the view);
+  // Titles and Pictures fit the whole map, Pictures a little further out.
+  const farOut = useStore((s) => s.transform[2] < READ);
+  const shownStop: Stop = farOut ? (stop === "words" ? "titles" : stop) : "words";
+  const choose = (next: Stop) => {
+    setStop(next);
+    if (next === "words") {
+      const g = following ? goal() : null;
+      const target = g?.box ?? middle()?.box;
+      if (target) camera.aim(target, { zoom: 1, ring: g?.ring });
+      return;
+    }
+    stopFollowing();
+    camera.fit(all(), next === "titles" ? 0.6 : 0.42, minZoom);
+  };
+  const seeAll = () => { stopFollowing(); camera.fit(all(), 1, minZoom); };
+
+  // Keys, from anywhere on the page but a field or a dialog: 1 2 3 the stops, 0 everything, F follow, N the newest edge
+  // chip, S the shelf, + and − zoom. Picking words: Enter answers them, Esc lets them go.
+  const keyed = useRef<(event: KeyboardEvent) => void>(() => {});
+  keyed.current = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+    const target = event.target as Element | null;
+    if (target?.closest?.("input, textarea, select, [contenteditable=''], [contenteditable='true']") || document.querySelector("dialog[open]")) return;
+    if (selecting || picking) {
+      if (event.key === "Escape") { event.preventDefault(); unpick(); getSelection()?.removeAllRanges(); return; }
+      if (event.key === "Enter" && picking && !picking.typing) { event.preventDefault(); setPicking({ ...picking, typing: true }); return; }
+    }
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (key === "1") choose("words");
+    else if (key === "2") choose("titles");
+    else if (key === "3") choose("pictures");
+    else if (key === "0") seeAll();
+    else if (key === "f") { if (following) stopFollowing(); else startFollowing(); }
+    else if (key === "n" && cues.length) goTo([...cues].sort((a, b) => b.at - a.at)[0]);
+    else if (key === "s" && layout.shelf.length) setShelfOpen((was) => !was);
+    else if (key === "+" || key === "=") { stopFollowing(); void flow.zoomIn({ duration: reduced ? 0 : 200 }); }
+    else if (key === "-") { stopFollowing(); void flow.zoomOut({ duration: reduced ? 0 : 200 }); }
+    else return;
+    event.preventDefault();
+  };
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => keyed.current(event);
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, []);
+
   const ready_ = ready && top !== null;
+  const rowStyle = { bottom: corner.row };
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}
-      onKeyDown={(event) => {
-        if ((event.target as Element).closest("input, textarea")) return;
-        if (event.key === "+" || event.key === "=") void flow.zoomIn({ duration: reduced ? 0 : 200 });
-        else if (event.key === "-") void flow.zoomOut({ duration: reduced ? 0 : 200 });
-        else if (event.key === "0") seeAll();
-        else return;
-        stopFollowing();
-      }}>
+    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
       <ReactFlow<ItemNode>
         className="spine-flow" nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
-        onNodeDragStart={() => stopFollowing()}
+        onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event) => setOverShelf(overShelfAt(event))}
         onNodeDragStop={(event, node) => {
           const item = layout.byKey.get(node.id);
@@ -444,47 +665,49 @@ function Canvas({ map, actions, on }: BrickProps) {
             if (was?.id === item.id) put(item.id, was.was?.x ?? null, was.was?.y ?? null);
           } else put(item.id, node.position.x, node.position.y);
         }}
-        onMoveStart={(event) => { if (event) stopFollowing(); }}
-        onPaneClick={() => setPicked(null)}
+        onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}
+        onPaneClick={() => { setPicked(null); if (!picking?.typing) unpick(); }}
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
-        aria-label="Your threads as spines: drag the canvas to look around, pinch or Ctrl and scroll to zoom">
+        aria-label="Your threads as spines: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures">
+        <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             {layout.links.map((link) => {
               const d = pathOf(link, linkEnd(link));
-              const drawn = fresh.has(link.key) && link.kind !== "pulled";
-              return d && <path key={link.key} d={d} className={cls("spine-link", LINK_CLASS[link.kind], drawn && "spine-draw")}
-                pathLength={drawn ? 1 : undefined} style={{ stroke: link.room ? `var(--room-${link.room})` : undefined }} />;
+              const drawn = fresh.has(link.key) && link.kind !== "pulled" && link.kind !== "slot";
+              const dim = pointing ? !!link.topic && layout.byKey.get(link.to.key)?.thread !== pointing.thread : !!focusTopic && link.topic !== focusTopic;
+              const start = link.kind === "branch" || link.kind === "note" ? linkEnd(link)(link.from) : null;
+              return d && <g key={link.key} className={cls(dim && "spine-link-dim")}>
+                <path d={d} className={cls("spine-link", LINK_CLASS[link.kind], drawn && "spine-draw")}
+                  pathLength={drawn ? 1 : undefined} style={{ stroke: link.room && link.kind !== "note" ? `var(--room-${link.room})` : undefined }} />
+                {start && <circle className={cls("spine-link-end", link.kind === "note" && "spine-link-end-note")} cx={start.x} cy={start.y} r={2.2}
+                  style={{ fill: link.room && link.kind !== "note" ? `var(--room-${link.room})` : undefined }} />}
+              </g>;
             })}
           </svg>
         </EdgeLabelRenderer>
       </ReactFlow>
-      <Cues cues={cues} layout={layout} area={area} go={(item) => { setCues((was) => was.filter((cue) => cue.key !== item.key)); stopFollowing(); aim(item.box); }} />
+      {!narrow && <Cues cues={cues} layout={layout} area={area} width={width} narrow={false} go={goTo} seen={seenCues} />}
       </NowContext.Provider>
       </ActsContext.Provider>
-      {!following && here && <button type="button" className="spine-follow" style={{ bottom: dock + 12 }}
-        onClick={() => { setFollowing(true); aim(here.box); }}>
-        <span className="spine-follow-dot" aria-hidden="true" />Follow · {activeThread?.title}
-      </button>}
-      <div className="spine-corner" style={{ bottom: dock + 12 }}>
-      <div className="spine-controls" role="group" aria-label="Canvas">
-        <button type="button" className="spine-control" aria-label="Zoom in" title="Zoom in (+)" onClick={() => { stopFollowing(); void flow.zoomIn({ duration: reduced ? 0 : 200 }); }}>+</button>
-        <button type="button" className="spine-control" aria-label="Zoom out" title="Zoom out (−)" onClick={() => { stopFollowing(); void flow.zoomOut({ duration: reduced ? 0 : 200 }); }}>−</button>
-        <button type="button" className="spine-control" aria-label="See everything" title="See everything (0)" onClick={() => { stopFollowing(); seeAll(); }}>
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
-      </div>
-
-      <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf}
-        putBack={(id) => shelf.remove(id)}
-        place={(id, x, y) => {
-          const box = frame.current?.getBoundingClientRect();
-          const p = flow.screenToFlowPosition({ x, y });
-          if (box && y < box.bottom - dock && put(id, p.x - G.lineX, p.y - G.dotY)) shelf.remove(id);
-        }} />
+      {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
+        send={(text) => { notes.add(picking.thoughtId, picking.quote, text); unpick(); getSelection()?.removeAllRanges(); }} />}
+      {!narrow && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
+        <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
+      </div>}
+      <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottom }}>
+        {narrow && <Cues cues={cues} layout={layout} area={area} width={width} narrow go={goTo} seen={seenCues} />}
+        {narrow && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
+        <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
+          putBack={(id) => shelf.remove(id)}
+          place={(id, x, y) => {
+            const frameBox = frame.current?.getBoundingClientRect();
+            const p = flow.screenToFlowPosition({ x, y });
+            if (frameBox && y < frameBox.top + area().y1 && put(id, p.x - G.lineX, p.y - G.dotY)) shelf.remove(id);
+          }} />
       </div>
     </div>
   </div>;
@@ -506,35 +729,4 @@ function ZoomVar() {
     return store.subscribe((state) => set(state.transform[2]));
   }, [store]);
   return null;
-}
-
-/** Where a new thing landed out of view: an arrow at the edge of the screen, toward it, with its thread's title. */
-function Cues({ cues, layout, area, go }: { cues: { key: string; title: string }[]; layout: Layout; area: () => { w: number; h: number }; go: (item: Item) => void }) {
-  const [x, y, zoom] = useStore((s) => s.transform);
-  if (!cues.length) return null;
-  const { w, h } = area();
-  const inset = 16;
-  const placed: { left: number; top: number }[] = [];
-  return <div className="spine-cues">
-    {cues.map((cue) => {
-      const item = layout.byKey.get(cue.key);
-      if (!item) return null;
-      const cx = (item.box.x + item.box.w / 2) * zoom + x;
-      const cy = (item.box.y + item.box.h / 2) * zoom + y;
-      if (cx > 0 && cx < w && cy > 0 && cy < h) return null;
-      // Along the line from the middle of the screen toward it, stopped at the edge.
-      const dx = cx - w / 2, dy = cy - h / 2;
-      const scale = Math.min((w / 2 - inset - 90) / Math.max(Math.abs(dx), 1), (h / 2 - inset - 18) / Math.max(Math.abs(dy), 1));
-      let left = w / 2 + dx * scale, top = h / 2 + dy * scale;
-      // Several pointing the same way stack, a row apart, never on top of each other.
-      while (placed.some((p) => Math.abs(p.left - left) < 120 && Math.abs(p.top - top) < 30)) top += top > h / 2 ? -34 : 34;
-      placed.push({ left, top });
-      const angle = Math.atan2(dy, dx);
-      return <button key={cue.key} type="button" className="spine-cue" style={{ left, top }} onClick={() => go(item)}
-        aria-label={`New on ${cue.title}: go there`}>
-        <span className="spine-cue-arrow" style={{ transform: `rotate(${angle}rad)` }} aria-hidden="true">➜</span>
-        <span className="spine-cue-title">{cue.title}</span>
-      </button>;
-    })}
-  </div>;
 }

@@ -16,8 +16,12 @@
 //    and moves none, and a bubble opens its thread on the map, moving your place there.
 // Spine, beyond that: a head per topic and a card per tangent; a landing pulses its point once and moves nothing that
 //    was there; a drag places a point where it's dropped (asked as a position, a mark left on its line) and its pin puts
-//    it back; a thread opens on the map. In the app: a landing from the core pulses, a place someone else gave moves the
-//    point there, and a drag reaches the core as a position.
+//    it back; a thread opens on the map. Your thought on its way has a dashed slot (`data-slot="slot:<id>"`) under the
+//    tip of the thread you're on, and lands in it with its landing note. It follows your talk; a hand on the map holds
+//    it: a landing then moves nothing, and out of view gets an edge chip that stays until seen; the chip's click goes
+//    there in 400 ms or less, and F follows again. Under Reduce Motion the camera cuts, with a ring for a second where it
+//    went, and a landing rings without moving. In the app: a landing from the core pulses, a place someone else gave
+//    moves the point there, and a drag reaches the core as a position.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
 //    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
@@ -377,6 +381,107 @@ try {
     }
     await evaluate(`document.querySelector('[aria-label="Open Hackathon plan on the map"]').click()`);
     if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread Hackathon plan")`, 2000)) fail("spine", "a thread doesn't open on the map");
+
+    // Round 2: the slot, the follow and a hand that holds it, edge chips, the camera's pace, Reduce Motion.
+    const press = (label) => evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+    const key = async (k) => { for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: k, code: `Key${k.toUpperCase()}`, text: type === "keyDown" ? k : undefined }); };
+    const nodeAt = (selector) => evaluate(`(() => { const n = document.querySelector(${JSON.stringify(selector)})?.closest(".react-flow__node");
+      const m = n?.style.transform.match(/translate\\(([-\\d.]+)px, ([-\\d.]+)px\\)/); return m ? { id: n.dataset.id, x: +m[1], y: +m[2] } : null; })()`);
+    const following = () => evaluate(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed")`);
+    const view = () => evaluate(`document.querySelector(".react-flow__viewport").style.transform`);
+    // A press on the empty canvas in the frame's right half, dragged 600 px left: a hand moving the map.
+    const handPan = async () => {
+      const from = await evaluate(`(() => { const f = document.querySelector(".spine-frame").getBoundingClientRect();
+        for (let y = f.top + 80; y < f.bottom - 200; y += 16) for (let x = f.right - 40; x > f.left + f.width / 2 + 100; x -= 16)
+          if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+        return null; })()`);
+      if (!from) return false;
+      await drag(from, { x: from.x - 600, y: from.y }, 12);
+      return true;
+    };
+    const spineAgain = async () => {
+      await go(`${base}/bricks.html?brick=spine&sample=student-week`);
+      if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine", "the canvas never showed (again)");
+      await settle();
+    };
+    await spineAgain();
+    if (await following() !== "true") fail("spine", "it doesn't open following your talk (Following, pressed)");
+    // The slot: under the tip of the thread you're on, named for the flight; the point lands in it, with its note.
+    const tip = await nodeAt(".spine-on");
+    await press("Add a thought");
+    if (!await until(`!!document.querySelector('.spine-slot[data-slot^="slot:pg-"]')`, 1000)) fail("spine", "no dashed slot for your thought on its way");
+    else {
+      const slot = await nodeAt('.spine-slot[data-slot^="slot:pg-"]');
+      const id = (await evaluate(`document.querySelector('.spine-slot[data-slot^="slot:pg-"]').dataset.slot`)).slice("slot:".length);
+      if (!tip || !slot || slot.x !== tip.x || slot.y <= tip.y) fail("spine", `the slot isn't under the tip of the thread you're on (tip ${JSON.stringify(tip)}, slot ${JSON.stringify(slot)})`);
+      if (!await until(`!document.querySelector(".spine-slot") && !!document.querySelector('.react-flow__node[data-id="p:${id}"]')`, 3000)) fail("spine", "the slot doesn't give way to its point once it lands");
+      else {
+        const point = await nodeAt(`.react-flow__node[data-id="p:${id}"] .spine-point`);
+        if (!slot || !point || point.x !== slot.x || Math.abs(point.y - slot.y) > 1) fail("spine", `the point didn't land in its slot (slot ${JSON.stringify(slot)}, point ${JSON.stringify(point)})`);
+        const note = await evaluate(`document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`);
+        if (note !== "Put here in 1.2 s") fail("spine", `the landing note says "${note}", not how long placing took ("Put here in 1.2 s"; the model once the contract sends it)`);
+      }
+    }
+    // A hand on the map holds the view; a landing then moves nothing, and out of view an edge chip says where.
+    await sleep(600);
+    if (!await handPan()) fail("spine", "no empty canvas to drag (the check's)");
+    else if (!await until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "false"`, 1500)) fail("spine", "a hand on the map doesn't hold the view");
+    else {
+      await sleep(300);
+      const held = await view();
+      await press("Add a thought");
+      if (!await until(`!!document.querySelector(".spine-cue")`, 3000)) fail("spine", "a landing out of view, while the view is held, shows no edge chip");
+      else {
+        // Longer than the old chips' 5 s: it stays until it's seen, and the view stays where the hand left it.
+        await sleep(5600);
+        if (await view() !== held) fail("spine", "the view moved while a hand held it");
+        const stayed = await evaluate(`!!document.querySelector(".spine-cue")`);
+        if (!stayed) fail("spine", "an edge chip left before it was seen");
+        // Its click goes there: one glide of 400 ms or less (or, past a screen, a 200 ms cross-fade), and the chip goes.
+        const took = !stayed ? 0 : await evaluate(`new Promise((resolve) => {
+          const viewport = document.querySelector(".react-flow__viewport");
+          let last = viewport.style.transform;
+          const began = performance.now();
+          let changed = -1;
+          document.querySelector(".spine-cue").click();
+          const tick = (t) => {
+            if (viewport.style.transform !== last) { last = viewport.style.transform; changed = t; }
+            if ((changed > 0 && t - changed > 300) || t - began > 3000) resolve(changed < 0 ? -1 : Math.round(changed - began)); else requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })`);
+        if (took < 0) fail("spine", "an edge chip's click doesn't go there");
+        else if (took > 450) fail("spine", `an edge chip's move took ${took} ms (a glide is 400 ms at most)`);
+        if (!await until(`!document.querySelector(".spine-cue")`, 1500)) fail("spine", "an edge chip stays once its landing is in view");
+      }
+      await key("f");
+      if (!await until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "true"`, 1000)) fail("spine", "F doesn't follow your talk again");
+    }
+    // Reduce Motion: the camera cuts (one frame, then still) with a ring for a second where it went; a landing rings in
+    // place of its pulse.
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await spineAgain();
+    if (!await handPan()) fail("spine", "no empty canvas to drag under Reduce Motion (the check's)");
+    else {
+      await until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "false"`, 1500);
+      await sleep(300);
+      const cut = await evaluate(`new Promise((resolve) => {
+        const viewport = document.querySelector(".react-flow__viewport");
+        const before = viewport.style.transform;
+        document.querySelector(".spine-follow").click();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const first = viewport.style.transform;
+          setTimeout(() => resolve({ moved: first !== before, still: viewport.style.transform === first, ring: !!document.querySelector(".spine-cut") }), 300);
+        }));
+      })`);
+      if (!cut.moved || !cut.still) fail("spine", `under Reduce Motion the camera glides instead of cutting (${JSON.stringify(cut)})`);
+      if (!cut.ring) fail("spine", "under Reduce Motion no ring shows where the camera cut to");
+      else if (!await until(`!document.querySelector(".spine-cut")`, 1500)) fail("spine", "the ring where the camera cut stays past its second");
+      await press("Add a thought");
+      if (!await until(`!!document.querySelector(".spine-point.spine-cut")`, 3000)) fail("spine", "under Reduce Motion a landing shows no ring");
+      if (await evaluate(`[...document.querySelectorAll(".spine-ring")].some((ring) => getComputedStyle(ring).display !== "none")`)) fail("spine", "under Reduce Motion a landing still pulses");
+    }
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
   }
   if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
