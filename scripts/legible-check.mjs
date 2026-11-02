@@ -11,7 +11,12 @@ const read = (name) => readFileSync(new URL(name, src), "utf8");
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { saidDiffers, intoColumns, NATURAL_PAUSE_MS, TWO_COLUMNS, focusSpot, restoreFocus } = await server.ssrLoadModule("/src/legible.ts");
+  const { saidDiffers, intoColumns, NATURAL_PAUSE_MS, TWO_COLUMNS, focusSpot, restoreFocus, POINT_OWN } = await server.ssrLoadModule("/src/legible.ts");
+  // A click into a point's Move field (or anywhere in its menu) is the menu's, not a toggle of the point's words
+  // (bug hunt 17); its buttons and marks keep theirs. The point's click handler asks `closest` with this list.
+  const own = new Set(POINT_OWN.split(",").map((s) => s.trim()));
+  for (const control of ["button", "input", ".move-menu", "[data-tip]"]) assert.ok(own.has(control), control);
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /\.closest\(POINT_OWN\)/);
 
   // A point opens its words only when they say more than the point: case and punctuation don't count.
   assert.equal(saidDiffers("Okay so the deadline is tomorrow at 9 PM", "Deadline tomorrow 9 PM"), true, "a short version");
@@ -69,7 +74,7 @@ try {
   assert.doesNotMatch(point, /onKeyDown/, "no key handler on the <li>: the button is the keyboard path");
   // A mark inside the point (Tips.tsx) keeps its own job: a tap shows its tip, not the words, and the point's title
   // doesn't add a second tip over it.
-  assert.match(point, /closest\("button, \[data-tip\]"\)/, "a tap on a point's ✦ or ? shows its tip without opening the words");
+  assert.match(point, /closest\(POINT_OWN\)/, "a tap on a point's ✦ or ? shows its tip without opening the words");
   for (const mark of point.match(/<span [^>]*data-tip=[^>]*>/g) ?? []) assert.match(mark, /title=""/, `no second tip over ${mark}`);
   assert.match(read("legible.css"), /\.said-toggle \{[^}]*user-select: none/, "its name stays out of words selected to explain");
 

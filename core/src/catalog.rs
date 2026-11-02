@@ -14,7 +14,7 @@
 //!   comes back as one act, written as a phrase the rules must read as that act before it runs.
 
 use crate::protocol::{ServerMsg, View};
-use crate::world::{Change, Thought, Thread, World};
+use crate::world::{Change, ItemStatus, Thought, Thread, World};
 use crate::{now_ms, Core};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -735,6 +735,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
             kept.push(id);
             continue;
         }
+        changes.extend(set_aside(&world, &id));
         match before.as_ref().filter(|into| **into != id) {
             Some(into) => changes.push(Change::ThreadMerged { from: id, into: into.clone() }),
             None => {
@@ -747,6 +748,16 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     drop(world);
     core.commit(changes);
     Some(Undo::Restore { thoughts, threads })
+}
+
+/// What the AI proposed on a thread that leaves the map with the words taken back (a reminder, an idea) and that is
+/// still unanswered: set aside with it, so it neither stays on with no thread nor follows the thread's id into another.
+pub(crate) fn set_aside(world: &World, thread_id: &str) -> Vec<Change> {
+    let waiting = |id: &String, on: &str, status: ItemStatus| (status == ItemStatus::New && world.resolve(on) == thread_id).then(|| id.clone());
+    world.suggestions.iter().filter_map(|s| waiting(&s.id, &s.thread_id, s.status))
+        .chain(world.actions.iter().filter_map(|a| waiting(&a.id, &a.thread_id, a.status)))
+        .map(|id| Change::ItemStatus { id, status: ItemStatus::Dismissed, done_ms: None })
+        .collect()
 }
 
 /// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other thought, no branch.
@@ -886,6 +897,7 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
             let started = started.as_ref().map(|id| world.resolve(id)).filter(|id| world.thread(id).is_some());
             let mut emptied = None;
             if let Some(started) = started.filter(|id| empty_without(&world, id, &gone)) {
+                changes.extend(set_aside(&world, &started));
                 changes.push(match to.as_ref().filter(|to| **to != started) {
                     Some(to) => Change::ThreadMerged { from: started.clone(), into: to.clone() },
                     // Nowhere to go (it was the first thread): it leaves the map.

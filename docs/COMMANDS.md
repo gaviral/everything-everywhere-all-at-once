@@ -1,6 +1,6 @@
 # Voice commands
 
-The getting-back, finding, view, filing and fixing commands, with their variants. All are recognized by rule, with no model call, and only as the whole turn, except that “where was I?”, “next one” and “last one” also work at a turn's start or end, and a correction no rule reads (below). Recap, “make an app that …” and the yes or no to “Did you mean …?” are in the README; “what can I say?” lists every command. The README has the short list.
+The getting-back, finding, view, filing and fixing commands, with their variants. All are recognized by rule, with no model call, and only as the whole turn, except that “where was I?”, “next one” and “last one” also work at a turn's start or end, “stop listening” at its end, and a correction no rule reads (below). Recap, “make an app that …” and the yes or no to “Did you mean …?” are in the README; “what can I say?” lists every command. The README has the short list.
 
 ## The unfinished card and moving around
 
