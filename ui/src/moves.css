@@ -23,13 +23,13 @@
   width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
   color: var(--ink); font: inherit; font-size: 13px;
 }
-.move-menu ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: calc(6 * 30px); overflow-y: auto; }
-.move-menu li button {
+.move-list { margin-top: 6px; max-height: calc(6 * 30px); overflow-y: auto; }
+.move-list button {
   display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit;
   font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; overflow-wrap: anywhere;
 }
-.move-menu li button:is(:hover, :focus-visible) { background: var(--accent-soft); outline: none; }
-.move-menu li button.new { color: var(--accent); }
+.move-list button:is(:hover, :focus-visible) { background: var(--accent-soft); outline: none; }
+.move-list button.new { color: var(--accent); }
 
 /* While a point is dragged, cards show they take it; the one under the pointer says so. */
 .moving-point .thread { outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }

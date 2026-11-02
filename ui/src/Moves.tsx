@@ -58,7 +58,7 @@ function MoveMenu({ current, threads, pick, close }: { current: string | null; t
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [close]);
   const walk = (event: React.KeyboardEvent, step: number) => {
-    const items = Array.from(menu.current?.querySelectorAll<HTMLElement>("input, li > button") ?? []);
+    const items = Array.from(menu.current?.querySelectorAll<HTMLElement>("input, .move-list > button") ?? []);
     const at = items.indexOf(document.activeElement as HTMLElement);
     items[Math.max(0, Math.min(items.length - 1, at + step))]?.focus();
     event.preventDefault();
@@ -74,10 +74,11 @@ function MoveMenu({ current, threads, pick, close }: { current: string | null; t
       <input autoFocus value={query} placeholder="Move to…" aria-label="Move to a thread: type to narrow the list"
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); pick(targets[0]?.id ?? null); } }} />
-      <ul>
-        {targets.map((t) => <li key={t.id}><button type="button" onClick={() => pick(t.id)}>{t.title}</button></li>)}
-        <li><button type="button" className="new" onClick={() => pick(null)}>New thread</button></li>
-      </ul>
+      {/* Buttons, not a list: inside a point, a list's items would take the point's own bullet and spacing. */}
+      <div className="move-list">
+        {targets.map((t) => <button key={t.id} type="button" onClick={() => pick(t.id)}>{t.title}</button>)}
+        <button type="button" className="new" onClick={() => pick(null)}>New thread</button>
+      </div>
     </div>
   );
 }
