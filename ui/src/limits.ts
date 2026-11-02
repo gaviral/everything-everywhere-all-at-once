@@ -17,6 +17,13 @@ export function tooLongThought(text: string): string | null {
   return [...text.trim()].length > THOUGHT_MAX ? THOUGHT_TOO_LONG : null;
 }
 
+/** A title as the box holds it: at most `TITLE_MAX` characters, counted as the core counts (by character, not
+ * UTF-16 unit, so 60 "𠮷" fit where a native `maxLength` would cut them to 50). */
+export function clipTitle(text: string): string {
+  const chars = [...text];
+  return chars.length > TITLE_MAX ? chars.slice(0, TITLE_MAX).join("") : text;
+}
+
 /** What to say instead of sending a message, or null when it fits: bytes on the wire. */
 export function tooBig(data: string | ArrayBuffer): string | null {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data).length : data.byteLength;

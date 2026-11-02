@@ -34,15 +34,22 @@ try {
   // The largest real message fits: Explain on a thought at the cap, with that thought as its context.
   const widest = "𝄞".repeat(limits.THOUGHT_MAX); // 4 bytes each
   assert.equal(limits.tooBig(JSON.stringify({ type: "explain", id: "x", text: widest, context: widest, thread_id: "T1" })), null);
+  // A title clips by character, as the core counts: 60 "𠮷" (120 UTF-16 units) all fit; one past the cap is cut.
+  assert.equal(limits.clipTitle("𠮷".repeat(60)), "𠮷".repeat(60));
+  assert.equal(limits.clipTitle("𠮷".repeat(limits.TITLE_MAX + 1)), "𠮷".repeat(limits.TITLE_MAX));
+  assert.equal(limits.clipTitle("a".repeat(limits.TITLE_MAX)), "a".repeat(limits.TITLE_MAX));
   // Calm: no blame, no jargon, says what to do.
   for (const words of [limits.THOUGHT_TOO_LONG, limits.TOO_BIG]) assert.doesNotMatch(words, /error|invalid|frame|byte|exceed/i);
 
   // The window uses them: every message passes `tooBig`, a typed thought `tooLongThought` (keeping the draft),
-  // and the title box stops at the cap.
+  // and the title box clips at the cap by character.
   const core = read("ui/src/core.ts");
   assert.match(core, /const send = useCallback\(\(data: string \| ArrayBuffer\) => \{\s*const big = tooBig\(data\);/);
   assert.match(core, /sendText: \(text: string\) => \{\n(?:.*\n){0,3}.*tooLongThought\(text\)/);
-  assert.match(read("ui/src/Moves.tsx"), /className="title-input"[^>]*maxLength=\{TITLE_MAX\}/);
+  // (not a native maxLength: it counts UTF-16 units, so it would cut a title the core accepts)
+  const moves = read("ui/src/Moves.tsx");
+  assert.doesNotMatch(moves, /maxLength/);
+  assert.match(moves, /className="title-input"[\s\S]*?onInput=\{\(event\) => \{\s*const box = event\.currentTarget;\s*const clipped = clipTitle\(box\.value\);/);
 } finally {
   await server.close();
 }

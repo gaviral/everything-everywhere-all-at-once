@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Thought, Thread } from "./core";
-import { TITLE_MAX } from "./limits";
+import { clipTitle } from "./limits";
 import { moveTargets, typedTitle } from "./moves-core";
 import "./moves.css";
 
@@ -200,8 +200,13 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   if (editing) {
     return (
       <div {...heading}>
-        <input className="title-input" maxLength={TITLE_MAX} autoFocus defaultValue={thread.title} aria-label={`Rename “${thread.title}”`}
+        <input className="title-input" autoFocus defaultValue={thread.title} aria-label={`Rename “${thread.title}”`}
           onFocus={(event) => event.currentTarget.select()}
+          onInput={(event) => {
+            const box = event.currentTarget;
+            const clipped = clipTitle(box.value);
+            if (clipped !== box.value) box.value = clipped;
+          }}
           onKeyDown={(event) => {
             event.stopPropagation();
             if (event.key === "Enter") { event.preventDefault(); refocus.current = true; finish(event.currentTarget.value); }

@@ -1427,8 +1427,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.wake.notify_waiters();
                 }
                 // Only a tag the thread has: tags come from the refiner (bounded there, `TAG_MAX`), so nothing else is journaled.
+                // Checked on the thread it was merged into, if any, where the change itself lands (`World::resolved`).
                 Ok(ClientMsg::Tag { thread_id, tag, keep }) => {
-                    if !core.snapshot().thread(&thread_id).is_some_and(|t| t.tags.iter().any(|t| t.name == tag)) {
+                    let world = core.snapshot();
+                    let on = world.thread(&world.resolve(&thread_id)).is_some_and(|t| t.tags.iter().any(|t| t.name == tag));
+                    drop(world);
+                    if !on {
                         core.send_to(&speaker, ServerMsg::Notice { message: "That tag isn't on this thread any more.".into() });
                         continue;
                     }
@@ -2398,6 +2402,17 @@ mod tests {
         window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": "#money", "keep": true}))).await.unwrap();
         while !core.snapshot().thread("T1").unwrap().tags.iter().any(|t| t.kept) {
             received(&mut window).await;
+        }
+        // A click made before a merge still lands, on the thread T1 went into (when that thread has the tag too).
+        core.commit(vec![
+            Change::ThreadAdded { thread: crate::world::fixtures::thread("T2", "Bills", 2) },
+            Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
+            Change::ThreadMerged { from: "T1".into(), into: "T2".into() },
+        ]);
+        window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": "#money", "keep": true}))).await.unwrap();
+        while !core.snapshot().thread("T2").unwrap().tags.iter().any(|t| t.kept) {
+            let said = notice(received(&mut window).await);
+            assert!(said.is_none(), "{said:?}");
         }
 
         // A frame past the cap closes this window; the core holds none of it.
