@@ -20,6 +20,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { intoColumns, saidDiffers, useTalking, useTwoColumns } from "./legible";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -366,6 +367,8 @@ export default function App() {
 
   // Your own thoughts on their way; in a room the other person's land on the map with their name.
   const pending = useMemo(() => world.thoughts.filter((t) => !t.placed && t.speaker === me), [world.thoughts, me]);
+  // While you talk the map quiets all but where you are (legible.css); at a natural pause everything reads again.
+  const talking = useTalking({ heard: core.partial || core.handoff, inFlight: pending.length });
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
@@ -796,7 +799,7 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className="map" aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
@@ -1028,8 +1031,11 @@ type MapProps = {
 // The composer, live transcript and pull-back timer update independently of the map.
 const MapCards = memo(function MapCards(props: MapProps) {
   const roots = props.childrenByParent.get(null) ?? [];
-  return roots.length === 0 ? <p className="no-results">No threads match. Try another search.</p>
-    : roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
+  // A wide window holds two columns (legible.ts); a lone thread sits in the middle (legible.css).
+  const two = useTwoColumns();
+  if (roots.length === 0) return <p className="no-results">No threads match. Try another search.</p>;
+  if (!two) return roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
+  return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
 });
 
 function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
@@ -1152,8 +1158,17 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
+  // The words behind the point open under it by click, tap or Enter, not by hover alone (a phone has none).
+  const said = saidDiffers(thought.text, thought.point);
+  const [open, setOpen] = useState(false);
+  const toggle = said ? (event: React.MouseEvent | React.KeyboardEvent) => {
+    // Its own buttons (undo a fix, did you mean) and selecting words to explain keep their jobs.
+    if ((event.target as HTMLElement).closest("button") || !(window.getSelection()?.isCollapsed ?? true)) return;
+    if ("key" in event) { if ((event.key !== "Enter" && event.key !== " ") || event.target !== event.currentTarget || event.defaultPrevented) return; event.preventDefault(); }
+    setOpen((was) => !was);
+  } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={thought.text} className={other ? "other" : undefined} tabIndex={thought.place_ms != null ? 0 : undefined}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={said || thought.place_ms != null ? 0 : undefined} onClick={toggle} onKeyDown={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
@@ -1180,6 +1195,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
         )
       )}
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
+      {open && <span className="said">“{thought.text.trim()}”</span>}
     </motion.li>
   );
 });
