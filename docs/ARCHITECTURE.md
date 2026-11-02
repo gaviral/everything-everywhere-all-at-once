@@ -30,6 +30,7 @@ Browser, one page per window (ui/src)
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
+  keys.ts        keys the README, tour and ? list promise: ? opens the list, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
   unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
