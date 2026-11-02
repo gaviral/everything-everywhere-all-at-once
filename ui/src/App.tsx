@@ -41,7 +41,7 @@ import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
-import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
+import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
@@ -941,7 +941,7 @@ export default function App() {
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
-            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} />
+            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} offline={!core.connected} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -982,8 +982,13 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
-              <button type="button" className="sample-button" onClick={core.sample} disabled={!core.connected}>Try a sample map</button>
+              <button type="button" className="sample-button" onClick={() => core.sample()} disabled={!core.connected}>Try a sample map</button>
               <span>A student's week, with pictures. Your own thoughts join it.</span>
+              {moreSamples(site.samples).length > 0 && <span className="more-samples" role="group" aria-label="Shorter sample maps">
+                <span>Or a shorter one:</span>
+                <span className="sample-links">{moreSamples(site.samples).map((choice) =>
+                  <button key={choice.id} type="button" className="sample-link" onClick={() => core.sample(choice.id)} disabled={!core.connected}>{choice.label}</button>)}</span>
+              </span>}
             </p>}
             {!core.noKey && modelsLine(site.models) && <p className="empty-models">{modelsLine(site.models)}</p>}
           </div>
@@ -1200,6 +1205,10 @@ function useDockRoom(ref: RefObject<HTMLElement | null>) {
   }), []);
 }
 
+/** How a dismissed suggestion or action leaves: a 150 ms fade, as a card's body folds (ThreadCard). A fade isn't motion,
+ *  so it stays under Reduce Motion, where the rows below snap up instead of gliding (MotionConfig "user"). */
+const EXIT = { opacity: 0, transition: { duration: 0.15 } };
+
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
   const grouped = new Map<string, T[]>();
   for (const item of items) if (item.status !== "dismissed") {
@@ -1314,8 +1323,10 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           <Point key={t.id} thought={t} heads={heads} on={on} />
         ))}
       </ul>
+      {/* A dismissed row fades out (EXIT) and the rows below glide up, rather than the row vanishing under the click. */}
+      <AnimatePresence initial={false}>
       {ideas.map((s) => (
-        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
           <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
@@ -1328,10 +1339,13 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           )}
         </motion.div>
       ))}
+      </AnimatePresence>
       <ProposalRows thread={thread.id} />
+      <AnimatePresence initial={false}>
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
+      </AnimatePresence>
       </motion.div>}
       </AnimatePresence>
       {branches.length > 0 && (
@@ -1479,7 +1493,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
     if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
   }, [action.status]);
   return (
-    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
         data-tip={calendarFile ? TIPS.file(action.status === "done", !!line.button) : action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
