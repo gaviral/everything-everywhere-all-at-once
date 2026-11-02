@@ -40,6 +40,17 @@ check "model guards catch what they should (self-test)" "python3 scripts/model-g
 check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
 check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
+# Claims stay modest and non-medical: the app helps people keep their threads; it doesn't diagnose or treat anything,
+# so nothing a judge or user reads may say or suggest it (README, docs, UI copy, sample maps, demo talk, prompts).
+# Allowed: "treat ... as" (model output is treated as data) and a refusal ("never give medical advice", Explain's guard).
+medical_wording() {
+  git ls-files -z -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src |
+    xargs -0 perl -nle 'BEGIN { $re = qr/\b(adhd|neurodivergent|mental health|diagnos(e|es|ed|is|ing)|treat(s|ed|ing|ments?)?|therap(y|ies|ist|ists|eutic)|cur(e|es|ed|ing)|medical(ly)?|symptoms?|clinical(ly)?)\b/i }
+      ($l = $_) =~ s/\btreat(s|ed|ing)?\b[^.]{0,60}?\bas\b//gi; $l =~ s/\b(never|not|no)(\s+\S+){0,3}?\s+medical\b//gi; print "$ARGV:$.: " . substr($_, 0, 140) if $l =~ $re; close ARGV if eof'
+}
+claims=$(medical_wording)
+if [ -z "$claims" ]; then pass "no medical or diagnosis wording in README, docs, UI copy or samples"
+else fail "medical or diagnosis wording (modest, non-medical claims only):"; echo "$claims" | sed 's/^/        /'; fi
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
 # A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.
 samples_have_pictures() {
@@ -97,5 +108,8 @@ for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print
 # So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them.
 for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at"; done
 grep -q 'timeout' core/src/asr.rs || warn "speech stream has no read timeout"
+# Commit messages go public with the repo; scripts/release.sh lists each one and blocks on it.
+n=$(git log --format=%B HEAD | grep -cE '/Users/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
+[ "$n" = 0 ] || warn "commit messages name local paths on $n lines: scripts/release.sh lists the commits"
 [ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
 exit $failed
