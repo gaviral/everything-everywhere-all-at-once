@@ -275,6 +275,17 @@ impl Core {
     /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
     /// held, which were said before what stopped it (see `find::stop`).
     fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
+        self.take_turn(speaker, text, search, false);
+    }
+
+    /// Typed words: as said ones, except that a line of only filler ("ok", "cool") is answered instead of vanishing
+    /// without a trace: typing it was deliberate, and nothing on screen would say where it went.
+    pub fn add_typed(self: &Arc<Self>, speaker: &str, text: &str) {
+        self.take_turn(speaker, text, true, true);
+    }
+
+    /// `add_turn`, saying why when `typed` filler is set aside.
+    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool) {
         self.touch();
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
@@ -286,6 +297,9 @@ impl Core {
         }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
         if filler(text, asked) {
+            if typed {
+                self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
+            }
             return;
         }
         // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops.
@@ -1255,7 +1269,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
                 Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
                 Ok(ClientMsg::AppOutput { id, sound }) => apps::volume_output(&core, id, sound),
-                Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_thought(&speaker, text.trim()),
+                Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_typed(&speaker, text.trim()),
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     audio = Some(start_listening(&core, &speaker, &listens));
@@ -1469,6 +1483,24 @@ mod tests {
         assert!(updates.try_recv().is_err(), "no window is sent a mark");
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "ok" said is filler, set aside without a word (it's how people talk); typed, it gets an answer instead of vanishing.
+    #[test]
+    fn typed_filler_is_answered_not_dropped_without_a_trace() {
+        let (core, _queue, path) = keyless(World::default());
+        let mut updates = core.updates.subscribe();
+        core.add_thought("you", "ok");
+        assert!(updates.try_recv().is_err(), "said: nothing to say");
+        core.add_typed("you", "ok");
+        let said: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message { ServerMsg::Notice { message } => Some(message), _ => None })
+            .collect();
+        assert_eq!(said, ["Not kept: that reads as filler. Add a few words to keep it."]);
+        assert!(core.snapshot().thoughts.is_empty());
+        core.add_typed("you", "ok, call the plumber");
+        assert_eq!(core.snapshot().thoughts.len(), 1);
         let _ = std::fs::remove_file(&path);
     }
 
