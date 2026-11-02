@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Action, World } from "./core";
 import { ideaCounts } from "./chunks";
 import { resolveMerged } from "./merges";
@@ -6,6 +6,7 @@ import "./recap.css";
 import { TIPS } from "./Tips";
 import { runningModel, useSteps } from "./model-line";
 import { capitalized } from "./core";
+import { Markdown } from "./md";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -124,13 +125,13 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
   const resolve = (id: string) => resolveMerged(world, id);
   const title = (id: string) => world.threads.find((t) => t.id === resolve(id))?.title ?? "Open thread";
   const follow = (id: string) => { onClose(); onFocus(resolve(id)); };
-  const link = (id: string, text: string, className = "recap-thread") => (
+  const link = (id: string, text: ReactNode, className = "recap-thread") => (
     <a className={className} href={`#thread-${resolve(id)}`} onClick={(event) => { event.preventDefault(); follow(id); }}>{text}</a>
   );
   // Each row as the map shows its point: capitalized (the core copies a decided point as said: "if under $80 …", 16 of
   // 30 rows on ec4ae51), a decision after the map's ✓ (review spec-recap #3).
   const rows = (items: RecapItem[], decided = false) => <ul className="recap-items">{items.map((item, i) => <li key={`${item.thread_id}-${i}`}>
-    {decided && <span className="decided" aria-hidden="true">✓</span>}{link(item.thread_id, capitalized(item.text), "recap-item-link")}
+    {decided && <span className="decided" aria-hidden="true">✓</span>}{link(item.thread_id, <Markdown text={capitalized(item.text)} />, "recap-item-link")}
     <span className="recap-source">{title(item.thread_id)} ↗</span>
   </li>)}</ul>;
   const actions = (recap?.actions ?? []).map((a) => world.actions.find((current) => current.id === a.id) ?? a).filter((a) => a.status !== "dismissed");
@@ -181,7 +182,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
       <section className="recap-work" aria-labelledby="recap-work-title">
         <h2 id="recap-work-title">What you worked on <span>Newest first</span></h2>
         {recap.worked_on.length ? <ol>{recap.worked_on.map((item) => <li key={item.thread_id}>
-          {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p>{item.text}</p>
+          {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p><Markdown text={item.text} /></p>
         </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
       </section>
       {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
