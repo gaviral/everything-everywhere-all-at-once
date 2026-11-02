@@ -7,6 +7,8 @@ export const THOUGHT_MAX = 6_000;
 export const TITLE_MAX = 100;
 /** One message to the core, in bytes. */
 export const FRAME_MAX = 64 << 10;
+/** How far from the canvas's origin a place may be, on either axis, in canvas pixels; past it the core refuses it. */
+export const POSITION_MAX = 1_000_000;
 
 export const THOUGHT_TOO_LONG = "Too long for one thought: 6,000 characters at most. Send it in parts.";
 export const TOO_BIG = "Too long to send. Try a shorter one.";

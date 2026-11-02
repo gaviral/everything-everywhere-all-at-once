@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const app = read("ui/src/App.tsx"), styles = read("ui/src/styles.css"), tour = read("ui/src/Tour.tsx"), readme = read("README.md");
+const app = read("ui/src/App.tsx"), styles = read("ui/src/styles.css"), tour = read("ui/src/Tour.tsx"), readme = read("README.md") + read("docs/FEATURES.md");
 const server = await uiServer();
 try {
   const keys = await server.ssrLoadModule("/src/keys.ts");
@@ -34,7 +34,7 @@ try {
   assert.match(app, /opensHelp\(\{ key: event\.key, field, modified: /, "the page's keydown handler asks opensHelp");
   assert.match(app, /setHelpOpen\(\(open\) => !open\)/, "? toggles the list");
 
-  // 3. "Tab to it and press Enter" (README): Enter or Space on a focused point opens its words, as a click does.
+  // 3. "Tab to it and press Enter" (docs/FEATURES.md, moved from the README): Enter or Space on a focused point opens its words, as a click does.
   assert.match(readme, /Tab to it and press Enter/);
   assert.equal(keys.togglesPoint({ key: "Enter", onPoint: true }), true);
   assert.equal(keys.togglesPoint({ key: " ", onPoint: true }), true);
