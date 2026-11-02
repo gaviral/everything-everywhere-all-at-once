@@ -43,6 +43,8 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 ### Rooms
 - `./run.sh room`: a second laptop on the network joins the same map with the code and a name ("Guest" if it gives none, or asks for "you", the host's); each person keeps their own active thread, unfinished card and way back; only the host approves actions.
 - A name is the host's or a guest's, never both, so notices, live words, the mic and an import stay with their person; the join form asks for another name.
+- `scripts/trial.sh NAME`: a friend anywhere tries the app through an HTTPS link (a Cloudflare quick tunnel, no account), on a fresh map, core and port of their own; always as a guest with the code, never the host; this laptop's localhost is refused too.
+- Every window gets a ping every 30 s, so a quiet window stays connected through a tunnel.
 
 ### Running, demo and samples
 - `./run.sh` builds the UI and serves everything on localhost:4321; `./run.sh NAME` keeps a separate map in `data/NAME`; `./run.sh sample` opens a prepared map without a key or a mic.

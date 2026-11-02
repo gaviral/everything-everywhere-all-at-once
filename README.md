@@ -119,6 +119,18 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 - The guest sees a self-signed certificate warning: verify the address with the host, accept the exception, then allow microphone access. The certificate is saved in `data/room/tls/identity.json` and reused across restarts. Exceptions depend on the browser; some need the certificate imported and trusted before microphone access works. An IP/hostname change or yearly certificate renewal needs a new exception.
 - `./run.sh room` opts into HTTPS. `ROOM_HTTPS=0 ./run.sh room` keeps the old HTTP room mode (guest typing works, mic unavailable). When starting the core directly, set both `ROOM_CODE` and `ROOM_HTTPS=1` for HTTPS. Alone mode stays on loopback HTTP and creates no certificate.
 
+**Try it with a friend.** A friend anywhere opens a link in Chrome or Safari, allows the mic and talks into a fresh map of their own; nothing to install on their side.
+
+```sh
+brew install cloudflared        # once; quick tunnels need no account
+sh scripts/trial.sh sam         # one per friend; Ctrl-C ends it
+```
+
+- Needs a key. Each run makes a new folder, `data/trials/sam-<time>/`, a core on its own port (from 4410) and a new HTTPS link with a 12-character room code: send that link. Two friends at once get two of everything.
+- The core listens on `127.0.0.1` only and lets in just the tunnel, with the code. No one is the host: nothing reaches this laptop's Reminders, Calendar or imports, and this laptop's own localhost is refused too. To watch along, open the same link under another name.
+- What they say goes to Meta's models through your key, under the hourly call cap; placing uses the private model, not Contributor mode. Tell them before they start.
+- A new link can take a minute to answer on this Mac; `scripts/trial.sh` waits for it. `--no-key` opens the link without a key, to check the page and the mic prompt.
+
 ## What you'll see
 
 Real screenshots from one run of the demo talk (`scripts/demo-talk-v4.jsonl`, typed in; the unfinished-thread card needed two extra typed lines). They are only cropped and resized.

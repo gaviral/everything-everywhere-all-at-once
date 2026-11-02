@@ -1,6 +1,7 @@
 //! E2A2O core: holds the world in memory, journals every change, listens through
 //! Muse Voice Transcribe, places thoughts with Muse Spark, and keeps every UI in sync.
-//! With a room code, a second laptop on the same network joins the same map.
+//! With a room code, a second laptop on the same network joins the same map; with PUBLIC_URL too, a laptop
+//! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
 mod apple;
 mod apps;
@@ -22,6 +23,7 @@ mod moves;
 mod spoken;
 mod tidy;
 mod tls;
+mod tunnel;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -784,6 +786,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("MODEL_API_KEY is not set: listening and placement are off (see .env.example)");
     }
     let room = room_code()?;
+    let tunnel = tunnel::Tunnel::from_env(room.as_deref())?;
     let data = std::env::var("E2A2O_DATA").unwrap_or_else(|_| "../data".into());
     let (journal, world) = Journal::open(&Path::new(&data).join("journal.jsonl"))?;
     let pending: Vec<String> = world.thoughts.iter().filter(|t| !t.placed).map(|t| t.id.clone()).collect();
@@ -802,7 +805,7 @@ async fn main() -> anyhow::Result<()> {
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
         placing: placer::Placing::default(),
-        room: room.as_deref().map(Room::from),
+        room: room.as_deref().map(|code| Room { tunnel: tunnel.clone(), ..Room::from(code) }),
         key,
         // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
         // and cheaper, but Meta may keep what it reads.
@@ -847,6 +850,14 @@ async fn main() -> anyhow::Result<()> {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }
     };
+    // Through a tunnel, its client on this machine is the only way in, so the core stays off the network.
+    if let (Some(tunnel), Some(code)) = (&tunnel, &room) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.map_err(unopened)?;
+        tracing::info!("E2A2O core on 127.0.0.1:{port}, reachable only through {}", tunnel.origin());
+        tracing::info!("Trial open: {}/?room={code} (this laptop's localhost is refused too: no one is the host)", tunnel.origin());
+        axum::serve(listener, app.into_make_service_with_connect_info::<Link>()).await?;
+        return Ok(());
+    }
     // Alone, only this machine can reach the core; a room opens it to the local network, behind the code.
     if room.is_some() && std::env::var("ROOM_HTTPS").as_deref() == Ok("1") {
         let ip = lan_ip().ok_or_else(|| anyhow::anyhow!("HTTPS room needs a LAN IPv4 address; check the network connection"))?;
@@ -952,12 +963,19 @@ enum Access {
 /// In a room the core is on the network: a page may also come from the address the connection
 /// reached (the laptop's IP, never a name a site could point at it), and the map needs the code
 /// unless the request comes from this machine.
+/// Through a tunnel (tunnel.rs) the connection is the tunnel client's; the person is at the address it names.
 async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -> Response {
     let link = request.extensions().get::<ConnectInfo<Link>>().map(|c| c.0);
-    let access = {
+    let (access, visitor) = {
         let value = |name| request.headers().get(name).and_then(|v| v.to_str().ok());
         let has_code = core.room.as_ref().is_some_and(|room| codes(&request).iter().any(|c| same(&normal_code(c), &room.code)));
-        link.map_or(Access::None, |link| access(core.room.is_some(), link, value(header::HOST), value(header::ORIGIN), has_code))
+        match (link, core.room.as_ref().and_then(|room| room.tunnel.as_ref())) {
+            (None, _) => (Access::None, None),
+            (Some(link), Some(tunnel)) => {
+                tunnel::access(tunnel, link, value(header::HOST), value(header::ORIGIN), value(tunnel::VISITOR), has_code)
+            }
+            (Some(link), None) => (access(core.room.is_some(), link, value(header::HOST), value(header::ORIGIN), has_code), None),
+        }
     };
     if access == Access::None || (access == Access::Page && !public(request.uri().path())) {
         tracing::warn!(
@@ -969,6 +987,10 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
         return StatusCode::FORBIDDEN.into_response();
     }
     request.extensions_mut().insert(access);
+    // Everything after the gate (names, host powers) then sees a guest at the visitor's address, never this machine.
+    if let (Some(link), Some(visitor)) = (link, visitor) {
+        request.extensions_mut().insert(ConnectInfo(Link { from: SocketAddr::new(visitor, 0), ..link }));
+    }
     // Built files and pictures never change under their names (content hash, uuid); everything else, the
     // page above all, is checked every time, so after an update the browser never shows the old app.
     let fixed = ["/assets/", "/images/"].iter().any(|dir| request.uri().path().starts_with(dir));
@@ -1037,18 +1059,21 @@ async fn room_info(
     let taken = member
         && !join.name.trim().is_empty()
         && core.room.as_ref().is_some_and(|room| room.names.lock().unwrap().taken(&speaker_name(&join.name, link.here()), link));
-    Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken }))
+    let tunnel = core.room.as_ref().is_some_and(|room| room.tunnel.is_some());
+    Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel }))
 }
 
 /// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
 pub struct Room {
     code: String,
     names: Mutex<Names>,
+    /// Set in tunnel mode: the public origin, the only way in.
+    tunnel: Option<tunnel::Tunnel>,
 }
 
 impl From<&str> for Room {
     fn from(code: &str) -> Self {
-        Room { code: code.into(), names: Mutex::default() }
+        Room { code: code.into(), names: Mutex::default(), tunnel: None }
     }
 }
 
@@ -1280,9 +1305,21 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 }
 
 /// Sends a window every change and whatever is meant for its speaker, until the window is gone.
+/// A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
+/// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
 async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String) {
+    let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
     loop {
-        match updates.recv().await {
+        let update = tokio::select! {
+            update = updates.recv() => update,
+            _ = keep_alive.tick() => {
+                if out.send(Message::Ping(Default::default())).await.is_err() {
+                    return;
+                }
+                continue;
+            }
+        };
+        match update {
             // Someone else's live words, mic and notices.
             Ok(Outgoing { to: Some(to), .. }) if to != speaker => {}
             Ok(Outgoing { message, .. }) => {
@@ -1302,6 +1339,9 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
         }
     }
 }
+
+/// About a quarter of the shortest idle cut measured (125 s), so one lost ping never drops a window.
+const KEEP_ALIVE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// One message to a window, as JSON; an error means the window is gone.
 async fn write(out: &mut SplitSink<WebSocket, Message>, message: &ServerMsg) -> Result<(), axum::Error> {
@@ -2012,6 +2052,65 @@ mod tests {
                 return serde_json::from_str(text.as_str()).unwrap();
             }
         }
+    }
+
+    /// A friend's window through the tunnel, as cloudflared hands it over (from 127.0.0.1, the tunnel's Host and
+    /// Origin, the visitor's address): in with the code, as a guest who can't take "you" or add to this laptop's apps.
+    #[tokio::test]
+    async fn through_the_tunnel_a_friend_joins_as_a_guest_never_the_host() {
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue, Message};
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let tunnel = crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com").unwrap();
+        let room = Room { tunnel: Some(tunnel), ..Room::from("k7m2x9qpab") };
+        let core = Arc::new(Core { room: Some(room), ..Core::test(journal, world) });
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(super::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let request = |query: &str, visitor: Option<&str>, host: &str| {
+            let mut request = format!("ws://{address}/ws?{query}").into_client_request().unwrap();
+            let headers = request.headers_mut();
+            headers.insert("host", HeaderValue::from_str(host).unwrap());
+            headers.insert("origin", HeaderValue::from_static("https://quiet-river-12.trycloudflare.com"));
+            if let Some(visitor) = visitor {
+                headers.insert("cf-connecting-ip", HeaderValue::from_str(visitor).unwrap());
+            }
+            request
+        };
+        let tunnel_host = "quiet-river-12.trycloudflare.com";
+        for (query, visitor, host, why) in [
+            ("name=you", Some("203.0.113.7"), tunnel_host, "no code"),
+            ("name=you&room=k7m2x9qpab", None, tunnel_host, "no visitor address: not through the tunnel"),
+            ("name=you&room=k7m2x9qpab", Some("127.0.0.1"), tunnel_host, "a visitor claiming this machine"),
+            ("name=you&room=k7m2x9qpab", Some("203.0.113.7"), &*format!("{address}"), "this laptop's own address"),
+        ] {
+            let refused = tokio_tungstenite::connect_async(request(query, visitor, host)).await;
+            assert!(refused.is_err(), "{why}");
+        }
+        let (mut window, _) = tokio_tungstenite::connect_async(request("name=you&room=k7m2x9qpab", Some("203.0.113.7"), tunnel_host)).await.unwrap();
+        let mut said = Vec::new();
+        while said.len() < 6 {
+            let message = received(&mut window).await;
+            let done = message["type"] == "notice" && message["message"].as_str().is_some_and(|m| m.contains("joined as"));
+            said.push(message);
+            if done { break; }
+        }
+        assert!(said.iter().any(|m| m["message"] == "You joined as Guest: \"you\" is the host's name."), "{said:?}");
+        window.send(Message::Text(r#"{"type":"approve","id":"x"}"#.into())).await.unwrap();
+        loop {
+            let message = received(&mut window).await;
+            if message["type"] == "notice" {
+                assert_eq!(message["message"], "Only the host can add this: it goes into their apps.");
+                break;
+            }
+        }
+        assert!(core.hosts.lock().unwrap().is_empty(), "no one through the tunnel is the host");
+        window.close(None).await.unwrap();
+        let _ = std::fs::remove_file(&path);
     }
 
     /// One window over a real WebSocket, as the page connects: the world first, then what's meant for it and
