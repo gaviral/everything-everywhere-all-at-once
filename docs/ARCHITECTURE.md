@@ -21,6 +21,14 @@ Browser, one page per window (ui/src)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
+  unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
+  Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
+  tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
+  rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
+  apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
+  apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
+  Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
+  level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"
@@ -43,7 +51,11 @@ Core, one process (core/src: axum, tokio)
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
+  perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
+  refiner_live.rs  the refiner against the real model, on maps built to tempt it (`--ignored refiner_live`)
 ```
+
+Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept beside the code (`*_tests.rs`, `*/tests.rs`). `node scripts/readme-check.mjs` fails when a source file is missing from this list.
 
 ## State and the journal
 
@@ -131,4 +143,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - `node scripts/away-check.mjs`, `node scripts/recap-check.mjs`, `node scripts/placing-check.mjs`, `node scripts/picture-check.mjs`, `node scripts/marks-check.mjs`, `node scripts/legible-check.mjs`, `node scripts/attention-check.mjs` and `node scripts/catalog-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, which messages close an open Recap, what a pending thought's pill says and when a landing moves the map, the picture-slot rule (letter until decoded, next copy, capped refetches, one more when the core is back), the mic's states and that every ✦ has a tip, legibility (which points open their words, the two columns, numbers shared between files, and that no CSS cuts text with an ellipsis or clamp unless listed with its reason), the attention rules (reading times, what counts as unseen, where a mark goes after a merge, which words point at "this"), and which card "this" is and when the core is told, with a spoken fix of "Did you mean …?" mirrored.
 - `node scripts/notice-check.mjs`: which notices stay until dismissed, how long the rest are up; on the real useCore hook with a stand-in socket, that a notice made in the window drops an older Undo, that the same answer again restarts its time, and that a correction's answer and Undo outlast the window's answer to the view it asked for.
 - Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, someone else's turn in between, the words and where they may land; or a journal up to a thought, for a real miss kept outside the repo. `node scripts/where.mjs data/<map>` prints each thought's thread, with the model's answer when a trace exists.
+- `node scripts/readme-check.mjs`: the README's first screen (the pitch, a screenshot that exists, each Meta model the core calls named with its job, links into docs/trace.md, which shows a real call by each), the words it may hold, this parts list against the source files, and `scripts/trace-summary.mjs` on a small trace.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. It runs `scripts/model-guards.py`: only Meta's models and API in the app's code (`meta-only`), and every model call counted by the hourly cap (`counted`: only `call_model_noting`, which `call_model` wraps, and `ask_model` send the key, and both spend first). The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.

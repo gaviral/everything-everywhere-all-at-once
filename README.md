@@ -1,14 +1,34 @@
 # E2A2O
 
 <!-- cover: stand-in, User to pick (three options in the design repo, docs/drafts/cover) -->
-![A microphone whose cable branches into colored tiles: speech in, a map of threads out](docs/cover.webp)
+<img src="docs/cover.webp" alt="A microphone whose cable branches into colored tiles: speech in, a map of threads out" width="220" align="right">
 
 <!-- pitch: draft, User to approve -->
 For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.
 
 Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
 
+![The map mid-talk: seven threads, two with a branch; “Not Finishing Things” marked “left off”; at the bottom, a card “You didn't finish Not Finishing Things” quoting “My biggest problem is that I never finish my”, with Finish it and Later](docs/screens/left-off.webp)
+
+*A real frame, only cropped: a sentence trailed off, the talk moved on, and the card offers to go back.*
+
 ## Meta models it runs on
+
+| When you… | Meta model | Does | Proof in [a real run's trace](docs/trace.md) |
+|---|---|---|---|
+| talk | Muse Voice Transcribe 1.0 | hears you, live | [heard](docs/trace.md#heard) |
+| finish a thought | Muse Spark 1.2 | places it; notices it trailed off | [placer](docs/trace.md#placer) |
+| pause | Muse Spark 1.3 | tidies; proposes reminders and next steps | [refiner](docs/trace.md#refiner) |
+| say “make an app that…” | Muse Spark 1.3 | builds it from blocks | [composer](docs/trace.md#composer) |
+| ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | [recap](docs/trace.md#recap) |
+| let a thread settle | Muse Image 1.0 | draws its picture | [pictures](docs/trace.md#pictures) |
+| say “where was I?”, get loud | no model | rules: the jump back, the tune | [rules](docs/trace.md#rules) |
+
+**No key, no mic:** `./run.sh sample` after cloning ([Try it](#try-it)).
+
+<!-- end of the first screen -->
+
+### Every model call, with its setting
 
 Every model the app calls at runtime is Meta's, through the Meta Model API; `scripts/precheck.sh` fails on any other model SDK, endpoint or model name in the app's code.
 
@@ -144,7 +164,7 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 
 Each finished speech turn (Voice Transcribe's endpointing) or typed line is checked before the model sees it. Filler such as “um, so” is set aside, as are acknowledgements such as “yeah, okay” unless the last turn was a question. A turn that changes topic is split there; joining words at the cut are left out and the rest is placed next. The model may also set aside short acknowledgements, but turns over 8 words are always placed.
 
-The queue sends one thought at a time with every thread's id, title and last point, plus your active thread and, if you said it in the last 2 minutes, your previous turn word for word with the thread it went to, even with someone else's question in between (so "the cursor thing" right after a word on a subscription isn't read as the on-screen cursor). The selected card is only a hint: the words decide where they land. The JSON answer says to continue the active thread, return to an earlier one or start a new one (a branch if it names a parent); it also gives a point of at most 12 words, whether the thought trailed off and any words that look misheard. Only existing thread ids are trusted. Each thought gets three tries; after three failures it returns to the queue in 15 s, then at doubling intervals up to 4 min. Measure placing time with `node scripts/latency.mjs data/journal.jsonl` (median, 90th percentile, slowest). To see where each thought went and why, start the core with `E2A2O_TRACE=1` (it appends every model call and placement to `data/<map>/trace.jsonl`; off by default) and run `node scripts/where.mjs data/<map>`. Routing cases (`scripts/routing-cases.jsonl`) run against the real model with `cd core && cargo test --release -- --ignored routing_cases --nocapture` and `MODEL_API_KEY` set.
+The queue sends one thought at a time with every thread's id, title and last point, plus your active thread and, if you said it in the last 2 minutes, your previous turn word for word with the thread it went to, even with someone else's question in between (so "the cursor thing" right after a word on a subscription isn't read as the on-screen cursor). The selected card is only a hint: the words decide where they land. The JSON answer says to continue the active thread, return to an earlier one or start a new one (a branch if it names a parent); it also gives a point of at most 12 words, whether the thought trailed off and any words that look misheard. Only existing thread ids are trusted. Each thought gets three tries; after three failures it returns to the queue in 15 s, then at doubling intervals up to 4 min. Measure placing time with `node scripts/latency.mjs data/journal.jsonl` (median, 90th percentile, slowest). To see where each thought went and why, start the core with `E2A2O_TRACE=1` (it appends every model call and placement to `data/<map>/trace.jsonl`; off by default) and run `node scripts/where.mjs data/<map>`; `node scripts/trace-summary.mjs data/<map>/trace.jsonl` counts every model call by feature and model ([one run's, shortened](docs/trace.md)). Routing cases (`scripts/routing-cases.jsonl`) run against the real model with `cd core && cargo test --release -- --ignored routing_cases --nocapture` and `MODEL_API_KEY` set.
 
 A thought said in two parts across a pause lands as one point. The prompt also quotes your latest turn that trailed off when it's still the last word on its thread and you said it in the last 2 minutes or went back to it ("where was I?"); the answer says whether the new words carry on the turn before or those unfinished words. Then they land on that thread whatever else the answer says, linked, and the card shows both parts as one point (its words said open as “first part” … “second part”) with a quiet ✦ joined: a tap on it keeps them apart, and the second part then says only its own words. Each part keeps its own "Did you mean …?" and undo of a fix, and a yes there fixes the joined point too; a search for a part lands on the point it shows in; "scratch that" and Undo bring a part back joined. A sentence that stands on its own, or a decision, is never joined. When a reading your words left open (what "it" means) took a thought away from the thread you were on, the point says so under it (“✦ Assumed 'it' is the pottery class”); one that kept it where you were isn't shown, since it changed nothing. Opening a point's words said also shows why it went there in 10 words or fewer (“Why here: finishes 'never finish my'”), except for a new topic, whose own thread is the answer, and a reason that names a thread by id. Asking for it cost no measurable time: 30 turns placed by two cores in turn, one asking and one not, median 2.90 s with it and 2.98 s without (the same turns paired: +0.1 s). Join cases for the real model are in `scripts/chunk-cases.jsonl` (`ROUTING_CASES=../scripts/chunk-cases.jsonl` with the routing-cases command).
 
