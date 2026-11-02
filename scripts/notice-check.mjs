@@ -69,6 +69,16 @@ try {
   const busy = micStopped("Voice Transcribe: Too many requests");
   assert.equal(busy, "The mic stopped: the voice service said “Too many requests”. Tap it to try again, or type below.");
   assert.equal(micStopped(""), "The mic stopped. Tap it to keep talking.");
+  // A mic notice stays until the mic is tapped again, and that tap clears it, so "The mic stopped" never sits over a
+  // listening mic; the refused-key notice isn't the mic's and stays (review ui-voice #2).
+  const { micNotice } = await server.ssrLoadModule("/src/notice-rules.ts");
+  for (const notice of [quiet, busy, micStopped(""), "Microphone access is off. Allow it in your browser settings, or type below.",
+    "Couldn't start the mic. Try again. You can type below.", "Connection lost. Reconnect to use the microphone; you can still type below.",
+    "The mic stopped: the connection was lost. Tap it once reconnected; you can still type below."]) assert.ok(micNotice(notice), notice);
+  for (const notice of ["The AI key was refused. Check MODEL_API_KEY in .env, then restart.", "Moved to Health", ""]) assert.ok(!micNotice(notice), notice);
+  const appText = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const startPath = appText.slice(appText.indexOf("const toggleMic"), appText.indexOf("await startMic("));
+  assert.match(startPath, /setStartingMic\(true\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its notice");
   for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
 
   // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
@@ -127,6 +137,18 @@ try {
   core.showNotice("Sound isn't available in this browser right now.");
   await settle();
   assert.equal(core.undoId, null);
+
+  // Words heard after an Undo was offered: the core now remembers those (each turn's `correctable`, catalog.rs
+  // `remember`), not the turn the button was for. The button goes, so a click never answers "can't be undone any
+  // more" and its "⌘Z works too" never points ⌘Z at the newer words (review ui-notices #1).
+  say({ type: "notice", message: "Moved “rent” to Pottery Class Budget" });
+  say({ type: "correctable", for_ms: 8000, back_to: null });
+  say({ type: "undoable", id: 2 });
+  await settle();
+  assert.equal(core.undoId, 2, "a turn's own correctable comes before its Undo: that Undo stays");
+  say({ type: "correctable", for_ms: 8000, back_to: null });
+  await settle();
+  assert.equal(core.undoId, null, "a newer turn: the Undo the core can no longer honor goes");
 
   // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review).
   const before = core.answerRevision;

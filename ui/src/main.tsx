@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { Crash } from "./Crash";
 import { Room } from "./room";
 import "./styles.css";
 import "./legible.css";
@@ -10,8 +11,10 @@ if (new URLSearchParams(location.search).has("recording")) document.documentElem
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Room>
-      <App />
-    </Room>
+    <Crash>
+      <Room>
+        <App />
+      </Room>
+    </Crash>
   </StrictMode>,
 );

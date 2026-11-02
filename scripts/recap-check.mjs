@@ -74,8 +74,8 @@ try {
     decisions: [item("T1", "Open with the mic turning on")], plans: [item("T2", "Book the cooking class")],
     questions: [item("T3", "Which room do we record in?")], worked_on: [item("T1", "How the demo opens")], unfinished: [],
     actions: [], thought_count: 4, thread_count: 3, limited: false };
-  const sheet = (shown, loading = false) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading,
-    message: "", recap: shown }, world: map, connected: true, noKey: false, listening: true, onRequest() {}, onMark: () => true,
+  const sheet = (shown, loading = false, world = map) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading,
+    message: "", recap: shown }, world, connected: true, noKey: false, listening: true, onRequest() {}, onMark: () => true,
     onClose() {}, onFocus() {} })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   const order = (shown, words) => words.map((w) => shown.indexOf(w)).every((at, i, all) => at >= 0 && (i === 0 || at > all[i - 1]));
   assert.ok(order(sheet(recap), ["Decisions made", "Open with the mic turning on", "Plans", "Open questions", "What you worked on"]),
@@ -87,6 +87,23 @@ try {
   const updating = sheet(recap, true);
   assert.ok(order(updating, ["Bringing this up to date…", "Decisions made", "Open with the mic turning on"]), "the saved recap shows while loading");
   assert.ok(sheet(null, true).includes("Gathering your thoughts…") && !sheet(null, true).includes("Decisions made"), "nothing saved yet");
+  // The header and the Recap count thoughts one way, as the cards show them: a part said before a pause and the one
+  // carrying it on are one thought. The core's `thought_count` counts both, and stays so, since Export keeps a
+  // recap's decisions by it (export-md.ts); the sheet counts from the map (review ui-recap-palace #2).
+  const joined = { ...map, thoughts: [thought("I never finish my", "T1", { at_ms: 1 }), thought("sentences", "T1", { at_ms: 1 }),
+    thought("rent", "T2", { at_ms: 1 }), thought("later", "T2", { at_ms: 5 })], notes: { sentences: { continues: "I never finish my" } } };
+  assert.match(sheet({ ...recap, thought_count: 3, thread_count: 2 }, false, joined), / 2 thoughts · 2 threads · /,
+    "the joined pair is one thought; one said after the recap isn't in it");
+  const { ideaCounts } = await server.ssrLoadModule("/src/chunks.tsx");
+  assert.deepEqual(ideaCounts(joined, 0, 5), { thoughts: 3, threads: 2 });
+  // A part carried on after the period still counts in it: the recap of [0, 2] keeps "rent" when "later" (said at 5)
+  // carries it on.
+  const laterJoin = { ...joined, notes: { ...joined.notes, later: { continues: "rent" } } };
+  assert.deepEqual(ideaCounts(laterJoin, 0, 2), { thoughts: 2, threads: 2 }, "a continuation outside the period doesn't hide its head");
+  assert.deepEqual(ideaCounts(laterJoin, 0, 5), { thoughts: 2, threads: 2 }, "inside it, the pair is one thought");
+  const appSource = (await import("node:fs")).readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  assert.match(appSource, /return ideaCounts\(world, start, Date\.now\(\)\);/, "the header counts with the same function");
+
   // Answers arrive in the order asked: one for a period the sheet has since moved off never replaces the newer request.
   const { nextRecapView } = await server.ssrLoadModule("/src/Recap.tsx");
   const st = (period, loading, shown = null) => ({ type: "recap_state", period, loading, message: "", recap: shown });
