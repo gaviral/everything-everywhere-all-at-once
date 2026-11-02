@@ -93,6 +93,9 @@ export interface Action {
   when: string;
   status: ItemStatus;
   done_ms: number | null;
+  /** This window only: why the last "Add to …" didn't add it (the core's `action_failed`), shown on its row until
+   *  it is tried again. A reload drops it; the row still offers the button. */
+  failed?: string;
 }
 
 // How an import of past chats is going (core/src/import.rs).
@@ -174,6 +177,7 @@ type ServerMsg =
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
+  | { type: "action_failed"; id: string; message: string }
   | { type: "notice"; message: string }
   | { type: "undoable"; id: number }
   | { type: "correctable"; for_ms: number; back_to: string | null }
@@ -257,6 +261,11 @@ function swap(text: string, from: string, to: string): string {
   return text;
 }
 
+/** An approval that didn't add its action: the core has offered it again (status new); its row says why. */
+export function actionFailed(world: World, id: string, message: string): World {
+  return { ...world, actions: world.actions.map((a) => (a.id === id ? { ...a, failed: message } : a)) };
+}
+
 export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
@@ -322,7 +331,8 @@ export function apply(world: World, raw: Change): World {
       return {
         ...world,
         suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: c.status } : s)),
-        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms } : a)),
+        // Trying again (being added), added or dismissed: the last failure no longer applies.
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms, failed: c.status === "new" ? a.failed : undefined } : a)),
         proposals: (world.proposals ?? []).map((p) => (p.id === c.id ? { ...p, status: c.status } : p)),
       };
     case "thought_added":
@@ -581,6 +591,10 @@ export function useCore(speaker?: string) {
             setWorld(currentWorld);
             break;
           }
+          case "action_failed":
+            currentWorld = actionFailed(currentWorld, msg.id, msg.message);
+            setWorld(currentWorld);
+            break;
           case "partial":
             window.clearTimeout(handoffTimer);
             if (msg.text) {

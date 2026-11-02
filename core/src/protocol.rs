@@ -9,8 +9,11 @@ use serde::{Deserialize, Serialize};
 pub enum ServerMsg {
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
-    /// An app's tune: `playful` for loud voices, else the calm one.
-    AppsSound { name: String, playful: bool },
+    /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
+    /// for 3 s"), so the window can say which app played and why.
+    AppsSound { name: String, playful: bool, why: String },
+    /// Approving an action didn't add it; it is offered again, and the window shows `message` on its row.
+    ActionFailed { id: String, message: String },
     Snapshot { world: std::sync::Arc<World> },
     Change { change: Change },
     /// Draft words of the turn being spoken; replaces the previous draft.

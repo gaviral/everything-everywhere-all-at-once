@@ -4,6 +4,7 @@ import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatu
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
+import { actionLine } from "./action-line";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -13,7 +14,7 @@ type Handlers = {
   unlink: (thoughtId: string) => void;
 };
 import { startMic } from "./mic";
-import { Apps, DockBuild } from "./Apps";
+import { Apps, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -890,6 +891,7 @@ export default function App() {
           {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
               unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
           <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
+          <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
@@ -1280,6 +1282,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const days = date ? Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000) : null;
   const due = days == null || action.status === "done" ? "" : days < 0 ? "overdue" : days === 0 ? "today" : days === 1 ? "tomorrow" : "";
   const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
+  const line = actionLine(action, app);
   return (
     <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
@@ -1287,21 +1290,18 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
       <span>
         {action.title}
         {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
+        {/* Under the title, beside its "Try again", where the click was: a notice elsewhere is missed on camera. */}
+        {line.failed && <span className="action-failed" role="alert">{line.failed}</span>}
       </span>
-      {action.status === "new" && (
+      {line.button && (
         <span className="ai-actions">
-          <button aria-label={`Add ${action.title} to ${app}`} onClick={() => on.approve(action.id)}>Add to {app}</button>
+          <button aria-label={line.label} onClick={() => on.approve(action.id)}>{line.button}</button>
           <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
             ×
           </button>
         </span>
       )}
-      {action.status === "kept" && <span className="when ai-actions">Adding to {app}…</span>}
-      {action.status === "done" && action.done_ms != null && (
-        <span className="when ai-actions">
-          in {app} · {(action.done_ms / 1000).toFixed(1)} s
-        </span>
-      )}
+      {line.status && <span className="when ai-actions" role="status">{line.status}</span>}
     </motion.div>
   );
 }
