@@ -4,7 +4,7 @@
 // is one the core's code calls. Also: every source file is in docs/ARCHITECTURE.md's parts list, and the trace
 // summary script reads a trace right.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { excerpt, median, parse, shorten, summary, table, KEEP } from "./trace-summary.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -33,6 +33,14 @@ assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn'
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
 assert.ok(images.some((src) => /screens\//.test(src)), "no screenshot or GIF of the app on the first screen");
 for (const src of images) assert.ok(existsSync(root + src), `the first screen shows ${src}, which isn't in the repo`);
+// Below it too (the 16-second run right after the marker): every image exists and loads quickly on a judge's
+// connection; 3 MB is about 1 s at 25 Mbit/s, and the run is 1 MB today.
+for (const [, a, b] of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)) {
+  const src = a ?? b;
+  if (/^https?:/.test(src)) continue;
+  assert.ok(existsSync(root + src), `the README shows ${src}, which isn't in the repo`);
+  assert.ok(statSync(root + src).size <= 3e6, `the README shows ${src}, ${(statSync(root + src).size / 1e6).toFixed(1)} MB; at most 3 MB`);
+}
 
 // Which Meta model does what: each model the core calls by default is named, and every name is a real one.
 const code = readdirSync(root + "core/src").filter((f) => f.endsWith(".rs")).map((f) => read(`core/src/${f}`)).join("\n");
