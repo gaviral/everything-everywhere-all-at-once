@@ -121,7 +121,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Placing | `PLACER_MODEL`, default `muse-spark-1.2` (Contributor mode is opt-in) | minimal | 12 s first, then 20 s; more for a long turn | back in line after each failure; after 3, again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
 | Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 52 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
-| Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
+| Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | minimal | 40 s | 1 | `e2a2o-recap` |
 | Composer, Search-first, app prompts | `REFINER_MODEL` | low | 45 s (Search-first 6 s: it runs beside the composer, and the build goes on without it when it fails or stalls) | 1, and 1 more when a reply has no answer in it; a composer draft that doesn't check out gets one more, told what was wrong | |
 | Take me there | `REFINER_MODEL` | minimal | 8 s (twice the slowest of 68 measured) | 1, only when the words match weakly | `e2a2o-find` |
 | Safety net (a correction no rule reads) | the placer's model | minimal | 12 s (twice the slowest of 10 measured) | 1; on failure the words are kept as a thought | `e2a2o-safety-net` |
