@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ImportStatus } from "./core";
+import { comesFirst, type Card as SendCard } from "./send-card";
 import "./import.css";
 
 // What the core found in a file, before anything is sent anywhere (POST /import).
@@ -23,6 +24,7 @@ interface Preview {
 
 type ImportCore = {
   importStatus: ImportStatus | null;
+  sendCard: SendCard | null;
   startImport: (id: string) => boolean;
   cancelImport: () => boolean;
 };
@@ -82,6 +84,11 @@ export function ImportChats({ core }: { core: ImportCore }) {
       previousFocus.current?.focus({ preventScroll: true });
     }
   }, [open]);
+
+  // A message that starts counting comes first: this modal sheet would cover its countdown and make its Stop inert.
+  useEffect(() => {
+    if (comesFirst(core.sendCard)) setOpen(false);
+  }, [core.sendCard?.id, core.sendCard?.state]);
 
   const reset = () => {
     setStep("choose");

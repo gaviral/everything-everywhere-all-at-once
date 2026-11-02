@@ -70,6 +70,13 @@ export function stopsOnKey(card: Card | null, key: string, now: number): card is
   return !!card && key === "Escape" && card.state === "counting" && card.until > now;
 }
 
+/** A message that starts counting comes first: a modal sheet (Recap, Import) makes the rest of the window inert and
+ *  covers it, so the countdown and its Stop would be out of view and out of reach while the message can be stopped.
+ *  The window closes them for it; the card's end leaves a sheet opened since alone. */
+export function comesFirst(card: { state: SendState } | null): boolean {
+  return card?.state === "counting";
+}
+
 /** How long an ended card stays up: its line's reading time (notice-rules.ts `upFor`), as any answer gets. */
 export function lingerMs(card: Card): number {
   return card.state === "counting" ? 0 : upFor(cardWords(card, card.until).status);
