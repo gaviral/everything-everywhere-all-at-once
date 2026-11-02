@@ -196,21 +196,46 @@ pub async fn run(core: Arc<Core>) {
 fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
     let world = core.snapshot();
     drop_stale_titles(&mut answer, sent, &world);
-    let changes = changes(&world, answer);
+    let mut changes = changes(&world, answer);
     tracing::info!("refiner pass {when}: {} changes", changes.len());
-    if !changes.is_empty() {
-        core.commit(changes);
+    // An idea or task the person approved or dismissed while this was worked out is theirs: its correction is dropped,
+    // checked under the commit's lock, so it never puts back a row that's being added (`as_left`).
+    for _ in 0..3 {
+        if changes.is_empty() || core.commit_if(|w| changes.iter().all(|c| as_left(w, c)), changes.clone()) {
+            return;
+        }
+        let now = core.snapshot();
+        changes.retain(|c| as_left(&now, c));
+    }
+}
+
+/// True unless `c` corrects an idea or task that is no longer as the pass saw it.
+fn as_left(world: &World, c: &Change) -> bool {
+    match c {
+        Change::ItemRefined { id, was, .. } => world.item_state(id).as_ref() == Some(was),
+        _ => true,
     }
 }
 
 /// Leaves out titles for threads that heard words the pass didn't see: placed there since it was sent, or still
 /// being placed (on the thread that was active when they were said). Those words may name the thread anew ("call
-/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them.
+/// it Falcon", then "actually, call it Eagle" while the pass was out); the next pass sees them. So do withdrawals and
+/// corrections of ideas and tasks on those threads ("Wednesday", then "no, Thursday" while the pass was out).
 fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
     let seen: HashSet<&str> = sent.thoughts.iter().filter(|t| t.placed).map(|t| t.id.as_str()).collect();
     let heard: HashSet<&str> =
         now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
     pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
+    // A short or full id; one on a thread that heard more, or any of two that share a short id, waits.
+    let fresh = |given: &str| {
+        let given = given.trim();
+        let named = |id: &str| id == given || short(id) == given;
+        !now.suggestions.iter().filter(|s| named(&s.id)).map(|s| &s.thread_id)
+            .chain(now.actions.iter().filter(|a| named(&a.id)).map(|a| &a.thread_id))
+            .any(|t| heard.contains(t.as_str()))
+    };
+    pass.retire.retain(|r| fresh(&r.id));
+    pass.revise.retain(|r| fresh(&r.id));
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -643,7 +668,7 @@ fn refine(world: &World, retire: Vec<Retire>, revise: Vec<Revise>, today: &str, 
         let when = match r.when.trim() {
             "" => was.when.clone(),
             asked if task => {
-                let (said, point) = about(world, &thread, &text);
+                let (said, point) = corrected_in(world, &thread, &[&text, &was.text]);
                 let said_on = point.and_then(said_on);
                 match day(asked, &said, today, said_on.as_deref().unwrap_or(today)) {
                     d if crate::apps::valid_date(&d) => d,
@@ -656,8 +681,14 @@ fn refine(world: &World, retire: Vec<Retire>, revise: Vec<Revise>, today: &str, 
         if text == was.text && when == was.when {
             continue;
         }
+        // Against each task as this pass leaves it: two rows corrected to the same day in one pass are twins too.
         let twin = task && world.actions.iter().any(|a| {
-            a.id != id && a.thread_id == thread && a.status != ItemStatus::Dismissed && a.when == when && normalized(&a.title) == normalized(&text)
+            let after = out.iter().rev().find_map(|c| match c {
+                Change::ItemRefined { id, now, .. } if *id == a.id => Some(now.clone()),
+                _ => None,
+            });
+            let ItemState { status, text: title, when: day } = after.unwrap_or(ItemState { status: a.status, text: a.title.clone(), when: a.when.clone() });
+            a.id != id && a.thread_id == thread && status != ItemStatus::Dismissed && day == when && normalized(&title) == normalized(&text)
         });
         let now = if twin { ItemState { status: ItemStatus::Dismissed, ..was.clone() } } else { ItemState { status: was.status, text, when } };
         touched.insert(id.clone());
@@ -670,11 +701,10 @@ fn refine(world: &World, retire: Vec<Retire>, revise: Vec<Revise>, today: &str, 
 /// it alone after. Only while it's still as the refiner left it: one kept, added or dismissed since is the person's
 /// own call already.
 pub fn restore(core: &Core, id: &str) {
-    let world = core.snapshot();
-    let Some((now, was)) = world.refined.get(id) else { return };
-    if world.item_state(id).as_ref() == Some(now) {
-        core.commit(vec![Change::ItemRestored { id: id.into(), to: was.clone() }]);
-    }
+    let Some(left) = core.snapshot().refined.get(id).cloned() else { return };
+    // Checked under the commit's lock: an approval or a newer correction between the look and the commit stays.
+    let as_left = |w: &World| w.refined.get(id) == Some(&left) && w.item_state(id).as_ref() == Some(&left.0);
+    core.commit_if(as_left, vec![Change::ItemRestored { id: id.into(), to: left.1.clone() }]);
 }
 
 /// A rename the refiner makes on its own, without asking: the person's own words for the thread. Every word of the new
@@ -764,6 +794,18 @@ fn about<'a>(world: &'a World, thread: &'a str, title: &'a str) -> (Vec<&'a str>
     let point = sentences.iter().find(|(_, n, _)| most > 0 && *n == most).map(|(_, _, p)| *p);
     let said = std::iter::once(title).chain(sentences.into_iter().filter(|(_, n, _)| most > 0 && *n == most).map(|(s, _, _)| s)).collect();
     (said, point)
+}
+
+/// What a correction of a task is checked against: its title and the latest point on its thread that shares a word
+/// with its old or new title, the correcting one ("midterm is Wednesday, not Tuesday" after "Biology midterm is
+/// Tuesday", which `about` would pick for having more of the words), with that point.
+fn corrected_in<'a>(world: &'a World, thread: &str, titles: &[&'a str]) -> (Vec<&'a str>, Option<&'a Thought>) {
+    let words: HashSet<String> = titles.iter().flat_map(|t| content(t)).collect();
+    let point = world.thoughts.iter().enumerate()
+        .filter(|(_, p)| p.placed && p.thread_id.as_deref() == Some(thread) && !content(&p.text).is_disjoint(&words))
+        .max_by_key(|(i, p)| (p.at_ms, *i))
+        .map(|(_, p)| p);
+    (titles.iter().take(1).copied().chain(point.map(|p| p.text.as_str())).collect(), point)
 }
 
 /// The thought's local calendar day; a missing timestamp leaves the old today-based behavior in place.
@@ -1909,6 +1951,49 @@ mod tests {
         world.refined.clear();
         let twin = changes_on(&world, pass(serde_json::json!({ "revise": [{"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "Wednesday"}] })), TODAY);
         assert!(matches!(twin.as_slice(), [Change::ItemRefined { now, .. }] if now.status == ItemStatus::Dismissed), "{twin:?}");
+    }
+
+    #[test]
+    fn a_correction_is_checked_against_the_point_that_corrects_it() {
+        // "Biology midterm is Tuesday" has more of the title's words; the later point names the day.
+        let mut world = map(&[("T1", "Biology midterm", &["Biology midterm is Tuesday.", "Midterm is Wednesday, not Tuesday."])]);
+        world.actions = stale_map().actions[..1].to_vec();
+        world.actions[0].title = "Biology midterm".into();
+        let pass = serde_json::json!({ "revise": [{"id": "ac-0a1b2c", "title": "", "when": "2026-11-04", "why": "midterm is Wednesday"}] });
+        let out = changes_on(&world, serde_json::from_value(pass).unwrap(), TODAY);
+        assert!(matches!(out.as_slice(), [Change::ItemRefined { now, .. }] if now.when == "2026-11-04"), "{out:?}");
+    }
+
+    #[test]
+    fn two_rows_corrected_to_one_day_in_one_pass_leave_one() {
+        let mut world = map(&[("T1", "Midterm", &["Midterm is on Tuesday.", "Midterm is Wednesday.", "Both midterms are Thursday now."])]);
+        world.actions = stale_map().actions[..1].to_vec();
+        world.actions.push(Action { id: "ac-9f8e7d6c5b4a".into(), when: "2026-11-04".into(), ..world.actions[0].clone() });
+        let pass = serde_json::json!({ "revise": [
+            {"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-05", "why": "Thursday now"},
+            {"id": "ac-9f8e7d", "title": "Midterm", "when": "2026-11-05", "why": "Thursday now"},
+        ] });
+        changes_on(&world.clone(), serde_json::from_value(pass).unwrap(), TODAY).iter().for_each(|c| world.apply(c));
+        let open: Vec<_> = world.actions.iter().filter(|a| a.status == ItemStatus::New).map(|a| a.when.as_str()).collect();
+        assert_eq!(open, ["2026-11-05"]);
+    }
+
+    #[test]
+    fn a_correction_waits_when_its_thread_heard_more_or_its_item_was_acted_on() {
+        let sent = stale_map();
+        let mut now = sent.clone();
+        now.thoughts.push(Thought { id: "thu".into(), text: "No, the midterm is Thursday.".into(), ..sent.thoughts[1].clone() });
+        let mut pass: Pass = serde_json::from_value(serde_json::json!({
+            "revise": [{"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "Wednesday"}],
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
+        })).unwrap();
+        drop_stale_titles(&mut pass, &sent, &now);
+        assert_eq!((pass.revise.len(), pass.retire.len()), (0, 1), "T1 heard Thursday; T2 heard nothing");
+        // Approved while the pass was worked out: the correction would put the row back to new.
+        let out = changes_on(&sent, pass, TODAY);
+        let mut kept = sent.clone();
+        kept.suggestions[0].status = ItemStatus::Kept;
+        assert!(out.iter().all(|c| super::as_left(&sent, c)) && !out.iter().all(|c| super::as_left(&kept, c)), "{out:?}");
     }
 
     #[test]
