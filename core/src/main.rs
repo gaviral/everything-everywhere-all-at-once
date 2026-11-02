@@ -160,13 +160,15 @@ impl Core {
     /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?",
     /// "next one" and "last one" move with this alone: saying one already stopped any search said before it
     /// (`add_thought`), and one that waited its turn in the placer's queue must not stop a search said after it.
+    /// A thread merged away since its id was taken (an Undo's "where you were") means the thread it went into.
     fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
-        let Some(thread) = world.thread(thread_id) else { return };
+        let thread_id = world.resolve(thread_id);
+        let Some(thread) = world.thread(&thread_id) else { return };
         self.placing.moved(speaker);
-        let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
+        let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.clone(), speaker: speaker.into() }];
         if thread.status == ThreadStatus::Dropped {
-            changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
+            changes.push(Change::ThreadStatus { thread_id, status: ThreadStatus::Open, speaker: speaker.into() });
         }
         drop(world);
         self.commit(changes);
@@ -1467,6 +1469,19 @@ mod tests {
         assert!(updates.try_recv().is_err(), "no window is sent a mark");
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Open the garden", then Bills merged into Taxes, then Undo: back to where you were, Bills, now inside Taxes.
+    #[test]
+    fn undo_of_a_go_to_finds_a_thread_merged_away_since() {
+        let mut world = World::default();
+        world.threads = vec![thread("T2", 2, ""), thread("T3", 3, "")];
+        world.merged.insert("T1".into(), "T2".into());
+        world.active_by.insert("you".into(), "T3".into());
+        let (core, _queue, path) = keyless(world);
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Move { to: "T1".into() });
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("T2"));
         let _ = std::fs::remove_file(&path);
     }
 
