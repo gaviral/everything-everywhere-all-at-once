@@ -56,6 +56,7 @@ pub enum Act {
     Undo,
     Move,
     Rename,
+    Export,
 }
 
 /// What a request needs before it can act; without it, it answers why not (never a silent thought).
@@ -136,12 +137,13 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::File, does: "add words to a thread named by its title", template: Some("add <words> to <thread title>"), phrases: &["Add milk to the shopping list", "Put the receipt in the bills thread"], needs: Needs::Thread, answers: "the words land there: “Added to …”", undo: UndoBy::Unfile, external: false, button: None },
     Def { act: Act::Unfold, does: "open a thread and every branch under it", template: Some("expand <thread title>"), phrases: &["Expand the garden", "Expand everything", "Expand this"], needs: Needs::Thread, answers: "the thread opens at the top: “Opened …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Show") },
     Def { act: Act::Fold, does: "fold a thread and every branch under it", template: Some("collapse <thread title>"), phrases: &["Collapse this", "Fold the garden"], needs: Needs::Thread, answers: "the thread folds: “Folded …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Hide") },
-    Def { act: Act::Move, does: "move a thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there: “Moved to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
+    Def { act: Act::Move, does: "move a thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there, named: “Moved “…” to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
     Def { act: Act::Rename, does: "rename a thread", template: Some("rename this to <words>"), phrases: &["Rename this to Pottery class", "Rename the garden thread to Backyard", "Call this thread Pottery class"], needs: Needs::Thread, answers: "the title changes: “Renamed to …”", undo: UndoBy::Retitle, external: false, button: Some("rename") },
     Def { act: Act::Palace, does: "switch to the Palace of pictures", template: Some("palace"), phrases: &["Palace", "Go to the palace"], needs: Needs::Nothing, answers: "the Palace shows", undo: UndoBy::ViewBack, external: false, button: Some("Palace") },
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
     Def { act: Act::Focus, does: "show only one thread", template: Some("focus"), phrases: &["Focus", "Let's focus", "Focus on this"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
     Def { act: Act::All, does: "show every thread again", template: Some("show all"), phrases: &["Show all", "Unfocus"], needs: Needs::Nothing, answers: "the map shows every thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
+    Def { act: Act::Export, does: "save the map as a Markdown file", template: Some("export my map"), phrases: &["Export my map", "Download the map as Markdown"], needs: Needs::Nothing, answers: "the file downloads: “Exported …”", undo: UndoBy::Not("the file is yours; delete it where you saved it"), external: false, button: Some("Export") },
     Def { act: Act::Recap, does: "recap what was decided today or this session", template: Some("recap"), phrases: &["Recap", "Recap this session", "What did I decide today?"], needs: Needs::Key, answers: "the Recap sheet", undo: UndoBy::Not("say “map” or press Esc"), external: false, button: Some("Recap") },
     Def { act: Act::Compose, does: "build a small app from a sentence", template: Some("make an app that <does what>"), phrases: &["Make an app that pings me about bills"], needs: Needs::Key, answers: "the app builds in the dock, then Keep app or Discard", undo: UndoBy::Not("“discard it”, or Discard"), external: false, button: Some("compose_app") },
     Def { act: Act::Forget, does: "set the unfinished card aside for good", template: None, phrases: &["Forget it", "Never mind"], needs: Needs::Card, answers: "the card goes: “Set aside: …”", undo: UndoBy::Not("its words stay on the map; “where was I?” goes back"), external: false, button: None },
@@ -210,6 +212,7 @@ pub fn of_view(view: View) -> Act {
         View::Forget => Act::Forget,
         View::Finish => Act::Finish,
         View::Pause => Act::Pause,
+        View::Export => Act::Export,
     }
 }
 
@@ -423,12 +426,23 @@ pub fn this(core: &Core, world: &World, speaker: &str) -> Option<String> {
 }
 
 fn resolve_this(world: &World, speaker: &str, a: &Attention, now: u64) -> Option<String> {
+    attended(world, a, now).or_else(|| world.active_for(speaker).cloned())
+}
+
+/// The card the speaker's attention picks out, before "this" falls back to their active thread: the one they
+/// selected, else the one under their pointer, else the one it left within `POINTER_MS`. "Move that" acts on its
+/// newest point (moves.rs `that`).
+pub fn pointed_at(core: &Core, world: &World, speaker: &str) -> Option<String> {
+    let attention = core.catalog.attention.lock().unwrap().get(speaker).cloned().unwrap_or_default();
+    attended(world, &attention, now_ms())
+}
+
+fn attended(world: &World, a: &Attention, now: u64) -> Option<String> {
     let on_map = |id: &String| world.thread(&world.resolve(id)).map(|t| t.id.clone());
     let left = a.left.as_ref().filter(|(_, at)| now.saturating_sub(*at) <= POINTER_MS).map(|(id, _)| id);
     a.selected.as_ref().and_then(on_map)
         .or_else(|| a.pointed.as_ref().and_then(on_map))
         .or_else(|| left.and_then(on_map))
-        .or_else(|| world.active_for(speaker).cloned())
 }
 
 // --- The AI's one open question -------------------------------------------------------------------------------
@@ -513,7 +527,9 @@ pub fn answer(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
 /// The question's answer, said or clicked: yes takes the guess (or `with`, the person's own words), no keeps the
 /// words as heard (and puts back a fix made without asking).
 pub fn answered(core: &Core, thought_id: &str, accept: bool, with: String) {
-    core.commit(vec![Change::ThoughtCorrected { thought_id: thought_id.into(), accept, with }]);
+    // "We divided on Thursday" corrected to "decided" is a decision now; its undo takes the mark back.
+    let changes = crate::decided::remarked(&core.snapshot(), vec![Change::ThoughtCorrected { thought_id: thought_id.into(), accept, with }]);
+    core.commit(changes);
 }
 
 // --- Corrections ------------------------------------------------------------------------------------------------
@@ -851,7 +867,7 @@ fn took_off(core: &Arc<Core>, speaker: &str, turn: u64, ids: &[String], rest: &s
 }
 
 /// At most 8 words of `text`, for a notice.
-fn short(text: &str) -> String {
+pub(crate) fn short(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let cut = words.iter().take(8).copied().collect::<Vec<_>>().join(" ");
     let cut = cut.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();
@@ -940,6 +956,15 @@ pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
         }
         _ => core.send_to(speaker, ServerMsg::Notice { message: STALE.into() }),
     }
+}
+
+/// The Undo key (⌘Z / Ctrl+Z): "undo that" without words. A new turn as the words would be (a search still looking
+/// stops, a late safety-net answer is dropped), and the same take-back, within the same `JUST_BEFORE_MS`.
+pub fn undo_last(core: &Arc<Core>, speaker: &str) {
+    core.touch();
+    crate::find::stop(core, speaker);
+    newer(core, speaker);
+    correct(core, speaker, "undo that", false);
 }
 
 const STALE: &str = "That can't be undone any more: something newer happened";
