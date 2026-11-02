@@ -32,6 +32,11 @@ fn point(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
     }
 }
 
+/// What a turn searches for, if it's a search.
+fn asked(text: &str) -> Option<String> {
+    command(text).map(|ask| ask.query)
+}
+
 #[test]
 fn accepts_whole_requests_with_filler_and_polite_words() {
     for ask in [
@@ -42,10 +47,45 @@ fn accepts_whole_requests_with_filler_and_polite_words() {
         "WHERE DID I WRITE ABOUT RENT?!", "did i say anything about rent", "please find #rent",
         "Didn't I talk about rent?", "Where have I mentioned rent?", "Take me back to rent",
         "Find where I talked about rent", "find where we said something about rent", "Take me to my thoughts on rent",
+        // The words that lead into any request (main.rs `lead_in`).
+        "Hey, where did I talk about rent?", "Well, all right, where did I talk about rent?", "Cool. Where did I talk about rent?",
+        "Let's see, where did I talk about rent?", "Will you take me to the thread about rent?", "I see. Where did I talk about rent?",
     ] {
-        assert_eq!(command(ask).as_deref(), Some(if ask.contains('#') { "#rent" } else if ask.contains("the rent") { "the rent" } else { "rent" }), "{ask}");
+        assert_eq!(asked(ask).as_deref(), Some(if ask.contains('#') { "#rent" } else if ask.contains("the rent") { "the rent" } else { "rent" }), "{ask}");
     }
-    assert_eq!(command("Find where I said the deposit comes back").as_deref(), Some("the deposit comes back"));
+    assert_eq!(asked("Find where I said the deposit comes back").as_deref(), Some("the deposit comes back"));
+}
+
+#[test]
+fn the_question_is_the_first_sentence_and_the_words_after_it_are_kept() {
+    let ask = |query: &str, topic: &str, rest: &str, saying: bool| Some(Ask { query: query.into(), topic: topic.into(), rest: rest.into(), saying });
+    for (text, expected) in [
+        ("Where did I talk about the lease? I think it was due Friday.", ask("the lease", "the lease", "I think it was due Friday.", false)),
+        ("Where did I talk about the lease… it's due Friday", ask("the lease", "the lease", "it's due Friday", false)),
+        ("Take me to the thread about rent. Also the deposit.", ask("rent", "rent", "Also the deposit.", false)),
+        // Only filler or a "please" after it isn't a thought.
+        ("Where did I talk about the lease? Um.", ask("the lease", "the lease", "", false)),
+        ("Take me to the thread about rent. Please.", ask("rent", "rent", "", false)),
+        // A title or an initial doesn't end the question.
+        ("Where did I talk about Dr. Patel?", ask("dr patel", "Dr. Patel", "", false)),
+        ("Where did I talk about the U.S. visa?", ask("the u s visa", "the U.S. visa", "", false)),
+        ("Where did I talk about my Ph.D. applications?", ask("my ph d applications", "my Ph.D. applications", "", false)),
+        // A name or a number with a dot in it does, and so does a digit.
+        ("Where did I talk about v2.1. It ships Friday.", ask("v2 1", "v2.1", "It ships Friday.", false)),
+        ("Where did I talk about step 2. It was hard.", ask("step 2", "step 2", "It was hard.", false)),
+        // The topic as it was said, for "I couldn't find …".
+        ("Where did I talk about Dana's party?", ask("danas party", "Dana's party", "", false)),
+        // "Take me back to …" with nothing pointing at the map may be a saying.
+        ("Take me back to Paris.", ask("paris", "Paris", "", true)),
+        ("Take me back to Paris. It was lovely.", ask("paris", "Paris", "It was lovely.", true)),
+        ("Take me back to the thread about Paris", ask("paris", "Paris", "", false)),
+        // A tag points at the map, as a pointer does.
+        ("Take me back to #paris", ask("#paris", "#paris", "", false)),
+    ] {
+        assert_eq!(command(text), expected, "{text}");
+    }
+    // Initials in brackets don't end it either.
+    assert_eq!(first_sentence("Where did I talk about bills (e.g. rent)? It's due."), ("Where did I talk about bills (e.g. rent)?", "It's due."));
 }
 
 #[test]
@@ -71,6 +111,42 @@ fn leaves_ordinary_thoughts_alone() {
     ] {
         assert!(command(thought).is_none(), "{thought}");
     }
+}
+
+#[test]
+fn the_one_about_a_topic_searches_after_go_to_take_me_to_or_find() {
+    for (ask, query) in [
+        ("Go to the one about rent", "rent"),
+        ("Take me to the one where I mentioned the lease", "the lease"),
+        ("find the one about rent", "rent"),
+        ("Go back to the thread about rent", "rent"),
+        ("go to the rent thread", "the rent"),
+    ] {
+        assert_eq!(asked(ask).as_deref(), Some(query), "{ask}");
+    }
+    // Only mentioned, no topic, a "go to" that doesn't point at the map, or "the one about …" alone, which speech
+    // splits off the end of a thought ("…that cookbook. The one about Oaxacan food.").
+    for thought in [
+        "The one about never finishing things", "the one where I talked about rent", "Okay, the one about rent.",
+        "The one about Oaxacan food.",
+        "I liked the one about rent", "the one", "the one about", "The one I bought is blue", "go to the one", "Go to the gym",
+        "Go to the store on Friday", "go to the last one", "go back to the drawing board",
+    ] {
+        assert!(command(thought).is_none(), "{thought}");
+    }
+}
+
+#[test]
+fn go_to_the_one_about_a_topic_jumps_as_where_did_i_talk_about_does() {
+    let fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Habits", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "I never finish what I start", 1)],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    });
+    fixture.core.add_thought("User", "Go to the one about never finishing things");
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T1"));
+    assert_eq!(fixture.core.snapshot().thoughts.len(), 1, "a jump, not a thought");
 }
 
 #[test]
@@ -164,12 +240,15 @@ fn fallback_is_bounded_and_only_offers_latest_points() {
 #[test]
 fn a_new_request_only_cancels_that_speakers_old_request() {
     let runtime = Runtime::default();
-    let User = runtime.cancel("User");
-    let sam = runtime.cancel("Sam");
+    let (User, _) = runtime.next("User", String::new(), String::new());
+    let (sam, _) = runtime.next("Sam", String::new(), String::new());
     assert!(runtime.current("User", User));
-    runtime.cancel("User");
+    let (_, stopped) = runtime.next("User", String::new(), String::new());
+    assert_eq!(stopped.request, User);
     assert!(!runtime.current("User", User));
     assert!(runtime.current("Sam", sam));
+    // An ended search can't answer twice.
+    assert!(runtime.end("Sam", sam).is_some() && runtime.end("Sam", sam).is_none());
 }
 
 #[test]
@@ -203,6 +282,8 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
             }
             ServerMsg::Change { change: Change::ActiveChanged { speaker, .. } } => assert_eq!(speaker, "User"),
             ServerMsg::Change { change: Change::ThreadStatus { .. } } => {}
+            // Where a correction of this turn would start from (catalog.rs), to the asker alone.
+            ServerMsg::Correctable { .. } => assert_eq!(out.to.as_deref(), Some("User")),
             _ => panic!("unexpected message"),
         }
     }
@@ -213,25 +294,136 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
     assert_eq!(fixture.core.snapshot().thoughts.len(), 2, "ordinary thoughts still reach placement");
 }
 
+/// The messages one speaker got, with the thoughts added, in order.
+fn told(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) -> Vec<String> {
+    std::iter::from_fn(|| updates.try_recv().ok()).filter_map(|out| match out.message {
+        ServerMsg::Notice { message } => Some(format!("notice: {message}")),
+        ServerMsg::Found { message, .. } => Some(format!("found: {message}")),
+        ServerMsg::Change { change: Change::ThoughtAdded { thought } } => Some(format!("thought: {}", thought.text)),
+        _ => None,
+    }).collect()
+}
+
+/// A question that can only mean the map finds nothing: a notice that says what was tried, and nothing filed, since
+/// asking again would file it twice. Never "it isn't there": the model misses some paraphrases.
 #[test]
-fn missing_and_weak_matches_without_a_key_keep_the_words_as_a_thought() {
-    for query in ["spaceship", "rent spaceship"] {
-        let fixture = Fixture::new(World {
-            threads: vec![thread("T1", "Rent", 1)], active: Some("T1".into()), ..World::default()
-        });
+fn a_question_that_finds_nothing_says_why_and_files_nothing() {
+    for (map, said, notice) in [
+        (vec![thread("T1", "Rent", 1)], "Where did I talk about the spaceship?", "I couldn't find “the spaceship”. Searching by meaning needs the AI key."),
+        (vec![thread("T1", "Rent", 1)], "Where did I talk about rent spaceships?", "I couldn't find “rent spaceships”. Searching by meaning needs the AI key."),
+        (vec![thread("T1", "Rent", 1)], "Where did I talk about it?", "I couldn't find “it”. Try a few words you used."),
+        (vec![thread("T1", "Rent", 1)], "Take me back to #spaceship", "I couldn't find “#spaceship”. Searching by meaning needs the AI key."),
+        (vec![], "Where did I talk about the spaceship?", "Nothing on the map yet: say a thought first"),
+    ] {
+        let fixture = Fixture::new(World { threads: map, active: Some("T1".into()), ..World::default() });
         let mut updates = fixture.core.updates.subscribe();
-        let said = format!("Where did I talk about {query}?");
-        request(fixture.core.clone(), "Sam".into(), query.into(), said.clone());
-        let out = updates.try_recv().unwrap();
-        assert_eq!(out.to.as_deref(), Some("Sam"));
-        assert!(matches!(out.message, ServerMsg::Notice { message } if message == "I couldn't find a match, so I kept it as a thought."));
-        // Nothing moves, and the words aren't lost: they're a thought, to be placed like any other.
-        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { ref thought } }
-            if thought.text == said && thought.speaker == "Sam" && thought.thread_id.as_deref() == Some("T1") && !thought.placed));
-        assert!(updates.try_recv().is_err());
-        assert!(fixture.core.snapshot().active_by.is_empty());
-        assert_eq!(std::fs::read_to_string(&fixture.path).unwrap().lines().count(), 1, "journaled like any thought");
+        fixture.core.add_thought("Sam", said);
+        assert_eq!(told(&mut updates), [format!("notice: {notice}")], "{said}");
+        assert!(fixture.core.snapshot().thoughts.is_empty() && fixture.core.snapshot().active_by.is_empty(), "{said}");
     }
+}
+
+/// Words said after the question are kept whatever it finds: after the jump, so they go on where it landed. A
+/// "take me back to …" that may be a saying is kept whole when nothing is found.
+#[test]
+fn words_after_the_question_and_a_saying_are_kept() {
+    let world = || World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1)],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    };
+    for (said, expected, on) in [
+        (
+            "Where did I talk about the rent deposit? The landlord says June.",
+            vec!["found: Here: Home — Rent deposit comes back in June", "thought: The landlord says June."],
+            "T1",
+        ),
+        (
+            "Where did I talk about the spaceship? It flew over the house.",
+            vec!["notice: I couldn't find “the spaceship”. Searching by meaning needs the AI key.", "thought: It flew over the house."],
+            "T2",
+        ),
+        // The dot of a web address ends the question too.
+        (
+            "Find the thread about example.com. The renewal is due Friday.",
+            vec!["notice: I couldn't find “example.com”. Searching by meaning needs the AI key.", "thought: The renewal is due Friday."],
+            "T2",
+        ),
+        ("Take me back to Paris.", vec!["notice: I couldn't find “Paris”, so I kept it as a thought.", "thought: Take me back to Paris."], "T2"),
+        (
+            "Take me back to Paris. It was lovely.",
+            vec!["notice: I couldn't find “Paris”, so I kept it as a thought.", "thought: Take me back to Paris. It was lovely."],
+            "T2",
+        ),
+    ] {
+        let fixture = Fixture::new(world());
+        let mut updates = fixture.core.updates.subscribe();
+        fixture.core.add_thought("User", said);
+        assert_eq!(told(&mut updates), expected, "{said}");
+        let world = fixture.core.snapshot();
+        assert_eq!(world.active_for("User").map(String::as_str), Some(on), "{said}");
+        // A kept thought starts out on the thread the speaker is on: after a jump, the answer's.
+        assert!(world.thoughts.iter().filter(|t| !t.placed).all(|t| t.thread_id.as_deref() == Some(on)), "{said}");
+    }
+}
+
+/// "Looking through your threads…" stays up until the answer, so newer words that stop the search take it down;
+/// the words the search held go in first, in the order they were said.
+#[tokio::test]
+async fn newer_words_stop_a_search_and_take_down_its_notice() {
+    let pending = Thought { speaker: "User".into(), placed: false, ..point("pending", "T2", "Paint the kitchen", crate::now_ms()) };
+    let mut fixture = Fixture::new(World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2)],
+        thoughts: vec![point("answer", "T1", "Rent deposit comes back in June", 1), pending],
+        active_by: HashMap::from([("User".into(), "T2".into())]),
+        ..World::default()
+    });
+    // A working key, so the search waits for the thought still placing and says it's looking.
+    Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("User", "Where did I talk about the rent deposit? The landlord says June.");
+    fixture.core.add_thought("User", "Hmm.");
+    assert_eq!(told(&mut updates), ["notice: Looking through your threads…"], "\"hmm\" adds nothing, so the search goes on");
+    fixture.core.add_thought("User", "The kitchen needs paint.");
+    assert_eq!(told(&mut updates), ["notice: ", "thought: The landlord says June.", "thought: The kitchen needs paint."]);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(fixture.core.snapshot().active_for("User").map(String::as_str), Some("T2"), "the stopped search never jumps");
+    assert!(told(&mut updates).is_empty());
+}
+
+/// Two questions in one turn answer one after the other. A click while the first waits stops both: the second was
+/// asked before the click too, and its answer would undo it. The words after them are kept either way.
+#[tokio::test]
+async fn a_click_stops_a_search_and_any_search_its_words_ask() {
+    let said = "Where did I talk about the lease? Where did I talk about rent? It's due on the first.";
+    let world = || World {
+        threads: vec![thread("T1", "Home", 1), thread("T2", "Work", 2), thread("T3", "Bills", 3)],
+        thoughts: vec![point("lease", "T1", "The lease ends in June", 1), point("rent", "T3", "Rent is due on the first", 2)],
+        active_by: HashMap::from([("you".into(), "T1".into())]),
+        ..World::default()
+    };
+    let fixture = Fixture::new(world());
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", said);
+    let both = ["found: Here: Home — The lease ends in June", "found: Here: Bills — Rent is due on the first", "thought: It's due on the first."];
+    assert_eq!(told(&mut updates), both);
+    assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T3"));
+    // The first waits for a thought still placing (a working key, so it can land), and Work is clicked meanwhile.
+    let mut busy = world();
+    busy.thoughts.push(Thought { placed: false, ..point("pending", "T1", "Paint the kitchen", crate::now_ms()) });
+    let mut fixture = Fixture::new(busy);
+    Arc::get_mut(&mut fixture.core).unwrap().key = Some("test".into());
+    let mut updates = fixture.core.updates.subscribe();
+    fixture.core.add_thought("you", said);
+    fixture.core.focus("you", "T2");
+    fixture.core.commit(vec![Change::ThoughtPlaced {
+        thought_id: "pending".into(), thread_id: "T1".into(), point: "Paint the kitchen".into(), unclear: String::new(),
+        guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+    }]);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T2"), "nothing asked before the click moves you after it");
+    assert_eq!(told(&mut updates), ["notice: Looking through your threads…", "notice: ", "thought: It's due on the first."]);
 }
 
 #[test]
@@ -266,7 +458,7 @@ fn a_to_do_that_starts_with_find_or_take_me_to_reaches_the_map() {
 #[test]
 fn filler_while_a_search_is_looking_keeps_the_search() {
     let fixture = Fixture::new(World::default());
-    let request = fixture.core.find.cancel("User");
+    let (request, _) = fixture.core.find.next("User", String::new(), String::new());
     fixture.core.add_thought("User", "Hmm.");
     fixture.core.add_thought("User", "um, okay");
     assert!(fixture.core.find.current("User", request), "\"hmm\" while it looks adds nothing");
@@ -285,7 +477,8 @@ fn a_late_result_follows_a_merge_and_uses_the_current_words() {
     world.thoughts[0].point = "Rent deposit returns in June".into();
     let fixture = Fixture::new(world);
     let mut updates = fixture.core.updates.subscribe();
-    show(&fixture.core, "User", found, "Where did I talk about the rent deposit?");
+    let (request, _) = fixture.core.find.next("User", String::new(), String::new());
+    show(&fixture.core, "User", request, found, "the rent deposit");
     let mut seen = false;
     while let Ok(out) = updates.try_recv() {
         if let ServerMsg::Found { thread_id, message, .. } = out.message {

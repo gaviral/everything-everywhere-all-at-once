@@ -2,22 +2,30 @@
 .palace-switch { display: inline-flex; flex: none; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .map-tools .palace-switch button { min-height: 30px; padding: 5px 12px; border: 0; background: transparent; }
 .map-tools .palace-switch button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
-.palace { max-width: 1180px; margin: 0 auto; padding: 38px 32px calc(var(--dock-height, 150px) + 48px); }
+.palace { max-width: 1180px; margin: 0 auto; padding: 38px 32px calc(var(--dock-room, var(--dock-height, 150px)) + 48px); }
 .palace-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 12px; }
 .palace-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
 .palace-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 48px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
 .palace-intro p { max-width: 300px; margin: 0 0 3px; color: var(--muted); font-size: 13px; }
 .palace-keyboard { margin: 0 0 32px; color: var(--muted); font-size: 11px; }
-.palace-rooms { display: flex; flex-direction: column; gap: 36px; }
-.palace-room { min-width: 0; }
+/* Rooms flow side by side like words, each as wide as its pictures (--span of the row's columns, set by Palace.tsx);
+   the gap between rooms is twice the gap between pictures, so each room still reads as one group. */
+.palace-rooms { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 36px; }
+.palace-room { flex: none; min-width: 0; width: calc(var(--span, 6) * var(--tile, 171px) + (var(--span, 6) - 1) * 18px); max-width: 100%; }
 .palace-room-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.palace-room-rule { flex: 1; height: 1px; background: var(--line); }
-.palace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 24px 18px; }
+.palace-room-rule { flex: 1; min-width: 16px; height: 1px; background: var(--line); }
+/* A narrow room cuts a long title; its first picture carries the full one. */
+.palace-room-heading > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palace-room-heading > span:last-child { flex: none; }
+/* Tiles are buttons, which center their content: start keeps the pictures in a row level when captions differ. */
+.palace-grid { display: grid; grid-template-columns: repeat(var(--span, 6), minmax(0, 1fr)); gap: 24px 18px; align-items: start; }
 .palace-tile { display: block; min-width: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+/* Arrow keys bring a tile clear of what stays on screen: the header and tools above (114 px at 1440×900) and the dock
+   below, with the clearance a thread gets on the map. */
+.palace-tile { scroll-margin-top: 145px; scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
 .palace-art { position: relative; display: block; overflow: hidden; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s, border-color .2s; }
 .palace-art img, .palace-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; }
 .palace-art img { z-index: 1; object-fit: cover; }
-.palace-art img[hidden] { display: none; }
 .palace-placeholder { display: grid; place-items: center; background: radial-gradient(circle at 35% 25%, color-mix(in srgb, var(--accent-soft) 65%, var(--card)), transparent 60%), linear-gradient(145deg, var(--card), color-mix(in srgb, var(--ai-soft) 55%, var(--bg))); color: color-mix(in srgb, var(--ai) 45%, var(--muted)); }
 .palace-placeholder span { display: grid; place-items: center; width: 34%; aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font-family: Georgia, serif; font-size: clamp(28px, 4vw, 48px); line-height: 1; }
 .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: translateY(-3px); box-shadow: 0 10px 26px #0002; }
@@ -27,30 +35,34 @@
 .palace-badge { padding: 3px 7px; border-radius: 99px; background: var(--card); color: var(--ink); box-shadow: 0 1px 6px #0002; font-size: 10px; font-weight: 700; }
 .palace-badge.active { background: var(--accent); color: var(--accent-button-ink); }
 .palace-badge.unfinished { background: var(--amber-soft); color: var(--amber); }
-.palace-point { position: absolute; z-index: 3; inset: auto 0 0; max-height: 100%; overflow-y: auto; padding: 28px 12px 12px; background: linear-gradient(transparent, var(--card) 32%); color: var(--ink); font-size: 12px; line-height: 1.35; opacity: 0; transition: opacity .18s; overflow-wrap: anywhere; }
-.palace-point > span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.palace-tile:hover .palace-point, .palace-tile:focus-visible .palace-point { opacity: 1; }
 .palace-title, .palace-parent { display: block; overflow-wrap: anywhere; }
 .palace-title { margin-top: 10px; font-size: 14px; font-weight: 650; line-height: 1.3; }
 .palace-parent { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.3; }
+/* The last thought is a caption, so focusing a tile never covers its picture. Two lines show it whole on 46 of 54 tiles
+   across three maps (demo-like, a 37-thread recording, the sample), and none needed more than three. */
+.palace-point { display: -webkit-box; overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Twice the caption's gap, so "Branch of …" reads as its own line, not the end of the thought. */
+.palace-point + .palace-parent { margin-top: 6px; }
 @media (max-width: 560px) {
-  .palace { padding: 26px 16px calc(var(--dock-height, 150px) + 32px); }
+  .palace { padding: 26px 16px calc(var(--dock-room, var(--dock-height, 150px)) + 32px); }
   .palace-intro { display: block; }
   .palace-intro p { margin-top: 10px; }
   .palace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
   .palace-rooms { gap: 30px; }
+  .palace-room { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .palace-tile:hover .palace-art, .palace-tile:focus-visible .palace-art { transform: none; } }
 
 /* Labels stay readable when the gallery is shown in a recording. */
 .palace-keyboard, .palace-parent { font-size: 12px; }
 .palace-room-heading, .palace-badge { font-size: 11px; }
-.palace-point { font-size: 13px; }
-.palace-point > span { font-size: 10px; }
 @media (prefers-reduced-motion: reduce) {
-  .palace-art, .palace-point { transition: none; }
+  .palace-art { transition: none; }
 }
 
-@media (hover: none) {
-  .palace-point { opacity: 1; }
-}
+/* A room wears one color, the one its pictures are painted in (rooms.ts); a letter tile waits in it too. */
+.palace-room-heading { color: var(--room, var(--muted)); }
+.palace-room-rule { height: 2px; background: color-mix(in srgb, var(--room, var(--line)) 40%, transparent); }
+.palace-placeholder { background: var(--room-soft, var(--line)); color: var(--room, var(--muted)); }
+.palace-placeholder span { background: color-mix(in srgb, var(--room, var(--muted)) 12%, var(--card)); color: var(--room, var(--muted)); }
+

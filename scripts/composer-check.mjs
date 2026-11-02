@@ -8,7 +8,11 @@
 // and checks on a draft: "watcher" (kinds), "words" (a phrase or topic holds one; a thought watcher's prompt names
 // one), "every" (seconds), "hour" (local hours a timer may start at, within a day), "prompt" (true: needs one that
 // reads {thought} or {points}), "publishers" (at least one of these kinds), "repeats" (a timer that must keep
-// showing something); on a refusal, "words" (the reason names one).
+// showing something), "level" ([low, high] a volume watcher's level must sit in), "prompt" (false: none, so the
+// app answers at once and can't decide to stay quiet), "all" (every one of these kinds); on a refusal, "words" (the
+// reason names one) and "instead" (true: it offers the closest app).
+// beat5-requests.jsonl holds the demo sentence (beat 5), its paraphrases and requests near it that must be refused:
+// run it on a demo core with the Volume watcher removed (Apps › Steps › Remove app), as the take does.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
@@ -120,6 +124,7 @@ function problems(req, r) {
     const p = [];
     if (r.message.length > 240) p.push("reason too long");
     if (req.words && r.outcome === "refused" && !has(r.message, req.words)) p.push(`reason doesn't name ${req.words[0]}`);
+    if (req.instead && r.outcome === "refused" && !r.instead) p.push("no closest app");
     return p;
   }
   if (r.outcome !== "built") return [];
@@ -136,6 +141,9 @@ function problems(req, r) {
     const soon = w.at_ms > Date.now() - 60_000 && w.at_ms <= Date.now() + 86_400_000;
     if (![req.hour].flat().includes(at.getHours()) || at.getMinutes() !== 0 || !soon) p.push(`starts ${at.toLocaleString()}`);
   }
+  if (req.level && w.kind === "volume" && !(req.level[0] <= w.level && w.level <= req.level[1])) p.push(`level ${w.level}`);
+  if (req.prompt === false && app.prompt) p.push("asks the model each time");
+  if (req.all && !req.all.every((k) => kinds.includes(k))) p.push(`publishes ${kinds.join(", ")}`);
   if (req.prompt && !app.prompt) p.push("no prompt");
   if (req.prompt && app.prompt && !/\{(thought|points)\}/.test(app.prompt.template)) p.push("its prompt never sees what was said");
   if (req.publishers && !kinds.some((k) => req.publishers.includes(k))) p.push(`publishes ${kinds.join(", ")}`);
@@ -156,7 +164,7 @@ await Promise.all(conns.map(async (conn) => {
     const row = { id: job.req.id, run: job.run, request: job.req.request, ...r, problems: problems(job.req, r) };
     row.ok = row.problems.length === 0;
     results.push(row);
-    const what = r.outcome === "built" ? blocks(r.draft) : r.outcome === "matched" ? r.match_id : r.message;
+    const what = r.outcome === "built" ? blocks(r.draft) : r.outcome === "matched" ? r.match_id : `${r.message}${r.instead ? ` → “${r.instead}”` : ""}`;
     console.log(`${row.ok ? "ok  " : "MISS"} #${String(row.id).padEnd(2)} run ${row.run} ${(r.ms / 1000).toFixed(1).padStart(5)} s  ${r.outcome.padEnd(8)} ${what}${r.retried ? " (retried)" : ""}${row.ok ? "" : `  ✗ ${row.problems.join("; ")}`}`);
   }
 }));
@@ -168,4 +176,11 @@ const ok = results.filter((r) => r.ok).length;
 const times = results.map((r) => r.ms).sort((a, b) => a - b);
 console.log(`\n${results.length} builds: ${count("built")} built, ${count("matched")} matched, ${count("refused") + count("notice")} refused, ${count("failed")} failed, ${count("timeout")} timed out`);
 console.log(`Does what was asked: ${ok} of ${results.length}; median ${(times[times.length >> 1] / 1000).toFixed(1)} s, slowest ${(times.at(-1) / 1000).toFixed(1)} s`);
+// With more than one run: how often each request did what was asked.
+if (runs > 1) {
+  for (const id of [...new Set(results.map((r) => r.id))]) {
+    const rows = results.filter((r) => r.id === id);
+    console.log(`#${String(id).padEnd(3)} ${rows.filter((r) => r.ok).length}/${rows.length}  ${rows[0].request}`);
+  }
+}
 if (out) writeFileSync(out, JSON.stringify(results, null, 2));

@@ -1,0 +1,3 @@
+/* Beside the notice's words, in their color and size (the notice is ink on paper's color, so the accent would read
+   poorly), bold and underlined so it reads as the one thing to press; smaller than the ×, which is a symbol. */
+.notice .undo { font-size: 13px; font-weight: 600; line-height: 1.4; text-decoration: underline; text-underline-offset: 2px; }

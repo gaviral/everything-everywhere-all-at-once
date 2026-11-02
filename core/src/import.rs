@@ -1005,7 +1005,8 @@ async fn ask(
     Ok(value["choices"][0]["message"]["content"].as_str().context("no answer")?.to_string())
 }
 
-/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't one.
+/// A blip (a rate limit, a timeout) shouldn't cost a part: a few tries, a short pause between. A refused key isn't
+/// one, and neither is the hour's cap, which lasts minutes.
 async fn retry<T, F, Fut>(tries: u64, mut call: F) -> anyhow::Result<T>
 where
     F: FnMut() -> Fut,
@@ -1015,7 +1016,8 @@ where
     loop {
         match call().await {
             Ok(value) => return Ok(value),
-            Err(e) if attempt < tries && crate::model::Verdict::of(&e) != Some(crate::model::Verdict::Refused) => {
+            Err(e) if attempt < tries
+                && !matches!(crate::model::Verdict::of(&e), Some(crate::model::Verdict::Refused | crate::model::Verdict::Capped)) => {
                 tracing::warn!("import call failed (try {attempt}): {e:#}");
                 tokio::time::sleep(Duration::from_millis(800 * attempt)).await;
                 attempt += 1;

@@ -70,17 +70,24 @@ pub struct Runtime {
 
 /// Whole-utterance commands, so talking *about* a recap remains a thought.
 pub fn command(text: &str) -> Option<Period> {
-    let today = ["recap", "recap today", "recap my day", "today s recap", "what did i decide today", "what happened today", "what did i work on today", "summarize today", "give me a recap", "give me a recap of today"];
-    let session = ["recap this session", "recap my session", "session recap", "what happened this session", "what did i decide this session", "summarize this session"];
+    let today = [
+        "recap", "let s recap", "recap today", "recap my day", "today s recap", "what did i decide", "what did we decide", "what did i decide today",
+        "what did we decide today", "what happened today", "what did i work on today", "summarize today", "give me a recap", "give me a recap of today",
+    ];
+    let session = [
+        "recap this session", "recap my session", "session recap", "what happened this session", "what did i decide this session",
+        "what did we decide this session", "summarize this session",
+    ];
     if crate::is_command(text, &today, &[]) { Some(Period::Today) }
     else if crate::is_command(text, &session, &[]) { Some(Period::Session) }
     else { None }
 }
 
-/// A bare "recap" (no period named) asks for whatever there is to look back on: today, or, when
-/// nothing has landed since midnight, the last session (a new morning, or the dated sample maps).
+/// A request that names no period ("recap", "let's recap", "what did I decide?") asks for whatever there is
+/// to look back on: today, or, when nothing has landed since midnight, the last session (a new morning, or
+/// the dated sample maps).
 pub fn unqualified(text: &str) -> bool {
-    crate::is_command(text, &["recap", "give me a recap"], &[])
+    crate::is_command(text, &["recap", "let s recap", "give me a recap", "what did i decide", "what did we decide"], &[])
 }
 
 pub fn default_period(world: &World, now: u64) -> Period {
@@ -121,8 +128,10 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             }
             Err(e) => {
                 tracing::warn!("recap failed: {e:#}");
-                let message = if core.key_refused() { crate::model::REFUSED } else { "Couldn't make a recap just now. Your thoughts are still here. Try again." };
-                state(&core, &speaker, period, false, message, None);
+                let message = if core.key_refused() { crate::model::REFUSED.into() }
+                    else if let Some(capped) = core.capped_message() { capped }
+                    else { "Couldn't make a recap just now. Your thoughts are still here. Try again.".to_string() };
+                state(&core, &speaker, period, false, &message, None);
             }
         }
     });

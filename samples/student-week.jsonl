@@ -18,7 +18,7 @@
 {"type":"tag_suggested","thread_id":"T2","tag":"rent"}
 {"type":"tag_suggested","thread_id":"T2","tag":"urgent"}
 {"type":"thread_status","thread_id":"T2","status":"dropped"}
-{"type":"thread_picture","thread_id":"T2","path":"/images/T2-c737d1318fe54077aab3a96e8eeb35bd-small.webp"}
+{"type":"thread_picture","thread_id":"T2","path":"/images/T2-71f263c13cca4062a33e638cab3264db-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
 {"type":"thread_added","thread":{"id":"T3","title":"Group project meeting","parent_id":null,"status":"open","last_point":"","touched_ms":1793747100000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T3"}
@@ -63,7 +63,7 @@
 {"type":"thread_touched","thread_id":"T6","last_point":"Include .env.example with API key setup","at_ms":1793748120000}
 {"type":"tag_suggested","thread_id":"T6","tag":"hackathon"}
 {"type":"tag_suggested","thread_id":"T6","tag":"docs"}
-{"type":"thread_picture","thread_id":"T6","path":"/images/T6-23dd26336e174a53ab252a5f15586ef1-small.webp"}
+{"type":"thread_picture","thread_id":"T6","path":"/images/T6-ed5e0197f16b455bab5292a62e068f1c-small.webp"}
 {"type":"thread_added","thread":{"id":"T7","title":"Electric bill autopay","parent_id":"T2","status":"open","last_point":"","touched_ms":1793748300000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T7"}
 {"type":"thought_added","thought":{"id":"th-18","speaker":"you","text":"While I'm thinking about money stuff I should set up autopay for the electric bill too","point":"Set up autopay for electric bill","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748300000,"place_ms":1800}}
@@ -77,7 +77,7 @@
 {"type":"thread_touched","thread_id":"T4","last_point":"Three minutes, open with pre-existing work disclosure","at_ms":1793748600000}
 {"type":"thought_added","thought":{"id":"th-21","speaker":"you","text":"Then show the mic turning on and the first thought landing on the map, that's the hook","point":"Hook: mic on, first thought lands on map","thread_id":"T4","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748660000,"place_ms":1400}}
 {"type":"thread_touched","thread_id":"T4","last_point":"Hook: mic on, first thought lands on map","at_ms":1793748660000}
-{"type":"thread_picture","thread_id":"T4","path":"/images/T4-f3654349211d4c0aabbc39802383a604-small.webp"}
+{"type":"thread_picture","thread_id":"T4","path":"/images/T4-b1d4a24cc88f4998a563ab085133b81c-small.webp"}
 {"type":"thread_added","thread":{"id":"T8","title":"Submission checklist","parent_id":"T1","status":"open","last_point":"","touched_ms":1793748900000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T8"}
 {"type":"thought_added","thought":{"id":"th-22","speaker":"you","text":"For submission I need the public repo link, the demo video link, and my team member info","point":"Need: public repo, demo video link, team member info","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748900000,"place_ms":1700}}
@@ -90,21 +90,21 @@
 {"type":"tag_suggested","thread_id":"T8","tag":"submission"}
 {"type":"thought_added","thought":{"id":"th-25","speaker":"you","text":"Oh and I need to post the demo on X for the Most Viral bonus prize","point":"Post demo on X for Most Viral prize","thread_id":"T8","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749080000,"place_ms":1400}}
 {"type":"thread_touched","thread_id":"T8","last_point":"Post demo on X for Most Viral prize","at_ms":1793749080000}
-{"type":"thread_picture","thread_id":"T8","path":"/images/T8-441ee924d1414795b820b0dd7b28e7a3-small.webp"}
+{"type":"thread_picture","thread_id":"T8","path":"/images/T8-393897624fe54c768d79993f438ccdb6-small.webp"}
 {"type":"thought_added","thought":{"id":"th-26","speaker":"you","text":"Back to the group project, I just realized our presentation and the hackathon deadline are basically the same week","point":"Group presentation and hackathon deadline same week","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749200000,"place_ms":1800}}
 {"type":"thread_touched","thread_id":"T3","last_point":"Group presentation and hackathon deadline same week","at_ms":1793749200000}
 {"type":"active_changed","thread_id":"T3"}
 {"type":"thought_added","thought":{"id":"th-27","speaker":"you","text":"I think I need to do the group stuff this afternoon and the hackathon stuff tonight and tomorrow morning","point":"Group stuff this afternoon, hackathon tonight and tomorrow AM","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749260000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T3","last_point":"Group stuff this afternoon, hackathon tonight and tomorrow AM","at_ms":1793749260000}
-{"type":"thread_picture","thread_id":"T3","path":"/images/T3-b8498b6119a54b63a1b2bcf545ec1916-small.webp"}
+{"type":"thread_picture","thread_id":"T3","path":"/images/T3-deec9cff921948d2a8f0155263282952-small.webp"}
 {"type":"thought_added","thought":{"id":"th-28","speaker":"you","text":"The cooking class thing I can do on my phone while waiting for the demo to render or whatever","point":"Book cooking class on phone during downtime","thread_id":"T5","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749400000,"place_ms":1700}}
 {"type":"thread_touched","thread_id":"T5","last_point":"Book cooking class on phone during downtime","at_ms":1793749400000}
-{"type":"thread_picture","thread_id":"T5","path":"/images/T5-ec0c212470e04a6ebc9871cd2e280826-small.webp"}
+{"type":"thread_picture","thread_id":"T5","path":"/images/T5-204f841d8c574f58ba2e434b8a5d84c3-small.webp"}
 {"type":"active_changed","thread_id":"T5"}
 {"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Alright I think the priority is README then record then submit, rent transfer right now, and text Priya before I forget","point":"Priority: README, record, submit; rent now; text Priya","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749500000,"place_ms":1600}}
 {"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Priya","at_ms":1793749500000}
-{"type":"thread_picture","thread_id":"T1","path":"/images/T1-e980671503b1418fb6043d8a66e0ca2b-small.webp"}
+{"type":"thread_picture","thread_id":"T1","path":"/images/T1-bd42b23eb79442baa2cf8a2033608b11-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
-{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet I think the","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":false,"at_ms":1793749560000,"place_ms":1500}}
+{"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749560000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T7","last_point":"Electric bill can wait until after hackathon","at_ms":1793749560000}
-{"type":"thread_picture","thread_id":"T7","path":"/images/T7-effe9df785664f6ea459a3cf4d7a6bd2-small.webp"}
+{"type":"thread_picture","thread_id":"T7","path":"/images/T7-af024ca151fb4e07987c5401e59646e5-small.webp"}
