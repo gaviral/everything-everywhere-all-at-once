@@ -47,6 +47,12 @@ pub enum ServerMsg {
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
     /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
     Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
+    /// One step of the work, for the window's model line (ui/src/model-line.ts): the step (the trace's feature:
+    /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
+    /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
+    /// `ms` and `ok`), sharing `id`. Sent from where every call goes through (model.rs), so the name shown is the
+    /// name asked, never a label kept by hand.
+    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64 },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's

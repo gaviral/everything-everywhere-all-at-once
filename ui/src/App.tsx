@@ -34,6 +34,7 @@ import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
@@ -933,6 +934,7 @@ export default function App() {
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
+            <ModelLine hearing={!!core.partial} hidden={!!draft} />
             <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>

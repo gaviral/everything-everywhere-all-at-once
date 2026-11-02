@@ -180,6 +180,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker, now_ms()) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
             return;
