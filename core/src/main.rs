@@ -72,8 +72,10 @@ pub struct Core {
     /// Set when a room is open.
     room: Option<Room>,
     pub key: Option<String>,
-    /// Placing and Explain's model (model.rs).
+    /// Explain's model, and every placing lane's when the person set it (PLACER_MODEL; model.rs).
     pub placer_model: model::Setting,
+    /// Each placing lane's model, unless PLACER_MODEL is set (`placer_lane`, placer.rs `MODELS`).
+    pub placer_lanes: model::Lanes,
     /// How many of the same placement call race, the first good answer winning (placer.rs `RACE`).
     pub placer_race: usize,
     pub http: reqwest::Client,
@@ -904,13 +906,21 @@ fn models(core: &Core) -> serde_json::Value {
     let tidy = std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into());
     let recap = std::env::var("RECAP_MODEL").unwrap_or_else(|_| tidy.clone());
     let pictures = !std::env::var("PICTURES").is_ok_and(|value| value.eq_ignore_ascii_case("off"));
-    let mut models = vec![
-        serde_json::json!({ "step": "hears", "model": "muse-voice-transcribe-1.0" }),
-        serde_json::json!({ "step": "places", "model": core.placer_model.name() }),
+    // Each model a placement's lanes ask, once, in lane order (placer.rs `MODELS`).
+    let mut places: Vec<&str> = Vec::new();
+    for lane in 0..core.placer_race.max(1) {
+        let model = core.placer_lane(lane).name();
+        if !places.contains(&model) {
+            places.push(model);
+        }
+    }
+    let mut models = vec![serde_json::json!({ "step": "hears", "model": "muse-voice-transcribe-1.0" })];
+    models.extend(places.into_iter().map(|model| serde_json::json!({ "step": "places", "model": model })));
+    models.extend([
         serde_json::json!({ "step": "tidies", "model": tidy }),
         serde_json::json!({ "step": "builds", "model": tidy }),
         serde_json::json!({ "step": "recaps", "model": recap }),
-    ];
+    ]);
     if pictures {
         models.push(serde_json::json!({ "step": "draws", "model": "muse-image-1.0" }));
     }
@@ -961,6 +971,8 @@ async fn main() -> anyhow::Result<()> {
         // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
         // and cheaper, but Meta may keep what it reads.
         placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+        // A placement's racing calls each ask their own model (placer.rs `MODELS`), unless PLACER_MODEL names one.
+        placer_lanes: model::Lanes::from_env("PLACER_MODEL", "PLACER_MODELS", placer::MODELS),
         placer_race: placer::race_from_env(),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
@@ -1641,6 +1653,8 @@ impl Core {
             room: None,
             key: None,
             placer_model: "test".into(),
+            // Every lane asks `placer_model`, as with PLACER_MODEL set; the lanes' own models have their tests (placer.rs).
+            placer_lanes: Default::default(),
             // One call a placement, so a stand-in's answers are used in order; racing has its own test (placer.rs).
             placer_race: 1,
             // One for every test core: making one reads the system's certificates, and a test may make thousands.
@@ -3059,6 +3073,19 @@ mod tests {
         let models = super::models(&core);
         let named = |step: &str| models.as_array().unwrap().iter().find(|m| m["step"] == step).map(|m| m["model"].as_str().unwrap().to_string());
         assert_eq!(named("places").as_deref(), Some(core.placer_model.name()));
+        // A placement's lanes, each model once, and only the lanes that race (placer.rs `MODELS`).
+        let places = |race: usize| {
+            let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+            let (journal, world) = crate::Journal::open(&path).unwrap();
+            let lanes = crate::model::Lanes::pick(None, Some(format!("{},muse-spark-1.3", crate::placer::MODELS)), crate::placer::MODELS);
+            let core = Core { placer_lanes: lanes, placer_race: race, ..Core::test(journal, world) };
+            let models = super::models(&core);
+            let _ = std::fs::remove_file(path);
+            models.as_array().unwrap().iter().filter(|m| m["step"] == "places").map(|m| m["model"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(places(2), ["muse-spark-1.3", "muse-spark-1.2"]);
+        assert_eq!(places(4), ["muse-spark-1.3", "muse-spark-1.2"], "a model listed twice is named once");
+        assert_eq!(places(1), ["muse-spark-1.3"], "one call: only the first lane's model");
         let sources = [("hears", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("builds", include_str!("apps.rs")),
             ("recaps", include_str!("recap.rs")), ("draws", include_str!("pictures.rs"))];
         for (step, source) in sources {
