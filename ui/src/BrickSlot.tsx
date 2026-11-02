@@ -15,8 +15,9 @@ export type BrickHost = { map: MapSnapshot; actions: BrickActions; on: BrickOn }
  *  taken for landings) with this window's live words (`partial`: a new map with each word heard; the arrays stay the
  *  same, so a brick that works from them redoes nothing), the app's own actions (`act`, the latest each render,
  *  behind actions that keep their identity), and events: landings seen here, and the mic's loudness as the core is
- *  sent it (apps-audio.ts). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: BrickActions): BrickHost {
+ *  sent it (apps-audio.ts). `emit` is for the window's own events (App.tsx's notices); a brick is handed only map,
+ *  actions and on (BrickMount). */
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: BrickActions): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial), [world, me, connected, rooms, partial]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
@@ -34,7 +35,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   useEffect(() => {
     for (const landing of landings(world.thoughts, me, revision)) events.emit("landed", landing);
   }, [world.thoughts, me, revision, landings, events]);
-  return useMemo(() => ({ map, actions, on }), [map, actions, on]);
+  return useMemo(() => ({ map, actions, on, emit: events.emit }), [map, actions, on, events]);
 }
 
 const components = new Map<string, LazyExoticComponent<ComponentType<BrickProps>>>();

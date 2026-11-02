@@ -666,6 +666,14 @@ export function useCore(speaker?: string) {
   const [listenedRevision, setListenedRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // Every notice and map update as it comes up, for the bricks' on("notice") (App.tsx `takeNotices` after each render):
+  // kept where each is said, since one render can carry several, the same words twice too. Clearing one says nothing.
+  const notices = useRef<{ text: string; kind: "notice" | "error" | "map-change"; time: number }[]>([]);
+  const sayNotice = (text: string, kind: "notice" | "error" = "notice") => {
+    if (text) notices.current.push({ text, kind, time: Date.now() });
+    setNotice(text);
+  };
+  const takeNotices = useCallback(() => notices.current.splice(0), []);
   // The notice up now, for the socket handler, whose `notice` would be the one from when it connected.
   const noticeShown = useRef("");
   useEffect(() => { noticeShown.current = notice; }, [notice]);
@@ -785,6 +793,7 @@ export function useCore(speaker?: string) {
             const note = tidyNote(currentWorld, change);
             if (note) {
               const id = ++changeId;
+              notices.current.push({ text: note.text, kind: "map-change", time: Date.now() });
               setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
@@ -807,7 +816,7 @@ export function useCore(speaker?: string) {
             const row = document.getElementById(`item-${msg.id}`)?.getBoundingClientRect();
             const inView = !!row && row.height > 0 && row.bottom > 0 && row.top < window.innerHeight;
             const say = failureNotice(action.title, msg.message, inView, noticeShown.current);
-            if (say) { setNotice(say); setUndoId(null); answered(); }
+            if (say) { sayNotice(say, "error"); setUndoId(null); answered(); }
             break;
           }
           case "partial":
@@ -841,7 +850,8 @@ export function useCore(speaker?: string) {
             // Past the daily limit the core has no key, so a later "needs MODEL_API_KEY" (making an app) is the same
             // limit: the window keeps saying back tomorrow until the next snapshot.
             if (aboutKey(msg.message)) setKeyNotice((held) => (isResting(held) && !isResting(msg.message) ? held : msg.message));
-            setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
+            if (msg.message) sayNotice(msg.message, msg.type);
+            else setNotice((shown) => (shown === LOOKING ? "" : shown));
             // A newer answer: the Undo shown was for the one before.
             if (msg.message) { setUndoId(null); answered(); }
             break;
@@ -863,7 +873,7 @@ export function useCore(speaker?: string) {
             break;
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
-            setNotice(msg.message);
+            sayNotice(msg.message);
             setUndoId(null);
             answered();
             break;
@@ -937,7 +947,7 @@ export function useCore(speaker?: string) {
   const send = useCallback((data: string | ArrayBuffer) => {
     const big = tooBig(data);
     // Past the core's cap it would end this window's connection (core/src/protocol.rs `FRAME_MAX`).
-    if (big) { setNotice(big); answered(); return false; }
+    if (big) { sayNotice(big); answered(); return false; }
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
     socket.current.send(data);
     return true;
@@ -945,7 +955,7 @@ export function useCore(speaker?: string) {
   const placeAt = useMemo(() => placeSender((data) => send(data)), [send]);
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
-    setNotice("Not connected — try again when connected.");
+    sayNotice("Not connected — try again when connected.");
     answered();
     return false;
   }, [send]);
@@ -957,7 +967,7 @@ export function useCore(speaker?: string) {
   const stopSend = useCallback((id: number) => {
     if (send(JSON.stringify({ type: "stop_send", id }))) return true;
     stopWaiting.current = id;
-    setNotice(STOP_WAITS);
+    sayNotice(STOP_WAITS);
     answered();
     return false;
   }, [send]);
@@ -1015,6 +1025,7 @@ export function useCore(speaker?: string) {
     listenedRevision,
     connected,
     notice,
+    takeNotices,
     answerRevision,
     noKey,
     keyRefused: keyNotice.includes("refused"),
@@ -1053,7 +1064,7 @@ export function useCore(speaker?: string) {
     // sends the view, then "Did … instead" with its Undo, and both can reach one render (review).
     showNotice: (message: string, asked?: ViewAsk | null) => {
       if (asked && answers.current > asked.answers) return;
-      setNotice(message);
+      sayNotice(message);
       setUndoId(null);
       answered();
     },
@@ -1063,7 +1074,7 @@ export function useCore(speaker?: string) {
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
       if (!online && outbox.current.length + parts.length > 50) {
-        setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
+        sayNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
       }
       for (const part of parts) {
         const message = JSON.stringify({ type: "text", text: part });
@@ -1071,7 +1082,7 @@ export function useCore(speaker?: string) {
         else outbox.current.push(message);
       }
       if (!online) setQueuedCount(outbox.current.length);
-      if (parts.length > 1) { setNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
+      if (parts.length > 1) { sayNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { if (localMic.current) { volume.feed(frame); send(frame); } },
