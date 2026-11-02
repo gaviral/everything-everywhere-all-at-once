@@ -34,11 +34,13 @@ Browser, one page per window (ui/src)
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
+  merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
   Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
   level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
+  save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
@@ -161,6 +163,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 - Unit tests sit beside the code (`cd core && cargo test`): every kind of change through a journal and back, old formats, the gate and room access, per-speaker navigation, placement and auto-fix, Recap slicing and caching, app validation and runs, import parsing and landing.
 - `node scripts/away-check.mjs`, `node scripts/recap-check.mjs`, `node scripts/placing-check.mjs`, `node scripts/picture-check.mjs`, `node scripts/marks-check.mjs`, `node scripts/legible-check.mjs`, `node scripts/attention-check.mjs` and `node scripts/catalog-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, which messages close an open Recap, what a pending thought's pill says and when a landing moves the map, the picture-slot rule (letter until decoded, next copy, capped refetches, one more when the core is back), the mic's states and that every ✦ has a tip, legibility (which points open their words, the two columns, numbers shared between files, and that no CSS cuts text with an ellipsis or clamp unless listed with its reason), the attention rules (reading times, what counts as unseen, where a mark goes after a merge, which words point at "this"), and which card "this" is and when the core is told, with a spoken fix of "Did you mean …?" mirrored.
+- The UI checks load the window's modules through one helper, `scripts/ui-server.mjs`. `node scripts/merges-check.mjs` and `node scripts/save-file-check.mjs` hold the one copy of following merges and of saving a file, and fail on a new copy.
 - `node scripts/notice-check.mjs`: which notices stay until dismissed, how long the rest are up; on the real useCore hook with a stand-in socket, that a notice made in the window drops an older Undo, that the same answer again restarts its time, and that a correction's answer and Undo outlast the window's answer to the view it asked for.
 - Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, someone else's turn in between, the words and where they may land; or a journal up to a thought, for a real miss kept outside the repo. `node scripts/where.mjs data/<map>` prints each thought's thread, with the model's answer when a trace exists.
 - `node scripts/start-check.mjs`: run.sh's pre-build check (`scripts/start.mjs`) reads the key and `PORT` as the core will (environment first, then `.env` as dotenvy reads it) and probes every address the mode binds (a room's LAN address too), so a missing key or a busy port stops the run before the build.

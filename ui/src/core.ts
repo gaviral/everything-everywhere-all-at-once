@@ -9,6 +9,7 @@ import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
 import { failureNotice } from "./action-line";
 import { applyMove, type MoveChange } from "./moves-core";
+import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
@@ -299,14 +300,6 @@ export function jumpTracker() {
 }
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
-
-// Follows merges, as the core does, so late changes land on the surviving thread.
-function resolve(world: World, id: string): string {
-  let current = id;
-  // At most one hop per merge, so a corrupt snapshot with a cycle can't freeze the tab.
-  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[current]; hops--) current = world.merged[current];
-  return current;
-}
 
 // Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
 // when lowercasing keeps the length, so the cut lines up.

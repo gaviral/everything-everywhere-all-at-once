@@ -1,5 +1,5 @@
 // How long a notice stays up. Pure, so scripts/notice-check.mjs can run it without a browser.
-import { LOOK_MS, readMs } from "./attention-core";
+import { readMs } from "./attention-core";
 
 /** The shortest time any notice is up: the time it always had, enough for a short answer ("Back to Rent"). */
 export const SHORTEST_MS = 5000;
@@ -42,8 +42,7 @@ export const REACH_MS = 400 + 1100;
 
 /** How long a slow reader takes to find and read `text`: one look over, then its words at `SLOW_WPM`. */
 export function slowReadMs(text: string): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return LOOK_MS + Math.round((words * 60_000) / SLOW_WPM);
+  return readMs(text, SLOW_WPM);
 }
 
 /** How long a notice with Undo is up: long enough to act on, not just read. A slow reader notices it and reads it with

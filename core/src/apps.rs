@@ -475,15 +475,7 @@ pub fn volume_output(core: &Core, id: String, sound: bool) {
 pub fn command(text: &str) -> Option<String> {
     let text = crate::lead_in(text);
     // Each word, lowercased, with where it ends in the text.
-    let mut words: Vec<(String, usize)> = Vec::new();
-    let mut start = None;
-    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
-        match (c.is_alphanumeric(), start) {
-            (true, None) => start = Some(i),
-            (false, Some(s)) => { words.push((text[s..i].to_lowercase(), i)); start = None; }
-            _ => {}
-        }
-    }
+    let words = crate::word_spans(text);
     let said: Vec<&str> = words.iter().map(|(w, _)| w.as_str()).collect();
     // "Make (me or us) an app", "a new app", "an application"; "a app" too, as speech-to-text can write it.
     let mut at = 1;

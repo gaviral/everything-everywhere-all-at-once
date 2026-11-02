@@ -534,21 +534,27 @@ pub fn lead_in(text: &str) -> &str {
     lead(text, true)
 }
 
-/// `lead_in`, with or without the words that ask.
-fn lead(text: &str, asking: bool) -> &str {
-    // Each word as `words` splits them (a run of letters and digits), and where it ends.
-    let mut spans: Vec<(String, usize)> = Vec::new();
+/// Each word of `text` as `words` splits them (a run of letters and digits), lowercased, with where it ends: what
+/// a rule reads word by word and then cuts the text at.
+pub(crate) fn word_spans(text: &str) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
     let mut start = None;
     for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
         match (c.is_alphanumeric(), start) {
             (true, None) => start = Some(i),
             (false, Some(s)) => {
-                spans.push((text[s..i].to_lowercase(), i));
+                out.push((text[s..i].to_lowercase(), i));
                 start = None;
             }
             _ => {}
         }
     }
+    out
+}
+
+/// `lead_in`, with or without the words that ask.
+fn lead(text: &str, asking: bool) -> &str {
+    let spans = word_spans(text);
     let said: Vec<&str> = spans.iter().map(|(w, _)| w.as_str()).collect();
     let extra: &[&str] = if asking { &ASKING } else { &[] };
     let paused = |end: usize| text[spans[end - 1].1..].trim_start().starts_with(PAUSE);
@@ -1957,6 +1963,17 @@ mod tests {
             ServerMsg::AppsBuild { .. } => "app".into(),
             _ => return None,
         })
+    }
+
+    /// The one word splitter the request rules cut by (`lead_in`, apps' "make an app", catalog's corrections):
+    /// lowercased runs of letters and digits, each with the byte where it ends, so a cut lands on a char boundary.
+    #[test]
+    fn word_spans_are_lowercased_words_with_where_each_ends() {
+        let spans = |text: &str| crate::word_spans(text).into_iter().map(|(w, end)| format!("{w}@{end}")).collect::<Vec<_>>();
+        assert_eq!(spans("Okay, Mom's app!"), ["okay@4", "mom@9", "s@11", "app@15"]);
+        assert_eq!(spans("Café ok"), ["café@5", "ok@8"]);
+        assert!(crate::word_spans(" ,.! ").is_empty());
+        assert_eq!(crate::lead_in("Okay, so make an app that hums").trim_start(), "make an app that hums");
     }
 
     /// Every request the README and the "?" list teach acts through `add_thought`, said alone and after each word

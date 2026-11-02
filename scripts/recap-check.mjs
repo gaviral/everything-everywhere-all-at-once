@@ -5,12 +5,11 @@
 import assert from "node:assert/strict";
 import React from "../ui/node_modules/react/index.js";
 import ReactDOMServer from "../ui/node_modules/react-dom/server.node.js";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 // room.tsx reads the page's address as it loads: this is the app opened alone.
 globalThis.location = new URL("http://localhost:4321/");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { movesAsked, apply } = await server.ssrLoadModule("/src/core.ts");
   const thread = (id) => ({ id, title: `Topic ${id}`, parent_id: null, status: "open", last_point: "", touched_ms: 1,

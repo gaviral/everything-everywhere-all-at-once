@@ -2,13 +2,12 @@
 // "Why here": a point and each "While you were away" row can say why its thought went to that thread, on demand.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import React from "../ui/node_modules/react/index.js";
 import ReactDOMServer from "../ui/node_modules/react-dom/server.node.js";
 
 const ui = (path) => readFileSync(new URL(`../ui/src/${path}`, import.meta.url), "utf8");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { whyLine, hoverTitle, WhyHere, WhyContext, whysAfter } = await server.ssrLoadModule("/src/whyhere.tsx");
   const { NotesContext } = await server.ssrLoadModule("/src/chunks.tsx");

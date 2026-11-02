@@ -5,11 +5,10 @@
 // a stand-in for osascript, so no check here or there ever adds a real reminder). A failure says why on the row and
 // offers "Try again"; trying again takes the old reason down.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 globalThis.location = new URL("http://localhost:4321/");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { apply, actionFailed } = await server.ssrLoadModule("/src/core.ts");
   const { actionLine, failureNotice } = await server.ssrLoadModule("/src/action-line.ts");

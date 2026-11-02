@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WhyHere } from "./whyhere";
 import type { World } from "./core";
+import { resolveMerged as resolve } from "./merges";
 import { TIPS } from "./Tips";
 import "./away.css";
 
@@ -27,11 +28,6 @@ export type AwayItem = {
   at: number;
   sourceAt?: number;
 };
-
-function resolve(world: World, id: string): string {
-  for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
-  return id;
-}
 
 /** A map diff, not a recap request. Only this speaker's newly placed words count. */
 export function awayItems(before: World, after: World, me: string, observed: Map<string, number> = new Map()): AwayItem[] {

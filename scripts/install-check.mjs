@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import { SVG, PAPER } from "./icons.mjs";
 
 const root = new URL("../", import.meta.url);
@@ -89,8 +89,7 @@ for (const path of ["/manifest.webmanifest", favicon, touch, ...manifest.icons.m
   assert.ok(exact.includes(path) || prefixes.some((p) => path.startsWith(p)), `the core serves ${path} to a guest without the code`);
 }
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { installWay, hintText, temporaryAddress, eligible, placedSince, shownBefore, rememberShown } = await server.ssrLoadModule("/src/Install.tsx");
   const { buildInTheWay } = await server.ssrLoadModule("/src/Apps.tsx");

@@ -5,7 +5,7 @@
 // pixels were measured at 1440 × 900 in both themes when these landed).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url), "utf8");
 const styles = src("styles.css"), palace = src("palace.css"), app = src("App.tsx");
@@ -41,8 +41,7 @@ assert.ok(rule(styles, ".chip.waiting") && !/amber/.test(rule(styles, ".chip.wai
 const amberChips = [...styles.matchAll(/(\.chip[.\w-]*)\s*\{[^}]*var\(--amber/g)].map(([, s]) => s);
 assert.deepEqual(amberChips, [".chip.dropped"], "the only amber chip on a card is left off");
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { headClickToggles, showsLiveLine } = await server.ssrLoadModule("/src/ux-rules.ts");
   // 4. The whole head opens the card, except where a click already means something else or ends a selection.

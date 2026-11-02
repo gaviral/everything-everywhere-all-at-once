@@ -6,11 +6,11 @@
 // main.rs `the_models_on_the_first_screen_are_the_ones_each_step_asks`).
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 globalThis.location = new URL("http://localhost:4321/");
 const root = new URL("../ui", import.meta.url).pathname;
-const server = await createServer({ root, server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const site = await server.ssrLoadModule("/src/site.ts");
   const { actionLine, dismissable } = await server.ssrLoadModule("/src/action-line.ts");

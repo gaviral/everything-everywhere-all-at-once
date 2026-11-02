@@ -2,8 +2,9 @@
 //! the journal, and respected by the refiner. No test calls a model.
 
 use super::*;
+use crate::world::fixtures::{thought, thread};
 use crate::catalog::{self, Act};
-use crate::world::{Journal, ThreadStatus};
+use crate::world::Journal;
 use std::collections::HashMap;
 
 struct Fixture {
@@ -81,39 +82,6 @@ fn drain(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoin
 
 fn undoable(lines: &[String]) -> u64 {
     lines.iter().find_map(|l| l.strip_prefix("undoable ")).and_then(|id| id.parse().ok()).expect("an Undo offer")
-}
-
-fn thread(id: &str, title: &str, touched_ms: u64) -> Thread {
-    Thread {
-        id: id.into(),
-        title: title.into(),
-        parent_id: None,
-        status: ThreadStatus::Open,
-        last_point: String::new(),
-        touched_ms,
-        tags: Vec::new(),
-        picture: None,
-        dropped_by: String::new(),
-    }
-}
-
-fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
-    Thought {
-        id: id.into(),
-        speaker: "you".into(),
-        text: text.into(),
-        point: text.into(),
-        thread_id: Some(thread.into()),
-        placed: true,
-        unclear: String::new(),
-        guess: String::new(),
-        heard: String::new(),
-        fixed: String::new(),
-        complete: true,
-        at_ms,
-        place_ms: Some(1_000),
-        decided: false,
-    }
 }
 
 /// The demo's slip: "Learn to throw on the wheel" landed on Garden, the speaker with it; Pottery class is elsewhere.

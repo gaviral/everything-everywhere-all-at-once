@@ -3,7 +3,8 @@
 //! model: the safety net's check of an answer is tested on its own.
 
 use super::*;
-use crate::world::{Action, ItemStatus, Journal, Thread, ThreadStatus};
+use crate::world::fixtures::{thought, thread};
+use crate::world::{Action, ItemStatus, Journal, ThreadStatus};
 
 struct Fixture {
     core: Arc<Core>,
@@ -86,39 +87,6 @@ fn drain(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoin
         });
     }
     out
-}
-
-fn thread(id: &str, title: &str, touched_ms: u64) -> Thread {
-    Thread {
-        id: id.into(),
-        title: title.into(),
-        parent_id: None,
-        status: ThreadStatus::Open,
-        last_point: String::new(),
-        touched_ms,
-        tags: Vec::new(),
-        picture: None,
-        dropped_by: String::new(),
-    }
-}
-
-fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
-    Thought {
-        id: id.into(),
-        speaker: "you".into(),
-        text: text.into(),
-        point: text.into(),
-        thread_id: Some(thread.into()),
-        placed: true,
-        unclear: String::new(),
-        guess: String::new(),
-        heard: String::new(),
-        fixed: String::new(),
-        complete: true,
-        at_ms,
-        place_ms: Some(1_000),
-        decided: false,
-    }
 }
 
 /// Two threads, you on the garden, with one point each said a minute or two ago.

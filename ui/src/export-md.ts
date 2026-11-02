@@ -1,5 +1,7 @@
 import { asIdeas } from "./chunks";
 import { capitalized, type Thought, type Thread, type World } from "./core";
+import { resolveMerged } from "./merges";
+import { saveFile } from "./save-file";
 
 // "Export my map" (or the Export button): the map as a Markdown file, made in this window from the map it already
 // holds, so nothing leaves the machine but the file the person saves. Threads are headings in the map's own order
@@ -80,10 +82,7 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
   const who = (t: Thought) => (speakers.size > 1 ? `${inline(t.speaker)}: ` : "");
 
   // A recap's decisions, each on its thread (a merged one's on the thread it went into), said once.
-  const live = (id: string) => {
-    for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
-    return id;
-  };
+  const live = (id: string) => resolveMerged(world, id);
   // Only from a recap that still matches the map: a thought scratched (or placed) since in its window means the recap
   // spoke of a map that's gone, and an undone decision mustn't come back as **Decided:** (the core redoes it on asking).
   const current = (recap: World["recaps"][number]) => recap.thought_count === undefined || recap.thought_count ===
@@ -166,16 +165,7 @@ export function exportedNotice(e: Exported): string {
   return `Exported ${e.threads} ${e.threads === 1 ? "thread" : "threads"} and ${e.thoughts} ${e.thoughts === 1 ? "thought" : "thoughts"} as ${e.name}`;
 }
 
-/** Hands the file to the browser to save: a link to it in this page's memory, clicked, then let go. */
+/** Hands the file to the browser to save. */
 export function download(e: Exported): void {
-  const url = URL.createObjectURL(new Blob([e.text], { type: "text/markdown;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = e.name;
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  // Revoked a moment later: some browsers start the save only after the click returns.
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(e.text, "text/markdown;charset=utf-8", e.name);
 }

@@ -1,9 +1,8 @@
 // No extra dependencies: run with `node scripts/away-check.mjs`.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { awayItems, spokeAgain, AWAY_AFTER_MS } = await server.ssrLoadModule("/src/Away.tsx");
   const thread = (id, extra = {}) => ({ id, title: id, parent_id: null, status: "open", last_point: "", touched_ms: 100,

@@ -2,10 +2,9 @@
 // The picture-slot rule (ui/src/pictures.ts): the letter tile until a picture decodes, the next copy when one fails,
 // a few spaced fetches and then the tile stays, and one more fetch when the core comes back.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { start, resume, source, decoded, failed, wait, retried, back, RETRY_MS } = await server.ssrLoadModule("/src/pictures.ts");
 

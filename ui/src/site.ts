@@ -5,6 +5,7 @@
 // Pure rules here (scripts/hosted-check.mjs holds them); room.tsx provides the context.
 import { createContext, useContext } from "react";
 import { dated } from "./action-line";
+import { saveFile } from "./save-file";
 
 export type Model = { step: string; model: string };
 export type Site = { hosted: boolean; calendarFile: boolean; sample: boolean; models: Model[] };
@@ -96,13 +97,6 @@ export function icsName(title: string): string {
 export function downloadIcs(action: { id: string; title: string; when: string }): boolean {
   const ics = icsFor(action, new Date());
   if (!ics) return false;
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = icsName(action.title);
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(ics, "text/calendar;charset=utf-8", icsName(action.title));
   return true;
 }
