@@ -53,6 +53,8 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
       frame = requestAnimationFrame(() => {
         target = (found.item_id ? document.getElementById(`item-${found.item_id}`) : null)
           ?? (found.thought_id ? document.getElementById(`point-${found.thought_id}`) : null)
+          // A part said before a pause shows inside the point that carries it on (chunks.tsx).
+          ?? (found.thought_id ? document.querySelector<HTMLElement>(`[data-heads~="${CSS.escape(found.thought_id)}"]`) : null)
           ?? document.getElementById(`thread-${id}`);
         if (!target) return;
         // Make the destination available to keyboard and screen-reader users as well as sighted users.

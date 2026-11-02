@@ -23,7 +23,7 @@ import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
 import { useRevert } from "./revert";
-import { NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
+import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { composerHint, MicButton, micState } from "./MicButton";
@@ -51,15 +51,21 @@ export default function App() {
     const threads = new Set<string>();
     const threadIds = new Set(world.threads.map((thread) => thread.id));
     const mergeCount = Object.keys(world.merged).length;
+    const card = (thought: Thought) => {
+      let id = thought.thread_id;
+      for (let hops = mergeCount; hops > 0 && id && world.merged[id]; hops--) id = world.merged[id];
+      return id;
+    };
+    // Ideas, as the cards count them: a part said before a pause and carried on by a later one is in that one.
+    const carried = carriedIds(world.thoughts, world.notes ?? {}, card);
     let thoughts = 0;
     for (const thought of world.thoughts) {
-      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now()) continue;
-      let id = thought.thread_id;
-      for (let hops = mergeCount; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now() || carried.has(thought.id)) continue;
+      const id = card(thought)!;
       if (threadIds.has(id)) { thoughts++; threads.add(id); }
     }
     return { thoughts, threads: threads.size };
-  }, [world.thoughts, world.threads, world.merged]);
+  }, [world.thoughts, world.threads, world.merged, world.notes]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -1218,13 +1224,26 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
+      {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
+      {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
+      <Fixes thought={thought} on={on} />
+      {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{words}{why && <span className="why">Why here: {why}</span>}</span>}
+    </motion.li>
+  );
+});
+
+/** A point's speech fixes: "✦ fixed" (one tap puts the words back) and "Did you mean …?". */
+function Fixes({ thought, on }: { thought: Thought; on: Handlers }) {
+  return (
+    <>
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
@@ -1248,11 +1267,9 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
           </span>
         )
       )}
-      {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{words}{why && <span className="why">Why here: {why}</span>}</span>}
-    </motion.li>
+    </>
   );
-});
+}
 
 // A real YYYY-MM-DD day, as the core checks it: "Saturday" or "2026-11-31" (which a Date rolls over to December 1) isn't one.
 function day(when: string): Date | null {

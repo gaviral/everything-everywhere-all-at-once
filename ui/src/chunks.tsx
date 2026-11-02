@@ -39,6 +39,19 @@ export function asIdeas(thoughts: Thought[], notes: Record<string, Note>): Idea[
   return ideas;
 }
 
+/** The thoughts that show inside a later one (`asIdeas`), card by card (`card`: a thought's card), so a count of
+ *  thoughts can count ideas, as the cards do. */
+export function carriedIds(thoughts: Thought[], notes: Record<string, Note>, card: (t: Thought) => string | null): Set<string> {
+  const byCard = new Map<string, Thought[]>();
+  for (const t of thoughts) {
+    const id = card(t);
+    if (id !== null && notes[t.id]?.continues) byCard.set(id, []);
+  }
+  if (!byCard.size) return new Set();
+  for (const t of thoughts) byCard.get(card(t) ?? "")?.push(t);
+  return new Set([...byCard.values()].flatMap((list) => asIdeas(list, notes).flatMap((idea) => idea.heads.map((h) => h.id))));
+}
+
 /** A card's ideas, recomputed only when its thoughts or the notes change. */
 export function useIdeas(thoughts: Thought[]): Idea[] {
   const notes = useContext(NotesContext);
@@ -69,13 +82,17 @@ export function PointNote({ thought, heads, unlink }: { thought: Thought; heads:
     <>
       {head && (
         // As "✦ fixed": quiet until you look; hover or focus says what a tap does.
-        <button type="button" className="chunk-mark" data-tip={CHUNK_TIPS.joined} title="" onClick={() => unlink(thought.id)}
-          aria-label={`Joined across a pause. Keep “${head.text.trim()}” as its own point`}>
+        // The button goes with the link: focus moves to the point first, which stays, so the keyboard isn't left at
+        // the top of the page.
+        <button type="button" className="chunk-mark" data-tip={CHUNK_TIPS.joined} title=""
+          onClick={(event) => { event.currentTarget.closest<HTMLElement>("li[tabindex]")?.focus(); unlink(thought.id); }}
+          aria-label={`Joined across a pause; keep apart: “${head.text.trim()}” as its own point`}>
           <span aria-hidden="true" data-tip={CHUNK_TIPS.joined}>✦</span> <span>joined</span><span>keep apart</span>
         </button>
       )}
       {note.assumed && (
-        <span className="assumed" data-tip={CHUNK_TIPS.assumed} title="">
+        // Focusable, so the keyboard reaches its tip as a pointer does (Tips.tsx shows it on focus).
+        <span className="assumed" data-tip={CHUNK_TIPS.assumed} title="" tabIndex={0}>
           <span aria-hidden="true" data-tip={CHUNK_TIPS.assumed}>✦</span> Assumed {note.assumed}
         </span>
       )}

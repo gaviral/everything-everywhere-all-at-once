@@ -80,8 +80,16 @@ impl Heads<'_> {
             _ => None,
         }?;
         let thread = world.resolve(head.thread_id.as_deref()?);
-        (head.at_ms < thought.at_ms && world.thread(&thread).is_some()).then(|| Thought { thread_id: Some(thread), ..head.clone() })
+        // Already carried on by another turn (one that failed to place, retried after another joined it): one idea
+        // has one carrier, or the map could show neither the second link nor a way to take it apart.
+        let free = carriers(world, &head.id).next().is_none();
+        (free && head.at_ms < thought.at_ms && world.thread(&thread).is_some()).then(|| Thought { thread_id: Some(thread), ..head.clone() })
     }
+}
+
+/// The thoughts on the map that carry on `head` (`Note::continues`).
+pub(crate) fn carriers<'a>(world: &'a World, head: &'a str) -> impl Iterator<Item = &'a Thought> + 'a {
+    world.thoughts.iter().filter(move |t| world.notes.get(&t.id).is_some_and(|n| n.continues == head))
 }
 
 /// The note kept for a placement; `moved`: it took the thought away from where the speaker was (see `moved`). An
@@ -123,10 +131,16 @@ pub(crate) fn moved(world: &World, changes: &[Change], landed: &str, was: Option
 }
 
 /// "Not one idea": the thought stops carrying on the words before it, and shows as a point of its own again where
-/// it is. The rest of its note stays.
+/// it is. Its point said both parts ("I need to pay the electric bill"), the reading just taken back, so it becomes
+/// its own words ("electric bill"); the rest of its note stays.
 pub fn unlink(core: &Core, thought_id: &str) {
-    let Some(note) = core.snapshot().notes.get(thought_id).cloned().filter(|n| !n.continues.is_empty()) else { return };
-    core.commit(vec![Change::ThoughtNoted { thought_id: thought_id.into(), note: Note { continues: String::new(), ..note } }]);
+    let world = core.snapshot();
+    let Some(note) = world.notes.get(thought_id).cloned().filter(|n| !n.continues.is_empty()) else { return };
+    let own = world.thoughts.iter().find(|t| t.id == thought_id).map(|t| t.text.trim().to_string()).filter(|text| !text.is_empty());
+    drop(world);
+    let mut changes = vec![Change::ThoughtNoted { thought_id: thought_id.into(), note: Note { continues: String::new(), ..note } }];
+    changes.extend(own.map(|point| Change::ThoughtRepointed { thought_id: thought_id.into(), point }));
+    core.commit(changes);
 }
 
 #[cfg(test)]
@@ -220,6 +234,14 @@ mod tests {
         // The rest of a turn cut in two shares its time: it can't carry on its own first part.
         let rest = Thought { at_ms: 43_000, ..new_turn(0) };
         assert!(heads(&w, &rest, None).joined(&w, &rest, "before").is_none());
+        // Already carried on by another turn (this one failed to place, and its retry still sees `a` as just before):
+        // one idea has one carrier.
+        let mut carried = w.clone();
+        carried.thoughts.push(said("c", "T1", 50, true));
+        carried.apply(&Change::ThoughtNoted { thought_id: "c".into(), note: Note { continues: "a".into(), ..Note::default() } });
+        let retry = super::Heads { before: Some(&carried.thoughts[0]), left: None };
+        assert!(retry.joined(&carried, &turn, "before").is_none());
+        assert_eq!(super::Heads { before: Some(&w.thoughts[0]), left: None }.joined(&w, &turn, "before").map(|t| t.id), Some("a".into()));
         // Merged meanwhile: it follows the merge.
         let mut merged = w.clone();
         merged.apply(&Change::ThreadMerged { from: "T1".into(), into: "T3".into() });
@@ -291,5 +313,62 @@ mod tests {
         let (_, replayed) = crate::world::Journal::open(&path).unwrap();
         assert!(!replayed.notes.contains_key("b"));
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// "I need to pay the" + "electric bill" read as one point, "I need to pay the electric bill"; kept apart, that
+    /// reading goes: the second part says its own words, here and as the card's last point (Sol review, 2026-11-01).
+    #[test]
+    fn kept_apart_the_second_part_says_only_its_own_words() {
+        let path = std::env::temp_dir().join(format!("e2a2o-chunks-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1");
+        w.thoughts[0].text = "I need to pay the".into();
+        w.thoughts[1].text = "electric bill.".into();
+        w.thoughts[1].point = "I need to pay the electric bill".into();
+        w.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "I need to pay the electric bill".into(), at_ms: 2 });
+        let core = crate::Core::test(journal, w);
+        core.commit(vec![Change::ThoughtNoted { thought_id: "b".into(), note: Note { continues: "a".into(), ..Note::default() } }]);
+        super::unlink(&core, "b");
+        let after = core.snapshot();
+        assert_eq!(after.thoughts[1].point, "electric bill.");
+        assert_eq!(after.thread("T1").unwrap().last_point, "electric bill.");
+        assert!(!after.notes.contains_key("b"));
+        // Nothing joined: nothing changes.
+        super::unlink(&core, "a");
+        assert_eq!(core.snapshot().thoughts[0].point, "point a");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Scratch that" takes a joined part off the map; Undo brings it back joined, as the window still shows it
+    /// (Sol review, 2026-11-01).
+    #[test]
+    fn a_joined_part_scratched_and_brought_back_is_joined_again() {
+        let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1");
+        w.apply(&Change::ThoughtNoted { thought_id: "b".into(), note: Note { continues: "a".into(), ..Note::default() } });
+        let b = w.thoughts[1].clone();
+        w.apply(&Change::ThoughtSkipped { thought_id: "b".into() });
+        assert!(super::carriers(&w, "a").next().is_none(), "off the map, it carries nothing on");
+        w.apply(&Change::ThoughtAdded { thought: b });
+        assert_eq!(w.notes["b"].continues, "a");
+    }
+
+    /// A yes to "Did you mean Muse Spark?" on the first part also fixes the point that says both parts.
+    #[test]
+    fn a_fix_to_a_part_reaches_the_point_that_carries_it() {
+        let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1");
+        w.thoughts[0].text = "ask muse bark about".into();
+        w.thoughts[0].unclear = "muse bark".into();
+        w.thoughts[0].guess = "Muse Spark".into();
+        w.thoughts[1].point = "Ask muse bark about the lease".into();
+        w.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "Ask muse bark about the lease".into(), at_ms: 2 });
+        w.apply(&Change::ThoughtNoted { thought_id: "b".into(), note: Note { continues: "a".into(), ..Note::default() } });
+        w.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() });
+        assert_eq!(w.thoughts[1].point, "Ask Muse Spark about the lease");
+        assert_eq!(w.thread("T1").unwrap().last_point, "Ask Muse Spark about the lease");
+        // A fix made without asking, taken back: the words as heard there too.
+        w.thoughts[0].heard = "muse bark".into();
+        w.thoughts[0].fixed = "Muse Spark".into();
+        w.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() });
+        assert_eq!(w.thoughts[1].point, "Ask muse bark about the lease");
     }
 }

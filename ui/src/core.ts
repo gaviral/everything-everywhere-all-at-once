@@ -144,6 +144,7 @@ type Change =
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
   | { type: "thought_noted"; thought_id: string; note: Note }
+  | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
@@ -335,6 +336,8 @@ export function apply(world: World, raw: Change): World {
       else if (world.thoughts.some((t) => t.id === c.thought_id)) notes[c.thought_id] = c.note;
       return { ...world, notes };
     }
+    case "thought_repointed":
+      return repoint(world, c.thought_id, () => c.point);
     case "thread_removed": {
       // As the core: only an empty thread, and nobody stays on it.
       if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
@@ -406,15 +409,30 @@ export function apply(world: World, raw: Change): World {
         heard: undo ? "" : t.heard,
         fixed: undo ? "" : t.fixed,
       };
-      return {
+      const corrected = {
         ...world,
         thoughts: world.thoughts.map((x) => (x.id === t.id ? next : x)),
         threads: world.threads.map((th) =>
           th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next.point } : th,
         ),
       };
+      // As the core: a point that carries these words on across a pause (chunks.tsx) takes the same swap.
+      const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
+      return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
     }
   }
+}
+
+/** Thought `id`'s point becomes `point(old)`; the thread's last point, a copy, keeps in step (the core's `repoint`). */
+function repoint(world: World, id: string, point: (old: string) => string): World {
+  const t = world.thoughts.find((x) => x.id === id);
+  if (!t) return world;
+  const next = point(t.point);
+  return {
+    ...world,
+    thoughts: world.thoughts.map((x) => (x.id === id ? { ...x, point: next } : x)),
+    threads: world.threads.map((th) => (th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next } : th)),
+  };
 }
 
 /**

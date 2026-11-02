@@ -220,6 +220,8 @@ pub enum Change {
     ThoughtSkipped { thought_id: String },
     /// What the placer read into a placed thought (chunks.rs); an empty note takes it away ("not one idea").
     ThoughtNoted { thought_id: String, note: crate::chunks::Note },
+    /// A point said anew: a joined thought taken apart says only its own words again (chunks.rs `unlink`).
+    ThoughtRepointed { thought_id: String, point: String },
     /// An empty thread taken back with the words that started it, with nowhere to merge it (catalog.rs: "new thread
     /// about …" on an empty map, then Undo): it leaves the map, and nobody is on it any more. Only while it holds no
     /// thought and no branch; this journal keeps it.
@@ -307,10 +309,9 @@ impl World {
                     self.thoughts.insert(i + 1, rest.clone());
                 }
             }
-            Change::ThoughtSkipped { thought_id } => {
-                self.thoughts.retain(|t| &t.id != thought_id);
-                self.notes.remove(thought_id);
-            }
+            // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
+            // as it was (chunks.rs); a note for a thought off the map shows nothing.
+            Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
             Change::ThoughtNoted { thought_id, note } => {
                 if note.is_empty() {
                     self.notes.remove(thought_id);
@@ -318,6 +319,7 @@ impl World {
                     self.notes.insert(thought_id.clone(), note.clone());
                 }
             }
+            Change::ThoughtRepointed { thought_id, point } => self.repoint(thought_id, |_| point.clone()),
             Change::ThreadRemoved { thread_id } => {
                 let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
@@ -459,13 +461,16 @@ impl World {
         let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
         let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
         let to = if with.is_empty() { t.guess.clone() } else { with.to_string() };
+        let mut swapped = None;
         if accept && !t.unclear.is_empty() && !to.is_empty() {
             t.text = swap(&t.text, &t.unclear, &to);
             t.point = swap(&t.point, &t.unclear, &to);
+            swapped = Some((t.unclear.clone(), to));
         }
         if !accept && !t.heard.is_empty() && !t.fixed.is_empty() {
             t.text = swap(&t.text, &t.fixed, &t.heard);
             t.point = swap(&t.point, &t.fixed, &t.heard);
+            swapped = Some((t.fixed.clone(), t.heard.clone()));
             t.heard.clear();
             t.fixed.clear();
         }
@@ -476,6 +481,26 @@ impl World {
         if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
             if th.last_point == old_point {
                 th.last_point = point;
+            }
+        }
+        // A point that carries these words on across a pause says them too (chunks.rs): the same swap there.
+        if let Some((from, to)) = swapped {
+            let carriers: Vec<String> = crate::chunks::carriers(self, thought_id).map(|t| t.id.clone()).collect();
+            for id in carriers {
+                self.repoint(&id, |p| swap(p, &from, &to));
+            }
+        }
+    }
+
+    /// Thought `id`'s point becomes `point(old)`; the thread's last point, a copy, keeps in step.
+    fn repoint(&mut self, id: &str, point: impl FnOnce(&str) -> String) {
+        let Some(t) = self.thoughts.iter_mut().find(|t| t.id == id) else { return };
+        let new = point(&t.point);
+        let old = std::mem::replace(&mut t.point, new);
+        let (new, thread_id) = (t.point.clone(), t.thread_id.clone());
+        if let Some(th) = thread_id.and_then(|id| self.thread_mut(&id)) {
+            if th.last_point == old {
+                th.last_point = new;
             }
         }
     }
@@ -1007,6 +1032,7 @@ mod tests {
                 thought_id: "b".into(),
                 note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into() },
             },
+            Change::ThoughtRepointed { thought_id: "b".into(), point: "Ask Muse Spark about b".into() },
             Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() },
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget".into() },
             Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
@@ -1099,6 +1125,7 @@ mod tests {
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
                 | Change::ThoughtNoted { .. }
+                | Change::ThoughtRepointed { .. }
                 | Change::ThreadRemoved { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
@@ -1113,7 +1140,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 30, "one of each kind of change");
+        assert_eq!(kinds.len(), 31, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
