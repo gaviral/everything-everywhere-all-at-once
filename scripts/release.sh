@@ -4,7 +4,7 @@
 # nothing unless it's run with --publish and the repo's name, the same retype GitHub's own dialog asks for.
 #   sh scripts/release.sh                                  check only; safe any time
 #   VIDEO_FILE=demo.mp4 VIDEO_URL=https://... sh scripts/release.sh     also the demo video (3:00 at most, opens logged out)
-#   ACCEPT_COMMITS="355cc7d" sh scripts/release.sh         commits whose message paths the owner chose to keep
+#   ACCEPT_COMMITS="355cc7d" sh scripts/release.sh         commits the owner chose to keep as they are (message paths, wording)
 #   sh scripts/release.sh --publish OWNER/REPO             check, make public, confirm it opens logged out
 # FAIL lines block --publish; WARN lines are for the owner to read first.
 set -u
@@ -39,6 +39,8 @@ else fail "can't fetch origin's main (network or sign-in)"; fi
 [ -z "$(git status --porcelain)" ] && pass "nothing uncommitted" || fail "uncommitted changes: commit or stash them; the checks must match what's pushed"
 
 # 2. Everything precheck holds (keys, paths, Meta-only models, tests, claims, links inside the repo).
+# Without ui/node_modules precheck only warns that it skipped the UI build and checks; here that blocks.
+[ -d ui/node_modules ] && pass "UI dependencies installed, so precheck builds and checks the UI" || fail "no ui/node_modules: precheck would skip the UI build and checks; run (cd ui && npm ci), then this again"
 pre=$(sh scripts/precheck.sh 2>&1); pre_status=$?
 if [ $pre_status = 0 ]; then pass "precheck passes"; else fail "precheck fails:"; echo "$pre" | grep '^FAIL' | indent; fi
 echo "$pre" | grep '^WARN' | indent
@@ -58,6 +60,17 @@ if [ -z "$blocked" ]; then pass "no commit message on $ref names a local path${a
 else
   fail "commit messages on $ref name local paths (reword them before public, or list them in ACCEPT_COMMITS):"
   for h in $blocked; do echo "$h $(git log -1 --format=%s "$h" | cut -c1-110)" | indent; done
+fi
+# precheck reads only today's files; a line removed since is still in history. Health wording in any added line blocks.
+health=$(git log -p --format='commit %h' "$ref" -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src | perl scripts/health-words.pl --history)
+hblocked=""
+for h in $(echo "$health" | awk -F: 'NF { print $1 }' | sort -u); do
+  case " ${ACCEPT_COMMITS:-} " in *" $h "*) accepted="$accepted $h" ;; *) hblocked="$hblocked $h" ;; esac
+done
+if [ -z "$hblocked" ]; then pass "no health wording in any commit on $ref"
+else
+  fail "health wording in history on $ref (rewrite these commits before public, or list them in ACCEPT_COMMITS):"
+  for h in $hblocked; do echo "$health" | grep "^$h: " | indent; done
 fi
 [ -z "$accepted" ] || warn "kept by choice (ACCEPT_COMMITS):$accepted"
 others=$(git log --format='%ae%n%ce' "$ref" | sort -u | grep -v '@users\.noreply\.github\.com$')
