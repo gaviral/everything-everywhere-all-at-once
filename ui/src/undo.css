@@ -3,3 +3,5 @@
 .notice .undo { font-size: 13px; font-weight: 600; line-height: 1.4; text-decoration: underline; text-underline-offset: 2px; }
 /* The key, beside the word, quieter: learned while the notice is up, so the notice can go. */
 .notice .undo kbd { margin-left: 4px; font: inherit; font-weight: 400; opacity: .7; text-decoration: none; display: inline-block; }
+/* Away from the core: faded and not pressable, as the window's other core buttons are (.mic:disabled). */
+.notice .undo:disabled { opacity: .5; cursor: default; }

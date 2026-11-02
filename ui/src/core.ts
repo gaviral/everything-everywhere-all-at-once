@@ -897,7 +897,8 @@ export function useCore(speaker?: string) {
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
-    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
+    undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
     undoLast: useCallback(() => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo_last" })); }, [sendOrWarn]),
     // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.

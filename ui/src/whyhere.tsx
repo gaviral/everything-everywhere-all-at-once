@@ -57,7 +57,7 @@ export function WhyHere({ thoughtId, auto = false }: { thoughtId: string; auto?:
   return (
     <span ref={box} className="why" tabIndex={-1} aria-live="polite" aria-busy={line?.pending || undefined}>
       {!line && <button type="button" className="why-ask" onClick={asking}>Why here?</button>}
-      {line && <span className={line.failed ? "why-failed" : undefined}>{line.text}</span>}
+      {line && <span className={line.failed ? "why-failed" : line.pending ? "why-wait" : undefined}>{line.text}</span>}
       {line?.failed && <> <button type="button" className="why-ask" onClick={asking}>Try again</button></>}
     </span>
   );

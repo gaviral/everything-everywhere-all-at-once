@@ -23,6 +23,7 @@ Browser, one page per window (ui/src)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
+  feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
