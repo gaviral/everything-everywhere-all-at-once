@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Thought, Thread } from "./core";
 import { moveTargets, typedTitle } from "./moves-core";
+import { titleTap } from "./ux-rules";
 import "./moves.css";
 
 // Move, rename and delete on the map (core/src/moves.rs): a point's Move opens a list of threads to send it to (type to
@@ -168,9 +169,10 @@ export function useDropPoint(thread: string) {
   };
 }
 
-/** A thread's title; a click (or Enter on it) edits it in place. Enter or leaving the field keeps the new title, Esc
+/** A thread's title; a click (or Enter on it) edits it in place, and so does a long press or a double tap on touch,
+ *  where a tap opens or folds the card instead (`onOpen`, ux-rules.ts `titleTap`). Enter or leaving the field keeps the new title, Esc
  *  keeps the old one, and an unchanged or empty title sends nothing. */
-export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }) {
+export function ThreadTitle({ thread, depth, onOpen }: { thread: Thread; depth: number; onOpen?: (event: React.MouseEvent) => void }) {
   const moves = useContext(MovesContext);
   const [editing, setEditing] = useState(false);
   const done = useRef(false);
@@ -181,6 +183,8 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   // on from its card. Leaving the field by click or Tab keeps focus where it went.
   const refocus = useRef(false);
   const button = useRef<HTMLButtonElement>(null);
+  // The press a click ends: its pointer and when it went down (a long press renames, a tap opens).
+  const press = useRef({ type: "", at: 0 });
   useLayoutEffect(() => {
     if (!editing && refocus.current) {
       refocus.current = false;
@@ -196,6 +200,8 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
     const title = typed === null ? null : typedTitle(typed, before.current);
     if (title) moves.rename(thread.id, title);
   };
+  // Started inside the press's own handler, so a phone raises its keyboard for the field.
+  const rename = () => { if (editing) return; done.current = false; before.current = thread.title; setEditing(true); };
   if (editing) {
     return (
       <div {...heading}>
@@ -213,7 +219,14 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   return (
     <div {...heading}>
       <button ref={button} type="button" className="title-button" title="Rename"
-        onClick={() => { done.current = false; before.current = thread.title; setEditing(true); }}>{thread.title}</button>
+        onPointerDown={(event) => { press.current = { type: event.pointerType, at: performance.now() }; }}
+        // A long press on Android is a context menu, not a click: it renames there too.
+        onContextMenu={(event) => { if (press.current.type === "touch" || press.current.type === "pen") { event.preventDefault(); rename(); } }}
+        onClick={(event) => {
+          if (titleTap(press.current.type, event.detail, performance.now() - press.current.at) === "open") { onOpen?.(event); return; }
+          rename();
+        }}
+        onDoubleClick={rename}>{thread.title}</button>
     </div>
   );
 }
