@@ -6,6 +6,7 @@ mod apple;
 mod apps;
 mod asr;
 mod catalog;
+mod chunks;
 mod clock;
 mod explain;
 mod find;
@@ -1217,6 +1218,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
                 Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
+                Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
                 Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),

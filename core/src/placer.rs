@@ -30,7 +30,13 @@ complete: false if the thought trails off unfinished (for example \"I need to pa
 dropped: ids of other threads the speaker clearly left unfinished mid-thought, else empty. \
 unclear: words that look mistranscribed, such as a near miss of a name on the map, else an empty string. \
 guess: what those words most likely were, judging by the context, else an empty string. \
-sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. Answer with JSON only.";
+sure: true only if the context leaves no doubt about the guess (for example the right name is already on the map), else false. \
+joins: \"before\" if the new thought carries on the words said just before, cut off from them by a pause: it finishes that sentence, \
+or can't stand alone without it (\"the one on Main Street\" right after naming a class); \"unfinished\" if it finishes the words left unfinished; \
+else \"none\". A sentence that stands on its own, or a decision, is \"none\", even on the same topic. On a join, point says the whole idea, both parts. \
+assumed: if where it goes rests on a reading the words leave open (what \"it\" or \"that\" means, which of two threads is meant), \
+that reading in at most 8 words, such as \"'it' is the pottery class\", else an empty string. \
+why: why it goes there, in at most 10 words, naming the words that show it, such as \"names the lease\", never an id. Answer with JSON only.";
 
 /// A skip never sets aside a turn longer than this, whatever the model says: filler is short.
 const SKIP_MAX_WORDS: usize = 8;
@@ -122,6 +128,15 @@ struct Placement {
     guess: String,
     #[serde(default)]
     sure: bool,
+    /// "before" or "unfinished": it carries on those words, cut off by a pause (chunks.rs).
+    #[serde(default)]
+    joins: String,
+    /// A reading the words left open that decided where it goes.
+    #[serde(default)]
+    assumed: String,
+    /// Why it goes there, in a few words.
+    #[serde(default)]
+    why: String,
 }
 
 fn yes() -> bool {
@@ -479,6 +494,10 @@ fn traced(
         "landed_title": landed.as_deref().and_then(title_of),
         "new": changes.iter().any(|c| matches!(c, Change::ThreadAdded { .. })),
         "point": point,
+        "note": changes.iter().find_map(|c| match c {
+            Change::ThoughtNoted { note, .. } => Some(note),
+            _ => None,
+        }),
         "rest": rest,
     })
 }
@@ -630,13 +649,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // A short turn right after a question may answer it ("Yeah."). The points above often drop the
     // "?", so the question goes in as said; without it the model sets the answer aside as filler.
     // The latest said before it, by time: imported points land last in the list, with their old times.
-    let question = world
-        .thoughts
-        .iter()
-        .take_while(|t| t.id != thought.id)
-        .filter(|t| t.at_ms <= thought.at_ms)
-        .max_by_key(|t| t.at_ms)
-        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS);
+    let question = just_asked(world, thought);
     let asked = question.map(|t| format!("Just asked: \"{}\"\n", t.text.trim())).unwrap_or_default();
     // What the speaker said just before, word for word, and where it went: a thread's title and last point say
     // what it's about, not what was just said, so a turn on "the cursor thing" right after one on a coding tool's
@@ -644,15 +657,11 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // before counts: in a real session turns came a median 31 s apart (9 s at the quarter), and one said longer
     // ago than `JUST_BEFORE_MS` is context the map's points already give. Left out only when it's that same turn
     // as the question just asked, which is already there; another speaker's question doesn't hide it.
-    let before = world
-        .thoughts
-        .iter()
-        .take_while(|t| t.id != thought.id)
-        .filter(|t| t.placed && t.speaker == thought.speaker && t.at_ms <= thought.at_ms)
-        .max_by_key(|t| t.at_ms)
-        .filter(|t| thought.at_ms.saturating_sub(t.at_ms) <= JUST_BEFORE_MS && question.is_none_or(|q| q.id != t.id))
-        .and_then(|t| Some(format!("Said just before (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim())))
-        .unwrap_or_default();
+    // Words left unfinished earlier, which this may finish (chunks.rs): "I never finish my", a tangent, "Sentences."
+    let heads = crate::chunks::heads(world, thought, question);
+    let quote = |label: &str, t: &Thought| Some(format!("{label} (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim()));
+    let before = heads.before.and_then(|t| quote("Said just before", t)).unwrap_or_default();
+    let left = heads.left.and_then(|t| quote("Left unfinished", t)).unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
@@ -665,7 +674,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         "prompt_cache_key": "e2a2o-placer",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{before}{starts}NEW THOUGHT: \"{}\"", thought.text)},
+            {"role": "user", "content": format!("Threads:\n{threads}\nActive thread: {active}\n{names}{asked}{before}{left}{starts}NEW THOUGHT: \"{}\"", thought.text)},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "Placement", "schema": {
             "type": "object",
@@ -680,11 +689,26 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
                 "dropped": {"type": "array", "items": {"type": "string"}},
                 "unclear": {"type": "string"},
                 "guess": {"type": "string"},
-                "sure": {"type": "boolean"}
+                "sure": {"type": "boolean"},
+                "joins": {"type": "string", "enum": ["none", "before", "unfinished"]},
+                "assumed": {"type": "string"},
+                "why": {"type": "string"}
             },
-            "required": ["action", "thread_id", "title", "parent_id", "point", "split", "complete", "dropped", "unclear", "guess", "sure"]
+            "required": ["action", "thread_id", "title", "parent_id", "point", "split", "complete", "dropped", "unclear", "guess", "sure", "joins", "assumed", "why"]
         }}}
     })
+}
+
+/// The latest thing said before `thought`, by anyone, when it's a question and the thought is short enough to
+/// answer it ("Yeah.").
+fn just_asked<'a>(world: &'a World, thought: &Thought) -> Option<&'a Thought> {
+    world
+        .thoughts
+        .iter()
+        .take_while(|t| t.id != thought.id)
+        .filter(|t| t.at_ms <= thought.at_ms)
+        .max_by_key(|t| t.at_ms)
+        .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
 }
 
 /// How recent the turn said before must be to go in the prompt as said (see `request`): two minutes.
@@ -788,8 +812,13 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     let fix = |text: &str| if sure { swap(text, &unclear, &guess) } else { text.to_string() };
     let point = fix(if p.point.trim().is_empty() { thought.text.as_str() } else { p.point.trim() });
     let mut changes = Vec::new();
+    // Carrying on words cut off by a pause, it goes where they are, whatever else the answer says: the two halves
+    // are one idea (chunks.rs). Not when the speaker asked for a new thread.
+    let head = if new_thread { None } else { crate::chunks::heads(world, thought, just_asked(world, thought)).joined(world, thought, &p.joins) };
+    let was = world.active_for(speaker).cloned();
 
     let target = match p.action.as_str() {
+        _ if head.is_some() => head.as_ref().and_then(|h| h.thread_id.clone()),
         "new" => None,
         _ if new_thread => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
@@ -835,6 +864,11 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         complete: p.complete,
         place_ms,
     });
+    let why = crate::chunks::why_here(&p.why, &changes);
+    let note = crate::chunks::note(head.as_ref(), &p.assumed, &why, crate::chunks::moved(world, &changes, &thread_id, was.as_ref()));
+    if !note.is_empty() {
+        changes.push(Change::ThoughtNoted { thought_id: thought.id.clone(), note });
+    }
     // Landing late, after the speaker moved on: on the map, but they stay where they are and leave nothing. Nor does
     // it change a thread that has newer words: its last point and whether it was left unfinished stay theirs.
     if moves || !said_since(world, thought, now).any(|t| t.thread_id.as_deref() == Some(thread_id.as_str())) {
@@ -870,6 +904,10 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     }
     changes
 }
+
+#[cfg(test)]
+#[path = "placer_chunks_tests.rs"]
+mod chunks_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1678,6 +1716,10 @@ mod tests {
     /// seconds ago], someone else's turn after it.
     /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread) or "new<T1" (a new branch of T1).
     /// `split`: the turn must (true) or must not (false) be cut in two. `known`: a miss not fixed yet, and why.
+    /// `unfinished`: [thread, words, seconds ago], an earlier turn of the speaker's that trailed off; `trailed`: the
+    /// turn `before` trailed off. `joins`: the words must (true) or must not (false) be linked to a turn before
+    /// (chunks.rs); `assumed`: an assumption must (true) or must not (false) be noted. Their cases are in
+    /// scripts/chunk-cases.jsonl (`ROUTING_CASES=../scripts/chunk-cases.jsonl`).
     #[tokio::test]
     #[ignore]
     async fn routing_cases() {
@@ -1714,12 +1756,20 @@ mod tests {
                     None => landed.clone(),
                 };
                 let split = matches!(rest, Ok(Some(_)));
+                let note = after.notes.get(&id).cloned().unwrap_or_default();
                 let fits = case["want"].as_array().is_some_and(|want| {
                     want.iter().filter_map(|w| w.as_str()).any(|w| w == got || (w == "new" && got.starts_with("new<")))
-                }) && case["split"].as_bool().is_none_or(|s| s == split);
+                }) && case["split"].as_bool().is_none_or(|s| s == split)
+                    && case["joins"].as_bool().is_none_or(|j| j == !note.continues.is_empty())
+                    && case["assumed"].as_bool().is_none_or(|a| a == !note.assumed.is_empty());
                 good += usize::from(fits);
                 let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
-                println!("{} {name} #{run}: {got} \"{title}\"{}", if fits { "ok  " } else { "MISS" }, if split { " (split)" } else { "" });
+                let noted = [("joins", note.continues.as_str()), ("assumed", note.assumed.as_str()), ("why", note.why.as_str())]
+                    .iter()
+                    .filter(|(_, v)| !v.is_empty())
+                    .map(|(k, v)| format!(" {k}: {v}"))
+                    .collect::<String>();
+                println!("{} {name} #{run}: {got} \"{title}\"{}{noted}", if fits { "ok  " } else { "MISS" }, if split { " (split)" } else { "" });
                 let _ = std::fs::remove_dir_all(&dir);
             }
             // A known miss is said, not failed: it waits for its fix (`known` says why and when).
@@ -1762,14 +1812,25 @@ mod tests {
             });
             world.apply(&Change::ThreadTouched { thread_id: field(0), last_point: field(2), at_ms: 0 });
         }
-        // `before`: [thread, words, seconds ago]: a turn said and placed that long before this one.
         let now = crate::now_ms();
+        // `unfinished`: [thread, words, seconds ago]: an earlier turn that trailed off.
+        if let Some(u) = case["unfinished"].as_array() {
+            let thread_id = u[0].as_str().unwrap();
+            let earlier = Thought {
+                text: u[1].as_str().unwrap().into(),
+                at_ms: now - 1000 * u[2].as_u64().unwrap_or(30),
+                ..thought("th-unfinished", "you", Some(thread_id), false)
+            };
+            world.apply(&Change::ThoughtAdded { thought: earlier });
+            world.apply(&Change::ActiveChanged { thread_id: thread_id.into(), speaker: "you".into() });
+        }
+        // `before`: [thread, words, seconds ago]: a turn said and placed that long before this one.
         if let Some(b) = case["before"].as_array() {
             let thread_id = b[0].as_str().unwrap();
             let earlier = Thought {
                 text: b[1].as_str().unwrap().into(),
                 at_ms: now - 1000 * b[2].as_u64().unwrap_or(10),
-                ..thought("th-before", "you", Some(thread_id), true)
+                ..thought("th-before", "you", Some(thread_id), !case["trailed"].as_bool().unwrap_or(false))
             };
             world.apply(&Change::ThoughtAdded { thought: earlier });
             world.apply(&Change::ActiveChanged { thread_id: thread_id.into(), speaker: "you".into() });

@@ -40,6 +40,14 @@ export interface Thought {
   place_ms: number | null;
 }
 
+/** What the placer read into a thought (chunks.tsx): the words it carries on across a pause, an assumption that moved
+ * it, and why it went where it went. Empty fields are left out. */
+export interface Note {
+  continues?: string;
+  assumed?: string;
+  why?: string;
+}
+
 /** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
  * has a capital inside ("iPhone", "eBay") is a name, and stays as it is. */
 export function capitalized(point: string): string {
@@ -112,6 +120,8 @@ export interface World extends AppsWorld {
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
+  /** Thought id → its note (chunks.tsx). */
+  notes?: Record<string, Note>;
   /** Renames and merges the AI wasn't sure of, waiting on their cards (tidy-core.ts). */
   proposals?: Proposal[];
 }
@@ -137,6 +147,8 @@ type Change =
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "thought_noted"; thought_id: string; note: Note }
+  | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
@@ -326,6 +338,15 @@ export function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thought_noted": {
+      // As the core: an empty note takes it away; a note only for a thought that's there.
+      const notes = { ...world.notes };
+      if (!c.note.continues && !c.note.assumed && !c.note.why) delete notes[c.thought_id];
+      else if (world.thoughts.some((t) => t.id === c.thought_id)) notes[c.thought_id] = c.note;
+      return { ...world, notes };
+    }
+    case "thought_repointed":
+      return repoint(world, c.thought_id, () => c.point);
     case "thread_removed": {
       // As the core: only an empty thread, and nobody stays on it.
       if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
@@ -397,15 +418,30 @@ export function apply(world: World, raw: Change): World {
         heard: undo ? "" : t.heard,
         fixed: undo ? "" : t.fixed,
       };
-      return {
+      const corrected = {
         ...world,
         thoughts: world.thoughts.map((x) => (x.id === t.id ? next : x)),
         threads: world.threads.map((th) =>
           th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next.point } : th,
         ),
       };
+      // As the core: a point that carries these words on across a pause (chunks.tsx) takes the same swap.
+      const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
+      return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
     }
   }
+}
+
+/** Thought `id`'s point becomes `point(old)`; the thread's last point, a copy, keeps in step (the core's `repoint`). */
+function repoint(world: World, id: string, point: (old: string) => string): World {
+  const t = world.thoughts.find((x) => x.id === id);
+  if (!t) return world;
+  const next = point(t.point);
+  return {
+    ...world,
+    thoughts: world.thoughts.map((x) => (x.id === id ? { ...x, point: next } : x)),
+    threads: world.threads.map((th) => (th.id === t.thread_id && th.last_point === t.point ? { ...th, last_point: next } : th)),
+  };
 }
 
 /**
@@ -640,6 +676,7 @@ export function useCore(speaker?: string) {
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
+  const unlink = useCallback((thought_id: string) => sendOrWarn(JSON.stringify({ type: "unlink", thought_id })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
@@ -702,7 +739,7 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem, approve, correct, tag,
+    setItem, approve, correct, unlink, tag,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
