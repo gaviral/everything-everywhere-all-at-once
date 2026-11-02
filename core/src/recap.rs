@@ -112,13 +112,15 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         let _guard = core.recap.gate.lock().await;
         let since = slice(&core.snapshot(), period, crate::now_ms()).since_ms;
         // Placement is already in progress; don't pay for a second placement call,
-        // or summarize a thought on the provisional branch it may soon leave. On a refused key nothing is placing.
+        // or summarize a thought on the provisional branch it may soon leave. Without a key that works now (none,
+        // refused, or the hour's calls used up) nothing is placing: the answer says why at once, not after 10 s.
+        let can_place = || core.key().is_ok();
         for _ in 0..40 {
-            if core.key_refused() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
+            if !can_place() || !placing(&core.snapshot(), since, crate::now_ms()) { break; }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         let world = core.snapshot();
-        if !core.key_refused() && placing(&world, since, crate::now_ms()) {
+        if can_place() && placing(&world, since, crate::now_ms()) {
             state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
             return;
         }
@@ -888,6 +890,27 @@ mod tests {
         drop(asked);
         assert!(!waiting.await.unwrap(), "no spare calls left after the wait: no draft");
         assert!(core.snapshot().recaps.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// With the hour's calls used up nothing can be placing: an asked-for recap says so at once, instead of waiting
+    /// 10 s on a thought that can't land and then saying it is still finding its thread.
+    #[tokio::test(start_paused = true)]
+    async fn under_the_hourly_cap_a_recap_says_so_at_once() {
+        let path = std::env::temp_dir().join(format!("e2a2o-recap-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core { key: Some("test".into()), service: crate::model::Service::with_limit(1), ..Core::test(journal, world) });
+        let now = crate::now_ms();
+        let mut world = sample(now);
+        world.thoughts.push(Thought { placed: false, ..thought(7, "T1", now) });
+        *core.world.lock().unwrap() = world.into();
+        core.spend().unwrap();
+        let mut rx = core.updates.subscribe();
+        let started = tokio::time::Instant::now();
+        request(core.clone(), "you".into(), Period::Today);
+        let (message, recap) = ready(&mut rx).await;
+        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+        assert!(recap.is_none() && !message.contains("still finding"), "{message}");
         let _ = std::fs::remove_file(&path);
     }
 
