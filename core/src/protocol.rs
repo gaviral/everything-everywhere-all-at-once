@@ -22,6 +22,11 @@ pub const TAG_MAX: usize = 40;
 /// two thoughts (2 × 6,000 characters × up to 4 bytes ≈ 48 KB with its JSON); a mic frame is 3,840. The default
 /// was 64 MiB, so a room guest could make the core hold gigabytes (256 queued audio frames).
 pub const FRAME_MAX: usize = 64 << 10;
+/// How far from the canvas's origin a place may be, on either axis, in canvas pixels: 260 widths of a 4K screen, far
+/// past where anyone drags, so only a script meets it. Within it an f64 (JavaScript's number) holds a coordinate to
+/// better than a billionth of a pixel, and a script's 1e308 can't turn the canvas's sums (its bounds, a zoom to fit)
+/// into infinity (positions.rs).
+pub const POSITION_MAX: f64 = 1_000_000.0;
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -203,6 +208,16 @@ pub enum ClientMsg {
     Rename { thread_id: String, title: String },
     /// The point's Delete: the thought (with the words it carries on) off the map, with Undo (moves.rs).
     Delete { thought_id: String },
+    /// Put a thread's card or a thought's point (`id`) at `x`, `y` on the canvas, absolute canvas coordinates of its
+    /// top-left within ±`POSITION_MAX`; both null: back to the automatic layout (positions.rs). A person's window or an
+    /// AI participant's alike; never a model call.
+    Position {
+        id: String,
+        #[serde(default)]
+        x: Option<f64>,
+        #[serde(default)]
+        y: Option<f64>,
+    },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

@@ -254,6 +254,16 @@ Choose Import chats (top right), then a ChatGPT or Claude `conversations.json` e
 
 `./run.sh room` sets a fresh 8-character code and puts the core on the local network; without a room it answers only this laptop. A laptop without the code gets only the page, to type the code in, not the map or the pictures. Every window streams its mic through the host's core, one Voice Transcribe session per window, under that person's name. Only the host's own window can approve actions, since they land in the host's apps.
 
+### Places on the canvas
+
+Any window, a person's or an AI participant's, can put a thread's card or a thought's point anywhere on the canvas, and every window gets it; no place calls a model. Over the WebSocket:
+
+- **Put it:** `{"type":"position","id":"T3","x":120.5,"y":-40}`, with a thread's or thought's id and the canvas coordinates of its top-left, each within ±1,000,000. **Back to the automatic layout:** `"x":null,"y":null`.
+- **Every window gets** `{"type":"change","change":{"type":"positioned","id":"T3","x":120.5,"y":-40.0,"by":"Ana","at_ms":…}}`, `by` naming who put it there (two nulls: back in the layout); the snapshot a window opens with holds them all as `positions`, each id's `{x, y, by, at_ms}`.
+- **Refused,** with a note to the sender alone: an id not on the map (a thread merged away too), or one number without the other.
+- **A place goes** when what it placed leaves the map (deleted, merged away); Undo brings that back in the layout.
+- **A drag** sends a step every frame, and each reaches every window at once; the journal keeps at most one line per item every 250 ms, the latest, so a restart opens where the drag ended.
+
 ### The journal
 
 Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then sent to every window; on start the core replays it, so the map opens where you left it. `./run.sh NAME` uses `data/NAME`; plain `./run.sh` uses `data/`.
