@@ -368,7 +368,8 @@ function Canvas({ map, actions, on }: BrickProps) {
     return { box: bounds(boxes), ring: here.key };
   };
   const goalNow = useRef(goal);
-  goalNow.current = () => (following && !drag && !selecting ? goal() : null);
+  // Words being picked or answered keep the view where it is.
+  goalNow.current = () => (following && !drag && !selecting && !picking ? goal() : null);
 
   // Opening: your latest point at reading size, or the whole map when you're nowhere yet; shown once it's there.
   useEffect(() => {
@@ -449,17 +450,22 @@ function Canvas({ map, actions, on }: BrickProps) {
     if (mine && !following && quiet) setFollowing(true);
     else if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
       const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
-      const thread = layout.items.find((i) => i.key === item.key)?.thread ?? threadId;
-      setCues((was) => [...was.filter((cue) => cue.thread !== thread), { key: item.key, thread, title, at: Date.now() }]);
+      setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
   });
   // contract: `pointing` (the guide's): what the Friend points at, `{ thoughtId?, threadId? }`, or null when it stops.
-  // The Spine keeps the one dim (78%) for the rest, so a pointed-at thread never dims twice. Not in contract.ts yet.
-  useEffect(() => (on as unknown as (name: string, listener: (value: unknown) => void) => () => void)("pointing", (value) => {
+  // The Spine keeps the one dim (78%) for the rest, so a pointed-at thread never dims twice; while the view follows your
+  // talk, the target comes into view (a view a hand holds stays where it was left). Not in contract.ts yet.
+  const pointed = useRef<(value: unknown) => void>(() => {});
+  pointed.current = (value) => {
     const target = value as { thoughtId?: string; threadId?: string } | null;
-    const thread = target?.threadId ?? (target?.thoughtId ? map.thoughts.find((t) => t.id === target.thoughtId)?.thread_id : null);
+    const thought = target?.thoughtId ? map.thoughts.find((t) => t.id === target.thoughtId) : undefined;
+    const thread = target?.threadId ?? thought?.thread_id ?? null;
     setPointing(thread ? { thread } : null);
-  }), [on]);
+    const item = thought ? layout.items.find((i) => i.thoughts?.includes(thought.id)) : thread ? layout.byKey.get(`t:${thread}`) : undefined;
+    if (item && following && !camera.comfortable(item.box)) camera.aim(item.box, { ring: item.key });
+  };
+  useEffect(() => (on as unknown as (name: string, listener: (value: unknown) => void) => () => void)("pointing", (value) => pointed.current(value)), [on]);
 
   const seenCues = useCallback((keys: string[]) => setCues((was) => was.filter((cue) => !keys.includes(cue.key))), []);
   const goTo = (cue: Cue) => {

@@ -175,6 +175,7 @@ const { evaluate, until, page: cdp } = page;
 const settle = () => evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`).then(() => sleep(250));
 const go = async (url) => { await cdp("Page.navigate", { url }); await sleep(150); };
 const width = (w, h) => cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600 });
+let closed = false;
 try {
   for (const folder of checked) {
     const info = infos[`./bricks/${folder}/brick.json`];
@@ -378,7 +379,7 @@ try {
       await drag(point, { x: point.x + 60, y: point.y + 260 });
       if (!await until(`document.querySelector(".playground-log").textContent.includes("position th-2 → placed at")`, 3000)) fail("spine", "a drag doesn't ask to place the point");
       if (!await until(`!!document.querySelector(".spine-notch") && !!document.querySelector('.react-flow__node[data-id="p:th-2"] .spine-pinned')`, 2000)) fail("spine", "a point placed by hand leaves no mark on its line, or isn't shown as placed");
-      await evaluate(`document.querySelector('.react-flow__node[data-id="p:th-2"] .spine-tool-pin').click()`);
+      await evaluate(`document.querySelector('.react-flow__node[data-id="p:th-2"] .spine-tool-pin')?.click()`);
       if (!await until(`document.querySelector(".playground-log").textContent.includes("position th-2 → back to the layout") && !document.querySelector(".spine-notch")`, 3000)) fail("spine", "its pin doesn't put it back");
     }
     await evaluate(`document.querySelector('[aria-label="Open Hackathon plan on the map"]').click()`);
@@ -470,7 +471,7 @@ try {
       const cut = await evaluate(`new Promise((resolve) => {
         const viewport = document.querySelector(".react-flow__viewport");
         const before = viewport.style.transform;
-        document.querySelector(".spine-follow").click();
+        document.querySelector(".spine-follow")?.click();
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const first = viewport.style.transform;
           setTimeout(() => resolve({ moved: first !== before, still: viewport.style.transform === first, ring: !!document.querySelector(".spine-cut") }), 300);
@@ -485,7 +486,16 @@ try {
     }
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
   }
-  if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
+  // One brick, as its builder runs it: done here. The browser closes first (an exit inside this try skips the finally,
+  // and left a headless Chrome running after each run).
+  if (only) {
+    closed = true;
+    await page.close();
+    core.close();
+    assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`);
+    console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`);
+    process.exit(0);
+  }
 
   // 6. The app with every brick at its default; then each view brick switched on in the Catalog.
   const appBricks = folders.filter((f) => !f.startsWith("_")).map((f) => infos[`./bricks/${f}/brick.json`]).filter(Boolean);
@@ -612,8 +622,7 @@ try {
     if (await evaluate(`!!document.querySelector(".level-meter")`)) fail("Level meter", "shows without ?level");
   }
 } finally {
-  await page.close();
-  core.close();
+  if (!closed) { await page.close(); core.close(); }
 }
 assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`);
 console.log(`bricks-check: ok (${checked.length} bricks: ${kinds.join(", ")}; playground and app)`);
