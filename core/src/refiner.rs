@@ -148,10 +148,11 @@ pub async fn run(core: Arc<Core>) {
 
 /// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
 /// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
-/// merged, or a thread heard more (see `drop_stale_titles`).
+/// merged, a thread heard more (see `drop_stale_titles`), or words it read were taken back (see `drop_taken_back`).
 fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
     let world = core.snapshot();
     drop_stale_titles(&mut answer, sent, &world);
+    drop_taken_back(&mut answer, sent, &world);
     let changes = changes(&world, answer);
     tracing::info!("refiner pass {when}: {} changes", changes.len());
     if !changes.is_empty() {
@@ -167,6 +168,28 @@ fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
     let heard: HashSet<&str> =
         now.thoughts.iter().filter(|t| !seen.contains(t.id.as_str())).filter_map(|t| t.thread_id.as_deref()).collect();
     pass.titles.retain(|t| !heard.contains(t.thread_id.as_str()));
+}
+
+/// Leaves out all a pass says about a thread whose words it read were taken back while it was out ("scratch that",
+/// catalog.rs): its reminder, idea, question, title, tags or merge may come from those words alone. A first user said
+/// "I'm getting her the Breville one", then "scratch that", and "Buy Breville espresso machine · Add to Reminders"
+/// landed anyway (win audit, 2026-11-01). The thread's other words are read again by the next pass.
+fn drop_taken_back(pass: &mut Pass, sent: &World, now: &World) {
+    let kept: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
+    let gone: HashSet<&str> = sent.thoughts.iter()
+        .filter(|t| t.placed && !kept.contains(t.id.as_str()))
+        .filter_map(|t| t.thread_id.as_deref())
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    let on = |id: &str| gone.contains(id);
+    pass.titles.retain(|t| !on(&t.thread_id));
+    pass.merges.retain(|m| !on(&m.from) && !on(&m.into));
+    pass.suggestions.retain(|s| !on(&s.thread_id));
+    pass.questions.retain(|q| !on(&q.thread_id));
+    pass.actions.retain(|a| !on(&a.thread_id));
+    pass.tags.retain(|t| !on(&t.thread_id));
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -648,7 +671,7 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, drop_stale_titles, existing, named_at, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, drop_stale_titles, drop_taken_back, existing, named_at, rest_ms, Pass};
     use crate::tidy::Kind;
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
@@ -1218,6 +1241,38 @@ mod tests {
             now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
             assert_eq!(titles(&now), ["T2 proposes title Grocery list"], "placed: {placed}");
         }
+    }
+
+    #[test]
+    fn words_taken_back_while_the_pass_was_out_leave_nothing_from_it_on_their_thread() {
+        // The first user's trace: the pass read "the Breville one", then "scratch that" took it off a thread that
+        // keeps its other words, and the pass came back with a reminder for it.
+        let sent = map(&[
+            ("T1", "Mom's Birthday", &["Maybe a nice espresso machine, she loves coffee.", "Decided: I'm getting her the espresso machine, the Breville one."]),
+            ("T2", "Groceries", &["Buy oat milk and coffee beans."]),
+        ]);
+        let mut now = sent.clone();
+        now.thoughts.retain(|t| !t.text.contains("Breville"));
+        let landed = |now: &World| {
+            let mut pass: Pass = serde_json::from_value(serde_json::json!({
+                "titles": [{"thread_id": "T1", "title": "Breville gift"}, {"thread_id": "T2", "title": "Coffee shopping"}],
+                "merges": [{"from": "T2", "into": "T1"}],
+                "suggestions": [{"thread_id": "T1", "text": "Check Breville prices this week"}, {"thread_id": "T2", "text": "Try a local roaster"}],
+                "questions": [{"thread_id": "T1", "text": "Which Breville model?"}],
+                "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Buy Breville espresso machine", "when": ""},
+                            {"thread_id": "T2", "kind": "reminder", "title": "Buy oat milk", "when": ""}],
+                "tags": [{"thread_id": "T1", "tags": ["gift"]}, {"thread_id": "T2", "tags": ["errands"]}]
+            }))
+            .unwrap();
+            drop_taken_back(&mut pass, &sent, now);
+            shown(&changes_on(now, pass, TODAY))
+        };
+        let all = landed(&sent);
+        assert!(all.iter().any(|c| c.starts_with("T1 reminder Buy Breville")), "nothing taken back: the pass stands: {all:?}");
+        let after = landed(&now);
+        assert!(after.iter().all(|c| c.starts_with("T2 ")), "nothing lands on the thread that lost words: {after:?}");
+        assert!(after.contains(&"T2 reminder Buy oat milk ".to_string()) && after.contains(&"T2 #errands".to_string()), "{after:?}");
+        assert!(!after.iter().any(|c| c.contains("into T1")), "no merge into it either: {after:?}");
     }
 
     #[test]
