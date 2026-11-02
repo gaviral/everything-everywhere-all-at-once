@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { WhyHere } from "./whyhere";
 import type { World } from "./core";
 import { TIPS } from "./Tips";
 import "./away.css";
@@ -20,6 +21,9 @@ export type AwayItem = {
   detail: string;
   kind: "thread" | "proposal";
   unfinished?: boolean;
+  /** The row can say why its point went to that thread (whyhere.tsx): every thread row but a new top-level thread,
+   *  whose "New thread" already is the answer. */
+  why?: boolean;
   at: number;
   sourceAt?: number;
 };
@@ -62,7 +66,8 @@ export function awayItems(before: World, after: World, me: string, observed: Map
   for (const [id, thoughts] of groups) {
     const latest = [...thoughts].sort((a, b) => b.at_ms - a.at_ms)[0];
     const changes = oldThreads.has(id) ? `${thoughts.length} new ${thoughts.length === 1 ? "point" : "points"}` : "New thread";
-    items.push({ key: `thread:${id}`, threadId: id, thoughtId: latest.id, title: threads.get(id)!.title,
+    const why = oldThreads.has(id) || !!threads.get(id)!.parent_id;
+    items.push({ key: `thread:${id}`, threadId: id, thoughtId: latest.id, why, title: threads.get(id)!.title,
       detail: `${changes}${unfinished?.[0] === id ? " · Left unfinished" : ""} · ${latest.point || latest.text}`,
       kind: "thread", unfinished: unfinished?.[0] === id, sourceAt: latest.at_ms,
       at: thoughts.reduce((at, t) => Math.max(at, observed.get(t.id) ?? t.at_ms), 0) });
@@ -70,7 +75,7 @@ export function awayItems(before: World, after: World, me: string, observed: Map
   // A thought begun before looking away may be left behind when the speaker moves on.
   if (unfinished && !groups.has(unfinished[0])) {
     const [id, thought] = unfinished;
-    items.push({ key: `thread:${id}`, threadId: id, thoughtId: thought.id, title: threads.get(id)!.title,
+    items.push({ key: `thread:${id}`, threadId: id, thoughtId: thought.id, why: true, title: threads.get(id)!.title,
       detail: `Left unfinished · ${thought.point || thought.text}`, kind: "thread", unfinished: true,
       sourceAt: thought.at_ms, at: observed.get(`dropped:${id}`) ?? thought.at_ms });
   }
@@ -171,7 +176,11 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
   onDismiss: () => void;
   onDismissFocus: () => void;
 }) {
+  const [why, setWhy] = useState<ReadonlySet<string>>(new Set());
+  // A card gone forgets what it had open: a later card's row on the same thread would otherwise open (and ask) at once.
+  useEffect(() => { if (!items.length) setWhy((open) => (open.size ? new Set() : open)); }, [items.length]);
   if (!items.length) return null;
+  const flip = (key: string) => setWhy((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
   const close = () => { onDismiss(); onDismissFocus(); };
   return <section className="away" aria-labelledby="away-title" onKeyDown={(event) => {
     if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); }
@@ -193,6 +202,12 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
           </span>
           <span className="away-go" aria-hidden="true">›</span>
         </a>
+        {/* Why its point went there, on demand: the row stays one glance until asked (C225). */}
+        {item.why && item.thoughtId && <button type="button" className="away-why" aria-expanded={why.has(item.key)}
+          aria-controls={`away-why-${item.key}`} aria-label={`Why it went to ${item.title}`} onClick={() => flip(item.key)}>Why?</button>}
+        {item.why && item.thoughtId && <p className="away-why-line" id={`away-why-${item.key}`} hidden={!why.has(item.key)}>
+          {why.has(item.key) && <WhyHere thoughtId={item.thoughtId} auto />}
+        </p>}
       </li>)}
     </ol>
     <p className="away-when" id="away-when">{AWAY_WHEN}</p>

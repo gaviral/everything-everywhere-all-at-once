@@ -97,7 +97,8 @@ done
 [ -n "$url" ] || { echo "cloudflared gave no link; see $data/tunnel.log" >&2; exit 1; }
 
 # A private model (not Contributor mode), whatever .env says: the friend's words aren't kept for training.
-(cd core && exec env MODEL_API_KEY="${MODEL_API_KEY:-}" PUBLIC_URL="$url" ROOM_CODE="$code" PORT="$port" E2A2O_DATA="$data" PLACER_MODEL=muse-spark-1.2 \
+# The key, if any, comes as exported above (Keychain, or empty for --no-key) or from .env, which the core reads.
+(cd core && exec env PUBLIC_URL="$url" ROOM_CODE="$code" PORT="$port" E2A2O_DATA="$data" PLACER_MODEL=muse-spark-1.2 \
   "$bin") >"$data/core.log" 2>&1 &
 core_pid=$!
 link="$url/?room=$code"

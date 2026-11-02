@@ -12,13 +12,23 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 
+/// What a model call was for: `extra`'s "feature" when it names one, else the prompt cache key without
+/// "e2a2o-", else "other". The trace line and the window's model line (`ServerMsg::Step`) both say this.
+pub fn feature(body: &Value, extra: &Value) -> String {
+    extra["feature"]
+        .as_str()
+        .or_else(|| body["prompt_cache_key"].as_str().map(|k| k.strip_prefix("e2a2o-").unwrap_or(k)))
+        .unwrap_or("other")
+        .to_string()
+}
+
 #[derive(Default)]
 pub struct Trace {
     file: Option<Mutex<File>>,
 }
 
 /// True for a switch that says on: "1", "on", "true" or "yes".
-fn on(value: &str) -> bool {
+pub(crate) fn on(value: &str) -> bool {
     matches!(
         value.trim().to_lowercase().as_str(),
         "1" | "on" | "true" | "yes"
@@ -79,9 +89,7 @@ impl Trace {
         extra: Value,
     ) {
         self.write(|| {
-            let feature = body["prompt_cache_key"]
-                .as_str()
-                .map_or("other", |k| k.strip_prefix("e2a2o-").unwrap_or(k));
+            let feature = feature(body, &extra);
             let sent = body
                 .get("messages")
                 .or_else(|| body.get("prompt"))

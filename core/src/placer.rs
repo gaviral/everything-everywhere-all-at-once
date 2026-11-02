@@ -50,6 +50,29 @@ const JOINS: [&str; 9] = ["and", "also", "plus", "but", "so", "oh", "then", "any
 /// character (3,344 for that one).
 const ROOM: u32 = 2000;
 
+/// How many of the same placement call go at once, the first good answer winning, unless PLACER_RACE says otherwise
+/// (1 turns it off). A placement's time is nearly all reasoning, and how long it reasons varies from call to call:
+/// on 281 placements from two replays (2026-11-01, Spark 1.2 Contributor, minimal effort) time was 0.9 s + 4 ms a
+/// completion token (r = 0.94) and barely followed prompt size (r = 0.21); the median was 2.6 s, the slowest tenth
+/// over 4.3 s, the slowest 7.7 s. The faster of two draws from that spread is 2.1 s at the median and 3.1 s at the
+/// 90th percentile; starting the second only once the first is slow saves little (at 3 s: 90th percentile unchanged),
+/// since most of the spread is above the median. Cost: twice a placement's tokens (≈ US$0.004 more a thought on
+/// Spark 1.2) and two calls of the hourly cap (model.rs `CALLS_PER_HOUR`: its busiest measured hour had 77
+/// placements, so ≈ 280 of 400).
+pub const RACE: usize = 2;
+
+/// `RACE`, or PLACER_RACE when it's a whole number from 1 to 4.
+pub fn race_from_env() -> usize {
+    match std::env::var("PLACER_RACE").ok().map(|v| v.trim().parse::<usize>()) {
+        None => RACE,
+        Some(Ok(n)) if (1..=4).contains(&n) => n,
+        Some(_) => {
+            tracing::warn!("PLACER_RACE isn't a whole number from 1 to 4: using {RACE}");
+            RACE
+        }
+    }
+}
+
 /// The most room a placement is asked for: as much as the chat import asks for.
 const MAX_ROOM: u32 = 12_000;
 
@@ -404,24 +427,44 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let placement = loop {
-        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try.
-        let body = core
-            .ask_model(
-                &core.placer_model,
-                url,
-                limit(room),
-                |model| request(&world, &thought, model, room, new_thread),
-                json!({"thought": thought_id, "room": room}),
-            )
-            .await?;
-        match read(&body)? {
-            Some(placement) => break placement,
-            None if !again && room < MAX_ROOM => {
+        // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
+        // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
+        // Only while the hourly cap has room for every lane: at the cap, one call goes, so the extra one can't be the
+        // call refused there and show "AI paused" while the first places the thought.
+        let lanes = core.placer_race.max(1);
+        let lanes = if core.calls_left() >= lanes { lanes } else { 1 };
+        let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
+            .map(|lane| {
+                core.ask_model(
+                    &core.placer_model,
+                    url,
+                    limit(room),
+                    |model| request(&world, &thought, model, room, new_thread),
+                    json!({"thought": thought_id, "room": room, "lane": lane}),
+                )
+            })
+            .collect();
+        let (mut won, mut cut_off, mut failed) = (None, false, None);
+        while let Some(answer) = futures_util::StreamExt::next(&mut calls).await {
+            match answer.and_then(|body| read(&body)) {
+                Ok(Some(placement)) => {
+                    won = Some(placement);
+                    break;
+                }
+                Ok(None) => cut_off = true,
+                Err(e) => failed = failed.or(Some(e)),
+            }
+        }
+        drop(calls);
+        match (won, cut_off, failed) {
+            (Some(placement), _, _) => break placement,
+            (None, false, Some(e)) => return Err(e),
+            (None, _, _) if !again && room < MAX_ROOM => {
                 let more = (2 * room).min(MAX_ROOM);
                 tracing::info!("answer cut off at {room} tokens: asking once more with {more}");
                 (room, again) = (more, true);
             }
-            None => bail!("answer cut off at {room} tokens"),
+            (None, _, _) => bail!("answer cut off at {room} tokens"),
         }
     };
     // From when the thought arrived, so time waiting in the queue counts too.
@@ -632,12 +675,17 @@ pub(crate) fn perf(world: &World, thought: &Thought) {
 }
 
 fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool) -> serde_json::Value {
-    let threads = if world.threads.is_empty() {
+    // Oldest-touched first, the one just spoken on last (refiner.rs orders its list the same way): a placement
+    // rewrites only its own thread's line, so with the threads in the order they were made every line after it was a
+    // new prefix, and the cache held the system prompt only (625 tokens) in 14 of 24 calls on a 300-thread map
+    // (scale-2026-11-01.md). Ties (an import, a map made at once) keep the order they were made in.
+    let mut ordered: Vec<&Thread> = world.threads.iter().collect();
+    ordered.sort_by_key(|t| t.touched_ms);
+    let threads = if ordered.is_empty() {
         "(none yet)".to_string()
     } else {
-        world
-            .threads
-            .iter()
+        ordered
+            .into_iter()
             .map(|t| {
                 let status = if t.status == ThreadStatus::Dropped { "dropped" } else { "open" };
                 format!("{}: {} [{status}] last: {}", t.id, t.title, t.last_point)
@@ -793,7 +841,8 @@ fn capitalized(text: &str) -> Vec<String> {
 /// `new_thread`: the speaker asked for one, so whatever is placed starts it (see `NewThreads`).
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> Vec<Change> {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
-    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS {
+    // Never words that say a decision: "Okay, decided:" cut off by a pause is two words, and the rest needs it.
+    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
         return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
     }
     let now = now_ms();
@@ -817,8 +866,16 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     let head = if new_thread { None } else { crate::chunks::heads(world, thought, just_asked(world, thought)).joined(world, thought, &p.joins) };
     let was = world.active_for(speaker).cloned();
 
+    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said. Carrying on
+    // words cut off by a pause, read on from them: "Decided: I'll study with" … "Priya on Wednesday night" is one
+    // decision, and the map shows the two as one point with this one's mark.
+    let decided = crate::decided::said_after(head.as_ref().map(|h| h.text.as_str()), &fix(&thought.text));
     let target = match p.action.as_str() {
         _ if head.is_some() => head.as_ref().and_then(|h| h.thread_id.clone()),
+        // A decision goes on the thread it decides, not a branch of its own: the model branched "decided: if it's
+        // under $80, I'm booking it" off Mom's birthday as "Pottery Class Cost" (2026-11-01 take), so the birthday's
+        // card never showed what was decided about it.
+        "new" if decided && !new_thread && exists(&p.parent_id) => Some(p.parent_id.clone()),
         "new" => None,
         _ if new_thread => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
@@ -863,6 +920,7 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         fixed,
         complete: p.complete,
         place_ms,
+        decided,
     });
     let why = crate::chunks::why_here(&p.why, &changes);
     let note = crate::chunks::note(head.as_ref(), &p.assumed, &why, crate::chunks::moved(world, &changes, &thread_id, was.as_ref()));
@@ -948,6 +1006,7 @@ mod tests {
             complete,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1526,6 +1585,144 @@ mod tests {
         assert_eq!((asked, placed), (vec![2000], false));
     }
 
+    /// Two of the same call race and the first good answer places the thought: one that reasons for long, fails or
+    /// is cut off costs nothing while the other answers. Each stand-in answer: its delay, its status and its body.
+    #[tokio::test]
+    async fn the_faster_of_two_racing_calls_places_the_thought() {
+        async fn race(answers: Vec<(u64, u16, serde_json::Value)>) -> (anyhow::Result<Option<String>>, Vec<u64>, bool, Duration) {
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let seen = asked.clone();
+            let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+                let (delay, status, answer) = {
+                    let mut asked = seen.lock().unwrap();
+                    asked.push(request["max_tokens"].as_u64().unwrap());
+                    answers[(asked.len() - 1).min(answers.len() - 1)].clone()
+                };
+                async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(answer))
+                }
+            };
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+            let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+            let (journal, world) = crate::world::Journal::open(&path).unwrap();
+            let core = Core { key: Some("good".into()), placer_race: 2, ..Core::test(journal, world) };
+            core.keep("you", "Pay rent before Friday");
+            let id = core.snapshot().thoughts[0].id.clone();
+            let started = std::time::Instant::now();
+            let result = super::place(&core, &id, &url, super::patience).await;
+            let took = started.elapsed();
+            let placed = core.snapshot().thoughts[0].placed;
+            let _ = std::fs::remove_file(&path);
+            let asked = asked.lock().unwrap().clone();
+            (result, asked, placed, took)
+        }
+        let whole = || body(json!("stop"), json!(WHOLE));
+        // One reasons for 5 s, the other answers at once: placed at once, both asked with the same room.
+        let (result, asked, placed, took) = race(vec![(5_000, 200, whole()), (50, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000]);
+        assert!(took < Duration::from_secs(2), "waited on the slow call: {took:?}");
+        // One fails: the other places it.
+        let (result, _, placed, _) = race(vec![(10, 500, json!({"error": {"message": "boom"}})), (100, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        // One is cut off: the other places it, with no second round.
+        let (result, asked, placed, _) = race(vec![(10, 200, body(json!("length"), json!(cut_short()))), (100, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000]);
+        // Both cut off: once more, both with twice the room.
+        let (result, asked, placed, _) =
+            race(vec![(10, 200, body(json!("length"), json!(cut_short()))), (10, 200, body(json!("length"), json!(cut_short()))), (10, 200, whole())]).await;
+        assert!(result.unwrap().is_none() && placed);
+        assert_eq!(asked, [2000, 2000, 4000, 4000]);
+        // Both fail: the error, and it waits to be placed again.
+        let (result, _, placed, _) = race(vec![(10, 500, json!({"error": {"message": "boom"}}))]).await;
+        assert!(result.is_err() && !placed);
+    }
+
+    /// At the hourly cap's edge one call goes, not two: the extra one would be the call refused there, and "AI paused"
+    /// would show while the first placed the thought. The slower of two racing calls is still in the trace, marked
+    /// dropped, so what was spent can be counted from it.
+    #[tokio::test]
+    async fn the_race_stays_under_the_cap_and_its_loser_is_traced() {
+        async fn race(limit: usize, delays: [u64; 2]) -> (usize, bool, Vec<String>, Vec<serde_json::Value>) {
+            let asked = Arc::new(Mutex::new(0usize));
+            let seen = asked.clone();
+            let service = move |_: axum::Json<serde_json::Value>| {
+                let delay = {
+                    let mut asked = seen.lock().unwrap();
+                    *asked += 1;
+                    delays[(*asked - 1).min(1)]
+                };
+                async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    axum::Json(body(json!("stop"), json!(WHOLE)))
+                }
+            };
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+            let dir = std::env::temp_dir().join(format!("e2a2o-race-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let (journal, world) = crate::world::Journal::open(&dir.join("journal.jsonl")).unwrap();
+            let core = Core {
+                key: Some("good".into()),
+                placer_race: 2,
+                service: crate::model::Service::with_limit(limit),
+                trace: crate::trace::Trace::to(&dir),
+                ..Core::test(journal, world)
+            };
+            let mut updates = core.updates.subscribe();
+            core.keep("you", "Pay rent before Friday");
+            let id = core.snapshot().thoughts[0].id.clone();
+            super::place(&core, &id, &url, super::patience).await.unwrap();
+            let placed = core.snapshot().thoughts[0].placed;
+            let said = std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|o| match o.message {
+                    crate::protocol::ServerMsg::Notice { message } => Some(message),
+                    _ => None,
+                })
+                .collect();
+            drop(core);
+            let calls = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap_or_default().lines()
+                .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).filter(|l| l["kind"] == "call").collect();
+            let asked = *asked.lock().unwrap();
+            (asked, placed, said, calls)
+        }
+        let (asked, placed, said, _) = race(1, [10, 10]).await;
+        assert_eq!((asked, placed), (1, true), "one call left: one call");
+        assert!(said.iter().all(|s| !s.starts_with("AI paused")), "{said:?}");
+        let (asked, placed, said, calls) = race(400, [2_000, 10]).await;
+        assert_eq!((asked, placed), (2, true));
+        assert!(said.is_empty(), "{said:?}");
+        let errors: Vec<&str> = calls.iter().filter_map(|c| c["error"].as_str()).collect();
+        assert_eq!((calls.len(), errors.len()), (2, 1), "both calls traced: {calls:?}");
+        assert!(errors[0].starts_with("dropped before its answer"), "{errors:?}");
+    }
+
+    /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
+    /// the talk keeps coming back to) used to rewrite the list's first line, so nothing after the system prompt was
+    /// cached. Now it rewrites only the last line.
+    #[test]
+    fn a_placement_rewrites_only_the_end_of_the_thread_list() {
+        let mut world = World { active: Some("T1".into()), ..World::default() };
+        for (id, touched) in [("T1", 400), ("T2", 100), ("T3", 200), ("T4", 300)] {
+            world.threads.push(Thread { touched_ms: touched, last_point: format!("about {id}"), ..thread(id) });
+        }
+        let said = Thought { text: "and one more thing on that".into(), at_ms: 500, ..thought("x", "you", None, true) };
+        let prompt = |world: &World| request(world, &said, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        let before = prompt(&world);
+        let order: Vec<&str> = before.lines().skip(1).take(4).map(|l| &l[..2]).collect();
+        assert_eq!(order, ["T2", "T3", "T4", "T1"], "oldest-touched first: {before}");
+        world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "one more thing".into(), at_ms: 500 });
+        let after = prompt(&world);
+        let same = before.chars().zip(after.chars()).take_while(|(a, b)| a == b).count();
+        assert!(before[..same].contains("T4: Topic T4 [open] last: about T4\n"), "the cached prefix ends where T1's line begins: {after}");
+        assert!(super::SYSTEM.len() > 2_000 && !super::SYSTEM.contains('{'), "the system prompt is stable text, sent first");
+    }
+
     #[test]
     fn the_placer_sees_the_speakers_own_thread() {
         let world = room();
@@ -1599,6 +1796,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut answer = json!({"action": "new", "title": "Muse Bark speed", "point": text});
         answer.as_object_mut().unwrap().extend(misheard.as_object().unwrap().clone());
@@ -1620,6 +1818,44 @@ mod tests {
         });
         let [point, unclear, guess, heard, fixed] = placed.unwrap();
         [title.unwrap(), point, unclear, guess, heard, fixed]
+    }
+
+    /// Line 3 of the demo is placed as a decision, whatever the model titles its thread; talk about deciding isn't.
+    #[test]
+    fn a_decision_said_is_placed_as_one_and_talk_about_deciding_is_not() {
+        let decided = |text: &str| {
+            decide(&map(), &turn(text), reply(json!({"action": "new", "title": "Pottery Class Cost"})), 0, false, true)
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::ThoughtPlaced { decided, .. } => Some(decided),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert!(decided("Okay, decided: if it's under eighty dollars, I'm booking it tonight."));
+        // Branched off a thread, a decision lands on it instead; anything else still branches.
+        let landed = |text: &str, new_thread: bool| {
+            decide(&map(), &turn(text), reply(json!({"action": "new", "title": "Pottery Class Cost", "parent_id": "T2"})), 0, new_thread, true)
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::ThoughtPlaced { thread_id, .. } => Some(thread_id),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(landed("Okay, decided: if it's under eighty dollars, I'm booking it tonight.", false), "T2");
+        assert_eq!(landed("The class costs eighty dollars a person.", false), "T3", "not a decision: its own branch");
+        assert_eq!(landed("Decided: we book the class.", true), "T3", "asked for a new thread, it starts one");
+        assert!(decided("Decided: I'll study with Priya on Wednesday night."));
+        assert!(!decided("I can't decide whether to book the pottery class."));
+        assert!(!decided("We'll decide later about the pottery class."));
+        let mut world = World::default();
+        let thought = turn("Let's go with the Thursday slot.");
+        world.thoughts.push(thought.clone());
+        for change in decide(&World::default(), &thought, reply(json!({"action": "new", "title": "Slot"})), 0, false, true) {
+            world.apply(&change);
+        }
+        assert!(world.thoughts[0].decided, "the map keeps it");
     }
 
     #[test]

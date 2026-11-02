@@ -179,6 +179,7 @@ fn leaving_a_thought_unfinished_for_a_filing_offers_it_back() {
         complete: false,
         at_ms: 1,
         place_ms: Some(0),
+        decided: false,
     });
     let f = Fixture::new(world);
     assert!(act(&f.core, "you", "Add milk to the shopping list").is_some());
@@ -311,5 +312,24 @@ fn stop_listening_is_only_the_whole_turn() {
     }
     for said in ["Stop listening to him", "I should stop listening to podcasts at night", "Stop", "Pause"] {
         assert!(!is_stop_listening(said), "{said}");
+    }
+}
+
+#[test]
+fn without_apples_apps_only_a_dated_item_is_sent_to_download_ics() {
+    let action = |when: &str| Action {
+        id: "a".into(),
+        thread_id: "T1".into(),
+        kind: "event".into(),
+        title: "Demo day".into(),
+        when: when.into(),
+        status: ItemStatus::New,
+        done_ms: None,
+    };
+    assert_eq!(file_words(&action("2026-11-04")), "To add “Demo day”, choose Download .ics on its row: your calendar app opens it.");
+    for when in ["", "tomorrow", "2026-11-31"] {
+        let words = file_words(&action(when));
+        assert!(!words.contains("Download"), "{when}: {words}");
+        assert!(words.contains("no day") && words.contains('×'), "{when}: {words}");
     }
 }

@@ -46,7 +46,7 @@ impl Fixture {
     /// Places thought `id` in `thread` with `point`, as the placer would, and moves the speaker there.
     fn place(&self, id: &str, thread: &str, point: &str) {
         self.core.commit(vec![
-            Change::ThoughtPlaced { thought_id: id.into(), thread_id: thread.into(), point: point.into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1 },
+            Change::ThoughtPlaced { thought_id: id.into(), thread_id: thread.into(), point: point.into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1, decided: false },
             Change::ThreadTouched { thread_id: thread.into(), last_point: point.into(), at_ms: now_ms() },
             Change::ActiveChanged { thread_id: thread.into(), speaker: "you".into() },
         ]);
@@ -117,6 +117,7 @@ fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         complete: true,
         at_ms,
         place_ms: Some(1_000),
+        decided: false,
     }
 }
 
@@ -141,7 +142,7 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     let acts = [
         Act::Back, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
         Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
-        Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename,
+        Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
         Act::Delete,
     ];
     assert_eq!(CATALOG.len(), acts.len());
@@ -248,7 +249,7 @@ async fn words_taken_back_take_the_thread_they_started_with_them() {
     f.say("Make the next thing I say its own topic").await;
     let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
     f.core.commit(vec![
-        Change::ThoughtPlaced { thought_id: id.clone(), thread_id: "T5".into(), point: "Own topic".into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1 },
+        Change::ThoughtPlaced { thought_id: id.clone(), thread_id: "T5".into(), point: "Own topic".into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1, decided: false },
         Change::ActiveChanged { thread_id: "T5".into(), speaker: "you".into() },
     ]);
     let redo = f.say("I meant start a new thread").await;
@@ -287,6 +288,17 @@ async fn a_request_is_redone_by_a_bare_no_and_the_first_one_undone() {
     let f = Fixture::new(garden());
     f.say("Expand the garden").await;
     assert_eq!(f.say("No, I was asking about the other one").await, ["added No, I was asking about the other one"]);
+}
+
+/// "Export my map" asks only the speaker's window for the file (it holds the map): the words aren't kept as a thought,
+/// nothing on the map changes, and there's nothing to take back.
+#[tokio::test]
+async fn export_my_map_asks_the_window_for_the_file_and_changes_nothing() {
+    let f = Fixture::new(garden());
+    let before = serde_json::to_string(&f.core.snapshot()).unwrap();
+    assert_eq!(f.say("Export my map").await, ["view export"]);
+    assert_eq!(serde_json::to_string(&f.core.snapshot()).unwrap(), before);
+    assert_eq!(f.say("Export the photos to Dana").await, ["added Export the photos to Dana"]);
 }
 
 #[tokio::test]
@@ -533,6 +545,7 @@ async fn each_request_undoes_as_its_definition_says() {
         ("Finish it", Act::Finish),
         ("Stop listening", Act::Pause),
         ("Add it to Reminders", Act::Approve),
+        ("Export my map", Act::Export),
     ] {
         let f = Fixture::new(world.clone());
         let done = f.core.request("you", said, true).unwrap_or_else(|| panic!("{said}"));
@@ -659,4 +672,30 @@ async fn the_first_thread_taken_back_leaves_the_map_empty() {
     let world = f.core.snapshot();
     assert_eq!(world.thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T5"));
     assert!(world.thread("T5").is_some());
+}
+
+/// ⌘Z (the window's `undo_last`) is "undo that" without words: the same last turn comes back, after the notice and its
+/// Undo button are gone, and a typed thought comes off as it would by voice (persona run 2026-11-01, friction 4).
+#[tokio::test]
+async fn the_undo_key_takes_back_the_last_turn_as_undo_that_does() {
+    let message: crate::protocol::ClientMsg = serde_json::from_str(r#"{"type":"undo_last"}"#).unwrap();
+    assert!(matches!(message, crate::protocol::ClientMsg::UndoLast));
+    let key = |f: &Fixture| {
+        let mut updates = f.core.updates.subscribe();
+        undo_last(&f.core, "you");
+        drain(&mut updates)
+    };
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Next one").await, ["notice On to Bills", "on T2"]);
+    assert_eq!(key(&f), ["on T1", "notice Undone: go to the next thread"]);
+    let f = Fixture::new(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    let off = key(&f);
+    assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
+    // Pressed again, it puts them back, as "undo that" said twice does.
+    assert_eq!(key(&f), ["added Buy more stakes for the beans", "notice Put back"]);
+    // Nothing said yet: it says so, rather than doing nothing.
+    let f = Fixture::new(garden());
+    assert_eq!(key(&f), ["notice Nothing to undo: nothing said just before"]);
 }

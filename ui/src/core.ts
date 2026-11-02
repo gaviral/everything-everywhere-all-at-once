@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { receiveStep, resetSteps } from "./model-line";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -8,6 +9,7 @@ import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
 import { failureNotice } from "./action-line";
 import { applyMove, type MoveChange } from "./moves-core";
+import { whysAfter } from "./whyhere";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
@@ -40,6 +42,8 @@ export interface Thought {
   complete: boolean;
   at_ms: number;
   place_ms: number | null;
+  /** The words say a decision was made (the core's decided.rs); placements before it have none. */
+  decided?: boolean;
 }
 
 /** What the placer read into a thought (chunks.tsx): the words it carries on across a pause, an assumption that moved
@@ -48,6 +52,8 @@ export interface Note {
   continues?: string;
   assumed?: string;
   why?: string;
+  /** `why` was asked for afterwards (whyhere.tsx), not what decided the placement. */
+  later?: boolean;
 }
 
 /** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
@@ -63,15 +69,20 @@ export function firstLetter(title: string): string {
 }
 
 export type ItemStatus = "new" | "kept" | "dismissed" | "done";
+/** An idea's text or a task's title, its day, and where it stands: what the refiner made it, or what it was (`item_refined`). */
+export type ItemState = { status: ItemStatus; text: string; when: string };
 
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
 
+// An answer to "Why here?" (whyhere.tsx); pending until it comes, failed when there's none.
+export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
+
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
-// mic off ("stop listening"). The revision makes the same one asked twice a new ask.
+// mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number; answers: number };
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -149,11 +160,13 @@ type Change =
       fixed?: string;
       complete: boolean;
       place_ms: number;
+      decided?: boolean;
     }
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
   | { type: "put_back"; id: string; before: string }
+  | { type: "thought_decided"; thought_id: string; decided: boolean }
   | { type: "thought_noted"; thought_id: string; note: Note }
   | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
@@ -166,6 +179,9 @@ type Change =
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  // The refiner brought a waiting idea or task in line with something said later; restored is its Undo (refiner.rs).
+  | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string }
+  | { type: "item_restored"; id: string; to: ItemState }
   | { type: "tag_suggested"; thread_id: string; tag: string }
   | { type: "tag_kept"; thread_id: string; tag: string }
   | { type: "tag_removed"; thread_id: string; tag: string }
@@ -190,6 +206,7 @@ type ServerMsg =
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "unfold"; thread_id: string | null; open: boolean }
   | { type: "explanation"; id: string; text: string; failed: boolean }
+  | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
 
@@ -240,6 +257,45 @@ export function landingToFollow(world: World, added: Thought[], me: string, move
   }
   if (!landing && moved && held?.thread === world.active) landing = held;
   return { landing, held: late };
+}
+
+/**
+ * Jumps the map's own follow must leave alone. A jump (find's answer, a "While you were away" row) moves your place
+ * and shows its own point; the move would also set off a follow of your place, which ~120 ms later highlighted the
+ * thread's newest point instead and could scroll the found one away. Either order is covered: the jump before its
+ * move reaches the map (Away: the row reveals, then focus's ActiveChanged comes back) or after it (find: ActiveChanged,
+ * then Found). Only a follow of your place is answered, never a landing. A jump that moved your place also stands
+ * down any follow of your place scheduled before it, whatever its thread: the map doesn't reschedule for an answered
+ * move, so that older follow would otherwise run and pull you back off the jump.
+ */
+export function jumpTracker() {
+  let seq = 0;
+  // A jump whose move hasn't reached the map yet.
+  let pending: string | null = null;
+  let last: { thread: string; seq: number; moved?: boolean } | null = null;
+  return {
+    jumped(world: World, thread: string) {
+      const id = resolve(world, thread);
+      seq += 1;
+      pending = id;
+      last = { thread: id, seq };
+    },
+    /** At a move of your place: true when a jump already answered it. Any move ends the pending jump. */
+    moved(active: string) {
+      const answered = pending === active;
+      pending = null;
+      if (answered && last) last.moved = true;
+      return answered;
+    },
+    /** Taken when a follow is scheduled, for `since`. */
+    mark: () => seq,
+    /** When the follow runs: true when a jump came after it was scheduled, to its thread or moving your place. */
+    since(mark: number, thread: string) {
+      const answered = !!last && last.seq > mark && (last.thread === thread || !!last.moved);
+      if (answered) pending = null;
+      return answered;
+    },
+  };
 }
 
 const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
@@ -332,6 +388,16 @@ export function apply(world: World, raw: Change): World {
         : { ...world, suggestions: [...world.suggestions, c.suggestion] };
     case "action_proposed":
       return world.actions.some((a) => a.id === c.action.id) ? world : { ...world, actions: [...world.actions, c.action] };
+    case "item_refined":
+    case "item_restored": {
+      // As the core's `World::set_item`: the same row, with its new words, day or status.
+      const to = c.type === "item_refined" ? c.now : c.to;
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: to.status, text: to.text } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: to.status, title: to.text, when: to.when } : a)),
+      };
+    }
     case "item_status":
       return {
         ...world,
@@ -354,6 +420,9 @@ export function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thought_decided":
+      // The core read the mark again after the words changed (a correction, or a join taken apart).
+      return { ...world, thoughts: world.thoughts.map((t) => (t.id === c.thought_id ? { ...t, decided: c.decided } : t)) };
     case "thought_noted": {
       // As the core: an empty note takes it away; a note only for a thought that's there.
       const notes = { ...world.notes };
@@ -406,6 +475,7 @@ export function apply(world: World, raw: Change): World {
                 complete: c.complete,
                 placed: true,
                 place_ms: c.place_ms,
+                decided: c.decided ?? false,
               }
             : t,
         ),
@@ -485,8 +555,8 @@ export function movesAsked(speaker?: string) {
     const change = msg.type === "change" ? msg.change : null;
     const landed = landing;
     if (change?.type !== "thread_touched" && change?.type !== "thread_status") landing = null;
-    // Not Later or the mic: they leave the map as it is.
-    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause"].includes(msg.view))) return true;
+    // Not Later, the mic or an export: they leave the map as it is.
+    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause", "export"].includes(msg.view))) return true;
     if (!speaker || !change) return false;
     if (change.type === "thought_placed" && world.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
       landing = change.thread_id;
@@ -543,6 +613,7 @@ export function useCore(speaker?: string) {
   const [queuedCount, setQueuedCount] = useState(0);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
+  const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
@@ -565,6 +636,7 @@ export function useCore(speaker?: string) {
       socket.current = ws;
       ws.onopen = () => {
         resetApps();
+        resetSteps();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
@@ -579,6 +651,7 @@ export function useCore(speaker?: string) {
         if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
+        if (receiveStep(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);
@@ -591,6 +664,7 @@ export function useCore(speaker?: string) {
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
+            setWhys((w) => whysAfter(w, msg));
             break;
           case "change": {
             const change = msg.change;
@@ -608,6 +682,7 @@ export function useCore(speaker?: string) {
             }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
+            setWhys((w) => whysAfter(w, msg));
             break;
           }
           case "action_failed": {
@@ -681,6 +756,9 @@ export function useCore(speaker?: string) {
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
             break;
+          case "why_here":
+            setWhys((w) => ({ ...w, [msg.thought_id]: { text: msg.text, failed: msg.failed } }));
+            break;
           case "import":
             setImportStatus(msg.status);
             break;
@@ -694,6 +772,7 @@ export function useCore(speaker?: string) {
         setHandoff("");
         // No answer comes on a closed connection.
         setNotice((shown) => (shown === LOOKING ? "" : shown));
+        setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
         recapDisconnected();
@@ -780,10 +859,14 @@ export function useCore(speaker?: string) {
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
+    undoLast: useCallback(() => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo_last" })); }, [sendOrWarn]),
     // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
     tidy: useCallback((id: string, apply: boolean) => sendOrWarn(JSON.stringify({ type: "tidy", id, apply })), [sendOrWarn]),
     // Newest first, so each puts back the title or thread from before it.
     untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
+    // The Undo on a note about ideas or tasks the AI withdrew or corrected: each as it was, newest first.
+    restore: (ids: string[]) => [...ids].reverse().forEach((id) => sendOrWarn(JSON.stringify({ type: "restore", id }))),
     hideMapChange: useCallback(() => setMapChange(null), []),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
@@ -805,9 +888,21 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    // "Try a sample map": the core fills an empty map with the sample (core/src/sample.rs).
+    sample: () => sendOrWarn(JSON.stringify({ type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename, remove,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
+    whys,
+    // "Why here?" on a point or a "While you were away" row: one ask at a time per thought; the core answers from the
+    // map when it can, else asks the model once and keeps the answer as the thought's note.
+    askWhy: useCallback((thought_id: string) => {
+      if (!send(JSON.stringify({ type: "why_here", thought_id }))) {
+        setWhys((w) => ({ ...w, [thought_id]: { text: "Not connected. Try again when connected.", failed: true } }));
+        return;
+      }
+      setWhys((w) => ({ ...w, [thought_id]: { text: "", failed: false, pending: true } }));
+    }, [send]),
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
     // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.

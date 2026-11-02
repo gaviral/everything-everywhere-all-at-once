@@ -137,6 +137,7 @@ fn thought(n: usize, at_ms: u64, thread: usize) -> Thought {
         complete: true,
         at_ms,
         place_ms: None,
+        decided: false,
     }
 }
 
@@ -177,6 +178,7 @@ fn populate(core: &Arc<Core>, now: u64) {
                 fixed: String::new(),
                 complete: true,
                 place_ms: 2_000,
+                decided: false,
             },
             Change::ThreadTouched { thread_id: thread_id.clone(), last_point: point, at_ms },
             Change::ActiveChanged { thread_id, speaker },
@@ -303,6 +305,7 @@ fn perf_big_map() {
                 fixed: String::new(),
                 complete: true,
                 place_ms: 2_000,
+                decided: false,
             },
             Change::ThreadTouched { thread_id: "T1".into(), last_point: "new point".into(), at_ms: now + event },
             Change::ActiveChanged { thread_id: "T1".into(), speaker: "Guest".into() },

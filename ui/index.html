@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f6f6f3" />
+    <!-- The window's bar matches the page in either theme (--bg in src/styles.css); Safari also tints an iPhone's status bar with it. -->
+    <meta name="theme-color" content="#f6f6f3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)" />
+    <!-- Installable to the Dock and a phone's home screen. With credentials, so a sign-in in front of the core
+         (the hosted link) lets the manifest through instead of redirecting it. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="E2A2O" />
     <title>E2A2O</title>
   </head>
   <body>

@@ -29,6 +29,7 @@ fn point(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(), thread_id: Some(thread.into()),
         placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
         complete: true, at_ms, place_ms: None,
+        decided: false,
     }
 }
 
@@ -420,6 +421,7 @@ async fn a_click_stops_a_search_and_any_search_its_words_ask() {
     fixture.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "pending".into(), thread_id: "T1".into(), point: "Paint the kitchen".into(), unclear: String::new(),
         guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+        decided: false,
     }]);
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T2"), "nothing asked before the click moves you after it");
@@ -447,6 +449,7 @@ fn a_to_do_that_starts_with_find_or_take_me_to_reaches_the_map() {
     let placed = fixture.core.snapshot().thoughts.iter().filter(|t| !t.placed).map(|t| Change::ThoughtPlaced {
         thought_id: t.id.clone(), thread_id: "T1".into(), point: t.text.clone(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+        decided: false,
     }).collect();
     fixture.core.commit(placed);
     fixture.core.commit(vec![Change::ActiveChanged { thread_id: "T3".into(), speaker: "Ana".into() }]);
@@ -511,6 +514,7 @@ async fn a_jump_waits_for_the_thought_said_just_before_it() {
         Change::ThoughtPlaced {
             thought_id: "pending".into(), thread_id: "T2".into(), point: "Paint the kitchen".into(), unclear: String::new(),
             guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 900,
+            decided: false,
         },
         Change::ActiveChanged { thread_id: "T2".into(), speaker: "Ana".into() },
     ]);

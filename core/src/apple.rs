@@ -54,6 +54,25 @@ fn failure(app: &str, output: &std::io::Result<std::process::Output>) -> String 
     }
 }
 
+/// Whether approving reaches Reminders and Calendar: on a Mac that runs E2A2O for its own person. Elsewhere (Linux,
+/// or a hosted service, `crate::hosted`) the window saves a dated item as a calendar file (.ics) itself, which
+/// Apple, Google and Outlook calendars open, and Approve only marks it saved (`saved`).
+pub fn reachable() -> bool {
+    cfg!(target_os = "macos") && !crate::hosted()
+}
+
+/// Approve where Apple's apps can't be reached: the window already saved the item as a calendar file, so it's done,
+/// for whoever asked, since the file went to their own computer, not the host's apps. Only a waiting item with a
+/// real day has a file; true when this one was marked.
+pub fn saved(core: &Core, action_id: &str) -> bool {
+    let _one_at_a_time = CLAIMING.lock().unwrap();
+    let world = core.snapshot();
+    let dated = |a: &&Action| a.id == action_id && a.status == ItemStatus::New && crate::apps::valid_date(a.when.trim());
+    let Some(action) = world.actions.iter().find(dated) else { return false };
+    core.commit(vec![Change::ItemStatus { id: action.id.clone(), status: ItemStatus::Done, done_ms: None }]);
+    true
+}
+
 /// Marks a new action as being added (kept) and returns it; none when it isn't new: added, being added,
 /// or dismissed. AppleScript takes 1–3 s, longer behind macOS's first permission prompt, so this is what
 /// stops a second click, or another window, from adding it twice.
@@ -241,6 +260,26 @@ mod tests {
         super::item(&core, "s".into(), ItemStatus::Kept);
         assert_eq!(core.snapshot().suggestions[0].status, ItemStatus::Kept);
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// Without Apple's apps (Linux, or hosted) the window saves the calendar file and says so: a waiting item with a
+    /// real day is marked saved, once; one without a day has no file, and a dismissed one stays dismissed.
+    #[test]
+    fn a_calendar_file_saved_marks_only_a_waiting_dated_item_done() {
+        let path = std::env::temp_dir().join(format!("e2a2o-apple-saved-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        let action = |id: &str, when: &str, status| Change::ActionProposed { action: Action { id: id.into(), thread_id: "T1".into(),
+            kind: "event".into(), title: "Demo day".into(), when: when.into(), status, done_ms: None } };
+        core.commit(vec![action("a", "2026-11-04", ItemStatus::New), action("b", "", ItemStatus::New), action("c", "2026-11-04", ItemStatus::Dismissed)]);
+        let status = |id: &str| core.snapshot().actions.iter().find(|a| a.id == id).map(|a| (a.status, a.done_ms));
+        assert!(super::saved(&core, "a"));
+        assert_eq!(status("a"), Some((ItemStatus::Done, None)), "saved: done, with no Apple time to show");
+        assert!(!super::saved(&core, "a"), "once");
+        assert!(!super::saved(&core, "b") && status("b") == Some((ItemStatus::New, None)), "no day, no file");
+        assert!(!super::saved(&core, "c") && status("c") == Some((ItemStatus::Dismissed, None)));
+        assert!(!super::saved(&core, "nope"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

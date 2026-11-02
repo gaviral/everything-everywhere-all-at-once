@@ -1,0 +1,18 @@
+/* "Why here" (whyhere.tsx): a muted line, asked for with a quiet text button, so cards stay calm until you look. */
+.why:focus { outline: none; }
+.why:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.why-ask {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.why-ask:hover { color: var(--ink); }
+.why-ask:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+/* Tap targets reach 44 px on touch without growing the line for a pointer. */
+@media (pointer: coarse) { .why-ask { min-height: 44px; } }

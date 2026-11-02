@@ -1351,6 +1351,8 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
                 complete: true,
                 at_ms: idea.at_ms,
                 place_ms: None,
+                // What the chat import read as a decision (`EXTRACT`, kind "decision") is one on the map too.
+                decided: idea.kind == "decision",
             },
         });
     }
@@ -1386,7 +1388,7 @@ fn changes_for(group: &Group, id: &str, parent: Option<String>, ideas: &[Idea], 
 /// call, so sharing its T numbers could hand two threads one id.
 async fn land(core: &Core, speaker: &str, groups: &[Group], ideas: &[Idea], status: &mut Status) {
     let world = core.snapshot();
-    let base = world.threads.len() + world.merged.len();
+    let base = world.threads_made();
     let mut ids: Vec<Option<String>> = vec![None; groups.len()];
     let (mut made, mut newest) = (0, None::<(u64, String)>);
     for i in order(groups, ideas) {
@@ -1789,6 +1791,7 @@ mod tests {
             complete: true,
             at_ms: 1_791_000_000_000,
             place_ms: None,
+            decided: false,
         };
         let mut updates = f.core.updates.subscribe();
         f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);
