@@ -185,7 +185,7 @@ A thought said in two parts across a pause lands as one point. The prompt also q
 
 Leave a thread whose last thought trailed off (“I need to pay rent before…”) and it's marked dropped, for you only. After 2.5 s without new words, the card offers the one you dropped last with your last words and Finish it and Later. The first Later hides it until at least 5 minutes have passed and you pause; it then returns once. A second Later hides it until that thread changes.
 
-Spoken commands are recognized by rule, with no model call, and only as a whole turn (so “I bought a boat. What was I thinking?” stays a thought):
+Spoken commands are recognized by rule, with no model call, and only as a whole turn, except that “where was I?”, “next one” and “last one” also work at a turn's start or end (“The rent is due Friday. Well, where was I?” places the thought, then goes back), while “I bought a boat. What was I thinking?” stays a thought:
 
 - **Getting back:** “where was I?”, “next one”, “last one”, “Finish it”, “Later”, “forget it”.
 - **Finding:** “where did I talk about …?”, “take me back to …”, “go to the one about …”.
@@ -194,7 +194,7 @@ Spoken commands are recognized by rule, with no model call, and only as a whole 
 - **Actions:** “add it to Reminders”, “keep it” or “discard it” for an app, “stop listening”.
 - **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” undoes it. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
 
-Every command, its variants and what it never does: [docs/COMMANDS.md](docs/COMMANDS.md).
+Getting back, finding, views, filing and fixing in full, with variants and what each never does: [docs/COMMANDS.md](docs/COMMANDS.md). Recap, making an app and answering “Did you mean …?” are in their own sections below; “what can I say?” lists them all.
 
 ### Did you mean, and confident auto-fix
 
