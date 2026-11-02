@@ -10,6 +10,9 @@ Browser, one page per window (ui/src)
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   pictures.ts    the one picture-slot rule (map, unfinished card, Palace): letter until decoded, capped refetches
+  MicButton.tsx  the mic's states (off, starting, listening, hearing you, paused, no key, refused, connecting)
+  Tips.tsx       one shared tip for every element with `data-tip` (each ✦ says what the AI did and its undo)
+  Symbols.tsx    the ? list's legend, drawn with the map's own classes
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
@@ -52,7 +55,7 @@ Core, one process (core/src: axum, tokio)
 5. `decide` trusts only ids that exist. It builds `ThreadAdded` (for a new thread, with its parent if that exists), `ThoughtPlaced` (with a sure fix applied, or the question to ask), `ThreadTouched`, drops and `ActiveChanged`, and commits them together. Drops are the speaker's own: a thread they left whose last thought trailed off, or one the model names that they spoke on.
 6. In the UI the pending pill and the placed point share a Motion `layoutId`, so the thought moves from the dock to its thread. An `ActiveChanged` in the commit that placed the speaker's own words (after its `ThoughtPlaced`, `ThreadTouched` and drops) is their words moving them, even to where they'd already clicked, since `decide` sees the map from before the model answered; so is an import opening them on its newest thread when they had no place yet. Any other one for them, a `Found`, an `Unfold` or a `View` (but Later, Forget and Pause, which leave the map as it is), answers a request, and the window closes an open Recap so the result shows (`movesAsked` in `core.ts`).
 7. `apps.rs` sees the `ThoughtPlaced` broadcast and runs matching watchers; the refiner and pictures pick the thought up at the next pause.
-8. When a window returns after at least 30 seconds hidden or blurred, `Away.tsx` compares the map before and after the absence. It shows the speaker's newly placed thoughts grouped by thread, and new proposals on those threads; rows link to the point or proposal. It does not make a model call.
+8. When a window returns after at least 30 seconds hidden or blurred, `Away.tsx` compares the map before and after the absence. It shows the speaker's newly placed thoughts grouped by thread, and new proposals on those threads; rows link to the point or proposal, and the card states this rule. It does not make a model call.
 
 ## Background work
 

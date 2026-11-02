@@ -67,6 +67,10 @@ try {
   assert.match(point, /<button type="button" className="said-toggle" aria-expanded=\{open\} aria-controls=\{`said-\$\{thought\.id\}`\}[^>]*>Words said<\/button>/, "a Words said button");
   assert.match(point, /id=\{`said-\$\{thought\.id\}`\}/, "the words it controls carry the id");
   assert.doesNotMatch(point, /onKeyDown/, "no key handler on the <li>: the button is the keyboard path");
+  // A mark inside the point (Tips.tsx) keeps its own job: a tap shows its tip, not the words, and the point's title
+  // doesn't add a second tip over it.
+  assert.match(point, /closest\("button, \[data-tip\]"\)/, "a tap on a point's ✦ or ? shows its tip without opening the words");
+  for (const mark of point.match(/<span [^>]*data-tip=[^>]*>/g) ?? []) assert.match(mark, /title=""/, `no second tip over ${mark}`);
   assert.match(read("legible.css"), /\.said-toggle \{[^}]*user-select: none/, "its name stays out of words selected to explain");
 
   // Numbers that live in two files say the same thing.

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { World } from "./core";
+import { TIPS } from "./Tips";
 import "./away.css";
 
 export const AWAY_AFTER_MS = 30_000;
+
+// The card's rule, in its own words (C219: "how did it appear there … what about all the other things"): only
+// threads where your own words landed while this window was hidden or in the background for 30 s or more, with the
+// AI's new proposals on those threads; threads you didn't talk in, and other people's, stay out by design.
+export const AWAY_WHAT = "Threads your new thoughts landed in · newest first";
+export const AWAY_WHEN = `Shown after ${AWAY_AFTER_MS / 1000} s or more away · a row takes you there`;
 
 export type AwayItem = {
   key: string;
@@ -170,17 +177,24 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
     if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); }
   }}>
     <div className="away-top">
-      <div><h2 id="away-title">While you were away</h2><p>Your thoughts · Newest first</p></div>
+      {/* The rule, said where the question comes up (why these threads, and what about the rest): see awayItems. */}
+      <div><h2 id="away-title">While you were away</h2><p>{AWAY_WHAT}</p></div>
       <button className="away-dismiss" onClick={close} aria-label="Dismiss while you were away">×</button>
     </div>
     <ol className="away-items" aria-label="What landed while you were away">
       {items.map((item) => <li key={item.key}>
+        {/* A row only takes you there; nothing is kept, added or dismissed from here. */}
         <a href={`#${item.itemId ? `item-${item.itemId}` : item.thoughtId ? `point-${item.thoughtId}` : `thread-${item.threadId}`}`}
+          aria-describedby="away-when"
           onClick={(event) => { event.preventDefault(); onFollow(item); }}>
-          <span className="away-title">{item.kind === "proposal" && <span className="away-mark" role="img" aria-label="AI proposal">✦ </span>}{item.title}<span className="away-arrow" aria-hidden="true">↗</span></span>
-          <span className="away-detail">{item.detail}</span>
+          <span className="away-text">
+            <span className="away-title">{item.kind === "proposal" && <span className="away-mark" role="img" aria-label="AI proposal" data-tip={TIPS.awayProposal}>✦ </span>}{item.title}</span>
+            <span className="away-detail">{item.detail}</span>
+          </span>
+          <span className="away-go" aria-hidden="true">›</span>
         </a>
       </li>)}
     </ol>
+    <p className="away-when" id="away-when">{AWAY_WHEN}</p>
   </section>;
 }
