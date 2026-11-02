@@ -149,13 +149,77 @@ pub fn said_after(head: Option<&str>, text: &str) -> bool {
 
 /// Whether a thought on the map says a decision, read on from the head its note says it carries on.
 pub fn on_map(world: &World, thought: &Thought) -> bool {
-    let head = world
-        .notes
-        .get(&thought.id)
-        .map(|n| n.continues.as_str())
-        .filter(|id| !id.is_empty())
-        .and_then(|id| world.thoughts.iter().find(|t| t.id == id));
-    said_after(head.map(|h| h.text.as_str()), &thought.text)
+    said_after(head_of(world, thought).map(|h| h.text.as_str()), &thought.text)
+}
+
+/// The head a thought carries on across a pause (chunks.rs), if its note names one.
+fn head_of<'a>(world: &'a World, thought: &Thought) -> Option<&'a Thought> {
+    world.notes.get(&thought.id).map(|n| n.continues.as_str()).filter(|id| !id.is_empty()).and_then(|id| world.thoughts.iter().find(|t| t.id == id))
+}
+
+/// A thought's decision in the person's own words, read on from its head as `on_map` reads it: what Recap lists and
+/// leads with. The placer's point is at most 12 words and often a fragment ("if under $80 booking pottery class
+/// tonight"), and Recap echoed it as the decision (8 of 8 items, 2026-11-01 takes). None when no sentence says one.
+pub fn words_on_map(world: &World, thought: &Thought) -> Option<String> {
+    match head_of(world, thought) {
+        Some(head) => in_words(&format!("{} {}", head.text.trim(), thought.text.trim())),
+        None => in_words(&thought.text),
+    }
+}
+
+/// The decision a text says, as said: the sentence that says it, or when a marker only leads it in its own clause
+/// ("Okay, decided: …", "It's settled, …", "I made up my mind, …"), the words after it. Starts with a capital.
+pub fn in_words(text: &str) -> Option<String> {
+    let mut start = 0;
+    for (i, c) in text.char_indices().chain([(text.len(), '.')]) {
+        if !matches!(c, '.' | '!' | '?' | ';' | '\n') {
+            continue;
+        }
+        let end = (i + c.len_utf8()).min(text.len());
+        let sentence = text[start..end].replace(['’', '‘'], "'");
+        start = end;
+        let lower = sentence.to_lowercase();
+        if c == '?' || !decides(&lower) {
+            continue;
+        }
+        // Lowercasing changed a letter's length: the clauses' places don't carry over, so the whole sentence.
+        if lower.len() != sentence.len() {
+            return capital(&sentence);
+        }
+        // Clause by clause, as `decides` reads them: the first that is only a marker and lead-in words.
+        let mut from = 0;
+        for (j, ch) in lower.char_indices().chain([(lower.len(), ',')]) {
+            if !matches!(ch, ',' | '—' | '–' | ':') {
+                continue;
+            }
+            let clause = words(&lower[from..j]);
+            let next = (j + ch.len_utf8()).min(lower.len());
+            let leads = MARKERS.iter().any(|(marker, strict)| {
+                clause.len() >= marker.len() && {
+                    let i = clause.len() - marker.len();
+                    marks(&clause, i, marker, *strict)
+                        && clause[..i].iter().all(|w| LEADS.contains(w) || SELF.contains(w) || BETWEEN.contains(w))
+                }
+            });
+            if leads {
+                let rest = sentence[next..].trim_start_matches(|c: char| !c.is_alphanumeric() && c != '$');
+                if rest.chars().any(char::is_alphanumeric) {
+                    return capital(rest);
+                }
+            }
+            from = next;
+        }
+        return capital(&sentence);
+    }
+    None
+}
+
+/// Trimmed, first letter capitalized, so a decision reads as a sentence on its own.
+fn capital(text: &str) -> Option<String> {
+    let text = text.trim();
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    Some(first.to_uppercase().chain(chars).collect())
 }
 
 /// `changes`, then a `ThoughtDecided` for each placed thought whose mark they change: a correction ("We divided" →
@@ -189,7 +253,28 @@ pub fn remarked(world: &World, mut changes: Vec<Change>) -> Vec<Change> {
 
 #[cfg(test)]
 mod tests {
-    use super::said;
+    use super::{in_words, said};
+
+    /// What Recap lists for a decision: the person's words, past a marker that only leads them in, as a sentence.
+    #[test]
+    fn a_decision_reads_in_the_persons_words() {
+        let cases = [
+            ("Okay, decided: if it's under eighty dollars, I'm booking it tonight.", "If it's under eighty dollars, I'm booking it tonight."),
+            ("Okay, decided, if it's under $80, I'm booking it tonight.", "If it's under $80, I'm booking it tonight."),
+            ("Decided: I'll study with Priya on Wednesday night.", "I'll study with Priya on Wednesday night."),
+            ("I made up my mind, I'm quitting coffee.", "I'm quitting coffee."),
+            ("It’s settled, we're doing Lisbon in May.", "We're doing Lisbon in May."),
+            ("I can't decide. Okay, decided: the red one.", "The red one."),
+            ("OK so I’ve decided — no more late-night email.", "No more late-night email."),
+            ("Let's go with the Thursday slot.", "Let's go with the Thursday slot."),
+            ("so I've decided to take the job in Toronto. It pays more.", "So I've decided to take the job in Toronto."),
+        ];
+        for (said, want) in cases {
+            assert_eq!(in_words(said).as_deref(), Some(want), "{said}");
+        }
+        assert_eq!(in_words("I can't decide between the two classes."), None);
+        assert_eq!(in_words("Have you decided?"), None);
+    }
 
     /// Decisions as people say them, the demo's two lines first.
     const DECISIONS: [&str; 22] = [

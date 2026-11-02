@@ -705,3 +705,35 @@ async fn a_card_whose_last_point_is_deleted_goes_even_while_words_said_there_are
     assert!(f.core.snapshot().thread("T3").is_none(), "no empty card");
     assert!(has(&f, "p"), "the words being placed stay");
 }
+
+/// The AI's cards follow the words they were made from: a reminder made from "Learn to throw on the wheel" alone
+/// moves with it, and back with the move's Undo; deleted or scratched, the words take it with them, and Undo opens
+/// it again. A card that shares no word with them ("Buy tomato stakes") stays where it is.
+#[tokio::test]
+async fn the_cards_made_from_a_point_go_where_it_goes() {
+    let mut world = slipped();
+    let card = |id: &str, title: &str| Action { id: id.into(), thread_id: "T1".into(), kind: "reminder".into(), title: title.into(), when: String::new(), status: ItemStatus::New, done_ms: None };
+    world.actions = vec![card("r1", "Book a wheel throwing lesson"), card("r2", "Buy tomato stakes")];
+    let base = world.clone();
+    let f = Fixture::new(world);
+    let card = |f: &Fixture, id: &str| f.core.snapshot().actions.iter().find(|a| a.id == id).map(|a| (a.thread_id.clone(), a.status)).unwrap();
+    let new = |on: &str| (on.to_string(), ItemStatus::New);
+
+    let lines = f.say("Move that to the pottery thread").await;
+    assert!(lines.contains(&"notice Moved “Learn to throw on the wheel” and the card made from it to Pottery class".to_string()), "{lines:?}");
+    assert_eq!((card(&f, "r1"), card(&f, "r2")), (new("T2"), new("T1")));
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert_eq!((card(&f, "r1"), card(&f, "r2")), (new("T1"), new("T1")), "Undo takes it back with its words");
+    assert_eq!(serde_json::to_value(&*f.core.snapshot()).unwrap()["actions"], serde_json::to_value(f.replayed(base)).unwrap()["actions"]);
+
+    let lines = f.watch(|core| click_delete(core, "you", "w"));
+    assert_eq!(lines[0], "notice Deleted “Learn to throw on the wheel” and the card made from it");
+    assert_eq!((card(&f, "r1"), card(&f, "r2")), (("T1".into(), ItemStatus::Dismissed), new("T1")));
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert_eq!(card(&f, "r1"), new("T1"), "Undo opens it again with its words");
+
+    catalog::kept(&f.core, "you", "Learn to throw on the wheel", vec!["w".into()]);
+    let lines = f.say("Scratch that").await;
+    assert!(lines.contains(&"notice Removed “Learn to throw on the wheel” and the card made from it".to_string()), "{lines:?}");
+    assert_eq!((card(&f, "r1"), card(&f, "r2")), (("T1".into(), ItemStatus::Dismissed), new("T1")));
+}

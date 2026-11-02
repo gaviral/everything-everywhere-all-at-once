@@ -286,7 +286,7 @@ pub(crate) fn delete(core: &Arc<Core>, speaker: &str, thought_id: &str) -> Done 
         notice(core, speaker, "That thought isn't on the map any more".into());
         return Done::missed(Act::Delete);
     };
-    notice(core, speaker, format!("Deleted “{}”", crate::catalog::short(&words)));
+    notice(core, speaker, format!("Deleted “{}”{}", crate::catalog::short(&words), crate::catalog::with_cards(&undo)));
     Done::with(Act::Delete, Some(undo))
 }
 
@@ -497,6 +497,11 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
         // Taken along, the speaker is somewhere again: a "new thread" asked for before ends, as on any move (`focus`).
         core.new_threads.cancel(speaker);
     }
+    // The cards made from these words alone go with them (an emptied thread's go with its merge): "pottery class
+    // Thursday" moved off Garden takes its reminder, rather than leaving it on a card that no longer says it.
+    let carried = if emptied { Vec::new() } else { carry(&world, &ids, &from, &target) };
+    let cards = cards(carried.len());
+    changes.extend(carried);
     if emptied {
         changes.push(Change::ThreadMerged { from: from.clone(), into: target.clone() });
     }
@@ -504,8 +509,23 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     let what = crate::catalog::short(if thought.point.is_empty() { &thought.text } else { &thought.point });
     drop(world);
     core.commit(changes);
-    notice(core, speaker, if started.is_some() { format!("Moved “{what}” to a new thread: {title}") } else { format!("Moved “{what}” to {title}") });
+    notice(core, speaker, if started.is_some() { format!("Moved “{what}”{cards} to a new thread: {title}") } else { format!("Moved “{what}”{cards} to {title}") });
     Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, back })))
+}
+
+/// The waiting cards on `from` made from thoughts `ids` alone (catalog.rs `made_from`), moved to `to` with them.
+fn carry(world: &World, ids: &[String], from: &str, to: &str) -> Vec<Change> {
+    let moving: Vec<Thought> = world.thoughts.iter().filter(|t| ids.contains(&t.id)).cloned().collect();
+    crate::catalog::made_from(world, from, &moving).into_iter().map(|id| Change::ItemMoved { id, thread_id: to.into() }).collect()
+}
+
+/// How a move's notice names the cards that went along: "", " and the card made from it", " and its 2 cards".
+fn cards(n: usize) -> String {
+    match n {
+        0 => String::new(),
+        1 => " and the card made from it".into(),
+        n => format!(" and the {n} cards made from it"),
+    }
 }
 
 /// Whether thought `t` is on thread `id`, following merges.
@@ -581,8 +601,12 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
     });
     let now = now_ms();
     changes.extend(last_points(&world, &ids, &on, &back, false, now).into_iter().filter(|c| !matches!(c, Change::ThreadTouched { thread_id, .. } if Some(thread_id) == emptied.as_ref())));
+    // The cards that went with them come back too, as does any made from them alone where they were put.
+    let carried = if world.thread(&back).is_some() { carry(&world, &ids, &on, &back) } else { Vec::new() };
+    let going_back = |c: &Change| carried.iter().any(|m| matches!((m, c), (Change::ItemMoved { id, .. }, Change::ItemStatus { id: other, .. }) if id == other));
+    changes.extend(carried.iter().cloned());
     if let Some(id) = &emptied {
-        changes.extend(crate::catalog::set_aside(&world, id));
+        changes.extend(crate::catalog::set_aside(&world, id).into_iter().filter(|c| !going_back(c)));
         changes.push(Change::ThreadRemoved { thread_id: id.clone() });
     }
     let follow = u.back.is_some() && (world.active_for(speaker) == Some(&on) || emptied.is_some());

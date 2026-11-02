@@ -182,6 +182,8 @@ type Change =
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  // A waiting idea or task goes with the words it was made from to another thread (a move, or its Undo).
+  | { type: "item_moved"; id: string; thread_id: string }
   // The refiner brought a waiting idea or task in line with something said later; restored is its Undo (refiner.rs).
   | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string }
   | { type: "item_restored"; id: string; to: ItemState }
@@ -406,6 +408,14 @@ export function apply(world: World, raw: Change): World {
         actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: to.status, title: to.text, when: to.when } : a)),
       };
     }
+    case "item_moved":
+      // As the core: only onto a thread that's there.
+      if (!world.threads.some((t) => t.id === c.thread_id)) return world;
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, thread_id: c.thread_id } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, thread_id: c.thread_id } : a)),
+      };
     case "item_status":
       return {
         ...world,
