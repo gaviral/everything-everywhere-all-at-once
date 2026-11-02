@@ -31,7 +31,7 @@ mod world;
 #[cfg(test)]
 mod perf;
 #[cfg(test)]
-mod journal_tests;
+mod replay_tests;
 
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};

@@ -1,7 +1,7 @@
 // No extra dependencies: run with `node scripts/world-mirror-check.mjs` (scripts/test.sh runs it after the Rust tests).
 // The window's copy of the map (ui/src/core.ts `apply`, with tidy-core, moves-core and apps-core) against the core's
 // (world.rs `World::apply`): every kind of change (world.rs `every_change`) and a session that takes every road to Undo
-// (journal_tests.rs `session`), written by the core's own tests, give the core's map in the window; so does a snapshot
+// (replay_tests.rs `session`), written by the core's own tests, give the core's map in the window; so does a snapshot
 // the last changes reach again (main.rs `session` subscribes before it snapshots); and a kind the window doesn't know
 // leaves its map as it was.
 import assert from "node:assert/strict";
