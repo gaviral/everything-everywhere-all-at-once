@@ -37,7 +37,7 @@ const TAGS: usize = 3;
 /// not two minutes on.
 const PATIENCE: Duration = Duration::from_secs(52);
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 struct Pass {
     #[serde(default)]
     titles: Vec<Title>,
@@ -54,31 +54,31 @@ struct Pass {
     tags: Vec<Tags>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Tags {
     thread_id: String,
     tags: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Title {
     thread_id: String,
     title: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Merge {
     from: String,
     into: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Idea {
     thread_id: String,
     text: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Task {
     thread_id: String,
     kind: String,
@@ -149,15 +149,38 @@ pub async fn run(core: Arc<Core>) {
 /// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
 /// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
 /// merged, a thread heard more (see `drop_stale_titles`), or words it read were taken back (see `drop_taken_back`).
-fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
-    let world = core.snapshot();
-    drop_stale_titles(&mut answer, sent, &world);
-    drop_taken_back(&mut answer, sent, &world);
-    let changes = changes(&world, answer);
-    tracing::info!("refiner pass {when}: {} changes", changes.len());
-    if !changes.is_empty() {
-        core.commit(changes);
+fn land(core: &Core, answer: Pass, sent: &World, when: &str) {
+    land_racing(core, answer, sent, when, || {});
+}
+
+/// `land`, with `between` run after the check and before the commit (a test takes words back there). The check
+/// is made on a snapshot, so words can be taken back before the commit: the commit holds only while every word the
+/// pass read and the check kept is still on the map (`commit_if`), else the pass is checked again on the new map.
+fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: impl Fn()) {
+    for _ in 0..3 {
+        let world = core.snapshot();
+        let mut pass = answer.clone();
+        drop_stale_titles(&mut pass, sent, &world);
+        drop_taken_back(&mut pass, sent, &world);
+        let present: HashSet<&str> = world.thoughts.iter().map(|t| t.id.as_str()).collect();
+        let read: Vec<String> =
+            sent.thoughts.iter().filter(|t| t.placed && present.contains(t.id.as_str())).map(|t| t.id.clone()).collect();
+        let changes = changes(&world, pass);
+        tracing::info!("refiner pass {when}: {} changes", changes.len());
+        if changes.is_empty() {
+            return;
+        }
+        between();
+        let still = |now: &World| {
+            let on: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
+            read.iter().all(|id| on.contains(id.as_str()))
+        };
+        if core.commit_if(still, changes) {
+            return;
+        }
     }
+    // Words keep being taken back: the next pass reads the map as it is then.
+    tracing::warn!("refiner pass {when}: dropped, words were taken back while it landed");
 }
 
 /// Leaves out titles for threads that heard words the pass didn't see: placed there since it was sent, or still
@@ -671,7 +694,7 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, drop_stale_titles, drop_taken_back, existing, named_at, rest_ms, Pass};
+    use super::{changes, changes_on, day, describe, drop_stale_titles, drop_taken_back, existing, land_racing, named_at, rest_ms, Pass};
     use crate::tidy::Kind;
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
@@ -1273,6 +1296,34 @@ mod tests {
         assert!(after.iter().all(|c| c.starts_with("T2 ")), "nothing lands on the thread that lost words: {after:?}");
         assert!(after.contains(&"T2 reminder Buy oat milk ".to_string()) && after.contains(&"T2 #errands".to_string()), "{after:?}");
         assert!(!after.iter().any(|c| c.contains("into T1")), "no merge into it either: {after:?}");
+    }
+
+    #[test]
+    fn words_taken_back_as_a_pass_lands_leave_nothing_from_it_on_their_thread() {
+        // The check passes on a snapshot; "scratch that" commits before the pass does (another worker).
+        let world = map(&[
+            ("T1", "Mom's Birthday", &["Maybe a nice espresso machine, she loves coffee.", "Decided: I'm getting her the espresso machine, the Breville one."]),
+            ("T2", "Groceries", &["Buy oat milk and coffee beans."]),
+        ]);
+        let breville = world.thoughts.iter().find(|t| t.text.contains("Breville")).unwrap().id.clone();
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::Journal::open(&path).unwrap();
+        let core = crate::Core::test(journal, world.clone());
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Buy Breville espresso machine", "when": ""},
+                        {"thread_id": "T2", "kind": "reminder", "title": "Buy oat milk", "when": ""}]
+        }))
+        .unwrap();
+        let taken = std::sync::atomic::AtomicBool::new(false);
+        land_racing(&core, pass, &world, "in a test", || {
+            if !taken.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                core.commit(vec![Change::ThoughtSkipped { thought_id: breville.clone() }]);
+            }
+        });
+        let now = core.snapshot();
+        let landed: Vec<String> = now.actions.iter().map(|a| format!("{} {}", a.thread_id, a.title)).collect();
+        assert_eq!(landed, ["T2 Buy oat milk"], "checked again after the race: only the other thread's reminder");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
