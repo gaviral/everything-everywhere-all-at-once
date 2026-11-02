@@ -8,7 +8,7 @@ export const SHORTEST_MS = 5000;
  *  fix a refused key and restart) or says the core is gone. "No AI key" is not one: the header, the composer's
  *  placeholder, the mic and the tour keep saying it, and kept up it covered the Apps bar and the tour's last step.
  *  "The mic is already off." is not one either: it answers "stop listening" and has nothing to ask. */
-const STAYS = /^(The mic stopped|Microphone|Couldn't start the mic|Connection lost)|was refused/i;
+const STAYS = /^(The mic stopped|Microphone|Couldn't start the mic|Connection lost|The AI key was refused)/i;
 
 export function staysUp(notice: string): boolean {
   return STAYS.test(notice);

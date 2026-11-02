@@ -59,7 +59,8 @@ export type Explanation = { text: string; failed: boolean };
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
 // mic off ("stop listening"). The revision makes the same one asked twice a new ask.
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number };
+// `answers`: how many answers had been shown when it came (see showNotice).
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -447,6 +448,11 @@ export function useCore(speaker?: string) {
   const [notice, setNotice] = useState("");
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const [undoId, setUndoId] = useState<number | null>(null);
+  // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
+  // answer the window makes for a view request stands down when the core has answered since (showNotice).
+  const answers = useRef(0);
+  const [answerRevision, setAnswerRevision] = useState(0);
+  const answered = () => setAnswerRevision(++answers.current);
   // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
   const [revertAsk, setRevertAsk] = useState(0);
   // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
@@ -558,7 +564,7 @@ export function useCore(speaker?: string) {
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             // A newer answer: the Undo shown was for the one before.
-            if (msg.message) setUndoId(null);
+            if (msg.message) { setUndoId(null); answered(); }
             break;
           case "undoable":
             setUndoId(msg.id);
@@ -573,10 +579,14 @@ export function useCore(speaker?: string) {
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
             setUndoId(null);
+            answered();
             break;
-          case "view":
-            setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
+          case "view": {
+            // Counted now, not in the updater: React may run that only at render, after answers that came later.
+            const shown = answers.current;
+            setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1, answers: shown }));
             break;
+          }
           case "unfold":
             setUnfoldAsk((previous) => ({ thread_id: msg.thread_id, open: msg.open, revision: (previous?.revision ?? 0) + 1 }));
             break;
@@ -620,6 +630,7 @@ export function useCore(speaker?: string) {
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
+    answered();
     return false;
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
@@ -657,6 +668,7 @@ export function useCore(speaker?: string) {
     voiceStatusRevision,
     connected,
     notice,
+    answerRevision,
     noKey,
     keyRefused: keyNotice.includes("refused"),
     keyNotice,
@@ -672,13 +684,20 @@ export function useCore(speaker?: string) {
     attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
-    showNotice: (message: string) => { setNotice(message); setUndoId(null); },
+    // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
+    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review of judgeseye, Sol).
+    showNotice: (message: string, asked?: ViewAsk | null) => {
+      if (asked && answers.current > asked.answers) return;
+      setNotice(message);
+      setUndoId(null);
+      answered();
+    },
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const message = JSON.stringify({ type: "text", text });
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(message);
       else if (outbox.current.length < 50) { outbox.current.push(message); setQueuedCount(outbox.current.length); }
-      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); return false; }
+      else { setNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false; }
       return true;
     },
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
