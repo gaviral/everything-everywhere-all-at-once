@@ -22,8 +22,9 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 // that I never finish my", on a thread named for that, "Oh, and rent is due Friday and I still haven't sent it" was
 // reasoned over at length (is an unsent payment a case of never finishing?) and placed in 5.6 s and 5.0 s in the
 // takes, over the 5 s the map has. Always right ("new"), the time was all reasoning: the same request sent alone,
-// 4 batches side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698–813 → 412–588 with this
-// clause; the same line after a finished sentence took 365–499.
+// one lane, batches of 12 side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698 → 528 with this
+// wording; 743 → 538 and 813 → 479 with an earlier one ("a bill not paid, a message not sent"); the same line after
+// a finished sentence took 365–499.
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
 For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
 news that something is done), \"return\" if it says more about an earlier thread, \
@@ -2220,7 +2221,8 @@ mod tests {
     }
 
     /// Routing cases against the real model: `cargo test --release -- --ignored routing_cases --nocapture`, with
-    /// MODEL_API_KEY set (about $0.0002 a placement on the default model). Each line of `ROUTING_CASES` (default
+    /// MODEL_API_KEY set (about $0.0002 a call on the default model; a placement races `RACE` calls as the app
+    /// does, PLACER_RACE=1 for one). Each line of `ROUTING_CASES` (default
     /// scripts/routing-cases.jsonl) is a map, the card selected, words said, and where they may land; each runs
     /// `ROUTING_RUNS` times (default 3) on a fresh copy, since one answer is a hint, not proof. A case fails when
     /// most of its runs land somewhere it doesn't allow. A line can instead take its map from a journal: every
@@ -2257,6 +2259,9 @@ mod tests {
                 let core = Core {
                     key: Some(key.clone()),
                     placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+                    // As the app races (`RACE`, or PLACER_RACE), so a case checks the answer the app would keep:
+                    // the first good one, which skews to the shorter reasonings.
+                    placer_race: super::race_from_env(),
                     ..Core::test(journal, world.clone())
                 };
                 // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.
