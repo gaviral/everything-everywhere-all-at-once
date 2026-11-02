@@ -37,7 +37,7 @@ import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor,
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
@@ -545,23 +545,27 @@ export default function App() {
     previousThoughtGroups.current = grouped;
     return grouped;
   }, [world.thoughts]);
-  // Keep fields separate so a query cannot match across two different pieces of text.
-  const previousSearchIndex = useRef(new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>());
+  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
+  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
+  // Everything the card shows is found: title, tags, thoughts, ideas and reminders (searchFields), each a separate
+  // field so a query cannot match across two pieces of text. An entry is rebuilt only when its card's items change:
+  // groups are new arrays after any item changes, so they're compared item by item (a letter costs only the scan).
+  type SearchEntry = { thread: Thread; thoughts: Thought[] | undefined; ideas: Suggestion[] | undefined; actions: Action[] | undefined; fields: string[] };
+  const previousSearchIndex = useRef(new Map<string, SearchEntry>());
   const searchIndex = useMemo(() => {
-    const next = new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>();
+    const next = new Map<string, SearchEntry>();
+    const same = <T,>(a: T[] | undefined, b: T[] | undefined) => a === b || (!!a && !!b && a.length === b.length && a.every((item, i) => item === b[i]));
     const entries = world.threads.map((thread) => {
-      const thoughts = thoughtsByThread.get(thread.id);
+      const thoughts = thoughtsByThread.get(thread.id), ideas = ideasByThread.get(thread.id), actions = actionsByThread.get(thread.id);
       const previous = previousSearchIndex.current.get(thread.id);
-      const entry = previous?.thread === thread && previous.thoughts === thoughts ? previous : {
-        thread, thoughts,
-        fields: [thread.title, ...(thread.tags ?? []).map((tag) => tag.name), ...(thoughts ?? []).flatMap((thought) => [thought.text, thought.point])].map((text) => text.toLocaleLowerCase()),
-      };
+      const entry = previous?.thread === thread && previous.thoughts === thoughts && same(previous.ideas, ideas) && same(previous.actions, actions)
+        ? previous : { thread, thoughts, ideas, actions, fields: searchFields(thread, thoughts, ideas, actions) };
       next.set(thread.id, entry);
       return { id: thread.id, fields: entry.fields };
     });
     previousSearchIndex.current = next;
     return entries;
-  }, [world.threads, thoughtsByThread]);
+  }, [world.threads, thoughtsByThread, ideasByThread, actionsByThread]);
   // The box shows each letter at once; the map follows a moment later and gives way to the next letter
   // (useDeferredValue), so typing never waits on the cards. At 1,000 threads a letter used to freeze the page ≈ 1 s.
   const deferredQuery = useDeferredValue(query);
@@ -597,8 +601,6 @@ export default function App() {
     if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
-  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
-  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct, unlink: core.unlink }), [core.setItem, core.approve, core.tag, core.correct, core.unlink]);
 
   // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
