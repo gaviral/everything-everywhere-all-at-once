@@ -17,6 +17,7 @@ mod messages;
 mod model;
 mod pictures;
 mod placer;
+mod positions;
 mod refiner;
 mod sample;
 mod trace;
@@ -97,6 +98,8 @@ pub struct Core {
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
     pub messages: messages::Runtime,
+    /// Places on the canvas whose journal line waits, so a drag's steps make a few lines (positions.rs).
+    positions: positions::Runtime,
 }
 
 impl Core {
@@ -134,6 +137,7 @@ impl Core {
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
+                positions::settle(self, &world);
                 if let Err(e) = journal.append(change) {
                     tracing::error!("journal write failed: {e:#}");
                 }
@@ -986,6 +990,7 @@ async fn main() -> anyhow::Result<()> {
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
+        positions: positions::Runtime::default(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
@@ -1447,6 +1452,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // quick off and on, the old session's late end mustn't switch the new mic off.
     let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
+    // The item whose place was refused last, so a run of refusals on it is said once (positions.rs).
+    let mut refused: Option<String> = None;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -1540,6 +1547,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
                 Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),
+                // Anyone in the room, a person or an AI participant. Refused once per item: a drag's steps still on
+                // their way when its card left the map would each say it.
+                Ok(ClientMsg::Position { id, x, y }) => match positions::set(&core, &speaker, &id, x, y) {
+                    Ok(()) => refused = None,
+                    Err(why) if refused.as_deref() != Some(id.as_str()) => {
+                        core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
+                        refused = Some(id);
+                    }
+                    Err(_) => {}
+                },
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1669,6 +1686,7 @@ impl Core {
             service: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
+            positions: Default::default(),
         }
     }
 }

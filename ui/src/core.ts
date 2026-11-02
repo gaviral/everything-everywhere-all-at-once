@@ -16,6 +16,7 @@ import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
+import { applyPosition, keepPlaced, type Position, type PositionChange } from "./positions-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -148,6 +149,8 @@ export interface World extends AppsWorld {
   notes?: Record<string, Note>;
   /** Renames and merges the AI wasn't sure of, waiting on their cards (tidy-core.ts). */
   proposals?: Proposal[];
+  /** Thread or thought id → where a person or an AI participant put it on the canvas (positions-core.ts). */
+  positions?: Record<string, Position>;
 }
 
 type Change =
@@ -185,6 +188,7 @@ type Change =
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | MoveChange
+  | PositionChange
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
@@ -343,7 +347,14 @@ export function actionFailed(world: World, id: string, message: string): World {
   return { ...world, actions: world.actions.map((a) => (a.id === id ? { ...a, failed: message } : a)) };
 }
 
+/** The window's copy of a change, as the core applies it (world.rs `World::apply`). A thread or thought that leaves the
+ *  map takes its place on the canvas with it (positions-core.ts). */
 export function apply(world: World, raw: Change): World {
+  if (raw.type === "positioned") return applyPosition(world, raw);
+  return keepPlaced(applyChange(world, raw));
+}
+
+function applyChange(world: World, raw: Exclude<Change, PositionChange>): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
