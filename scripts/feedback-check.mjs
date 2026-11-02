@@ -1,9 +1,11 @@
 // No extra dependencies: run with `node scripts/feedback-check.mjs`.
-// Every action answers you (ui/src/feedback.ts): a click, key, drag or form in ui/src with no entry there fails, as
-// does an entry whose words aren't in the code or that waits on something slow with no working or failed state. The
-// shared press (styles.css "Pressed") must be there for every button, with Reduce Motion keeping only the dim; a
-// dismissed row fades out rather than vanishing; and every spoken command in core/src/catalog.rs answers with words
-// the core really sends. Source-level, as the other checks here: the e2e run is in the card.
+// The feedback catalog (ui/src/feedback.ts) matches the code: a click, key, pointer, blur, input, drag or form handler
+// in ui/src with no entry there fails, as does an entry whose `says` words aren't in the code or that waits on
+// something slow with no working or failed state. The shared press (styles.css "Pressed") must be there for every
+// button, Move and Delete included, with Reduce Motion keeping only the dim (the mic too); a dismissed row fades out
+// rather than vanishing; and every spoken command in core/src/catalog.rs answers with words the core really sends.
+// Source-level, as the other checks here: it doesn't prove a state renders (the e2e run in the card and each feature's
+// own check do).
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
@@ -23,24 +25,33 @@ try {
 }
 
 // 1. Every handler in ui/src is an action with an entry, or says why it isn't one.
-const HANDLER = /\bon(?:Click|Submit|DoubleClick|ContextMenu|DragStart|KeyDown|Change)=\{|\bonDrop:|addEventListener\("(?:keydown|drop)"/g;
+const HANDLER = /\bon(?:Click|Submit|DoubleClick|ContextMenu|DragStart|KeyDown|Change|Input|Blur|Pointer(?:Down|Up|Cancel))=\{|\bonDrop:|addEventListener\("(?:keydown|drop|pointer(?:down|up))"/g;
 const handlers = [];
-for (const [file, text] of Object.entries(src)) {
+const found = (file, text) => {
+  const out = [];
   for (const m of text.matchAll(HANDLER)) {
     // Its line and the next: a handler opened at a line's end ("onClick={(event) => {") is named by its first line.
     const start = text.lastIndexOf("\n", m.index) + 1, end = text.indexOf("\n", text.indexOf("\n", m.index) + 1);
     const line = text.slice(start, end < 0 ? undefined : end);
     // The element it's on: the last tag opened before it.
     const tag = [...text.slice(Math.max(0, m.index - 2000), m.index).matchAll(/<([a-zA-Z][\w.]*)/g)].at(-1)?.[1] ?? "";
-    handlers.push({ file, line, lineNo: text.slice(0, m.index).split("\n").length, tag, handler: m[0] });
+    out.push({ file, line, lineNo: text.slice(0, m.index).split("\n").length, tag, handler: m[0] });
   }
-}
+  return out;
+};
+for (const [file, text] of Object.entries(src)) handlers.push(...found(file, text));
 const marks = [
   ...ACTIONS.flatMap((a) => a.at.map(([file, marker]) => ({ file, marker, action: a }))),
   ...NOT_ACTIONS.map(({ at: [file, marker] }) => ({ file, marker, action: null })),
 ];
+const catalogued = (h) => marks.filter((m) => m.file === h.file && h.line.includes(m.marker));
+// The net catches what it says it does: an uncatalogued handler of each kind, added to a real file, fails.
+for (const added of ["onPointerUp={() => go()}", "onBlur={() => go()}", "onInput={() => go()}", "onClick={() => go()}"]) {
+  const extra = found("App.tsx", `${src["App.tsx"]}\n<button type="button" ${added}>Go</button>\n`).filter((h) => !catalogued(h).length);
+  assert.ok(extra.some((h) => h.line.includes(added)), `the check misses an uncatalogued ${added}`);
+}
 for (const h of handlers) {
-  const by = marks.filter((m) => m.file === h.file && h.line.includes(m.marker));
+  const by = catalogued(h);
   if (!by.length) problems.push(`${h.file}:${h.lineNo} ${h.handler} on <${h.tag}> gives no catalogued feedback: add it to ui/src/feedback.ts`);
   h.by = by;
 }
@@ -78,8 +89,12 @@ else {
   if (!/transition-duration:\s*0s/.test(press)) problems.push("styles.css: the press must show at once (transition-duration: 0s on :active)");
   for (const el of ["summary", "a[href]", "[role=\"button\"]"]) if (!press.includes(el)) problems.push(`styles.css: the shared press leaves out ${el}`);
 }
+// Move and Delete show at opacity: 1 (moves.css), which wins over the zero-specificity press: their own dim must be there.
+const moves = read("ui/src/moves.css").replace(/\/\*[\s\S]*?\*\//g, "");
+if (!/\.move-button:active[^{]*\{[^}]*opacity:\s*\.75/.test(moves)) problems.push("moves.css: Move and Delete don't dim when pressed (their opacity: 1 hides the shared press)");
 const reduced = [...styles.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]).join("\n");
 if (!/:active[^{]*\{[^}]*scale:\s*none/.test(reduced)) problems.push("styles.css: under Reduce Motion the press must not move (scale: none)");
+if (!/\.mic[^{]*:active[^{]*\{[^}]*transform:\s*none[^}]*opacity:\s*\.75/.test(reduced)) problems.push("styles.css: under Reduce Motion the mic's press must not move, and must dim instead");
 if (!/\*\s*\{\s*animation:\s*none !important;\s*transition:\s*none !important;/.test(reduced)) problems.push("styles.css: Reduce Motion must stop every animation and transition");
 
 // 4. A suggestion or action you dismiss fades out, so the rows below close the gap instead of jumping.

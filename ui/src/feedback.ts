@@ -1,8 +1,9 @@
 // Every action in the window, and what it shows at each step: pressed (the instant it's touched), working (while it
-// waits on something slower than a frame), done and failed. scripts/feedback-check.mjs holds it: a click, key, drag
-// or form in ui/src with no entry here fails, as does an entry whose words aren't in the code, and every spoken
-// command in core/src/catalog.rs must answer with words the core really sends. Nothing here ships: the app doesn't
-// import it.
+// waits on something slower than a frame), done and failed. scripts/feedback-check.mjs holds the catalog to the code,
+// at the source level: a click, key, pointer, blur, input, drag or form handler in ui/src with no entry here fails, as
+// does an entry whose `says` words aren't in the code, and every spoken command in core/src/catalog.rs must answer
+// with words the core really sends. It doesn't prove a state renders: the e2e run in the card and each feature's own
+// check do. Nothing here ships: the app doesn't import it.
 
 /** The shared press (styles.css, "Pressed"): every enabled button, summary and link dims at once, and a button also
  *  sinks 3%; under Reduce Motion it only dims. */
@@ -44,7 +45,7 @@ export const ACTIONS: Action[] = [
   { id: "skip-to-composer", how: "click", at: [["App.tsx", "Skip to Type a thought"]], pressed: PRESS, done: "focus lands in the composer, its ring lights" },
   { id: "dismiss-notice", how: "click", at: [["App.tsx", `aria-label="Dismiss notice"`]], pressed: PRESS, done: "the notice fades out" },
   { id: "undo-notice", how: "click", at: [["Undo.tsx", "onClick={() => onUndo(id)}"]], pressed: PRESS, waits: "core",
-    done: "the change is taken back on the map and the core says what: “Undone: …” or “Put back”", failed: OFFLINE },
+    done: "the change is taken back on the map and the core says what: “Undone: …” or “Put back”", failed: OFFLINE + "; a click racing the drop: " + NOT_CONNECTED },
   { id: "undo-map-change", how: "click", at: [["App.tsx", "core.untidy(core.mapChange!.undo"]], pressed: PRESS, waits: "core",
     done: "the old title or merge comes back and the note goes", failed: NOT_CONNECTED },
   { id: "dismiss-map-change", how: "click", at: [["App.tsx", `aria-label="Dismiss map update"`]], pressed: PRESS, done: "the note goes" },
@@ -76,7 +77,7 @@ export const ACTIONS: Action[] = [
   { id: "card-show-hide", how: "click", at: [["App.tsx", "onClick={toggle}>{collapsed"]], pressed: PRESS, done: "the card opens or folds; the button says Show or Hide" },
   { id: "title", how: "click", at: [["Moves.tsx", "titleTap(press.current.type"], ["Moves.tsx", "onDoubleClick={rename}"], ["Moves.tsx", "onContextMenu="]], pressed: PRESS,
     done: "the title becomes a field with its words selected (a tap on touch opens the card instead)" },
-  { id: "rename", how: "key", at: [["Moves.tsx", "onKeyDown={(event) => {"]], pressed: INSTANT, waits: "core", done: "Enter or leaving keeps the new title on the card; Esc keeps the old one", failed: NOT_CONNECTED },
+  { id: "rename", how: "key", at: [["Moves.tsx", "onKeyDown={(event) => {"], ["Moves.tsx", "onBlur={(event) => finish(event.currentTarget.value)}"]], pressed: INSTANT, waits: "core", done: "Enter or leaving keeps the new title on the card; Esc keeps the old one", failed: NOT_CONNECTED },
   { id: "tag", how: "click", at: [["App.tsx", "on.tag(thread.id"]], pressed: PRESS, waits: "core", done: "the tag turns kept (solid), or goes", failed: NOT_CONNECTED },
   { id: "keep-suggestion", how: "click", at: [["App.tsx", `on.setItem(s.id, "kept")`]], pressed: PRESS, waits: "core", done: "its buttons go and the row settles as kept", failed: NOT_CONNECTED },
   { id: "dismiss-suggestion", how: "click", at: [["App.tsx", `on.setItem(s.id, "dismissed")`]], pressed: PRESS, waits: "core", done: "the row fades out and the rows below close the gap", failed: NOT_CONNECTED },
@@ -177,4 +178,15 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["Apps.tsx", "onChange={(e) => setRequest(e.target.value)}"], why: "typing an app request: the words are the feedback" },
   { at: ["room.tsx", "setCode(e.target.value)"], why: "typing the room code" },
   { at: ["room.tsx", "setName(e.target.value)"], why: "typing your name" },
+  { at: ["Moves.tsx", "onInput={(event) => {"], why: "typing a title: the words are the feedback, clipped at the cap as you type" },
+  { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },
+  { at: ["App.tsx", "onBlur={() => setNoticeFocused(false)}"], why: "a notice keeps up while it has focus: no change you see" },
+  { at: ["App.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the shortcuts list closes it: the list going is the feedback" },
+  { at: ["App.tsx", `window.addEventListener("pointerdown", down, true)`], why: "notes that you're moving around the map, so the map stops following landings" },
+  { at: ["App.tsx", `window.addEventListener("pointerup", up, true)`], why: "as above, on letting go" },
+  { at: ["Attention.tsx", `document.addEventListener("pointerdown", touch, true)`], why: "tracks where your attention is, for “this”" },
+  { at: ["Explain.tsx", `document.addEventListener("pointerup", onPointerUp)`], why: "selecting words: the Explain chip shows beside them (explain's pressed)" },
+  { at: ["Explain.tsx", `document.addEventListener("pointerdown", onPointerDown)`], why: "a press outside the answer closes it: the answer going is the feedback" },
+  { at: ["Moves.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the move list closes it: the list going is the feedback" },
+  { at: ["Tips.tsx", `document.addEventListener("pointerdown", down, true)`], why: "hides a tip on a press" },
 ];

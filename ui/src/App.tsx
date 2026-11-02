@@ -941,7 +941,7 @@ export default function App() {
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
-            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} />
+            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} offline={!core.connected} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}

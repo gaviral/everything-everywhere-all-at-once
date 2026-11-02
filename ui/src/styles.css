@@ -763,8 +763,10 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mic.on { animation: none; }
-  /* The press only dims: nothing moves. */
+  /* The press only dims: nothing moves, the mic included (its own press sinks 5% with transform, so it dims here too,
+     or it would show nothing at all). */
   :where(button, summary, [role="button"], a[href]):active { scale: none; }
+  .composer .mic:not(:disabled):active { transform: none; opacity: .75; }
 }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */
