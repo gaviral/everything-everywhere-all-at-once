@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { check, coreAddresses, corePort, free, lanIp, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
@@ -125,7 +126,8 @@ assert.match(r.err, /needs this laptop on a network/);
 
 // Another machine: before a few minutes of compiling, run.sh names what the build will lack, with the one command
 // that fixes it. The floor is core/Cargo.toml's rust-version (the highest any locked crate needs: uuid 1.29, 1.89).
-const root = new URL("..", import.meta.url).pathname;
+// fileURLToPath, not .pathname: a clone under a folder with a space would read "%20" and miss core/Cargo.toml.
+const root = fileURLToPath(new URL("..", import.meta.url));
 const floor = rustFloor(root);
 assert.equal(floor, "1.89");
 assert.match(readFileSync(join(root, "README.md"), "utf8"), new RegExp(`Needs Rust ${floor.replace(".", "\\.")} or newer`));
@@ -151,6 +153,8 @@ assert.match(m, /missing: OpenSSL's headers/);
 assert.ok(m.endsWith(apt), m);
 assert.ok(machine({ has: ["rustup", "pkg-config", "pkg-config openssl"] }).endsWith(apt));
 assert.equal(machine({ has: ["rustup", "cc"], env: { OPENSSL_DIR: "/opt/ssl" } }), null, "OPENSSL_DIR points openssl-sys past pkg-config");
+assert.equal(machine({ has: ["rustup", "cc"], env: { OPENSSL_LIB_DIR: "/opt/ssl/lib", OPENSSL_INCLUDE_DIR: "/opt/ssl/include" } }), null, "both directory variables point openssl-sys past pkg-config");
+assert.match(machine({ has: ["rustup", "cc"], env: { OPENSSL_LIB_DIR: "/opt/ssl/lib" } }), /missing: pkg-config, OpenSSL's headers/, "the lib directory alone still needs pkg-config for the headers");
 assert.ok(machine({ has: ["rustup"], os: 'ID=fedora\n' }).endsWith("Run: sudo dnf install gcc pkgconf-pkg-config openssl-devel"));
 assert.ok(machine({ has: ["rustup"], os: 'ID="rocky"\nID_LIKE="rhel centos fedora"\n' }).endsWith("Run: sudo dnf install gcc pkgconf-pkg-config openssl-devel"));
 assert.ok(machine({ has: ["rustup"], os: "ID=arch\n" }).endsWith("Run: sudo pacman -S --needed base-devel openssl"));

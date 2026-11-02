@@ -245,7 +245,9 @@ export function toolchainProblem({ floor, platform = process.platform, run = run
   } else if (platform === "linux") {
     const missing = [];
     if (!run("cc").ok) missing.push("a C compiler");
-    if (!(env.OPENSSL_DIR ?? "").trim()) {
+    // openssl-sys skips pkg-config when told where OpenSSL is: OPENSSL_DIR, or both OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR.
+    const set = (k) => !!(env[k] ?? "").trim();
+    if (!set("OPENSSL_DIR") && !(set("OPENSSL_LIB_DIR") && set("OPENSSL_INCLUDE_DIR"))) {
       if (!run("pkg-config").ok) missing.push("pkg-config");
       if (!run("pkg-config openssl").ok) missing.push("OpenSSL's headers");
     }
