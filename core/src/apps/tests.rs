@@ -236,9 +236,9 @@ async fn beat_five_said_aloud_builds_an_app_that_plays_the_silly_tune_on_a_raise
     let app = fixture.core.snapshot().apps.iter().find(|a| a.name == "Loud tune").cloned().expect("kept");
     assert!(app.enabled && matches!(app.watcher, Watcher::Volume { seconds, .. } if seconds == held));
     let tunes = |messages: &mut tokio::sync::broadcast::Receiver<Outgoing>| {
-        let mut playful = Vec::new();
-        while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsSound { playful: p, .. } = message.message { playful.push(p); } }
-        playful
+        let mut played = Vec::new();
+        while let Ok(message) = messages.try_recv() { if let ServerMsg::AppsSound { playful, name, why } = message.message { played.push((playful, name, why)); } }
+        played
     };
     // Normal speech, read after read, never sets it off; a raised voice that has held its seconds does.
     for _ in 0..20 { volume(&fixture.core, "mic", NORMAL_VOICE); }
@@ -251,7 +251,8 @@ async fn beat_five_said_aloud_builds_an_app_that_plays_the_silly_tune_on_a_raise
     fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), app.id.clone()), (now - held * 1000, now - 320, false));
     volume(&fixture.core, "mic", RAISED_VOICE);
     for _ in 0..3 { tokio::task::yield_now().await; }
-    assert_eq!(tunes(&mut messages), [true], "the silly tune, once, within its seconds");
+    // Which app played it, and why, for the window's line under the tune (onrecord).
+    assert_eq!(tunes(&mut messages), [(true, "Loud tune".to_string(), format!("voices stayed loud for {held} s"))], "the silly tune, once, within its seconds");
     assert!(fixture.core.snapshot().suggestions.is_empty() && fixture.core.snapshot().threads.is_empty());
 }
 
@@ -269,6 +270,26 @@ async fn a_failed_search_still_makes_the_app() {
     let b = build(&fixture.core).unwrap();
     assert_eq!(b.stage, "ready", "{:?}", b.steps);
     assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "the search, then the composition");
+}
+
+/// A tune says what set it off, from the watcher that fired it: a stray tune with no reason reads as a glitch on camera.
+#[test]
+fn a_tune_says_what_set_it_off() {
+    let (loud, held) = loud_voices();
+    let cases = [
+        (Watcher::Volume { level: loud, seconds: held }, format!("voices stayed loud for {held} s")),
+        (Watcher::Volume { level: SHOUT, seconds: 2 }, "voices stayed at a shout for 2 s".into()),
+        (Watcher::Phrase { phrase: " deadline ".into() }, "you said “deadline”".into()),
+        (Watcher::Topic { topic: "rent".into() }, "rent came up".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 1800 }, "its timer, every 30 min".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 86_400 }, "its timer, every day".into()),
+        (Watcher::Time { at_ms: 0, every_secs: 45 }, "its timer, every 45 s".into()),
+        (Watcher::NewThought { min_points: 0 }, "a new thought landed".into()),
+        (Watcher::NewThought { min_points: 5 }, "a thread reached 5 points".into()),
+    ];
+    for (watcher, expected) in cases { assert_eq!(why(&watcher), expected); }
+    let once = why(&Watcher::Time { at_ms: 1_793_800_000_000, every_secs: 0 });
+    assert!(once.starts_with("it was set for ") && once.len() == "it was set for 12:00".len(), "{once}");
 }
 
 /// A search slower than its patience doesn't hold the build: the composition, asked at the same time, is shown once

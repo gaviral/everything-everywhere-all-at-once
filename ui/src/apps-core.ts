@@ -75,7 +75,7 @@ export function applyAppChange<T extends AppsWorld>(world: T, c: AppChange): T {
   }
 }
 
-export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string; playful?: boolean };
+export type AppsServerMsg = { type: "apps_build"; build: AppBuild } | { type: "apps_sound"; name: string; playful?: boolean; why?: string };
 
 /** What the core says when it won't start a build (core/src/apps.rs `compose`): an empty request or one over its
  *  2,000 bytes, or another app still waiting. No build answers the request then. */
@@ -99,8 +99,15 @@ export function panelBuildFor(build: AppBuild, askedInPanel: string | null, prev
   return asked || previous === build.id ? build.id : null;
 }
 
-/** A tune the browser wouldn't play yet: which app, and which tune. */
-export interface PendingTune { name: string; playful: boolean }
+/** A tune the browser wouldn't play yet: which app, which tune, and what set it off ("voices stayed loud for 3 s"). */
+export interface PendingTune { name: string; playful: boolean; why: string }
+
+/** A tune that just played: which app and why, said under the Apps pill for a moment, since a sound out of nowhere
+ *  reads as a glitch. `id` tells two tunes in a row apart, so the second keeps its full time on screen. */
+export interface PlayedTune { name: string; why: string; id: number }
+
+/** The line for a tune that played: "♪ Loud Silly Tune: voices stayed loud for 3 s" (the ♪ is drawn, not read). */
+export const playedLine = (tune: { name: string; why: string }) => tune.why ? `${tune.name}: ${tune.why}` : `${tune.name} played its tune`;
 
 // The first click, tap or key press lets the page play sound. Taps count only when they end (pointerup).
 const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown"] as const;
@@ -113,6 +120,7 @@ export function useApps() {
   const panelRequest = useRef<string | null>(null);
   const latest = useRef<string | null>(null);
   const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
+  const [played, setPlayed] = useState<PlayedTune | null>(null);
   // A new connection: a request sent on the old one gets no answer.
   const reset = useCallback(() => { latest.current = null; panelRequest.current = null; setBuild(null); }, []);
   useEffect(() => {
@@ -136,7 +144,9 @@ export function useApps() {
     }
     if (msg.type === "apps_sound") {
       const playful = !!msg.playful;
-      if (!playTune(playful)) setSoundPending({ name: msg.name, playful });
+      const why = msg.why ?? "";
+      if (playTune(playful)) setPlayed((last) => ({ name: msg.name, why, id: (last?.id ?? 0) + 1 }));
+      else setSoundPending({ name: msg.name, playful, why });
       return true;
     }
     return false;
@@ -148,5 +158,6 @@ export function useApps() {
     /** Marks the next build as the panel's, before its request goes out (null takes that back if it couldn't go). */
     askedInPanel: useCallback((text: string | null) => { panelRequest.current = text; }, []),
     soundPending, receive, reset, clearSound: () => setSoundPending(null),
+    played, setPlayed,
   };
 }

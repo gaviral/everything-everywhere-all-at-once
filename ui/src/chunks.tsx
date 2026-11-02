@@ -69,7 +69,7 @@ export function wordsSaid(heads: Thought[], thought: Thought): string {
 
 export const CHUNK_TIPS = {
   joined: "Joined to what you said before the pause, as one idea. Tap to keep them apart.",
-  assumed: "How the AI read your words, and why this point is here. There's no undo yet.",
+  assumed: "How the AI read your words, and why this point is here. Wrong place? Move it.",
 };
 
 /** What the placer read into a point, beside it: "✦ joined" when two parts said across a pause became one idea

@@ -32,7 +32,7 @@ const notes = () => started.filter((note) => pitch(note) > 100);
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { DockBuild, Apps } = await server.ssrLoadModule("/src/Apps.tsx");
+  const { DockBuild, DockTune, Apps } = await server.ssrLoadModule("/src/Apps.tsx");
   const { useApps, panelBuildFor } = await server.ssrLoadModule("/src/apps-core.ts");
   const { unlockTune } = await server.ssrLoadModule("/src/apps-audio.ts");
   const render = (component, props) => ReactDOMServer.renderToStaticMarkup(React.createElement(component, props));
@@ -47,8 +47,8 @@ try {
     enabled: false, request, cooldown_secs: 60, created_ms: 0, last_run_ms: 0 };
   const build = (stage, count, extra = {}) => ({ id: "build-1", request, stage, steps: steps.slice(0, count), draft: null,
     match_id: null, message: "", instead: "", ...extra });
-  const core = (current, inPanel = false, soundPending = null) => ({ connected: true, snapshotRevision: 1, world: { apps: [] },
-    apps: { build: current, inPanel, soundPending, askedInPanel() {}, clearSound() {} },
+  const core = (current, inPanel = false, soundPending = null, played = null) => ({ connected: true, snapshotRevision: 1, world: { apps: [] },
+    apps: { build: current, inPanel, soundPending, played, askedInPanel() {}, clearSound() {}, setPlayed() {} },
     decideApp() {}, composeApp: () => true, showNotice() {}, toggleApp() {}, removeApp() {}, appOutput() {} });
   // The dock's card as it shows on screen (without the screen reader's status line, which repeats some of it).
   const dockHtml = (current, inPanel = false) => render(DockBuild, { core: core(current, inPanel), onLeave() {} })
@@ -91,8 +91,15 @@ try {
   // Before the page's first click the browser won't play: nothing starts, and the card offers it instead.
   assert.equal(apps.receive(loud), true);
   assert.equal(notes().length, 0, "no sound before a click");
-  const card = text(render(Apps, { core: core(null, false, { name: "Loud Silly Tune", playful: true }) }));
-  assert.ok(card.includes("Loud Silly Tune has a silly tune for you.") && card.includes("Play tune"), "the card offers it");
+  const why = "voices stayed loud for 3 s";
+  const card = text(render(Apps, { core: core(null, false, { name: "Loud Silly Tune", playful: true, why }) }));
+  assert.ok(card.includes(`Loud Silly Tune has a silly tune for you: ${why}.`) && card.includes("Play tune"), "the card offers it, and why");
+  // Played: the dock says which app played it and why (the core's `why`, from the watcher that fired), so a tune out
+  // of nowhere doesn't read as a glitch on camera.
+  const tuneHtml = render(DockTune, { core: core(null, false, null, { name: "Loud Silly Tune", why, id: 1 }) });
+  assert.ok(tuneHtml.includes('role="status"') && text(tuneHtml).startsWith("♪ Loud Silly Tune") && tuneHtml.includes(`<strong>Loud Silly Tune</strong>: ${why}`), tuneHtml);
+  assert.ok(tuneHtml.includes("data-dock-card"), "the tune line grows the dock as a card does, so a fresh landing moves clear of it");
+  assert.equal(render(DockTune, { core: core(null) }), "", "nothing played: no line");
   // The first click, tap or key press lets the page play (useApps listens for it); then the message plays the silly
   // tune: three quick hops up and a sliding whistle, done in under a second.
   unlockTune();

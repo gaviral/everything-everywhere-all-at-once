@@ -2,10 +2,16 @@
 .palace-switch { display: inline-flex; flex: none; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .map-tools .palace-switch button { min-height: 30px; padding: 5px 12px; border: 0; background: transparent; }
 .map-tools .palace-switch button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
-.palace { max-width: 1180px; margin: 0 auto; padding: 38px 32px calc(var(--dock-room, var(--dock-height, 150px)) + 48px); }
+/* The Palace is the demo's last frame: two rows of pictures with their captions have to clear the dock at 1440 × 900
+   without scrolling. The top gives 22 px back (38 → 16, the gap under the tools as on the map) and the title tops out
+   at 40 px; with the dock only the composer here (ux-rules.ts), 8 threads in 3 rooms clear it (UX audit fix 2). */
+/* Over the Palace the dock is the composer and whatever needs you, nothing more: its empty slots (the pending list, the
+   tour's anchor) give back their 8 px gaps, so it starts 16 px lower. On the map they hold the dock still. */
+.dock.in-palace .dock-inner > :empty { display: none; }
+.palace { max-width: 1180px; margin: 0 auto; padding: 16px 32px calc(var(--dock-room, var(--dock-height, 150px)) + 48px); }
 .palace-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 12px; }
 .palace-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
-.palace-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 48px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
+.palace-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 40px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
 .palace-intro p { max-width: 300px; margin: 0 0 3px; color: var(--muted); font-size: 13px; }
 .palace-keyboard { margin: 0 0 32px; color: var(--muted); font-size: 11px; }
 /* Rooms flow side by side like words, each as wide as its pictures (--span of the row's columns, set by Palace.tsx);

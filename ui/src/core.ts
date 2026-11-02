@@ -6,6 +6,8 @@ import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
+import { failureNotice } from "./action-line";
+import { applyMove, type MoveChange } from "./moves-core";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
@@ -93,6 +95,9 @@ export interface Action {
   when: string;
   status: ItemStatus;
   done_ms: number | null;
+  /** This window only: why the last "Add to …" didn't add it (the core's `action_failed`), shown on its row until
+   *  it is tried again. A reload drops it; the row still offers the button. */
+  failed?: string;
 }
 
 // How an import of past chats is going (core/src/import.rs).
@@ -156,6 +161,7 @@ type Change =
   | { type: "active_changed"; thread_id: string; speaker: string }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
+  | MoveChange
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
@@ -174,6 +180,7 @@ type ServerMsg =
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
+  | { type: "action_failed"; id: string; message: string }
   | { type: "notice"; message: string }
   | { type: "undoable"; id: number }
   | { type: "correctable"; for_ms: number; back_to: string | null }
@@ -257,9 +264,15 @@ function swap(text: string, from: string, to: string): string {
   return text;
 }
 
+/** An approval that didn't add its action: the core has offered it again (status new); its row says why. */
+export function actionFailed(world: World, id: string, message: string): World {
+  return { ...world, actions: world.actions.map((a) => (a.id === id ? { ...a, failed: message } : a)) };
+}
+
 export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
+  if (raw.type === "thought_moved") return applyMove(world, raw);
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -322,7 +335,8 @@ export function apply(world: World, raw: Change): World {
       return {
         ...world,
         suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, status: c.status } : s)),
-        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms } : a)),
+        // Trying again (being added), added or dismissed: the last failure no longer applies.
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: c.status, done_ms: c.done_ms, failed: c.status === "new" ? a.failed : undefined } : a)),
         proposals: (world.proposals ?? []).map((p) => (p.id === c.id ? { ...p, status: c.status } : p)),
       };
     case "thought_added":
@@ -491,6 +505,9 @@ export function useCore(speaker?: string) {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // The notice up now, for the socket handler, whose `notice` would be the one from when it connected.
+  const noticeShown = useRef("");
+  useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const [undoId, setUndoId] = useState<number | null>(null);
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
@@ -579,6 +596,18 @@ export function useCore(speaker?: string) {
             }
             currentWorld = apply(currentWorld, change);
             setWorld(currentWorld);
+            break;
+          }
+          case "action_failed": {
+            const action = currentWorld.actions.find((a) => a.id === msg.id);
+            currentWorld = actionFailed(currentWorld, msg.id, msg.message);
+            setWorld(currentWorld);
+            if (!action) break;
+            // Its row says why when it's on screen; else the notice does (action-line.ts `failureNotice`).
+            const row = document.getElementById(`item-${msg.id}`)?.getBoundingClientRect();
+            const inView = !!row && row.height > 0 && row.bottom > 0 && row.top < window.innerHeight;
+            const say = failureNotice(action.title, msg.message, inView, noticeShown.current);
+            if (say) { setNotice(say); setUndoId(null); answered(); }
             break;
           }
           case "partial":
@@ -689,6 +718,9 @@ export function useCore(speaker?: string) {
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const unlink = useCallback((thought_id: string) => sendOrWarn(JSON.stringify({ type: "unlink", thought_id })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
+  // A point to another thread (null: a new one of its own), and a title typed on a card (core moves.rs).
+  const move = useCallback((thought_id: string, thread_id: string | null) => sendOrWarn(JSON.stringify({ type: "move", thought_id, thread_id })), [sendOrWarn]);
+  const rename = useCallback((thread_id: string, title: string) => sendOrWarn(JSON.stringify({ type: "rename", thread_id, title })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
   const noKey = keyNotice !== "";
@@ -759,7 +791,7 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    setItem, approve, correct, unlink, tag,
+    setItem, approve, correct, unlink, tag, move, rename,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>

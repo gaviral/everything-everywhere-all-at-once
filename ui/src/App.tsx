@@ -4,6 +4,7 @@ import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatu
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
+import { actionLine } from "./action-line";
 
 type Handlers = {
   setItem: (id: string, status: ItemStatus) => void;
@@ -13,7 +14,7 @@ type Handlers = {
   unlink: (thoughtId: string) => void;
 };
 import { startMic } from "./mic";
-import { Apps, DockBuild } from "./Apps";
+import { Apps, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -23,11 +24,13 @@ import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
+import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { staysUp, upFor } from "./notice-rules";
+import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -766,6 +769,7 @@ export default function App() {
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
           <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
           <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
+          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
@@ -846,14 +850,16 @@ export default function App() {
         ) : (
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
+          <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </MovesProvider>
           </TidyProvider>
           </NotesContext.Provider>
         )}
       </main>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-      <section ref={dockRef} className="dock" aria-label="Your thoughts">
+      <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
@@ -890,11 +896,12 @@ export default function App() {
           {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
               unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
           <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
+          <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
@@ -1088,7 +1095,18 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   // Your own unfinished thread is flagged; someone else's tag just says whose it is.
   const me = useMe();
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
-  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : ""].join(" ");
+  // A point dragged by its Move lands on the card under it (Moves.tsx).
+  const drop = useDropPoint(thread.id);
+  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
+
+  const toggle = (event: React.MouseEvent) => {
+    if (searching && matches.has(thread.id)) return;
+    // Option-click opens or folds every branch under it too, as "expand …" does.
+    const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
+    const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
+    for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
+    setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
+  };
 
   return (
     <motion.section
@@ -1100,14 +1118,18 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
+      {...drop.props}
     >
       <ThisTag thread={thread.id} />
-      <div className="thread-head">
+      {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
+      <div className="thread-head" onClick={(event) => {
+        if (headClickToggles(event.target as Element, window.getSelection()?.toString())) toggle(event);
+      }}>
         <UnseenDot thread={thread.id} />
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
-            <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
+            <ThreadTitle thread={thread} depth={depth} />
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
@@ -1133,14 +1155,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={(event) => {
-          if (searching && matches.has(thread.id)) return;
-          // Option-click opens or folds every branch under it too, as "expand …" does.
-          const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
-          const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
-          for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
-          setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
-        }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -1203,6 +1218,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
   const { latest, arriving } = usePointMarks(thought.id);
   const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
+  // Every point takes focus from a tap, so a phone shows its Move (moves.css); only one with a placement time to read
+  // is a stop for Tab, as Move and Words said are their own.
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
   // Joined across a pause, the words are each part as said; a "why here" opens with them.
@@ -1217,12 +1234,13 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
+      <MovePoint thought={thought} />
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
@@ -1280,28 +1298,42 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const days = date ? Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000) : null;
   const due = days == null || action.status === "done" ? "" : days < 0 ? "overdue" : days === 0 ? "today" : days === 1 ? "tomorrow" : "";
   const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
+  const line = actionLine(action, app);
+  // Add pressed from the keyboard: its button goes while Apple's side runs, so focus waits on the row instead of
+  // falling to the page, and goes to "Try again" if it comes back (unless you've moved on). A click's isn't moved.
+  const row = useRef<HTMLDivElement>(null);
+  const add = useRef<HTMLButtonElement>(null);
+  const keyed = useRef(false);
+  const approve = () => {
+    keyed.current = !!add.current?.matches(":focus-visible");
+    if (keyed.current) row.current?.focus({ preventScroll: true });
+    on.approve(action.id);
+  };
+  useEffect(() => {
+    if (action.status === "kept" || !keyed.current) return;
+    keyed.current = false;
+    const focused = document.activeElement;
+    if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
+  }, [action.status]);
   return (
-    <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
         data-tip={action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
         {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
+        {/* Under the title, beside its "Try again", where the click was: a notice elsewhere is missed on camera. */}
+        {line.failed && <span className="action-failed" role="alert">{line.failed}</span>}
       </span>
-      {action.status === "new" && (
+      {line.button && (
         <span className="ai-actions">
-          <button aria-label={`Add ${action.title} to ${app}`} onClick={() => on.approve(action.id)}>Add to {app}</button>
+          <button ref={add} aria-label={line.label} onClick={approve}>{line.button}</button>
           <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
             ×
           </button>
         </span>
       )}
-      {action.status === "kept" && <span className="when ai-actions">Adding to {app}…</span>}
-      {action.status === "done" && action.done_ms != null && (
-        <span className="when ai-actions">
-          in {app} · {(action.done_ms / 1000).toFixed(1)} s
-        </span>
-      )}
+      {line.status && <span className="when ai-actions" role="status">{line.status}</span>}
     </motion.div>
   );
 }

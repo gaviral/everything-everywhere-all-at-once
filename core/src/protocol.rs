@@ -9,8 +9,11 @@ use serde::{Deserialize, Serialize};
 pub enum ServerMsg {
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
-    /// An app's tune: `playful` for loud voices, else the calm one.
-    AppsSound { name: String, playful: bool },
+    /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
+    /// for 3 s"), so the window can say which app played and why.
+    AppsSound { name: String, playful: bool, why: String },
+    /// Approving an action didn't add it; it is offered again, and the window shows `message` on its row.
+    ActionFailed { id: String, message: String },
     Snapshot { world: std::sync::Arc<World> },
     Change { change: Change },
     /// Draft words of the turn being spoken; replaces the previous draft.
@@ -124,6 +127,15 @@ pub enum ClientMsg {
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
     Untidy { kind: crate::tidy::Kind, thread_id: String },
+    /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
+    /// (moves.rs).
+    Move {
+        thought_id: String,
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    /// A title typed on a thread's card (moves.rs).
+    Rename { thread_id: String, title: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

@@ -17,7 +17,11 @@ Browser, one page per window (ui/src)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
+  ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
+  action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
+  Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
+  moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
@@ -45,6 +49,7 @@ Core, one process (core/src: axum, tokio)
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
+  moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour

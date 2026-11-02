@@ -1,0 +1,51 @@
+/* Move and rename (Moves.tsx). */
+
+/* A point's Move sits left of its placing time, in the same top line, and shows when the point does (hover, focus,
+   or a tap that focuses it on a phone), as the time does: nothing new on a card at rest. Out of the flow, so a point's
+   words don't wrap differently when it shows; its card-white face keeps the words under it from showing through. */
+.points li { position: relative; }
+.move-point { position: absolute; top: -1px; right: 40px; z-index: 2; }
+.move-button {
+  padding: 1px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--muted);
+  font: inherit; font-size: 11px; line-height: 18px; cursor: grab; opacity: 0; transition: opacity .2s;
+}
+.points li:is(:hover, :focus-within) .move-button, .move-button[aria-expanded="true"] { opacity: 1; }
+.move-button:hover, .move-button:focus-visible, .move-button[aria-expanded="true"] { color: var(--ink); border-color: var(--accent); }
+.move-button:active { cursor: grabbing; }
+
+/* The list it opens: under the button, right-aligned with it, above the cards beside it. 6 rows show before it scrolls
+   (a map's live threads fit; an imported one narrows by typing). */
+.move-menu {
+  position: absolute; top: calc(100% + 4px); right: 0; width: min(260px, 80vw); padding: 6px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card); box-shadow: 0 8px 28px rgba(0, 0, 0, .14); z-index: 20;
+}
+.move-menu input {
+  width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
+  color: var(--ink); font: inherit; font-size: 13px;
+}
+.move-list { margin-top: 6px; max-height: calc(6 * 30px); overflow-y: auto; }
+.move-list button {
+  display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit;
+  font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; overflow-wrap: anywhere;
+}
+.move-list button:is(:hover, :focus-visible) { background: var(--accent-soft); outline: none; }
+.move-list button.new { color: var(--accent); }
+
+/* While a point is dragged, cards show they take it; the one under the pointer says so. */
+.moving-point .thread { outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.thread.drop-over { outline: 2px solid var(--accent); outline-offset: 2px; background: color-mix(in srgb, var(--accent-soft) 60%, var(--card)); }
+
+/* A title reads as a title until clicked: then it's a field with the same size and weight, in place. */
+.title-button {
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: text; overflow-wrap: anywhere;
+}
+.title-button:hover { text-decoration: underline dotted color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 3px; }
+.title-input {
+  width: 100%; box-sizing: border-box; margin: -3px 0; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 7px;
+  background: var(--card); color: var(--ink); font: inherit;
+}
+
+@media (hover: none) {
+  /* No hover on a phone: Move shows once a tap focuses the point (at the 40 px every button there gets, styles.css). */
+  .points li:not(:focus-within) .move-button:not([aria-expanded="true"]) { visibility: hidden; }
+}
