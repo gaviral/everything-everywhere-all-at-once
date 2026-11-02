@@ -96,6 +96,11 @@ try {
     "the joined pair is one thought; one said after the recap isn't in it");
   const { ideaCounts } = await server.ssrLoadModule("/src/chunks.tsx");
   assert.deepEqual(ideaCounts(joined, 0, 5), { thoughts: 3, threads: 2 });
+  // A part carried on after the period still counts in it: the recap of [0, 2] keeps "rent" when "later" (said at 5)
+  // carries it on (review countsundo Sol).
+  const laterJoin = { ...joined, notes: { ...joined.notes, later: { continues: "rent" } } };
+  assert.deepEqual(ideaCounts(laterJoin, 0, 2), { thoughts: 2, threads: 2 }, "a continuation outside the period doesn't hide its head");
+  assert.deepEqual(ideaCounts(laterJoin, 0, 5), { thoughts: 2, threads: 2 }, "inside it, the pair is one thought");
   const appSource = (await import("node:fs")).readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(appSource, /return ideaCounts\(world, start, Date\.now\(\)\);/, "the header counts with the same function");
 

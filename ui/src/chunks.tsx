@@ -58,11 +58,13 @@ export function carriedIds(thoughts: Thought[], notes: Record<string, Note>, car
 export function ideaCounts(world: Pick<World, "thoughts" | "threads" | "merged" | "notes">, since: number, until: number) {
   const threadIds = new Set(world.threads.map((thread) => thread.id));
   const card = (thought: Thought) => thought.thread_id && resolveMerged(world, thought.thread_id);
-  const carried = carriedIds(world.thoughts, world.notes ?? {}, card);
+  // Only the period's own thoughts join up: a part carried on after it still counts in it (review countsundo).
+  const said = world.thoughts.filter((thought) => thought.placed && thought.thread_id && thought.at_ms >= since && thought.at_ms <= until);
+  const carried = carriedIds(said, world.notes ?? {}, card);
   const threads = new Set<string>();
   let thoughts = 0;
-  for (const thought of world.thoughts) {
-    if (!thought.placed || !thought.thread_id || thought.at_ms < since || thought.at_ms > until || carried.has(thought.id)) continue;
+  for (const thought of said) {
+    if (carried.has(thought.id)) continue;
     const id = card(thought)!;
     if (threadIds.has(id)) { thoughts++; threads.add(id); }
   }
