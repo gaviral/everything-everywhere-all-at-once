@@ -56,13 +56,16 @@ export function changes(before: World, after: World, me: string): Unseen[] {
   return [...out.values()];
 }
 
-/** Marks kept across a world change: a merged thread's mark moves to the one it joined; a removed thread's goes. */
+/** Marks kept across a world change: a merged thread's mark moves to the one it joined; a removed thread's goes. A
+ *  new title's mark points at the joined thread's title, as the old title is gone with its card. */
 export function carry(unseen: Unseen[], world: World): Unseen[] {
-  const ids = new Set(world.threads.map((t) => t.id));
+  const threads = new Map(world.threads.map((t) => [t.id, t]));
   const out = new Map<string, Unseen>();
   for (const mark of unseen) {
-    const thread = resolve(world, mark.thread);
-    if (ids.has(thread)) out.set(thread, { ...mark, thread });
+    const thread = threads.get(resolve(world, mark.thread));
+    if (!thread) continue;
+    const retitled = thread.id !== mark.thread && mark.element === `title-${mark.thread}`;
+    out.set(thread.id, retitled ? { thread: thread.id, element: `title-${thread.id}`, line: thread.title } : { ...mark, thread: thread.id });
   }
   return [...out.values()];
 }
@@ -72,18 +75,39 @@ export function newestOwn(added: { id: string; speaker: string }[], me: string):
   return [...added].reverse().find((t) => t.speaker === me || t.speaker === "you")?.id ?? null;
 }
 
-// The words a spoken command uses for the thread you're on (core/src/spoken.rs, THIS and focus), after a verb that
-// acts on a thread. "This is so exciting" isn't one: the pointing word must follow the verb, or be "this thread",
-// "this card", "this one".
-const VERB = "(?:expand|unfold|open(?: up)?|show(?: me)?|collapse|fold(?: up)?|close|hide|focus(?: on)?)";
-const POINT = "(?:this|that|it|here)(?: one| thread| card)?";
-const COMMAND = new RegExp(`^(?:(?:okay|ok|so|well|now|please|can you|could you|let'?s|lets),?\\s+)*${VERB}\\s+${POINT}\\b`, "i");
-const NAMED = /\b(?:this|that) (?:thread|card|one)\b/i;
+/** Your newest thought among `thoughts` by when you said it, for a page that didn't see them land (a fresh page, a
+ *  reconnect): a time ahead of `now` (a sample's) counts least. */
+export function newestSaid(thoughts: { id: string; speaker: string; at_ms: number }[], me: string, now: number): string | null {
+  let best: { id: string; at: number } | null = null;
+  for (const t of thoughts) {
+    if (t.speaker !== me && t.speaker !== "you") continue;
+    const at = t.at_ms > now ? 0 : t.at_ms;
+    if (!best || at >= best.at) best = { id: t.id, at };
+  }
+  return best?.id ?? null;
+}
 
-/** Whether the words being said point at a thread as "this" (a command that will act on the thread you're on). */
+// "This" as the core reads a spoken command (core/src/spoken.rs `unfold`, main.rs `lead_in` and the focus view): the
+// words that lead in, then "expand", "unfold" or "collapse" with only a pointing word after it, or "focus on this".
+// The whole turn must be the command: "collapse this weekend" names a thread titled "This weekend", and "open this",
+// "hide it" or "this is so exciting" aren't commands the core acts on, so none shows "this".
+const LEADS = ["um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "ahh", "eh", "hmm", "hm", "hmmm", "mm", "mmm", "oh", "so", "well",
+  "and", "but", "anyway", "anyways", "wait", "actually", "basically", "hold on", "let me think", "let me see", "let s see",
+  "yeah", "yep", "yup", "okay", "ok", "alright", "all right", "right", "sure", "mhm", "mm hmm", "uh huh", "cool", "got it",
+  "now", "hey", "please", "can you", "could you", "would you", "will you"];
+const TAILS = ["please", "for me", "now"];
+const THIS = "(?:this|this one|this thread|this card|it|that|that one|that thread|here|it all)";
+const COMMAND = new RegExp(`^(?:(?:(?:can we|could we|let s|lets|let us) )?(?:expand|unfold|collapse) ${THIS}|focus on this(?: thread| one)?(?: mode)?)$`);
+
+/** Whether the words being said are a command the core will act on "this" with: the thread you're on. */
 export function pointsAtThis(words: string): boolean {
-  const said = words.trim().replace(/[’]/g, "'");
-  return COMMAND.test(said) || NAMED.test(said);
+  let said = words.toLowerCase().replace(/['’]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
+  for (let again = true; again;) {
+    again = false;
+    for (const lead of LEADS) if (said.startsWith(`${lead} `)) { said = said.slice(lead.length + 1); again = true; }
+    for (const tail of TAILS) if (said.endsWith(` ${tail}`)) { said = said.slice(0, -tail.length - 1); again = true; }
+  }
+  return COMMAND.test(said);
 }
 
 /** Which way to look for something off screen, given its top and bottom against the map's visible band. */
