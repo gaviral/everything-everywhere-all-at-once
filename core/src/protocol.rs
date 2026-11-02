@@ -131,6 +131,8 @@ pub enum ClientMsg {
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
+    /// ⌘Z / Ctrl+Z: "undo that" without words, the speaker's last turn, after its notice and Undo have gone too.
+    UndoLast,
     /// A rename or merge the refiner proposed: Rename or Merge applies it, × (`apply` false) keeps things as they are.
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.

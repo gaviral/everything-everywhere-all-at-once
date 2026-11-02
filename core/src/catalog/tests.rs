@@ -672,3 +672,29 @@ async fn the_first_thread_taken_back_leaves_the_map_empty() {
     assert_eq!(world.thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T5"));
     assert!(world.thread("T5").is_some());
 }
+
+/// ⌘Z (the window's `undo_last`) is "undo that" without words: the same last turn comes back, after the notice and its
+/// Undo button are gone, and a typed thought comes off as it would by voice (persona run 2026-11-01, friction 4).
+#[tokio::test]
+async fn the_undo_key_takes_back_the_last_turn_as_undo_that_does() {
+    let message: crate::protocol::ClientMsg = serde_json::from_str(r#"{"type":"undo_last"}"#).unwrap();
+    assert!(matches!(message, crate::protocol::ClientMsg::UndoLast));
+    let key = |f: &Fixture| {
+        let mut updates = f.core.updates.subscribe();
+        undo_last(&f.core, "you");
+        drain(&mut updates)
+    };
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Next one").await, ["notice On to Bills", "on T2"]);
+    assert_eq!(key(&f), ["on T1", "notice Undone: go to the next thread"]);
+    let f = Fixture::new(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    let off = key(&f);
+    assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
+    // Pressed again, it puts them back, as "undo that" said twice does.
+    assert_eq!(key(&f), ["added Buy more stakes for the beans", "notice Put back"]);
+    // Nothing said yet: it says so, rather than doing nothing.
+    let f = Fixture::new(garden());
+    assert_eq!(key(&f), ["notice Nothing to undo: nothing said just before"]);
+}
