@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -52,11 +52,12 @@ import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 import { SendCard } from "./SendCard";
+import { BRICKS, useBricksOn } from "./bricks-core";
+import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
+import { Catalog } from "./Catalog";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
-// `?level` adds a meter of the loudness readings the core receives, for tuning volume apps; without it, it isn't loaded.
-const LevelMeter = typeof location !== "undefined" && new URLSearchParams(location.search).has("level") ? lazy(() => import("./Level")) : null;
 
 export default function App() {
   const me = useMe();
@@ -82,7 +83,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
-  const [view, setView] = useState<"map" | "palace">("map");
+  // "map", "palace", or the id of a view brick that's on (bricks-core.ts): its name joins the Map and Palace switch.
+  const [view, setView] = useState<string>("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
   // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
   const jumps = useRef(jumpTracker()).current;
@@ -114,12 +116,14 @@ export default function App() {
   // end left its room, which the Palace's own top gives back, so the map came back on a shorter page, 74 px down.
   const mapRoom = useRef(0);
   const restoreMap = useRef(false);
-  const showView = (next: "map" | "palace") => {
+  // Leaving the map keeps its place; coming back to it, from the Palace or a view brick, puts it back.
+  const showView = (next: string) => {
     if (next === view) return;
-    if (next === "palace") {
+    if (view === "map") {
       mapScroll.current = window.scrollY;
       mapRoom.current = dockRoom.now();
-    } else restoreMap.current = true;
+    }
+    if (next === "map") restoreMap.current = true;
     setView(next);
   };
   // Export, or "export my map": the whole map as a Markdown file, made here from the map this window holds (export-md.ts).
@@ -883,6 +887,20 @@ export default function App() {
     });
   };
 
+  // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
+  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does.
+  const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, {
+    addThought: core.sendText,
+    openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
+    select: core.select,
+    notify: (text) => core.showNotice(text),
+  });
+  const bricksOn = useBricksOn();
+  const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
+  const viewBrick = viewBricks.find((brick) => brick.info.id === view);
+  // A view brick switched off while it's shown hands the window back to the map.
+  useEffect(() => { if (view !== "map" && view !== "palace" && !viewBrick) showView("map"); }, [view, viewBrick]);
+
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
@@ -999,6 +1017,7 @@ export default function App() {
           <div className="palace-switch" role="group" aria-label="View">
             <button aria-pressed={view === "map"} onClick={() => showView("map")}>Map</button>
             <button aria-pressed={view === "palace"} onClick={() => showView("palace")}>Palace</button>
+            {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)}>{brick.info.name}</button>)}
           </div>
           {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
@@ -1009,7 +1028,8 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1085,6 +1105,7 @@ export default function App() {
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
+          <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
@@ -1109,8 +1130,10 @@ export default function App() {
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
-      {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
+      <BrickSlot kind="panel" host={brickHost} />
+      <BrickSlot kind="input" host={brickHost} />
       <Tips />
+      <Catalog />
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);

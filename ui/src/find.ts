@@ -14,7 +14,8 @@ export function typingIn(element: Element | null): boolean {
 export type Found = { thread_id: string; thought_id: string | null; item_id?: string; revision: number };
 
 type Reveal = {
-  setView: Dispatch<SetStateAction<"map" | "palace">>;
+  /** "map", "palace" or a view brick's id (App.tsx). */
+  setView: Dispatch<SetStateAction<string>>;
   setQuery: Dispatch<SetStateAction<string>>;
   setFocusMode: Dispatch<SetStateAction<boolean>>;
   setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;

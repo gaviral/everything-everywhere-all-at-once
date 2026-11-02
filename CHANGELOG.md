@@ -55,6 +55,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - A first run fails fast: `./run.sh demo` and `room` stop before building when there is no key and say how to add one; a busy port is caught before building (the key and port read as the core reads them, from the environment or `.env`; a room's LAN address probed too), with the same command on the next port; `scripts/demo.mjs` stops when the core has no key or the key was refused.
 
 ### Recent changes
+- Bricks: a part of the app can live in a folder of its own under `ui/src/bricks/` (a view, a card, an input or a panel), found by reading the folders. Apps › Catalog switches each on or off in this browser. The `?level` meter is now one, unchanged. `ui/bricks.html` runs one brick on a sample map, without the core ([docs/bricks.md](docs/bricks.md)).
 - Presets: Demo (the default, the core alone) and Full (every connector; `PRESET=full`). In Full, “ask Mia to confirm what to bring” shows a ready-to-send card with a visible 5-second countdown; “stop”, Esc or Stop takes it down unsent. It sends only to a contact on `MESSAGES_TO`, only from the host's laptop, and only with `MESSAGES_SEND=on`; otherwise it's a dry run.
 - The first "Later" on the unfinished-thought card brings it back once, at a pause at least 5 minutes later; a second "Later" hides it until that thread changes.
 - Suggested tags wait until a thread has 3 thoughts before they appear; kept tags always show.

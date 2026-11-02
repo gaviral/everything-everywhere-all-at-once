@@ -10,9 +10,9 @@ export function headClickToggles(target: { closest(selector: string): unknown } 
 }
 
 /** Whether the dock shows its live line. Words always show; with none yet, the map keeps the line's place, empty (the
- *  dock doesn't jump when words start). The Palace leaves it out: the dock is then only the composer, so it covers
+ *  dock doesn't jump when words start). The Palace (and a view brick) leaves it out: the dock is then only the composer, so it covers
  *  less of the pictures' captions (at 1440 × 900 the line sat on the second row's captions in the demo's last frame). */
-export function showsLiveLine(state: { words: boolean; pending: number; listening: boolean; starting: boolean; view: "map" | "palace" }): boolean {
+export function showsLiveLine(state: { words: boolean; pending: number; listening: boolean; starting: boolean; view: string }): boolean {
   if (state.words) return true;
   if (state.pending > 0) return false;
   if (state.starting) return true;
