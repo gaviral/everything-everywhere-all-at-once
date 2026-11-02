@@ -9,6 +9,7 @@ mod asr;
 mod catalog;
 mod chunks;
 mod clock;
+mod decided;
 mod explain;
 mod find;
 mod import;
@@ -68,6 +69,8 @@ pub struct Core {
     pub key: Option<String>,
     /// Placing and Explain's model (model.rs).
     pub placer_model: model::Setting,
+    /// How many of the same placement call race, the first good answer winning (placer.rs `RACE`).
+    pub placer_race: usize,
     pub http: reqwest::Client,
     /// When the person last spoke or typed; background work waits for a pause.
     last_activity: std::sync::atomic::AtomicU64,
@@ -188,6 +191,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker, now_ms()).filter(|_| !back_already) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
             self.came_back.lock().unwrap().insert(speaker.into(), mark(&self.snapshot()));
@@ -402,6 +406,7 @@ impl Core {
             complete: true,
             at_ms: now_ms(),
             place_ms: None,
+            decided: false,
         };
         let id = thought.id.clone();
         // Before it's queued, so the placer knows when it's the first after "new thread".
@@ -744,6 +749,12 @@ fn view(text: &str) -> Option<View> {
     ];
     let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
     let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
+    // "Export my map" and its kin: a file of the map ("save my map" too, as a Save button would). Only the whole turn,
+    // so "export the photos" and "I should save the map for Dana" stay thoughts.
+    let export = [
+        "export", "export map", "export my map", "export the map", "export this map", "download my map", "download the map",
+        "save my map", "save the map",
+    ];
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -756,6 +767,8 @@ fn view(text: &str) -> Option<View> {
         Some(View::Focus)
     } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
         Some(View::All)
+    } else if is_command(text, &export, &["as markdown", "to markdown", "as a markdown file", "as a file"]) {
+        Some(View::Export)
     } else {
         None
     }
@@ -841,6 +854,7 @@ async fn main() -> anyhow::Result<()> {
         // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
         // and cheaper, but Meta may keep what it reads.
         placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+        placer_race: placer::race_from_env(),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -1310,6 +1324,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
                 Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
+                Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
@@ -1427,6 +1442,8 @@ impl Core {
             room: None,
             key: None,
             placer_model: "test".into(),
+            // One call a placement, so a stand-in's answers are used in order; racing has its own test (placer.rs).
+            placer_race: 1,
             // One for every test core: making one reads the system's certificates, and a test may make thousands.
             http: {
                 static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
@@ -1526,6 +1543,7 @@ mod tests {
             complete: true,
             at_ms,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1720,6 +1738,11 @@ mod tests {
             ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
+            ("Export my map", View::Export),
+            ("Okay, export the map as Markdown, please.", View::Export),
+            ("Can you download my map?", View::Export),
+            ("Save the map as a file", View::Export),
+            ("Export.", View::Export),
         ] {
             assert_eq!(view(text), Some(asked), "{text}");
         }
@@ -1730,6 +1753,8 @@ mod tests {
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
             // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
+            // Export takes only the map, whole: these are talk.
+            "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -2583,6 +2608,7 @@ mod tests {
                     fixed: String::new(),
                     complete: true,
                     place_ms: 900,
+                    decided: false,
                 }]),
                 Job::Back(speaker) => core.go_back(&speaker),
                 Job::Next(speaker) => core.go_next(&speaker),

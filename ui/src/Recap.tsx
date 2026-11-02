@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
 import "./recap.css";
 import { TIPS } from "./Tips";
+import { runningModel, useSteps } from "./model-line";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -88,15 +89,23 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
   const dialog = useRef<HTMLDialogElement>(null);
   // Recaps marked off in this window, by period and when each was made.
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
+  // The wait named: the model the core is asking for this recap, from its own call (model-line.ts).
+  const reading = runningModel(useSteps().state, "recap");
   const open = !!view;
   useEffect(() => {
     if (!open) return;
     const sheet = dialog.current!;
     const previous = document.activeElement as HTMLElement | null;
+    // A ring on × only when the focus before it showed one (the keyboard), as Chrome decides: Safari's showModal()
+    // rings its first button even after a click or tap, so × wore a blue ring on every Recap opened that way. Focusing
+    // the same element again doesn't clear it there; leaving it first does.
+    const ring = !!previous?.matches(":focus-visible");
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     sheet.showModal();
-    sheet.querySelector<HTMLButtonElement>(".recap-close")?.focus();
+    const close = sheet.querySelector<HTMLButtonElement>(".recap-close");
+    close?.blur();
+    close?.focus({ focusVisible: ring });
     return () => {
       sheet.close();
       document.body.style.overflow = overflow;
@@ -148,7 +157,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
-        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
+        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{reading ? <><span aria-hidden="true">{reading} is {recap ? "bringing this up to date" : "reading your day"}…</span><span className="sr-only">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</span></> : recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>

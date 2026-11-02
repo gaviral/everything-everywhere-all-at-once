@@ -30,7 +30,7 @@ Return JSON: summary (one short sentence, under 25 words; when there are decisio
 in the person's words; otherwise it names the two or three threads they spent the most on, by title; never a general line, and never a list of every thread), \
 worked_on (one line per supplied thread), plans, decisions, questions. \
 Every list item has thread_id and text (under 22 words). Plans are clear intentions stated in the points and not yet settled \
-(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points, \
+(\"I want to…\", \"I should…\", \"I need to…\"), never next steps you infer. Decisions must be explicit choices in the period's points; a thread's \"decided\" lists ones the person said they decided, each a decision. \
 never suggestions, intentions, or AI proposals; an intention goes in plans, never in both. Questions must be unresolved in these points. \
 Do not infer that an action was added: the app reports approval separately. \
 Use only supplied thread IDs, no markdown, and empty lists when there is no evidence. \
@@ -276,6 +276,11 @@ struct SourceThread {
     unfinished: bool,
     clipped: bool,
     points: Vec<String>,
+    /// The points where the person said they decided (decided.rs), short, in their voice: each is one of the period's
+    /// decisions whatever the model reads, so Recap can lead with it. Left out when there are none, so a period
+    /// without one sends the same prompt as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    decided: Vec<String>,
 }
 
 /// A projection of the journal's ThoughtAdded/Placed/Corrected changes, using
@@ -317,6 +322,9 @@ fn slice(world: &World, period: Period, through_ms: u64) -> Source {
             // The original words preserve explicit choices and question wording.
             points: thoughts[thoughts.len().saturating_sub(MAX_POINTS)..].iter()
                 .map(|t| short(&format!("{}: {}{}", t.speaker, t.text, if t.unclear.is_empty() { "" } else { " [may be misheard]" }), 700)).collect(),
+            // A head carried on across a pause is one idea with its carrier, whose point says both parts: once.
+            decided: thoughts.iter().filter(|t| t.decided && crate::chunks::carriers(world, &t.id).next().is_none())
+                .map(|t| short(if t.point.trim().is_empty() { &t.text } else { &t.point }, 240)).collect(),
         })
     }).collect();
     threads.sort_by(|a, b| b.touched_ms.cmp(&a.touched_ms).then_with(|| a.thread_id.cmp(&b.thread_id)));
@@ -429,7 +437,14 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
     let unfinished = source.threads.iter().filter(|t| t.unfinished).map(|t| Item {
         thread_id: t.thread_id.clone(), text: format!("{} still has a loose end.", t.title),
     }).collect();
-    let decisions = clean(answer.decisions);
+    let mut decisions = clean(answer.decisions);
+    // A decision the person said in so many words is one even when the model leaves it out: its point goes in.
+    for t in &source.threads {
+        let listed: Vec<&Item> = decisions.iter().filter(|d| d.thread_id == t.thread_id).collect();
+        let missed: Vec<Item> = uncovered(&t.decided, &listed).into_iter()
+            .map(|point| Item { thread_id: t.thread_id.clone(), text: point.clone() }).collect();
+        decisions.extend(missed);
+    }
     // The day's decisions are what a person wants back first ("What did I decide today?"), and they read better than
     // where the time went ("You circled around …"), so the summary leads with them when there are any.
     let summary = if source.threads.is_empty() { "No thoughts in this period yet. Start wherever you like.".into() }
@@ -445,6 +460,29 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
         unfinished, actions: source.actions, thought_count: source.thought_count,
         thread_count: source.thread_count, limited: source.limited,
     }
+}
+
+/// The decided points of one thread that none of the model's decisions on it covers. Each listed decision covers at
+/// most one point, the one it shares the most words with ("Book the pottery class tonight if it's under $80" covers
+/// "If it's under $80, I'm booking it tonight"), so two decisions said on one thread and one listed leaves the other
+/// to add. A listed decision sharing no words with any point (a paraphrase) still covers one, in order, so a thread's
+/// decisions are never listed twice.
+fn uncovered<'a>(points: &'a [String], listed: &[&Item]) -> Vec<&'a String> {
+    let words: Vec<HashSet<String>> = points.iter().map(|p| content_words(p)).collect();
+    let mut open: Vec<usize> = (0..points.len()).collect();
+    let mut paraphrases = 0;
+    for item in listed {
+        let said = content_words(&item.text);
+        let best = open.iter().enumerate()
+            .map(|(at, &p)| (at, words[p].iter().filter(|w| !w.starts_with("decid") && said.contains(*w)).count()))
+            .filter(|&(_, shared)| shared > 0)
+            .max_by_key(|&(at, shared)| (shared, std::cmp::Reverse(at)));
+        match best {
+            Some((at, _)) => { open.remove(at); }
+            None => paraphrases += 1,
+        }
+    }
+    open.into_iter().skip(paraphrases).map(|p| &points[p]).collect()
 }
 
 /// True when a summary names at least one of the threads, by a word of four letters or more from its title
@@ -528,7 +566,7 @@ mod tests {
     fn thought(id: u64, thread_id: &str, at_ms: u64) -> Thought {
         Thought { id: format!("th-{id}"), speaker: "you".into(), text: format!("Point {id}"), point: format!("Point {id}"),
             thread_id: Some(thread_id.into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
-            complete: true, at_ms, place_ms: None }
+            complete: true, at_ms, place_ms: None, decided: false }
     }
     #[test]
     fn a_bare_recap_looks_back_at_the_last_session_when_nothing_landed_today() {
@@ -681,6 +719,63 @@ mod tests {
         assert_eq!(with("You circled around Topic T1.", vec![Item { thread_id: "invented".into(), text: "Book it".into() }]),
             "You circled around Topic T1.");
         assert!(SYSTEM.contains(r#"starts "You decided""#), "the model is asked for it, not only corrected");
+    }
+
+    /// The demo's line 3 ("Okay, decided: if it's under eighty dollars, I'm booking it tonight") is recorded as a
+    /// decision when placed: the model is told so, and if it still lists none, the point leads the Recap anyway.
+    #[test]
+    fn a_decision_said_out_loud_leads_the_recap_even_when_the_model_misses_it() {
+        let mut world = sample(1000);
+        world.thoughts[0].text = "Okay, decided: if it's under eighty dollars, I'm booking it tonight.".into();
+        world.thoughts[0].point = "If it's under $80, I'm booking it tonight".into();
+        world.thoughts[0].decided = true;
+        let source = slice(&world, Period::Session, 1000);
+        let sent = serde_json::to_string(&model_body(&source).unwrap()).unwrap();
+        assert!(sent.contains(r#"\"decided\":[\"If it's under $80, I'm booking it tonight\"]"#), "{sent}");
+        assert_eq!(sent.matches(r#"\"decided\":"#).count(), 1, "a thread with no decision sends none");
+        let mut a = answer();
+        a.summary = "You circled around Topic T1 and Topic T2 today.".into();
+        let recap = finish(source, a, "key".into());
+        assert_eq!(recap.decisions.len(), 1);
+        assert_eq!((recap.decisions[0].thread_id.as_str(), recap.decisions[0].text.as_str()), ("T1", "If it's under $80, I'm booking it tonight"));
+        assert!(recap.summary.starts_with("You decided"), "{}", recap.summary);
+        // The model's own words for it win; the point isn't added twice.
+        let source = slice(&world, Period::Session, 1000);
+        let mut a = answer();
+        a.decisions = vec![Item { thread_id: "T1".into(), text: "Book the pottery class tonight if it's under $80.".into() }];
+        assert_eq!(finish(source, a, "key".into()).decisions.len(), 1);
+    }
+
+    /// Two decisions said on one thread and the model lists one: the other is added, not lost because its thread has
+    /// a decision already. A paraphrase sharing no words still counts for one, so nothing is listed twice. A head
+    /// carried on across a pause goes in once, as its carrier's point.
+    #[test]
+    fn each_decision_said_is_in_the_recap_even_two_on_one_thread() {
+        let mut world = sample(1000);
+        world.thoughts.insert(1, thought(3, "T1", 500));
+        let (a, b) = (0, 1);
+        world.thoughts[a].point = "Book the pottery class if it's under $80".into();
+        world.thoughts[a].decided = true;
+        world.thoughts[b].point = "Drive to Mom's on Saturday morning".into();
+        world.thoughts[b].decided = true;
+        let listed = |world: &World, decisions: Vec<Item>| {
+            let mut answer = answer();
+            answer.decisions = decisions;
+            let mut texts: Vec<String> = finish(slice(world, Period::Session, 1000), answer, "key".into())
+                .decisions.into_iter().filter(|d| d.thread_id == "T1").map(|d| d.text).collect();
+            texts.sort();
+            texts
+        };
+        let item = |text: &str| Item { thread_id: "T1".into(), text: text.into() };
+        assert_eq!(listed(&world, vec![item("Book the pottery class tonight, under $80.")]),
+            ["Book the pottery class tonight, under $80.", "Drive to Mom's on Saturday morning"]);
+        assert_eq!(listed(&world, vec![item("Saturday morning drive to Mom's.")]),
+            ["Book the pottery class if it's under $80", "Saturday morning drive to Mom's."]);
+        assert_eq!(listed(&world, vec![item("Book the pottery class tonight, under $80."), item("Saturday morning drive to Mom's.")]).len(), 2);
+        assert_eq!(listed(&world, vec![item("Settled the plan.")]).len(), 2, "a paraphrase covers one");
+        // a carried on by b: one decision, b's point.
+        world.notes.insert(world.thoughts[b].id.clone(), crate::chunks::Note { continues: world.thoughts[a].id.clone(), ..Default::default() });
+        assert_eq!(listed(&world, Vec::new()), ["Drive to Mom's on Saturday morning"]);
     }
 
     #[test]
