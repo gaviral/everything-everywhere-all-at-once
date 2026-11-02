@@ -18,6 +18,12 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 // made a price or a moved date its own branch, and "the thread it branched from" hung a cafe shift under a midterm it
 // clashed with. Replaying 48 recorded placements twice (2026-11-01, Spark 1.2, minimal): updates on their thread 28 →
 // 55 of 68, branches under an unrelated thread 13 → 0 of 16; a party's invite list and cake still branch (12 of 12).
+// Something not done yet is about that thing, not about a habit of not finishing: right after "My biggest problem is
+// that I never finish my", on a thread named for that, "Oh, and rent is due Friday and I still haven't sent it" was
+// reasoned over at length (is an unsent payment a case of never finishing?) and placed in 5.6 s and 5.0 s in the
+// takes, over the 5 s the map has. Always right ("new"), the time was all reasoning: the same request sent alone,
+// 4 batches side by side (2026-11-02, Spark 1.2, minimal), reasoning tokens median 698–813 → 412–588 with this
+// clause; the same line after a finished sentence took 365–499.
 const SYSTEM: &str = "You keep a live map of a person's spoken thoughts as threads: topics and the tangents that branch from them. \
 For each NEW THOUGHT decide: \"continue\" if it says more about the active thread (a detail, an update, an answer, a correction, \
 news that something is done), \"return\" if it says more about an earlier thread, \
@@ -27,7 +33,8 @@ An update on what a thread is about goes on that thread, even with a new detail;
 which thread that is goes by what the words mean, read with what was said just before, never by a word shared with a title. \
 Being about the same project is not enough to continue. \
 Place by what the words are about, not by how they are said or a word they share with a title: \
-a thought that trails off belongs with its own topic, never with a thread about unfinished thoughts. \
+a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
+never with a thread about unfinished thoughts or habits. \
 \"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked; never skip \"yes\", \"no\" or any other answer. \
 split: if it moves on to another thread partway, the exact words where that starts (the other fields describe only the words before), else an empty string; \
 never between two sentences about one thing, such as a deadline and what is due by then. \
