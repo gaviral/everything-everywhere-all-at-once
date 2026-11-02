@@ -28,7 +28,7 @@ import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
-import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { micStopped, staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
@@ -1259,9 +1259,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   const said = heads.length > 0 || !!why || saidDiffers(thought.text, thought.point);
   const [open, flip] = useSaidOpen(thought.id);
   const toggle = said ? (event: React.MouseEvent) => {
-    // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
-    // Tips.tsx) and selecting words to explain keep their jobs.
-    if ((event.target as HTMLElement).closest("button, [data-tip]") || !(window.getSelection()?.isCollapsed ?? true)) return;
+    // Its own controls (legible.ts `POINT_OWN`; marks' tips in Tips.tsx) and selecting words to explain keep their jobs.
+    if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
     flip();
   } : undefined;
   return (
