@@ -316,7 +316,7 @@ mod tests {
     }
 
     /// "I need to pay the" + "electric bill" read as one point, "I need to pay the electric bill"; kept apart, that
-    /// reading goes: the second part says its own words, here and as the card's last point (Sol review, 2026-11-01).
+    /// reading goes: the second part says its own words, here and as the card's last point (review, 2026-11-01).
     #[test]
     fn kept_apart_the_second_part_says_only_its_own_words() {
         let path = std::env::temp_dir().join(format!("e2a2o-chunks-{}.jsonl", uuid::Uuid::new_v4()));
@@ -340,7 +340,7 @@ mod tests {
     }
 
     /// "Scratch that" takes a joined part off the map; Undo brings it back joined, as the window still shows it
-    /// (Sol review, 2026-11-01).
+    /// (review, 2026-11-01).
     #[test]
     fn a_joined_part_scratched_and_brought_back_is_joined_again() {
         let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1");

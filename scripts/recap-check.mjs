@@ -75,7 +75,7 @@ try {
     decisions: [item("T1", "Open with the mic turning on")], plans: [item("T2", "Book the cooking class")],
     questions: [item("T3", "Which room do we record in?")], worked_on: [item("T1", "How the demo opens")], unfinished: [],
     actions: [], thought_count: 4, thread_count: 3, limited: false };
-  const sheet = (shown) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading: false,
+  const sheet = (shown, loading = false) => ReactDOMServer.renderToStaticMarkup(React.createElement(Recap, { view: { period: "today", loading,
     message: "", recap: shown }, world: map, connected: true, noKey: false, listening: true, onRequest() {}, onMark: () => true,
     onClose() {}, onFocus() {} })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   const order = (shown, words) => words.map((w) => shown.indexOf(w)).every((at, i, all) => at >= 0 && (i === 0 || at > all[i - 1]));
@@ -83,7 +83,30 @@ try {
     "decisions first, then plans, open questions and what you worked on");
   // None decided: it says so, still first.
   assert.ok(order(sheet({ ...recap, decisions: [] }), ["Decisions made", "None yet", "Plans", "What you worked on"]), "no decisions yet");
-  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't; the sheet puts decisions first.");
+  // Asked while a newer one is made: the saved recap (kept current in the background) is there at once, decisions
+  // first, and the sheet says it's being brought up to date rather than making the person wait on an empty sheet.
+  const updating = sheet(recap, true);
+  assert.ok(order(updating, ["Bringing this up to date…", "Decisions made", "Open with the mic turning on"]), "the saved recap shows while loading");
+  assert.ok(sheet(null, true).includes("Gathering your thoughts…") && !sheet(null, true).includes("Decisions made"), "nothing saved yet");
+  // Answers arrive in the order asked: one for a period the sheet has since moved off never replaces the newer request.
+  const { nextRecapView } = await server.ssrLoadModule("/src/Recap.tsx");
+  const st = (period, loading, shown = null) => ({ type: "recap_state", period, loading, message: "", recap: shown });
+  let view = null;
+  for (const msg of [st("today", true), st("session", true), st("today", false, recap)]) view = nextRecapView(view, msg);
+  assert.ok(view.period === "session" && view.loading, "Today's late answer leaves the Session request showing as in progress");
+  view = nextRecapView(view, st("session", false, { ...recap, period: "session" }));
+  assert.ok(view.period === "session" && !view.loading && view.recap, "then Session's answer shows");
+  assert.equal(nextRecapView(null, st("today", false, recap)), null, "a closed sheet stays closed");
+  assert.equal(nextRecapView(view, st("today", true)).period, "today", "a new request, spoken or clicked, still switches it");
+
+  // Reduced motion: the loading line still waits 400 ms (styles.css's blanket `animation: none !important` would
+  // otherwise show it at once and flash it on a recap that answers in milliseconds).
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../ui/src/recap.css", import.meta.url), "utf8");
+  const reduced = css.match(/prefers-reduced-motion: reduce\)\s*\{\s*\.recap-feedback \.recap-loading\s*\{([^}]*)\}/);
+  assert.ok(reduced && /400ms/.test(reduced[1]) && /!important/.test(reduced[1]), "reduced motion keeps the 400 ms wait");
+
+  console.log("Recap checks passed: a view, a search's jump, “next one”, “last one” and “where was I?” close it; your words moving you, a landing where you'd clicked meanwhile, an import's end and others' moves don't; the sheet puts decisions first, shows the saved recap at once while a newer one is made, never lets an older answer replace a newer request, and keeps the 400 ms wait under reduced motion.");
 } finally {
   await server.close();
 }

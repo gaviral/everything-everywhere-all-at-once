@@ -57,8 +57,8 @@
 {"type":"active_changed","thread_id":"T6"}
 {"type":"thought_added","thought":{"id":"th-15","speaker":"you","text":"Okay the README needs to have how to run it, what it does, and the how we built it section","point":"README: how to run, what it does, how we built it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748000000,"place_ms":1600}}
 {"type":"thread_touched","thread_id":"T6","last_point":"README: how to run, what it does, how we built it","at_ms":1793748000000}
-{"type":"thought_added","thought":{"id":"th-16","speaker":"you","text":"The how we built it section should mention Claude and the overnight agents, that's a real part of the story","point":"Mention Claude and overnight agents in how-we-built-it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748060000,"place_ms":1700}}
-{"type":"thread_touched","thread_id":"T6","last_point":"Mention Claude and overnight agents in how-we-built-it","at_ms":1793748060000}
+{"type":"thought_added","thought":{"id":"th-16","speaker":"you","text":"The how we built it section should mention the late nights debugging the voice input, that's a real part of the story","point":"Mention late-night voice debugging in how-we-built-it","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748060000,"place_ms":1700}}
+{"type":"thread_touched","thread_id":"T6","last_point":"Mention late-night voice debugging in how-we-built-it","at_ms":1793748060000}
 {"type":"thought_added","thought":{"id":"th-17","speaker":"you","text":"And I need to put the env example with the model api key setup","point":"Include .env.example with API key setup","thread_id":"T6","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793748120000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T6","last_point":"Include .env.example with API key setup","at_ms":1793748120000}
 {"type":"tag_suggested","thread_id":"T6","tag":"hackathon"}

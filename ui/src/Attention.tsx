@@ -1,4 +1,4 @@
-// The attention guide (decisions/attention.md): one highlight for "look here", the "latest" mark on your newest
+// The attention guide: one highlight for "look here", the "latest" mark on your newest
 // point, "New in X ↓" when the map held still, unseen marks on threads that changed out of sight, and "this" on the
 // card a spoken "this" acts on. App.tsx feeds it the world and tells it what the map showed or held back.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";

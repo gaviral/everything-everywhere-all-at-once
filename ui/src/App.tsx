@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
@@ -83,6 +83,11 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
+  const jumps = useRef(jumpTracker()).current;
+  const worldNow = useRef(world);
+  worldNow.current = world;
+  useEffect(() => { if (core.found) jumps.jumped(worldNow.current, core.found.thread_id); }, [core.found, jumps]);
   const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal, attending: core.attending, correctable: core.correctable });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
@@ -236,6 +241,7 @@ export default function App() {
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
     seenActive.current = world.active;
+    const answered = moved && jumps.moved(world.active!);
     // Where you are goes first: your thought landing on another thread means "…, where was I?" moved you on in the
     // same breath (your place can end where it started, so it doesn't count as moving).
     const elsewhere = !!world.active && (moved || (!!landing?.mine && landing.thread !== world.active));
@@ -243,6 +249,8 @@ export default function App() {
     // words move your view.
     const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
     if (!follow) return;
+    // Your place moved by a jump that shows its own point: the jump is the look.
+    if (answered && !("thought" in follow)) return;
     // Your landing the map won't show (another view, a search, Recap open): the dock says where it went.
     if (view !== "map" || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
     followTarget.current = follow;
@@ -257,6 +265,7 @@ export default function App() {
       followTarget.current = null;
       followLanding.current = null;
       if (!target) return;
+      if (!target.thought && !landed && jumps.since(scheduled, target.thread)) return;
       if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
@@ -287,6 +296,7 @@ export default function App() {
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       scrollForMap(following, delta, !!reducedMotion);
     };
+    const scheduled = jumps.mark();
     window.clearTimeout(followTimer.current);
     cancelAnimationFrame(followFrame.current);
     followTimer.current = window.setTimeout(() => { followFrame.current = requestAnimationFrame(look); }, 120);
@@ -452,7 +462,7 @@ export default function App() {
       const visited = new Set<string>();
       while (thread && !visited.has(thread.id)) {
         visited.add(thread.id);
-        // Opened with its branches: it stays open after you leave (review of 88ace4d).
+        // Opened with its branches: it stays open after you leave (review).
         if (!(keptOpen.current.has(thread.id) && next[thread.id] === false)) {
           delete next[thread.id];
           keptOpen.current.delete(thread.id);
@@ -686,7 +696,7 @@ export default function App() {
   // moves clear of it, once. Under 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its
   // words, the card after 2.5 s of quiet) the newest landing is younger than that when the card rises. Not once you've
   // moved the map yourself. Your own words in the dock (the live line, a thought on its way) don't move it: they land
-  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review of 1eb1226).
+  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review).
   const clearFrame = useRef(0);
   const cardsHeight = useRef(0);
   const keepClear = () => {
@@ -870,6 +880,7 @@ export default function App() {
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+            jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();

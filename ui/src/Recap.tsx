@@ -47,16 +47,22 @@ export function isDefaultRecap(text: string): boolean {
   return ["recap", "give me a recap"].includes(words.join(" "));
 }
 
+/** The sheet after one message from the core. */
+export function nextRecapView(old: View | null, state: RecapServerMsg): View | null {
+  // A finished request must not reopen a sheet the person already closed.
+  if (!old && !state.loading) return null;
+  // Nor replace a newer one: asked for Today, then Session while Today was being made, Today's answer arrives first
+  // and would show the wrong period, with no sign that Session is still coming.
+  if (old?.loading && !state.loading && state.period !== old.period) return old;
+  return { ...state, fallbackSince: old?.period === state.period ? old.fallbackSince : undefined, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
+}
+
 export function useRecap() {
   const [view, setView] = useState<View | null>(null);
   const receive = useCallback((msg: { type: string }) => {
     if (msg.type !== "recap_state") return false;
     const state = msg as RecapServerMsg;
-    setView((old) => {
-      // A finished request must not reopen a sheet the person already closed.
-      if (!old && !state.loading) return null;
-      return { ...state, fallbackSince: old?.period === state.period ? old.fallbackSince : undefined, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
-    });
+    setView((old) => nextRecapView(old, state));
     return true;
   }, []);
   const open = useCallback((period: RecapPeriod, recap: RecapData | null, connected: boolean, fallbackSince?: number) => {
@@ -145,7 +151,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
-        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{reading ? <><span aria-hidden="true">{reading} is reading your day…</span><span className="sr-only">Gathering your thoughts…</span></> : "Gathering your thoughts…"}{recap ? " Your last recap is below." : ""}</p>
+        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{reading ? <><span aria-hidden="true">{reading} is {recap ? "bringing this up to date" : "reading your day"}…</span><span className="sr-only">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</span></> : recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>
