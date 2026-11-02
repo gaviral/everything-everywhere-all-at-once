@@ -23,6 +23,8 @@ Browser, one page per window (ui/src)
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
+  ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
+  model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
