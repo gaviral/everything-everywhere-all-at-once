@@ -205,13 +205,14 @@ Spoken commands are recognized by rule, with no model call, and only as a whole 
 - **Filing:** “add milk to the shopping list”, “new thread about …”, “move that to the pottery thread”, “rename this to …”, “delete this”.
 - **Actions:** “add it to Reminders”, “keep it” or “discard it” for an app, “stop listening”.
 - **Messages (Full preset only):** “ask Mia to confirm what to bring” shows the message on a card with a 5-second countdown; “stop”, Esc or the card's Stop takes it down unsent. See [Presets](#presets-and-messages).
+- **Notes (Full preset only):** “save this thread as a note” or “put this in Notes” shows the note on a card, then writes it into Apple Notes. See [Presets](#presets-and-messages).
 - **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” (also after “no”, “sorry” or “oops”) undoes it. Deleting, scratching or moving a point takes the waiting cards made from its words alone with it, with Undo; a card sharing any meaning word with what stays on the thread (its title or other points) is left where it is. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
 
 Getting back, finding, views, filing and fixing in full, with variants and what each never does: [docs/COMMANDS.md](docs/COMMANDS.md). Recap, making an app and answering “Did you mean …?” are in their own sections below; “what can I say?” lists them all.
 
 ### Presets and Messages
 
-A preset picks which connectors a run has. **Demo** (the default) is the core alone: the map, and Reminders and Calendar after you approve. **Full** adds every connector; today that's Messages. Set `PRESET=full` in `.env` to switch.
+A preset picks which connectors a run has. **Demo** (the default) is the core alone: the map, and Reminders and Calendar after you approve. **Full** adds every connector; today that's Messages and Notes. Set `PRESET=full` in `.env` to switch.
 
 In Full, a whole turn like “ask Mia to confirm what to bring” (or “text Sam that I'm running late”) puts a card up with who it's to, the message (“Hi Mia, could you confirm what to bring?”) and a countdown. The count is 5 seconds for a short message: enough for a slow reader to read about 8 words, decide, and say “stop”. A longer message gets longer. “Stop” (also “cancel”, “wait”, “no”, “don't send it”), Esc or the card's Stop takes it down unsent; a spoken “stop” counts as soon as it's heard, before your turn ends, and a stop still counts for a second after the card's count ends, so one made as it says “Sends in 1” is never late. “No, I meant text Sam …” takes the first one down before the new one counts. A reload brings the card back with its time left. Only when the count ends does it go, and only:
 
@@ -219,6 +220,8 @@ In Full, a whole turn like “ask Mia to confirm what to bring” (or “text Sa
 - from the host's laptop: in a room, a guest's words never send from the host's Messages.
 - one at a time, until Messages has answered for the one before.
 - for real only with `MESSAGES_SEND=on`, on a Mac, through Messages (macOS asks first). Without it, it's a dry run: the card counts down the same and then says what it would have sent.
+
+Also in Full, “save this thread as a note” (or “put this in Notes”, “save the picnic thread to Apple Notes”) shows a card with the note it makes: the thread's title, its points in the order said, a decision marked “Decided”, words left unfinished marked “unfinished”, and each branch under its own heading. Then it writes that as a new note in Apple Notes, only from the host's laptop, and only with `NOTES_WRITE=on` on a Mac (macOS asks first); without it, the card says it's a dry run and nothing is written. Open in Notes shows the note there. Each save is a new note, and the app never changes or deletes one. With a thread called Notes on your map, “put this in Notes” still means that thread. Notes is off in Demo and on a hosted core.
 
 ### Did you mean, and confident auto-fix
 

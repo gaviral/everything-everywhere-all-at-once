@@ -1,7 +1,8 @@
 //! Presets, and the Messages connector the Full preset turns on.
 //!
 //! A preset picks which connectors a run has: Demo (the default) is the core alone, the map and its Reminders and
-//! Calendar beat; Full is every connector, today Messages. `PRESET=full` in the environment or `.env` switches it.
+//! Calendar beat; Full is every connector, today Messages and Notes (notes.rs). `PRESET=full` in the environment or
+//! `.env` switches it.
 //!
 //! Messages: a whole turn like "ask Mia to confirm what to bring" puts a ready-to-send card up, with the message, who
 //! it goes to and a visible countdown (`countdown_ms`). "Stop" (said, typed, or heard as it is being said), Esc or the
@@ -29,7 +30,7 @@ pub enum Preset {
     /// The core alone: nothing reaches outside the app but the Reminders and Calendar beat.
     #[default]
     Demo,
-    /// Every connector: Messages too.
+    /// Every connector: Messages and Notes too.
     Full,
 }
 
@@ -387,7 +388,7 @@ fn dry_run(to: &str, setting_on: bool) -> String {
 }
 
 /// The AppleScript error number in `osascript`'s words ("… (-1743)"), or "unknown": nothing else of them is logged.
-fn error_number(error: &str) -> String {
+pub(crate) fn error_number(error: &str) -> String {
     error
         .rsplit_once("(-")
         .and_then(|(_, tail)| tail.split_once(')'))

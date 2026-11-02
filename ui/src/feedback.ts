@@ -171,6 +171,12 @@ export const ACTIONS: Action[] = [
     done: "the count stops and the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
   { id: "stop-send-key", how: "key", at: [["SendCard.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT, waits: "core",
     done: "Esc while it counts: the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
+
+  // The note card (Full preset): a saved note opens in Notes; the card closes. Nothing here changes or deletes a note.
+  { id: "open-note", how: "click", at: [["NoteCard.tsx", "onClick={() => onOpen(card.id)}"]], pressed: PRESS, waits: "core",
+    done: "Notes comes forward showing the note (only once the card says “Saved to Notes”)", failed: NOT_CONNECTED + "; Notes refusing: notice “Couldn't open it: …”",
+    says: ["Saved to Notes", "Open in Notes"] },
+  { id: "close-note-card", how: "click", at: [["NoteCard.tsx", `aria-label="Close the note card"`]], pressed: PRESS, done: "the card goes" },
 ];
 
 /** Handlers that aren't actions of their own: each says why. */
@@ -188,6 +194,7 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["Moves.tsx", "onInput={(event) => {"], why: "typing a title: the words are the feedback, clipped at the cap as you type" },
   { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },
   { at: ["App.tsx", "onBlur={() => setNoticeFocused(false)}"], why: "a notice keeps up while it has focus: no change you see" },
+  { at: ["NoteCard.tsx", "onBlur={() => setHeld(false)}"], why: "the note card keeps up while it has focus: no change you see" },
   { at: ["App.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the shortcuts list closes it: the list going is the feedback" },
   { at: ["App.tsx", `window.addEventListener("pointerdown", down, true)`], why: "notes that you're moving around the map, so the map stops following landings" },
   { at: ["App.tsx", `window.addEventListener("pointerup", up, true)`], why: "as above, on letting go" },

@@ -14,6 +14,7 @@ mod explain;
 mod find;
 mod import;
 mod messages;
+mod notes;
 mod model;
 mod pictures;
 mod placer;
@@ -95,6 +96,8 @@ pub struct Core {
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
     pub messages: messages::Runtime,
+    /// Whether a note really writes into Notes, and the notes this run wrote (notes.rs).
+    pub notes: notes::Runtime,
 }
 
 impl Core {
@@ -408,6 +411,10 @@ impl Core {
             return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
         }
         if let Some(done) = messages::act(self, speaker, text) {
+            return Some(done);
+        }
+        // Before filing and moves: in Full, "put this in Notes" is a note, not a thread called Notes (notes.rs).
+        if let Some(done) = notes::act(self, speaker, text) {
             return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
@@ -959,9 +966,13 @@ async fn main() -> anyhow::Result<()> {
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
+        notes: notes::Runtime::from_env(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
+    if notes::on(&core) {
+        tracing::info!("Notes: {}", if core.notes.write { "writes" } else { "dry run" });
+    }
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
@@ -1464,6 +1475,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::StopSend { id }) => {
                     messages::stop(&core, id);
                 }
+                // The note card's Open in Notes: only a note this run wrote, only for the host (notes.rs).
+                Ok(ClientMsg::OpenNote { id }) => {
+                    let (core, speaker) = (core.clone(), speaker.clone());
+                    tokio::spawn(async move { notes::open(&core, &speaker, id).await });
+                }
                 Ok(ClientMsg::Visible) => {
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
                     core.wake.notify_waiters();
@@ -1629,6 +1645,7 @@ impl Core {
             service: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
+            notes: Default::default(),
         }
     }
 }

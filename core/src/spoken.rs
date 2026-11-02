@@ -402,7 +402,7 @@ pub(crate) fn name_words(name: &str) -> HashSet<String> {
 /// most recently touched. With `title_only` ("show", "open", "hide"), only a title with exactly those words: "Show
 /// Dana the photos" is talk though a thread is titled "Dana photos from Japan". Otherwise a thread whose title, tags
 /// or points hold all the words counts too (find.rs).
-fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
+pub(crate) fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
     let wanted = name_words(name);
     if wanted.is_empty() {
         return None;
@@ -461,7 +461,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
 }
 
 /// Every thread under `id`, however deep.
-fn descendants(world: &World, id: &str) -> Vec<String> {
+pub(crate) fn descendants(world: &World, id: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut at = 0;
     let mut parents = vec![id.to_string()];

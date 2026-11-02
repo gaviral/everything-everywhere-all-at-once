@@ -51,6 +51,7 @@ import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 import { SendCard } from "./SendCard";
+import { NoteCard } from "./NoteCard";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -952,6 +953,7 @@ export default function App() {
       </AnimatePresence>
 
       <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
+      <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
 
       {core.mapChange && (
         <div className="map-change">

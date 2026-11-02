@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -218,7 +219,8 @@ type ServerMsg =
   | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] }
-  | SendCardMsg;
+  | SendCardMsg
+  | NoteCardMsg;
 
 /** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
@@ -650,6 +652,8 @@ export function useCore(speaker?: string) {
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
   const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
+  // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
+  const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -816,6 +820,9 @@ export function useCore(speaker?: string) {
             if (comesFirst(msg)) closeRecap();
             break;
           }
+          case "note_card":
+            setNoteCard((shown) => noteReceived(shown, msg));
+            break;
         }
       };
       ws.onclose = () => {
@@ -864,6 +871,9 @@ export function useCore(speaker?: string) {
   // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
   const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
+  // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
+  const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);
+  const noteCardGone = useCallback((id: number) => setNoteCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -897,6 +907,9 @@ export function useCore(speaker?: string) {
     sendCard,
     stopSend,
     sendCardGone,
+    noteCard,
+    openNote,
+    noteCardGone,
     snapshotRevision,
     mapChange,
     partial,
