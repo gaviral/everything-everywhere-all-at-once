@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
 import "./recap.css";
+import { TIPS } from "./Tips";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -127,7 +128,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
   return <dialog ref={dialog} className="recap-sheet" aria-labelledby="recap-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}>
     <div className="recap-top">
-      <span className="recap-eyebrow"><span aria-hidden="true">✦</span> Recap <span className="sr-only">by AI</span></span>
+      <span className="recap-eyebrow"><span aria-hidden="true" data-tip={TIPS.recap}>✦</span> Recap <span className="sr-only">by AI</span></span>
       <button className="recap-close" onClick={onClose} aria-label="Close recap">×</button>
     </div>
     <div className="recap-intro">

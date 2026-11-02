@@ -1,5 +1,5 @@
 // No extra dependencies: run with `node scripts/catalog-check.mjs`.
-// Checks the window's side of the action catalog: which card "this" is (attention.ts), that it's told to the core
+// Checks the window's side of the action catalog: which card "this" is (this-card.ts), that it's told to the core
 // only when it changes and again on each connection, that Undo of a view or fold puts back what the window showed, that
 // a thread taken back leaves the map, and that a spoken fix of a "Did you mean …?" ("No, Muse Lark") lands as the core
 // applies it.
@@ -10,7 +10,7 @@ globalThis.location = new URL("http://localhost:4321/");
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { threadOf, selectedThread, watchAttention, attentionTeller } = await server.ssrLoadModule("/src/attention.ts");
+  const { threadOf, selectedThread, watchAttention, attentionTeller, attend, resolveThis, POINTER_MS } = await server.ssrLoadModule("/src/this-card.ts");
   const { reverter } = await server.ssrLoadModule("/src/revert.ts");
   const { apply } = await server.ssrLoadModule("/src/core.ts");
 
@@ -57,6 +57,29 @@ try {
   teller.resend((m) => sent.push(m));
   teller.resend((m) => sent.push(m));
   assert.deepEqual(sent.map((m) => JSON.parse(m)), [{ type: "attention", selected: null, pointed: "T2" }, { type: "attention", selected: null, pointed: "T2" }]);
+
+  // What the teller told is what the window's own "this" mark reads (Attention.tsx), and each change is heard.
+  let heard = 0;
+  const unwatch = teller.watch(() => heard++);
+  teller.tell("T5", "T2", () => true);
+  unwatch();
+  teller.tell(null, null, () => true);
+  assert.equal(heard, 1, "a watcher hears changes until it stops");
+  assert.deepEqual([teller.attending().selected, teller.attending().pointed, teller.attending().left?.id], [null, null, "T2"]);
+
+  // "This" picked as catalog.rs `resolve_this` picks it: selected, else pointed, else the card the pointer left within
+  // POINTER_MS, else the active thread; only cards on the map count, a merged one as the thread it joined.
+  const map = { threads: [{ id: "T1" }, { id: "T2" }, { id: "T3" }], merged: { T9: "T3" } };
+  const nowhere = { selected: null, pointed: null, left: null };
+  assert.equal(resolveThis({ selected: "T2", pointed: "T3", left: null }, map, "T1", 0), "T2", "selection first");
+  assert.equal(resolveThis({ selected: null, pointed: "T3", left: null }, map, "T1", 0), "T3", "then the pointer");
+  assert.equal(resolveThis(nowhere, map, "T1", 0), "T1", "else the thread you're on");
+  assert.equal(resolveThis({ selected: "T7", pointed: "T9", left: null }, map, "T1", 0), "T3", "a gone card doesn't count; a merged one is its thread");
+  const off = attend(attend(nowhere, null, "T2", 1_000), null, null, 2_000);
+  assert.deepEqual(off.left, { id: "T2", at: 2_000 }, "the card the pointer left, with when");
+  assert.equal(resolveThis(off, map, "T1", 2_000 + POINTER_MS), "T2", "still this within POINTER_MS");
+  assert.equal(resolveThis(off, map, "T1", 2_001 + POINTER_MS), "T1", "then the thread you're on");
+  assert.deepEqual(attend(off, "T3", null, 3_000).left, off.left, "a selection alone leaves the left card as it was");
 
   // Undo of a voice view or fold: what was kept just before it comes back, once.
   const shown = reverter();

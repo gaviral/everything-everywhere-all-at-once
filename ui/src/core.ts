@@ -5,7 +5,7 @@ import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeri
 import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
-import { attentionTeller, watchAttention } from "./attention";
+import { attentionTeller, watchAttention } from "./this-card";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -449,7 +449,7 @@ export function useCore(speaker?: string) {
   const [undoId, setUndoId] = useState<number | null>(null);
   // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
   const [revertAsk, setRevertAsk] = useState(0);
-  // What "this" means here, as last told; told again on every connection, since the core forgets it (attention.ts).
+  // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
   const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
@@ -624,7 +624,7 @@ export function useCore(speaker?: string) {
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
-  // "This" for spoken requests: the card you selected or point at (attention.ts).
+  // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
@@ -668,6 +668,8 @@ export function useCore(speaker?: string) {
     clearNotice: useCallback(() => setNotice(""), []),
     undoId,
     revertAsk,
+    // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
+    attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 // crypto.randomUUID needs a secure page; a guest laptop in a room loads plain http from the LAN.
 const newId = () => (window.isSecureContext && crypto.randomUUID ? crypto.randomUUID() : `x${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 import type { Explanation } from "./core";
+import { TIPS } from "./Tips";
 
 // A word, a phrase or a sentence; longer selections are usually for copying.
 const LONGEST = 160;
@@ -159,7 +160,7 @@ export function Explain({ explanations, explain, mark }: {
             </>
           ) : answer ? (
             <>
-              <span className="ai-mark" role="img" aria-label="AI explanation">✦</span> {answer.text}
+              <span className="ai-mark" role="img" aria-label="AI explanation" data-tip={TIPS.explanation}>✦</span> {answer.text}
             </>
           ) : (
             <span className="explain-wait">Explaining…</span>
