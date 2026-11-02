@@ -1,0 +1,48 @@
+/* Bubbles (index.tsx). Its heading is the Palace's, so the views read as one family; each bubble is a soft sphere in
+   its room's color. Blue rings where you are and amber dashes what you left off, as everywhere in the app. */
+.bubbles-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 12px; }
+.bubbles-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.bubbles-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 40px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
+.bubbles-intro p { max-width: 300px; margin: 0 0 3px; color: var(--muted); font-size: 13px; }
+.bubbles-empty { margin: 48px auto; color: var(--muted); text-align: center; }
+
+/* The field keeps its shape (the spiral's) and grows only when a new bubble needs room at its edge. */
+.bubbles-field { position: relative; width: 100%; margin: 8px auto 0; padding: 0; list-style: none; }
+/* Each bubble's middle sits on its spot; it's a size container, so what it shows follows its own size. */
+.bubbles-bubble { position: absolute; transform: translate(-50%, -50%); container-type: inline-size; transition: width .6s cubic-bezier(.2, .8, .2, 1); animation: bubbles-arrive .5s ease-out both; }
+.bubbles-face {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 100%; aspect-ratio: 1; padding: 13%; border: 1px solid color-mix(in srgb, var(--room, var(--muted)) 35%, transparent); border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--card), var(--room-soft, var(--bg)) 72%);
+  box-shadow: var(--shadow); color: var(--ink); font: inherit; text-align: center; cursor: pointer;
+  animation: bubbles-float var(--float, 9s) ease-in-out var(--delay, 0s) infinite alternate;
+  transition: scale .2s ease;
+}
+.bubbles-face:hover { scale: 1.04; }
+.bubbles-face:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.bubbles-here .bubbles-face { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+.bubbles-left .bubbles-face { border: 2px dashed var(--amber); }
+
+/* Too small for a title: its first letter, as a thread's picture slot shows one. */
+.bubbles-letter { color: var(--room, var(--muted)); font-family: Georgia, serif; font-size: 40cqi; line-height: 1; }
+/* About a ninth of the bubble across: "Submission" fits whole in a two-point bubble; only a word longer than the bubble
+   breaks, with a hyphen. */
+.bubbles-title { display: none; overflow: hidden; font-size: clamp(11px, 11cqi, 16px); font-weight: 600; line-height: 1.2; overflow-wrap: break-word; hyphens: auto; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.bubbles-count { display: none; color: var(--muted); font-size: clamp(11px, 9cqi, 13px); }
+@container (min-width: 84px) {
+  .bubbles-letter { display: none; }
+  .bubbles-title { display: -webkit-box; }
+}
+@container (min-width: 128px) { .bubbles-count { display: block; } }
+
+/* A landing: one ring in the room's color, out and gone. */
+.bubbles-ripple { position: absolute; inset: -2px; border: 2px solid var(--room, var(--accent)); border-radius: 50%; opacity: 0; pointer-events: none; animation: bubbles-ripple 1.4s ease-out; }
+
+@keyframes bubbles-arrive { from { opacity: 0; scale: .6; } }
+@keyframes bubbles-float { from { translate: 0 -3px; } to { translate: 0 3px; } }
+@keyframes bubbles-ripple { from { opacity: .75; scale: 1; } to { opacity: 0; scale: 1.35; } }
+
+@media (max-width: 560px) {
+  .bubbles-intro { display: block; }
+  .bubbles-intro p { margin-top: 10px; }
+}

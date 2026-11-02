@@ -1,0 +1,8 @@
+{
+  "id": "keys",
+  "name": "Keys",
+  "does": "Arrows or h j k l move between threads and points; ⌘D or Ctrl+D starts or stops the mic.",
+  "kind": "input",
+  "defaultOn": false,
+  "demoSafe": true
+}

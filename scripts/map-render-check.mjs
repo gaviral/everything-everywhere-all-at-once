@@ -57,6 +57,24 @@ try {
   // Words other modules own and other checks hold (marks-check, hosted-check): here, only that each shows where it goes.
   const { emptyLine } = await server.ssrLoadModule("/src/ux-rules.ts");
   const { MIC_WORDS, composerHint } = await server.ssrLoadModule("/src/MicButton.tsx");
+  const { Markdown } = await server.ssrLoadModule("/src/md.tsx");
+  const markdown = (text) => renderToStaticMarkup(React.createElement(Markdown, { text }));
+  for (const plain of ["", "Plain text, as before.", "Two  spaces\nand a newline", "5 * 3", "5 * 3 * 2", "*unclosed", "**unclosed", "* spaced *", "# Heading", "[link](https://example.com)", "![image](x)"]) {
+    assert.equal(markdown(plain), plain, `literal Markdown: ${plain}`);
+  }
+  assert.equal(markdown("**bold** *italics* `code`"), "<strong>bold</strong> <em>italics</em> <code>code</code>");
+  assert.equal(markdown("**bold *nested***"), "<strong>bold <em>nested</em></strong>");
+  assert.equal(markdown("*italic **nested***"), "<em>italic <strong>nested</strong></em>");
+  assert.equal(markdown("`**literal** <img src=x onerror=alert(1)>`"), "<code>**literal** &lt;img src=x onerror=alert(1)&gt;</code>");
+  const hostile = markdown('<script>alert(1)</script> <img src=x onerror="alert(1)"> & **safe**');
+  assert.ok(hostile.includes("&lt;script&gt;") && hostile.includes("&lt;img") && hostile.includes("&amp; <strong>safe</strong>"));
+  assert.doesNotMatch(hostile, /<(?:script|img|a)\b|<[^>]*\sonerror=/);
+  const bullets = markdown("Before\n- **one**\n- *two*\n3. `three`\n4. four\nAfter");
+  assert.equal((bullets.match(/role="list"/g) ?? []).length, 2, "separate bullet and numbered lists");
+  assert.equal((bullets.match(/role="listitem"/g) ?? []).length, 4);
+  assert.match(bullets, /<strong>one<\/strong>[^]*<em>two<\/em>[^]*>3\.<[^]*<code>three<\/code>[^]*>4\.</);
+  assert.ok(bullets.startsWith("Before") && bullets.endsWith("After"));
+  assert.equal(markdown("- one\r\n- two"), markdown("- one\n- two"), "typed CRLF lists");
 
   // The real hook's state before its socket opens: every field App reads, with the window's own defaults.
   let fresh;
@@ -172,6 +190,15 @@ try {
   const card = (id, title, extra = {}) => ({ id, title, parent_id: null, status: "open", last_point: "", touched_ms: at(30), tags: [], picture: null, dropped_by: "", ...extra });
   const said = (id, thread_id, text, point, s, extra = {}) => ({ id, speaker: "you", text, point, thread_id, placed: !!thread_id, unclear: "", guess: "",
     heard: "", fixed: "", complete: true, at_ms: at(s), place_ms: thread_id ? 2600 : null, decided: false, ...extra });
+  const mdText = "- **typed**\n- `safe` <img src=x>";
+  const mdPoint = "**point** with *emphasis*";
+  const mdWorld = { ...fresh.world, threads: [card("MD", "Markdown")], active: "MD", active_by: { you: "MD" },
+    thoughts: [said("md-placed", "MD", mdText, mdPoint, 5), said("md-pending", null, mdText, "", 1)] };
+  const mdMap = draw({ world: mdWorld, placing: { now: "md-pending", retryAt: {} } });
+  assert.match(mdMap, /<span><strong>point<\/strong> with <em>emphasis<\/em><\/span>/, "a placed point");
+  assert.match(mdMap, /id="said-md-placed"[^]*?role="list"[^]*?<strong>typed<\/strong>/, "original words, including a first-line bullet");
+  assert.match(mdMap, /class="pill"[^]*?role="list"[^]*?<strong>typed<\/strong>/, "a pending thought");
+  assert.doesNotMatch(mdMap, /<img src="?x\b/, "thought HTML stays text in every card");
   const half = said("s1", "T1", "My biggest problem is that I never finish my", "Never finishes sentences", 26, { complete: false });
   const rentLine = said("r1", "T2", "Oh, and rent is due Friday and I still haven't sent it.", "Rent due Friday, not sent yet", 20);
   const sendRent = { id: "ac-9", thread_id: "T2", kind: "reminder", title: "Send rent", when: "2026-11-06", status: "new", done_ms: null };
@@ -223,7 +250,7 @@ try {
   assert.match(marks, /<button aria-label="Rename: Rename to “Rent payment”\?">Rename<\/button><button class="quiet" aria-label="Keep the title">×<\/button>/);
   assert.match(marks, /aria-label="AI-suggested tag: money" aria-pressed="false"[^>]*><span aria-hidden="true">✦ <\/span>money<\/button>/, "a suggested tag, once the thread has 3 thoughts");
   assert.match(marks, /aria-label="Kept tag: home" aria-pressed="true" title="Remove tag">home<\/button>/);
-  console.log("map-render-check: ok (first screen with and without a key, the sample map through the reducer, a reminder from proposed to added, hosted, the catch beat, the AI's marks)");
+  console.log("map-render-check: ok (safe thought Markdown, first screen with and without a key, the sample map through the reducer, a reminder from proposed to added, hosted, the catch beat, the AI's marks)");
 } finally {
   globalThis.Date = RealDate;
   await server.close();

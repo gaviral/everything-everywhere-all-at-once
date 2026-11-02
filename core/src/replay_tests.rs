@@ -274,6 +274,11 @@ async fn session(core: &Arc<Core>) -> Vec<Change> {
     let undo = |act: &dyn Fn()| catalog::undo_click(core, "you", offered(core, act).expect("an Undo is offered"));
     let first = core.snapshot().thoughts[0].id.clone();
     let on_t2 = core.snapshot().thoughts.iter().rev().find(|t| t.thread_id.as_deref() == Some("T2")).unwrap().id.clone();
+    // Places on the canvas, a person's and an AI participant's: on a point deleted and put back, on a thread merged
+    // away and back, and one that stays.
+    crate::positions::set(core, "you", &on_t2, Some(40.0), Some(80.0)).unwrap();
+    crate::positions::set(core, "AI", "T6", Some(-120.0), Some(15.5)).unwrap();
+    crate::positions::set(core, "AI", "T2", Some(600.0), Some(0.0)).unwrap();
     undo(&|| moves::click_delete(core, "you", &on_t2));
     undo(&|| moves::click_move(core, "you", &first, Some("T3".into())));
     undo(&|| moves::click_move(core, "you", &first, None));
@@ -404,6 +409,9 @@ fn invariants(w: &World) -> Vec<String> {
     if ids.len() != n {
         bad.push("an id twice".into());
     }
+    for id in w.positions.keys().filter(|id| !w.placeable(id)) {
+        bad.push(format!("a place on the canvas for {id}, not on the map"));
+    }
     bad
 }
 
@@ -422,6 +430,8 @@ async fn any_walk_of_fixes_and_undos_keeps_the_map_whole_and_replayable() {
             (rng % n.max(1) as u64) as usize
         };
         let mut offers: Vec<u64> = Vec::new();
+        // An AI participant's places, from a stream of its own, so the walk of fixes stays the one it was.
+        let mut place = seed.wrapping_mul(0xD1B5_4A32_D192_ED03) | 1;
         for step in 0..300 {
             let w = core.snapshot();
             let thought = (!w.thoughts.is_empty()).then(|| w.thoughts[next(w.thoughts.len())].id.clone());
@@ -462,9 +472,25 @@ async fn any_walk_of_fixes_and_undos_keeps_the_map_whole_and_replayable() {
                 Some(id) => offers.push(id),
                 None => {}
             }
+            // Every third step or so the AI participant puts something somewhere, or one in seven back in the layout.
+            place ^= place << 13;
+            place ^= place >> 7;
+            place ^= place << 17;
+            if place % 3 == 0 {
+                let w = core.snapshot();
+                let ids: Vec<String> = w.threads.iter().map(|t| t.id.clone()).chain(w.thoughts.iter().map(|t| t.id.clone())).collect();
+                drop(w);
+                if !ids.is_empty() {
+                    let at = (place % 2_000) as f64 - 1_000.0;
+                    let (x, y) = if place % 7 == 0 { (None, None) } else { (Some(at), Some(-at / 2.0)) };
+                    crate::positions::set(&core, "AI", &ids[(place >> 11) as usize % ids.len()], x, y).unwrap();
+                }
+            }
             let bad = invariants(&core.snapshot());
             assert!(bad.is_empty(), "seed {seed}, step {step} (kind {what}): {bad:?}");
         }
+        // The places a running core would write within a quarter second.
+        crate::positions::flush_all(&core);
         let (_, replayed) = Journal::open(&path).unwrap();
         let _ = std::fs::remove_file(&path);
         assert_eq!(full(&replayed), full(&core.snapshot()), "seed {seed}: the restart's map differs");

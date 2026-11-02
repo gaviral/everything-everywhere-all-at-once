@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 
 /** What a voice view or fold changes in the window. */
-export type Shown = { view: "map" | "palace"; focusMode: boolean; query: string; expanded: Record<string, boolean>; kept: string[] };
+export type Shown = { view: string; focusMode: boolean; query: string; expanded: Record<string, boolean>; kept: string[] };
 
 /** One kept state: `keep` replaces it, `take` hands it over once. */
 export function reverter<T>() {

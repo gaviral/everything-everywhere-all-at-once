@@ -12,11 +12,14 @@ mod clock;
 mod decided;
 mod explain;
 mod find;
+mod github;
 mod import;
 mod messages;
+mod notes;
 mod model;
 mod pictures;
 mod placer;
+mod positions;
 mod refiner;
 mod sample;
 mod trace;
@@ -97,6 +100,12 @@ pub struct Core {
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
     pub messages: messages::Runtime,
+    /// The GitHub card's reading of `gh`, in the Full preset (github.rs).
+    pub github: github::Runtime,
+    /// Whether a note really writes into Notes, and the notes this run wrote (notes.rs).
+    pub notes: notes::Runtime,
+    /// Places on the canvas whose journal line waits, so a drag's steps make a few lines (positions.rs).
+    positions: positions::Runtime,
 }
 
 impl Core {
@@ -134,6 +143,7 @@ impl Core {
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
+                positions::settle(self, &world);
                 if let Err(e) = journal.append(change) {
                     tracing::error!("journal write failed: {e:#}");
                 }
@@ -425,6 +435,14 @@ impl Core {
             return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
         }
         if let Some(done) = messages::act(self, speaker, text) {
+            return Some(done);
+        }
+        if let Some(done) = github::act(self, speaker, text) {
+            return Some(done);
+        }
+        // Before filing and moves: in Full, "put this in Notes" is a note, unless a thread called Notes is on the map;
+        // "add milk to my notes" stays filing (notes.rs).
+        if let Some(done) = notes::act(self, speaker, text) {
             return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
@@ -986,9 +1004,19 @@ async fn main() -> anyhow::Result<()> {
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
+        github: github::Runtime::from_env(),
+        notes: notes::Runtime::from_env(),
+        positions: positions::Runtime::default(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
+    // GitHub reads gh only in Full, and never on a hosted core.
+    if core.messages.settings.preset == messages::Preset::Full && !core.github.settings.hosted {
+        tracing::info!("GitHub card: on, reading gh ({} named repo(s))", core.github.settings.repos.len());
+    }
+    if notes::on(&core) {
+        tracing::info!("Notes: {}", if core.notes.write { "writes" } else { "dry run" });
+    }
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
@@ -1398,8 +1426,8 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
     }
 }
 
-/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
-/// message counting down.
+/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress,
+/// message counting down and note card.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
@@ -1408,6 +1436,8 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    // A note card still saving, or just ended, comes back too: its end and Open in Notes reach a window that dropped.
+    messages.extend(crate::notes::shown_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
@@ -1447,6 +1477,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // quick off and on, the old session's late end mustn't switch the new mic off.
     let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
+    // The item whose place was refused last, so a run of refusals on it is said once (positions.rs).
+    let mut refused: Option<String> = None;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -1502,6 +1534,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::StopSend { id }) => {
                     messages::stop(&core, id);
                 }
+                // The note card's Open in Notes: only a note this run wrote, only for the host (notes.rs).
+                Ok(ClientMsg::OpenNote { id }) => {
+                    let (core, speaker) = (core.clone(), speaker.clone());
+                    tokio::spawn(async move { notes::open(&core, &speaker, id).await });
+                }
                 Ok(ClientMsg::Visible) => {
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
                     core.wake.notify_waiters();
@@ -1540,6 +1577,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
                 Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),
+                // Anyone in the room, a person or an AI participant. Refused once per item: a drag's steps still on
+                // their way when its card left the map would each say it.
+                Ok(ClientMsg::Position { id, x, y }) => match positions::set(&core, &speaker, &id, x, y) {
+                    Ok(()) => refused = None,
+                    Err(why) if refused.as_deref() != Some(id.as_str()) => {
+                        core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
+                        refused = Some(id);
+                    }
+                    Err(_) => {}
+                },
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1669,6 +1716,9 @@ impl Core {
             service: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
+            github: Default::default(),
+            notes: Default::default(),
+            positions: Default::default(),
         }
     }
 }
@@ -2254,6 +2304,13 @@ mod tests {
             ("Pause listening", "pause"),
             ("Turn off the mic", "pause"),
             ("Add that to my calendar", "approve"),
+            // docs/COMMANDS.md: saying you lost your place is "where was I?".
+            ("Going back to what I was saying", "back"),
+            ("Going back to what you were saying", "back"),
+            ("I lost my place", "back"),
+            ("I lost my train of thought", "back"),
+            ("I don't remember what I was saying", "back"),
+            ("Where did I leave off?", "back"),
         ];
         let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
         for (phrase, does) in documented {
@@ -2285,6 +2342,12 @@ mod tests {
             "A new thread about the budget came up on Slack",
             "New topic on the agenda is hiring",
             "I bought a boat. What was I thinking?",
+            "I lost my place in line at the DMV",
+            "The phone rang and I lost my train of thought",
+            "Going back to what I was saying about the rent, it's due Friday",
+            "I don't remember the name of that restaurant",
+            // Alone, as often an answer to a question as a lost thought.
+            "I don't remember",
             "Forget it, I'll just buy a new one",
             "Never mind the weather, the trip is on",
             "Expand the business into Europe",

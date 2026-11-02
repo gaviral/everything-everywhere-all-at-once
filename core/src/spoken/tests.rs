@@ -297,6 +297,23 @@ fn add_it_to_reminders_adds_the_newest_waiting_on_your_thread() {
 }
 
 #[test]
+fn saying_you_lost_your_place_is_where_was_i_only_as_the_whole_turn() {
+    for said in [
+        "I've lost my place", "Lost my place, sorry", "Um, I lost my place.", "I lost my train of thought again", "I lost track of what I was saying",
+        "Where did I leave off?", "I can't remember what I was saying", "I don’t remember what I was going to say", "I forgot what I was gonna say",
+        "Okay, back to what I was saying", "So, getting back to what I was saying earlier", "Going back to what you were saying before",
+    ] {
+        assert_eq!(kind(said), Some(Act::Back), "{said}");
+    }
+    for said in [
+        "I don't remember", "I don't remember the name of that restaurant", "I lost my place in the book", "I lost my keys",
+        "She forgot what I was saying", "I lost my place. The rent is due Friday.", "Going back to what I was saying about the rent, it's due Friday",
+    ] {
+        assert_eq!(kind(said), None, "{said}");
+    }
+}
+
+#[test]
 fn stop_listening_is_only_the_whole_turn() {
     for said in ["Stop listening", "Okay, stop listening for a bit.", "Pause listening", "Mic off", "Turn off the mic, please"] {
         assert!(is_stop_listening(said), "{said}");

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { useCore } from "./core";
 import { DESCRIBE_APP, playedLine, tooLongForApp, type AppBuild, type MiniApp, type Watcher } from "./apps-core";
 import { playTune, unlockTune } from "./apps-audio";
+import { openCatalog } from "./bricks-core";
 import "./apps.css";
 import { TIPS } from "./Tips";
 
@@ -168,6 +169,8 @@ export function Apps({ core }: { core: Core }) {
             aria-label={app.name} disabled={!core.connected} onClick={() => core.toggleApp(app.id, !app.enabled)}>{app.enabled ? "On" : "Off"}</button>
         </article>)}
       </div>
+      {/* The app's own parts, under the apps people make: the Catalog switches them (Catalog.tsx, docs/bricks.md). */}
+      <div className="apps-catalog"><p>More views and tools you can switch on</p><button type="button" aria-haspopup="dialog" onClick={openCatalog}>Catalog</button></div>
     </div>}
   </aside>;
 }

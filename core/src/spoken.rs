@@ -177,7 +177,10 @@ pub fn stops_listening(text: &str) -> bool {
 
 /// "What was I thinking?" when you've lost your thought: as "where was I?". Only the whole turn: at the end of a
 /// sentence it's often about a choice ("I bought a boat. What was I thinking?"). "Let me think" stays filler: it's
-/// a pause to think, not a wish to be moved.
+/// a pause to think, not a wish to be moved. Saying you lost your place ("I lost my train of thought", "going back to
+/// what I was saying") is "where was I?" too, also only as the whole turn: with more words it's about something else
+/// ("I lost my place in line", "I don't remember the name"). "I don't remember" alone stays a thought: it answers a
+/// question as often as it means a lost thought.
 fn is_lost_thought(text: &str) -> bool {
     crate::is_command(
         text,
@@ -186,6 +189,16 @@ fn is_lost_thought(text: &str) -> bool {
             "let me finish my thought", "let me finish that thought", "let me finish my sentence", "help me finish my thought",
         ],
         &["again"],
+    ) || crate::is_command(
+        text,
+        &[
+            "i lost my place", "i ve lost my place", "lost my place", "i lost my train of thought", "i ve lost my train of thought",
+            "lost my train of thought", "i lost track of what i was saying", "where did i leave off",
+            "i don t remember what i was saying", "i don t remember what i was going to say", "i don t remember what i was gonna say",
+            "i can t remember what i was saying", "i forgot what i was saying", "i forgot what i was going to say", "i forgot what i was gonna say",
+            "going back to what i was saying", "going back to what you were saying", "getting back to what i was saying", "back to what i was saying",
+        ],
+        &["again", "sorry", "before", "earlier"],
     )
 }
 
@@ -406,7 +419,7 @@ pub(crate) fn name_words(name: &str) -> HashSet<String> {
 /// most recently touched. With `title_only` ("show", "open", "hide"), only a title with exactly those words: "Show
 /// Dana the photos" is talk though a thread is titled "Dana photos from Japan". Otherwise a thread whose title, tags
 /// or points hold all the words counts too (find.rs).
-fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
+pub(crate) fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
     let wanted = name_words(name);
     if wanted.is_empty() {
         return None;
@@ -465,7 +478,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
 }
 
 /// Every thread under `id`, however deep.
-fn descendants(world: &World, id: &str) -> Vec<String> {
+pub(crate) fn descendants(world: &World, id: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut at = 0;
     let mut parents = vec![id.to_string()];

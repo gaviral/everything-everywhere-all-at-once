@@ -23,16 +23,20 @@ Browser, one page per window (ui/src)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
+  pulls-card.ts  the GitHub card's rows (state, checks, when), which links open, how long it stays (held by `scripts/pulls-card-check.mjs`); PullsCard.tsx draws it
   send-card.ts the message card's countdown, words, Esc and how long an ended card stays (held by `scripts/send-card-check.mjs`); SendCard.tsx draws it
+  note-card.ts the note card's words, marks, Open in Notes only once saved, and how long an ended card stays (held by `scripts/note-card-check.mjs`); NoteCard.tsx draws it
   feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
+  positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
   onscreen.ts    keeps a popover anchored to a button (Room, the ? list, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
   route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
+  md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
   whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
   keys.ts        keys the README, tour and ? list promise: ? opens the list, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
@@ -40,15 +44,22 @@ Browser, one page per window (ui/src)
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
-  limits.ts      the core's caps on what the window sends (protocol.rs), checked first so a long paste keeps its draft (held by `scripts/limits-check.mjs`)
+  limits.ts      the core's caps on what the window sends (protocol.rs), checked first; a thought past the cap goes in parts, cut at paragraphs, else sentences, else words (held by `scripts/limits-check.mjs`)
   merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
   landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
-  Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
-  level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
+  bricks-core.ts the bricks (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
+  BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
+  Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
+  bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
+    level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
+    bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
+    keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
+    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px above the dock, in place of the dock's big line
+    _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
@@ -69,6 +80,7 @@ Core, one process (core/src: axum, tokio)
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
   moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
+  positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
@@ -76,6 +88,8 @@ Core, one process (core/src: axum, tokio)
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
   messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
+  github.rs      the GitHub card (Full only, not hosted, the host's only): "show me the open pull requests" reads gh pr list / view, read-only, and says in one line when gh is missing, signed out or slow
+  notes.rs       Full preset: "save this thread as a note" shows the note (points in order, decisions and unfinished marked, branches under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
   sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
@@ -87,8 +101,8 @@ Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept besid
 
 ## State and the journal
 
-- `World`: threads, thoughts, `active` (where the talk is), `active_by` (each speaker's thread), suggestions, actions, `merged` (old thread id to its successor), apps, recaps.
-- Every change goes through `Core::commit`: under the world and journal locks, each `Change` is applied to the `World` and appended to `data/<map>/journal.jsonl` as one JSON line (`#[serde(tag = "type")]`); then each is broadcast as `ServerMsg::Change`. Nothing else changes the `World`.
+- `World`: threads, thoughts, `active` (where the talk is), `active_by` (each speaker's thread), suggestions, actions, `merged` (old thread id to its successor), apps, recaps, `positions` (thread or thought id to where it was put on the canvas, by whom and when).
+- Every change goes through `Core::commit`: under the world and journal locks, each `Change` is applied to the `World` and appended to `data/<map>/journal.jsonl` as one JSON line (`#[serde(tag = "type")]`); then each is broadcast as `ServerMsg::Change`. Nothing else changes the `World`, but a place on the canvas (`positions::set`): applied and broadcast the same way, under the same locks, while its journal line may wait up to 250 ms for a newer step of the same item to take its place (a drag sends one every frame). A commit drops a waiting line whose item it takes off the map, so replay matches what windows were sent.
 - `Core::record` appends a change that only the journal keeps (`ExplainAnswered`, `AnswerMarked`): the `World` ignores it and no window is sent it. These are labels for judging Explain and Recap prompts later.
 - On start, `Journal::open` replays the file. A line it can't parse is skipped with a warning; a missing final newline (a crash mid-write) is added, so the next change starts on its own line. Fields added later carry `#[serde(default)]`, so old journals keep loading.
 - A merge moves thoughts, branches, suggestions, actions and each speaker's place, and records `from → into`; later changes aimed at `from` follow it, with a hop limit so a cycle can't loop.

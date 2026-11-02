@@ -64,7 +64,7 @@ export const ACTIONS: Action[] = [
   { id: "export", how: "click", at: [["App.tsx", "exportMap()"]], pressed: PRESS, waits: "file", done: "the file downloads: “Exported … as …”",
     working: "none needed: the file is written in the page, in one frame", failed: "notice: “Nothing on the map yet to export.”",
     says: ["Nothing on the map yet to export."] },
-  { id: "map-or-palace", how: "click", at: [["App.tsx", `showView("map")`], ["App.tsx", `showView("palace")`]], pressed: PRESS, done: "the view changes and its button stays pressed" },
+  { id: "map-or-palace", how: "click", at: [["App.tsx", `showView("map")`], ["App.tsx", `showView("palace")`], ["App.tsx", "showView(brick.info.id)"]], pressed: PRESS, done: "the view changes and its button stays pressed" },
   { id: "search", how: "key", at: [["App.tsx", "searchRef}"]], pressed: INSTANT, done: "matching threads stay, “N threads found” with Clear; Esc clears", says: ["found"] },
   { id: "clear-search", how: "click", at: [["App.tsx", `onClick={() => setQuery("")}`]], pressed: PRESS, done: "the whole map is back" },
   { id: "focus-mode", how: "click", at: [["App.tsx", "setFocusMode((value) => !value)"]], pressed: PRESS, done: "the map shows one thread; Focus stays pressed while on" },
@@ -149,6 +149,14 @@ export const ACTIONS: Action[] = [
   { id: "app-remove", how: "click", at: [["Apps.tsx", "core.removeApp(app.id)"]], pressed: PRESS, waits: "core", done: "the app's row goes", failed: OFFLINE },
   { id: "app-output", how: "pick", at: [["Apps.tsx", "core.appOutput(app.id"]], pressed: INSTANT, waits: "core", done: "the menu shows the choice", failed: OFFLINE },
 
+  // Bricks (docs/bricks.md): the Catalog, opened from the Apps panel, and the switches in it. A switch is this
+  // browser's own, so it waits on nothing.
+  { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Catalog sheet opens: every brick with its line and its switch" },
+  { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Catalog" },
+  { id: "catalog-backdrop", how: "click", at: [["Catalog.tsx", "if (event.target === event.currentTarget) closeCatalog()"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
+  { id: "brick-switch", how: "click", at: [["Catalog.tsx", "switchBrick(info.id, !shown)"], ["BrickSlot.tsx", "switchBrick(info.id, false)"]], pressed: PRESS,
+    done: "the switch says On or Off and the brick shows or goes at once (a view's name joins or leaves Map and Palace); a broken brick's line goes" },
+
   // Import.
   { id: "import-open", how: "click", at: [["Import.tsx", "setOpen(true)"], ["Import.tsx", "import-close"], ["Import.tsx", "onClick={(event) => {"]], pressed: PRESS, done: "the import dialog opens or closes" },
   { id: "import-file", how: "click", at: [["Import.tsx", "picker.current?.click()"], ["Import.tsx", "onChange={(event) => {"], ["Import.tsx", `window.addEventListener("drop", drop)`], ["Import.tsx", "void trySample()"]], pressed: PRESS, waits: "file",
@@ -171,6 +179,15 @@ export const ACTIONS: Action[] = [
     done: "the count stops and the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
   { id: "stop-send-key", how: "key", at: [["SendCard.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT, waits: "core",
     done: "Esc while it counts: the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
+
+  // The GitHub card (Full preset): read-only; its rows are links, which open on GitHub in a new tab.
+  { id: "close-pulls-card", how: "click", at: [["PullsCard.tsx", `aria-label="Close the GitHub card"`]], pressed: PRESS, done: "the card goes" },
+  { id: "close-pulls-card-key", how: "key", at: [["PullsCard.tsx", `onKeyDown={(event) => { if (event.key === "Escape")`]], pressed: INSTANT, done: "Esc from inside the card: the card goes" },
+  // The note card (Full preset): a saved note opens in Notes; the card closes. Nothing here changes or deletes a note.
+  { id: "open-note", how: "click", at: [["NoteCard.tsx", "onClick={() => onOpen(card.id)}"]], pressed: PRESS, waits: "core",
+    done: "Notes comes forward showing the note (only once the card says “Saved to Notes”)", failed: NOT_CONNECTED + "; Notes refusing: notice “Couldn't open it: …”",
+    says: ["Saved to Notes", "Open in Notes"] },
+  { id: "close-note-card", how: "click", at: [["NoteCard.tsx", `aria-label="Close the note card"`]], pressed: PRESS, done: "the card goes" },
 ];
 
 /** Handlers that aren't actions of their own: each says why. */
@@ -181,6 +198,7 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["this-card.ts", `doc.addEventListener("keydown", key, true)`], why: "tracks which card “this” means" },
   { at: ["App.tsx", "event.key === \"Esc"], why: "Esc in search clears it (search's own feedback)" },
   { at: ["Moves.tsx", "onChange={(event) => setQuery(event.target.value)}"], why: "typing in the move list's filter: the list narrows as you type" },
+  { at: ["App.tsx", "onKeyDown={submitOnEnter}"], why: "Enter submits the composer through its existing send feedback" },
   { at: ["App.tsx", "typedSinceSend.current = true; setDraft"], why: "typing a thought: the words are the feedback" },
   { at: ["Apps.tsx", "onChange={(e) => setRequest(e.target.value)}"], why: "typing an app request: the words are the feedback" },
   { at: ["room.tsx", "setCode(e.target.value)"], why: "typing the room code" },
@@ -188,6 +206,8 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["Moves.tsx", "onInput={(event) => {"], why: "typing a title: the words are the feedback, clipped at the cap as you type" },
   { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },
   { at: ["App.tsx", "onBlur={() => setNoticeFocused(false)}"], why: "a notice keeps up while it has focus: no change you see" },
+  { at: ["PullsCard.tsx", "onBlur={(event) =>"], why: "the GitHub card keeps up while it has focus: no change you see" },
+  { at: ["NoteCard.tsx", "onBlur={(event) =>"], why: "the note card keeps up while it has focus: no change you see" },
   { at: ["App.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the shortcuts list closes it: the list going is the feedback" },
   { at: ["App.tsx", `window.addEventListener("pointerdown", down, true)`], why: "notes that you're moving around the map, so the map stops following landings" },
   { at: ["App.tsx", `window.addEventListener("pointerup", up, true)`], why: "as above, on letting go" },

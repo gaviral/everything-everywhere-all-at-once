@@ -551,7 +551,7 @@ header {
   box-shadow: var(--shadow);
 }
 
-.composer input {
+.composer textarea {
   flex: 1;
   padding: 8px 0;
   border: 0;
@@ -559,6 +559,12 @@ header {
   background: transparent;
   color: var(--ink);
   font: inherit;
+  resize: none;
+  /* One line, as tall as the input it replaced (its line and padding), so the dock keeps its height and an empty
+     composer has nothing to scroll; longer words wrap and scroll in place, with the caret's line in view and no bar. */
+  height: calc(1lh + 16px);
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .mic {
@@ -681,6 +687,28 @@ header {
   height: 0;
 }
 .notice-lane > * { flex: none; }
+/* Its notices and cards are one column, out of the page's flow like the lane, ending above the dock (--lane-room, App.tsx
+   useLaneRoom): past that room the GitHub list and the note's points scroll inside their cards, so with ten pull
+   requests, a note and a message up at once none runs under the composer or off the screen, and none covers another
+   (scripts/lane-check.mjs). A notice and the message card never shrink, so Stop stays whole. The GitHub list gives
+   twice what the note does (its rows are read one by one and scroll; a note reads as a whole): with all three on a
+   900 px window, four rows and four points stay whole in view (two rows when the dock holds a card too), not ten rows
+   and a point cut in half. At the least the GitHub card keeps its head and a row, the note card its title and status.
+   The column's empty sides let clicks through to the map. */
+.notice-stack {
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-height: var(--lane-room, calc(100dvh - var(--header-height, 64px) - 6px - 96px));
+  pointer-events: none;
+}
+.notice-stack > * { flex: none; pointer-events: auto; }
+.notice-stack > .pulls-card:has(.pulls-card-list) { flex: 0 2 auto; min-height: 96px; }
+.notice-stack > .note-card { flex: 0 1 auto; min-height: 132px; }
 /* An open Apps panel can run past the screen's foot, and a sticky lane can't rise above where it sits: fixed while
    it's open, so its answers (a request too long to build) are seen. On a phone too (its lane is below). */
 .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; display: flex; }
@@ -742,7 +770,7 @@ header {
 .pill { overflow-wrap: anywhere; }
 .composer { transition: border-color .2s, box-shadow .2s; }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
-.composer input { min-width: 0; }
+.composer textarea { min-width: 0; }
 .mic { flex: none; transition: background .2s, transform .15s; }
 .mic:hover { background: color-mix(in srgb, var(--accent) 20%, var(--accent-soft)); }
 .mic.on:hover { background: var(--accent); }
@@ -854,7 +882,7 @@ header:has(.room-menu[open]) { z-index: 11; }
 .did-you-mean button { min-height: 30px; }
 .pullback-title { font-size: 15px; }
 .pullback-actions button { min-height: 40px; }
-.composer input::placeholder { color: var(--muted); opacity: 1; }
+.composer textarea::placeholder { color: var(--muted); opacity: 1; }
 
 /* The active thread is the map's anchor; session progress stays secondary. */
 .session-count { margin-left: 18px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
@@ -968,7 +996,7 @@ img.slot-picture[data-instant] { transition: none; }
   .session-count { flex: 0 1 auto; flex-basis: auto; min-width: 0; }
   .recap-button { padding-inline: 11px; }
   /* At 16 px a placeholder can outrun a 320 px composer: it ends in "…", not mid-word under the mic. */
-  .composer input { text-overflow: ellipsis; }
+  .composer textarea { text-overflow: ellipsis; }
   /* The tools row scrolls away with the page: pinned, its rows took 152 of a 664 px screen and left the map 54%. */
   .map-tools { position: static; }
   .thread { scroll-margin-top: calc(var(--header-height, 64px) + 12px); }
@@ -981,12 +1009,14 @@ img.slot-picture[data-instant] { transition: none; }
     max-height: var(--lane-max); overflow-y: auto; overscroll-behavior: contain;
     padding: 8px 16px; pointer-events: none;
   }
-  .notice-lane:empty { padding: 0; }
-  .notice-lane > * { pointer-events: auto; }
-  .notice-lane > .notice, .notice-lane > .map-change, .notice-lane > .send-card { width: auto; max-width: none; margin: 0; }
+  /* The laptop's column (.notice-stack, above) is no box of its own here: its notices and cards are the lane's, each
+     taking taps, and the GitHub list and the note's points still give first when the lane is short of room. */
+  .notice-stack { display: contents; }
+  .notice-lane:has(> .notice-stack:empty) { padding: 0; }
+  .notice-stack > .notice, .notice-stack > .map-change, .notice-stack > .send-card { width: auto; max-width: none; margin: 0; }
   /* A message about to go out comes first, so its Stop is never scrolled out of a short stack; a long message scrolls
      inside the card (send-card.css), so its Stop is never pushed out either. */
-  .notice-lane > .send-card { order: -1; max-height: calc(var(--lane-max) - 16px); }
+  .notice-stack > .send-card { order: -1; max-height: calc(var(--lane-max) - 16px); }
   .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; top: var(--lane-top, calc(var(--header-height, 64px) + 6px)); }
 }
 /* The status in words where there's room beside the count; under 380 px the dot alone (its name says it). */
@@ -1027,9 +1057,13 @@ img.slot-picture[data-instant] { transition: none; }
     position: fixed; inset-inline: 0; top: var(--lane-top, 8px); height: auto; max-height: var(--lane-room, 60dvh); --lane-max: var(--lane-room, 60dvh);
     overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 8px; pointer-events: none;
   }
-  .notice-lane:empty { padding: 0; }
-  .notice-lane > * { pointer-events: auto; }
-  .notice-lane > .send-card { order: -1; max-height: calc(var(--lane-max) - 8px); }
+  /* As on a phone, the laptop's column is no box here: its notices and cards are the lane's. */
+  .notice-stack { display: contents; }
+  .notice-lane:has(> .notice-stack:empty) { padding: 0; }
+  .notice-stack > .send-card { order: -1; max-height: calc(var(--lane-max) - 8px); }
   /* The unfinished card keeps its title and buttons; its quote of your last words gave the dock a line the map needs. */
   .pullback-quote { display: none; }
 }
+
+/* Below 380 px the idle status hides its words. Capture must always keep the existing Listening indicator visible. */
+.header-actions > .status.capturing > span[aria-hidden="true"] { display: inline; }
