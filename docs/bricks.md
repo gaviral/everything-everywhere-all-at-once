@@ -37,7 +37,7 @@ Where each kind shows:
 
 `ui/src/bricks/contract.ts` is the only app file a brick imports. Its default export gets `{ map, actions, on, brick }`:
 - `map`, the map as it is now, read-only: `threads`, `thoughts`, `active` (your thread), `suggestions`, `reminders` (proposed reminders and events), `apps`, `notes` (why a thought went where it went), `points` (each thread's point count, as its card shows it), `rooms` (each thread's room color), `me`, `connected`. The types are the app's own, from `core.ts`. A new snapshot comes with every change.
-- `actions`: `addThought(text)` (as if typed in the composer), `openThread(id)` (as a Palace picture does: back to the Map at that thread, highlighted; your place moves there), `select(id)` (that thread is "this" for what's said next, as pointing at its card makes it), `notify(text)` (one line in the notice lane). Each answers on screen as its button does.
+- `actions`: `addThought(text)` (as if typed in the composer), `openThread(id)` (as a Palace picture does: back to the Map at that thread, highlighted; your place moves there), `select(id)` (that thread is "this" for what's said next, as pointing at its card makes it), `notify(text)` (one line in the notice lane), `listen(on?)` (a tap on the mic: `true` on, `false` off, nothing switches it; it starts the mic only inside a click or key press in this tab, so a brick never turns it on by itself). Each answers on screen as its button does.
 - `on(name, listener)`, or `useBrickEvent(on, name, listener)` in a component: `landed` (a thought just placed: `{ thoughtId, threadId, mine }`) and `loudness` (the mic's level, 0 to 1, every 320 ms while it's on).
 - `brick`: its own `brick.json`.
 
@@ -71,4 +71,5 @@ The Catalog lists every brick by kind, each with its name, its line and its swit
 
 - `level` (panel, off): the `?level` meter of the loudness readings the core hears, for setting a volume app's level. Moved here from `Level.tsx` unchanged: `?level` shows it, and without it nothing loads.
 - `bubbles` (view, off, demo-safe): every thread as a bubble in a place of its own, sized by its points, floating gently; a landing ripples its bubble. A bubble opens its thread on the map.
+- `keys` (input, off, demo-safe): the map from the keyboard: j/↓ and k/↑ walk a thread's points (focused on the map), l/→ and h/← the threads in the order they were made; Enter shows a point's details, Esc lets go, ? shows the keys (also on first use), ⌘D (Ctrl+D off a Mac) starts or stops listening. Keys typed in a field stay the field's; the Palace and view bricks keep their arrows.
 - `_template` (card): the brick to copy.

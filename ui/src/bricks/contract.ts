@@ -73,6 +73,10 @@ export interface BrickActions {
   select(threadId: string | null): void;
   /** Says one short line in the notice lane, up for its reading time. */
   notify(text: string): void;
+  /** Taps the mic, as its button does: true starts listening, false stops, nothing switches it. Starting takes a click
+   *  or a key press in this tab, under way as it's called (the Keys brick's ⌘D), so a brick never turns the mic on by
+   *  itself; stopping always works. */
+  listen(on?: boolean): void;
 }
 
 /** What passes, for `on`. */

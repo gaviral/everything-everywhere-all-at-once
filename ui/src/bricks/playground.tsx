@@ -107,6 +107,7 @@ function Playground() {
     },
     select: (thread) => said(`select ${title(thread)} → in the app: “this” for what's said next`),
     notify: (text) => { said(`notify “${text}”`); setNotice(text); },
+    listen: (on) => said(`listen ${on === undefined ? "(switch)" : on ? "on" : "off"} → in the app: as a tap on the mic`),
   });
   const hum = () => VOICES.forEach((level, i) => window.setTimeout(() => received(level), i * 320));
 
