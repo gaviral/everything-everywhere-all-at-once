@@ -2328,4 +2328,24 @@ mod tests {
             let _ = std::fs::remove_file(path);
         }
     }
+
+    /// The sample is a judge's first map, and its tour says to type "where was I?": that goes where the unfinished
+    /// card points, before and after the sample's own date. (Its last line once trailed off on another thread, so
+    /// the card said "Rent is due" and "where was I?" went to "Electric bill autopay".)
+    #[test]
+    fn in_each_sample_where_was_i_goes_where_the_unfinished_card_points() {
+        for sample in ["student-week", "founder-day"] {
+            let text = std::fs::read_to_string(format!("{}/../samples/{sample}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let mut world = World::default();
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                world.apply(&serde_json::from_str(line).unwrap());
+            }
+            let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "you")
+                .max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
+            assert!(card.is_some(), "{sample}: the sample shows an unfinished card");
+            for now in [1, u64::MAX / 2] {
+                assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
+            }
+        }
+    }
 }
