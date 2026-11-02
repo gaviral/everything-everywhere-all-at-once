@@ -607,16 +607,16 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [firstHint]);
 
-  const [mapChangeVisible, setMapChangeVisible] = useState(false);
   const [mapAnnouncement, setMapAnnouncement] = useState("");
+  const { mapChange, hideMapChange } = core;
   useEffect(() => {
-    if (!core.mapChange) return;
-    setMapChangeVisible(true);
+    if (!mapChange) return;
     setMapAnnouncement("");
-    const announcement = window.setTimeout(() => setMapAnnouncement(core.mapChange!.text), 700);
-    const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
+    const announcement = window.setTimeout(() => setMapAnnouncement(mapChange.text), 700);
+    // Hidden in the core's state, so a later rename doesn't join a note no longer up (tidy-core.ts `joinNotes`).
+    const timer = window.setTimeout(hideMapChange, 10000);
     return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
-  }, [core.mapChange]);
+  }, [mapChange, hideMapChange]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread.
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -814,11 +814,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {core.mapChange && mapChangeVisible && (
+      {core.mapChange && (
         <div className="map-change">
           {core.mapChange.ai && <span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span>} {core.mapChange.text}
-          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); setMapChangeVisible(false); }}>Undo</button>}
-          <button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button>
+          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); core.hideMapChange(); }}>Undo</button>}
+          <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
 

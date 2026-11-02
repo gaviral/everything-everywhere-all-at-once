@@ -203,10 +203,13 @@ pub enum Change {
         #[serde(default = "you")]
         speaker: String,
     },
+    /// A rename whose maker isn't said: in journals from before tidy.rs, the refiner's own.
     ThreadRenamed { thread_id: String, title: String },
     ThreadMerged { from: String, into: String },
     /// A rename the refiner was sure of (tidy.rs); `was` is the title before it, for Undo.
     ThreadRetitled { thread_id: String, title: String, was: String },
+    /// A title the person chose (a proposal's Rename, or an AI rename undone): the refiner leaves it alone (tidy.rs).
+    TitleChosen { thread_id: String, title: String },
     /// A merge undone: the thread comes back with what it held (tidy.rs).
     ThreadUnmerged { unmerge: crate::tidy::Unmerge },
     /// A rename or merge the refiner wasn't sure of, proposed on the card (tidy.rs).
@@ -378,7 +381,7 @@ impl World {
                 self.active = Some(thread_id.clone());
                 self.active_by.insert(speaker.clone(), thread_id.clone());
             }
-            Change::ThreadRenamed { thread_id, title } => {
+            Change::ThreadRenamed { thread_id, title } | Change::TitleChosen { thread_id, title } => {
                 if let Some(th) = self.thread_mut(thread_id) {
                     th.title = title.clone();
                 }
@@ -511,6 +514,7 @@ impl World {
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
             | Change::ThreadRetitled { thread_id, .. }
+            | Change::TitleChosen { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
             | Change::TagRemoved { thread_id, .. }
@@ -536,6 +540,7 @@ impl World {
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
             | Change::ThreadRetitled { thread_id, .. }
+            | Change::TitleChosen { thread_id, .. }
             | Change::TagSuggested { thread_id, .. }
             | Change::TagKept { thread_id, .. }
             | Change::TagRemoved { thread_id, .. }
@@ -1059,6 +1064,7 @@ mod tests {
                 },
             },
             Change::ThreadRetitled { thread_id: "T3".into(), title: "Muse Spark questions".into(), was: "Topic T3".into() },
+            Change::TitleChosen { thread_id: "T3".into(), title: "Muse Spark".into() },
             Change::ThreadAdded { thread: test_thread("T4", None) },
             Change::ThreadMerged { from: "T4".into(), into: "T1".into() },
             Change::ThreadUnmerged {
@@ -1136,6 +1142,7 @@ mod tests {
                 | Change::ThreadRenamed { .. }
                 | Change::ThreadMerged { .. }
                 | Change::ThreadRetitled { .. }
+                | Change::TitleChosen { .. }
                 | Change::ThreadUnmerged { .. }
                 | Change::TidyProposed { .. }
                 | Change::SuggestionAdded { .. }
@@ -1162,7 +1169,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 32, "one of each kind of change");
+        assert_eq!(kinds.len(), 33, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

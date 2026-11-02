@@ -6,7 +6,7 @@ import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
-import { applyTidy, settle, tidyNote, type Proposal, type TidyChange, type TidyNote } from "./tidy-core";
+import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -245,7 +245,7 @@ function swap(text: string, from: string, to: string): string {
 
 export function apply(world: World, raw: Change): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
-  if (raw.type === "thread_retitled" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
+  if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   const r = (id: string) => resolve(world, id);
   const c: Change =
     raw.type === "suggestion_added"
@@ -294,7 +294,8 @@ export function apply(world: World, raw: Change): World {
         active: move(world.active),
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
-        proposals: settle(world, "merge", c.from).map((p) => ({ ...p, thread_id: move(p.thread_id)! })),
+        // Left behind, as the core does (`tidy::record`): a rename meant for `from` would rename `into`.
+        proposals: settle(world, null, c.from),
       };
     }
     case "suggestion_added":
@@ -520,7 +521,10 @@ export function useCore(speaker?: string) {
             const change = msg.change;
             // An AI rename, a merge, or one undone: said above the map, with Undo where it can be taken back.
             const note = tidyNote(currentWorld, change);
-            if (note) setMapChange({ id: ++changeId, ...note });
+            if (note) {
+              const id = ++changeId;
+              setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
+            }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
               lastPartial = "";
@@ -673,7 +677,9 @@ export function useCore(speaker?: string) {
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
     tidy: useCallback((id: string, apply: boolean) => sendOrWarn(JSON.stringify({ type: "tidy", id, apply })), [sendOrWarn]),
-    untidy: (undo: NonNullable<TidyNote["undo"]>) => sendOrWarn(JSON.stringify({ type: "untidy", ...undo })),
+    // Newest first, so each puts back the title or thread from before it.
+    untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
+    hideMapChange: useCallback(() => setMapChange(null), []),
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }

@@ -682,7 +682,7 @@ mod tests {
         // Waiting on the card: no second proposal, whatever its words.
         assert!(ask(&world, "T1", "Grocery list").is_empty() && ask(&world, "T1", "Shopping").is_empty());
         // The person renamed it (or undid an AI rename, or said no to one): never touched again, even in their words.
-        world.apply(&Change::ThreadRenamed { thread_id: "T2".into(), title: "Rent".into() });
+        world.apply(&Change::TitleChosen { thread_id: "T2".into(), title: "Rent".into() });
         assert!(ask(&world, "T2", "Pay rent").is_empty());
         assert!(existing(&world).iter().any(|l| l == "title the person chose: T2"), "the model is told");
     }

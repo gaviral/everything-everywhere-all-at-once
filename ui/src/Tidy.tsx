@@ -20,7 +20,7 @@ export function useWaitingProposals(thread: string): number {
   return useContext(TidyContext)?.waiting.get(thread)?.length ?? 0;
 }
 
-/** A thread's waiting proposals, in the style of its ✦ ideas: Rename or Merge applies one, × keeps things as they are. */
+/** A thread's waiting proposal (one at a time: `waitingByThread`), in the style of its ✦ ideas: Rename or Merge applies it, × keeps things as they are. */
 export function ProposalRows({ thread }: { thread: string }) {
   const tidy = useContext(TidyContext);
   if (!tidy) return null;

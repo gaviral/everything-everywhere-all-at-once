@@ -31,8 +31,9 @@ pub struct Proposal {
     pub status: ItemStatus,
 }
 
-/// What a merge moved, to put it back exactly: the thread as it was and where it stood in the list, and the ids of
-/// its thoughts, branches, ideas, tasks and proposals, and whether the talk (and who) was on it.
+/// What a merge moved, to put it back exactly: the thread as it was and where it stood in the list, the ids of its
+/// thoughts, branches, ideas and tasks, the proposals still waiting on it (the merge left them behind), and whether
+/// the talk (and who) was on it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Unmerge {
     pub thread: Thread,
@@ -54,10 +55,16 @@ pub struct Unmerge {
     pub active_by: Vec<String>,
 }
 
-/// Records what merging `from` into `into` is about to move (called by `World::merge` before it moves anything).
-pub fn record(world: &World, from: &str, into: &str) -> Option<Unmerge> {
+/// Records what merging `from` into `into` is about to move (called by `World::merge` before it moves anything), and
+/// leaves the proposals waiting on `from` behind (done): they were about a thread that is going, so neither moves
+/// to `into` (a rename meant for `from` would rename `into`). An undo of the merge brings them back.
+pub fn record(world: &mut World, from: &str, into: &str) -> Option<Unmerge> {
     let at = world.threads.iter().position(|t| t.id == from)?;
     let ids = |on: Vec<&String>| on.into_iter().cloned().collect::<Vec<_>>();
+    let waiting: Vec<String> = world.proposals.iter().filter(|p| p.thread_id == from && p.status == ItemStatus::New).map(|p| p.id.clone()).collect();
+    for p in world.proposals.iter_mut().filter(|p| waiting.contains(&p.id)) {
+        p.status = ItemStatus::Done;
+    }
     Some(Unmerge {
         thread: world.threads[at].clone(),
         into: into.into(),
@@ -66,7 +73,7 @@ pub fn record(world: &World, from: &str, into: &str) -> Option<Unmerge> {
         branches: ids(world.threads.iter().filter(|t| t.parent_id.as_deref() == Some(from)).map(|t| &t.id).collect()),
         suggestions: ids(world.suggestions.iter().filter(|s| s.thread_id == from).map(|s| &s.id).collect()),
         actions: ids(world.actions.iter().filter(|a| a.thread_id == from).map(|a| &a.id).collect()),
-        proposals: ids(world.proposals.iter().filter(|p| p.thread_id == from).map(|p| &p.id).collect()),
+        proposals: waiting,
         active: world.active.as_deref() == Some(from),
         active_by: world.active_by.iter().filter(|(_, id)| *id == from).map(|(who, _)| who.clone()).collect(),
     })
@@ -100,7 +107,9 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     }
     world.suggestions.iter_mut().for_each(|s| back(&u.suggestions, &s.id, &mut s.thread_id));
     world.actions.iter_mut().for_each(|a| back(&u.actions, &a.id, &mut a.thread_id));
-    world.proposals.iter_mut().for_each(|p| back(&u.proposals, &p.id, &mut p.thread_id));
+    for p in world.proposals.iter_mut().filter(|p| u.proposals.contains(&p.id) && p.thread_id == from && p.status == ItemStatus::Done) {
+        p.status = ItemStatus::New;
+    }
     if u.active && world.active.as_deref() == Some(into.as_str()) {
         world.active = Some(from.clone());
     }
@@ -111,21 +120,21 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     }
 }
 
-/// Keeps the proposals in step with the map (`World::apply`): a thread renamed or merged leaves its waiting proposals
-/// behind (done: the map moved past them); a rename turned down makes the title the person's.
+/// Keeps the proposals in step with the map (`World::apply`): a thread renamed leaves its waiting renames behind
+/// (done: the map moved past them; a merge does the same in `record`); a title the person chose, or a rename they
+/// turned down, makes the title theirs. A `ThreadRenamed` doesn't: before tidy.rs the refiner renamed with it, so an
+/// old journal's are the AI's.
 pub fn follow(world: &mut World, change: &Change) {
     match change {
-        Change::ThreadRenamed { thread_id, .. } | Change::ThreadRetitled { thread_id, .. } => {
-            if matches!(change, Change::ThreadRenamed { .. }) {
+        Change::ThreadRenamed { thread_id, .. } | Change::ThreadRetitled { thread_id, .. } | Change::TitleChosen { thread_id, .. } => {
+            if !matches!(change, Change::ThreadRetitled { .. }) {
+                // A newer title: the AI rename's Undo would put back a title from before it.
                 world.retitled.remove(thread_id);
+            }
+            if matches!(change, Change::TitleChosen { .. }) {
                 world.titled.insert(thread_id.clone());
             }
             for p in world.proposals.iter_mut().filter(|p| p.kind == Kind::Rename && p.thread_id == *thread_id && p.status == ItemStatus::New) {
-                p.status = ItemStatus::Done;
-            }
-        }
-        Change::ThreadMerged { from, .. } => {
-            for p in world.proposals.iter_mut().filter(|p| p.kind == Kind::Merge && p.thread_id == *from && p.status == ItemStatus::New) {
                 p.status = ItemStatus::Done;
             }
         }
@@ -147,7 +156,7 @@ pub fn decide(core: &Core, speaker: &str, id: &str, apply: bool) {
         let thread = world.resolve(&p.thread_id);
         match p.kind {
             Kind::Rename if world.thread(&thread).is_some() => {
-                changes.push(Change::ThreadRenamed { thread_id: thread, title: p.title.clone() });
+                changes.push(Change::TitleChosen { thread_id: thread, title: p.title.clone() });
             }
             Kind::Merge => {
                 let into = world.resolve(&p.into);
@@ -168,11 +177,12 @@ pub fn decide(core: &Core, speaker: &str, id: &str, apply: bool) {
 }
 
 /// The Undo on the window's note: an AI rename goes back to the title before it (which is then the person's), and a
-/// merge comes apart. Only while it's still the latest of its kind on that thread.
+/// merge comes apart. Only while it's still the latest of its kind on that thread, and the renamed thread is still
+/// there (merged away since, its rename would land on the thread it went into).
 pub fn undo(core: &Core, speaker: &str, kind: Kind, thread_id: &str) {
     let world = core.snapshot();
     let change = match kind {
-        Kind::Rename => world.retitled.get(thread_id).map(|was| Change::ThreadRenamed { thread_id: thread_id.into(), title: was.clone() }),
+        Kind::Rename => world.retitled.get(thread_id).filter(|_| world.thread(thread_id).is_some()).map(|was| Change::TitleChosen { thread_id: thread_id.into(), title: was.clone() }),
         Kind::Merge => world.unmerge.get(thread_id).filter(|_| world.merged.contains_key(thread_id)).map(|u| Change::ThreadUnmerged { unmerge: u.clone() }),
     };
     match change {
@@ -274,7 +284,7 @@ mod tests {
         world.apply(&Change::ThreadRetitled { thread_id: "T1".into(), title: "Rent".into(), was: "Topic T1".into() });
         assert_eq!((world.thread("T1").unwrap().title.as_str(), world.retitled.get("T1").map(String::as_str)), ("Rent", Some("Topic T1")));
         assert!(!world.titled.contains("T1"), "the AI's own title isn't the person's");
-        world.apply(&Change::ThreadRenamed { thread_id: "T1".into(), title: "Topic T1".into() });
+        world.apply(&Change::TitleChosen { thread_id: "T1".into(), title: "Topic T1".into() });
         assert!(world.retitled.is_empty() && world.titled.contains("T1"));
         // A rename turned down: the title stays theirs; a merge turned down doesn't touch titles.
         let proposal = |id: &str, kind, on: &str| Proposal { id: id.into(), kind, thread_id: on.into(), title: "New".into(), into: "T1".into(), status: ItemStatus::New };
@@ -288,6 +298,56 @@ mod tests {
         world.apply(&Change::TidyProposed { proposal: proposal("p3", Kind::Rename, "T3") });
         world.apply(&Change::ThreadRetitled { thread_id: "T3".into(), title: "Other".into(), was: "Topic T3".into() });
         assert_eq!(world.proposals.iter().find(|p| p.id == "p3").unwrap().status, ItemStatus::Done);
+    }
+
+    #[test]
+    fn a_merge_leaves_the_proposals_of_the_thread_going_behind_and_its_undo_brings_them_back() {
+        // Review finding: the window moved a waiting rename onto the thread merged into, so Rename renamed that one.
+        let mut world = map();
+        let proposal = |id: &str, kind, on: &str, title: &str, into: &str| Change::TidyProposed {
+            proposal: Proposal { id: id.into(), kind, thread_id: on.into(), title: title.into(), into: into.into(), status: ItemStatus::New },
+        };
+        world.apply(&proposal("r", Kind::Rename, "T2", "Rent payment", ""));
+        world.apply(&proposal("m", Kind::Merge, "T2", "", "T4"));
+        world.apply(&proposal("t1", Kind::Rename, "T1", "Pay rent", ""));
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        let status = |w: &World| w.proposals.iter().map(|p| (p.id.clone(), p.thread_id.clone(), p.status)).collect::<Vec<_>>();
+        let owned = |v: [(&str, &str, ItemStatus); 3]| v.map(|(a, b, c)| (a.to_string(), b.to_string(), c)).to_vec();
+        assert_eq!(status(&world), owned([("r", "T2", ItemStatus::Done), ("m", "T2", ItemStatus::Done), ("t1", "T1", ItemStatus::New)]));
+        world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge["T2"].clone() });
+        assert_eq!(status(&world), owned([("r", "T2", ItemStatus::New), ("m", "T2", ItemStatus::New), ("t1", "T1", ItemStatus::New)]));
+    }
+
+    #[test]
+    fn an_old_journals_renames_are_the_ais_and_a_chosen_title_is_the_persons() {
+        // Review finding: before tidy.rs the refiner renamed with `ThreadRenamed`, so replaying it can't make titles the person's.
+        let mut world = map();
+        world.apply(&Change::ThreadRenamed { thread_id: "T1".into(), title: "Rent".into() });
+        assert_eq!(world.thread("T1").unwrap().title, "Rent");
+        assert!(world.titled.is_empty());
+        world.apply(&Change::TitleChosen { thread_id: "T1".into(), title: "Pay rent".into() });
+        assert_eq!(world.thread("T1").unwrap().title, "Pay rent");
+        assert!(world.titled.contains("T1"));
+    }
+
+    #[test]
+    fn a_rename_undo_after_its_thread_merged_away_changes_nothing() {
+        // Review finding: the Undo still showing renamed the thread it went into.
+        let mut world = map();
+        world.apply(&Change::ThreadRetitled { thread_id: "T2".into(), title: "Rent".into(), was: "Topic T2".into() });
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        let (core, path) = core(world);
+        super::undo(&core, "you", Kind::Rename, "T2");
+        let now = core.snapshot();
+        assert_eq!(now.thread("T1").unwrap().title, "Topic T1");
+        assert!(now.titled.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "", "nothing was written");
+        // Put back, its Undo works again.
+        let unmerge = now.unmerge["T2"].clone();
+        core.commit(vec![Change::ThreadUnmerged { unmerge }]);
+        super::undo(&core, "you", Kind::Rename, "T2");
+        assert_eq!(core.snapshot().thread("T2").unwrap().title, "Topic T2");
+        std::fs::remove_file(&path).unwrap();
     }
 
     /// A keyless core on `world`, and the journal it writes.

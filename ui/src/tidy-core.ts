@@ -22,6 +22,7 @@ export interface Unmerge {
   branches: string[];
   suggestions: string[];
   actions: string[];
+  /** Proposals that were waiting on it: the merge left them behind, and an undo asks them again. */
   proposals: string[];
   active: boolean;
   active_by: string[];
@@ -29,6 +30,7 @@ export interface Unmerge {
 
 export type TidyChange =
   | { type: "thread_retitled"; thread_id: string; title: string; was: string }
+  | { type: "title_chosen"; thread_id: string; title: string }
   | { type: "thread_unmerged"; unmerge: Unmerge }
   | { type: "tidy_proposed"; proposal: Proposal };
 
@@ -45,7 +47,8 @@ function resolve(world: Pick<World, "merged">, id: string): string {
 export function applyTidy<W extends World>(world: W, change: Change): W | null {
   const c = change as TidyChange;
   switch (c.type) {
-    case "thread_retitled": {
+    case "thread_retitled":
+    case "title_chosen": {
       const id = resolve(world, c.thread_id);
       return { ...world, threads: world.threads.map((t) => (t.id === id ? { ...t, title: c.title } : t)), proposals: settle(world, "rename", id) };
     }
@@ -68,7 +71,7 @@ export function applyTidy<W extends World>(world: W, change: Change): W | null {
         thoughts: world.thoughts.map((t) => ({ ...t, thread_id: back(u.thoughts, t.id, t.thread_id) })),
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: back(u.suggestions, s.id, s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: back(u.actions, a.id, a.thread_id)! })),
-        proposals: (world.proposals ?? []).map((p) => ({ ...p, thread_id: back(u.proposals, p.id, p.thread_id)! })),
+        proposals: (world.proposals ?? []).map((p) => (u.proposals.includes(p.id) && p.thread_id === from && p.status === "done" ? { ...p, status: "new" } : p)),
         active: u.active && world.active === into ? from : world.active,
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, u.active_by.includes(who) && id === into ? from : id])),
       };
@@ -78,13 +81,35 @@ export function applyTidy<W extends World>(world: W, change: Change): W | null {
   }
 }
 
-/** Waiting proposals of `kind` on `thread` are done once the map moved past them (`tidy::follow`). */
-export function settle(world: World, kind: Proposal["kind"], thread: string): Proposal[] {
-  return (world.proposals ?? []).map((p) => (p.kind === kind && p.thread_id === thread && p.status === "new" ? { ...p, status: "done" } : p));
+/** Waiting proposals of `kind` (null: any) on `thread` are done once the map moved past them (`tidy::follow`, and
+ * `tidy::record` for a merge: a proposal about a thread that went never moves to the one it went into). */
+export function settle(world: World, kind: Proposal["kind"] | null, thread: string): Proposal[] {
+  return (world.proposals ?? []).map((p) => ((kind === null || p.kind === kind) && p.thread_id === thread && p.status === "new" ? { ...p, status: "done" } : p));
 }
 
-/** The note a change gets above the map, and what its Undo takes back; `ai` when the AI did it on its own (✦). */
-export type TidyNote = { text: string; ai: boolean; undo?: { kind: Proposal["kind"]; thread_id: string } };
+/** What one Undo takes back. */
+export type TidyUndo = { kind: Proposal["kind"]; thread_id: string };
+
+/** The note a change gets above the map, and what its Undo takes back; `ai` when the AI did it on its own (✦), and
+ * `renamed` the AI's renames it tells of ([was, title]). */
+export type TidyNote = { text: string; ai: boolean; undo?: TidyUndo[]; renamed?: [string, string][] };
+
+/** Renames by one refiner pass arrive one by one: while a note of them is up, the next joins it, so every one keeps
+ * its Undo (one Undo takes them all back). Any other note replaces what was up. */
+export function joinNotes(shown: TidyNote | null, note: TidyNote): TidyNote {
+  if (!shown?.renamed || !note.renamed) return note;
+  const renamed = [...shown.renamed, ...note.renamed];
+  const undo = [...(shown.undo ?? []), ...(note.undo ?? [])].filter((u, i, all) => all.findIndex((x) => x.thread_id === u.thread_id) === i);
+  return { text: renamedText(renamed), ai: true, undo, renamed };
+}
+
+/** Two renames are said in full; more would run past a phone's width, so only their new titles are. */
+function renamedText(renamed: [string, string][]): string {
+  const pair = ([was, title]: [string, string]) => `“${was}” to “${title}”`;
+  if (renamed.length <= 2) return `AI renamed ${renamed.map(pair).join(" and ")}`;
+  const titles = renamed.map(([, title]) => `“${title}”`);
+  return `AI renamed ${renamed.length} threads: ${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
+}
 
 export function tidyNote(world: World, change: Change): TidyNote | null {
   const c = change as TidyChange | { type: "thread_merged"; from: string; into: string };
@@ -92,14 +117,15 @@ export function tidyNote(world: World, change: Change): TidyNote | null {
   switch (c.type) {
     case "thread_retitled": {
       const id = resolve(world, c.thread_id);
-      return title(id) === c.title ? null : { text: `AI renamed “${c.was}” to “${c.title}”`, ai: true, undo: { kind: "rename", thread_id: id } };
+      const renamed: [string, string][] = [[c.was, c.title]];
+      return title(id) === c.title ? null : { text: renamedText(renamed), ai: true, undo: [{ kind: "rename", thread_id: id }], renamed };
     }
     case "thread_merged": {
       const from = world.threads.find((t) => t.id === c.from);
       const into = title(c.into);
       // An empty thread going (words you took back that had started it) isn't a merge to announce.
       const held = world.thoughts.some((t) => t.thread_id === c.from);
-      return from && into && held ? { text: `Merged “${from.title}” into “${into}”`, ai: false, undo: { kind: "merge", thread_id: c.from } } : null;
+      return from && into && held ? { text: `Merged “${from.title}” into “${into}”`, ai: false, undo: [{ kind: "merge", thread_id: c.from }] } : null;
     }
     case "thread_unmerged":
       return { text: `Put back “${c.unmerge.thread.title}”`, ai: false };
@@ -115,9 +141,10 @@ export function proposalWords(p: Proposal, world: World): { text: string; apply:
   return into ? { text: `Same topic as “${into.title}”?`, apply: "Merge", keep: "Keep them apart" } : null;
 }
 
-/** Proposals still waiting, by thread. */
+/** The proposal waiting on each thread: a card asks one thing at a time (a rename and a merge can both wait), so the
+ * next shows once the first is answered, and a folded card's count agrees with what opening it shows. */
 export function waitingByThread(proposals: Proposal[] | undefined): Map<string, Proposal[]> {
-  const grouped = new Map<string, Proposal[]>();
-  for (const p of proposals ?? []) if (p.status === "new") grouped.set(p.thread_id, [...(grouped.get(p.thread_id) ?? []), p]);
-  return grouped;
+  const first = new Map<string, Proposal[]>();
+  for (const p of proposals ?? []) if (p.status === "new" && !first.has(p.thread_id)) first.set(p.thread_id, [p]);
+  return first;
 }
