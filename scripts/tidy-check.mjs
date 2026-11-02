@@ -95,12 +95,34 @@ try {
   const proposed = apply(world, { type: "tidy_proposed", proposal: rename });
   assert.deepEqual(changes(world, proposed, "you"), [{ thread: "T4", element: "item-p1", line: "Rename to “Grocery list”?" }]);
 
+  // A later point withdrew or corrected a waiting idea or task (refiner.rs `refine`): the same row changes, the note
+  // says what and why with Undo, a repeat says nothing, and the Undo's change puts it back.
+  const state = (status, text, when = "") => ({ status, text, when });
+  const due = { ...world, actions: [{ ...world.actions[0], kind: "event", title: "Midterm", when: "2026-11-10" }] };
+  const moved = { type: "item_refined", id: "ac", was: state("new", "Midterm", "2026-11-10"), now: state("new", "Midterm", "2026-11-11"), why: "midterm is Wednesday" };
+  const movedNote = tidyNote(due, moved);
+  assert.equal(movedNote.text, "AI moved “Midterm” to Wed, Nov 11: midterm is Wednesday");
+  assert.deepEqual([movedNote.ai, movedNote.restore, movedNote.undo], [true, ["ac"], undefined]);
+  const after = apply(due, moved);
+  assert.deepEqual([after.actions[0].when, after.actions[0].status, after.actions.length], ["2026-11-11", "new", 1]);
+  assert.equal(tidyNote(after, moved), null, "a repeat says nothing");
+  const dropped = { type: "item_refined", id: "sg", was: state("new", "idea"), now: state("dismissed", "idea"), why: "trip cancelled" };
+  assert.equal(apply(world, dropped).suggestions[0].status, "dismissed");
+  const both = joinNotes(movedNote, tidyNote(world, dropped));
+  assert.equal(both.text, "AI moved “Midterm” to Wed, Nov 11 and took back “idea”");
+  assert.deepEqual(both.restore, ["ac", "sg"]);
+  const withRename = joinNotes(both, note("T1", "Topic T1", "Rent"));
+  assert.deepEqual([withRename.restore.length, withRename.undo.length], [2, 1], "a rename in the same pass keeps every Undo");
+  assert.equal(withRename.text, "AI renamed “Topic T1” to “Rent” · AI moved “Midterm” to Wed, Nov 11 and took back “idea”");
+  assert.deepEqual(apply(after, { type: "item_restored", id: "ac", to: moved.was }).actions[0], due.actions[0]);
+
   // The map shows them, the note offers Undo, and every tip fits.
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /<ProposalRows thread=\{thread\.id\} \/>/);
-  assert.match(app, /core\.mapChange\.undo && <button className="undo"/);
+  assert.match(app, /\(core\.mapChange\.undo \|\| core\.mapChange\.restore\) && <button className="undo"/);
+  assert.match(app, /core\.restore\(core\.mapChange!\.restore/);
   assert.doesNotMatch(app, /mapChangeVisible/, "a hidden note is gone from the core's state, so nothing joins it");
-  for (const tip of [TIPS.mapChange, TIPS.tidyRename, TIPS.tidyMerge]) assert.ok(tip.length <= 120, tip);
+  for (const tip of [TIPS.mapChange, TIPS.mapRefined, TIPS.tidyRename, TIPS.tidyMerge]) assert.ok(tip.length <= 120, tip);
   assert.doesNotMatch(TIPS.mapChange, /no undo/);
   console.log("tidy-check: ok");
 } finally {

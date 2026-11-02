@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -15,7 +15,7 @@ type Handlers = {
   unlink: (thoughtId: string) => void;
 };
 import { startMic } from "./mic";
-import { Apps, DockBuild, DockTune } from "./Apps";
+import { Apps, buildInTheWay, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
@@ -29,19 +29,21 @@ import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
+import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
-import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { isUndoKey, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
-import { composerHint, MicButton, micState } from "./MicButton";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
+import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
+import { InstallHint, useInstallHint } from "./Install";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -341,7 +343,12 @@ export default function App() {
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
-  useEffect(() => { if (!core.notice) { setNoticeFocused(false); setNoticeHeld(false); } }, [core.notice]);
+  // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
+  // kept every later notice up for good: on each change, look where focus is now.
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setNoticeFocused(!!core.notice && !!noticeRef.current?.contains(document.activeElement)); }, [core.notice, core.undoId]);
+  // The pointer leaves with the notice: a mouseleave never comes when the notice is gone.
+  useEffect(() => { if (!core.notice) setNoticeHeld(false); }, [core.notice]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
@@ -352,40 +359,53 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [core.notice, core.answerRevision, core.clearNotice, core.undoId, noticeFocused, noticeHeld]);
 
-  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
-  // so the next tap starts a fresh session.
-  const voiceStartedAt = useRef(0);
-  const voiceErrorStartedAt = useRef(0);
-  const voiceRevisions = useRef({ status: 0, error: 0 });
-  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
-  useEffect(() => {
-    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
-      stopMic();
-      setStopMic(null);
-      core.listen(false);
-      core.showNotice(core.noKey ? core.keyNotice : "The mic stopped. Tap it to keep talking.");
-    }
-  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
-
-  useEffect(() => {
-    if (stopMic && core.notice.includes("MODEL_API_KEY")) {
-      stopMic();
-      setStopMic(null);
-    }
-  }, [core.notice, stopMic]);
+  // The running mic's stop, as effects of one render see it: the first to stop the mic clears it at once, so the
+  // next effect in the same render finds the mic off (`stopMic` there is still the render's value).
+  const liveStop = useRef<(() => void) | null>(null);
+  liveStop.current = stopMic;
+  /** Stops the mic if it runs; false if it was already off. */
+  const releaseMic = () => {
+    const stop = liveStop.current;
+    liveStop.current = null;
+    setStopMic(null);
+    stop?.();
+    return !!stop;
+  };
 
   // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
-  // would need it to keep listening). The core has ended the stream already and drops anything heard after.
+  // would need it to keep listening). The core has ended the stream already and drops anything heard after. Before
+  // the stream's end below: both often arrive in one render, and then "Paused" is the answer, not "The mic stopped".
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (core.viewAsk?.view !== "pause") return;
-    if (!stopMic) { core.showNotice("The mic is already off.", core.viewAsk); return; }
-    stopMic();
-    setStopMic(null);
+    if (!releaseMic()) { core.showNotice("The mic is already off.", core.viewAsk); return; }
     core.listen(false);
     setPaused(true);
     core.showNotice("Paused: nothing is heard until you tap the mic.", core.viewAsk);
   }, [core.viewAsk]);
+
+  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
+  // so the next tap starts a fresh session.
+  const voiceStartedAt = useRef(0);
+  const voiceErrorStartedAt = useRef(0);
+  const voiceListenedAt = useRef(0);
+  const voiceRevisions = useRef({ status: 0, error: 0, listened: 0 });
+  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision, listened: core.listenedRevision };
+  useEffect(() => {
+    // Only this mic's stream can end it: the mic tapped off and on fast, the old stream's late "not listening"
+    // comes before the new one's "listening" and is passed over.
+    const ends = micEnds({ connected: core.connected, listening: core.listening, failed: core.voiceErrorRevision > voiceErrorStartedAt.current,
+      statusNew: core.voiceStatusRevision > voiceStartedAt.current, listenedNew: core.listenedRevision > voiceListenedAt.current });
+    if (liveStop.current && ends) {
+      releaseMic();
+      core.listen(false);
+      core.showNotice(ends === "offline" ? MIC_OFFLINE : core.noKey ? core.keyNotice : micStopped(ends === "failed" ? core.voiceError : ""));
+    }
+  }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
+
+  useEffect(() => {
+    if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
+  }, [core.notice, stopMic]);
 
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
@@ -404,19 +424,22 @@ export default function App() {
     setStartingMic(true);
     try {
       let stopped = false;
-      // The browser ended the mic itself (another app took it, it was unplugged): off, and said so.
+      // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
+      // "Listening" to nothing. Starts "The mic stopped", so it stays up until the mic is tapped (notice-rules.ts).
       const ended = () => {
         if (stopped || !mounted.current) return;
         stopped = true;
+        if (liveStop.current === stop) liveStop.current = null;
         setStopMic(null);
         core.listen(false);
-        core.showNotice("The microphone stopped. Tap the mic to listen again, or type below.");
+        core.showNotice("The mic stopped: the microphone went away. Tap it to listen again, or type below.");
       };
       const stopAudio = await startMic(core.sendAudio, ended);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
+      voiceListenedAt.current = voiceRevisions.current.listened;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();
@@ -499,6 +522,7 @@ export default function App() {
 
   const threadById = useMemo(() => new Map(world.threads.map((thread) => [thread.id, thread])), [world.threads]);
   const notes = useMemo(() => world.notes ?? {}, [world.notes]);
+  const whyAsk = useMemo(() => ({ whys: core.whys, ask: core.askWhy }), [core.whys, core.askWhy]);
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const previousThoughtGroups = useRef(new Map<string, Thought[]>());
   const thoughtsByThread = useMemo(() => {
@@ -567,6 +591,10 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
+    // Found threads show best first (up to RANK_LIMIT): matches come ranked, so a thread joins visibleIds at its best
+    // found branch's place.
+    const place = search && matches.size <= RANK_LIMIT ? new Map([...visibleIds].map((id, i) => [id, i])) : undefined;
+    if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
@@ -700,6 +728,13 @@ export default function App() {
   const dropped = leftOff(world.threads, me, hidden, now);
   const pullBack = cardAt(dropped, now, lastActivity);
   const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
+  // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
+  // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
+  const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).map((t) => t.id), [world.thoughts, me]);
+  const buildGone = useState<string | null>(null);
+  const install = useInstallHint(placedMine, view === "map" && !hasAway && !pullBack && !buildInTheWay(core.apps, buildGone[0]) && !firstHint
+    && !core.partial && !core.handoff && !pending.length && !core.listening && !stopMic && !startingMic && !draft && core.queuedCount === 0 && !attention.value.note?.title,
+    core.snapshotRevision > 0);
   // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
   // acts on the card you see (or would see at the next pause); with none, "forget it" takes the one hidden for now
   // and "finish it" the newest you left. Your words stay on the map either way.
@@ -792,14 +827,13 @@ export default function App() {
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
     (site.hosted || !core.keyRefused) && core.notice.includes("MODEL_API_KEY") ? keyWords(site.hosted, core.keyRefused, "notice")
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
-    : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again."
-    : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again."
     : core.notice
   );
 
   return (
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
+    <WhyContext.Provider value={whyAsk}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
@@ -820,7 +854,7 @@ export default function App() {
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
           <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
           <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
-          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title</div>
+          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title · “Delete this” · the point you're on, else your last; or a point's Delete</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
@@ -856,6 +890,7 @@ export default function App() {
       <AnimatePresence>
         {core.notice && (
           <motion.div
+            ref={noticeRef}
             className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
@@ -874,8 +909,8 @@ export default function App() {
 
       {core.mapChange && (
         <div className="map-change">
-          {core.mapChange.ai && <span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span>} {core.mapChange.text}
-          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); core.hideMapChange(); }}>Undo</button>}
+          {core.mapChange.ai && <span aria-hidden="true" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦</span>} {core.mapChange.text}
+          {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
@@ -916,7 +951,7 @@ export default function App() {
         ) : (
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
-          <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
+          <MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider>
           </TidyProvider>
@@ -928,12 +963,14 @@ export default function App() {
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
+          <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();
           }} />
+          </NotesContext.Provider>
           <AnimatePresence>
             {!hasAway && pullBack && (
               <motion.div
@@ -962,11 +999,12 @@ export default function App() {
           </AnimatePresence>
           {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
               unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
-          <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
+          <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
+          {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
@@ -1000,6 +1038,7 @@ export default function App() {
         });
       }} />
     </div>
+    </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>
   );
@@ -1292,19 +1331,21 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   // is a stop for Tab, as Move and Words said are their own.
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
-  // Joined across a pause, the words are each part as said; a "why here" opens with them.
-  const why = useNote(thought.id)?.why;
+  // Joined across a pause, the words are each part as said; "why here" opens with them, and every placed point has
+  // one to ask for (whyhere.tsx), so every placed point opens. The hover card says it too once it's known (C225).
+  const why = whyLine(useNote(thought.id), useContext(WhyContext).whys[thought.id]);
   const words = heads.length ? wordsSaid(heads, thought) : `“${thought.text.trim()}”`;
-  const said = heads.length > 0 || !!why || saidDiffers(thought.text, thought.point);
+  // Words that only repeat the point stay out (legible.ts); then it opens to its reason alone.
+  const differ = heads.length > 0 || saidDiffers(thought.text, thought.point);
+  const said = differ || thought.placed;
   const [open, flip] = useSaidOpen(thought.id);
   const toggle = said ? (event: React.MouseEvent) => {
-    // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
-    // Tips.tsx) and selecting words to explain keep their jobs.
-    if ((event.target as HTMLElement).closest("button, [data-tip]") || !(window.getSelection()?.isCollapsed ?? true)) return;
+    // Its own controls (legible.ts `POINT_OWN`; marks' tips in Tips.tsx) and selecting words to explain keep their jobs.
+    if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
@@ -1312,14 +1353,14 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
       {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
-      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
+      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
       <MovePoint thought={thought} />
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
       <Fixes thought={thought} on={on} />
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{words}{why && <span className="why">Why here: {why}</span>}</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && words}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
     </motion.li>
   );
 });

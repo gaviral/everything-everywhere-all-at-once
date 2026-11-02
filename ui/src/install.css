@@ -1,0 +1,27 @@
+/* One quiet line, like the dock's other hints: muted words, one plain button, one quieter. */
+.install-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  animation: install-hint-in 200ms ease-out;
+}
+.install-hint-actions { display: flex; gap: 4px; margin-left: auto; }
+.install-hint button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.install-hint button.quiet { background: transparent; color: var(--muted); font-weight: 400; }
+.install-hint button.quiet:hover { background: var(--accent-soft); color: var(--ink); }
+@keyframes install-hint-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .install-hint { animation: none; } }

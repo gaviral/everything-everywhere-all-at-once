@@ -42,6 +42,9 @@ pub enum ServerMsg {
     Unfold { thread_id: Option<String>, open: bool },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
+    /// The answer to a "Why here?" (whyhere.rs): why the thought is on its thread; `failed` when there's none, so the
+    /// window can offer to ask again. Only to the asker's windows; a model's answer also lands as the thought's note.
+    WhyHere { thought_id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
     Import { status: crate::import::Status },
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
@@ -108,6 +111,8 @@ pub enum ClientMsg {
         #[serde(default)]
         thread_id: Option<String>,
     },
+    /// Why a thought is on its thread, asked from its point or a "While you were away" row (whyhere.rs).
+    WhyHere { thought_id: String },
     /// Mark an AI answer as off, or take the mark back: `kind` is "explain" (the request's id) or "recap"
     /// (its period and when it was made, as "today-1793547629176").
     Mark { kind: String, id: String, off: bool },
@@ -131,6 +136,9 @@ pub enum ClientMsg {
         selected: Option<String>,
         #[serde(default)]
         pointed: Option<String>,
+        /// The point (thought id) focused, else under the pointer: what "delete this" means (moves.rs).
+        #[serde(default)]
+        point: Option<String>,
     },
     /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
     Undo { id: u64 },
@@ -140,6 +148,8 @@ pub enum ClientMsg {
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
     Untidy { kind: crate::tidy::Kind, thread_id: String },
+    /// The Undo on the note about an idea or task the refiner withdrew or corrected: it is as it was (refiner.rs).
+    Restore { id: String },
     /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
     /// (moves.rs).
     Move {
@@ -149,6 +159,8 @@ pub enum ClientMsg {
     },
     /// A title typed on a thread's card (moves.rs).
     Rename { thread_id: String, title: String },
+    /// The point's Delete: the thought (with the words it carries on) off the map, with Undo (moves.rs).
+    Delete { thought_id: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

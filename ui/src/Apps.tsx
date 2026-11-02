@@ -205,10 +205,24 @@ export function DockTune({ core }: { core: Core }) {
  *  jump. The dock publishes its height and the map's end makes room for it (App.tsx), so the map stays put; only a
  *  thought you said in the last 10 s that the card would cover moves clear of it, once, as for the unfinished card
  *  (data-dock-card). `onLeave` takes focus that was in the card when it goes (to the composer). */
-export function DockBuild({ core, onLeave }: { core: Core; onLeave: () => void }) {
-  const current = core.apps.build;
-  const [gone, setGone] = useState<string | null>(null);
-  const build = current && !core.apps.inPanel && current.id !== gone ? current : null;
+/** The build the dock's card shows: the current one, unless the panel has it or the card was dismissed (`gone`). */
+export function dockBuild(apps: Core["apps"], gone: string | null) {
+  const current = apps.build;
+  return current && !apps.inPanel && current.id !== gone ? current : null;
+}
+
+/** Whether a build still wants the person: its card in the dock, or one in the panel not yet kept or discarded. The
+ *  core keeps the last build after it's decided, so `apps.build` alone stays set for the rest of the visit. */
+export function buildInTheWay(apps: Core["apps"], gone: string | null) {
+  return !!dockBuild(apps, gone) || (!!apps.build && apps.inPanel && !decided(apps.build));
+}
+
+/** `dismissed`: the card's dismissal held by the page, so others in the dock (the install hint) see it go too. */
+export function DockBuild({ core, onLeave, dismissed }: { core: Core; onLeave: () => void;
+  dismissed?: [string | null, (id: string) => void] }) {
+  const own = useState<string | null>(null);
+  const [gone, setGone] = dismissed ?? own;
+  const build = dockBuild(core.apps, gone);
   const card = useRef<HTMLDivElement>(null);
   // A choice made from the keyboard: when its buttons go, focus stays in the card instead of falling to the page.
   const keyed = useRef(false);

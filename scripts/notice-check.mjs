@@ -32,7 +32,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 const server = await uiServer();
 try {
-  const { staysUp, upFor, SHORTEST_MS, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { staysUp, upFor, SHORTEST_MS, micStopped, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const { readMs } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Each of these asks for something only the person can do, or says the core is gone: up until dismissed.
@@ -60,6 +60,16 @@ try {
   const long = "Did “Expand the garden” instead. Your earlier words are off the map, and the journal keeps them if you want them back later.";
   assert.equal(upFor(long), readMs(long));
   assert.ok(upFor(long) > SHORTEST_MS);
+
+  // The mic stopping on its own says why, when the core said, and stays up until the mic is tapped (bug hunt 26:
+  // every reason became the same "The mic stopped").
+  const quiet = micStopped("Speech service error: Voice Transcribe stopped answering");
+  assert.equal(quiet, "The mic stopped: the voice service stopped answering. Check the connection, then tap the mic.");
+  assert.equal(micStopped("Speech service error: IO error: Connection reset by peer (os error 54)"), quiet);
+  const busy = micStopped("Voice Transcribe: Too many requests");
+  assert.equal(busy, "The mic stopped: the voice service said “Too many requests”. Tap it to try again, or type below.");
+  assert.equal(micStopped(""), "The mic stopped. Tap it to keep talking.");
+  for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
 
   // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
   // reach for the button (persona run 2026-11-01, friction 4: Undo was gone in 5 s, reached at ≈ 8 s).
@@ -90,6 +100,25 @@ try {
   await settle();
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
 
+  // A stream's "listening" is counted, so a window that starts its mic again can tell the old stream's late "not
+  // listening" (before the new one's "listening") from its own stream ending (bug hunt 13).
+  const listened = core.listenedRevision;
+  say({ type: "status", listening: false, note: "Stopped listening" });
+  await settle();
+  assert.equal(core.listenedRevision, listened);
+  say({ type: "status", listening: true, note: "Listening" });
+  await settle();
+  assert.equal(core.listenedRevision, listened + 1);
+  const appSource = readFileSync(new URL("src/App.tsx", ui), "utf8");
+  assert.match(appSource, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
+  assert.match(appSource, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
+
+  // The words of a voice error stay readable for the window's "The mic stopped" notice.
+  say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
+  await settle();
+  assert.equal(core.voiceError, "Speech service error: Voice Transcribe stopped answering");
+  assert.equal(core.notice, "", "a voice error isn't shown raw");
+
   // A notice made in the window is a newer answer: it clears the Undo an earlier one offered.
   say({ type: "notice", message: "Expanded everything." });
   say({ type: "undoable", id: 1 });
@@ -110,6 +139,21 @@ try {
   assert.equal(core.answerRevision, before + 2);
   const app = readFileSync(new URL("src/App.tsx", ui), "utf8");
   assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.answerRevision,/);
+  // A focused Undo that leaves the notice says no blur: the notice's focus is looked up again on every change, so
+  // later notices still time out (bug hunt 19; wiring).
+  assert.match(app, /useEffect\(\(\) => \{ setNoticeFocused\(!!core\.notice && !!noticeRef\.current\?\.contains\(document\.activeElement\)\); \}, \[core\.notice, core\.undoId\]\);/);
+  assert.match(app, /<motion\.div\s+ref=\{noticeRef\}\s+className="notice"/);
+
+  // "Stop listening" said: the core sends the pause, then the stream's end, often taken in one render. The pause
+  // effect runs first and stops the mic through the shared ref, so the stream-end effect after it in that render
+  // finds the mic off: the answer is "Paused", not a sticky "The mic stopped" (bug hunt 12; wiring, as no check
+  // here renders App).
+  const pauseAt = app.indexOf('core.viewAsk?.view !== "pause"');
+  const streamEndAt = app.indexOf("core.voiceStatusRevision > voiceStartedAt.current");
+  assert.ok(pauseAt > 0 && pauseAt < streamEndAt, "the pause effect is declared before the stream-end effect");
+  assert.match(app.slice(pauseAt, streamEndAt), /if \(!releaseMic\(\)\)/);
+  assert.match(app.slice(streamEndAt, streamEndAt + 300), /if \(liveStop\.current && /);
+  assert.match(app, /const releaseMic = \(\) => \{\s*const stop = liveStop\.current;\s*liveStop\.current = null;/);
 
   // "No, I meant stop listening": the core sends the view, then "Did … instead" with its Undo. Arriving in one render,
   // the correction's answer and Undo stay; the window's "already off" stands down (review).

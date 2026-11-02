@@ -280,7 +280,11 @@ fn add_it_to_reminders_adds_the_newest_waiting_on_your_thread() {
     world.active_by.insert("you".into(), "T1".into());
     let f = Fixture::new(World::default());
     assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("a"));
+    // Off every thread with one waiting: "it" is that one. With two waiting on other threads (in a room, maybe
+    // someone else's), "it" is neither: nothing is added on a guess.
     world.active_by.insert("you".into(), "T9".into());
+    assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), None);
+    world.actions.retain(|a| a.id != "a");
     assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("b"));
     world.actions.retain(|a| a.status != ItemStatus::New);
     assert!(proposed(&f.core, &world, "you").is_none());
@@ -300,6 +304,24 @@ fn stop_listening_is_only_the_whole_turn() {
     for said in ["Stop listening to him", "I should stop listening to podcasts at night", "Stop", "Pause"] {
         assert!(!is_stop_listening(said), "{said}");
     }
+}
+
+#[test]
+fn stop_listening_ends_a_turn_only_after_a_pause() {
+    assert_eq!(stop_tail("Call mom tomorrow about the flight. Stop listening."), Some(("Call mom tomorrow about the flight.", "Stop listening.")));
+    assert_eq!(stop_tail("The deposit is due Friday, okay stop listening"), Some(("The deposit is due Friday", "okay stop listening")));
+    assert_eq!(stop_tail("Rent is due. Mic off, thanks."), Some(("Rent is due.", "Mic off, thanks.")));
+    assert!(is_stop_listening("Stop listening, thank you."));
+    for said in [
+        "Stop listening",
+        "I should stop listening to podcasts at night",
+        "We loved the band. Would you stop listening to them?",
+        "I loved it. Could you stop listening?",
+        "Okay, so I want to stop listening to the news.",
+    ] {
+        assert_eq!(stop_tail(said), None, "{said}");
+    }
+    assert!(stops_listening("Rent is due. Stop listening.") && stops_listening("Stop listening") && !stops_listening("Stop listening to him"));
 }
 
 #[test]

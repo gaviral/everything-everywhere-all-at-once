@@ -26,6 +26,7 @@ mod spoken;
 mod tidy;
 mod tls;
 mod tunnel;
+mod whyhere;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -166,13 +167,15 @@ impl Core {
     /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?",
     /// "next one" and "last one" move with this alone: saying one already stopped any search said before it
     /// (`add_thought`), and one that waited its turn in the placer's queue must not stop a search said after it.
+    /// A thread merged away since its id was taken (an Undo's "where you were") means the thread it went into.
     fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
-        let Some(thread) = world.thread(thread_id) else { return };
+        let thread_id = world.resolve(thread_id);
+        let Some(thread) = world.thread(&thread_id) else { return };
         self.placing.moved(speaker);
-        let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
+        let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.clone(), speaker: speaker.into() }];
         if thread.status == ThreadStatus::Dropped {
-            changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
+            changes.push(Change::ThreadStatus { thread_id, status: ThreadStatus::Open, speaker: speaker.into() });
         }
         drop(world);
         self.commit(changes);
@@ -291,10 +294,27 @@ impl Core {
     /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
     /// held, which were said before what stopped it (see `find::stop`).
     fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
+        self.take_turn(speaker, text, search, false);
+    }
+
+    /// Typed words: as said ones, except that a line of only filler ("ok", "cool") is answered instead of vanishing
+    /// without a trace: typing it was deliberate, and nothing on screen would say where it went.
+    pub fn add_typed(self: &Arc<Self>, speaker: &str, text: &str) {
+        self.take_turn(speaker, text, true, true);
+    }
+
+    /// `add_turn`, saying why when `typed` filler is set aside.
+    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool) {
         self.touch();
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
+        // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops. First,
+        // so a short fix to the open question below never takes the stop into its words ("No, Muse. Stop listening.").
+        if let Some((before, stop)) = spoken::stop_tail(text) {
+            self.add_turn(speaker, before, search);
+            return self.add_turn(speaker, stop, search);
+        }
         // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
         // first: "yeah" is filler otherwise.
         if catalog::answer(self, speaker, text) {
@@ -302,6 +322,9 @@ impl Core {
         }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
         if filler(text, asked) {
+            if typed {
+                self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
+            }
             return;
         }
         find::stop(self, speaker);
@@ -344,6 +367,11 @@ impl Core {
             // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
             // back too. Bare "focus" stays on the thread you're on, as its button does.
             let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            // The Palace or every thread of an empty map: the window would show nothing new, so say why.
+            if matches!(view, View::Palace | View::All) && self.snapshot().threads.is_empty() {
+                self.send_to(speaker, ServerMsg::Notice { message: "Nothing on the map yet: say a thought first".into() });
+                return Some(Done::missed(if view == View::Palace { Act::Palace } else { Act::All }));
+            }
             // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
             if view == View::Focus && to.is_none() && before.is_none() {
                 let empty = self.snapshot().threads.is_empty();
@@ -538,7 +566,7 @@ fn lead(text: &str, asking: bool) -> &str {
 }
 
 /// True when words that ask lead into `text`: partway through a turn, that's a question to someone.
-fn asks_someone(text: &str) -> bool {
+pub(crate) fn asks_someone(text: &str) -> bool {
     lead(text, true).len() < lead(text, false).len()
 }
 
@@ -630,7 +658,7 @@ fn opening(text: &str) -> Option<(Command, &str)> {
 /// Where a command may begin partway through a turn, or the words after one: a word after a punctuation
 /// mark, or a word that turns the talk ("okay", "anyway"). So "fly there and go back" and "that song would
 /// take me back" stay thoughts.
-fn starts(text: &str) -> Vec<usize> {
+pub(crate) fn starts(text: &str) -> Vec<usize> {
     const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
     let mut out = Vec::new();
     let mut in_word = false;
@@ -1110,8 +1138,11 @@ fn reached(host: &str, link: Link) -> bool {
 }
 
 /// The app's own files, which hold nothing of the map. Everything else needs the code in a room.
+/// The manifest and icons too: a browser fetches them as the page loads, before a guest has typed the code.
 fn public(path: &str) -> bool {
-    matches!(path, "/" | "/index.html" | "/room" | "/pcm-worklet.js") || path.starts_with("/assets/")
+    matches!(path, "/" | "/index.html" | "/room" | "/pcm-worklet.js" | "/manifest.webmanifest" | "/icon.svg")
+        || path.starts_with("/assets/")
+        || path.starts_with("/icons/")
 }
 
 /// The room codes a request carries: `?room=` on the WebSocket, or the `room` cookie the page sets
@@ -1333,7 +1364,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
                 Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
                 Ok(ClientMsg::AppOutput { id, sound }) => apps::volume_output(&core, id, sound),
-                Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_thought(&speaker, text.trim()),
+                Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_typed(&speaker, text.trim()),
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     audio = Some(start_listening(&core, &speaker, &listens));
@@ -1343,6 +1374,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
+                }
+                Ok(ClientMsg::WhyHere { thought_id }) => {
+                    tokio::spawn(whyhere::run(core.clone(), speaker.clone(), thought_id));
                 }
                 Ok(ClientMsg::Item { id, status }) => apple::item(&core, id, status),
                 // Where Apple's apps can't be reached, the window saved it as a calendar file on its own computer, so
@@ -1368,13 +1402,18 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
                 Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
                 Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
-                Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
+                Ok(ClientMsg::Attention { selected, pointed, point }) => {
+                    catalog::attend(&core, &speaker, selected, pointed);
+                    catalog::attend_point(&core, &speaker, point);
+                }
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
                 Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
+                Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
+                Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1557,6 +1596,37 @@ mod tests {
         assert!(updates.try_recv().is_err(), "no window is sent a mark");
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "ok" said is filler, set aside without a word (it's how people talk); typed, it gets an answer instead of vanishing.
+    #[test]
+    fn typed_filler_is_answered_not_dropped_without_a_trace() {
+        let (core, _queue, path) = keyless(World::default());
+        let mut updates = core.updates.subscribe();
+        core.add_thought("you", "ok");
+        assert!(updates.try_recv().is_err(), "said: nothing to say");
+        core.add_typed("you", "ok");
+        let said: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message { ServerMsg::Notice { message } => Some(message), _ => None })
+            .collect();
+        assert_eq!(said, ["Not kept: that reads as filler. Add a few words to keep it."]);
+        assert!(core.snapshot().thoughts.is_empty());
+        core.add_typed("you", "ok, call the plumber");
+        assert_eq!(core.snapshot().thoughts.len(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Open the garden", then Bills merged into Taxes, then Undo: back to where you were, Bills, now inside Taxes.
+    #[test]
+    fn undo_of_a_go_to_finds_a_thread_merged_away_since() {
+        let mut world = World::default();
+        world.threads = vec![thread("T2", 2, ""), thread("T3", 3, "")];
+        world.merged.insert("T1".into(), "T2".into());
+        world.active_by.insert("you".into(), "T3".into());
+        let (core, _queue, path) = keyless(world);
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Move { to: "T1".into() });
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("T2"));
         let _ = std::fs::remove_file(&path);
     }
 
@@ -2304,6 +2374,8 @@ mod tests {
         assert_eq!(access(true, guest, host, page, false), Access::Page);
         assert!(public("/") && public("/assets/index-abc.js") && public("/room") && public("/pcm-worklet.js"));
         assert!(!public("/ws") && !public("/images/T1-x.webp") && !public("/anything-else"));
+        // Installing from a guest's page: the browser fetches the manifest and icons without the code.
+        assert!(public("/manifest.webmanifest") && public("/icon.svg") && public("/icons/icon-512.png"));
         // Other sites stay out, code or not: their own Origin, or a name pointed at this laptop.
         assert_eq!(access(true, guest, host, Some("https://example.com"), true), Access::None);
         assert_eq!(access(true, guest, host, Some("http://192.168.1.5:3000"), true), Access::None);
@@ -2610,8 +2682,8 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. Focus
-    /// on an empty map says why nothing changes.
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. The
+    /// Palace and Focus on an empty map say why nothing changes.
     #[test]
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
@@ -2627,7 +2699,11 @@ mod tests {
             })
             .collect();
         let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
-        assert_eq!(views, [sam("Palace"), sam("Nothing on the map yet: say a thought first")]);
+        let empty = sam("Nothing on the map yet: say a thought first");
+        assert_eq!(views, [empty.clone(), empty]);
+        core.commit(vec![Change::ThreadAdded { thread: thread("T1", 1, "") }]);
+        core.add_thought("Sam", "Palace.");
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Palace })));
         assert!(core.snapshot().thoughts.is_empty());
         core.add_thought("Sam", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);

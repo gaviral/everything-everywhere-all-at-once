@@ -3,6 +3,9 @@
 // 0.6–0.7 s, because a one-letter query finds every thread and every found card opened at once. Held here: what
 // search finds is unchanged, only up to OPEN_LIMIT found cards open themselves, typed letters reach the map deferred,
 // and a cleared search comes back at once (jumps scroll to a card on the next frame).
+// Search finds words (2026-11-01, persona runs, 4 of 4 synthetic users): the whole query had to be one substring of
+// one field, so "dentist thursday", "launch date" and "cafe" (for "Café") found nothing. Held here: every word, in any
+// order, anywhere in a thread; everything the old rule found is still found and comes first.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
@@ -10,7 +13,7 @@ import { uiServer } from "./ui-server.mjs";
 const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
 const server = await uiServer();
 try {
-  const { searchMatches, heldOpen, mapQuery, OPEN_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");
+  const { searchMatches, heldOpen, mapQuery, OPEN_LIMIT, RANK_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");
 
   // 1. What search finds: the rule as it was inline in App.tsx before, on a seeded random map of 1,000 threads.
   const before = (index, search) => new Set(search ? index.filter(({ fields }) => fields.some((text) => text.includes(search))).map(({ id }) => id) : []);
@@ -19,11 +22,55 @@ try {
   const words = ["lisbon", "pottery", "class", "under", "$80", "trip", "budget", "rent", "café", "décidé", "Q4", "map"];
   const index = Array.from({ length: 1000 }, (_, i) => ({ id: `t${i}`,
     fields: Array.from({ length: 1 + rand(6) }, () => Array.from({ length: 1 + rand(5) }, () => words[rand(words.length)]).join(" ").toLocaleLowerCase()) }));
-  for (const q of ["", "l", "li", "lis", "lisbon", "class under", "$8", "é", "q4", "zzz", "on p"]) {
+  for (const q of ["", "l", "li", "lis", "lisbon", "class under", "$8", "é", "q4", "zzz", "on p", "trip lisbon", "rent  $80 "]) {
+    const found = searchMatches(index, q), was = before(index, q);
+    for (const id of was) assert.ok(found.has(id), `"${q}" still finds ${id}, as before`);
+    // What the old rule found comes first: what you typed, as you typed it, is the strongest hit.
+    assert.deepEqual([...found].slice(0, was.size).sort(), [...was].sort(), `"${q}": the old hits lead`);
+  }
+  // One plain word finds exactly what it did before.
+  for (const q of ["l", "li", "lis", "lisbon", "$8", "q4", "zzz"]) {
     assert.deepEqual([...searchMatches(index, q)].sort(), [...before(index, q)].sort(), `"${q}" finds what it did before`);
   }
-  // Fields stay separate: a query can't match across two pieces of text.
+  // Fields stay separate: a word can't match across two pieces of text.
   assert.equal(searchMatches([{ id: "a", fields: ["lis", "bon"] }], "lisbon").size, 0, "no match across two fields");
+
+  // 1b. Words, in any order, anywhere in the thread (the persona runs' searches that found nothing).
+  const health = { id: "health", fields: ["health", "dentist moved", "it's thursday at 3"] };
+  const launch = { id: "launch", fields: ["product launch", "launch moved to the 21st", "date is firm now"] };
+  const cafe = { id: "cafe", fields: ["café shifts", "december availability"] };
+  const map = [health, launch, cafe];
+  const finds = (q) => [...searchMatches(map, q)];
+  assert.deepEqual(finds("dentist thursday"), ["health"], "two words in two thoughts of one thread");
+  assert.deepEqual(finds("thursday dentist"), ["health"], "any order");
+  assert.deepEqual(finds("launch date"), ["launch"], "title word + a thought's word");
+  assert.deepEqual(finds("cafe"), ["cafe"], "no accent typed finds the accented word");
+  assert.deepEqual(finds("café december"), ["cafe"], "accent typed still finds it");
+  assert.deepEqual(finds("dentist thursday?"), ["health"], "a question mark is not a word to find");
+  assert.deepEqual(finds("when is the dentist"), ["health"], "question words don't have to be in the thread");
+  assert.deepEqual(finds("dentist launch"), [], "every word must be there: one thread each → none");
+  assert.deepEqual(finds("is"), ["launch", "health"], "a query of only small words still finds them (\"is\" in \"dentist\" too, after the whole word)");
+
+  // 1c. Ranking: the best hit first, map order breaks ties.
+  const order = (fields, q) => [...searchMatches(fields.map((f, i) => ({ id: `r${i}`, fields: f })), q)];
+  assert.deepEqual(order([["class notes", "art supplies"], ["art class"]], "art class"), ["r1", "r0"], "the phrase as typed beats words apart");
+  assert.deepEqual(order([["dentist", "thursday"], ["dentist on thursday"]], "dentist thursday"), ["r1", "r0"], "words in one thought beat words spread over a thread");
+  assert.deepEqual(order([["party"], ["art class"]], "art"), ["r1", "r0"], "a whole word beats the inside of one (\"art\" in \"party\")");
+  assert.deepEqual(order([["trip", "budget for rent"], ["rent", "trip budget"]], "rent"), ["r1", "r0"], "the thread named for it beats one that mentions it");
+  assert.deepEqual(order([["kids party", "ask about the art table"], ["art class"]], "art"), ["r1", "r0"], "named for it, not a word inside the name");
+  assert.deepEqual(order([["rent"], ["rent"], ["rent"]], "rent"), ["r0", "r1", "r2"], "ties keep map order");
+
+  assert.ok(RANK_LIMIT >= 20 && RANK_LIMIT <= 60, `RANK_LIMIT ${RANK_LIMIT}: one to three screens of folded titles (≈ 20 a screen)`);
+
+  // 1d. Fast at 1,000 threads: every letter of a query, typed one by one, well inside a frame.
+  const big = Array.from({ length: 1000 }, (_, i) => ({ id: `b${i}`, fields: Array.from({ length: 20 },
+    () => Array.from({ length: 12 }, () => words[rand(words.length)]).join(" ").toLocaleLowerCase()) }));
+  for (const q of ["l", "li", "lis"]) searchMatches(big, q); // first pass prepares each thread's text once, as the map does
+  const typing = ["l", "li", "lis", "lisb", "lisbo", "lisbon", "lisbon ", "lisbon t", "lisbon tr", "lisbon tri", "lisbon trip"];
+  // Fastest of 9 per letter: the rule's own cost. Single runs are noise from the machine (GC, other builds: at load 69
+  // the old rule's median reached 11.6 ms and single runs 77 ms), and noise would make this check fail at random.
+  const spent = typing.map((q) => Math.min(...Array.from({ length: 9 }, () => { const t = performance.now(); searchMatches(big, q); return performance.now() - t; })));
+  assert.ok(Math.max(...spent) < 8, `slowest letter ${Math.max(...spent).toFixed(1)} ms (fastest of 9) at 1,000 threads × 20 fields: under half a 60 Hz frame (16.7 ms), so the cards get the rest`);
 
   // 2. Which found cards open: all of them up to the limit, else none (never an arbitrary first few).
   const ids = (n) => new Set(Array.from({ length: n }, (_, i) => `t${i}`));
@@ -57,6 +104,8 @@ try {
   // 4. App.tsx wires them: the deferred query, the rule's matches, and cards held open only by heldOpen.
   assert.match(app, /const deferredQuery = useDeferredValue\(query\);\s*const search = mapQuery\(query, deferredQuery\)/, "the map's query is deferred through mapQuery");
   assert.match(app, /searchMatches\(searchIndex, search\)/, "the map finds with searchMatches");
+  assert.match(app, /const place = search && matches\.size <= RANK_LIMIT \? new Map\(\[\.\.\.visibleIds\]/, "found threads show best first, up to RANK_LIMIT");
+  assert.match(app, /if \(place\) for \(const group of grouped\.values\(\)\) group\.sort\(/, "…each branch list in searchMatches' order");
   assert.match(app, /const collapsed = held\.has\(thread\.id\) \? false :/, "a card opens for search only when heldOpen holds it");
   assert.match(app, /return previousChildren\.current = steady\(previousChildren\.current, grouped\);/, "the grouping goes through steady");
   assert.match(app, /const ThreadCard = memo\(function ThreadCard\([\s\S]*?\n\}, sameCard\);/, "cards skip unchanged renders with sameCard");

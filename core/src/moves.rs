@@ -1,7 +1,7 @@
-//! Move and rename: the person fixes the map themselves. A misplaced thought moves to
+//! Move, rename and delete: the person fixes the map themselves. A misplaced thought moves to
 //! another thread ("move that to the pottery thread", or the point's Move button), a thread takes the title they give
-//! it ("rename this to Pottery class", or a click on its title), and either comes back in one step (Undo, or "scratch
-//! that"). Both are the person's, so the AI never overrides them: the refiner never merges the two threads a move set
+//! it ("rename this to Pottery class", or a click on its title), a thought leaves the map ("delete this", "forget the
+//! last one", or the point's Delete), and each comes back in one step (Undo, or "scratch that"). Both are the person's, so the AI never overrides them: the refiner never merges the two threads a move set
 //! apart (`World::apart`), an undone merge leaves a moved thought where the person put it, and a title they chose
 //! stays theirs (tidy.rs). Said or clicked, the same functions act (catalog.rs: one definition each). By rule, with no
 //! model call, and only as the whole turn, as every request is: "move it to Friday" stays talk unless a thread's title
@@ -24,6 +24,8 @@ enum Ask {
     Move { place: Place, sure: bool, last: bool },
     /// A thread's new title; each way to read which thread, in the order they're tried (`Target`).
     Rename { targets: Vec<(Target, String)> },
+    /// A thought off the map: the speaker's latest (`latest`), or the point "this" means, else their latest.
+    Delete { latest: bool },
 }
 
 #[derive(Debug, PartialEq)]
@@ -116,7 +118,30 @@ fn read(text: &str) -> Option<Ask> {
     let t = spoken::plain(text);
     // ASCII only, so byte offsets in `l` are offsets in `t`, and a title keeps the capitals it was said with.
     let l = t.to_ascii_lowercase();
-    read_move(t, &l).or_else(|| read_rename(t, &l))
+    read_move(t, &l).or_else(|| read_rename(t, &l)).or_else(|| read_delete(&l))
+}
+
+/// "Delete" said of a thought, the whole turn. Bare "delete that" and "remove that" stay "scratch that" (catalog.rs),
+/// which takes back what was just said; "forget" never takes "it", "that" or "this one", which set the unfinished
+/// card aside (spoken.rs).
+const DELETE: [&str; 4] = ["delete", "remove", "erase", "forget"];
+/// Always the speaker's latest thought, wherever they point.
+const DELETE_LAST: [&str; 9] = [
+    "the last one", "my last one", "the last thought", "my last thought", "that last thought", "the last point", "my last point",
+    "what i just said", "the last thing i said",
+];
+/// The point "this" means; "forget" takes only the ones that name a thought.
+const THIS_POINT: [&str; 4] = ["this thought", "that thought", "this point", "that point"];
+const THIS_ONE: [&str; 3] = ["this one", "that one", "this"];
+
+fn read_delete(l: &str) -> Option<Ask> {
+    let n = lead(l, &DELETE, false)?;
+    let rest = l[n..].strip_suffix(" from the map").unwrap_or(&l[n..]);
+    if DELETE_LAST.contains(&rest) {
+        return Some(Ask::Delete { latest: true });
+    }
+    let forget = l.starts_with("forget");
+    (THIS_POINT.contains(&rest) || (!forget && THIS_ONE.contains(&rest))).then_some(Ask::Delete { latest: false })
 }
 
 fn read_move(t: &str, l: &str) -> Option<Ask> {
@@ -188,6 +213,7 @@ pub fn kind(text: &str) -> Option<Act> {
     read(text).map(|ask| match ask {
         Ask::Move { .. } => Act::Move,
         Ask::Rename { .. } => Act::Rename,
+        Ask::Delete { .. } => Act::Delete,
     })
 }
 
@@ -216,7 +242,52 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     match read(text)? {
         Ask::Move { place, sure, last } => move_that(core, speaker, text, place, sure, last),
         Ask::Rename { targets } => Some(rename_said(core, speaker, targets)),
+        Ask::Delete { latest } => Some(delete_said(core, speaker, latest)),
     }
+}
+
+/// "Delete this": the point the speaker is on (focused or pointed at), else, as "forget the last one" always does,
+/// their latest thought (as "move that" means it), placed or still finding its place.
+pub(crate) fn delete_said(core: &Arc<Core>, speaker: &str, latest: bool) -> Done {
+    let world = core.snapshot();
+    let now = now_ms();
+    let pointed = (!latest).then(|| crate::catalog::this_thought(core, &world, speaker)).flatten();
+    let target = pointed.or_else(|| world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now)).map(|t| t.id.clone()));
+    drop(world);
+    let Some(id) = target else {
+        notice(core, speaker, "Nothing to delete yet: say a thought first".into());
+        return Done::missed(Act::Delete);
+    };
+    delete(core, speaker, &id)
+}
+
+/// The point's Delete (a click, or Delete on a focused point).
+pub fn click_delete(core: &Arc<Core>, speaker: &str, thought_id: &str) {
+    let done = delete(core, speaker, thought_id);
+    crate::catalog::did(core, speaker, "delete this", done);
+}
+
+/// Takes a thought off the map as its point shows it, with the words before a pause it carries on (`with_heads`), and
+/// says what went, with Undo. The journal keeps the words (`ThoughtSkipped`); nothing brings them back but Undo: the
+/// refiner drops a pass that read them (refiner.rs `drop_deleted`), and an undone merge moves only thoughts on the map.
+pub(crate) fn delete(core: &Arc<Core>, speaker: &str, thought_id: &str) -> Done {
+    let world = core.snapshot();
+    let Some(thought) = world.thoughts.iter().find(|t| t.id == thought_id) else {
+        notice(core, speaker, "That thought isn't on the map any more".into());
+        return Done::missed(Act::Delete);
+    };
+    let ids = match thought.thread_id.as_deref().map(|id| world.resolve(id)) {
+        Some(on) if thought.placed => with_heads(&world, thought_id, &on),
+        _ => vec![thought_id.to_string()],
+    };
+    let words = if thought.point.is_empty() { thought.text.clone() } else { spoken::capital(&thought.point) };
+    drop(world);
+    let Some(undo) = crate::catalog::take_off(core, &ids) else {
+        notice(core, speaker, "That thought isn't on the map any more".into());
+        return Done::missed(Act::Delete);
+    };
+    notice(core, speaker, format!("Deleted “{}”", crate::catalog::short(&words)));
+    Done::with(Act::Delete, Some(undo))
 }
 
 fn notice(core: &Core, speaker: &str, message: String) {
@@ -511,6 +582,7 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
     let now = now_ms();
     changes.extend(last_points(&world, &ids, &on, &back, false, now).into_iter().filter(|c| !matches!(c, Change::ThreadTouched { thread_id, .. } if Some(thread_id) == emptied.as_ref())));
     if let Some(id) = &emptied {
+        changes.extend(crate::catalog::set_aside(&world, id));
         changes.push(Change::ThreadRemoved { thread_id: id.clone() });
     }
     let follow = u.back.is_some() && (world.active_for(speaker) == Some(&on) || emptied.is_some());

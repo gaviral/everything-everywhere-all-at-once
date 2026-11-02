@@ -79,6 +79,10 @@ export function restoreFocus(spot: FocusSpot, doc: Document = document) {
   target.focus();
 }
 
+/** What a click on a point leaves to its own controls instead of opening its words: its buttons (undo a fix, did you
+ *  mean, Words said), its Move menu with the field you type in, and its marks (a tap on ✦ or ? shows that mark's tip). */
+export const POINT_OWN = "button, input, textarea, select, .move-menu, [data-tip]";
+
 /** Which points have their original words open, kept outside the cards: crossing the two-column width rebuilds every
  *  card, and folding a thread unmounts its points, and neither should close words the person opened. */
 const saidOpen = new Set<string>();

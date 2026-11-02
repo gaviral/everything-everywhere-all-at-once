@@ -8,9 +8,42 @@ import { uiServer } from "./ui-server.mjs";
 const src = new URL("../ui/src/", import.meta.url);
 const server = await uiServer();
 try {
-  const { micState, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
+  const { micState, micEnds, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
   const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");
   const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
+
+  // A microphone that goes away on its own (its track ends: unplugged, switched off) is said at once, once; one we
+  // stop ourselves never is (bug hunt 20: the window showed "Listening" to nothing).
+  const { startMic } = await server.ssrLoadModule("/src/mic.ts");
+  const fakeTrack = () => ({ onended: null, stop() {} });
+  const end = () => track.onended?.();
+  let track;
+  const audioNode = () => ({ connect: (next) => next, disconnect() {} });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { mediaDevices: { getUserMedia: async () => {
+    track = fakeTrack();
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
+  } } } });
+  globalThis.window ??= globalThis;
+  globalThis.AudioWorkletNode = class { port = {}; connect(next) { return next; } disconnect() {} };
+  globalThis.AudioContext = class { sampleRate = 24000; state = "running"; async resume() {} audioWorklet = { addModule: async () => {} }; destination = {};
+    createMediaStreamSource() { return audioNode(); } createGain() { return { gain: { value: 1 }, ...audioNode() }; } close() {} };
+  let lost = 0;
+  const stopMic = await startMic(() => {}, () => lost++);
+  end();
+  end();
+  assert.equal(lost, 1, "a track that ends on its own is said once");
+  stopMic();
+  const stopAgain = await startMic(() => {}, () => lost++);
+  stopAgain();
+  end();
+  assert.equal(lost, 1, "after our own stop, nothing is said");
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /const ended = \(\) => \{\s*if \(stopped \|\| !mounted\.current\) return;\s*stopped = true;\s*if \(liveStop\.current === stop\) liveStop\.current = null;\s*setStopMic\(null\);\s*core\.listen\(false\);\s*core\.showNotice\("The mic stopped: [^]*?startMic\(core\.sendAudio, ended\)/);
+
+  // Escape that hides a tip hides only the tip: heard before the document's listener (App.tsx folds the quiet threads
+  // on Escape there), and stopped unless typed in a field (bug hunt 18).
+  const tipsSource = readFileSync(new URL("../ui/src/Tips.tsx", import.meta.url), "utf8");
+  assert.match(tipsSource, /window\.addEventListener\("keydown", key, true\)/);
+  assert.match(tipsSource, /if \(event\.key !== "Escape" \|\| !current\.current\) return;\s*hide\(\);[^]*?if \(!typing\) event\.stopPropagation\(\);/);
 
   const base = { connected: true, capturing: false, starting: false, serviceOn: false, words: false, paused: false, noKey: false, refused: false };
   const state = (extra) => micState({ ...base, ...extra });
@@ -23,6 +56,17 @@ try {
   assert.equal(state({ noKey: true }), "nokey");
   assert.equal(state({ noKey: true, refused: true }), "refused");
   assert.equal(state({ connected: false }), "offline");
+  // The running mic stops when the connection drops, even before the speech service said it listens: no "not
+  // listening" follows then, and a reconnect never starts the stream again (bug hunt: "Starting" for good).
+  const ends = (extra) => micEnds({ connected: true, listening: false, failed: false, statusNew: false, listenedNew: false, ...extra });
+  assert.equal(ends({}), "", "starting: the service hasn't answered yet");
+  assert.equal(ends({ connected: false, statusNew: true }), "offline", "dropped before the service said it listens");
+  assert.equal(ends({ connected: false, listening: false, statusNew: true, listenedNew: true }), "offline");
+  assert.equal(ends({ failed: true }), "failed");
+  assert.equal(ends({ statusNew: true }), "", "an old stream's late end is passed over");
+  assert.equal(ends({ statusNew: true, listenedNew: true }), "ended");
+  assert.equal(ends({ listening: true, statusNew: true, listenedNew: true }), "");
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /micEnds\(\{ connected: core\.connected,[^]*?\}, \[core\.connected, core\.listening,/);
   // Never "off" (or paused, or keyless) while the browser is taking sound, whatever else is true.
   for (const connected of [true, false]) for (const noKey of [true, false]) for (const paused of [true, false]) for (const serviceOn of [true, false]) {
     assert.ok(["starting", "listening", "hearing"].includes(state({ capturing: true, connected, noKey, paused, serviceOn })));
