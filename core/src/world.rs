@@ -828,8 +828,8 @@ mod tests {
 
     #[test]
     fn a_removed_threads_id_is_never_handed_out_again() {
-        // Scratch that on Sam's first thread removes T3 while User's T4 stays: the next new topic must not get T4,
-        // or it lands in User's thread; nor T3, or a late picture drawn for the old T3 lands on it.
+        // Scratch that on Sam's first thread removes T3 while Ana's T4 stays: the next new topic must not get T4,
+        // or it lands in Ana's thread; nor T3, or a late picture drawn for the old T3 lands on it.
         let line = |id: &str| format!(r#"{{"type":"thread_added","thread":{{"id":"{id}","title":"{id}","parent_id":null,"status":"open","last_point":"","touched_ms":1}}}}"#);
         let mut world = World::default();
         for id in ["T1", "T2", "T3", "T4"] {
