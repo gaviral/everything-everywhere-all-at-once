@@ -55,6 +55,10 @@ Every model request has a time limit: 12 s for placing's first try and 20 s for 
 
 Tested on macOS. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs); run `rustup update` if yours is older) and Node.js 22.12 or newer. On a Mac with no developer tools, run `xcode-select --install` first.
 
+**Linux:** the build also needs a C compiler, pkg-config and OpenSSL's headers (Ubuntu: `sudo apt install build-essential pkg-config libssl-dev`). `run.sh` checks all of these before building and prints the command for whatever is missing. Not tested on Linux.
+
+**Windows:** use the hosted version if you were given its link; otherwise WSL2 (Ubuntu): clone inside WSL, follow the Linux line, and open the printed link in Chrome on Windows. Not tested on Windows.
+
 Get the code and step into its folder:
 
 ```sh
@@ -277,7 +281,7 @@ A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each 
 ## Known limits
 
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
-- Reminders and Calendar need macOS; elsewhere, and hosted, a dated item downloads as an `.ics` file for any calendar app, and one without a day can only be dismissed. Tested on macOS only; on Linux the build also needs OpenSSL headers.
+- Reminders and Calendar need macOS; elsewhere, and hosted, a dated item downloads as an `.ics` file for any calendar app, and one without a day can only be dismissed. Tested on macOS only (Linux and Windows: [Try it](#try-it)).
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
 - From the end of speech to the map: median 3.6 s, slowest 5.1 s with Contributor mode (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
 - Placing is a model's judgment. You can move or delete a thought and rename a thread yourself, by voice or click, with Undo; you can't merge or split threads yourself, except by applying the refiner's proposals, nor move a whole thread under another.
