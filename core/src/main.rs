@@ -12,6 +12,7 @@ mod clock;
 mod decided;
 mod explain;
 mod find;
+mod guide;
 mod import;
 mod messages;
 mod model;
@@ -1437,7 +1438,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
         if write(&mut out, &notice).await.is_err() { return; }
     }
-    let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone()));
+    // This window's number: a point or caption it sends goes to every window but this one (guide.rs).
+    let window = guide::window();
+    let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone(), window));
     if here {
         core.hosts.lock().unwrap().insert(speaker.clone());
     }
@@ -1447,6 +1450,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // quick off and on, the old session's late end mustn't switch the new mic off.
     let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
+    let mut pace = guide::Pace::default();
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -1543,6 +1547,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
+                Ok(ClientMsg::Point { target, caption }) => guide::point(&core, &speaker, window, &mut pace, target, caption),
+                Ok(ClientMsg::Caption { text }) => guide::caption(&core, &speaker, window, &mut pace, text),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
             },
@@ -1562,10 +1568,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     }
 }
 
-/// Sends a window every change and whatever is meant for its speaker, until the window is gone.
-/// A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
+/// Sends a window every change and whatever is meant for its speaker, until the window is gone; never a point or
+/// caption it sent itself (`window`, guide.rs). A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
 /// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
-async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String) {
+async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
     loop {
         let update = tokio::select! {
@@ -1580,6 +1586,8 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
         match update {
             // Someone else's live words, mic and notices.
             Ok(Outgoing { to: Some(to), .. }) if to != speaker => {}
+            // Its own point or caption: the other windows show it (guide.rs).
+            Ok(Outgoing { message: ServerMsg::Guide { from, .. }, .. }) if from == window => {}
             Ok(Outgoing { message, .. }) => {
                 if write(&mut out, &message).await.is_err() {
                     return;
