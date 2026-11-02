@@ -20,6 +20,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
@@ -64,6 +65,7 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
@@ -201,6 +203,8 @@ export default function App() {
         setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
       ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
+      // A retry that landed late isn't followed (you've moved on): the dock says where it went.
+      if (heldLanding.current) attention.held(heldLanding.current);
     }
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
@@ -211,7 +215,9 @@ export default function App() {
     // A landing gets one chance to follow; never catch up later while someone is reading. In a room only your own
     // words move your view.
     const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
-    if (!follow || view !== "map" || query.trim() || core.recap.view) return;
+    if (!follow) return;
+    // Your landing the map won't show (another view, a search, Recap open): the dock says where it went.
+    if (view !== "map" || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
     followTarget.current = follow;
     if (landing?.mine) followLanding.current = landing;
     // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
@@ -223,7 +229,8 @@ export default function App() {
       const landed = followLanding.current;
       followTarget.current = null;
       followLanding.current = null;
-      if (!target || lookingElsewhere()) return;
+      if (!target) return;
+      if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
       const top = Math.max(0, ...Array.from(document.querySelectorAll("header, .map-tools"), (bar) => bar.getBoundingClientRect().bottom));
@@ -236,13 +243,19 @@ export default function App() {
       // read elsewhere. A nudge or a key press that leaves them on screen doesn't. The 5 s is the old guess at
       // reading, kept until a rule without a timer replaces it.
       const own = ownRect(card);
-      if (thought && Date.now() - lastNavigation.current < 5000 && (own.bottom <= top || own.top >= bottom)) return;
+      if (thought && Date.now() - lastNavigation.current < 5000 && (own.bottom <= top || own.top >= bottom)) {
+        attention.held({ thread: target.thread, thought, mine: true });
+        return;
+      }
       // The thought itself (a thread's latest, when you moved back to it), where it will settle: a landing point
       // starts out where its pending pill was, in the dock.
       const point = thought ? document.getElementById(`point-${thought}`)
         : card.querySelector<HTMLElement>(":scope > div > .points > li:last-child");
       const rect = settledRect(point ?? card);
       shownLanding.current = thought && point ? { thought, at: Date.now() } : null;
+      // Look here: the thought shown, highlighted once the map holds still, for as long as reading it takes.
+      const shownId = point?.id.replace(/^point-/, "");
+      if (shownId) attention.shown(shownId, target.thread);
       if (point ? rect.top >= top && rect.bottom <= bottom : rect.bottom > top && rect.top < bottom) return;
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       scrollForMap(following, delta, !!reducedMotion);
@@ -706,6 +719,9 @@ export default function App() {
       const target = document.getElementById(`thread-${thread.id}`);
       if (target) scrollCardToTop(target, !!reducedMotion);
       target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
+      // Look here: where you left off, the thread's last point (else its head).
+      const spot = target?.querySelector<HTMLElement>(":scope > div > .points > li:last-child") ?? target?.querySelector<HTMLElement>(":scope > .thread-head");
+      if (spot) look(spot, `${thread.title} ${spot.matches("li") ? wordsIn(spot) : ""}`);
     });
   };
 
@@ -722,6 +738,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
+    <AttentionProvider value={attention.value}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
@@ -858,7 +875,9 @@ export default function App() {
           <DockBuild core={core} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}</div>}
+          <AttentionNote onGo={attention.go} />
+          {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
+          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}{world.active && <ThisEcho title={threadById.get(world.active)?.title ?? ""} />}</span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
@@ -889,6 +908,7 @@ export default function App() {
         });
       }} />
     </div>
+    </AttentionProvider>
     </MotionConfig>
   );
 }
@@ -1062,7 +1082,9 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
     >
+      <ThisTag thread={thread.id} />
       <div className="thread-head">
+        <UnseenDot thread={thread.id} />
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
@@ -1158,6 +1180,9 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
+  // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
+  const { latest, arriving } = usePointMarks(thought.id);
+  const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
   const said = saidDiffers(thought.text, thought.point);
@@ -1169,10 +1194,11 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
+      {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.

@@ -14,3 +14,7 @@
 .symbol-mic .mic-sample[data-state="nokey"] { background: var(--amber-soft); color: var(--amber); }
 .symbol-mic .mic-badge { right: -4px; bottom: -4px; width: 12px; height: 12px; gap: 1.5px; }
 .symbol-mic .mic-badge i { width: 1.5px; height: 5px; }
+/* The attention marks (attention.css): the unseen dot in the sample column instead of a card's margin, and the bar
+   your newest point carries. */
+.symbol .unseen-dot { position: static; margin: 0; }
+.symbol-latest { width: 2px; height: 14px; border-radius: 2px; background: var(--accent); opacity: .6; }
