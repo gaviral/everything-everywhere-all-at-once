@@ -29,4 +29,12 @@ assert.match(face, /src:\s*local\("Zapf Dingbats"\)/, "drawn from Zapf Dingbats,
 const body = styles.match(/\nbody\s*{([^}]*)}/)?.[1] ?? "";
 assert.match(body, new RegExp(`font:[^;]*\\s"${family}",`), "the body's stack starts with it");
 
-console.log("Safari checks passed: theme-color follows the theme; ✦ is drawn from one face.");
+// 3. Recap opened by a click or tap: Safari's showModal() marks its first button :focus-visible, so × wore a ring Chrome
+//    never shows. The sheet focuses × again with the ring only when the focus before it showed one, leaving it first
+//    (focusing the already focused × again keeps Safari's ring).
+const recap = read("ui/src/Recap.tsx");
+const opening = recap.slice(recap.indexOf("sheet.showModal()"), recap.indexOf("return () => {", recap.indexOf("sheet.showModal()")));
+assert.match(recap, /const ring = !!previous\?\.matches\(":focus-visible"\);[\s\S]*sheet\.showModal\(\)/, "the ring is decided by the focus before the sheet opened");
+assert.match(opening, /close\?\.blur\(\);\s*close\?\.focus\(\{ focusVisible: ring \}\);/, "× is left, then focused with that ring");
+
+console.log("Safari checks passed: theme-color follows the theme; ✦ is drawn from one face; a clicked Recap opens without a ring on ×.");

@@ -87,10 +87,16 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
     if (!open) return;
     const sheet = dialog.current!;
     const previous = document.activeElement as HTMLElement | null;
+    // A ring on × only when the focus before it showed one (the keyboard), as Chrome decides: Safari's showModal()
+    // rings its first button even after a click or tap, so × wore a blue ring on every Recap opened that way. Focusing
+    // the same element again doesn't clear it there; leaving it first does.
+    const ring = !!previous?.matches(":focus-visible");
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     sheet.showModal();
-    sheet.querySelector<HTMLButtonElement>(".recap-close")?.focus();
+    const close = sheet.querySelector<HTMLButtonElement>(".recap-close");
+    close?.blur();
+    close?.focus({ focusVisible: ring });
     return () => {
       sheet.close();
       document.body.style.overflow = overflow;
