@@ -53,3 +53,7 @@
   /* No hover on a phone: Move shows once a tap focuses the point (at the 40 px every button there gets, styles.css). */
   .points li:not(:focus-within) .move-button:not([aria-expanded="true"]) { visibility: hidden; }
 }
+/* On touch a long press on a title renames it (ux-rules.ts titleTap): it mustn't start a text selection or callout. */
+@media (hover: none) {
+  .title-button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}

@@ -27,14 +27,17 @@ try {
     "model line": `${lineFor(listen, 0, false).model} · ${lineFor(listen, 0, false).text}`,
   };
   for (const [where, text] of Object.entries(others)) assert.ok(!/listen/i.test(text), `${where} says "${text}"; the header already says Listening`);
-  assert.match(app, /core\.listening \? "Listening"/, "the header still says Listening");
+  const { statusLine } = await server.ssrLoadModule("/src/core.ts");
+  assert.equal(statusLine({ connected: true, listening: true, noKey: false, refused: false, resting: false, paused: false }), "Listening", "the header still says Listening");
+  assert.match(app, /const status = statusLine\(\{ connected: core\.connected, listening: core\.listening/, "the header is wired to it");
   assert.equal(others["empty map"], "Say what's on your mind.");
   assert.equal(others.composer, "Or type a thought");
   assert.equal(others["model line"], "Muse Voice Transcribe 1.0 · mic on", "the model line names who hears");
   assert.equal(lineFor(listen, 0, true).text, "hearing you");
   assert.equal(liveLine("", true), "Starting the microphone…", "starting the mic still answers the click");
   assert.equal(liveLine("I never finish my", false), "I never finish my");
-  assert.match(app, /emptyLine\(\{ starting: startingMic, listening: core\.listening, pending: pending\.length, noKey: core\.noKey \}\)/, "the empty map is wired to the rule");
+  assert.match(app, /emptyLine\(\{ starting: startingMic, listening: core\.listening, pending: pending\.length, noKey: core\.noKey, resting: core\.resting \}\)/, "the empty map is wired to the rule");
+  assert.match(emptyLine({ starting: false, listening: false, pending: 1, noKey: true, resting: true }), /tomorrow/, "a held-back key says when (the daily limit)");
   assert.match(app, /\{liveLine\(core\.partial \|\| core\.handoff, startingMic\)\}/, "the dock is wired to the rule");
 
   // The models line in the end card's words (docs/demo.md, end card): one model, its steps together.

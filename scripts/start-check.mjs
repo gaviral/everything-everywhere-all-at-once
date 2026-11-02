@@ -3,11 +3,13 @@
 // process environment win, takes PORT from either, and probes every address the core binds for the mode, so a
 // missing key or a busy port stops the run before the build, never after it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { check, coreAddresses, corePort, free, lanIp, loadDotenv } from "./start.mjs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { check, coreAddresses, corePort, free, lanIp, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
 
@@ -121,5 +123,57 @@ if (lan) {
 r = await check(["room"], { MODEL_API_KEY: "k", ROOM_CODE: "abcd2345", ROOM_HTTPS: "1", PORT: String(sparePort) }, repo(), noLan);
 assert.equal(r.code, 1);
 assert.match(r.err, /needs this laptop on a network/);
+
+// Another machine: before a few minutes of compiling, run.sh names what the build will lack, with the one command
+// that fixes it. The floor is core/Cargo.toml's rust-version (the highest any locked crate needs: uuid 1.29, 1.89).
+// fileURLToPath, not .pathname: a clone under a folder with a space would read "%20" and miss core/Cargo.toml.
+const root = fileURLToPath(new URL("..", import.meta.url));
+const floor = rustFloor(root);
+assert.equal(floor, "1.89");
+assert.match(readFileSync(join(root, "README.md"), "utf8"), new RegExp(`Needs Rust ${floor.replace(".", "\\.")} or newer`));
+// A fake machine: `has` lists the commands that run; rustc answers `rustc`.
+const machine = ({ platform = "linux", rustc = "rustc 1.91.0 (abc 2025-10-30)", has = [], os = "ID=ubuntu\nID_LIKE=debian\n", env = {} }) =>
+  toolchainProblem({ platform, floor, osRelease: os, env, run: (cmd) => cmd === "rustc" ? (rustc ? { ok: true, out: rustc } : { ok: false, out: "" }) : { ok: has.includes(cmd), out: "" } });
+const linuxAll = ["rustup", "cc", "pkg-config", "pkg-config openssl"];
+assert.equal(machine({ has: linuxAll }), null);
+// Rust: older than the floor stops with the fix; rustup or not decides which fix. Versions compare as numbers.
+assert.match(machine({ rustc: "rustc 1.75.0 (82e1608df 2023-12-21) (built from a source tarball)", has: linuxAll }), /Rust 1\.89 or newer.*rustc 1\.75\.0[\s\S]*Run: rustup update$/);
+assert.match(machine({ rustc: "rustc 1.75.0", has: ["cc", "pkg-config", "pkg-config openssl"] }), /Run: curl .*https:\/\/sh\.rustup\.rs \| sh$/);
+assert.equal(machine({ rustc: "rustc 1.89.0 (29483883e 2025-08-04)", has: linuxAll }), null);
+assert.equal(machine({ rustc: "rustc 1.100.0", has: linuxAll }), null);
+assert.equal(machine({ rustc: "rustc 1.90.0-nightly (abc 2025-07-01)", has: linuxAll }), null);
+assert.equal(machine({ rustc: null, has: linuxAll }), null, "no rustc: run.sh's own cargo check already says so");
+// Linux: a C compiler (the linker cargo calls is cc), pkg-config and OpenSSL's headers; one install line for all.
+const apt = "Run: sudo apt install build-essential pkg-config libssl-dev";
+let m = machine({ has: ["rustup"] });
+assert.match(m, /a C compiler, pkg-config, OpenSSL's headers/);
+assert.ok(m.endsWith(apt), m);
+m = machine({ has: ["rustup", "cc", "pkg-config"] });
+assert.match(m, /missing: OpenSSL's headers/);
+assert.ok(m.endsWith(apt), m);
+assert.ok(machine({ has: ["rustup", "pkg-config", "pkg-config openssl"] }).endsWith(apt));
+assert.equal(machine({ has: ["rustup", "cc"], env: { OPENSSL_DIR: "/opt/ssl" } }), null, "OPENSSL_DIR points openssl-sys past pkg-config");
+assert.equal(machine({ has: ["rustup", "cc"], env: { OPENSSL_LIB_DIR: "/opt/ssl/lib", OPENSSL_INCLUDE_DIR: "/opt/ssl/include" } }), null, "both directory variables point openssl-sys past pkg-config");
+assert.match(machine({ has: ["rustup", "cc"], env: { OPENSSL_LIB_DIR: "/opt/ssl/lib" } }), /missing: pkg-config, OpenSSL's headers/, "the lib directory alone still needs pkg-config for the headers");
+assert.ok(machine({ has: ["rustup"], os: 'ID=fedora\n' }).endsWith("Run: sudo dnf install gcc pkgconf-pkg-config openssl-devel"));
+assert.ok(machine({ has: ["rustup"], os: 'ID="rocky"\nID_LIKE="rhel centos fedora"\n' }).endsWith("Run: sudo dnf install gcc pkgconf-pkg-config openssl-devel"));
+assert.ok(machine({ has: ["rustup"], os: "ID=arch\n" }).endsWith("Run: sudo pacman -S --needed base-devel openssl"));
+assert.match(machine({ has: ["rustup"], os: "ID=gentoo\n" }), /sudo apt install build-essential pkg-config libssl-dev \(Debian or Ubuntu/);
+// Both wrong: the Rust fix comes first, then the rest, so one read fixes both.
+assert.match(machine({ rustc: "rustc 1.75.0", has: ["rustup"] }), /rustup update\n[\s\S]*apt install/);
+// A Mac: Apple's command-line tools hold the C compiler and linker; OpenSSL isn't used there (native TLS).
+assert.equal(machine({ platform: "darwin", has: ["rustup", "xcode-select -p"] }), null);
+assert.ok(machine({ platform: "darwin", has: ["rustup"] }).endsWith("Run: xcode-select --install"));
+// Windows (Git Bash): only the Rust check; rustup's own installer sets up the C++ build tools.
+assert.equal(machine({ platform: "win32", has: ["rustup"] }), null);
+// This machine passes, as run.sh will ask it.
+assert.equal(toolchainProblem({ floor }), null, "this machine can't build the core");
+
+// A Windows clone (core.autocrlf=true) keeps every shell script LF, or run.sh dies on its first line.
+const sh = execFileSync("git", ["ls-files", "*.sh"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+assert.ok(sh.includes("run.sh"));
+for (const line of execFileSync("git", ["check-attr", "eol", "--", ...sh], { cwd: root, encoding: "utf8" }).trim().split("\n"))
+  assert.match(line, /: eol: lf$/, `${line}: a Windows checkout would give it CRLF line endings`);
+assert.match(readFileSync(join(root, "README.md"), "utf8"), /\*\*Windows:\*\* .*WSL2/);
 
 console.log("start-check: all passed");

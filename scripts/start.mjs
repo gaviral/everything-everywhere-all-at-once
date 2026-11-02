@@ -2,7 +2,10 @@
 // port shows up in a second, not after a few minutes of compiling. It answers with what the core itself will see:
 // the process environment first, then ../.env and the first .env found from core/ upward, read the way the core's
 // dotenvy 0.15 reads them (an `export ` prefix, spaces around `=`, quotes, `#` comments, $VAR), and it probes the
-// addresses the core will bind for that mode. On success it prints the port; on a problem it says what to do, exit 1.
+// addresses the core will bind for that mode. Before any of that, it checks what the build needs on this machine (the
+// Rust version, a C compiler, OpenSSL's headers on Linux). On success it prints the port; on a problem it says what to
+// do, exit 1.
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { createSocket } from "node:dgram";
@@ -196,8 +199,71 @@ export async function check(args, env, root, lan = lanIp) {
   return { code: 0, out: String(port), err: err.join("\n") };
 }
 
+/** The oldest Rust the core builds with: core/Cargo.toml's rust-version (the highest any locked crate needs). */
+export function rustFloor(root) {
+  return /^rust-version\s*=\s*"([\d.]+)"/m.exec(readFileSync(join(root, "core", "Cargo.toml"), "utf8"))?.[1] ?? null;
+}
+
+/** Whether a command runs and exits 0 (a missing command is a no); `pkg-config openssl` asks for OpenSSL's headers. */
+function runs(cmd) {
+  const [file, args] = {
+    rustc: ["rustc", ["--version"]],
+    rustup: ["rustup", ["--version"]],
+    cc: ["cc", ["--version"]],
+    "pkg-config": ["pkg-config", ["--version"]],
+    "pkg-config openssl": ["pkg-config", ["--exists", "openssl"]],
+    "xcode-select -p": ["xcode-select", ["-p"]],
+  }[cmd];
+  const r = spawnSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 });
+  return { ok: !r.error && r.status === 0, out: r.stdout ?? "" };
+}
+
+/** The one line that installs a C compiler, pkg-config and OpenSSL's headers, from /etc/os-release. */
+function linuxInstall(osRelease) {
+  const ids = (/^ID_LIKE=(.*)$/m.exec(osRelease)?.[1] ?? "") + " " + (/^ID=(.*)$/m.exec(osRelease)?.[1] ?? "");
+  const has = (id) => ids.replace(/"/g, "").split(/\s+/).includes(id);
+  if (has("debian") || has("ubuntu")) return "sudo apt install build-essential pkg-config libssl-dev";
+  if (has("fedora") || has("rhel")) return "sudo dnf install gcc pkgconf-pkg-config openssl-devel";
+  if (has("arch")) return "sudo pacman -S --needed base-devel openssl";
+  return "sudo apt install build-essential pkg-config libssl-dev (Debian or Ubuntu; elsewhere, your system's C compiler, pkg-config and OpenSSL development packages)";
+}
+
+/** What this machine lacks to build the core, as what to say (the fix last, one command), or null. run.sh has already
+ *  checked that cargo exists. */
+export function toolchainProblem({ floor, platform = process.platform, run = runs, env = process.env, osRelease } = {}) {
+  const problems = [];
+  const rustc = run("rustc");
+  const [have, need] = [/rustc (\d+)\.(\d+)/.exec(rustc.out)?.slice(1).map(Number), floor?.split(".").map(Number)];
+  if (rustc.ok && have && need && (have[0] < need[0] || (have[0] === need[0] && have[1] < need[1]))) {
+    const v = /rustc (\S+)/.exec(rustc.out)[1];
+    problems.push(run("rustup").ok
+      ? `Rust ${floor} or newer is needed; this is rustc ${v}.\nRun: rustup update`
+      : `Rust ${floor} or newer is needed; this is rustc ${v}, from the system rather than rustup. Install rustup's, then open a new terminal and run this again.\nRun: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`);
+  }
+  if (platform === "darwin" && !run("xcode-select -p").ok) {
+    problems.push("The Rust core's build needs Apple's command-line tools (its C compiler and linker).\nRun: xcode-select --install");
+  } else if (platform === "linux") {
+    const missing = [];
+    if (!run("cc").ok) missing.push("a C compiler");
+    // openssl-sys skips pkg-config when told where OpenSSL is: OPENSSL_DIR, or both OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR.
+    const set = (k) => !!(env[k] ?? "").trim();
+    if (!set("OPENSSL_DIR") && !(set("OPENSSL_LIB_DIR") && set("OPENSSL_INCLUDE_DIR"))) {
+      if (!run("pkg-config").ok) missing.push("pkg-config");
+      if (!run("pkg-config openssl").ok) missing.push("OpenSSL's headers");
+    }
+    if (missing.length) {
+      let os = osRelease;
+      if (os === undefined) { try { os = readFileSync("/etc/os-release", "utf8"); } catch { os = ""; } }
+      problems.push(`The Rust core's build needs a C compiler, pkg-config and OpenSSL's headers; missing: ${missing.join(", ")}.\nRun: ${linuxInstall(os)}`);
+    }
+  }
+  return problems.length ? problems.join("\n") : null;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const lacks = toolchainProblem({ floor: rustFloor(root) });
+  if (lacks) { console.error(lacks); process.exit(1); }
   const { code, out, err } = await check(process.argv.slice(2), process.env, root);
   if (err) console.error(err);
   if (out) console.log(out);

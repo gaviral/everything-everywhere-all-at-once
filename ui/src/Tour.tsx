@@ -18,7 +18,7 @@ function rememberTour() {
 
 type Step = { slot: string; title: string; text: string };
 
-export function Tour({ populated, noKey }: { populated: boolean; noKey: boolean }) {
+export function Tour({ populated, noKey, resting = false }: { populated: boolean; noKey: boolean; resting?: boolean }) {
   // The initial snapshot determines the path, even if the map changes during the tour.
   const { hosted } = useSite();
   const [order] = useState(() => populated ? ["tour-map", "tour-composer", "tour-tools"] : ["tour-composer", "tour-map", "tour-tools"]);
@@ -26,7 +26,7 @@ export function Tour({ populated, noKey }: { populated: boolean; noKey: boolean 
   // Read each render: the core's word about the key comes right after the snapshot that mounts the tour.
   const copy: Record<string, Step> = {
     "tour-composer": noKey
-      ? { slot: "tour-composer", title: "Type to move around", text: keyWords(hosted, false, "tour") }
+      ? { slot: "tour-composer", title: "Type to move around", text: keyWords(hosted, false, "tour", resting) }
       : { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" },
     "tour-map": { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." },
     "tour-tools": noKey

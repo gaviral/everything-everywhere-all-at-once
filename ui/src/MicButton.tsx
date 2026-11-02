@@ -10,17 +10,20 @@ import "./micbutton.css";
 // - starting: a dashed ring, not yet whole
 // - listening: a filled blue disc with a thin ring; hearing you: the ring swells with your voice
 // - paused ("stop listening"): the off disc with a pause badge, so it isn't mistaken for never started
-// - no key and refused: an amber mic struck through (amber is what needs you)
+// - no key, refused, resting (the hosted site's daily limit) and blocked (the browser or the computer keeps the mic
+//   from this page): an amber mic struck through (amber is what needs you); each says why on a tap
 // - connecting: faded, and it can't be pressed
-export type MicState = "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused";
+export type MicState = "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused" | "resting" | "blocked";
 
 export function micState(s: { connected: boolean; capturing: boolean; starting: boolean; serviceOn: boolean;
-  words: boolean; paused: boolean; noKey: boolean; refused: boolean }): MicState {
+  words: boolean; paused: boolean; noKey: boolean; refused: boolean; resting?: boolean; blocked?: boolean }): MicState {
   // Capturing comes first: the button never reads off while the browser is taking sound.
   if (s.capturing) return !s.serviceOn ? "starting" : s.words ? "hearing" : "listening";
   if (s.starting) return "starting";
   if (!s.connected) return "offline";
-  if (s.noKey) return s.refused ? "refused" : "nokey";
+  // Without the AI, allowing the mic wouldn't help yet: the key's state comes first.
+  if (s.noKey) return s.refused ? "refused" : s.resting ? "resting" : "nokey";
+  if (s.blocked) return "blocked";
   return s.paused ? "paused" : "off";
 }
 
@@ -46,6 +49,8 @@ export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
   paused: { tip: "Paused by “stop listening”: nothing is heard. Tap to talk again.", label: "Start listening, paused" },
   nokey: { tip: keyWords(false, false, "mic"), label: "Start listening, needs an AI key" },
   refused: { tip: keyWords(false, true, "mic"), label: "Start listening, AI key refused" },
+  resting: { tip: keyWords(true, false, "mic", true), label: "Start listening, free tries used up until tomorrow" },
+  blocked: { tip: "The microphone is blocked for this page. Tap to see how to allow it, or type.", label: "Start listening, microphone blocked" },
 };
 
 /** The composer's placeholder, which sits where your eyes are while you talk. */
@@ -55,6 +60,8 @@ export function composerHint(state: MicState): string {
     : state === "paused" ? "Paused · tap the mic to talk, or type"
     : state === "nokey" ? "Type a thought · the mic needs an AI key"
     : state === "refused" ? "Type a thought · the AI key was refused"
+    : state === "resting" ? "Type a thought · placed tomorrow"
+    : state === "blocked" ? "Type a thought · the mic is blocked"
     : state === "offline" ? "Type a thought — it will send when connected"
     : "Type a thought, or tap the mic";
 }
@@ -106,7 +113,7 @@ export function MicGlyph({ state }: { state: MicState }) {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-      {(state === "nokey" || state === "refused") && <path d="M4 3l16 18" />}
+      {(state === "nokey" || state === "refused" || state === "resting" || state === "blocked") && <path d="M4 3l16 18" />}
     </svg>
     {state === "paused" && <span className="mic-badge" aria-hidden="true"><i /><i /></span>}
   </>;

@@ -33,6 +33,8 @@
 @media (prefers-reduced-motion: reduce) { .recap-feedback .recap-loading { animation: recap-late 1ms step-end 400ms both !important; } }
 .recap-feedback .recap-error { padding: 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); }
 .recap-summary { max-width: 660px; margin: 22px 0 0; font-size: 18px; line-height: 1.55; letter-spacing: -.015em; }
+/* No word alone on the summary's last line ("…booking pottery if under / $80."); a no-op before Chrome 117. */
+.recap-summary { text-wrap: pretty; }
 .recap-limit { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
 .recap-content { padding: 0 32px; overflow-wrap: anywhere; }
 .recap-content section { padding-block: 22px; border-top: 1px solid var(--line); }

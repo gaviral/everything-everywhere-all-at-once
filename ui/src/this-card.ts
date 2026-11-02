@@ -47,16 +47,28 @@ export function selectedPoint(doc: Document): string | null {
   return null;
 }
 
+/** Whether `node` is in the composer, where typing "this" means what you selected before you came to type. */
+function inComposer(node: unknown): boolean {
+  return !!node && typeof (node as Element).closest === "function" && !!(node as Element).closest("form.composer");
+}
+
 /** Calls `report` with the selected and pointed card, and the point you're on (selected, else under the pointer),
- *  whenever any changes; returns the way to stop. */
+ *  whenever any changes; returns the way to stop. Focus moving into the composer keeps the card and point you had
+ *  selected, ahead of the pointer, so a typed "delete this" acts on them (the composer is in no card); a click
+ *  outside the composer, Esc there, or focus anywhere else lets them go. */
 export function watchAttention(report: (selected: string | null, pointed: string | null, point: string | null) => void, doc: Document = document): () => void {
   let selected: string | null = null;
   let pointed: string | null = null;
   let point: string | null = null;
   let pointer: string | null = null;
+  let held: { thread: string | null; point: string | null } | null = null;
   const update = (nextPointed: string | null, nextPointer: string | null = pointer) => {
-    const nextSelected = selectedThread(doc);
-    const nextPoint = selectedPoint(doc) ?? nextPointer;
+    let nextSelected = selectedThread(doc);
+    let selectedAt = selectedPoint(doc);
+    if (nextSelected || selectedAt) held = { thread: nextSelected, point: selectedAt };
+    else if (held && inComposer(doc.activeElement)) ({ thread: nextSelected, point: selectedAt } = held);
+    else held = null;
+    const nextPoint = selectedAt ?? nextPointer;
     pointer = nextPointer;
     if (nextSelected === selected && nextPointed === pointed && nextPoint === point) return;
     selected = nextSelected;
@@ -69,11 +81,16 @@ export function watchAttention(report: (selected: string | null, pointed: string
   // Focus leaves one element before it reaches the next: read it once it has landed.
   let timer = 0;
   const reselect = () => { clearTimeout(timer); timer = setTimeout(() => update(pointed), 0) as unknown as number; };
+  const drop = () => { held = null; reselect(); };
+  const down = (event: PointerEvent) => { if (held && !inComposer(event.target)) drop(); };
+  const key = (event: KeyboardEvent) => { if (held && event.key === "Escape" && inComposer(event.target)) drop(); };
   doc.addEventListener("pointerover", over);
   doc.documentElement.addEventListener("pointerleave", left);
   doc.addEventListener("focusin", reselect);
   doc.addEventListener("focusout", reselect);
   doc.addEventListener("selectionchange", reselect);
+  doc.addEventListener("pointerdown", down, true);
+  doc.addEventListener("keydown", key, true);
   return () => {
     clearTimeout(timer);
     doc.removeEventListener("pointerover", over);
@@ -81,6 +98,8 @@ export function watchAttention(report: (selected: string | null, pointed: string
     doc.removeEventListener("focusin", reselect);
     doc.removeEventListener("focusout", reselect);
     doc.removeEventListener("selectionchange", reselect);
+    doc.removeEventListener("pointerdown", down, true);
+    doc.removeEventListener("keydown", key, true);
   };
 }
 
