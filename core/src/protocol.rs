@@ -104,6 +104,8 @@ pub enum ClientMsg {
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.
     Correct { thought_id: String, accept: bool },
+    /// "Not one idea": the thought stops carrying on the words before a pause (chunks.rs).
+    Unlink { thought_id: String },
     /// What "this" means here: the thread the person selected (keyboard focus they moved there, or words selected
     /// in it) and the one under their pointer, sent when either changes (catalog.rs `this`).
     Attention {

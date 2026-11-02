@@ -1,0 +1,25 @@
+/* What the placer read into a point (chunks.tsx). Quiet, like "✦ fixed": they show only when the AI joined or assumed
+   something, and say more on hover or focus. */
+
+/* "✦ joined": the same pill as "✦ fixed", turning into what a tap does on hover and focus. */
+.chunk-mark {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.chunk-mark > span:last-child,
+.chunk-mark:is(:hover, :focus-visible) > span:nth-child(2) { display: none; }
+.chunk-mark:is(:hover, :focus-visible) > span:last-child { display: inline; }
+.chunk-mark > span:first-child, .assumed > span { color: var(--ai); }
+
+/* "✦ Assumed …": its own line under the point, in the point's muted small type, so it never crowds the words. */
+.assumed { flex-basis: 100%; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* "Why here", under the words said when the point is open. */
+.said .why { display: block; margin-top: 2px; font-size: 12px; }

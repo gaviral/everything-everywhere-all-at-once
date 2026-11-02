@@ -10,6 +10,7 @@ type Handlers = {
   approve: (id: string) => void;
   tag: (threadId: string, tag: string, keep: boolean) => void;
   correct: (thoughtId: string, accept: boolean) => void;
+  unlink: (thoughtId: string) => void;
 };
 import { startMic } from "./mic";
 import { Apps, DockBuild } from "./Apps";
@@ -22,6 +23,7 @@ import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
 import { useRevert } from "./revert";
+import { NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { composerHint, MicButton, micState } from "./MicButton";
@@ -448,6 +450,7 @@ export default function App() {
   }, [world.active]);
 
   const threadById = useMemo(() => new Map(world.threads.map((thread) => [thread.id, thread])), [world.threads]);
+  const notes = useMemo(() => world.notes ?? {}, [world.notes]);
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const previousThoughtGroups = useRef(new Map<string, Thought[]>());
   const thoughtsByThread = useMemo(() => {
@@ -515,7 +518,7 @@ export default function App() {
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
   const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
-  const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }), [core.setItem, core.approve, core.tag, core.correct]);
+  const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct, unlink: core.unlink }), [core.setItem, core.approve, core.tag, core.correct, core.unlink]);
 
   // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
   // folded) until you change them; where you are on the map doesn't fold them again. An opened thread comes to the top.
@@ -845,7 +848,9 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
+          <NotesContext.Provider value={notes}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </NotesContext.Provider>
         )}
       </main>}
 
@@ -1074,6 +1079,8 @@ const MapCards = memo(function MapCards(props: MapProps) {
 function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
+  // Two parts said across a pause show as one point (chunks.tsx).
+  const points = useIdeas(thoughts);
   const ideas = ideasByThread.get(thread.id) ?? [];
   const actions = actionsByThread.get(thread.id) ?? [];
   const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length;
@@ -1105,7 +1112,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
-            <span className="thread-count">{thoughts.length} {thoughts.length === 1 ? "thought" : "thoughts"}</span>
+            <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
             {/* Folding a thread mustn't hide what waits for you there: the AI's proposals still to keep or dismiss. */}
             {collapsed && waiting > 0 && <span className="chip waiting">{waiting} to review</span>}
           </div>
@@ -1140,8 +1147,8 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
       <ul className="points">
-        {thoughts.map((t) => (
-          <Point key={t.id} thought={t} on={on} layoutDependency={thoughts} />
+        {points.map(({ thought: t, heads }) => (
+          <Point key={t.id} thought={t} heads={heads} on={on} layoutDependency={thoughts} />
         ))}
       </ul>
       {ideas.map((s) => (
@@ -1189,7 +1196,7 @@ function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: bo
   );
 }
 
-const Point = memo(function Point({ thought, on, layoutDependency }: { thought: Thought; on: Handlers; layoutDependency: Thought[] }) {
+const Point = memo(function Point({ thought, heads, on, layoutDependency }: { thought: Thought; heads: Thought[]; on: Handlers; layoutDependency: Thought[] }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
@@ -1199,7 +1206,10 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
-  const said = saidDiffers(thought.text, thought.point);
+  // Joined across a pause, the words are each part as said; a "why here" opens with them.
+  const why = useNote(thought.id)?.why;
+  const words = heads.length ? wordsSaid(heads, thought) : `“${thought.text.trim()}”`;
+  const said = heads.length > 0 || !!why || saidDiffers(thought.text, thought.point);
   const [open, flip] = useSaidOpen(thought.id);
   const toggle = said ? (event: React.MouseEvent) => {
     // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
@@ -1208,12 +1218,13 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
+      <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
@@ -1238,7 +1249,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
         )
       )}
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>“{thought.text.trim()}”</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{words}{why && <span className="why">Why here: {why}</span>}</span>}
     </motion.li>
   );
 });

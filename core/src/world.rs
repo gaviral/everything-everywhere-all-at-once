@@ -141,6 +141,9 @@ pub struct World {
     pub apps_seeded: bool,
     #[serde(default)]
     pub recaps: Vec<crate::recap::Recap>,
+    /// Thought id → what the placer read into it: the words it carries on, an assumption, why it went there (chunks.rs).
+    #[serde(default)]
+    pub notes: std::collections::HashMap<String, crate::chunks::Note>,
     /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
     #[serde(default, skip_serializing)]
     pub read_ms: std::collections::HashSet<u64>,
@@ -215,6 +218,8 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// What the placer read into a placed thought (chunks.rs); an empty note takes it away ("not one idea").
+    ThoughtNoted { thought_id: String, note: crate::chunks::Note },
     /// An empty thread taken back with the words that started it, with nowhere to merge it (catalog.rs: "new thread
     /// about …" on an empty map, then Undo): it leaves the map, and nobody is on it any more. Only while it holds no
     /// thought and no branch; this journal keeps it.
@@ -302,7 +307,17 @@ impl World {
                     self.thoughts.insert(i + 1, rest.clone());
                 }
             }
-            Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::ThoughtSkipped { thought_id } => {
+                self.thoughts.retain(|t| &t.id != thought_id);
+                self.notes.remove(thought_id);
+            }
+            Change::ThoughtNoted { thought_id, note } => {
+                if note.is_empty() {
+                    self.notes.remove(thought_id);
+                } else if self.thoughts.iter().any(|t| &t.id == thought_id) {
+                    self.notes.insert(thought_id.clone(), note.clone());
+                }
+            }
             Change::ThreadRemoved { thread_id } => {
                 let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
@@ -988,6 +1003,10 @@ mod tests {
             placed("b", "T3", "muse bark", "Muse Spark", true),
             Change::ThreadTouched { thread_id: "T3".into(), last_point: "Ask Muse Spark about b".into(), at_ms: 20 },
             Change::ActiveChanged { thread_id: "T3".into(), speaker: "Sam".into() },
+            Change::ThoughtNoted {
+                thought_id: "b".into(),
+                note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into() },
+            },
             Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() },
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget".into() },
             Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
@@ -1079,6 +1098,7 @@ mod tests {
                 | Change::ThoughtCorrected { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
+                | Change::ThoughtNoted { .. }
                 | Change::ThreadRemoved { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
@@ -1093,7 +1113,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 29, "one of each kind of change");
+        assert_eq!(kinds.len(), 30, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
