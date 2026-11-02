@@ -66,7 +66,7 @@ try {
   assert.match(app, /<MovePoint thought=\{thought\} \/>/);
   assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\} \/>/);
   assert.match(app, /useDropPoint\(thread\.id\)[\s\S]*\{\.\.\.drop\.props\}/);
-  assert.match(app, /<MovesProvider threads=\{world\.threads\} move=\{core\.move\} rename=\{core\.rename\}>/);
+  assert.match(app, /<MovesProvider threads=\{world\.threads\} move=\{core\.move\} rename=\{core\.rename\} remove=\{core\.remove\}>/);
   assert.match(app, /“Move that to \[thread\]”[^<]*“Rename this to \[title\]”/);
   // On a phone Move shows once a tap focuses its point, so every point takes focus, an imported one (no placement
   // time) too, without becoming a Tab stop of its own.
@@ -87,6 +87,46 @@ try {
   const protocol = readFileSync(new URL("../core/src/protocol.rs", import.meta.url), "utf8");
   assert.match(protocol, /Move \{\s*thought_id: String,[\s\S]*?thread_id: Option<String>,\s*\}/);
   assert.match(protocol, /Rename \{ thread_id: String, title: String \}/);
+
+  // Delete: every point's Delete (in Move's span, so it shows when Move does) and the Delete key on a focused point
+  // send the message the core reads, and "delete this" knows the point you're on (this-card.ts `pointOf`).
+  assert.match(moves, /className="move-button delete-button" aria-label=\{`Delete “\$\{thought\.point\}”`\}/);
+  assert.match(moves, /event\.key !== "Delete" && event\.key !== "Backspace"[\s\S]*matches\("li\[id\^='point-'\]"\)[\s\S]*remove\(point\.id\.slice/);
+  assert.match(core, /type: "delete", thought_id/);
+  assert.match(protocol, /Delete \{ thought_id: String \}/);
+  assert.match(app, /“Delete this”/);
+  // Undo puts a thread and a point back where they stood, as the core does (world.rs `PutBack`); either gone, nothing.
+  const off = apply(apply(world, { type: "thought_skipped", thought_id: "b" }), { type: "thread_removed", thread_id: "T2" });
+  const back = [{ type: "thread_added", thread: world.threads[1] }, { type: "thought_added", thought: world.thoughts[2] },
+    { type: "put_back", id: "T2", before: "T3" }].reduce(apply, off);
+  assert.deepEqual(back.threads.map((t) => t.id), ["T1", "T2", "T3"]);
+  const first = [{ type: "thought_skipped", thought_id: "a" }, { type: "thought_added", thought: world.thoughts[0] },
+    { type: "put_back", id: "a", before: "w" }].reduce(apply, world);
+  assert.deepEqual(first.thoughts.map((t) => t.id), ["a", "w", "b"]);
+  assert.equal(apply(world, { type: "put_back", id: "a", before: "gone" }).thoughts, world.thoughts);
+  assert.equal(apply(world, { type: "put_back", id: "a", before: "a" }).thoughts, world.thoughts);
+  // Deleting a card's only point takes the card too: focus goes to the next card's title, else the one before.
+  assert.match(moves, /if \(card\.querySelector\("\.thread"\)\) return own\?\.focus\(\)[\s\S]*DOCUMENT_POSITION_FOLLOWING[\s\S]*\(after \?\? others\.at\(-1\) \?\? own\)\?\.focus\(\)/);
+  const { pointOf, watchAttention, attentionTeller } = await server.ssrLoadModule("/src/this-card.ts");
+  const li2 = (id) => ({ closest: (s) => (s.startsWith("li") ? { id } : null) });
+  assert.equal(pointOf(li2("point-th-1")), "th-1");
+  assert.equal(pointOf(li2("thread-T1")), null, "a card is no point");
+  assert.equal(pointOf(null), null);
+  const handlers = {};
+  const page = { getSelection: () => ({ isCollapsed: true }), activeElement: null, body: {}, addEventListener: (t, f) => { handlers[t] = f; },
+    removeEventListener: () => {}, documentElement: { addEventListener: (t, f) => { handlers[t] = f; }, removeEventListener: () => {} } };
+  const told = [];
+  const stop = watchAttention((...a) => told.push(a), page);
+  handlers.pointerover({ target: li2("point-th-1") });
+  handlers.pointerover({ target: li2("point-th-2") });
+  handlers.pointerleave();
+  stop();
+  assert.deepEqual(told.map((a) => a[2]), ["th-1", "th-2", null], "each point the pointer is on, then none");
+  const teller = attentionTeller();
+  const sent = [];
+  teller.tell(null, "T1", (m) => sent.push(JSON.parse(m)), "th-1");
+  teller.tell(null, "T1", (m) => sent.push(JSON.parse(m)));
+  assert.deepEqual(sent, [{ type: "attention", selected: null, pointed: "T1", point: "th-1" }, { type: "attention", selected: null, pointed: "T1" }]);
   console.log("moves-check: ok");
 } finally {
   await server.close();

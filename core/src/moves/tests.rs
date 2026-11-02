@@ -454,6 +454,132 @@ async fn following_a_move_ends_a_new_thread_asked_for_before_it() {
     assert!(f.core.new_threads.starts("next"));
 }
 
+// --- Delete -------------------------------------------------------------------------------------------------------
+
+fn has(f: &Fixture, thought: &str) -> bool {
+    f.core.snapshot().thoughts.iter().any(|t| t.id == thought)
+}
+
+#[test]
+fn the_words_read_as_a_delete_only_as_the_whole_turn() {
+    let this = Some(Ask::Delete { latest: false });
+    let last = Some(Ask::Delete { latest: true });
+    assert_eq!(read("Delete this."), this);
+    assert_eq!(read("Okay, delete this thought please"), this);
+    assert_eq!(read("Remove that point from the map"), this);
+    assert_eq!(read("Forget this thought"), this);
+    assert_eq!(read("Forget the last one"), last);
+    assert_eq!(read("Delete my last thought"), last);
+    assert_eq!(read("Erase what I just said"), last);
+    // Bare "delete that" stays "scratch that"; "forget it" and "forget that" set the unfinished card aside.
+    assert_eq!(catalog::classify("Delete that"), Some(Act::Undo));
+    assert_eq!(catalog::classify("Forget that"), Some(Act::Forget));
+    assert_eq!(catalog::classify("Forget the last one"), Some(Act::Delete));
+    for talk in ["Delete this email from my inbox", "I need to remove that one tree", "Forget this one", "Remove the stain from the rug", "Delete the app"] {
+        assert_eq!(kind(talk), None, "{talk}");
+    }
+}
+
+#[tokio::test]
+async fn any_point_deletes_by_its_button_and_undo_brings_it_back_as_the_journal_replays() {
+    let base = slipped();
+    let f = Fixture::new(base.clone());
+    // An older point, not the last: the rest of its thread stays, and the card shows its own latest point.
+    let lines = f.watch(|core| click_delete(core, "you", "a"));
+    assert_eq!(lines, ["notice Deleted “Plant the tomatoes”", "undoable 1"], "{lines:?}");
+    assert!(!has(&f, "a") && has(&f, "w"));
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Learn to throw on the wheel");
+    let replayed = f.replayed(base.clone());
+    assert!(!replayed.thoughts.iter().any(|t| t.id == "a"), "replay deletes it too");
+    // One step back: the point is where it was.
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert!(has(&f, "a") && f.on("a") == "T1");
+    let replayed = f.replayed(base);
+    assert_eq!(serde_json::to_value(&*f.core.snapshot()).unwrap()["thoughts"], serde_json::to_value(&replayed).unwrap()["thoughts"]);
+    // Gone already: said, not silent.
+    f.watch(|core| click_delete(core, "you", "a"));
+    assert_eq!(f.watch(|core| click_delete(core, "you", "a")), ["notice That thought isn't on the map any more"]);
+}
+
+#[tokio::test]
+async fn a_threads_only_point_takes_the_thread_with_it_and_undo_puts_both_back() {
+    let f = Fixture::new(slipped());
+    let lines = f.watch(|core| click_delete(core, "you", "c"));
+    assert!(lines.contains(&"removed T3".to_string()), "{lines:?}");
+    assert!(f.core.snapshot().thread("T3").is_none(), "no empty card is left behind");
+    let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert!(undone.contains(&"thread T3 Bills".to_string()), "{undone:?}");
+    assert_eq!(f.on("c"), "T3");
+}
+
+#[tokio::test]
+async fn delete_this_takes_the_point_you_are_on_else_your_latest_and_scratch_that_undoes_it() {
+    let f = Fixture::new(slipped());
+    // On an older point (focused or under the pointer): that one, not the latest.
+    catalog::attend_point(&f.core, "you", Some("b".into()));
+    let lines = f.say("Delete this").await;
+    assert!(lines.contains(&"notice Deleted “Pottery class is on Thursdays”".to_string()), "{lines:?}");
+    assert!(!has(&f, "b") && has(&f, "w"));
+    f.say("Scratch that").await;
+    assert!(has(&f, "b"), "one step back");
+    // "The last one" is always the latest, wherever you point; the command is never a thought.
+    f.say("Forget the last one").await;
+    assert!(!has(&f, "w") && has(&f, "b"));
+    assert!(f.core.snapshot().thoughts.iter().all(|t| !t.text.contains("last one")));
+    // Off the point: "delete this" is the latest again.
+    catalog::attend_point(&f.core, "you", None);
+    let f = Fixture::new(slipped());
+    f.say("Delete this").await;
+    assert!(!has(&f, "w"));
+}
+
+#[tokio::test]
+async fn delete_that_with_nothing_just_before_deletes_your_latest_with_undo() {
+    let f = Fixture::new(slipped());
+    let lines = f.say("Delete that").await;
+    assert!(lines.contains(&"notice Deleted “Learn to throw on the wheel”".to_string()), "{lines:?}");
+    assert!(!has(&f, "w"));
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert!(has(&f, "w"));
+    // Right after words just said, it still takes those back (catalog.rs "scratch that").
+    f.say("Buy more clay").await;
+    let said = f.core.snapshot().thoughts.iter().find(|t| t.text == "Buy more clay").map(|t| t.id.clone()).unwrap();
+    f.say("Delete that").await;
+    assert!(!has(&f, &said) && has(&f, "w"));
+}
+
+#[tokio::test]
+async fn undo_brings_a_point_back_to_its_thread_even_after_someone_else_emptied_it() {
+    let f = Fixture::new(slipped());
+    // You delete one of Garden's two points; Ben then deletes the other, and Garden leaves the map.
+    let yours = f.watch(|core| click_delete(core, "you", "a"));
+    let bens = f.watch(|core| click_delete(core, "ben", "w"));
+    assert!(bens.contains(&"removed T1".to_string()), "{bens:?}");
+    // Your Undo: Garden comes back with your point, not a point on no card.
+    let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&yours)));
+    assert!(undone.contains(&"thread T1 Garden".to_string()), "{undone:?}");
+    assert!(has(&f, "a") && f.on("a") == "T1" && f.core.snapshot().thread("T1").is_some());
+    let ids = |w: &World| w.threads.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&f.core.snapshot()), ["T1", "T2", "T3"], "where it stood");
+    assert_eq!(ids(&f.replayed(slipped())), ["T1", "T2", "T3"]);
+}
+
+#[tokio::test]
+async fn undo_puts_a_thread_and_its_points_back_where_they_stood_as_the_journal_replays() {
+    // Two points said in the same moment (a turn's parts), and a thread between two others.
+    let mut base = slipped();
+    let at = base.thoughts[0].at_ms;
+    base.thoughts.insert(1, thought("a2", "T1", "Water them at dusk", at));
+    let f = Fixture::new(base.clone());
+    let ids = |w: &World| (w.threads.iter().map(|t| t.id.clone()).collect::<Vec<_>>(), w.thoughts.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
+    for id in ["b", "a"] {
+        let lines = f.watch(|core| click_delete(core, "you", id));
+        f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+        assert_eq!(ids(&f.core.snapshot()), ids(&base), "after deleting {id} and Undo");
+        assert_eq!(ids(&f.replayed(base.clone())), ids(&base), "replayed, after {id}");
+    }
+}
+
 /// Undoing a move to a new thread removes that thread; a topic started in between must keep its own id, and the next
 /// new topic must get a fresh one rather than land on it.
 #[tokio::test]

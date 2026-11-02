@@ -1396,7 +1396,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
                 Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
                 Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
-                Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
+                Ok(ClientMsg::Attention { selected, pointed, point }) => {
+                    catalog::attend(&core, &speaker, selected, pointed);
+                    catalog::attend_point(&core, &speaker, point);
+                }
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
                 Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
@@ -1404,6 +1407,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
+                Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),

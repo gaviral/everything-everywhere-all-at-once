@@ -143,6 +143,7 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
         Act::Back, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
         Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
         Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
+        Act::Delete,
     ];
     assert_eq!(CATALOG.len(), acts.len());
     for act in acts {
@@ -379,7 +380,7 @@ fn this_is_the_selection_then_the_pointer_then_the_one_it_just_left_then_where_y
     world.merged.insert("T9".into(), "T3".into());
     let now = 1_000_000;
     let at = |selected: Option<&str>, pointed: Option<&str>, left: Option<(&str, u64)>| {
-        let a = Attention { selected: selected.map(String::from), pointed: pointed.map(String::from), left: left.map(|(id, at)| (id.to_string(), at)) };
+        let a = Attention { selected: selected.map(String::from), pointed: pointed.map(String::from), left: left.map(|(id, at)| (id.to_string(), at)), ..Attention::default() };
         resolve_this(&world, "you", &a, now)
     };
     assert_eq!(at(Some("T2"), Some("T3"), None).as_deref(), Some("T2"));

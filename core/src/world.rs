@@ -298,6 +298,9 @@ pub enum Change {
     /// about …" on an empty map, then Undo): it leaves the map, and nobody is on it any more. Only while it holds no
     /// thought and no branch; this journal keeps it.
     ThreadRemoved { thread_id: String },
+    /// A thread or thought an Undo brought back goes where it stood, just before `before` (catalog.rs `places`), so
+    /// the map's order, its colors and "next one" are as they were. Either missing: nothing moves.
+    PutBack { id: String, before: String },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
     ExplainAnswered {
@@ -428,6 +431,10 @@ impl World {
                     }
                     self.active_by.retain(|_, id| id != thread_id);
                 }
+            }
+            Change::PutBack { id, before } => {
+                put_back(&mut self.threads, |t| &t.id, id, before);
+                put_back(&mut self.thoughts, |t| &t.id, id, before);
             }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
             Change::ItemRefined { id, now, was, .. } => {
@@ -848,6 +855,17 @@ pub fn swap(text: &str, from: &str, to: &str) -> String {
         Some(r) => format!("{}{}{}", &text[..r.start], to, &text[r.end..]),
         None => text.to_string(),
     }
+}
+
+/// Moves the item `id` names to just before the one `before` names (`Change::PutBack`); either missing: as it was.
+fn put_back<T>(list: &mut Vec<T>, key: impl Fn(&T) -> &String, id: &str, before: &str) {
+    if !list.iter().any(|x| key(x) == before) {
+        return;
+    }
+    let Some(from) = list.iter().position(|x| key(x) == id) else { return };
+    let item = list.remove(from);
+    let to = list.iter().position(|x| key(x) == before).unwrap_or(from);
+    list.insert(to, item);
 }
 
 #[cfg(test)]
@@ -1314,6 +1332,7 @@ mod tests {
             Change::ThoughtSkipped { thought_id: "d".into() },
             Change::ThoughtDecided { thought_id: "c".into(), decided: true },
             Change::ThreadRemoved { thread_id: "T9".into() },
+            Change::PutBack { id: "T9".into(), before: "T1".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
             // Kept for judging answers; replaying them changes nothing on the map.
@@ -1389,6 +1408,7 @@ mod tests {
                 | Change::ThoughtNoted { .. }
                 | Change::ThoughtRepointed { .. }
                 | Change::ThreadRemoved { .. }
+                | Change::PutBack { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
@@ -1402,7 +1422,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 39, "one of each kind of change");
+        assert_eq!(kinds.len(), 40, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

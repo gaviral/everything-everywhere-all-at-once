@@ -165,6 +165,7 @@ type Change =
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "put_back"; id: string; before: string }
   | { type: "thought_decided"; thought_id: string; decided: boolean }
   | { type: "thought_noted"; thought_id: string; note: Note }
   | { type: "thought_repointed"; thought_id: string; point: string }
@@ -440,6 +441,17 @@ export function apply(world: World, raw: Change): World {
         active: world.active === c.thread_id ? null : world.active,
         active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
       };
+    }
+    case "put_back": {
+      // As the core: what an Undo brought back stands just before the one that followed it; either missing, nothing.
+      const put = <T extends { id: string }>(list: T[]) => {
+        const from = list.findIndex((x) => x.id === c.id);
+        if (from < 0 || c.id === c.before || !list.some((x) => x.id === c.before)) return list;
+        const rest = list.filter((_, i) => i !== from);
+        const to = rest.findIndex((x) => x.id === c.before);
+        return [...rest.slice(0, to), list[from], ...rest.slice(to)];
+      };
+      return { ...world, threads: put(world.threads), thoughts: put(world.thoughts) };
     }
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
@@ -800,13 +812,15 @@ export function useCore(speaker?: string) {
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
-  useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
+  useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const unlink = useCallback((thought_id: string) => sendOrWarn(JSON.stringify({ type: "unlink", thought_id })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   // A point to another thread (null: a new one of its own), and a title typed on a card (core moves.rs).
   const move = useCallback((thought_id: string, thread_id: string | null) => sendOrWarn(JSON.stringify({ type: "move", thought_id, thread_id })), [sendOrWarn]);
   const rename = useCallback((thread_id: string, title: string) => sendOrWarn(JSON.stringify({ type: "rename", thread_id, title })), [sendOrWarn]);
+  // A point off the map, with Undo on the notice that answers (core moves.rs `delete`; "delete this" said does the same).
+  const remove = useCallback((thought_id: string) => sendOrWarn(JSON.stringify({ type: "delete", thought_id })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
 
   const noKey = keyNotice !== "";
@@ -885,7 +899,7 @@ export function useCore(speaker?: string) {
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
     // "Try a sample map": the core fills an empty map with the sample (core/src/sample.rs).
     sample: () => sendOrWarn(JSON.stringify({ type: "sample" })),
-    setItem, approve, correct, unlink, tag, move, rename,
+    setItem, approve, correct, unlink, tag, move, rename, remove,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
     whys,
