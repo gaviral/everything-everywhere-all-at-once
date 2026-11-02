@@ -13,6 +13,7 @@ mod decided;
 mod explain;
 mod find;
 mod import;
+mod messages;
 mod model;
 mod pictures;
 mod placer;
@@ -90,6 +91,8 @@ pub struct Core {
     came_back: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
+    /// The preset, and the message counting down on its card (messages.rs).
+    pub messages: messages::Runtime,
 }
 
 impl Core {
@@ -306,6 +309,10 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool) {
         self.touch();
+        // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
+        if messages::said(self, speaker, text) {
+            return;
+        }
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
@@ -396,6 +403,9 @@ impl Core {
         if is_new_thread(text) {
             self.new_thread(speaker);
             return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
+        }
+        if let Some(done) = messages::act(self, speaker, text) {
+            return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
             return Some(done);
@@ -945,7 +955,10 @@ async fn main() -> anyhow::Result<()> {
         imports: import::Imports::default(),
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
+        messages: messages::Runtime::from_env(),
     });
+    // Names only: a contact's handle never goes to the log.
+    tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
@@ -1441,6 +1454,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Approve { .. }) => {
                     core.send_to(&speaker, ServerMsg::Notice { message: "Only the host can add this: it goes into their apps.".into() });
                 }
+                // The message card's Stop, or Esc: anyone who sees it may stop it; stopping never sends anything.
+                Ok(ClientMsg::StopSend { id }) => {
+                    messages::stop(&core, id);
+                }
                 Ok(ClientMsg::Visible) => {
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
                     core.wake.notify_waiters();
@@ -1605,6 +1622,7 @@ impl Core {
             imports: Default::default(),
             service: Default::default(),
             trace: Default::default(),
+            messages: Default::default(),
         }
     }
 }

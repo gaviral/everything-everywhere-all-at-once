@@ -23,6 +23,7 @@ Browser, one page per window (ui/src)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
+  send-card.ts the message card's countdown, words, Esc and how long an ended card stays (held by `scripts/send-card-check.mjs`); SendCard.tsx draws it
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
@@ -71,6 +72,7 @@ Core, one process (core/src: axum, tokio)
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
+  messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
   sample.rs      "Try a sample map": an empty map filled with the student's week from samples/
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code

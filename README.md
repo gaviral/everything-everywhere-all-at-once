@@ -204,9 +204,21 @@ Spoken commands are recognized by rule, with no model call, and only as a whole 
 - **Views:** “palace”, “map”, “focus on this”, “show all”, “expand everything”, “collapse this”, “what can I say?”.
 - **Filing:** “add milk to the shopping list”, “new thread about …”, “move that to the pottery thread”, “rename this to …”, “delete this”.
 - **Actions:** “add it to Reminders”, “keep it” or “discard it” for an app, “stop listening”.
+- **Messages (Full preset only):** “ask Mia to confirm what to bring” shows the message on a card with a 5-second countdown; “stop”, Esc or the card's Stop takes it down unsent. See [Presets](#presets-and-messages).
 - **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” undoes it. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
 
 Getting back, finding, views, filing and fixing in full, with variants and what each never does: [docs/COMMANDS.md](docs/COMMANDS.md). Recap, making an app and answering “Did you mean …?” are in their own sections below; “what can I say?” lists them all.
+
+### Presets and Messages
+
+A preset picks which connectors a run has. **Demo** (the default) is the core alone: the map, and Reminders and Calendar after you approve. **Full** adds every connector; today that's Messages. Set `PRESET=full` in `.env` to switch.
+
+In Full, a whole turn like “ask Mia to confirm what to bring” (or “text Sam that I'm running late”) puts a card up with who it's to, the message (“Hi Mia, could you confirm what to bring?”) and a countdown. The count is 5 seconds for a short message: enough for a slow reader to read about 8 words, decide, and say “stop”. A longer message gets longer. “Stop” (also “cancel”, “wait”, “no”, “don't send it”), Esc or the card's Stop takes it down unsent; a spoken “stop” counts as soon as it's heard, before your turn ends. Only when the count ends does it go, and only:
+
+- to someone on your list (`MESSAGES_TO=Mia=+15551234567, Sam=sam@example.com`); any other name stays a thought, and the app says why. The phone number or email never leaves the core.
+- from the host's laptop: in a room, a guest's words never send from the host's Messages.
+- one at a time.
+- for real only with `MESSAGES_SEND=on`, on a Mac, through Messages (macOS asks first). Without it, it's a dry run: the card counts down the same and then says what it would have sent.
 
 ### Did you mean, and confident auto-fix
 
