@@ -56,8 +56,12 @@ export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 export type Explanation = { text: string; failed: boolean };
 
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
-// say?"); the revision makes the same one asked twice a new ask.
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help"; revision: number };
+// say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
+// mic off ("stop listening"). The revision makes the same one asked twice a new ask.
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause"; revision: number };
+
+// "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
+export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
 
 // Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
 // when something newer stops the search.
@@ -154,6 +158,7 @@ type ServerMsg =
   | { type: "notice"; message: string }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
+  | { type: "unfold"; thread_id: string | null; open: boolean }
   | { type: "explanation"; id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
@@ -392,7 +397,8 @@ export function movesAsked(speaker?: string) {
     const change = msg.type === "change" ? msg.change : null;
     const landed = landing;
     if (change?.type !== "thread_touched" && change?.type !== "thread_status") landing = null;
-    if (msg.type === "found" || msg.type === "view") return true;
+    // Not Later or the mic: they leave the map as it is.
+    if (msg.type === "found" || msg.type === "unfold" || (msg.type === "view" && !["later", "forget", "pause"].includes(msg.view))) return true;
     if (!speaker || !change) return false;
     if (change.type === "thought_placed" && world.thoughts.some((t) => t.id === change.thought_id && t.speaker === speaker)) {
       landing = change.thread_id;
@@ -425,6 +431,7 @@ export function useCore(speaker?: string) {
   const [notice, setNotice] = useState("");
   const [found, setFound] = useState<Found | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
+  const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
@@ -536,6 +543,9 @@ export function useCore(speaker?: string) {
           case "view":
             setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
             break;
+          case "unfold":
+            setUnfoldAsk((previous) => ({ thread_id: msg.thread_id, open: msg.open, revision: (previous?.revision ?? 0) + 1 }));
+            break;
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
             break;
@@ -616,6 +626,7 @@ export function useCore(speaker?: string) {
     keyNotice,
     found,
     viewAsk,
+    unfoldAsk,
     queuedCount,
     placing,
     clearNotice: useCallback(() => setNotice(""), []),

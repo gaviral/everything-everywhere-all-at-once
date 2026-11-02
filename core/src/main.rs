@@ -16,6 +16,7 @@ mod refiner;
 mod trace;
 mod recap;
 mod protocol;
+mod spoken;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -68,6 +69,8 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
+    hosts: Mutex<std::collections::HashSet<String>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
 }
@@ -234,6 +237,11 @@ impl Core {
         self.send_to(speaker, ServerMsg::Notice { message: "New thread: your next thought starts it".into() });
     }
 
+    /// Whether the speaker's window runs on this machine. Alone, only this machine's pages get in.
+    fn is_host(&self, speaker: &str) -> bool {
+        self.room.is_none() || self.hosts.lock().unwrap().contains(speaker)
+    }
+
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
     /// never becomes a thought, a request is never one, and a spoken command keeps its place among the words:
     /// one the turn opens with goes ahead of the words after it, one it ends with waits behind the words before
@@ -266,6 +274,9 @@ impl Core {
         }
         if is_new_thread(text) {
             return self.new_thread(speaker);
+        }
+        if spoken::act(self, speaker, text) {
+            return;
         }
         let (first, said, then) = turn(text);
         // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
@@ -698,6 +709,7 @@ async fn main() -> anyhow::Result<()> {
         updates,
         placer_queue,
         new_threads: placer::NewThreads::default(),
+        hosts: Default::default(),
         placing: placer::Placing::default(),
         room: room.as_deref().map(Room::from),
         key,
@@ -1074,6 +1086,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         if write(&mut out, &notice).await.is_err() { return; }
     }
     let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone()));
+    if here {
+        core.hosts.lock().unwrap().insert(speaker.clone());
+    }
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
     // This window's listening sessions, counted, so only the latest one says listening stopped: after a
@@ -1211,6 +1226,7 @@ impl Core {
             updates: broadcast::channel(1024).0,
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
+            hosts: Default::default(),
             placing: Default::default(),
             room: None,
             key: None,
@@ -1591,7 +1607,12 @@ mod tests {
             ServerMsg::Notice { message } if message.starts_with("Back to ") => "back".into(),
             ServerMsg::Notice { message } if message.starts_with("On to ") => "next".into(),
             ServerMsg::Notice { message } if message.starts_with("Previous: ") => "previous".into(),
+            ServerMsg::Notice { message } if message.starts_with("New thread: “") => "new thread with".into(),
             ServerMsg::Notice { message } if message.starts_with("New thread: ") => "new thread".into(),
+            ServerMsg::Notice { message } if message.starts_with("Added to ") => "added".into(),
+            ServerMsg::Notice { message } if message.starts_with("I couldn't find") => "not found".into(),
+            ServerMsg::Notice { message } if message.starts_with("Nothing is waiting to be added") => "approve".into(),
+            ServerMsg::Unfold { open, .. } => if *open { "unfold" } else { "fold" }.into(),
             ServerMsg::Found { message, .. } if message.starts_with("Here: ") => "found".into(),
             ServerMsg::View { view } => format!("{view:?}").to_lowercase(),
             ServerMsg::RecapState { period, .. } => format!("recap {period:?}").to_lowercase(),
@@ -1698,6 +1719,108 @@ mod tests {
         ] {
             assert_eq!(did(world(), said).await, (vec![does.to_string()], vec![kept.to_string()]), "{said}");
         }
+    }
+
+    /// The spoken command pack (spoken.rs), as the asks table above: each command the "?" list and the README teach
+    /// acts said alone and after each lead-in, and is never kept as a thought, except "add … to X", whose words land
+    /// where it said (the thought is the turn as said); the look-alikes stay thoughts.
+    #[tokio::test]
+    async fn every_pack_command_acts_alone_and_its_look_alikes_stay_thoughts() {
+        let now = super::now_ms();
+        // Two threads you spoke on, you on the first, and one you left unfinished (the card is up).
+        let world = |dropped: bool| World {
+            threads: [thread("Garden", 1, ""), thread("Bills", 2, "")].into_iter().chain(dropped.then(|| thread("Trip", 3, "you"))).collect(),
+            thoughts: vec![
+                Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 120_000) },
+                Thought { point: "The electric bill is due Friday".into(), ..said("b", "you", "Bills", now - 60_000) },
+            ],
+            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            ..World::default()
+        };
+        let documented = [
+            // The "?" list.
+            ("Add tomato stakes to the garden", "added"),
+            ("Add milk to the shopping list", "added"),
+            ("New thread about the garden shed", "new thread with"),
+            ("What was I thinking?", "back"),
+            ("Let me finish my thought", "back"),
+            ("Forget it", "forget"),
+            ("Never mind", "forget"),
+            ("Expand the garden", "unfold"),
+            ("Expand everything", "unfold"),
+            ("Collapse this", "fold"),
+            ("Stop listening", "pause"),
+            ("Add it to Reminders", "approve"),
+            ("Finish it", "finish"),
+            ("Later", "later"),
+            // The README.
+            ("Put the receipt in the bills thread", "added"),
+            ("Add to the shopping list: oat milk", "added"),
+            ("Start a new thread about why the build is slow", "new thread with"),
+            ("New thread. I want to learn piano.", "new thread with"),
+            ("What was I going to say?", "back"),
+            ("It's okay, I forgot", "forget"),
+            ("Not now", "later"),
+            ("Expand all the sub cards inside the bills", "unfold"),
+            ("Show me everything under the garden", "unfold"),
+            ("Show me the bills", "unfold"),
+            ("Fold the garden", "fold"),
+            ("Expand everything in the attic", "not found"),
+            ("Pause listening", "pause"),
+            ("Turn off the mic", "pause"),
+            ("Add that to my calendar", "approve"),
+        ];
+        let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
+        for (phrase, does) in documented {
+            for lead in &leads {
+                let said = if lead.is_empty() { phrase.to_string() } else { format!("{lead}, {phrase}") };
+                let kept: Vec<String> = match does {
+                    "added" => vec![said.clone()],
+                    "new thread with" => vec![super::spoken::tests_first(phrase)],
+                    _ => vec![],
+                };
+                assert_eq!(did(world(true), &said).await, (vec![does.to_string()], kept), "{said}");
+            }
+            // By rule: nothing goes to the placer, so nothing waits on the model, and without a key each still acts
+            // ("new thread about …" queued a placement before the review of 88ace4d).
+            let (core, mut queue, path) = keyless(world(true));
+            core.add_thought("you", phrase);
+            let _ = std::fs::remove_file(&path);
+            assert!(queue.try_recv().is_err(), "{phrase} asked the placer");
+        }
+        // Look-alikes: talk about these things, or a command only partway through a turn, is a thought.
+        for said in [
+            "Put this in perspective",
+            "Put the kids in the car",
+            "Add salt to taste",
+            "Add a deck to the house",
+            "Add it to the list",
+            "Save money on groceries",
+            "I need to add milk to the shopping list",
+            "A new thread about the budget came up on Slack",
+            "New topic on the agenda is hiring",
+            "I bought a boat. What was I thinking?",
+            "Forget it, I'll just buy a new one",
+            "Never mind the weather, the trip is on",
+            "Expand the business into Europe",
+            "Show Dana the photos",
+            "Hide the presents",
+            "Fold the laundry",
+            "Close everything before you leave",
+            "Open the window",
+            "Stop listening to him",
+            "I should stop listening to podcasts at night",
+            "I'll add it to reminders later",
+            // With no card up, and no app waiting, these are answers or talk.
+            "Later",
+            "Not now",
+            "Finish it",
+            "Keep it",
+        ] {
+            assert_eq!(did(world(false), said).await, (vec![], vec![said.to_string()]), "{said}");
+        }
+        // "Let me think" is a pause to think: filler, neither a move nor a thought.
+        assert_eq!(did(world(true), "Let me think").await, (vec![], vec![]));
     }
 
     // A search said while a thought is still placing waits on a task, so this runs inside a runtime like the app.

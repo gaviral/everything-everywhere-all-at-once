@@ -31,6 +31,9 @@ export default function App() {
   const core = useCore(me);
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Threads opened with all their branches ("expand …", Option-click): they stay open as you move about the map,
+  // where a card you opened with a plain click folds again once you've been there and left.
+  const keptOpen = useRef(new Set<string>());
   const world = useMemo(() => ({ ...core.world, active: core.world.active_by[me] ?? core.world.active }), [core.world, me]);
   const sessionCounts = useMemo(() => {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
@@ -98,6 +101,8 @@ export default function App() {
   useEffect(() => {
     if (!core.viewAsk) return;
     const asked = core.viewAsk.view;
+    // The unfinished card's buttons and the mic, said aloud: handled where those live.
+    if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
@@ -299,8 +304,22 @@ export default function App() {
     }
   }, [core.notice, stopMic]);
 
+  // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
+  // would need it to keep listening). The core has ended the stream already and drops anything heard after.
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (core.viewAsk?.view !== "pause") return;
+    if (!stopMic) { core.showNotice("The mic is already off."); return; }
+    stopMic();
+    setStopMic(null);
+    core.listen(false);
+    setPaused(true);
+    core.showNotice("Paused: nothing is heard until you tap the mic.");
+  }, [core.viewAsk]);
+
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
+    setPaused(false);
     if (stopMic) {
       stopMic();
       setStopMic(null);
@@ -385,7 +404,11 @@ export default function App() {
       const visited = new Set<string>();
       while (thread && !visited.has(thread.id)) {
         visited.add(thread.id);
-        delete next[thread.id];
+        // Opened with its branches: it stays open after you leave (review of 88ace4d).
+        if (!(keptOpen.current.has(thread.id) && next[thread.id] === false)) {
+          delete next[thread.id];
+          keptOpen.current.delete(thread.id);
+        }
         thread = world.threads.find((item) => item.id === thread?.parent_id);
       }
       return next;
@@ -462,6 +485,41 @@ export default function App() {
   const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct }), [core.setItem, core.approve, core.tag, core.correct]);
 
+  // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
+  // folded) until you change them; where you are on the map doesn't fold them again. An opened thread comes to the top.
+  useEffect(() => {
+    const ask = core.unfoldAsk;
+    if (!ask) return;
+    let id = ask.thread_id;
+    for (let hops = Object.keys(world.merged).length; id && hops > 0 && world.merged[id]; hops--) id = world.merged[id];
+    if (id && !world.threads.some((thread) => thread.id === id)) return;
+    const ids = id ? [id, ...branchesUnder(world.threads, id)] : world.threads.map((thread) => thread.id);
+    setView("map");
+    setQuery("");
+    setFocusMode(false);
+    const kept = keptOpen.current;
+    setExpanded((state) => {
+      const next = { ...state };
+      for (const each of ids) {
+        next[each] = !ask.open;
+        if (ask.open) kept.add(each); else kept.delete(each);
+      }
+      // Its own card shows only under open parents.
+      const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
+      for (let parent = id ? byId.get(id)?.parent_id : null; ask.open && parent && next[parent] !== false; parent = byId.get(parent)?.parent_id) {
+        next[parent] = false;
+        kept.add(parent);
+      }
+      return next;
+    });
+    if (!id) return;
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
+      const card = document.getElementById(`thread-${id}`);
+      if (card) scrollCardToTop(card, !!reducedMotion);
+    }));
+    return () => cancelAnimationFrame(frame);
+  }, [core.unfoldAsk]);
+
   const jumpToActive = () => {
     setQuery("");
     setFocusMode(false);
@@ -494,6 +552,7 @@ export default function App() {
       }
       if (event.key === "Escape") {
         if (hasAway) { away.dismiss(); return; }
+        keptOpen.current.clear();
         setExpanded(Object.fromEntries(world.threads.filter((thread) => !activePath.has(thread.id)).map((thread) => [thread.id, true])));
       }
     };
@@ -548,6 +607,37 @@ export default function App() {
       (laterAt[dropKey(t)] === undefined || now - laterAt[dropKey(t)] >= 5 * 60 * 1000))
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
   const pullBack = dropped && now - lastActivity > 2500 ? dropped : null;
+  // Later: hidden for 5 minutes, then offered once more; a second Later sets it aside until that thread changes.
+  const later = (thread: Thread) => {
+    const key = dropKey(thread);
+    if (laterAt[key] !== undefined) setDismissed((d) => [...d, key]);
+    else setLaterAt((previous) => ({ ...previous, [key]: Date.now() }));
+  };
+  // Said aloud: "later" and "finish it" as the buttons; "forget it" sets the card aside as a second Later does. Each
+  // acts on the card you see (or would see at the next pause); with none, "forget it" takes the one hidden for now
+  // and "finish it" the newest you left. Your words stay on the map either way.
+  useEffect(() => {
+    const asked = core.viewAsk?.view;
+    if (asked !== "later" && asked !== "forget" && asked !== "finish") return;
+    const mine = world.threads.filter((t) => t.status === "dropped" && t.dropped_by === me).sort((a, b) => b.touched_ms - a.touched_ms);
+    const yours = mine.find((t) => !dismissed.includes(dropKey(t)));
+    if (asked === "finish") {
+      const card = dropped ?? mine[0];
+      if (!card) { core.showNotice("Nothing unfinished to finish."); return; }
+      goBack(card);
+      core.showNotice(`Back to ${card.title}`);
+      return;
+    }
+    const card = asked === "later" ? dropped : dropped ?? yours;
+    if (!card) { core.showNotice("Nothing unfinished to set aside."); return; }
+    if (asked === "later") {
+      later(card);
+      core.showNotice(`Later: ${card.title} comes back after a while.`);
+    } else {
+      setDismissed((d) => [...d, dropKey(card)]);
+      core.showNotice(`Set aside: ${card.title}. What you said stays on the map.`);
+    }
+  }, [core.viewAsk]);
   // A card rising in the dock (the unfinished card, a build's) grows it upward; the thought the map just showed you
   // moves clear of it, once. Under 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its
   // words, the card after 2.5 s of quiet) the newest landing is younger than that when the card rises. Not once you've
@@ -636,14 +726,18 @@ export default function App() {
         <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
-          <div>“Where was I?” or “Go back” · return to where you left off</div>
+          <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
           <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
-          <div>“New thread” or “Create a new one” · your next thought starts one</div>
+          <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
+          <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
+          <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
+          <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <strong>Keyboard</strong>
-          <div>Map: / search · j / k move between threads · Enter show or hide · Esc fold quiet threads</div>
+          <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
@@ -653,8 +747,8 @@ export default function App() {
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
         <div className="status">
-          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"} />
-          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : "Ready"}</span>
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
+          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
           {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
@@ -710,7 +804,7 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
-          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} on={on} />
+          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
         )}
       </main>}
 
@@ -742,11 +836,7 @@ export default function App() {
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => goBack(pullBack)}>Finish it</button>
-                  <button className="quiet" onClick={() => {
-                    const key = dropKey(pullBack);
-                    if (laterAt[key] !== undefined) setDismissed((d) => [...d, key]);
-                    else setLaterAt((previous) => ({ ...previous, [key]: Date.now() }));
-                  }}>
+                  <button className="quiet" onClick={() => later(pullBack)}>
                     Later
                   </button>
                 </div>
@@ -814,6 +904,19 @@ function settledRect(element: HTMLElement) {
  *  opened from a Palace tile mounts 8 px low and stopped 4 px under the tools, not 12 (on first load too, with
  *  motion on); with motion on, Back to active from Focus stopped it 294 px down, still sliding to its place as the
  *  other cards came back. */
+/** Every thread under `id`, however deep. */
+function branchesUnder(threads: Thread[], id: string): string[] {
+  const out: string[] = [];
+  const queue = [id];
+  while (queue.length) {
+    const parent = queue.shift();
+    for (const thread of threads) {
+      if (thread.parent_id === parent && thread.id !== id && !out.includes(thread.id)) { out.push(thread.id); queue.push(thread.id); }
+    }
+  }
+  return out;
+}
+
 function scrollCardToTop(card: HTMLElement, instant: boolean) {
   const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
   window.scrollBy({ top: settledRect(card).top - margin, behavior: instant ? "instant" : "smooth" });
@@ -919,6 +1022,7 @@ type MapProps = {
   ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
   matches: Set<string>; searching: boolean; expanded: Record<string, boolean>;
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  keptOpen: React.MutableRefObject<Set<string>>;
 };
 
 // The composer, live transcript and pull-back timer update independently of the map.
@@ -928,7 +1032,7 @@ const MapCards = memo(function MapCards(props: MapProps) {
     : roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
 });
 
-function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
+function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
@@ -982,7 +1086,14 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={() => { if (!(searching && matches.has(thread.id))) setExpanded((state) => ({ ...state, [thread.id]: !collapsed })); }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={(event) => {
+          if (searching && matches.has(thread.id)) return;
+          // Option-click opens or folds every branch under it too, as "expand …" does.
+          const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
+          const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
+          for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
+          setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
+        }}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -1013,7 +1124,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
           ))}
         </div>
       )}

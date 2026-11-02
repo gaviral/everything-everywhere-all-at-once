@@ -376,6 +376,11 @@ fn same_request(app: &MiniApp, request: &str) -> bool {
     request == normalized(&app.request) || request == normalized(&app.name) || request == normalized(&app.purpose)
 }
 
+/// The build waiting for Keep or Discard, if one is.
+pub fn waiting(core: &Core) -> Option<String> {
+    core.apps.state.lock().unwrap().build.as_ref().filter(|b| matches!(b.stage.as_str(), "ready" | "matched")).map(|b| b.id.clone())
+}
+
 pub fn decide(core: &Core, build_id: &str, keep: bool) {
     let mut state = core.apps.state.lock().unwrap();
     let Some(b) = state.build.as_mut().filter(|b| b.id == build_id && matches!(b.stage.as_str(), "ready" | "matched")) else { return };

@@ -257,7 +257,7 @@ struct Ranked {
 }
 
 /// Small English stems, with whole words so "rent" never matches "parent".
-fn stem(word: &str) -> String {
+pub(crate) fn stem(word: &str) -> String {
     let mut word = word.to_string();
     if word.is_ascii() {
         if word.len() > 4 && word.ends_with("ies") {
@@ -281,7 +281,8 @@ fn stem(word: &str) -> String {
     word
 }
 
-fn words(text: &str) -> Vec<String> {
+/// A text's words that say what it's about, stemmed, each once.
+pub(crate) fn words(text: &str) -> Vec<String> {
     const SKIP: &[&str] = &[
         "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "at", "for", "from", "with", "about",
         "i", "me", "my", "we", "our", "you", "your", "it", "its", "this", "that", "these", "those", "there",
@@ -342,6 +343,11 @@ fn best(ranked: &[Ranked], query: &str) -> Option<Found> {
     let best = ranked.first()?;
     // Partial overlap is a clue for the model, never enough to move someone on its own.
     (best.rank.words == words(query).len()).then(|| best.found.clone())
+}
+
+/// The thread whose title, tags or a point hold every word of `query`, as a search with no model call finds it.
+pub(crate) fn thread_for(world: &World, query: &str) -> Option<String> {
+    best(&rank(world, query), query).map(|found| world.resolve(&found.thread_id))
 }
 
 #[cfg(test)]
