@@ -63,7 +63,7 @@ try {
   // help list says both.
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /<MovePoint thought=\{thought\} \/>/);
-  assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\} \/>/);
+  assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\}[^>]*\/>/);
   assert.match(app, /useDropPoint\(thread\.id\)[\s\S]*\{\.\.\.drop\.props\}/);
   assert.match(app, /<MovesProvider threads=\{world\.threads\} move=\{core\.move\} rename=\{core\.rename\} remove=\{core\.remove\}>/);
   assert.match(app, /“Move that to \[thread\]”[^<]*“Rename this to \[title\]”/);

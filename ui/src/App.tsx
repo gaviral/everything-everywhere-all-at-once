@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
@@ -14,7 +14,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
   unlink: (thoughtId: string) => void;
 };
-import { startMic } from "./mic";
+import { micFailure, micPlace, startMic, watchMicPermission } from "./mic";
 import { Apps, buildInTheWay, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
@@ -28,22 +28,23 @@ import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
-import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
+import { ideaCounts, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+import { isUndoKey, micNotice, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
+import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
+import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -65,18 +66,8 @@ export default function App() {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
     let start = times.at(-1) ?? 0;
     for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
-    const threads = new Set<string>();
-    const threadIds = new Set(world.threads.map((thread) => thread.id));
-    const card = (thought: Thought) => thought.thread_id && resolveMerged(world, thought.thread_id);
-    // Ideas, as the cards count them: a part said before a pause and carried on by a later one is in that one.
-    const carried = carriedIds(world.thoughts, world.notes ?? {}, card);
-    let thoughts = 0;
-    for (const thought of world.thoughts) {
-      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now() || carried.has(thought.id)) continue;
-      const id = card(thought)!;
-      if (threadIds.has(id)) { thoughts++; threads.add(id); }
-    }
-    return { thoughts, threads: threads.size };
+    // Ideas, as the cards count them, and as Recap does.
+    return ideaCounts(world, start, Date.now());
   }, [world.thoughts, world.threads, world.merged, world.notes]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const mounted = useRef(true);
@@ -163,6 +154,11 @@ export default function App() {
     }
   }, [core.viewAsk]);
   const [startingMic, setStartingMic] = useState(false);
+  // The browser ("site") or the computer ("mac") keeps the mic from this page: it looks blocked until that changes
+  // (mic.ts `micFailure`, `watchMicPermission`); a tap still tries, and says how to allow it.
+  const [micBlocked, setMicBlocked] = useState<"" | "site" | "mac">("");
+  const micBlockedNow = useRef(micBlocked);
+  micBlockedNow.current = micBlocked;
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -231,9 +227,10 @@ export default function App() {
   const followFrame = useRef(0);
   // The landing the map last showed you, and when: the unfinished card keeps clear of it.
   const shownLanding = useRef<{ thought: string; at: number } | null>(null);
-  // The map holds still while something else has your eyes: a search, or a panel, menu or dialog over it.
+  // The map holds still while something else has your eyes: a search, typing in the Apps panel, or a menu or dialog
+  // over it. An Apps panel left open doesn't count: it stays open after Keep, and froze the map with no note.
   const lookingElsewhere = () => document.activeElement === searchRef.current || !!searchRef.current?.value.trim() ||
-    !!document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
+    !!document.querySelector(".apps-panel input:focus, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
   useEffect(() => () => { window.clearTimeout(followTimer.current); cancelAnimationFrame(followFrame.current); }, []);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
@@ -404,8 +401,21 @@ export default function App() {
   }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
-    if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
+    if (liveStop.current && aboutKey(core.notice)) releaseMic();
   }, [core.notice, stopMic]);
+
+  // The site's mic permission, where the browser says it: "denied" looks blocked; allowed later (from the address
+  // bar's icon), it says so and looks ready, without a reload. A block by the computer shows no change here: it lifts
+  // when the browser is reopened.
+  const showNotice = useRef(core.showNotice);
+  showNotice.current = core.showNotice;
+  useEffect(() => watchMicPermission(navigator.permissions, (state) => {
+    if (state === "denied") setMicBlocked("site");
+    else if (micBlockedNow.current === "site") {
+      setMicBlocked("");
+      showNotice.current("Microphone allowed. Tap to talk.");
+    }
+  }), []);
 
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
@@ -422,6 +432,7 @@ export default function App() {
       return;
     }
     setStartingMic(true);
+    if (micNotice(core.notice)) core.clearNotice();
     try {
       let stopped = false;
       // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
@@ -437,6 +448,7 @@ export default function App() {
       const stopAudio = await startMic(core.sendAudio, ended);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
+      setMicBlocked("");
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
       voiceListenedAt.current = voiceRevisions.current.listened;
@@ -449,8 +461,11 @@ export default function App() {
     } catch (err) {
       if (!mounted.current) return;
       core.listen(false);
-      const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
-      core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
+      // The browser's own words go to the console; the window says where to fix it (mic.ts).
+      console.warn("The mic didn't start:", err);
+      const failed = micFailure(err, micPlace());
+      if (failed.blocked) setMicBlocked(failed.blocked);
+      core.showNotice(failed.words);
     } finally {
       if (mounted.current) setStartingMic(false);
     }
@@ -545,23 +560,27 @@ export default function App() {
     previousThoughtGroups.current = grouped;
     return grouped;
   }, [world.thoughts]);
-  // Keep fields separate so a query cannot match across two different pieces of text.
-  const previousSearchIndex = useRef(new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>());
+  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
+  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
+  // Everything the card shows is found: title, tags, thoughts, ideas and reminders (searchFields), each a separate
+  // field so a query cannot match across two pieces of text. An entry is rebuilt only when its card's items change:
+  // groups are new arrays after any item changes, so they're compared item by item (a letter costs only the scan).
+  type SearchEntry = { thread: Thread; thoughts: Thought[] | undefined; ideas: Suggestion[] | undefined; actions: Action[] | undefined; fields: string[] };
+  const previousSearchIndex = useRef(new Map<string, SearchEntry>());
   const searchIndex = useMemo(() => {
-    const next = new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>();
+    const next = new Map<string, SearchEntry>();
+    const same = <T,>(a: T[] | undefined, b: T[] | undefined) => a === b || (!!a && !!b && a.length === b.length && a.every((item, i) => item === b[i]));
     const entries = world.threads.map((thread) => {
-      const thoughts = thoughtsByThread.get(thread.id);
+      const thoughts = thoughtsByThread.get(thread.id), ideas = ideasByThread.get(thread.id), actions = actionsByThread.get(thread.id);
       const previous = previousSearchIndex.current.get(thread.id);
-      const entry = previous?.thread === thread && previous.thoughts === thoughts ? previous : {
-        thread, thoughts,
-        fields: [thread.title, ...(thread.tags ?? []).map((tag) => tag.name), ...(thoughts ?? []).flatMap((thought) => [thought.text, thought.point])].map((text) => text.toLocaleLowerCase()),
-      };
+      const entry = previous?.thread === thread && previous.thoughts === thoughts && same(previous.ideas, ideas) && same(previous.actions, actions)
+        ? previous : { thread, thoughts, ideas, actions, fields: searchFields(thread, thoughts, ideas, actions) };
       next.set(thread.id, entry);
       return { id: thread.id, fields: entry.fields };
     });
     previousSearchIndex.current = next;
     return entries;
-  }, [world.threads, thoughtsByThread]);
+  }, [world.threads, thoughtsByThread, ideasByThread, actionsByThread]);
   // The box shows each letter at once; the map follows a moment later and gives way to the next letter
   // (useDeferredValue), so typing never waits on the cards. At 1,000 threads a letter used to freeze the page ≈ 1 s.
   const deferredQuery = useDeferredValue(query);
@@ -597,8 +616,6 @@ export default function App() {
     if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
-  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
-  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct, unlink: core.unlink }), [core.setItem, core.approve, core.tag, core.correct, core.unlink]);
 
   // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
@@ -664,7 +681,15 @@ export default function App() {
         if (goesTo === "app") core.undoLast();
         return;
       }
-      if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (opensHelp({ key: event.key, field, modified: event.metaKey || event.ctrlKey || event.altKey })) {
+        // The list opens where its ? button is, with focus on it: Esc or ? again closes it there.
+        away.dismiss();
+        event.preventDefault();
+        setHelpOpen((open) => !open);
+        document.querySelector<HTMLElement>(".shortcuts summary")?.focus();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey || field) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
         const buttons = Array.from(mapRef.current?.querySelectorAll<HTMLButtonElement>(".thread-toggle:not(:disabled)") ?? []);
@@ -821,11 +846,13 @@ export default function App() {
   };
 
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
-    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused });
+    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
+
+  const status = statusLine({ connected: core.connected, listening: core.listening, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
   const friendlyNotice = core.notice && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
-    (site.hosted || !core.keyRefused) && core.notice.includes("MODEL_API_KEY") ? keyWords(site.hosted, core.keyRefused, "notice")
+    (site.hosted || !core.keyRefused) && aboutKey(core.notice) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
     : core.notice
   );
@@ -838,6 +865,8 @@ export default function App() {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
+      {/* The page's first stop: Tab, then Enter, and you're typing (it took 46 Tabs past the header and the map). */}
+      <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
       <header ref={headerRef}>
         <div className="brand">
           E2A2O <small>threads</small>
@@ -863,7 +892,8 @@ export default function App() {
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
-          <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
+          <div>? · opens or closes this list · Tab, then Enter · from the page's top, straight to typing</div>
+          <div>Map: / search · j / k move between threads · Enter show or hide · on a point · Enter or Space shows or hides the words you said · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
           <div>{undoKeyLabel(MAC)} · undoes your last turn, as “Scratch that” does, after its notice has gone too</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
@@ -878,15 +908,21 @@ export default function App() {
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
         <div className="status">
-          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
-          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
+          {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
+          <span aria-hidden="true">{core.connected && core.resting && !core.listening ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
           {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
       </header>
 
+      <div id="tour-tools" />
+      <Apps core={core} />
+      <div id="tour-map" />
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
+      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
+      <div className="notice-lane">
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -914,12 +950,10 @@ export default function App() {
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
+      </div>
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
-      <div id="tour-tools" />
-      <Apps core={core} />
-      <div id="tour-map" />
       {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
@@ -936,10 +970,11 @@ export default function App() {
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
+        {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
-          <div className="empty">
+          core.snapshotRevision === 0 ? null : <div className="empty">
             <h1>Think out loud.</h1>
-            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
+            <p>{emptyLine({ starting: startingMic, listening: core.listening, pending: pending.length, noKey: core.noKey, resting: core.resting })}</p>
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
@@ -976,6 +1011,7 @@ export default function App() {
               <motion.div
                 key={dropKey(pullBack)}
                 className="pullback" role="status" data-dock-card
+                style={roomStyle(rooms.get(pullBack.id))}
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8 }}
@@ -1006,15 +1042,16 @@ export default function App() {
           <AttentionNote onGo={attention.go} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
             <input
+              id={COMPOSER_ID}
               ref={composerRef}
               value={draft}
               onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
@@ -1026,10 +1063,10 @@ export default function App() {
           </form>
         </div>
       </section>
-      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
       <Tips />
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1238,7 +1275,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
-            <ThreadTitle thread={thread} depth={depth} />
+            <ThreadTitle thread={thread} depth={depth} onOpen={toggle} />
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
@@ -1270,7 +1307,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
       <ul className="points">
         {points.map(({ thought: t, heads }) => (
-          <Point key={t.id} thought={t} heads={heads} on={on} layoutDependency={thoughts} />
+          <Point key={t.id} thought={t} heads={heads} on={on} />
         ))}
       </ul>
       {ideas.map((s) => (
@@ -1319,7 +1356,7 @@ function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: bo
   );
 }
 
-const Point = memo(function Point({ thought, heads, on, layoutDependency }: { thought: Thought; heads: Thought[]; on: Handlers; layoutDependency: Thought[] }) {
+const Point = memo(function Point({ thought, heads, on }: { thought: Thought; heads: Thought[]; on: Handlers }) {
   // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
@@ -1344,8 +1381,12 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
     flip();
   } : undefined;
+  // No layoutDependency: a point measures its box every time it renders. Measuring only when its thread's thoughts
+  // changed left a point that had just landed in a branch drawn ≈ 100 px under its card for 13–15 s after "Show" on a
+  // card above (its card moved, Motion projected it from its old box: the move counted twice). scripts/points-check.mjs.
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
+      onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget, taken: event.defaultPrevented })) { event.preventDefault(); flip(); } } : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
@@ -1458,7 +1499,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
 }
 
 /** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
-function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
+function PendingThought({ thought, placing, noKey, refused, resting, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; resting: boolean; reducedMotion: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (noKey || refused) return;
@@ -1466,7 +1507,7 @@ function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { t
     return () => window.clearInterval(interval);
   }, [noKey, refused]);
   const retryAt = placing.retryAt[thought.id];
-  const label = pendingLabel(thought, placing, now, noKey, refused);
+  const label = pendingLabel(thought, placing, now, noKey, refused, resting);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
   </motion.span>;

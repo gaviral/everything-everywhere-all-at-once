@@ -1,0 +1,3 @@
+# Every text file checks out with LF line endings, Windows included (Git for Windows' default would give CRLF,
+# and run.sh would die on its first line). Binary files are detected and left alone.
+* text=auto eol=lf

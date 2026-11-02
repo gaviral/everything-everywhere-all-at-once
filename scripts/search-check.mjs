@@ -6,6 +6,9 @@
 // Search finds words (2026-11-01, persona runs, 4 of 4 synthetic users): the whole query had to be one substring of
 // one field, so "dentist thursday", "launch date" and "cafe" (for "Café") found nothing. Held here: every word, in any
 // order, anywhere in a thread; everything the old rule found is still found and comes first.
+// Search finds what's written on the card (2026-11-02, UI review): reminders and ideas weren't indexed, so "landlord"
+// and "zoom" on the student sample said "No threads match" while the words sat on a card. Held here: a card's
+// reminders and ideas (not dismissed ones, which the card hides) are found like its thoughts, through the index App.tsx builds.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
@@ -13,7 +16,7 @@ import { uiServer } from "./ui-server.mjs";
 const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
 const server = await uiServer();
 try {
-  const { searchMatches, heldOpen, mapQuery, OPEN_LIMIT, RANK_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");
+  const { searchMatches, searchFields, heldOpen, mapQuery, OPEN_LIMIT, RANK_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");
 
   // 1. What search finds: the rule as it was inline in App.tsx before, on a seeded random map of 1,000 threads.
   const before = (index, search) => new Set(search ? index.filter(({ fields }) => fields.some((text) => text.includes(search))).map(({ id }) => id) : []);
@@ -61,6 +64,35 @@ try {
   assert.deepEqual(order([["rent"], ["rent"], ["rent"]], "rent"), ["r0", "r1", "r2"], "ties keep map order");
 
   assert.ok(RANK_LIMIT >= 20 && RANK_LIMIT <= 60, `RANK_LIMIT ${RANK_LIMIT}: one to three screens of folded titles (≈ 20 a screen)`);
+
+  // 1c2. What's on the card: both sample maps, indexed as App.tsx indexes them (searchFields), the judges' keyless path.
+  assert.match(app, /searchFields\(thread, thoughts, ideas, actions\)/, "App.tsx indexes a card's ideas and reminders through searchFields");
+  for (const [file, queries] of [
+    ["student-week", { landlord: "Rent is due", zoom: "Group project meeting", "gift card": "Mom's birthday", "rent landlord": "Rent is due" }],
+    ["founder-day", { debrief: "Hiring: senior engineer", "checkout errors": "Bug investigation steps", "revenue retention": "Pitch deck updates", "dr chen": "Mom's appointment" }],
+  ]) {
+    const threads = new Map(), thoughts = [], ideas = [], actions = [];
+    for (const line of readFileSync(new URL(`../samples/${file}.jsonl`, import.meta.url), "utf8").split("\n").filter(Boolean)) {
+      const c = JSON.parse(line);
+      if (c.type === "thread_added") threads.set(c.thread.id, { ...c.thread, tags: [] });
+      if (c.type === "tag_suggested") threads.get(c.thread_id)?.tags.push({ name: c.tag });
+      if (c.type === "thought_added") thoughts.push(c.thought);
+      if (c.type === "suggestion_added") ideas.push(c.suggestion);
+      if (c.type === "action_proposed") actions.push(c.action);
+    }
+    const of = (list, id) => list.filter((item) => item.thread_id === id);
+    const index = [...threads.values()].map((t) => ({ id: t.id, fields: searchFields(t, of(thoughts, t.id), of(ideas, t.id), of(actions, t.id)) }));
+    for (const [q, title] of Object.entries(queries)) {
+      const found = [...searchMatches(index, q)].map((id) => threads.get(id).title);
+      assert.equal(found[0], title, `${file}: "${q}" finds ${title} first (found: ${found.join(", ") || "none"})`);
+    }
+  }
+  const card = { title: "Rent is due", tags: [{ name: "money" }] };
+  const fields = searchFields(card, [], [{ text: "Ask about a Zoom call", status: "dismissed" }], [{ title: "Pay the Landlord", status: "done" }]);
+  assert.equal(fields[0], "rent is due", "the title stays the first field (ranking reads it as the name)");
+  assert.ok(fields.includes("pay the landlord"), "a done reminder still shows on the card, so it's found");
+  assert.ok(!fields.some((text) => text.includes("zoom")), "a dismissed idea is off the card, so it isn't found");
+  assert.equal(searchMatches([{ id: "a", fields: searchFields({ title: "Rent" }, [], [{ text: "lis", status: "new" }], [{ title: "bon", status: "new" }]) }], "lisbon").size, 0, "an idea and a reminder stay separate fields");
 
   // 1d. Fast at 1,000 threads: every letter of a query, typed one by one, well inside a frame.
   const big = Array.from({ length: 1000 }, (_, i) => ({ id: `b${i}`, fields: Array.from({ length: 20 },

@@ -3,8 +3,9 @@
 // Pure rules here (scripts/model-line-check.mjs holds them); the store and hook below; ModelLine.tsx shows it.
 import { useSyncExternalStore } from "react";
 
-/** `superseded`: a racing call dropped because another answered first (core/src/placer.rs); not a failure. */
-export type StepMsg = { type: "step"; id: number; step: string; model: string | null; done: boolean; ok: boolean; ms: number; superseded?: boolean };
+/** `dropped`: the call was cut off unanswered on purpose (the slower of a placement's 2 racing calls, a search past its
+ *  patience), not failed: the core says so (model.rs `StepGuard`), so the line never reads it as the model failing. */
+export type StepMsg = { type: "step"; id: number; step: string; model: string | null; done: boolean; ok: boolean; ms: number; dropped?: boolean };
 
 /** "muse-spark-1.2-contributor" → "Muse Spark 1.2": the model's public name. Contributor mode is how the key asks,
  *  not another model, so it's left out on screen (the full id stays in the line's tooltip). */
@@ -26,6 +27,7 @@ const STEPS: Record<string, string> = {
   refiner: "tidying the map",
   picture: "drawing a picture",
   recap: "reading your day",
+  "recap draft": "keeping your recap ready",
   app: "building your app",
   "app search": "looking for an app you have",
   "app run": "running your app",
@@ -36,8 +38,8 @@ const STEPS: Record<string, string> = {
 };
 const RULES: Record<string, string> = { back: "back to your thread", tune: "played the tune" };
 
-/** Steps you asked for and wait on, "Where was I?" included; the rest (pictures, tidying, an app a watcher woke)
- *  run behind, so they never cover a placing time. */
+/** Steps you asked for and wait on, "Where was I?" included; the rest (pictures, tidying, an app a watcher woke, a
+ *  Recap draft nobody asked for) run behind, so they never cover a placing time. */
 const FOREGROUND = new Set(["placer", "recap", "app", "app search", "find", "explain", "safety net", "import", "back"]);
 
 const kind = (step: string) => (step.startsWith("import") ? "import" : step);
@@ -64,8 +66,8 @@ export function stepped(state: LineState, msg: StepMsg, now: number): LineState 
     return { ...state, running, listening: state.listening?.id === msg.id ? null : state.listening };
   }
   if (!msg.done && msg.model) return { ...state, running: [...running, { id: msg.id, step: msg.step, model: msg.model, at: now }] };
-  // A placement's losing call only stops running: the winner's time stays, never "didn't answer" over it.
-  if (msg.superseded) return { ...state, running };
+  // Dropped: it only stops running. What the line showed stays (a race's winner keeps its time).
+  if (msg.dropped) return { ...state, running };
   // A step behind that finishes during a waited-on step's hold leaves that one's time showing (a picture done 0.1 s
   // after a placing never covers it).
   const last = state.last;
@@ -90,7 +92,7 @@ export function lineFor(state: LineState, now: number, hearing: boolean): Line |
   }
   const behind = running(latest(state.running));
   if (behind) return behind;
-  if (state.listening) return { model: modelName(state.listening.model), id: state.listening.model, text: hearing ? "hearing you" : "listening" };
+  if (state.listening) return { model: modelName(state.listening.model), id: state.listening.model, text: hearing ? "hearing you" : "mic on" };
   return null;
 }
 
@@ -134,8 +136,8 @@ export function useSteps(): { state: LineState; said: string } {
   return useSyncExternalStore(subscribe, read, read);
 }
 
-/** The model a running step of this kind is asked now, by its public name; null when none runs. */
-export function runningModel(state: LineState, step: string): string | null {
-  const r = state.running.filter((r) => r.step === step).at(-1);
+/** The model a running step of these kinds is asked now, by its public name; null when none runs. */
+export function runningModel(state: LineState, ...steps: string[]): string | null {
+  const r = state.running.filter((r) => steps.includes(r.step)).at(-1);
   return r ? modelName(r.model) : null;
 }

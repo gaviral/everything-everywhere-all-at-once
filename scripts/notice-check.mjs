@@ -28,6 +28,7 @@ globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
 const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;
 const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
+const app0 = () => readFileSync(new URL("src/App.tsx", ui), "utf8");
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 const server = await uiServer();
@@ -38,8 +39,16 @@ try {
   // Each of these asks for something only the person can do, or says the core is gone: up until dismissed.
   for (const notice of [
     "The mic stopped. Tap it to keep talking.",
-    "Microphone access is off. Allow it in your browser settings, or type below.",
-    "Couldn't start the mic. Try again. You can type below.",
+    "Couldn't start the mic. Tap it to try again, or type below.",
+    "The browser is blocking the microphone for this site. Allow it from the icon beside the address, then tap the mic. You can type meanwhile.",
+    "Safari is blocking the microphone for this site. Allow it in Safari › Settings for This Website, then tap the mic. You can type meanwhile.",
+    "Safari is blocking the microphone for this site. Allow it in Website Settings, from the page menu in the address bar, then tap the mic. You can type meanwhile.",
+    "Your Mac is blocking the microphone for this browser. Turn it on in System Settings › Privacy & Security › Microphone, then reopen the browser.",
+    "Windows is blocking the microphone for this browser. Turn it on in Settings › Privacy & security › Microphone, then reopen the browser.",
+    "No microphone found. Connect one, then tap the mic, or type below.",
+    "The microphone is busy in another app or didn't start. Close that app, then tap the mic, or type below.",
+    "The microphone wasn't allowed. Tap the mic and choose Allow, or type below.",
+    "Live audio needs a secure page (https). Open the link that starts with https.",
     "Connection lost. Reconnect to use the microphone; you can still type below.",
     "The AI key was refused. Check MODEL_API_KEY in .env, then restart.",
   ]) assert.ok(staysUp(notice), notice);
@@ -49,6 +58,7 @@ try {
   for (const notice of [
     "MODEL_API_KEY is not set: listening and placement are off.",
     "The mic is already off.",
+    "Microphone allowed. Tap to talk.",
     "Back to Rent is due",
     "Kept as a thought: it didn't read as a request",
   ]) assert.ok(!staysUp(notice), notice);
@@ -69,6 +79,19 @@ try {
   const busy = micStopped("Voice Transcribe: Too many requests");
   assert.equal(busy, "The mic stopped: the voice service said “Too many requests”. Tap it to try again, or type below.");
   assert.equal(micStopped(""), "The mic stopped. Tap it to keep talking.");
+  // A mic notice stays until the mic is tapped again, and that tap clears it, so "The mic stopped" never sits over a
+  // listening mic; the refused-key notice isn't the mic's and stays (review ui-voice #2).
+  const { micNotice } = await server.ssrLoadModule("/src/notice-rules.ts");
+  for (const notice of [quiet, busy, micStopped(""),
+    "The browser is blocking the microphone for this site. Allow it from the icon beside the address, then tap the mic. You can type meanwhile.",
+    "Your Mac is blocking the microphone for this browser. Turn it on in System Settings › Privacy & Security › Microphone, then reopen the browser.",
+    "No microphone found. Connect one, then tap the mic, or type below.",
+    "Couldn't start the mic. Tap it to try again, or type below.", "Connection lost. Reconnect to use the microphone; you can still type below.",
+    "The mic stopped: the connection was lost. Tap it once reconnected; you can still type below."]) assert.ok(micNotice(notice), notice);
+  for (const notice of ["The AI key was refused. Check MODEL_API_KEY in .env, then restart.", "Moved to Health", ""]) assert.ok(!micNotice(notice), notice);
+  const appText = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const startPath = appText.slice(appText.indexOf("const toggleMic"), appText.indexOf("await startMic("));
+  assert.match(startPath, /setStartingMic\(true\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its notice");
   for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
 
   // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
@@ -113,6 +136,31 @@ try {
   assert.match(appSource, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
   assert.match(appSource, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
 
+  // Past the hosted site's daily limit the proxy follows the core's key notice with its own line: the window knows
+  // the key is held back for the day, not missing, until the next connection's snapshot says otherwise.
+  say({ type: "notice", message: "MODEL_API_KEY is not set: listening and placement are off." });
+  await settle();
+  assert.ok(core.noKey && !core.resting);
+  say({ type: "notice", message: "Today's free tries are used up; back tomorrow. Your map is still here to read." });
+  await settle();
+  assert.ok(core.noKey && core.resting && !core.keyRefused);
+  // Asking for an app then: the core has no key, so it says making one needs it. Still the day's limit, not a missing key.
+  say({ type: "notice", message: "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart." });
+  await settle();
+  assert.ok(core.noKey && core.resting && !core.keyRefused, "an app's key notice keeps back tomorrow");
+  say({ type: "snapshot", world: {} });
+  await settle();
+  assert.ok(!core.noKey && !core.resting, "a new snapshot: the core says again if it still holds");
+  // The header's words, one place for both its dot and its text.
+  const { statusLine } = await server.ssrLoadModule("/src/core.ts");
+  const line = (extra) => statusLine({ connected: true, listening: false, noKey: false, refused: false, resting: false, paused: false, ...extra });
+  assert.equal(line({}), "Ready");
+  assert.equal(line({ noKey: true }), "No AI key");
+  assert.equal(line({ noKey: true, refused: true }), "AI key refused");
+  assert.match(line({ noKey: true, resting: true }), /^Free tries .*tomorrow/);
+  assert.doesNotMatch(line({ noKey: true, resting: true }), /AI key/);
+  assert.match(app0(), /statusLine\(\{/);
+
   // The words of a voice error stay readable for the window's "The mic stopped" notice.
   say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
   await settle();
@@ -127,6 +175,18 @@ try {
   core.showNotice("Sound isn't available in this browser right now.");
   await settle();
   assert.equal(core.undoId, null);
+
+  // Words heard after an Undo was offered: the core now remembers those (each turn's `correctable`, catalog.rs
+  // `remember`), not the turn the button was for. The button goes, so a click never answers "can't be undone any
+  // more" and its "⌘Z works too" never points ⌘Z at the newer words (review ui-notices #1).
+  say({ type: "notice", message: "Moved “rent” to Pottery Class Budget" });
+  say({ type: "correctable", for_ms: 8000, back_to: null });
+  say({ type: "undoable", id: 2 });
+  await settle();
+  assert.equal(core.undoId, 2, "a turn's own correctable comes before its Undo: that Undo stays");
+  say({ type: "correctable", for_ms: 8000, back_to: null });
+  await settle();
+  assert.equal(core.undoId, null, "a newer turn: the Undo the core can no longer honor goes");
 
   // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review).
   const before = core.answerRevision;

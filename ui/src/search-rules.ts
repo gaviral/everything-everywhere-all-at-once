@@ -1,7 +1,7 @@
 // What search finds and which found cards it holds open, kept pure so scripts/search-check.mjs can hold them.
 
-/** The threads a query finds, best first. A thread is found when every word of the query is somewhere in it (its
- *  title, a tag, a thought's words or its point), in any order: people search the way they'd say it ("dentist
+/** The threads a query finds, best first. A thread is found when every word of the query is somewhere in it (searchFields: its
+ *  title, a tag, a thought's words or point, an idea or a reminder), in any order: people search the way they'd say it ("dentist
  *  thursday", "launch date"), and the whole query as one phrase found nothing for 4 of 4 synthetic users (persona runs,
  *  2026-11-01). A word still can't run across two fields ("lis" + "bon" isn't "lisbon"). Everything the old rule found
  *  (the whole query inside one field) is still found and comes first. Ranked by, in turn:
@@ -27,6 +27,21 @@ export function searchMatches(index: { id: string; fields: string[] }[], search:
   }
   found.sort((a, b) => { for (let i = 0; i < a.rank.length; i++) if (a.rank[i] !== b.rank[i]) return b.rank[i] - a.rank[i]; return 0; });
   return new Set(found.map(({ id }) => id));
+}
+
+/** A card's text as search reads it, one field per piece so a word can't run across two: the title first (ranking
+ *  reads the first field as the card's name), its tags, each thought's words and point, then the ideas and reminders
+ *  the card shows (dismissed ones are off the card, so they aren't found). Before 2026-11-02 only title, tags and
+ *  thoughts counted, and "landlord" on a reminder said "No threads match". */
+export function searchFields(
+  thread: { title: string; tags?: { name: string }[] },
+  thoughts: { text: string; point: string }[] = [],
+  ideas: { text: string; status: string }[] = [],
+  actions: { title: string; status: string }[] = [],
+): string[] {
+  const shown = <T extends { status: string }>(items: T[]) => items.filter((item) => item.status !== "dismissed");
+  return [thread.title, ...(thread.tags ?? []).map((tag) => tag.name), ...thoughts.flatMap((thought) => [thought.text, thought.point]),
+    ...shown(ideas).map((idea) => idea.text), ...shown(actions).map((action) => action.title)].map((text) => text.toLocaleLowerCase());
 }
 
 /** Text as search compares it: lower case, accents off, so "cafe" finds "Café". */

@@ -573,9 +573,9 @@ fn patience(room: u32) -> Duration {
 }
 
 /// How long a first try may take: 1.2 times what filling its whole room takes (9.7 s for 2,000 tokens, so 6 ms a
-/// token): 12 s for a short turn. Above every placement measured: 1,015 turns of up to 1,000 characters across our
-/// journals (2026-10-27 to 11-01), median 2.8 s, 99th percentile 6.5 s, slowest 11.0 s. One that runs out goes
-/// back in line with `patience`, so a slow answer costs one wasted try, not the thought.
+/// token): 12 s for a short turn. Well above every placement measured on this code: 62 placements from the
+/// talks in `scripts/` replayed with demo.mjs (2026-11-01, scripts/trace-summary.mjs), median 2.5 s, slowest 4.4 s.
+/// One that runs out goes back in line with `patience`, so a slow answer costs one wasted try, not the thought.
 fn first_try(room: u32) -> Duration {
     Duration::from_millis(6 * u64::from(room))
 }
@@ -1717,10 +1717,10 @@ mod tests {
         let errors: Vec<&str> = calls.iter().filter_map(|c| c["error"].as_str()).collect();
         assert_eq!((calls.len(), errors.len()), (2, 1), "both calls traced: {calls:?}");
         assert!(errors[0].starts_with("dropped before its answer"), "{errors:?}");
-        // The windows hear the winner answered and the loser superseded, never that a placing call failed: the model
-        // line would say "didn't answer" over every placed thought.
-        let told: Vec<_> = ends.iter().map(|m| (m["step"].as_str(), m["ok"].as_bool(), m["superseded"].as_bool())).collect();
-        assert_eq!(told, [(Some("placer"), Some(true), Some(false)), (Some("placer"), Some(false), Some(true))], "{ends:?}");
+        // The windows hear the winner answered and the loser dropped (`dropped`, omitted when false), never that a
+        // placing call failed: the model line would say "didn't answer" over every placed thought.
+        let told: Vec<_> = ends.iter().map(|m| (m["step"].as_str(), m["ok"].as_bool(), m["dropped"].as_bool().unwrap_or(false))).collect();
+        assert_eq!(told, [(Some("placer"), Some(true), false), (Some("placer"), Some(false), true)], "{ends:?}");
     }
 
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
