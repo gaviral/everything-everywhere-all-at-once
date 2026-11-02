@@ -567,11 +567,30 @@ impl World {
             Change::ItemMoved { id, thread_id } => {
                 let to = self.resolve(thread_id);
                 if self.thread(&to).is_some() {
+                    let (mut idea, mut task) = (false, false);
                     if let Some(s) = self.suggestions.iter_mut().find(|s| &s.id == id) {
                         s.thread_id = to.clone();
+                        idea = true;
                     }
                     if let Some(a) = self.actions.iter_mut().find(|a| &a.id == id) {
-                        a.thread_id = to;
+                        a.thread_id = to.clone();
+                        task = true;
+                    }
+                    // As a thought moved (`moved`): a card moved is where it was put, not where a merge took it; one
+                    // sent to a thread merged away since goes with that thread if its merge is undone.
+                    for u in self.unmerge.values_mut() {
+                        u.suggestions.retain(|x| x != id);
+                        u.actions.retain(|x| x != id);
+                    }
+                    if to != *thread_id {
+                        if let Some(u) = self.unmerge.get_mut(thread_id) {
+                            if idea {
+                                u.suggestions.push(id.clone());
+                            }
+                            if task {
+                                u.actions.push(id.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -665,6 +684,8 @@ impl World {
         let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
         let to = if with.is_empty() { t.guess.clone() } else { with.to_string() };
         let mut swapped = None;
+        // Asked about words its own don't hold: they were said in a part it carries on (the joined point reads both).
+        let in_heads = accept && find(&t.text, &t.unclear).is_none();
         if accept && !t.unclear.is_empty() && !to.is_empty() {
             t.text = swap(&t.text, &t.unclear, &to);
             t.point = swap(&t.point, &t.unclear, &to);
@@ -691,6 +712,23 @@ impl World {
             let carriers: Vec<String> = crate::chunks::carriers(self, thought_id).map(|t| t.id.clone()).collect();
             for id in carriers {
                 self.repoint(&id, |p| swap(p, &from, &to));
+            }
+            // And the part that said them, when that's where they were: its words said show the fix (each part's own
+            // text is what "words said" quotes), as does its own point if the two are kept apart; its own question
+            // about the same words is answered with it.
+            if in_heads {
+                let mut seen = vec![thought_id.to_string()];
+                while let Some(head) = self.notes.get(seen.last().unwrap()).map(|n| n.continues.clone()).filter(|h| !h.is_empty() && !seen.contains(h)) {
+                    if let Some(h) = self.thoughts.iter_mut().find(|t| t.id == head && find(&t.text, &from).is_some()) {
+                        h.text = swap(&h.text, &from, &to);
+                        if h.unclear.eq_ignore_ascii_case(&from) {
+                            h.unclear.clear();
+                            h.guess.clear();
+                        }
+                        self.repoint(&head, |p| swap(p, &from, &to));
+                    }
+                    seen.push(head);
+                }
             }
         }
     }
@@ -1375,6 +1413,7 @@ mod tests {
                     proposals: Vec::new(),
                     active: false,
                     active_by: Vec::new(),
+                    last_point: Some("Its card's point, read when the undo was made".into()),
                 },
             },
             Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() },
@@ -1421,6 +1460,35 @@ mod tests {
                     thought_count: 2,
                     thread_count: 2,
                     limited: true,
+                },
+            },
+            // A yes on a joined point about words said in its first part: that part's words are fixed too.
+            Change::ThoughtAdded { thought: test_thought("e", "Ana", "T1") },
+            placed("e", "T1", "", "", false),
+            Change::ThoughtAdded { thought: Thought { text: "the lease".into(), ..test_thought("f", "Ana", "T1") } },
+            placed("f", "T1", "", "", true),
+            Change::ThoughtNoted { thought_id: "f".into(), note: crate::chunks::Note { continues: "e".into(), ..crate::chunks::Note::default() } },
+            Change::ThoughtCorrected { thought_id: "f".into(), accept: true, with: String::new() },
+            // A branch's merge undone after its parent merged away: it comes back under where the parent went, and
+            // with no point carried (a journal from before), its card's point is read as it always was.
+            Change::ThreadAdded { thread: test_thread("T6", None) },
+            Change::ThreadAdded { thread: test_thread("T7", Some("T6")) },
+            Change::ThreadAdded { thread: test_thread("T8", None) },
+            Change::ThreadMerged { from: "T7".into(), into: "T8".into() },
+            Change::ThreadMerged { from: "T6".into(), into: "T1".into() },
+            Change::ThreadUnmerged {
+                unmerge: crate::tidy::Unmerge {
+                    thread: test_thread("T7", Some("T6")),
+                    into: "T8".into(),
+                    at: 0,
+                    thoughts: Vec::new(),
+                    branches: Vec::new(),
+                    suggestions: Vec::new(),
+                    actions: Vec::new(),
+                    proposals: Vec::new(),
+                    active: false,
+                    active_by: Vec::new(),
+                    last_point: None,
                 },
             },
         ];
@@ -1525,7 +1593,10 @@ mod tests {
 
         // And the talk landed as told.
         let w = &replayed;
-        assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T3", "T4"], "a merge undone puts its thread back");
+        assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T7", "T1", "T3", "T4", "T8"], "a merge undone puts its thread back");
+        assert_eq!(w.thread("T7").unwrap().parent_id.as_deref(), Some("T1"), "under the thread its parent went into");
+        let e = w.thoughts.iter().find(|t| t.id == "e").unwrap();
+        assert_eq!((e.text.as_str(), e.unclear.as_str()), ("ask Muse Spark about e", ""), "a yes on the joined point fixes the part that said it");
         assert_eq!((w.proposals.len(), w.proposals[0].into.as_str()), (1, "T1"));
         assert_eq!(w.thread("T3").unwrap().title, "Budget and demo", "a change aimed at a merged thread follows it");
         assert_eq!((w.active_for("Ana").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));

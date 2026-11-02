@@ -1079,7 +1079,7 @@ pub(crate) fn short(text: &str) -> String {
 
 pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
     match undo {
-        Undo::Move { to } => core.focus(speaker, to),
+        Undo::Move { to } => core.back_to(speaker, to),
         Undo::Unfile { thought, started, to } => {
             let world = core.snapshot();
             let filed: Vec<Thought> = world.thoughts.iter().filter(|t| &t.id == thought).cloned().collect();
@@ -1102,6 +1102,8 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
             changes.extend(repoint(&world, &landed, &filed));
             drop(world);
             core.commit(changes);
+            // `focus`, not `back_to`: filing can itself drop the thread it left (spoken.rs `land` marks one whose last
+            // words trailed off), and undoing the filing reopens it.
             if let Some(to) = to {
                 core.focus(speaker, &to);
             }
@@ -1110,8 +1112,16 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
             // A thread the take-back merged away comes apart first, with whoever was on it (tidy.rs `unmerge`), so the
             // words come back on their own card, not on the one it merged into.
             let world = core.snapshot();
+            // Each read on the map the ones before it left (`tidy::unmerging`).
+            let mut after = (*world).clone();
             let apart: Vec<Change> = merged.iter().filter(|id| world.merged.contains_key(*id))
-                .filter_map(|id| world.unmerge.get(id).cloned()).map(|unmerge| Change::ThreadUnmerged { unmerge }).collect();
+                .filter_map(|id| world.unmerge.get(id))
+                .map(|unmerge| {
+                    let change = crate::tidy::unmerging(&after, unmerge);
+                    after.apply(&change);
+                    change
+                })
+                .collect();
             drop(world);
             if !apart.is_empty() {
                 core.commit(apart);
@@ -1166,16 +1176,18 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
             for t in thoughts.iter().filter(|t| !t.placed) {
                 let _ = core.placer_queue.send(crate::placer::Job::Place(t.id.clone()));
             }
-            // Their point is the thread's last again where they're its newest.
+            // Their point is the thread's last again where they're its newest: the one it showed before they went.
+            // Not on a thread merged away since: the card it went into keeps its own point, as the merge left it.
             let world = core.snapshot();
             let restored = |t: &Thought| thoughts.iter().any(|r| r.id == t.id);
-            let mut ids: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
+            let mut ids: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.clone()).filter(|id| world.resolve(id) == *id).collect();
             ids.dedup();
             let touched: Vec<Change> = ids.iter().filter_map(|id| {
                 let thread = world.thread(id)?;
                 let latest = newest(&world, id, |_| false).filter(|t| restored(t))?;
-                (latest.point != thread.last_point)
-                    .then(|| Change::LastPoint { thread_id: id.clone(), last_point: latest.point.clone() })
+                let was = threads.iter().find(|t| t.id == *id).map(|t| t.last_point.clone()).filter(|p| !p.is_empty());
+                let point = was.unwrap_or_else(|| latest.point.clone());
+                (point != thread.last_point).then(|| Change::LastPoint { thread_id: id.clone(), last_point: point })
             }).collect();
             drop(world);
             if !touched.is_empty() {

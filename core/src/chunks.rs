@@ -378,4 +378,23 @@ mod tests {
         w.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() });
         assert_eq!(w.thoughts[1].point, "Ask muse bark about the lease");
     }
+
+    /// The joined point asks "Did you mean Muse Spark?" about words said in its first part (the model reads both
+    /// parts, and only a sure fix must be in the point's own words): a yes fixes the words said too, which show
+    /// both parts, and the first part's own point, which shows again if the two are kept apart.
+    #[test]
+    fn a_yes_on_the_joined_point_fixes_the_part_that_said_it() {
+        let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1");
+        w.thoughts[0].text = "ask muse bark about".into();
+        w.thoughts[0].point = "Ask muse bark about".into();
+        w.thoughts[1].text = "the lease".into();
+        w.thoughts[1].point = "Ask muse bark about the lease".into();
+        w.thoughts[1].unclear = "muse bark".into();
+        w.thoughts[1].guess = "Muse Spark".into();
+        w.apply(&Change::ThoughtNoted { thought_id: "b".into(), note: Note { continues: "a".into(), ..Note::default() } });
+        w.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: true, with: String::new() });
+        assert_eq!(w.thoughts[1].point, "Ask Muse Spark about the lease");
+        assert_eq!((w.thoughts[0].text.as_str(), w.thoughts[0].point.as_str()), ("ask Muse Spark about", "Ask Muse Spark about"), "words said keep no old word");
+        assert_eq!(w.thoughts[1].text, "the lease");
+    }
 }

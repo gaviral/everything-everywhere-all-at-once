@@ -55,6 +55,10 @@ pub struct Unmerge {
     pub active: bool,
     #[serde(default)]
     pub active_by: Vec<String>,
+    /// The point its card shows once back, read when the undo was made (`unmerging`), so applying it reads no clock
+    /// and a replay gives the card the person saw. None in a merge's record and in a journal from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_point: Option<String>,
 }
 
 /// Records what merging `from` into `into` is about to move (called by `World::merge` before it moves anything), and
@@ -78,7 +82,22 @@ pub fn record(world: &mut World, from: &str, into: &str) -> Option<Unmerge> {
         proposals: waiting,
         active: world.active.as_deref() == Some(from),
         active_by: world.active_by.iter().filter(|(_, id)| *id == from).map(|(who, _)| who.clone()).collect(),
+        last_point: None,
     })
+}
+
+/// The change that undoes merge `u` on `world` now: its card's point is read here, once, by the clock (`newest`), and
+/// carried in the change, so the journal replays it the same.
+pub fn unmerging(world: &World, u: &Unmerge) -> Change {
+    let mut back = world.clone();
+    unmerge(&mut back, &Unmerge { last_point: None, ..u.clone() });
+    let last_point = back.thread(&u.thread.id).map(|t| t.last_point.clone());
+    Change::ThreadUnmerged { unmerge: Unmerge { last_point, ..u.clone() } }
+}
+
+/// The newest point on thread `id` (by `Thought::said_at`: a time ahead of the clock counts as the earliest).
+fn newest(world: &World, id: &str, now: u64) -> Option<String> {
+    world.thoughts.iter().filter(|t| t.placed && t.thread_id.as_deref() == Some(id)).max_by_key(|t| t.said_at(now)).map(|t| t.point.clone())
 }
 
 /// Puts a merged thread back (`Change::ThreadUnmerged`): what it held comes back from wherever the merge sent it, if
@@ -91,7 +110,10 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     let into = world.resolve(&u.into);
     world.merged.remove(&from);
     world.unmerge.remove(&from);
-    world.threads.insert(u.at.min(world.threads.len()), u.thread.clone());
+    // A branch whose parent merged away since goes under the thread that parent went into; one off the map, to the top.
+    let mut thread = u.thread.clone();
+    thread.parent_id = thread.parent_id.map(|p| world.resolve(&p)).filter(|p| *p != from && world.thread(p).is_some());
+    world.threads.insert(u.at.min(world.threads.len()), thread);
     let back = |ids: &[String], id: &str, on: &mut String| {
         if ids.iter().any(|x| x == id) && *on == into {
             *on = from.clone();
@@ -112,10 +134,9 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     for p in world.proposals.iter_mut().filter(|p| u.proposals.contains(&p.id) && p.thread_id == from && p.status == ItemStatus::Done) {
         p.status = ItemStatus::New;
     }
-    // Its card shows its newest point now there: one deleted since the merge isn't on it.
-    let now = crate::now_ms();
-    let newest = world.thoughts.iter().filter(|t| t.placed && t.thread_id.as_deref() == Some(from.as_str()))
-        .max_by_key(|t| t.said_at(now)).map(|t| t.point.clone());
+    // Its card shows its newest point now there: one deleted since the merge isn't on it. Read when the undo was
+    // made (`unmerging`); a journal from before that carries none, and it's read here as it always was.
+    let newest = u.last_point.clone().or_else(|| newest(world, &from, crate::now_ms()));
     if let (Some(point), Some(thread)) = (newest, world.threads.iter_mut().find(|t| t.id == from)) {
         thread.last_point = point;
     }
@@ -208,7 +229,7 @@ pub fn undo(core: &Core, speaker: &str, kind: Kind, thread_id: &str) {
         // Nothing of it left on the map (its points deleted since): no empty card comes back, with words long gone.
         Kind::Merge => world.unmerge.get(thread_id).filter(|_| world.merged.contains_key(thread_id))
             .filter(|u| u.thoughts.iter().any(|id| world.thoughts.iter().any(|t| &t.id == id)) || u.branches.iter().any(|id| world.thread(id).is_some()))
-            .map(|u| Change::ThreadUnmerged { unmerge: u.clone() }),
+            .map(|u| unmerging(&world, u)),
     };
     match change {
         Some(change) => core.commit(vec![change]),
@@ -517,6 +538,46 @@ mod tests {
         super::undo(&core, "you", Kind::Merge, "T1");
         super::undo(&core, "you", Kind::Merge, "T2");
         assert_eq!(shape(&core.snapshot()), shape(&before));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A branch whose merge is undone after its parent merged away: it comes back under the thread its parent went
+    /// into, not under a parent that isn't on the map (a card no top thread holds).
+    #[test]
+    fn a_branch_comes_back_under_the_thread_its_parent_went_into() {
+        let mut world = map();
+        // T3 (a branch of T2) into T4, then T2 into T1.
+        world.apply(&Change::ThreadMerged { from: "T3".into(), into: "T4".into() });
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge["T3"].clone() });
+        assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T1"));
+        assert_eq!(world.thoughts.iter().find(|t| t.id == "d").unwrap().thread_id.as_deref(), Some("T3"));
+    }
+
+    /// Replay gives the map the person saw: an undone merge's card shows the point it showed live, whatever the
+    /// clock says when the journal is read. A point dated just ahead of the clock (a sample, a wrong clock) counted
+    /// as the earliest live and as the newest once the clock passed it.
+    #[test]
+    fn an_undone_merge_replays_to_the_card_it_showed() {
+        // Reason for 300 ms: ahead of the clock when the undo runs, behind it once the test has waited 600 ms.
+        const AHEAD_MS: u64 = 300;
+        let now = crate::now_ms();
+        let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], thoughts: vec![said("a", "T1"), said("b", "T2"), said("c", "T2")], ..World::default() };
+        world.thoughts[1].at_ms = now - 60_000;
+        world.thoughts[2].at_ms = now + AHEAD_MS;
+        world.threads[1].last_point = "c".into();
+        world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        let start = world.clone();
+        let (core, path) = core(world);
+        super::undo(&core, "you", Kind::Merge, "T2");
+        let live = core.snapshot().thread("T2").unwrap().last_point.clone();
+        assert_eq!(live, "b", "a point dated ahead counts as the earliest");
+        std::thread::sleep(std::time::Duration::from_millis(2 * AHEAD_MS));
+        let mut replayed = start;
+        for line in std::fs::read_to_string(&path).unwrap().lines() {
+            replayed.apply(&serde_json::from_str(line).unwrap());
+        }
+        assert_eq!(replayed.thread("T2").unwrap().last_point, live);
         std::fs::remove_file(&path).unwrap();
     }
 }

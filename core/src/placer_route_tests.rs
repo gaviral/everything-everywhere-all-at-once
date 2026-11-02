@@ -215,3 +215,61 @@ fn a_kept_skip_says_why() {
     assert_eq!(ruled("so anyway I was thinking about the rent and the lease and the deposit", ""), Some(rules::NOT_FILLER));
     assert_eq!(ruled("Okay so the rent", "nothing like this"), Some(rules::FILLER_UNCLEAR));
 }
+
+/// "The blue." right after "Blue or red?" answers it: placed whatever the model says, as the prompt asks of it
+/// ("never skip … any other answer"), and the map says which rule kept it. After a statement it's filler as ever.
+#[test]
+fn a_short_answer_to_a_question_is_never_set_aside() {
+    let question = Thought { speaker: "Sam".into(), ..said("q", "Should we go with the blue or the red?", Some("T1"), 5_000, true) };
+    let blue = said("n", "The blue.", None, 6_000, true);
+    let mut world = map(vec![question, blue.clone()]);
+    let skip = || answer(json!({"action": "skip", "thread_id": "T1", "point": "The blue"}));
+    let (changes, rule) = decide_ruled(&world, &blue, skip(), 0, false, true);
+    assert!(changes.iter().any(|c| matches!(c, Change::ThoughtPlaced { thread_id, .. } if thread_id == "T1")), "{changes:?}");
+    assert_eq!(rule, Some(rules::ANSWERS));
+    world.thoughts[0].text = "We went with the red.".into();
+    let (changes, _) = decide_ruled(&world, &blue, skip(), 0, false, true);
+    assert!(matches!(changes[..], [Change::ThoughtSkipped { .. }]), "{changes:?}");
+}
+
+/// The time on the landing tag counts from when the first calls went: an answer cut off at its room and asked again
+/// took both rounds, and the tag says so (it said only the second).
+#[tokio::test]
+async fn the_landing_time_counts_a_cut_off_first_round() {
+    // Reason for 300 ms: long enough to stand clear of a local reply (≈ 1 ms), short enough for a unit test.
+    const FIRST_ROUND_MS: u64 = 300;
+    let placement = json!({"action": "continue", "thread_id": "T1", "point": "The rent went up", "why": "rent"});
+    let good = json!({"choices": [{"finish_reason": "stop", "message": {"content": placement.to_string()}}]});
+    let cut = json!({"choices": [{"finish_reason": "length", "message": {"content": "{\"action\": \"conti"}}]});
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let service = move |_: axum::Json<serde_json::Value>| {
+        let (good, cut, calls) = (good.clone(), cut.clone(), calls.clone());
+        async move {
+            if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(FIRST_ROUND_MS)).await;
+                axum::Json(cut)
+            } else {
+                axum::Json(good)
+            }
+        }
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+
+    let path = std::env::temp_dir().join(format!("e2a2o-route-{}.jsonl", uuid::Uuid::new_v4()));
+    let (journal, _) = crate::world::Journal::open(&path).unwrap();
+    let core = Core { key: Some("good".into()), placer_race: 1, ..Core::test(journal, map(vec![])) };
+    let mut updates = core.updates.subscribe();
+    let id = core.keep("you", "The rent went up");
+    super::place(&core, &id, &url, super::patience).await.unwrap();
+    let _ = std::fs::remove_file(&path);
+    let mut ms = None;
+    while let Ok(out) = updates.try_recv() {
+        if let ServerMsg::Route { route: Route::Decided { ms: took, .. } } = out.message {
+            ms = Some(took);
+        }
+    }
+    let ms = ms.expect("a landing");
+    assert!(ms >= FIRST_ROUND_MS, "the tag said {ms} ms; the first round alone took {FIRST_ROUND_MS} ms");
+}
