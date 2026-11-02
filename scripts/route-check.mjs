@@ -48,6 +48,10 @@ try {
   assert.equal(landTag(decided("x", ["T4"], { new: true, rule: "one level of branches", why: "names the seat" })), "new thread · rule: one level of branches");
   assert.equal(landTag(decided("x", ["T1", "T4"], { new: true })), "new branch");
   assert.equal(raceLine(decided("x", ["T1"], { lanes: 1, ms: 900 })), "Answered in 0.9 s");
+  // Each lane may ask its own model (core/src/placer.rs `MODELS`): the line names the one that placed it, by its public name.
+  assert.equal(raceLine(decided("x", ["T1"], { model: "muse-spark-1.3", why: "names the flight" })),
+    "Names the flight. First good answer of 2 calls (Muse Spark 1.3), in 2.1 s");
+  assert.equal(raceLine(decided("x", ["T1"], { lanes: 1, ms: 900, model: "muse-spark-1.2-contributor" })), "Answered (Muse Spark 1.2) in 0.9 s");
 
   // A turn said in two parts weighs its second 0 ms after the first lands: the landing's tag stays until read, over
   // the card's candidate light (it's the speaker's active now); once read, the card is a candidate.

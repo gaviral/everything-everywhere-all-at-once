@@ -51,11 +51,13 @@ const named = {
   "Muse Spark 1.3": "muse-spark-1.3",
   "Muse Image 1.0": "muse-image-1.0",
 };
+// "Muse Spark 1.3 + 1.2" (two models racing, as the model line says it) names both.
+const spelled = first.replace(/(Muse (?:Voice Transcribe|Spark|Image)) ([\d.]+) \+ ([\d.]+)/g, "$1 $2 + $1 $3");
 for (const [name, id] of Object.entries(named)) {
-  assert.ok(first.includes(name), `the first screen doesn't name ${name}`);
+  assert.ok(spelled.includes(name), `the first screen doesn't name ${name}`);
   assert.ok(called.has(id), `the first screen names ${name}, but the core never calls "${id}"`);
 }
-for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)?(?: Contributor)?/g)) {
+for (const m of spelled.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)?(?: Contributor)?/g)) {
   const id = m[0].toLowerCase().replace(/ /g, "-");
   assert.ok([...called].some((c) => c.startsWith(id)), `the first screen names ${m[0]}, which the core never calls`);
 }
@@ -64,13 +66,24 @@ for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)
 // none at all). Removing a row, its link or its evidence fails here.
 const ROLES = [
   { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /"kind":"heard"/ },
-  // Contributor mode is opt-in; a trace taken with it on still proves Muse Spark 1.2 places.
-  { anchor: "placer", model: "Muse Spark 1.2", proof: /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/ },
+  // Placing races Spark 1.3 and 1.2 (core/src/placer.rs `MODELS`): each needs its own placing call in the trace, or the
+  // row saying that one's proof is pending ("1.3 pending"). Contributor mode is opt-in; a trace taken with it on still
+  // proves its model places.
+  {
+    anchor: "placer",
+    model: "Muse Spark 1.3 + 1.2",
+    each: [
+      ["1.3", /"feature":"placer","model":"muse-spark-1\.3(-contributor)?"/],
+      ["1.2", /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/],
+    ],
+  },
   { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
-  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"composer","model":"muse-spark-1\.3"/ },
-  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap","model":"muse-spark-1\.3"/ },
+  // The core traces building an app as "app" (core/src/apps.rs `feature`), and a Recap kept current before you ask as
+  // "recap draft" (core/src/recap.rs): asking shows that draft, so either call proves the Recap's model.
+  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"app","model":"muse-spark-1\.3"/ },
+  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap( draft)?","model":"muse-spark-1\.3"/ },
   { anchor: "pictures", model: "Muse Image 1.0", proof: /"feature":"picture","model":"muse-image-1\.0"/ },
-  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"Wait, where was I\?"/, none: /"model":/ },
+  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"[Ww]ait, where was I\?"/, none: /"model":/ },
 ];
 assert.ok(/\(docs\/trace\.md(#[a-z0-9-]+)?\)/.test(first), "the first screen doesn't link to docs/trace.md");
 const trace = read("docs/trace.md");
@@ -78,7 +91,7 @@ const slug = (h) => h.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-
 const sections = new Map(trace.split(/^(?=## )/m).map((part) => [slug(part.split("\n")[0].replace(/^## /, "")), part]));
 const rows = first.split("\n").filter((l) => /^\|.*\(docs\/trace\.md#[a-z0-9-]+\)/.test(l));
 assert.equal(rows.length, ROLES.length, `the first screen has ${rows.length} model rows with proof; expected ${ROLES.length}`);
-for (const { anchor, model, when, proof, none } of ROLES) {
+for (const { anchor, model, when, proof, each, none } of ROLES) {
   const row = rows.find((l) => l.includes(`(docs/trace.md#${anchor})`));
   assert.ok(row, `the first screen has no row linking to docs/trace.md#${anchor}`);
   const cells = row.split("|").map((c) => c.trim());
@@ -86,7 +99,13 @@ for (const { anchor, model, when, proof, none } of ROLES) {
   if (when) assert.match(row, when, `the #${anchor} row isn't the one for ${when}`);
   const section = sections.get(anchor);
   assert.ok(section, `docs/trace.md has no section for #${anchor}`);
-  assert.match(section, proof, `docs/trace.md#${anchor} shows no evidence for its row (${proof})`);
+  if (proof) assert.match(section, proof, `docs/trace.md#${anchor} shows no evidence for its row (${proof})`);
+  for (const [version, shows] of each ?? []) {
+    const pending = row.includes(`${version} pending`);
+    if (shows.test(section)) assert.ok(!pending, `the #${anchor} row says ${version} is pending, but docs/trace.md#${anchor} shows it`);
+    else assert.ok(pending, `docs/trace.md#${anchor} shows no call by ${version} for its row (${shows}), and the row doesn't say "${version} pending"`);
+  }
+  if (each) assert.ok(each.some(([, shows]) => shows.test(section)), `docs/trace.md#${anchor} proves none of its row's models`);
   if (none) assert.doesNotMatch(section, none, `docs/trace.md#${anchor} says no model, but shows a model call`);
 }
 for (const id of ["muse-spark-1.2", "muse-spark-1.3", "muse-image-1.0"]) {
@@ -129,6 +148,13 @@ assert.equal(ex[0].sent.characters, 1800);
 assert.ok(ex[0].sent.last.length <= KEEP + 1 && ex[0].answer.length <= KEEP + 1, "an excerpt keeps the whole prompt");
 assert.deepEqual(ex[2].answer, { images: 1 });
 assert.equal(shorten(lines[3]).error, "timed out");
+// A race's slower call is dropped, not failed: it counts apart and keeps out of the times.
+const raced = summary(parse([
+  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], answer: "{}" },
+  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], error: "dropped before its answer: another of the same call answered first" },
+].map((l) => JSON.stringify(l)).join("\n")));
+assert.deepEqual(raced.calls.map((r) => [r.calls, r.failed, r.dropped, r.median_ms]), [[2, 0, 1, 2000]]);
+assert.match(table(raced), /\| placer \| muse-spark-1\.3 \| 2 \(1 dropped\) \| 2\.0 s \| 2\.0 s \|/);
 
 // Nothing acts unasked (core/src/apps.rs `starts_on`): only Search-first starts on, and only in demo mode, so the
 // docs a judge reads must not say the Argument resolver or the Volume watcher run before they're switched on. Change

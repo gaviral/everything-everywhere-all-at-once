@@ -18,14 +18,14 @@
 | When you… | Meta model | Does | Measured | Proof: [a real run's trace](docs/trace.md) |
 |---|---|---|---|---|
 | talk | Muse Voice Transcribe 1.0 | hears you, live | 0.4 s after you stop | [heard](docs/trace.md#heard) |
-| finish a thought | Muse Spark 1.2 | places it; notices it trailed off | 2.9 s after the words | [placer](docs/trace.md#placer) |
-| pause | Muse Spark 1.3 | tidies; proposes reminders | 16.6 s, in pauses | [refiner](docs/trace.md#refiner) |
+| finish a thought | Muse Spark 1.3 + 1.2 | places it (both race); notices it trailed off | 2.8 s after the words | [placer](docs/trace.md#placer) |
+| pause | Muse Spark 1.3 | tidies; proposes reminders | 10.5 s, in pauses | [refiner](docs/trace.md#refiner) |
 | say “make an app that…” | Muse Spark 1.3 | builds it from blocks | 5.6 s after you stop | [composer](docs/trace.md#composer) |
 | ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | 0.4 s after you ask | [recap](docs/trace.md#recap) |
-| let a thread settle | Muse Image 1.0 | draws its picture | 20.6 s each | [pictures](docs/trace.md#pictures) |
+| let a thread settle | Muse Image 1.0 | draws its picture | 17.4 s each | [pictures](docs/trace.md#pictures) |
 | say “where was I?”, get loud | no model | rules: the jump back, the tune | 0.4 s after you stop | [rules](docs/trace.md#rules) |
 
-A line beside the mic names the model at work (“Muse Spark 1.2 · placing your thought”) or says “by rule, no model”. n and dates: [Measured](#measured).
+A line beside the mic names the model at work, and a race's winner, or says “by rule, no model”. n and dates: [Measured](#measured).
 
 <!-- end of the first screen -->
 
@@ -52,7 +52,7 @@ The story the video tells, line by line. Play it yourself with [scripts/story-ta
 
 | You say | What happens |
 |---|---|
-| “My biggest problem is that I never finish my” | A new thread. Muse Spark 1.2 notes the thought trailed off. |
+| “My biggest problem is that I never finish my” | A new thread. Muse Spark (1.3 or 1.2, whichever answers first) notes the thought trailed off. |
 | “Oh, and rent is due Friday and I still haven't sent it.” | A new thread, *Rent Due Friday*. The thread you left is marked **left off**, and 2.5 s into the next pause a card quotes your half-sentence. |
 | “Wait, where was I?” | Back on the thread you left, by rule, with no model call. |
 | “Sentences. I never finish my sentences.” | Joined to the half-sentence as one point, marked ✦ joined; a tap keeps them apart. |
@@ -75,7 +75,7 @@ The story the video tells, line by line. Play it yourself with [scripts/story-ta
 browser, one page per window               the core: one Rust process on your laptop
 mic: 24 kHz audio, 80 ms frames ──/ws──▶   Muse Voice Transcribe 1.0: live words, end of each turn
                                            rules: filler, commands, "decided:"        (no model)
-                                           Muse Spark 1.2: which thread? (JSON)        one thought at a time
+                                           Muse Spark 1.3 + 1.2: which thread? (JSON)  one thought at a time
 the map, live ◀── every change ─────────   journal: one JSON line per change, replayed on start
                                            at pauses: Muse Spark 1.3 (tidy, Recap, apps)
                                                       Muse Image 1.0 (a picture per thread)
@@ -83,14 +83,14 @@ the map, live ◀── every change ─────────   journal: one 
 
 1. **Hear.** The page streams the mic to the core over a WebSocket. The core opens one Muse Voice Transcribe session per window and relays the audio; your words show live, and the service ends a turn when you pause. The key stays in the core.
 2. **Rules first.** Before a model sees a turn, the core sets aside filler and acts on spoken commands; a command at the end of a turn (“…the flight. Where was I?”) waits for the words before it to land. A decision said in so many words (“decided:”, “let's go with …”) is marked ✓ Decided by rule, never guessed.
-3. **Place.** Muse Spark 1.2, at minimal reasoning, reads each thread's title and last point, the thread you're on and what you said just before, and answers in a JSON schema: continue, go back to an earlier thread, start a new one, or branch a tangent off one; a point of 12 words or fewer; whether you trailed off; any word that looks misheard. Only thread ids that exist are trusted. A turn that changes topic is cut where the answer says and placed in two parts. Thoughts go one at a time, in the order said, so each sees the map the one before left. Two identical calls race and the first good answer wins, since how long the model reasons varies from call to call (`PLACER_RACE=1` sends one).
+3. **Place.** Muse Spark 1.3 and Muse Spark 1.2, at minimal reasoning, reads each thread's title and last point, the thread you're on and what you said just before, and answers in a JSON schema: continue, go back to an earlier thread, start a new one, or branch a tangent off one; a point of 12 words or fewer; whether you trailed off; any word that looks misheard. Only thread ids that exist are trusted. A turn that changes topic is cut where the answer says and placed in two parts. Thoughts go one at a time, in the order said, so each sees the map the one before left. Two calls race, one to each model, and the first good answer wins: how long a model reasons varies from call to call, and a slow spell mostly hits one model at a time. The window names the model that won (`PLACER_RACE=1` sends one call).
 4. **Show.** Every change is appended to `data/<map>/journal.jsonl` and sent to every open window. While the placing calls run, the threads the prompt singles out light up, each with why (“said just before”, “left unfinished”); then the thought lands. Beside the mic, a line names the model at work and then how long it took (“answered · 2.6 s”), or says “by rule, no model”.
 5. **While you pause.** Muse Spark 1.3 tidies: titles, one next step per thread, reminders and dated events from what you said, tags. A rename made of your own words lands with Undo; every other rename, and every merge, waits for your click. Muse Image 1.0 draws one picture per thread that has settled, for the Palace. A Recap draft stays current while the hour has model calls to spare, so asking shows it at once.
 6. **Apps from blocks.** “Make an app that …” asks Muse Spark 1.3 to choose from a closed set of blocks: a watcher (a new thought, a phrase, a topic, loud voices, a time), an optional prompt, and a card, a short tune or a proposed reminder. The core rejects any block, field or value outside the schema; apps can't run code, open links or act on their own. Of the three seed apps, the two that fire on their own start off until you switch them on in Apps: Argument resolver, which names a repeated point or a common fallacy, and Volume watcher, which plays a silly tune when voices stay loud. The third, Search-first, only looks for an app you already have while a new one is being built.
 
 ### What needs a model, and what doesn't
 
-- **Meta models, all through `api.meta.ai`:** hearing (Voice Transcribe 1.0); placing, Did you mean, Explain, Why here and reading a correction no rule reads (Spark 1.2); tidying, Recap, apps and search by meaning (Spark 1.3); importing past chats (Spark 1.2 pulls out the ideas, Spark 1.3 groups them); pictures (Image 1.0).
+- **Meta models, all through `api.meta.ai`:** hearing (Voice Transcribe 1.0); placing, Did you mean and Why here (Spark 1.3 and 1.2 race, the first good answer wins); Explain and reading a correction no rule reads (Spark 1.2); tidying, Recap, apps and search by meaning (Spark 1.3); importing past chats (Spark 1.2 pulls out the ideas, Spark 1.3 groups them); pictures (Image 1.0).
 - **Rules in the core, no model:** spoken commands, filler, ✓ Decided, the jump back, search by words, the hourly call cap, the journal, and an app's watcher deciding when it fires.
 - **The browser:** the mic (`getUserMedia` and an AudioWorklet that sends 24 kHz audio), the app's tune (Web Audio), Export to Markdown, and the calendar file (`.ics`) where Calendar can't be reached.
 - **macOS:** Reminders and Calendar, through AppleScript, only when you approve an item. Messages only in the Full preset, after a countdown you can stop, and as a dry run unless you turn sending on ([details](docs/FEATURES.md#presets-and-messages)).
@@ -141,15 +141,17 @@ Every voice below was synthesized, not a person's, and spoke through the real sp
 | What | Result | n, date and source |
 |---|---|---|
 | End of a spoken line to its final words (Voice Transcribe 1.0) | median 0.4 s, slowest 0.6 s | 13 lines, one take, 2026-11-01; 0.4 to 0.5 s in 5 more takes (40 lines) |
-| Words to their place on the map (Spark 1.2) | median 2.9 s, slowest 3.6 s | 9 thoughts, one take, 2026-11-01 |
+| Words to their place on the map (two Spark 1.2 calls racing) | median 2.9 s, slowest 3.6 s | 9 thoughts, one take, 2026-11-01 |
 | End of speech to the map | median 3.3 s, slowest 4.0 s | the same 9 thoughts |
+| Words to their place on the map (Spark 1.3 and 1.2 racing) | median 2.8 s, slowest 3.4 s | 8 thoughts, [the traced take](docs/trace.md), 2026-11-02 |
+| A placing round, Spark 1.3 + 1.2 against two Spark 1.2 calls | median 3.4 s vs 3.6 s; 90% within 4.6 s vs 5.6 s; 5 s or more in 3 vs 7 rounds; both placed 69 of 69 routing and chunk cases | 38 rounds, one a minute for 37 minutes, on the app's own placer requests, 2026-11-02 |
 | The same, 5 earlier takes, before two placing calls raced | median 3.15 s (words to map), slowest 6.1 s; 4 of 40 took 5 s or more | 40 thoughts, 2026-11-01 |
-| One placing call (Spark 1.2, default) | median 2.8 s, 90% within 4.2 s | 77 calls, 2026-11-02 |
+| One placing call (Spark 1.2, without Contributor mode) | median 2.8 s, 90% within 4.2 s | 77 calls, 2026-11-02 |
 | “Where was I?”, “recap”, “palace”, an app request | acted a median 0.4 s after you stop, no model call | 4 requests, one take, 2026-11-01 |
 | An app built from a request (Spark 1.3) | ready 5.6 s after the request ended; 58 of 60 requests did what was asked | 1 in the take; 30 requests, 2 runs each, 2026-11-01 ([CHANGELOG](CHANGELOG.md)) |
 | Recap when asked (Spark 1.3) | shown 0.4 s after you stop; from a kept draft in 5 to 11 ms | 1 in the take; 3 timed, 2026-11-01 |
-| Refiner pass (Spark 1.3) | median 16.6 s, while you're quiet | 2 in [one traced run](docs/trace.md#every-call-in-the-run), 2026-11-01 |
-| A picture (Image 1.0) | median 20.6 s, slowest 22.9 s | 7 in the same traced run |
+| Refiner pass (Spark 1.3) | median 10.5 s, slowest 11.9 s, while you're quiet | 3 in [one traced run](docs/trace.md#every-call-in-the-run), 2026-11-02 |
+| A picture (Image 1.0) | median 17.4 s, slowest 19.9 s | 4 in the same traced run |
 | Finding a thread by meaning, no shared words (Spark 1.3) | median 1.1 s; 51 of 62 found | 62 paraphrases, 2026-11-01 ([find.rs](core/src/find.rs), `PATIENCE`) |
 | Two parts of one thought across a pause (Spark 1.2) | 12 of 12 joined; 15 of 15 standalone sentences left apart | 3 runs each, 2026-11-01 ([CHANGELOG](CHANGELOG.md)) |
 | The tune after a loud line | played 3.3 s after the line began | 1, one take, 2026-11-01 |
@@ -172,8 +174,8 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 ## Privacy
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser. The app has no accounts, analytics or telemetry; the hosted site adds a sign-in and runs one core per person on its server.
-- Only model calls leave the core, to `api.meta.ai`. While the mic is on, that's the audio, after a 0.5 s synthetic “ah” the core sends so a session's first line comes back fast. Each finished thought goes with every thread's title and last point, as two identical calls at once (`PLACER_RACE=1` sends one). Every call and exactly what it sends: [docs/FEATURES.md](docs/FEATURES.md#privacy-and-data).
-- Placing uses `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode: a little faster, but Meta may keep what it reads to improve its products. A `PLACER_MODEL` you set is used as is, with no fallback: if the key can't use it (401 or 403), every model feature stops until a restart.
+- Only model calls leave the core, to `api.meta.ai`. While the mic is on, that's the audio, after a 0.5 s synthetic “ah” the core sends so a session's first line comes back fast. Each finished thought goes with every thread's title and last point, as two calls at once, one to Spark 1.3 and one to Spark 1.2 (`PLACER_RACE=1` sends one). Every call and exactly what it sends: [docs/FEATURES.md](docs/FEATURES.md#privacy-and-data).
+- Placing races `muse-spark-1.3` and `muse-spark-1.2` (`PLACER_MODELS`); Explain uses `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode, for Explain and every placing call: a little faster, but Meta may keep what it reads to improve its products. A `PLACER_MODEL` you set is used as is, with no fallback: if the key can't use it (401 or 403), every model feature stops until a restart. A listed model the key can't use leaves the race until a restart, and the others place.
 - On disk: `data/<map>/journal.jsonl` and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 
 ## Security and checks

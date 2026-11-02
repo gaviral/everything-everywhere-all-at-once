@@ -108,6 +108,9 @@ pub struct Setting {
     base: Option<String>,
     /// Set once the key couldn't use `name` and `base` worked: `base` from then on, until a restart.
     on_base: AtomicBool,
+    /// A placing lane's model only (`Lanes`): set once the key couldn't use it (401, 403 or 404) while another listed
+    /// model was still in use; its lanes ask another's from then on, until a restart.
+    off: AtomicBool,
 }
 
 impl Setting {
@@ -118,7 +121,7 @@ impl Setting {
 
     fn new(chosen: Option<String>, default: &str) -> Self {
         let base = if chosen.is_none() { default.strip_suffix("-contributor").map(String::from) } else { None };
-        Setting { name: chosen.unwrap_or_else(|| default.into()), base, on_base: AtomicBool::new(false) }
+        Setting { name: chosen.unwrap_or_else(|| default.into()), base, on_base: AtomicBool::new(false), off: AtomicBool::new(false) }
     }
 
     /// The model to ask now.
@@ -134,6 +137,72 @@ impl Setting {
 impl From<&str> for Setting {
     fn from(name: &str) -> Self {
         Setting::new(Some(name.into()), name)
+    }
+}
+
+/// The models a placement's racing calls ask (placer.rs `MODELS`): lane i asks the list's (i mod its length)th model.
+/// Each listed model gets a default's rule (`Setting`): one in Contributor mode gives way to the same model without it,
+/// for that model's lanes only. Empty when the person set one model for placing (PLACER_MODEL): every lane asks
+/// that one, as is (`Core::placer_lane`).
+#[derive(Default)]
+pub struct Lanes {
+    /// Each model once, so a model listed twice is switched (and said) once.
+    models: Vec<Setting>,
+    /// Lane i asks `models[order[i % order.len()]]`.
+    order: Vec<usize>,
+}
+
+impl Lanes {
+    /// The lanes the environment sets: none when `one` (PLACER_MODEL) is set, else `list` (PLACER_MODELS), else
+    /// `default`, each a comma-separated list of model names.
+    pub fn from_env(one: &str, list: &str, default: &str) -> Self {
+        let set = |var: &str| std::env::var(var).ok().filter(|v| !v.trim().is_empty());
+        Self::pick(set(one), set(list), default)
+    }
+
+    /// `from_env` on the values themselves.
+    pub fn pick(one: Option<String>, list: Option<String>, default: &str) -> Self {
+        if one.is_some() {
+            return Self::default();
+        }
+        let list = list.filter(|l| l.split(',').any(|m| !m.trim().is_empty())).unwrap_or_else(|| default.into());
+        let mut lanes = Self::default();
+        for name in list.split(',').map(str::trim).filter(|m| !m.is_empty()) {
+            let at = match lanes.models.iter().position(|m| m.name == name) {
+                Some(at) => at,
+                None => {
+                    lanes.models.push(Setting::new(None, name));
+                    lanes.models.len() - 1
+                }
+            };
+            lanes.order.push(at);
+        }
+        lanes
+    }
+
+    /// Lane `lane`'s model, or None when every lane asks the person's own one. A model the key can't use (`off`)
+    /// hands its lanes to the next listed one that it can.
+    pub fn get(&self, lane: usize) -> Option<&Setting> {
+        let n = self.order.len();
+        let at = |i: usize| &self.models[self.order[(lane + i) % n]];
+        (n > 0).then(|| (0..n).map(at).find(|m| !m.off.load(Ordering::SeqCst)).unwrap_or_else(|| at(0)))
+    }
+
+    /// Called once the key couldn't use `setting`: when it's one of these models and another listed one is still in
+    /// use, takes it out of the race (`off`) so one model's refusal doesn't stop placing for all, and says whether
+    /// this call took it out (Some(true)) or another already had. None for the last model left, or one not listed:
+    /// then the key counts as refused, as with one model.
+    fn spare(&self, setting: &Setting) -> Option<bool> {
+        if !self.models.iter().any(|m| std::ptr::eq(m, setting)) {
+            return None;
+        }
+        // Off first, then the others read: of two models turned away at once, the later to look sees both off.
+        let was = setting.off.swap(true, Ordering::SeqCst);
+        let others = self.models.iter().any(|m| !std::ptr::eq(m, setting) && !m.off.load(Ordering::SeqCst));
+        if !others {
+            setting.off.store(false, Ordering::SeqCst);
+        }
+        others.then_some(!was)
     }
 }
 
@@ -269,6 +338,11 @@ impl Core {
         self.service.spare(crate::now_ms())
     }
 
+    /// The model a placement's lane `lane` asks (from 0): its own (`Lanes`), or the person's PLACER_MODEL for every lane.
+    pub fn placer_lane(&self, lane: usize) -> &Setting {
+        self.placer_lanes.get(lane).unwrap_or(&self.placer_model)
+    }
+
     /// How many more model calls this hour's cap lets go now: a placement races its extra calls only while there's
     /// room for all of them (placer.rs), so the race never meets the cap and says "AI paused" while one call places.
     pub fn calls_left(&self) -> usize {
@@ -389,7 +463,8 @@ impl Core {
     /// `patience` for the whole answer, its status read as `check` reads it and its JSON as `answer` does. When
     /// the key can't use a default model in Contributor mode (401, 403 or 404), the same request goes once to the
     /// model without it; if that one works, the feature keeps it until a restart, said once. The key counts as
-    /// refused only if that model refuses it too. Each request sent is one trace line, `extra` added, so a
+    /// refused only if that model refuses it too, and, for a placing lane's model, only if no other listed model is
+    /// left (`Lanes::spare`). Each request sent is one trace line, `extra` added, so a
     /// turned-away try shows beside the one that answered.
     pub async fn ask_model(
         &self,
@@ -427,7 +502,18 @@ impl Core {
         }
         let result = async {
             let response = response?;
-            self.check(response.status())?;
+            let status = response.status();
+            // A placing lane's model the key can't use, while another listed one works: that model leaves the race,
+            // said once, and the key isn't counted as refused (`Lanes::spare`).
+            if let Some(first) = cant_use(status).then(|| self.placer_lanes.spare(setting)).flatten() {
+                if first {
+                    let instead = self.placer_lanes.get(0).map_or("", Setting::name);
+                    tracing::warn!("this key can't use {} ({status}): placing asks {instead} instead, until a restart", setting.name());
+                    self.send(ServerMsg::Notice { message: format!("Placing uses {instead} (this key can't use {}).", setting.name()) });
+                }
+                bail!("{status}: this key can't use {}", setting.name());
+            }
+            self.check(status)?;
             answer(response).await
         }
         .await;
