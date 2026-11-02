@@ -55,3 +55,18 @@ export function watchAttention(report: (selected: string | null, pointed: string
     doc.removeEventListener("selectionchange", reselect);
   };
 }
+
+/** Tells the core the latest selected and pointed card, and again on each new connection: a change made while the
+ *  connection was down, or a core that restarted, would otherwise leave "this" stale until the next change. */
+export function attentionTeller() {
+  let last: string | null = null;
+  return {
+    tell(selected: string | null, pointed: string | null, send: (message: string) => unknown) {
+      last = JSON.stringify({ type: "attention", selected, pointed });
+      send(last);
+    },
+    resend(send: (message: string) => unknown) {
+      if (last) send(last);
+    },
+  };
+}

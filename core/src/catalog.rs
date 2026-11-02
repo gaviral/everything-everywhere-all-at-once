@@ -14,7 +14,7 @@
 //!   comes back as one act, written as a phrase the rules must read as that act before it runs.
 
 use crate::protocol::{ServerMsg, View};
-use crate::world::{Change, Thought, World};
+use crate::world::{Change, Thought, Thread, World};
 use crate::{now_ms, Core};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -83,13 +83,13 @@ pub enum UndoBy {
     MoveBack,
     /// The filed words come off the map (journal keeps them), a thread they started goes, and the speaker moves back.
     Unfile,
-    /// The thread folds (or opens) again.
+    /// The window's folds as they were before (it keeps them).
     Refold,
-    /// The view the speaker came from.
+    /// The view the window showed before (it keeps it).
     ViewBack,
     /// The next thought no longer starts a thread.
     CancelNewThread,
-    /// Words taken off the map come back.
+    /// Words taken off the map come back (and an empty thread they alone started).
     Restore,
     /// Each of the parts, in turn (a correction: the redone request, then the words it took off).
     Each,
@@ -214,11 +214,15 @@ pub fn of_job(job: crate::Command) -> Act {
 #[derive(Clone, Debug)]
 pub enum Undo {
     Move { to: String },
-    /// `thought` comes off the map; `started`, the thread it began, goes into `to` while it holds nothing else.
+    /// `thought` comes off the map; `started`, the thread it began, goes into `to` while it holds nothing else (or
+    /// leaves the map, with nowhere to go).
     Unfile { thought: String, started: Option<String>, to: Option<String> },
-    Restore { thoughts: Vec<Thought> },
-    Refold { thread: Option<String>, open: bool },
-    View(View),
+    /// `thoughts` come back, and `threads`, empty ones that left the map with them.
+    Restore { thoughts: Vec<Thought>, threads: Vec<Thread> },
+    /// The window puts its folds back as they were before this open or fold (it keeps them).
+    Refold,
+    /// The window puts back the view it showed before this one was asked.
+    View,
     NewThread,
     Each(Vec<Undo>),
 }
@@ -231,8 +235,8 @@ impl Undo {
             Undo::Move { .. } => UndoBy::MoveBack,
             Undo::Unfile { .. } => UndoBy::Unfile,
             Undo::Restore { .. } => UndoBy::Restore,
-            Undo::Refold { .. } => UndoBy::Refold,
-            Undo::View(_) => UndoBy::ViewBack,
+            Undo::Refold => UndoBy::Refold,
+            Undo::View => UndoBy::ViewBack,
             Undo::NewThread => UndoBy::CancelNewThread,
             Undo::Each(_) => UndoBy::Each,
         }
@@ -266,16 +270,11 @@ impl Done {
         Done { act, undo: before.map(|to| Undo::Move { to }), missed: false }
     }
 
-    /// A view asked for: the one it came from is its opposite (the window keeps its own view).
+    /// A view asked for: only the window knows what it showed before (Map on Map stays Map), so it keeps that and
+    /// puts it back on Undo (`ServerMsg::Revert`).
     pub fn view(view: View) -> Self {
-        let back = match view {
-            View::Palace => Some(View::Map),
-            View::Map => Some(View::Palace),
-            View::Focus => Some(View::All),
-            View::All => Some(View::Focus),
-            _ => None,
-        };
-        Done { act: of_view(view), undo: back.map(Undo::View), missed: false }
+        let back = matches!(view, View::Palace | View::Map | View::Focus | View::All).then_some(Undo::View);
+        Done { act: of_view(view), undo: back, missed: false }
     }
 }
 
@@ -308,6 +307,29 @@ pub struct Runtime {
     last: Mutex<HashMap<String, Last>>,
     attention: Mutex<HashMap<String, Attention>>,
     ids: AtomicU64,
+    /// Each speaker's turns so far (not filler): a safety-net answer to an older one is stale.
+    turns: Mutex<HashMap<String, u64>>,
+    /// A correction redone as a search, while the search looks: its earlier words come off only once it jumps.
+    searches: Mutex<HashMap<String, Searching>>,
+}
+
+/// A correction redone as a search ("No, I meant go to the one about rent"), by where its search is.
+enum Searching {
+    /// Asked; the search may answer before the request returns (found by the words alone).
+    Asked,
+    /// It answered already: found or not.
+    Answered(bool),
+    /// Still looking (the model reads it): the turn it was (`Last::id`), and the words to take off once it jumps.
+    Waiting { turn: u64, ids: Vec<String>, rest: String },
+}
+
+/// A new turn from the speaker (not filler): anything the safety net was still reading for them is older.
+pub fn newer(core: &Core, speaker: &str) {
+    *core.catalog.turns.lock().unwrap().entry(speaker.into()).or_default() += 1;
+}
+
+fn turn(core: &Core, speaker: &str) -> u64 {
+    core.catalog.turns.lock().unwrap().get(speaker).copied().unwrap_or_default()
 }
 
 /// A turn counts as "just before" another within the placer's own window for the previous turn (placer.rs): the
@@ -451,6 +473,7 @@ pub fn answer(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
     let message = if with.is_empty() { format!("Kept “{unclear}”") } else { format!("Changed to “{with}”") };
     core.send_to(speaker, ServerMsg::Notice { message });
     remember(core, speaker, text, Was::Request { act: if with.is_empty() { Act::No } else { Act::Yes }, undo: None });
+    newer(core, speaker);
     true
 }
 
@@ -587,7 +610,7 @@ pub fn correct(core: &Arc<Core>, speaker: &str, text: &str, search: bool) -> boo
         return false;
     }
     core.send_to(speaker, ServerMsg::Notice { message: WORKING.into() });
-    tokio::spawn(safety_net(core.clone(), speaker.into(), text.into(), previous));
+    tokio::spawn(safety_net(core.clone(), speaker.into(), text.into(), previous, turn(core, speaker)));
     true
 }
 
@@ -625,8 +648,8 @@ fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
 }
 
 /// Takes words kept as thoughts off the map (`ThoughtSkipped`: the journal keeps them), and how to put them back. A
-/// thread they alone started goes too, into the thread the speaker was on before them (its id then leads there), so
-/// no empty card is left behind.
+/// thread they alone started goes too, into the thread the speaker was on before them (its id then leads there), or
+/// off the map with nowhere to go, so no empty card is left behind; a thread that keeps other words loses their point.
 fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let world = core.snapshot();
     // A turn the placer split goes with its rest, said at the same time.
@@ -642,18 +665,52 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let before = world.thoughts.iter().filter(|t| t.speaker == speaker && t.placed && !gone(t)).max_by_key(|t| t.said_at(now))
         .and_then(|t| t.thread_id.clone()).map(|id| world.resolve(&id)).filter(|id| world.thread(id).is_some());
     let mut changes: Vec<Change> = thoughts.iter().map(|t| Change::ThoughtSkipped { thought_id: t.id.clone() }).collect();
-    let mut emptied: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.clone()).collect();
+    let mut emptied: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
+    emptied.sort();
     emptied.dedup();
+    let (mut threads, mut kept) = (Vec::new(), Vec::new());
     for id in emptied {
-        let empty = !world.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(&id) && !gone(t))
-            && !world.threads.iter().any(|t| t.parent_id.as_ref() == Some(&id));
-        if let Some(into) = before.as_ref().filter(|into| empty && **into != id && world.thread(&id).is_some()) {
-            changes.push(Change::ThreadMerged { from: id, into: into.clone() });
+        let Some(thread) = world.thread(&id) else { continue };
+        if !empty_without(&world, &id, &gone) {
+            kept.push(id);
+            continue;
+        }
+        match before.as_ref().filter(|into| **into != id) {
+            Some(into) => changes.push(Change::ThreadMerged { from: id, into: into.clone() }),
+            None => {
+                changes.push(Change::ThreadRemoved { thread_id: id });
+                threads.push(thread.clone());
+            }
         }
     }
+    changes.extend(repoint(&world, &kept, &thoughts));
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts })
+    Some(Undo::Restore { thoughts, threads })
+}
+
+/// Whether thread `id` holds nothing once the thoughts `gone` picks are off: no other thought, no branch.
+fn empty_without(world: &World, id: &str, gone: &dyn Fn(&Thought) -> bool) -> bool {
+    !world.thoughts.iter().any(|t| t.thread_id.as_deref() == Some(id) && !gone(t))
+        && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(id))
+}
+
+/// The newest placed thought in thread `id`, past those `skip` picks.
+fn newest<'a>(world: &'a World, id: &str, skip: impl Fn(&Thought) -> bool) -> Option<&'a Thought> {
+    let now = now_ms();
+    world.thoughts.iter().filter(|t| t.placed && t.thread_id.as_deref() == Some(id) && !skip(t)).max_by_key(|t| t.said_at(now))
+}
+
+/// A thread whose last point came from words taken off takes its newest remaining point instead (none: empty), so
+/// they don't stay on its card, its Palace tile or in search (find.rs reads last points).
+fn repoint(world: &World, threads: &[String], removed: &[Thought]) -> Vec<Change> {
+    let gone = |t: &Thought| removed.iter().any(|r| r.id == t.id);
+    threads.iter().filter_map(|id| {
+        let thread = world.thread(id)?;
+        removed.iter().any(|r| r.placed && !r.point.is_empty() && r.point == thread.last_point).then_some(())?;
+        let point = newest(world, id, gone).map(|t| t.point.clone()).unwrap_or_default();
+        (point != thread.last_point).then(|| Change::ThreadTouched { thread_id: id.clone(), last_point: point, at_ms: thread.touched_ms })
+    }).collect()
 }
 
 /// Redoes the previous turn as `rest` asks. A request is undone first, so "next one", then "No, I meant last one"
@@ -664,18 +721,43 @@ fn redo(core: &Arc<Core>, speaker: &str, said: &str, rest: &str, previous: Last,
     const VIEWS: [Act; 5] = [Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help];
     let mut undos = Vec::new();
     if let Was::Request { undo: Some(undo), .. } = &previous.was {
-        let replaced = matches!(undo, Undo::View(_)) && classify(rest).is_some_and(|act| VIEWS.contains(&act));
+        let replaced = matches!(undo, Undo::View) && classify(rest).is_some_and(|act| VIEWS.contains(&act));
         if !replaced {
             run_undo(core, speaker, undo);
         }
     }
-    let Some(done) = core.request(speaker, rest, search) else { return false };
+    let kept = match &previous.was {
+        Was::Kept { ids } => Some(ids),
+        Was::Request { .. } => None,
+    };
+    if kept.is_some() {
+        core.catalog.searches.lock().unwrap().insert(speaker.into(), Searching::Asked);
+    }
+    let done = core.request(speaker, rest, search);
+    let searching = kept.and_then(|_| core.catalog.searches.lock().unwrap().remove(speaker));
+    let Some(done) = done else { return false };
     if done.missed {
         return true;
     }
-    let removed = match &previous.was {
-        Was::Kept { ids } => unkeep(core, speaker, ids).map(|restore| undos.push(restore)).is_some(),
-        Was::Request { .. } => false,
+    if let (Some(ids), Act::Search) = (kept, done.act) {
+        // The search says itself whether it found it: the words come off only once it jumps.
+        match searching {
+            Some(Searching::Answered(false)) => {}
+            Some(Searching::Answered(true)) => {
+                let turn = remember(core, speaker, said, Was::Request { act: Act::Search, undo: done.undo });
+                took_off(core, speaker, turn, ids, rest);
+            }
+            _ => {
+                let turn = remember(core, speaker, said, Was::Request { act: Act::Search, undo: done.undo });
+                let waiting = Searching::Waiting { turn, ids: ids.clone(), rest: rest.into() };
+                core.catalog.searches.lock().unwrap().insert(speaker.into(), waiting);
+            }
+        }
+        return true;
+    }
+    let removed = match kept {
+        Some(ids) => unkeep(core, speaker, ids).map(|restore| undos.push(restore)).is_some(),
+        None => false,
     };
     if let Some(undo) = done.undo {
         undos.insert(0, undo);
@@ -687,6 +769,39 @@ fn redo(core: &Arc<Core>, speaker: &str, said: &str, rest: &str, previous: Last,
         core.send_to(speaker, ServerMsg::Undoable { id });
     }
     true
+}
+
+/// A search a correction redid has jumped (`found`) or not (find.rs calls this for every search it ends): once it
+/// jumped, the earlier words come off, with Undo. A miss keeps them, and its own answer says why.
+pub fn searched(core: &Arc<Core>, speaker: &str, found: bool) {
+    let waiting = {
+        let mut searches = core.catalog.searches.lock().unwrap();
+        match searches.get_mut(speaker) {
+            Some(state @ Searching::Asked) => {
+                *state = Searching::Answered(found);
+                return;
+            }
+            Some(Searching::Waiting { .. }) => searches.remove(speaker),
+            _ => return,
+        }
+    };
+    if let (true, Some(Searching::Waiting { turn, ids, rest })) = (found, waiting) {
+        took_off(core, speaker, turn, &ids, &rest);
+    }
+}
+
+/// Takes off the words a correction's search replaced, if that correction is still the speaker's last turn, and
+/// adds putting them back to its Undo.
+fn took_off(core: &Arc<Core>, speaker: &str, turn: u64, ids: &[String], rest: &str) {
+    if core.catalog.last.lock().unwrap().get(speaker).map(|l| l.id) != Some(turn) {
+        return;
+    }
+    let Some(restore) = unkeep(core, speaker, ids) else { return };
+    if let Some(Last { was: Was::Request { undo, .. }, .. }) = core.catalog.last.lock().unwrap().get_mut(speaker).filter(|l| l.id == turn) {
+        *undo = Some(Undo::Each(undo.take().into_iter().chain([restore]).collect()));
+    }
+    core.send_to(speaker, ServerMsg::Notice { message: format!("Did “{}” instead. Your earlier words are off the map.", short(rest)) });
+    core.send_to(speaker, ServerMsg::Undoable { id: turn });
 }
 
 /// At most 8 words of `text`, for a notice.
@@ -702,32 +817,63 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
         Undo::Move { to } => core.focus(speaker, to),
         Undo::Unfile { thought, started, to } => {
             let world = core.snapshot();
+            let filed: Vec<Thought> = world.thoughts.iter().filter(|t| &t.id == thought).cloned().collect();
+            let gone = |t: &Thought| &t.id == thought;
             let mut changes = vec![Change::ThoughtSkipped { thought_id: thought.clone() }];
-            let empty = |id: &String| !world.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(id) && &t.id != thought)
-                && !world.threads.iter().any(|t| t.parent_id.as_ref() == Some(id));
-            if let (Some(started), Some(to)) = (started, to) {
-                if empty(started) && world.thread(to).is_some() {
-                    changes.push(Change::ThreadMerged { from: started.clone(), into: to.clone() });
-                }
+            let to = to.as_ref().map(|id| world.resolve(id)).filter(|id| world.thread(id).is_some());
+            let started = started.as_ref().map(|id| world.resolve(id)).filter(|id| world.thread(id).is_some());
+            let mut emptied = None;
+            if let Some(started) = started.filter(|id| empty_without(&world, id, &gone)) {
+                changes.push(match to.as_ref().filter(|to| **to != started) {
+                    Some(to) => Change::ThreadMerged { from: started.clone(), into: to.clone() },
+                    // Nowhere to go (it was the first thread): it leaves the map.
+                    None => Change::ThreadRemoved { thread_id: started.clone() },
+                });
+                emptied = Some(started);
             }
+            let landed: Vec<String> = filed.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id))
+                .filter(|id| Some(id) != emptied.as_ref()).collect();
+            changes.extend(repoint(&world, &landed, &filed));
             drop(world);
             core.commit(changes);
             if let Some(to) = to {
-                core.focus(speaker, to);
+                core.focus(speaker, &to);
             }
         }
-        Undo::Restore { thoughts } => {
-            // A thread they started went with them: they come back where its id leads now.
+        Undo::Restore { thoughts, threads } => {
+            // A thread they started went with them: back on the map if it left it, else they come back where its id
+            // leads now.
             let world = core.snapshot();
-            let back = thoughts.iter()
-                .map(|t| Thought { thread_id: t.thread_id.as_ref().map(|id| world.resolve(id)), ..t.clone() })
-                .map(|thought| Change::ThoughtAdded { thought })
+            let mut back: Vec<Change> = threads.iter()
+                .filter(|t| world.thread(&t.id).is_none() && !world.merged.contains_key(&t.id))
+                .map(|thread| Change::ThreadAdded { thread: thread.clone() })
                 .collect();
+            back.extend(thoughts.iter()
+                .map(|t| Thought { thread_id: t.thread_id.as_ref().map(|id| world.resolve(id)), ..t.clone() })
+                .map(|thought| Change::ThoughtAdded { thought }));
             drop(world);
             core.commit(back);
+            // Words not placed yet go back in line: the placer let go of them while they were off the map.
+            for t in thoughts.iter().filter(|t| !t.placed) {
+                let _ = core.placer_queue.send(crate::placer::Job::Place(t.id.clone()));
+            }
+            // Their point is the thread's last again where they're its newest.
+            let world = core.snapshot();
+            let restored = |t: &Thought| thoughts.iter().any(|r| r.id == t.id);
+            let mut ids: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
+            ids.dedup();
+            let touched: Vec<Change> = ids.iter().filter_map(|id| {
+                let thread = world.thread(id)?;
+                let latest = newest(&world, id, |_| false).filter(|t| restored(t))?;
+                (latest.point != thread.last_point)
+                    .then(|| Change::ThreadTouched { thread_id: id.clone(), last_point: latest.point.clone(), at_ms: thread.touched_ms })
+            }).collect();
+            drop(world);
+            if !touched.is_empty() {
+                core.commit(touched);
+            }
         }
-        Undo::Refold { thread, open } => core.send_to(speaker, ServerMsg::Unfold { thread_id: thread.clone(), open: !open }),
-        Undo::View(view) => core.send_to(speaker, ServerMsg::View { view: *view }),
+        Undo::Refold | Undo::View => core.send_to(speaker, ServerMsg::Revert),
         Undo::NewThread => core.new_threads.cancel(speaker),
         Undo::Each(all) => all.iter().for_each(|u| run_undo(core, speaker, u)),
     }
@@ -763,17 +909,29 @@ struct Verdict {
 /// Reads a correction no rule could: the model sees the previous turn, what the app did with it, the correction, the
 /// threads' titles and the catalog's acts it may pick; it answers one act and a phrase. The phrase runs only if the
 /// rules read it as that act; anything else keeps the words as a thought, as before the safety net.
-async fn safety_net(core: Arc<Core>, speaker: String, said: String, previous: Last) {
+async fn safety_net(core: Arc<Core>, speaker: String, said: String, previous: Last, asked: u64) {
     let verdict = ask(&core, &previous, &said).await;
+    act_on(&core, &speaker, &said, previous, asked, verdict);
+}
+
+/// Acts on the safety net's reading of `said`, a correction of `previous` asked as the speaker's turn `asked`.
+fn act_on(core: &Arc<Core>, speaker: &str, said: &str, previous: Last, asked: u64, verdict: anyhow::Result<Option<(Act, String)>>) {
+    // The speaker said or did something since ("Collapse Bills" while it read "No, Bills"), or took the turn back:
+    // acting now would undo what's newer, so the late answer goes. The newer turn's own answer is what they see.
+    let last = core.catalog.last.lock().unwrap().get(speaker).map(|l| l.id);
+    if turn(core, speaker) != asked || last != Some(previous.id) {
+        tracing::info!("safety net answered “{said}” after a newer turn: dropped");
+        return;
+    }
     let keep = |message: &str| {
-        let id = core.keep(&speaker, &said);
-        kept(&core, &speaker, &said, vec![id]);
-        core.send_to(&speaker, ServerMsg::Notice { message: message.into() });
+        let id = core.keep(speaker, said);
+        kept(core, speaker, said, vec![id]);
+        core.send_to(speaker, ServerMsg::Notice { message: message.into() });
     };
     match verdict {
         Ok(Some((act, say))) => {
             tracing::info!("safety net read “{said}” as {act:?}: “{say}”");
-            if !redo(&core, &speaker, &said, &say, previous, true) {
+            if !redo(core, speaker, said, &say, previous, true) {
                 keep("Kept as a thought: that isn't on the map");
             }
         }

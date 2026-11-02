@@ -43,8 +43,8 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         return Some(Done::new(Act::Later));
     }
     if is_approve(text) {
-        approve(core, speaker, &world);
-        return Some(Done::new(Act::Approve));
+        // Nothing waiting, or not the host's: answered, nothing done (a correction keeps the words it would replace).
+        return Some(if approve(core, speaker, &world) { Done::new(Act::Approve) } else { Done::missed(Act::Approve) });
     }
     if let Some(keep) = keep_app(text) {
         // "Keep it" with no app waiting is talk about something else.
@@ -200,18 +200,20 @@ fn proposed<'a>(core: &Core, world: &'a World, speaker: &str) -> Option<&'a crat
     waiting().find(|a| Some(&a.thread_id) == here.as_ref()).or_else(|| waiting().next())
 }
 
-fn approve(core: &Arc<Core>, speaker: &str, world: &World) {
-    let message = match proposed(core, world, speaker) {
+/// Adds the proposed reminder or event, and says so; false when there was none to add, or it isn't the host's.
+fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
+    let (message, adding) = match proposed(core, world, speaker) {
         // As a click on Add: it goes into the host's apps, so it's the host's call.
-        Some(_) if !core.is_host(speaker) => "Only the host can add this: it goes into their apps.".to_string(),
+        Some(_) if !core.is_host(speaker) => ("Only the host can add this: it goes into their apps.".to_string(), false),
         Some(action) => {
             let (core, id) = (core.clone(), action.id.clone());
             tokio::spawn(crate::apple::approve(core, id));
-            format!("Adding “{}”…", action.title)
+            (format!("Adding “{}”…", action.title), true)
         }
-        None => "Nothing is waiting to be added yet.".into(),
+        None => ("Nothing is waiting to be added yet.".into(), false),
     };
     core.send_to(speaker, ServerMsg::Notice { message });
+    adding
 }
 
 /// "Keep it" (true) or "discard it" (false) for an app that was just built.
@@ -378,7 +380,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
         Target::All => {
             core.send_to(speaker, ServerMsg::Unfold { thread_id: None, open: ask.open });
             notice(if ask.open { "Every thread is open" } else { "Every thread is folded" }.into());
-            return Some(Done::with(act, Some(Undo::Refold { thread: None, open: ask.open })));
+            return Some(Done::with(act, Some(Undo::Refold)));
         }
         // "Expand this": what the speaker selected, else points at, else is on.
         Target::This => crate::catalog::this(core, world, speaker),
@@ -401,7 +403,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
         (true, 1) => format!("Opened {} and its branch", thread.title),
         (true, n) => format!("Opened {} and its {n} branches", thread.title),
     });
-    Some(Done::with(act, Some(Undo::Refold { thread: Some(thread.id.clone()), open: ask.open })))
+    Some(Done::with(act, Some(Undo::Refold)))
 }
 
 /// Every thread under `id`, however deep.

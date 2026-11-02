@@ -34,6 +34,29 @@ impl Fixture {
     }
 }
 
+impl Fixture {
+    /// With the placer's queue to watch.
+    fn queued(world: World) -> (Self, tokio::sync::mpsc::UnboundedReceiver<crate::placer::Job>) {
+        let path = std::env::temp_dir().join(format!("e2a2o-catalog-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
+        let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
+        (Self { path, core: Arc::new(Core { placer_queue, ..Core::test(journal, world) }) }, queue)
+    }
+
+    /// Places thought `id` in `thread` with `point`, as the placer would, and moves the speaker there.
+    fn place(&self, id: &str, thread: &str, point: &str) {
+        self.core.commit(vec![
+            Change::ThoughtPlaced { thought_id: id.into(), thread_id: thread.into(), point: point.into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1 },
+            Change::ThreadTouched { thread_id: thread.into(), last_point: point.into(), at_ms: now_ms() },
+            Change::ActiveChanged { thread_id: thread.into(), speaker: "you".into() },
+        ]);
+    }
+
+    fn last_point(&self, thread: &str) -> String {
+        self.core.snapshot().thread(thread).unwrap().last_point.clone()
+    }
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
@@ -49,11 +72,13 @@ fn drain(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoin
             ServerMsg::Undoable { id } => format!("undoable {id}"),
             ServerMsg::Unfold { thread_id, open } => format!("{} {}", if open { "open" } else { "fold" }, thread_id.unwrap_or("all".into())),
             ServerMsg::View { view } => format!("view {view:?}").to_lowercase(),
+            ServerMsg::Revert => "revert".into(),
             ServerMsg::Change { change } => match change {
                 Change::ThoughtAdded { thought } => format!("added {}", thought.text),
                 Change::ThoughtSkipped { thought_id } => format!("removed {thought_id}"),
                 Change::ThoughtCorrected { accept, with, .. } => format!("corrected {accept} {with}").trim_end().to_string(),
                 Change::ThreadMerged { from, into } => format!("merged {from} into {into}"),
+                Change::ThreadRemoved { thread_id } => format!("gone {thread_id}"),
                 Change::ActiveChanged { thread_id, .. } => format!("on {thread_id}"),
                 _ => continue,
             },
@@ -188,7 +213,7 @@ async fn a_request_filed_as_a_thought_is_redone_and_its_words_come_off_with_undo
     assert!(f.core.snapshot().thoughts.iter().all(|t| t.id != id));
     // Undo puts the words back and folds the thread again.
     let undone = f.click_undo(undoable(&redo));
-    assert!(undone.contains(&"fold T1".to_string()) && undone.iter().any(|l| l.starts_with("added Can we see")), "{undone:?}");
+    assert!(undone.contains(&"revert".to_string()) && undone.iter().any(|l| l.starts_with("added Can we see")), "{undone:?}");
     assert!(f.core.snapshot().thoughts.iter().any(|t| t.id == id));
     // A stale button does nothing.
     assert_eq!(f.click_undo(undoable(&redo)), ["notice That can't be undone any more: something newer happened"]);
@@ -249,7 +274,7 @@ async fn a_request_is_redone_by_a_bare_no_and_the_first_one_undone() {
     let f = Fixture::new(garden());
     assert_eq!(f.say("Expand the garden").await[..2], ["open T1".to_string(), "notice Opened Garden".into()]);
     let redo = f.say("No, expand the bills").await;
-    assert_eq!(redo[..3], ["fold T1".to_string(), "open T2".into(), "notice Opened Bills".into()]);
+    assert_eq!(redo[..3], ["revert".to_string(), "open T2".into(), "notice Opened Bills".into()]);
     // After a thought a bare "No, …" is talk.
     let f = Fixture::new(garden());
     f.say("The meeting is on Monday").await;
@@ -269,7 +294,8 @@ async fn a_view_and_a_move_are_redone_and_scratched() {
     assert_eq!(f.say("Palace").await, ["view palace"]);
     // The new view replaces the old one: it isn't undone first.
     assert_eq!(f.say("No, I meant the map").await, ["view map"]);
-    assert_eq!(f.say("Scratch that").await, ["view palace", "notice Undone: switch to the map"]);
+    // The window puts back what it showed before the map: it alone knows (Map said on Map stays Map).
+    assert_eq!(f.say("Scratch that").await, ["revert", "notice Undone: switch to the map"]);
     let f = Fixture::new(garden());
     assert_eq!(f.say("Next one").await, ["notice On to Bills", "on T2"]);
     assert_eq!(f.say("Scratch that").await, ["on T1", "notice Undone: go to the next thread"]);
@@ -444,4 +470,120 @@ async fn each_request_undoes_as_its_definition_says() {
             (by, None) => panic!("{said}: {by:?} but no undo"),
         }
     }
+}
+
+#[tokio::test]
+async fn words_put_back_before_they_were_placed_go_back_in_line() {
+    let (f, mut queue) = Fixture::queued(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    while queue.try_recv().is_ok() {}
+    // Taken off before the placer reached it (it then lets go of the job), and put back: queued again.
+    f.say("Scratch that").await;
+    assert_eq!(f.say("Undo that").await, ["added Buy more stakes for the beans", "notice Put back"]);
+    assert!(matches!(queue.try_recv(), Ok(crate::placer::Job::Place(queued)) if queued == id));
+    assert!(!f.core.snapshot().thoughts.iter().find(|t| t.id == id).unwrap().placed);
+}
+
+#[tokio::test]
+async fn a_late_safety_net_answer_never_undoes_a_newer_turn() {
+    let f = Fixture::new(garden());
+    f.say("Expand the garden").await;
+    let previous = last(&f.core, "you").unwrap();
+    let asked = turn(&f.core, "you");
+    // While the model reads "No, the other one", the speaker folds the bills: the late answer goes.
+    f.say("Collapse the bills").await;
+    let mut updates = f.core.updates.subscribe();
+    act_on(&f.core, "you", "No, the other one", previous.clone(), asked, Ok(Some((Act::Unfold, "expand Bills".into()))));
+    assert_eq!(drain(&mut updates), Vec::<String>::new());
+    assert!(matches!(last(&f.core, "you").unwrap().was, Was::Request { act: Act::Fold, .. }));
+    // Taken back with Undo meanwhile: it goes too.
+    let f = Fixture::new(garden());
+    let opened = f.say("Expand the garden").await;
+    let previous = last(&f.core, "you").unwrap();
+    let asked = turn(&f.core, "you");
+    f.click_undo(undoable(&opened));
+    let mut updates = f.core.updates.subscribe();
+    act_on(&f.core, "you", "No, the other one", previous, asked, Ok(Some((Act::Unfold, "expand Bills".into()))));
+    assert_eq!(drain(&mut updates), Vec::<String>::new());
+    // Nothing newer: it acts.
+    let f = Fixture::new(garden());
+    f.say("Expand the garden").await;
+    let (previous, asked) = (last(&f.core, "you").unwrap(), turn(&f.core, "you"));
+    let mut updates = f.core.updates.subscribe();
+    act_on(&f.core, "you", "No, the other one", previous, asked, Ok(Some((Act::Unfold, "expand Bills".into()))));
+    assert_eq!(drain(&mut updates)[..3], ["revert".to_string(), "open T2".into(), "notice Opened Bills".into()]);
+}
+
+#[tokio::test]
+async fn a_correction_redone_as_a_search_takes_the_words_off_only_once_it_jumps() {
+    // Not found, and no key to search by meaning: the words stay, and the miss is the answer.
+    let f = Fixture::new(garden());
+    f.say("That thing about the attic insulation").await;
+    let missed = f.say("No, I meant go to the one about the attic insulation").await;
+    assert_eq!(missed.len(), 1, "{missed:?}");
+    assert!(missed[0].starts_with("notice I couldn't find “the attic insulation”"), "{missed:?}");
+    assert!(f.core.snapshot().thoughts.iter().any(|t| t.text.contains("attic insulation")));
+    // Found by its words: it jumps, then the words come off, with Undo.
+    let f = Fixture::new(garden());
+    f.say("That thing about the electric bill").await;
+    let found = f.say("No, I meant go to the one about the electric bill").await;
+    assert!(found.contains(&"on T2".to_string()), "{found:?}");
+    assert!(found.iter().any(|l| l.starts_with("notice Did “go to the one about the electric bill” instead")), "{found:?}");
+    assert!(f.core.snapshot().thoughts.iter().all(|t| !t.text.starts_with("That thing about")));
+    let undone = f.click_undo(undoable(&found));
+    assert!(undone.contains(&"on T1".to_string()) && undone.iter().any(|l| l == "added That thing about the electric bill"), "{undone:?}");
+}
+
+#[tokio::test]
+async fn a_correction_to_add_a_reminder_with_none_waiting_keeps_the_words() {
+    let f = Fixture::new(garden());
+    f.say("Can you put that on my list of reminders").await;
+    assert_eq!(f.say("No, I meant add it to Reminders").await, ["notice Nothing is waiting to be added yet."]);
+    assert!(f.core.snapshot().thoughts.iter().any(|t| t.text.starts_with("Can you put that")));
+}
+
+#[tokio::test]
+async fn words_taken_off_take_their_point_off_the_card_and_put_back_bring_it_back() {
+    // A filing taken back: the thread's last point is its newest remaining one again.
+    let f = Fixture::new(garden());
+    f.place("b", "T2", "The electric bill is due Friday");
+    f.say("Add the water bill to the bills").await;
+    assert!(f.last_point("T2").to_lowercase().contains("water bill"), "{}", f.last_point("T2"));
+    f.say("Scratch that").await;
+    assert_eq!(f.last_point("T2"), "The electric bill is due Friday");
+    // A thought taken back and put back.
+    let f = Fixture::new(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    f.place("a", "T1", "Plant the tomatoes");
+    f.place(&id, "T1", "Buy stakes");
+    f.say("Scratch that").await;
+    assert_eq!(f.last_point("T1"), "Plant the tomatoes");
+    f.say("Undo that").await;
+    assert_eq!(f.last_point("T1"), "Buy stakes");
+}
+
+#[tokio::test]
+async fn the_first_thread_taken_back_leaves_the_map_empty() {
+    // "New thread about …" on an empty map, then Undo: no card is left, and nobody is on it.
+    let f = Fixture::new(World::default());
+    let made = f.say("New thread about camping gear").await;
+    let id = f.core.snapshot().threads[0].id.clone();
+    let undone = f.click_undo(undoable(&made));
+    assert!(undone.contains(&format!("gone {id}")), "{undone:?}");
+    let world = f.core.snapshot();
+    assert!(world.threads.is_empty() && world.thoughts.is_empty() && world.active_for("you").is_none());
+    // A first thought the placer gave a thread, taken back and put back: the thread goes and comes back with it.
+    let f = Fixture::new(World::default());
+    f.say("Pack the tent for the weekend").await;
+    let id = f.core.snapshot().thoughts[0].id.clone();
+    f.core.commit(vec![Change::ThreadAdded { thread: thread("T5", "Weekend", 5) }]);
+    f.place(&id, "T5", "Pack the tent");
+    assert!(f.say("Scratch that").await.contains(&"gone T5".to_string()));
+    assert!(f.core.snapshot().threads.is_empty());
+    f.say("Undo that").await;
+    let world = f.core.snapshot();
+    assert_eq!(world.thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T5"));
+    assert!(world.thread("T5").is_some());
 }

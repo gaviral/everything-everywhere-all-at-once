@@ -23,6 +23,9 @@ pub enum ServerMsg {
     /// The notice just sent answers a request that can be taken back: the window shows Undo beside it, which sends
     /// this id back (catalog.rs).
     Undoable { id: u64 },
+    /// Undo of a view or a fold asked by voice: the window puts back what it showed before that ask (its view, Focus,
+    /// and which threads were open), which only it knows (catalog.rs).
+    Revert,
     /// A private jump to an existing answer; not replayed when a journal opens.
     Found { thread_id: String, thought_id: Option<String>, message: String },
     /// A view asked for by voice ("palace", "show the map", "let's focus", "what can I say?"); only to the speaker's windows.

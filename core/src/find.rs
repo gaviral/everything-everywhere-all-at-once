@@ -444,6 +444,8 @@ enum Miss {
 /// paraphrases), and the words the search held.
 fn missed(core: &Arc<Core>, speaker: &str, request: u64, why: Miss, topic: &str) {
     let Some(search) = core.find.end(speaker, request) else { return };
+    // A correction redone as this search keeps the words it replaced (catalog.rs).
+    crate::catalog::searched(core, speaker, false);
     let message = match (why, search.said.is_empty()) {
         // Trying again can't help a refused key.
         (Miss::Failed, _) if core.key_refused() => crate::model::REFUSED.into(),
@@ -479,6 +481,7 @@ fn show(core: &Arc<Core>, speaker: &str, request: u64, found: Found, topic: &str
     let Some(search) = core.find.end(speaker, request) else { return };
     core.focus(speaker, &id);
     core.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id: found.thought_id, message });
+    crate::catalog::searched(core, speaker, true);
     // Said after the question, they go on where it landed.
     held(core, speaker, (search.rest, String::new()), true);
 }

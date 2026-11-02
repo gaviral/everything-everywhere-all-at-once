@@ -99,8 +99,17 @@ impl Core {
 
     /// Applies a batch of changes together, journals each one, then tells every UI.
     pub fn commit(&self, changes: Vec<Change>) {
+        self.commit_if(|_| true, changes);
+    }
+
+    /// Commits `changes` only while `still` holds, checked under the same lock as the commit, so nothing comes
+    /// between: a placement whose words were taken back while the model thought (catalog.rs) changes nothing.
+    pub fn commit_if(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>) -> bool {
         {
             let mut world = self.world.lock().unwrap();
+            if !still(&world) {
+                return false;
+            }
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
@@ -112,6 +121,7 @@ impl Core {
         for change in changes {
             self.send(ServerMsg::Change { change });
         }
+        true
     }
 
     /// Journals a change that only the record keeps (an Explain answer, a mark on one): the world and the windows
@@ -270,6 +280,7 @@ impl Core {
             return;
         }
         find::stop(self, speaker);
+        catalog::newer(self, speaker);
         if let Some(done) = self.request(speaker, text, search) {
             return catalog::did(self, speaker, text, done);
         }

@@ -21,6 +21,7 @@ import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
+import { useRevert } from "./revert";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -90,6 +91,14 @@ export default function App() {
     } else restoreMap.current = true;
     setView(next);
   };
+  // "Scratch that" after a view or fold said aloud: what this window showed before it (revert.ts).
+  const keepShown = useRevert(core.revertAsk, () => ({ view, focusMode, query, expanded, kept: [...keptOpen.current] }), (shown) => {
+    showView(shown.view);
+    setFocusMode(shown.focusMode);
+    setQuery(shown.query);
+    setExpanded(shown.expanded);
+    keptOpen.current = new Set(shown.kept);
+  });
   useLayoutEffect(() => {
     if (view !== "map" || !restoreMap.current) return;
     restoreMap.current = false;
@@ -105,6 +114,7 @@ export default function App() {
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
+    keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
     else setView("map");
@@ -491,6 +501,7 @@ export default function App() {
   useEffect(() => {
     const ask = core.unfoldAsk;
     if (!ask) return;
+    keepShown();
     let id = ask.thread_id;
     for (let hops = Object.keys(world.merged).length; id && hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     if (id && !world.threads.some((thread) => thread.id === id)) return;

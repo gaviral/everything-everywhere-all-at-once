@@ -419,12 +419,20 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let now = now_ms();
     let moves = !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
     let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread, moves);
+    // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
+    let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
+    if !waiting(&core.snapshot()) {
+        tracing::info!("placed {thought_id} after it was taken back: dropped");
+        return Ok(None);
+    }
     core.trace.write(|| traced(&world, &thought, answer, new_thread, &changes, rest.as_deref()));
     drop(world);
     if new_thread {
         core.new_threads.placed(thought_id, &changes, rest.as_deref());
     }
-    core.commit(changes);
+    if !core.commit_if(waiting, changes) {
+        return Ok(None);
+    }
     Ok(rest)
 }
 
@@ -1785,5 +1793,24 @@ mod tests {
             ..thought(&format!("th-{}", uuid::Uuid::new_v4().simple()), "you", None, true)
         };
         (world.clone(), Thought { thread_id: world.active_for("you").cloned(), ..said })
+    }
+
+    /// Words taken back while the model places them ("scratch that", catalog.rs) leave no thread, touch or move behind;
+    /// put back, they go in line again and land.
+    #[tokio::test]
+    async fn words_taken_back_while_the_model_thinks_leave_nothing_behind() {
+        let (core, path, _) = burst_core().await;
+        let id = core.keep("you", "slow words taken back");
+        // Its call takes 300 ms: taken back in the middle of it.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let thought = core.snapshot().thoughts[0].clone();
+        core.commit(vec![Change::ThoughtSkipped { thought_id: id.clone() }]);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let world = core.snapshot();
+        assert!(world.threads.is_empty() && world.thoughts.is_empty() && world.active.is_none(), "{:?}", world.threads);
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new() });
+        until(Duration::from_secs(2), || core.snapshot().thoughts.iter().any(|t| t.id == id && t.placed)).await;
+        assert_eq!(core.snapshot().threads.len(), 1);
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -1,6 +1,8 @@
 // No extra dependencies: run with `node scripts/catalog-check.mjs`.
 // Checks the window's side of the action catalog: which card "this" is (attention.ts), that it's told to the core
-// only when it changes, and that a spoken fix of a "Did you mean …?" ("No, Muse Lark") lands as the core applies it.
+// only when it changes and again on each connection, that Undo of a view or fold puts back what the window showed, that
+// a thread taken back leaves the map, and that a spoken fix of a "Did you mean …?" ("No, Muse Lark") lands as the core
+// applies it.
 import assert from "node:assert/strict";
 import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 
@@ -8,7 +10,8 @@ globalThis.location = new URL("http://localhost:4321/");
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { threadOf, selectedThread, watchAttention } = await server.ssrLoadModule("/src/attention.ts");
+  const { threadOf, selectedThread, watchAttention, attentionTeller } = await server.ssrLoadModule("/src/attention.ts");
+  const { reverter } = await server.ssrLoadModule("/src/revert.ts");
   const { apply } = await server.ssrLoadModule("/src/core.ts");
 
   // Stand-ins for the page: a map card (id thread-T2), a Palace tile (data-thread T5), and the dock (no card).
@@ -44,6 +47,31 @@ try {
   handlers.pointerleave();
   stop();
   assert.deepEqual(told, [[null, "T2"], [null, "T5"], [null, null]]);
+
+  // Told again on every connection: a card pointed at while the connection was down (the send failed) still counts.
+  const teller = attentionTeller();
+  const sent = [];
+  teller.resend((m) => sent.push(m));
+  assert.deepEqual(sent, [], "nothing to tell yet");
+  teller.tell(null, "T2", () => false);
+  teller.resend((m) => sent.push(m));
+  teller.resend((m) => sent.push(m));
+  assert.deepEqual(sent.map((m) => JSON.parse(m)), [{ type: "attention", selected: null, pointed: "T2" }, { type: "attention", selected: null, pointed: "T2" }]);
+
+  // Undo of a voice view or fold: what was kept just before it comes back, once.
+  const shown = reverter();
+  assert.equal(shown.take(), null, "nothing kept: a revert changes nothing");
+  shown.keep({ view: "map", expanded: { T1: false } });
+  shown.keep({ view: "palace", expanded: {} });
+  assert.deepEqual(shown.take(), { view: "palace", expanded: {} }, "the latest ask's");
+  assert.equal(shown.take(), null, "once");
+
+  // A thread taken back leaves the map only while empty, and nobody stays on it.
+  const camping = { threads: [{ id: "T5", parent_id: null }], thoughts: [], active: "T5", active_by: { you: "T5" }, merged: {} };
+  const removed = apply(camping, { type: "thread_removed", thread_id: "T5" });
+  assert.deepEqual([removed.threads, removed.active, removed.active_by], [[], null, {}]);
+  const held = { ...camping, thoughts: [{ id: "x", thread_id: "T5" }] };
+  assert.equal(apply(held, { type: "thread_removed", thread_id: "T5" }), held, "a thread with words stays");
 
   // "Did you mean “Muse Spark”?" answered: yes takes the guess, a fix in your words takes those, no keeps the words.
   const asked = { threads: [{ id: "T1", title: "AI", last_point: "Ask muse bark" }], thoughts: [{ id: "q", thread_id: "T1",

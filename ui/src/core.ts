@@ -5,7 +5,7 @@ import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeri
 import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
-import { watchAttention } from "./attention";
+import { attentionTeller, watchAttention } from "./attention";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -133,6 +133,7 @@ type Change =
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
@@ -158,6 +159,7 @@ type ServerMsg =
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
   | { type: "undoable"; id: number }
+  | { type: "revert" }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "unfold"; thread_id: string | null; open: boolean }
@@ -315,6 +317,16 @@ export function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thread_removed": {
+      // As the core: only an empty thread, and nobody stays on it.
+      if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
+      return {
+        ...world,
+        threads: world.threads.filter((t) => t.id !== c.thread_id),
+        active: world.active === c.thread_id ? null : world.active,
+        active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
+      };
+    }
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
@@ -435,6 +447,10 @@ export function useCore(speaker?: string) {
   const [notice, setNotice] = useState("");
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const [undoId, setUndoId] = useState<number | null>(null);
+  // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
+  const [revertAsk, setRevertAsk] = useState(0);
+  // What "this" means here, as last told; told again on every connection, since the core forgets it (attention.ts).
+  const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
   const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
@@ -470,6 +486,7 @@ export function useCore(speaker?: string) {
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
       };
@@ -546,6 +563,9 @@ export function useCore(speaker?: string) {
           case "undoable":
             setUndoId(msg.id);
             break;
+          case "revert":
+            setRevertAsk((n) => n + 1);
+            break;
           case "placing":
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
@@ -605,7 +625,7 @@ export function useCore(speaker?: string) {
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // "This" for spoken requests: the card you selected or point at (attention.ts).
-  useEffect(() => watchAttention((selected, pointed) => { send(JSON.stringify({ type: "attention", selected, pointed })); }), [send]);
+  useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
@@ -647,6 +667,7 @@ export function useCore(speaker?: string) {
     placing,
     clearNotice: useCallback(() => setNotice(""), []),
     undoId,
+    revertAsk,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
