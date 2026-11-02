@@ -41,7 +41,7 @@ import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
-import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
+import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
@@ -982,8 +982,13 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
-              <button type="button" className="sample-button" onClick={core.sample} disabled={!core.connected}>Try a sample map</button>
+              <button type="button" className="sample-button" onClick={() => core.sample()} disabled={!core.connected}>Try a sample map</button>
               <span>A student's week, with pictures. Your own thoughts join it.</span>
+              {moreSamples(site.samples).length > 0 && <span className="more-samples" role="group" aria-label="Shorter sample maps">
+                <span>Or a shorter one:</span>
+                <span className="sample-links">{moreSamples(site.samples).map((choice) =>
+                  <button key={choice.id} type="button" className="sample-link" onClick={() => core.sample(choice.id)} disabled={!core.connected}>{choice.label}</button>)}</span>
+              </span>}
             </p>}
             {!core.noKey && modelsLine(site.models) && <p className="empty-models">{modelsLine(site.models)}</p>}
           </div>

@@ -124,6 +124,7 @@ struct Task {
 /// When a pass runs, working back from what the person needs:
 /// - never mid-sentence, so nothing moves while they talk;
 /// - at a natural pause (4 s quiet) once two new thoughts landed, or one started a new thread;
+/// - after a longer pause (8 s quiet) for a single new thought, so a lone correction lands without more talk;
 /// - right away when they come back to the window, so the map is tidy when they look;
 /// - at most every 10 s (longer after failed passes), and only when something changed;
 /// - a pass that comes back while they talk lands at the next pause (2 s quiet), not mid-sentence.
@@ -157,10 +158,8 @@ pub async fn run(core: Arc<Core>) {
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
         let (new_thoughts, new_threads) = new_since(&mut seen_thoughts, &mut seen_threads, placed, world.threads.len());
-        let quiet = core.quiet_ms() >= 4_000;
         let rested = crate::now_ms().saturating_sub(last_pass) >= rest_ms(failures);
-        let due = new_thoughts > 0 && rested && ((quiet && (new_thoughts >= 2 || new_threads)) || looked);
-        if !due || core.key().is_err() {
+        if !due(new_thoughts, new_threads, core.quiet_ms(), rested, looked) || core.key().is_err() {
             continue;
         }
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
@@ -197,6 +196,17 @@ pub async fn run(core: Arc<Core>) {
 /// Returns the threads whose results it dropped (words read were taken back): the next pass reads them in full.
 fn land(core: &Core, answer: Pass, sent: &World, when: &str) -> HashSet<String> {
     land_racing(core, answer, sent, when, || {})
+}
+
+/// A pause long enough to mean they stopped, not a breath: two of the 4 s pauses a pass waits for. A lone
+/// correction ("midterm is Wednesday, not Tuesday") or a lone typed reminder used to wait for the next thought with no
+/// limit (win audit: correction lag 26.5 s); the demo's mid-talk gaps stay under it, so nothing moves while they talk.
+const LONE_QUIET_MS: u64 = 8_000;
+
+/// Whether a pass is due (see `run`): new words, rested since the last pass, and a pause that fits them, or a look.
+fn due(new_thoughts: usize, new_threads: bool, quiet_ms: u64, rested: bool, looked: bool) -> bool {
+    let paused = (quiet_ms >= 4_000 && (new_thoughts >= 2 || new_threads)) || quiet_ms >= LONE_QUIET_MS;
+    new_thoughts > 0 && rested && (paused || looked)
 }
 
 /// How many placed thoughts are new since the last pass, and whether a thread is: a delete or merge since lowers
@@ -915,7 +925,7 @@ const COMMON: [&str; 44] = [
 ];
 
 /// The words of a text that carry its meaning, stemmed.
-fn content(text: &str) -> HashSet<String> {
+pub(crate) fn content(text: &str) -> HashSet<String> {
     words(text).iter().filter(|w| !COMMON.contains(&w.as_str())).map(|w| stem(w)).collect()
 }
 
@@ -1016,7 +1026,7 @@ fn chrono_today() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        changes, changes_on, day, describe, describe_in, drop_stale_titles, drop_taken_back, existing, land, land_racing, named_at,
+        changes, changes_on, day, describe, describe_in, drop_stale_titles, drop_taken_back, due, existing, land, land_racing, named_at,
         new_since, request_in, rest_ms, Pass, Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
     };
     use std::collections::HashSet;
@@ -2177,6 +2187,24 @@ mod tests {
         // A merge took a thread off: the next new one still counts as new.
         assert_eq!(new_since(&mut thoughts, &mut threads, 4, 2), (0, false));
         assert_eq!(new_since(&mut thoughts, &mut threads, 5, 3), (1, true));
+    }
+
+    #[test]
+    fn a_lone_new_thought_starts_a_pass_after_a_longer_pause() {
+        // (new thoughts, new thread, quiet ms, rested, looked) → due
+        let table = [
+            ((1, false, 4_000, true, false), false), // a lone point at a breath: wait, they may go on
+            ((1, false, 7_999, true, false), false),
+            ((1, false, 8_000, true, false), true),  // "midterm is Wednesday, not Tuesday", then they stopped
+            ((2, false, 4_000, true, false), true),
+            ((1, true, 4_000, true, false), true),
+            ((1, false, 0, true, true), true),       // back to the window
+            ((0, false, 60_000, true, true), false), // nothing new
+            ((1, false, 60_000, false, false), false), // too soon after the last pass
+        ];
+        for ((n, thread, quiet, rested, looked), want) in table {
+            assert_eq!(due(n, thread, quiet, rested, looked), want, "{n} {thread} {quiet} {rested} {looked}");
+        }
     }
 
     #[test]

@@ -1,0 +1,34 @@
+{"type":"thread_added","thread":{"id":"T1","title":"Empty export on staging","parent_id":null,"status":"open","last_point":"","touched_ms":1793741400000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T1","tag":"bug"}
+{"type":"tag_suggested","thread_id":"T1","tag":"staging"}
+{"type":"active_changed","thread_id":"T1"}
+{"type":"thought_added","thought":{"id":"th-1","speaker":"you","text":"Okay, the export button works on my laptop, but on staging the file comes out empty.","point":"Export empty on staging, fine locally","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793741400000,"place_ms":2370,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Export empty on staging, fine locally","at_ms":1793741400000}
+{"type":"thought_added","thought":{"id":"th-2","speaker":"you","text":"Staging uses the new storage bucket, so maybe we upload the file before it's fully written.","point":"Maybe upload starts before the file is written","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793741460000,"place_ms":2740,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Maybe upload starts before the file is written","at_ms":1793741460000}
+{"type":"thought_added","thought":{"id":"th-3","speaker":"you","text":"The logs show the upload returning 200, so it's not a permissions problem.","point":"Upload returns 200 → not permissions","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793741520000,"place_ms":3110,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Upload returns 200 → not permissions","at_ms":1793741520000}
+{"type":"thread_added","thread":{"id":"T2","title":"Filename spaces","parent_id":"T1","status":"open","last_point":"","touched_ms":1793741580000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T2","tag":"bug"}
+{"type":"active_changed","thread_id":"T2"}
+{"type":"thought_added","thought":{"id":"th-4","speaker":"you","text":"Side note, the export filename has spaces in it, and that breaks the share link.","point":"Spaces in filename break the share link","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793741580000,"place_ms":3480,"decided":false}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Spaces in filename break the share link","at_ms":1793741580000}
+{"type":"thought_added","thought":{"id":"th-5","speaker":"you","text":"Swap the spaces for dashes, that's a one-line fix for later.","point":"Fix: dashes instead of spaces","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793741640000,"place_ms":2350,"decided":false}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Fix: dashes instead of spaces","at_ms":1793741640000}
+{"type":"action_proposed","action":{"id":"ac-1","thread_id":"T2","kind":"reminder","title":"Use dashes in export filenames","when":"","status":"new","done_ms":null}}
+{"type":"thread_picture","thread_id":"T2","path":"/images/T2-872ecdc9851747cb8b43decda884df5f-small.webp"}
+{"type":"active_changed","thread_id":"T1"}
+{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Back to the empty file. I bet the stream isn't flushed before we close the","point":"Stream maybe not flushed before close","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":false,"at_ms":1793741700000,"place_ms":2720,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Stream maybe not flushed before close","at_ms":1793741700000}
+{"type":"thread_status","thread_id":"T1","status":"dropped"}
+{"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T1","text":"Check whether the file is flushed and closed before the upload starts","status":"new"}}
+{"type":"thread_picture","thread_id":"T1","path":"/images/T1-0b7326f6d5034205bc101a5e54424fed-small.webp"}
+{"type":"thread_added","thread":{"id":"T3","title":"Before standup","parent_id":null,"status":"open","last_point":"","touched_ms":1793744100000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T3","tag":"today"}
+{"type":"active_changed","thread_id":"T3"}
+{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"Standup moved to two, and I still need to review Omar's pull request before then.","point":"Standup at 2; review Omar's PR first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744100000,"place_ms":3090,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Standup at 2; review Omar's PR first","at_ms":1793744100000}
+{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Review Omar's pull request","when":"2026-11-03","status":"new","done_ms":null}}
+{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"His change touches the same export code, so I'll read that one first.","point":"Omar's PR touches export code → read it first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744160000,"place_ms":3460,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Omar's PR touches export code → read it first","at_ms":1793744160000}
+{"type":"thread_picture","thread_id":"T3","path":"/images/T3-e375cf7ef7524a8689aca2a8031310a8-small.webp"}

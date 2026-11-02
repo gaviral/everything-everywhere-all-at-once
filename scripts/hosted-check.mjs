@@ -19,9 +19,9 @@ try {
 
   // What /room says → how the window runs. An older core, or none yet: a laptop, as before.
   assert.deepEqual(site.siteFrom(null), site.LOCAL);
-  assert.deepEqual(site.siteFrom({ room: false }), { hosted: false, calendarFile: false, sample: false, models: [] });
+  assert.deepEqual(site.siteFrom({ room: false }), { hosted: false, calendarFile: false, sample: false, samples: [], models: [] });
   const models = [{ step: "hears", model: "muse-voice-transcribe-1.0" }, { step: "places", model: "muse-spark-1.2-contributor" }];
-  assert.deepEqual(site.siteFrom({ hosted: true, calendar_file: true, sample: true, models }), { hosted: true, calendarFile: true, sample: true, models });
+  assert.deepEqual(site.siteFrom({ hosted: true, calendar_file: true, sample: true, models }), { hosted: true, calendarFile: true, sample: true, samples: [], models });
 
   // Hosted words: true on a server; none points at a .env file, the host's computer or a Mac.
   const hostedWords = [site.savedWhere(true), site.siteText("The AI key was refused. Check MODEL_API_KEY in .env, then restart.", true),
