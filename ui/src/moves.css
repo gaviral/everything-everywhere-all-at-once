@@ -7,11 +7,14 @@
 .move-point { position: absolute; top: -1px; right: 40px; z-index: 2; }
 .move-button {
   padding: 1px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--muted);
-  font: inherit; font-size: 11px; line-height: 18px; cursor: grab; opacity: 0; transition: opacity .2s;
+  font: inherit; font-size: 11px; line-height: 18px; cursor: grab; opacity: 0; transition: opacity .2s, scale .16s ease-out;
 }
 .points li:is(:hover, :focus-within) .move-button, .move-button[aria-expanded="true"] { opacity: 1; }
 .move-button:hover, .move-button:focus-visible, .move-button[aria-expanded="true"] { color: var(--ink); border-color: var(--accent); }
 .move-button:active { cursor: grabbing; }
+/* The shared press (styles.css "Pressed") is at zero specificity, so the shown face's opacity: 1 above would hide its
+   dim: Move and Delete dim here, at once, and ease back as Move's own fade does. */
+.points li:is(:hover, :focus-within) .move-button:active, .move-button[aria-expanded="true"]:active { opacity: .75; transition-duration: 0s; }
 /* Delete sits left of Move, the same quiet face: it's undone in one step (Undo on its notice), so no red and no
    "are you sure". Not a drag handle. */
 .delete-button { margin-right: 4px; cursor: pointer; }
