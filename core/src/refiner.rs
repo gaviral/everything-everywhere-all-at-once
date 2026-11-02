@@ -26,7 +26,7 @@ tags: short lowercase hashtags for the wider topic a thread belongs to, never a 
 Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \
 Never repeat an existing suggestion or action, including the cards apps leave (they start with the app's name). Use empty lists when nothing applies.";
 /// What the answer's `questions` are, said in its schema rather than the rules above: there, it made the other ideas
-/// half as many (decisions/refinersure.md).
+/// half as many.
 const QUESTIONS: &str = "For a point that flags a problem or a to-do without saying what it is (\"the budget part needs work\", \
 \"the intro still bugs me\"): one concrete question that asks what (\"Which part of the budget needs work?\"), at most one per thread, \
 never for a point marked (trailed off). Empty when no point is like that.";
@@ -432,7 +432,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
             }
         }
     }
-    // A merge is never sure (decisions/refinersure.md): each is proposed on the card of the thread that would go, once
+    // A merge is never sure: each is proposed on the card of the thread that would go, once
     // per pair and one at a time. A thread never goes into its own branch, which would make the branch its own parent
     // and drop it from the map, and two threads with no word in common aren't one topic. Two threads the person set
     // apart by moving a thought from one to the other stay apart (moves.rs).
@@ -528,7 +528,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
 /// A rename the refiner makes on its own, without asking: the person's own words for the thread. Every word of the new
 /// title that carries meaning was said on the thread, and on a thread of two or more points they come from at least
 /// two of them, so the title speaks for the thread and not for one point; or the person named it so in so many words.
-/// Measured on the refiner's own answers (decisions/refinersure.md): of the 24 different renames it gave on sample,
+/// Measured on the refiner's own answers: of the 24 different renames it gave on sample,
 /// crafted and real maps, this makes 8 at once (7 a person would keep, 1 neither better nor worse) and asks the other
 /// 16, all 8 a person would undo among them ("Year-end admin tasks" for taxes and a car registration, "Everything App
 /// Demo Vision" for eye tracking): those used words nobody said, or spoke for one point of ten.
@@ -1493,7 +1493,7 @@ mod tests {
     #[test]
     fn a_later_speaker_in_a_room_can_rename_a_person_named_title() {
         let mut world = map(&[("T1", "Project Falcon", &["Calling this Project Falcon.", "Let's call it Quick Launch actually."])]);
-        world.thoughts[0].speaker = "User".into();
+        world.thoughts[0].speaker = "Ana".into();
         world.thoughts[1].speaker = "Sam".into();
         assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
         assert!(rename(&world, "Launch plan").is_empty(), "a model-invented title still has no cue");

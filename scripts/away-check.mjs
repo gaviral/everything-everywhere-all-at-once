@@ -8,54 +8,54 @@ try {
   const { awayItems, spokeAgain, AWAY_AFTER_MS } = await server.ssrLoadModule("/src/Away.tsx");
   const thread = (id, extra = {}) => ({ id, title: id, parent_id: null, status: "open", last_point: "", touched_ms: 100,
     tags: [], picture: null, dropped_by: "", ...extra });
-  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "User", text: id, point: id,
+  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "Ana", text: id, point: id,
     placed: true, complete: true, unclear: "", place_ms: 10, ...extra });
   const base = { threads: [thread("old"), thread("unfinished")], thoughts: [thought("seen", "old", 1), thought("start", "unfinished", 2, { complete: false })],
-    suggestions: [], actions: [], merged: {}, active: "old", active_by: { User: "old" }, recaps: [], apps: [], apps_seeded: true };
-  const after = { ...base, threads: [thread("old"), thread("unfinished", { status: "dropped", dropped_by: "User" }), thread("fresh"), thread("Sam's")],
+    suggestions: [], actions: [], merged: {}, active: "old", active_by: { Ana: "old" }, recaps: [], apps: [], apps_seeded: true };
+  const after = { ...base, threads: [thread("old"), thread("unfinished", { status: "dropped", dropped_by: "Ana" }), thread("fresh"), thread("Sam's")],
     thoughts: [...base.thoughts, thought("more", "old", 10), thought("newest", "fresh", 20), thought("other", "Sam's", 30, { speaker: "Sam" })],
     suggestions: [{ id: "idea", thread_id: "fresh", text: "Try this", status: "new" }, { id: "theirs", thread_id: "Sam's", text: "Their idea", status: "new" }],
     actions: [{ id: "task", thread_id: "old", title: "Call", kind: "reminder", when: "", status: "new", done_ms: null }] };
   const stamps = new Map([["more", 100], ["newest", 200], ["idea", 300], ["task", 400], ["dropped:unfinished", 150]]);
-  const rows = awayItems(base, after, "User", stamps);
+  const rows = awayItems(base, after, "Ana", stamps);
   assert.equal(AWAY_AFTER_MS, 30_000);
   assert.deepEqual(rows.map((r) => r.key), ["thread:fresh", "proposal:idea", "thread:unfinished", "thread:old", "proposal:task"]);
   assert.match(rows.find((r) => r.threadId === "fresh" && r.kind === "thread").detail, /^New thread/);
   assert.match(rows.find((r) => r.key === "thread:old").detail, /^1 new point/);
   assert.match(rows.find((r) => r.key === "thread:unfinished").detail, /^Left unfinished/);
   assert.equal(rows[rows.findIndex((r) => r.key === "thread:old") + 1].itemId, "task", "a proposal follows its thread");
-  assert.deepEqual(awayItems(base, base, "User"), []);
-  assert.deepEqual(awayItems(base, { ...base, suggestions: after.suggestions }, "User"), []);
+  assert.deepEqual(awayItems(base, base, "Ana"), []);
+  assert.deepEqual(awayItems(base, { ...base, suggestions: after.suggestions }, "Ana"), []);
   assert.equal(awayItems(base, after, "Sam").length, 2);
   assert.deepEqual(awayItems(base, after, "Nobody"), []);
   const done = { ...after, suggestions: after.suggestions.map((s) => ({ ...s, status: "dismissed" })), actions: after.actions.map((a) => ({ ...a, status: "done" })) };
-  assert.ok(awayItems(base, done, "User").every((r) => r.kind !== "proposal"));
+  assert.ok(awayItems(base, done, "Ana").every((r) => r.kind !== "proposal"));
   const merged = { ...after, merged: { old: "fresh" }, threads: after.threads.filter((t) => t.id !== "old"),
     thoughts: after.thoughts.map((t) => t.thread_id === "old" ? { ...t, thread_id: "fresh" } : t) };
-  const mergedRow = awayItems(base, merged, "User").find((r) => r.key === "thread:fresh");
+  const mergedRow = awayItems(base, merged, "Ana").find((r) => r.key === "thread:fresh");
   assert.match(mergedRow.detail, /^2 new points/);
-  assert.ok(awayItems(base, merged, "User").every((r) => r.threadId !== "old"));
+  assert.ok(awayItems(base, merged, "Ana").every((r) => r.threadId !== "old"));
   const pending = { ...base, thoughts: [...base.thoughts, thought("pending", "old", 3, { placed: false })] };
   const landed = { ...pending, thoughts: pending.thoughts.map((t) => ({ ...t, placed: true })) };
-  assert.match(awayItems(pending, landed, "User")[0].detail, /^1 new point/);
-  const tied = awayItems(base, after, "User", new Map([["more", 500], ["newest", 500]]))
+  assert.match(awayItems(pending, landed, "Ana")[0].detail, /^1 new point/);
+  const tied = awayItems(base, after, "Ana", new Map([["more", 500], ["newest", 500]]))
     .filter((r) => r.key === "thread:old" || r.key === "thread:fresh");
   assert.deepEqual(tied.map((r) => r.key), ["thread:fresh", "thread:old"], "batched arrivals keep the newest words first");
   const incomplete = { ...base, thoughts: [...base.thoughts, thought("trail", "old", 40, { complete: false })] };
-  assert.equal(awayItems(base, incomplete, "User").length, 1, "unfinished and updated are one row");
-  assert.equal(awayItems(base, incomplete, "User")[0].unfinished, true);
-  const alreadyDropped = { ...base, threads: base.threads.map((t) => t.id === "unfinished" ? { ...t, status: "dropped", dropped_by: "User" } : t) };
-  assert.ok(!awayItems(alreadyDropped, after, "User").some((r) => r.key === "thread:unfinished"), "old unfinished threads don't repeat");
+  assert.equal(awayItems(base, incomplete, "Ana").length, 1, "unfinished and updated are one row");
+  assert.equal(awayItems(base, incomplete, "Ana")[0].unfinished, true);
+  const alreadyDropped = { ...base, threads: base.threads.map((t) => t.id === "unfinished" ? { ...t, status: "dropped", dropped_by: "Ana" } : t) };
+  assert.ok(!awayItems(alreadyDropped, after, "Ana").some((r) => r.key === "thread:unfinished"), "old unfinished threads don't repeat");
   const oldProposal = { ...base, suggestions: [after.suggestions[0]] };
-  assert.ok(!awayItems(oldProposal, after, "User").some((r) => r.key === "proposal:idea"));
+  assert.ok(!awayItems(oldProposal, after, "Ana").some((r) => r.key === "proposal:idea"));
   // Back while your last turn is still being placed: its split-off rest, or an import landing, isn't you speaking again.
   const placing = { ...base, thoughts: [...base.thoughts, thought("turn", null, 50, { placed: false })] };
   const split = { ...placing, thoughts: [...placing.thoughts.map((t) => t.id === "turn" ? { ...t, placed: true, thread_id: "old" } : t),
     thought("rest", null, 50, { placed: false })] };
-  assert.equal(spokeAgain(placing, split, "User"), false, "a split's rest keeps its turn's time");
-  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("imported", "old", 7)] }, "User"), false, "imports arrive placed");
-  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("theirs", null, 60, { placed: false, speaker: "Sam" })] }, "User"), false);
-  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("again", null, 60, { placed: false })] }, "User"), true, "new words dismiss it");
+  assert.equal(spokeAgain(placing, split, "Ana"), false, "a split's rest keeps its turn's time");
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("imported", "old", 7)] }, "Ana"), false, "imports arrive placed");
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("theirs", null, 60, { placed: false, speaker: "Sam" })] }, "Ana"), false);
+  assert.equal(spokeAgain(placing, { ...placing, thoughts: [...placing.thoughts, thought("again", null, 60, { placed: false })] }, "Ana"), true, "new words dismiss it");
   console.log("Away map checks passed: new/updated threads, newest first, proposals, unfinished, room speakers, quiet returns, pending placement, merges, decisions, split turns and imports after a return.");
 } finally {
   await server.close();

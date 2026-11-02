@@ -167,10 +167,18 @@ pub fn seed(core: &Core, demo: bool) {
 /// tell them apart.
 fn loud_voices() -> (f64, u64) { (between(NORMAL_VOICE, RAISED_VOICE), LOUD_SECONDS) }
 
-fn seeds(enabled: bool) -> Vec<MiniApp> {
-    let base = |id: &str, name: &str, purpose: &str, watcher, prompt, publishers| MiniApp {
-        id: id.into(), name: name.into(), purpose: purpose.into(), watcher, prompt, publishers,
-        enabled, request: purpose.into(), cooldown_secs: 30, created_ms: now_ms(), last_run_ms: 0,
+/// Whether a seed starts switched on. Nothing acts unasked: an app runs on a request, or on a standing rule the
+/// person set (kept from a build or switched on in Apps). A seed is neither, so one whose watcher fires on its own
+/// (a thought, loud voices, a phrase, a topic, a time) starts off everywhere, demo included: in the final take
+/// (2026-11-01) the Argument resolver, on by default in demo mode, ran at 66.8 s when line 9 gave T6 its second
+/// point, though no line asked for it. Search-first fires only inside a build the person asked for, so in demo mode
+/// it stays on.
+pub fn starts_on(watcher: &Watcher, demo: bool) -> bool { demo && matches!(watcher, Watcher::AppRequest {}) }
+
+fn seeds(demo: bool) -> Vec<MiniApp> {
+    let base = |id: &str, name: &str, purpose: &str, watcher: Watcher, prompt, publishers| MiniApp {
+        id: id.into(), name: name.into(), purpose: purpose.into(), enabled: starts_on(&watcher, demo), watcher, prompt, publishers,
+        request: purpose.into(), cooldown_secs: 30, created_ms: now_ms(), last_run_ms: 0,
     };
     let mut apps = vec![
         base("app-argument", "Argument resolver", "Gently notice a repeated point or a common reasoning fallacy.",

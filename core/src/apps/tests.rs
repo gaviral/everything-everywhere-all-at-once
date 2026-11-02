@@ -21,6 +21,7 @@ impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_file(&self.
 fn app() -> MiniApp {
     let mut app = seeds(true).remove(1);
     app.id = "test-app".into();
+    app.enabled = true;
     app.watcher = Watcher::Phrase { phrase: "demo".into() };
     app.publishers = vec![Publisher::Card { text: "Take a quiet moment.".into() }];
     app
@@ -48,12 +49,55 @@ fn seed_defaults_are_journaled_once_and_removal_survives_restart() {
         seed(&fixture.core, demo);
         seed(&fixture.core, !demo);
         assert_eq!(fixture.core.snapshot().apps.len(), 3);
-        assert!(fixture.core.snapshot().apps.iter().all(|a| a.enabled == demo));
+        assert!(fixture.core.snapshot().apps.iter().all(|a| a.enabled == (demo && a.id == "app-search")), "only Search-first, in demo mode");
         fixture.core.commit(vec![Change::AppRemoved { id: "app-volume".into() }]);
         let (_, loaded) = Journal::open(&fixture.path).unwrap();
         *fixture.core.world.lock().unwrap() = loaded.into();
         seed(&fixture.core, demo);
         assert_eq!(fixture.core.snapshot().apps.len(), 2);
+    }
+}
+
+/// Nothing acts unasked (the final take, 2026-11-01: the seeded Argument resolver ran at 66.8 s when T6 got its second
+/// point, though no line asked for it). On a fresh map, demo or not, thoughts piling into one thread and voices held
+/// loud run no app and ask the model nothing; once the person switches one on, the same thoughts do run it.
+#[tokio::test]
+async fn nothing_runs_unasked_until_the_person_switches_an_app_on() {
+    for demo in [false, true] {
+        let fixture = Fixture::new();
+        seed(&fixture.core, demo);
+        for app in fixture.core.snapshot().apps.iter().filter(|a| a.enabled) {
+            assert!(matches!(app.watcher, Watcher::AppRequest {}), "{} starts on but fires without a request", app.id);
+        }
+        let mut messages = fixture.core.updates.subscribe();
+        let said = |id: &str| Thought { id: id.into(), speaker: "you".into(), text: format!("I never finish my sentences {id}"),
+            point: id.into(), thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(),
+            fixed: String::new(), complete: true, at_ms: 1, place_ms: None };
+        let pile = |fixture: &Fixture, ids: &[&str]| for id in ids {
+            fixture.core.commit(vec![Change::ThoughtAdded { thought: said(id) }]);
+            on_thought(&fixture.core, id);
+        };
+        pile(&fixture, &["a", "b", "c"]);
+        let now = now_ms();
+        for app in fixture.core.snapshot().apps.iter() {
+            fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), app.id.clone()), (now - 60_000, now - 100, false));
+        }
+        volume(&fixture.core, "mic", 1.0);
+        for _ in 0..5 { tokio::task::yield_now().await; }
+        let world = fixture.core.snapshot();
+        assert!(world.apps.iter().all(|a| a.last_run_ms == 0), "an app ran unasked (demo {demo}): {:?}",
+            world.apps.iter().filter(|a| a.last_run_ms > 0).map(|a| &a.id).collect::<Vec<_>>());
+        assert!(fixture.core.apps.asked.lock().unwrap().is_empty(), "the model was asked unasked (demo {demo})");
+        assert!(world.suggestions.is_empty());
+        while let Ok(message) = messages.try_recv() {
+            assert!(!matches!(message.message, ServerMsg::AppsSound { .. }), "a tune played unasked (demo {demo})");
+        }
+        // The person's switch is a standing rule: from then on the same kind of thought runs it.
+        toggle(&fixture.core, "app-argument".into(), true);
+        fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
+        pile(&fixture, &["d"]);
+        for _ in 0..5 { tokio::task::yield_now().await; }
+        assert!(fixture.core.snapshot().apps.iter().any(|a| a.id == "app-argument" && a.last_run_ms > 0), "switched on, it runs");
     }
 }
 
@@ -625,7 +669,7 @@ fn phrases_and_topics_match_whole_words() {
 #[tokio::test]
 async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_a_card() {
     let fixture = Fixture::new();
-    let a = seeds(true).remove(0);
+    let a = MiniApp { enabled: true, ..seeds(true).remove(0) };
     fixture.core.commit(vec![Change::AppRegistered { app: a.clone() }]);
     fixture.core.apps.answers.lock().unwrap().extend([
         json!({"publish":false,"text":"","when":""}),
@@ -641,7 +685,7 @@ async fn prompt_decides_whether_to_publish_and_ordinary_rehearsal_does_not_need_
 #[tokio::test]
 async fn an_app_hears_the_newest_thought_once() {
     let fixture = Fixture::new();
-    let resolver = seeds(true).remove(0);
+    let resolver = MiniApp { enabled: true, ..seeds(true).remove(0) };
     let said = |id: &str, text: &str, at_ms| Thought { id: id.into(), speaker: "you".into(), text: text.into(), point: text.into(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(),
         complete: true, at_ms, place_ms: None };
@@ -704,7 +748,7 @@ async fn a_busy_app_keeps_the_latest_matching_thought_for_its_next_pass() {
 #[tokio::test]
 async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
     let fixture = Fixture::new();
-    let asks = seeds(true).remove(0);
+    let asks = MiniApp { enabled: true, ..seeds(true).remove(0) };
     assert!(asks.prompt.is_some());
     fixture.core.commit(vec![Change::AppRegistered { app: asks.clone() }]);
     let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
@@ -719,8 +763,8 @@ async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
 fn in_a_room_an_app_hears_who_said_what() {
     let said_by = |speaker: &str, text: &str| Thought { id: text.into(), speaker: speaker.into(), text: text.into(), point: String::new(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None };
-    let (rent, friday, agree) = (said_by("User", "rent is due"), said_by("User", "pay it friday"), said_by("Sam", "friday works"));
+    let (rent, friday, agree) = (said_by("Ana", "rent is due"), said_by("Ana", "pay it friday"), said_by("Sam", "friday works"));
     // One speaker: the prompt reads exactly as it did before rooms.
     assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));
-    assert_eq!(said(&[&rent, &friday], Some(&agree)), ("User: rent is due\nAvi: pay it friday".to_string(), "Sam: friday works".to_string()));
+    assert_eq!(said(&[&rent, &friday], Some(&agree)), ("Ana: rent is due\nAna: pay it friday".to_string(), "Sam: friday works".to_string()));
 }

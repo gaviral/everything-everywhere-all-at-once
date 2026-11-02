@@ -29,7 +29,7 @@ const BUSY: &str = "The AI service is busy. Thoughts retry on their own; try any
 const SPELL_MS: u64 = 5 * 60_000;
 
 /// The most model calls the core makes in any 60 minutes, unless MODEL_CALLS_PER_HOUR says otherwise (0 turns it off).
-/// Worked back from User's own map on Nov 1: its busiest hour held 74 spoken thoughts, 30 new threads and 3 recaps,
+/// Worked back from a real map on Nov 1: its busiest hour held 74 spoken thoughts, 30 new threads and 3 recaps,
 /// which is at most ≈ 200 calls (77 placements, 3 of them splits; the Argument app on ≤ 44 thoughts with an earlier
 /// point; the refiner on ≤ 37, one per two thoughts; 30 pictures; 3 recaps; a few Explains and searches). Twice that
 /// leaves room for a faster talker or a room of two, and a runaway (a timer app every 10 s is 360 an hour) still
@@ -195,6 +195,16 @@ impl Service {
         (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
     }
 
+    /// True while the last hour's calls fill at most half the cap (always, with no cap): room for work nobody asked
+    /// for yet, such as a recap draft, that must never take a call placing needs.
+    fn spare(&self, now: u64) -> bool {
+        self.limit == 0 || {
+            let mut calls = self.calls.lock().unwrap();
+            self.wait(&mut calls, now);
+            calls.len() * 2 < self.limit
+        }
+    }
+
     /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
     /// step under one lock, so two features asking at once with one call left can't both take it.
     fn spend(&self, now: u64) -> Result<(), u64> {
@@ -243,6 +253,12 @@ impl Core {
         self.service.capped_for(crate::now_ms()).map(|wait| capped(self.service.limit, wait))
     }
 
+    /// True while this hour has calls to spare: under half the cap, which is about the busiest hour measured (see
+    /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
+    pub fn calls_to_spare(&self) -> bool {
+        self.service.spare(crate::now_ms())
+    }
+
     /// Counts one model call about to go out; past the cap, ends it unsent instead.
     pub fn spend(&self) -> anyhow::Result<()> {
         self.service.spend(crate::now_ms()).map_err(|wait| {
@@ -267,6 +283,11 @@ impl Core {
     /// call from here on and tells every window; a busy service is said once a spell. Both end the call with
     /// their verdict as the error. Any other failure is the caller's to report (`answer` does it for a model call).
     pub fn check(&self, status: StatusCode) -> anyhow::Result<()> {
+        self.check_as(status, true)
+    }
+
+    /// `check`, saying a busy service only when `say_busy`: work nobody waits on (a recap draft) is turned away quietly.
+    fn check_as(&self, status: StatusCode, say_busy: bool) -> anyhow::Result<()> {
         match verdict(status) {
             Verdict::Refused => {
                 if !self.service.refused.swap(true, Ordering::Relaxed) {
@@ -278,7 +299,7 @@ impl Core {
             Verdict::Busy => {
                 let (now, said) = (crate::now_ms(), self.service.busy_said_ms.load(Ordering::Relaxed));
                 // Two calls turned away at once say it once.
-                let fresh = now.saturating_sub(said) >= SPELL_MS
+                let fresh = say_busy && now.saturating_sub(said) >= SPELL_MS
                     && self.service.busy_said_ms.compare_exchange(said, now, Ordering::Relaxed, Ordering::Relaxed).is_ok();
                 if fresh {
                     tracing::warn!("the model service is busy ({status}): each caller backs off and tries again");
@@ -299,12 +320,21 @@ impl Core {
     /// `call_model`, with `extra` fields on its trace line: a call with no prompt cache key names its feature
     /// here, and says what it was for.
     pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
+        self.call(url, body, patience, extra, true).await
+    }
+
+    /// `call_model` for work nobody is waiting on (a recap draft): a busy service turns it away without a notice.
+    pub async fn call_model_quietly(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
+        self.call(url, body, patience, Value::Null, false).await
+    }
+
+    async fn call(&self, url: &str, body: &Value, patience: Duration, extra: Value, say_busy: bool) -> anyhow::Result<Value> {
         let key = self.key()?;
         self.spend()?;
         let started = std::time::Instant::now();
         let result = async {
             let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
-            self.check(response.status())?;
+            self.check_as(response.status(), say_busy)?;
             answer(response).await
         }
         .await;
@@ -518,6 +548,21 @@ mod tests {
         assert_eq!(core.key().unwrap(), "good");
     }
 
+    /// A recap draft nobody asked for (recap.rs) is turned away by a busy service without a notice mid-talk; the
+    /// next call someone waits on still says it.
+    #[test]
+    fn a_quiet_call_is_turned_away_without_a_notice() {
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        assert_eq!(Verdict::of(&core.check_as(StatusCode::TOO_MANY_REQUESTS, false).unwrap_err()), Some(Verdict::Busy));
+        assert!(notices(&mut updates).is_empty(), "nobody waits on a draft");
+        let _ = core.check(StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(notices(&mut updates).len(), 1, "a quiet one doesn't use up the spell's notice");
+        let _ = core.check_as(StatusCode::UNAUTHORIZED, false);
+        assert_eq!(notices(&mut updates), vec![REFUSED.to_string()], "a refused key stops everything: said either way");
+    }
+
     #[test]
     fn the_busy_notice_promises_a_retry_only_for_thoughts() {
         // Placing tries a busy thought again on its own (placer.rs); a Recap, Explain or search asks once.
@@ -527,6 +572,18 @@ mod tests {
         let said = notices(&mut updates).join("\n");
         assert!(said.contains("Thoughts retry on their own") && said.contains("try anything else again"), "{said}");
         assert!(said.split_whitespace().count() <= 15, "short enough to read in the 5 s a notice shows (App.tsx): {said}");
+    }
+
+    #[test]
+    fn calls_are_spare_only_under_half_the_cap() {
+        let service = super::Service::with_limit(4);
+        assert!(service.spare(0));
+        service.spend(0).unwrap();
+        assert!(service.spare(1), "1 of 4");
+        service.spend(1).unwrap();
+        assert!(!service.spare(2), "2 of 4: the rest is placing's");
+        assert!(service.spare(super::HOUR_MS), "an hour on, the first has aged out");
+        assert!(super::Service::with_limit(0).spare(0), "no cap");
     }
 
     #[test]
