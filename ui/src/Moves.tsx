@@ -40,12 +40,18 @@ export function MovesProvider({ threads, move, rename, remove, children }: Moves
 export const DRAG_TYPE = "application/x-e2a2o-thought";
 
 /** Where focus goes once a point leaves the map, so the keyboard carries on: the next point, else the one before,
- *  else its card's title (Things moves the selection the same way). Before it goes, while its neighbors are known. */
+ *  else its card's title (Things moves the selection the same way). A card left with no point and no branch leaves the
+ *  map too (moves.rs), so then the next card's title, else the one before. Before it goes, while its neighbors are known. */
 function focusAfter(point: HTMLElement | null) {
   const next = point?.nextElementSibling ?? point?.previousElementSibling;
-  const target = next instanceof HTMLElement && next.matches("li[id^='point-']") ? next
-    : point?.closest(".thread")?.querySelector<HTMLElement>(".title-button") ?? null;
-  target?.focus();
+  if (next instanceof HTMLElement && next.matches("li[id^='point-']")) return next.focus();
+  const card = point?.closest<HTMLElement>(".thread");
+  if (!card) return;
+  const own = card.querySelector<HTMLElement>(".title-button");
+  if (card.querySelector(".thread")) return own?.focus();
+  const others = Array.from(document.querySelectorAll<HTMLElement>(".thread .title-button")).filter((title) => !card.contains(title));
+  const after = others.find((title) => card.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING);
+  (after ?? others.at(-1) ?? own)?.focus();
 }
 
 /** A point's Delete and Move: Delete takes it off the map (Undo on the notice brings it back); Move's click opens the

@@ -96,6 +96,8 @@ try {
   assert.deepEqual(first.thoughts.map((t) => t.id), ["a", "w", "b"]);
   assert.equal(apply(world, { type: "put_back", id: "a", before: "gone" }).thoughts, world.thoughts);
   assert.equal(apply(world, { type: "put_back", id: "a", before: "a" }).thoughts, world.thoughts);
+  // Deleting a card's only point takes the card too: focus goes to the next card's title, else the one before.
+  assert.match(moves, /if \(card\.querySelector\("\.thread"\)\) return own\?\.focus\(\)[\s\S]*DOCUMENT_POSITION_FOLLOWING[\s\S]*\(after \?\? others\.at\(-1\) \?\? own\)\?\.focus\(\)/);
   const { pointOf, watchAttention, attentionTeller } = await server.ssrLoadModule("/src/this-card.ts");
   const li2 = (id) => ({ closest: (s) => (s.startsWith("li") ? { id } : null) });
   assert.equal(pointOf(li2("point-th-1")), "th-1");
