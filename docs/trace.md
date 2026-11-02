@@ -32,7 +32,7 @@ Muse Voice Transcribe 1.0 (`muse-voice-transcribe-1.0`, core/src/asr.rs) turns t
 
 ## Placer
 
-Muse Spark 1.2 Contributor puts each finished turn on a thread. Here “My biggest problem is that I never finish my” starts a thread and is marked unfinished (`"complete":false`):
+Muse Spark 1.2 puts each finished turn on a thread (this run opted into Contributor mode; the default is without it). Here “My biggest problem is that I never finish my” starts a thread and is marked unfinished (`"complete":false`):
 
 ```json
 {"feature":"placer","model":"muse-spark-1.2-contributor","ms":2580,"sent":{"messages":2,"characters":3292,"last":"Threads:\nT1: Rent Due Friday [open] last: Rent is due Friday and I haven't sent it\nT2: Mom's Birthday Pottery Class [open] last: Mom's birthday is Saturday wants pottery class\nT3: Pottery Class Cost [open] last: If under $80, I'm booking it…"},"answer":"{\"action\":\"new\",\"assumed\":\"\",\"complete\":false,\"dropped\":[],\"guess\":\"\",\"joins\":\"none\",\"parent_id\":\"\",\"point\":\"My biggest problem is that I never finish my\",\"split\":\"\",\"sure\":true,\"thread_id\":\"T6\",\"title\":\"Not Finishing Things\",\"unclear\":\"\",\"…","usage":{"completion_tokens":359,"completion_tokens_details":{"reasoning_tokens":282},"prompt_tokens":813,"prompt_tokens_details":{"cached_tokens":625},"total_tokens":1172}}
