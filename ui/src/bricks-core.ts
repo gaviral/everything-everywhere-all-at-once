@@ -134,7 +134,8 @@ export function useCatalogOpen(): boolean {
 const UNPLACED = Object.freeze({});
 
 /** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only, and
- *  `partial`, this window's live words (core.ts `partial`: only the speaker's own windows get them). */
+ *  `partial`, this tab's live words (core.ts `partial`: the core sends them to the speaker's windows alone, and a tab
+ *  takes them only while its own mic is on). */
 export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string): MapSnapshot {
   const notes = world.notes ?? {};
   return {

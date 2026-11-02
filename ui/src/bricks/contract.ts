@@ -65,8 +65,8 @@ export interface MapSnapshot {
   /** Who is at this window: "you" alone, or the name they joined a room with. A thought's `speaker` is the same. */
   readonly me: string;
   /** Your words as they're heard, not yet final: what the dock's live line shows while you talk, growing as you go,
-   *  "" once the turn ends (it then comes as a thought) or while you're quiet. Only yours: in a room, the other
-   *  person's words never reach this window. */
+   *  "" once the turn ends (it then comes as a thought) or while you're quiet. Only yours, and only in the tab whose
+   *  mic is on: in a room the other person's words never reach this window, nor do your other tabs'. */
   readonly partial: string;
   /** Whether the core is there: while it isn't, actions that change the map say so instead. */
   readonly connected: boolean;

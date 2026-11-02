@@ -340,9 +340,19 @@ try {
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);
   assert.deepEqual(await views(), ["Map", "Palace"], "at their defaults, no brick joins Map and Palace");
   await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
-  // Tiny transcript off (its default): the dock's big line shows your words, as ever.
+  // Tiny transcript off (its default): the dock's big line shows your words, as ever. A tab takes live words only while
+  // its own mic is on, so the mic starts first, as live-page-check starts it: a stand-in microphone (a tone through a
+  // real MediaStream) and a real tap.
   const tiny = appBricks.find((info) => info.id === "tiny-transcript");
+  const tapMic = async () => {
+    const at = await evaluate(`(() => { const r = document.querySelector("button.mic").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+  };
   if (tiny) {
+    await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(); const tone = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+    await tapMic();
+    if (!await until(`!!document.querySelector(".status.capturing")`, 5000)) fail("the dock", "a tap on the mic didn't start it, so no live words reach this tab");
     core.send({ type: "partial", text: "The rent is due" });
     if (!await until(`document.querySelector(".dock .live.words")?.textContent.includes("The rent is due")`, 3000)) fail("the dock", "with Tiny transcript off, its live line doesn't show your words");
     core.send({ type: "partial", text: "" });
@@ -362,6 +372,7 @@ try {
     if (await evaluate(`${switchFor(name)}.getAttribute("aria-checked")`) !== "true") fail("Catalog", `${name}'s switch didn't turn on`);
   }
   await evaluate(`document.querySelector(".catalog-close").click()`);
+  if (!await until(`!document.querySelector("dialog.catalog")`, 2000)) fail("Catalog", "× doesn't close it");
   // Tiny transcript on: your words from the core show in it, 11 px, and not in the dock (never twice); a long turn
   // keeps its newest words in view, its start behind the "…"; at the turn's end the words go.
   if (tiny) {
@@ -383,8 +394,9 @@ try {
     }
     core.send({ type: "partial", text: "" });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
+    await tapMic();
+    if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
-  if (!await until(`!document.querySelector("dialog.catalog")`, 2000)) fail("Catalog", "× doesn't close it");
   const switched = ["Map", "Palace", ...viewBricks.map((info) => info.name)].join();
   if ((await views()).join() !== switched) fail("Catalog", `switched on, the view switch says ${await views()}, not ${switched}`);
   // Each view shows in the map's place, with something in it, and Map brings the map back.
