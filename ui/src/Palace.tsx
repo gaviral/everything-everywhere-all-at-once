@@ -70,7 +70,9 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const palace = container.current;
     if (!palace) return;
     const tools = document.querySelector<HTMLElement>(".map-tools");
-    const toolsBottom = tools ? parseFloat(getComputedStyle(tools).top) + tools.offsetHeight : 0;
+    // Unpinned in a short window (styles.css, max-height), the tools scroll away: there's no bar to leave room for.
+    const pinned = tools && getComputedStyle(tools).position === "sticky";
+    const toolsBottom = pinned ? parseFloat(getComputedStyle(tools).top) + tools.offsetHeight : 0;
     window.scrollTo({ top: window.scrollY + palace.getBoundingClientRect().top - toolsBottom, behavior: "instant" });
     palace.querySelector<HTMLButtonElement>(".palace-tile")?.focus();
   }, []);
