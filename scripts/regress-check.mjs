@@ -54,6 +54,23 @@ try {
   assert.match(md(thought(true)), /\*\*Decided:\*\* /);
   assert.match(md(thought(undefined)), /\*\*Decided:\*\* /, "a thought from before the mark: its words are read");
 
+  // Words still being placed don't hold a thread (as world.rs): its last point deleted, the card goes from the window too.
+  const { apply } = await server.ssrLoadModule("/src/core.ts");
+  const point = (id, thread_id, at_ms, placed = true) => ({ ...thought(undefined), id, text: id, point: id, thread_id, at_ms, placed });
+  const two = { ...base, threads: [thread, { ...thread, id: "T2", title: "Train" }] };
+  const waiting = { ...two, thoughts: [point("p", "T1", 1, false)] };
+  assert.deepEqual(apply(waiting, { type: "thread_removed", thread_id: "T1" }).threads.map((t) => t.id), ["T2"], "an unplaced thought doesn't hold it");
+  const held = { ...two, thoughts: [point("p", "T1", 1)] };
+  assert.equal(apply(held, { type: "thread_removed", thread_id: "T1" }), held, "a placed one does");
+
+  // A merge undone after the merged thread's newest point was deleted: its card shows the newest point still there.
+  const trip = { ...two, thoughts: [point("old", "T2", 1), point("new", "T2", 2)] };
+  const mergedT2 = apply(trip, { type: "thread_merged", from: "T2", into: "T1" });
+  const deleted = apply(mergedT2, { type: "thought_skipped", thought_id: "new" });
+  const unmerge = { thread: { ...thread, id: "T2", title: "Train", last_point: "new" }, into: "T1", at: 1, thoughts: ["old", "new"], branches: [], suggestions: [], actions: [], proposals: [], active: false, active_by: [] };
+  assert.equal(apply(deleted, { type: "thread_unmerged", unmerge }).threads.find((t) => t.id === "T2").last_point, "old", "the deleted point isn't on the card");
+  assert.equal(apply(mergedT2, { type: "thread_unmerged", unmerge }).threads.find((t) => t.id === "T2").last_point, "new");
+
   // The install hint is a dock card, so the map's follow keeps landings clear of it.
   assert.match(ui("Install.tsx"), /className="install-hint"[^>]*data-dock-card/);
 

@@ -426,8 +426,8 @@ export function apply(world: World, raw: Change): World {
     case "thought_repointed":
       return repoint(world, c.thought_id, () => c.point);
     case "thread_removed": {
-      // As the core: only an empty thread, and nobody stays on it.
-      if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
+      // As the core: only an empty thread, and nobody stays on it. Words still being placed don't hold it.
+      if (world.thoughts.some((t) => t.placed && t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
       return {
         ...world,
         threads: world.threads.filter((t) => t.id !== c.thread_id),

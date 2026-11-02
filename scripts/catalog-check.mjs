@@ -92,7 +92,7 @@ try {
   const camping = { threads: [{ id: "T5", parent_id: null }], thoughts: [], active: "T5", active_by: { you: "T5" }, merged: {} };
   const removed = apply(camping, { type: "thread_removed", thread_id: "T5" });
   assert.deepEqual([removed.threads, removed.active, removed.active_by], [[], null, {}]);
-  const held = { ...camping, thoughts: [{ id: "x", thread_id: "T5" }] };
+  const held = { ...camping, thoughts: [{ id: "x", thread_id: "T5", placed: true }] };
   assert.equal(apply(held, { type: "thread_removed", thread_id: "T5" }), held, "a thread with words stays");
 
   // "Did you mean “Muse Spark”?" answered: yes takes the guess, a fix in your words takes those, no keeps the words.
