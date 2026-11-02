@@ -13,6 +13,32 @@ try {
   const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");
   const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
 
+  // A microphone that goes away on its own (its track ends: unplugged, switched off) is said at once, once; one we
+  // stop ourselves never is (bug hunt 20: the window showed "Listening" to nothing).
+  const { startMic } = await server.ssrLoadModule("/src/mic.ts");
+  const fakeTrack = () => Object.assign(new EventTarget(), { stop() {} });
+  let track;
+  const audioNode = () => ({ connect: (next) => next, disconnect() {} });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { mediaDevices: { getUserMedia: async () => {
+    track = fakeTrack();
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
+  } } } });
+  globalThis.window ??= globalThis;
+  globalThis.AudioWorkletNode = class { port = {}; connect(next) { return next; } disconnect() {} };
+  globalThis.AudioContext = class { sampleRate = 24000; audioWorklet = { addModule: async () => {} }; destination = {};
+    createMediaStreamSource() { return audioNode(); } createGain() { return { gain: { value: 1 }, ...audioNode() }; } close() {} };
+  let lost = 0;
+  const stopMic = await startMic(() => {}, () => lost++);
+  track.dispatchEvent(new Event("ended"));
+  track.dispatchEvent(new Event("ended"));
+  assert.equal(lost, 1, "a track that ends on its own is said once");
+  stopMic();
+  const stopAgain = await startMic(() => {}, () => lost++);
+  stopAgain();
+  track.dispatchEvent(new Event("ended"));
+  assert.equal(lost, 1, "after our own stop, nothing is said");
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /startMic\(core\.sendAudio, \(\) => \{\s*if \(liveStop\.current !== stop\) return;\s*releaseMic\(\);/);
+
   // Escape that hides a tip hides only the tip: heard before the document's listener (App.tsx folds the quiet threads
   // on Escape there), and stopped unless typed in a field (bug hunt 18).
   const tipsSource = readFileSync(new URL("../ui/src/Tips.tsx", import.meta.url), "utf8");

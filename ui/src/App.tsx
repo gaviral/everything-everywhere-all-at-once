@@ -402,9 +402,16 @@ export default function App() {
     }
     setStartingMic(true);
     try {
-      const stopAudio = await startMic(core.sendAudio);
+      let stop = () => {};
+      // A microphone unplugged or taken by another app: say so at once, rather than "Listening" to nothing.
+      const stopAudio = await startMic(core.sendAudio, () => {
+        if (liveStop.current !== stop) return;
+        releaseMic();
+        core.listen(false);
+        core.showNotice("The mic stopped: the microphone was disconnected. Tap it to use another.");
+      });
       let stopped = false;
-      const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
+      stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;

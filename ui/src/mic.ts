@@ -1,5 +1,7 @@
-// Streams the microphone as 24 kHz 16-bit PCM frames; returns a function that stops it.
-export async function startMic(onFrame: (frame: ArrayBuffer) => void): Promise<() => void> {
+// Streams the microphone as 24 kHz 16-bit PCM frames; returns a function that stops it. `onLost` is called once if
+// the microphone goes away on its own (unplugged, switched off, taken by another app): its track ends, which a stop
+// of ours never makes it do.
+export async function startMic(onFrame: (frame: ArrayBuffer) => void, onLost?: () => void): Promise<() => void> {
   if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) {
     throw new Error("Live audio isn't available in this browser.");
   }
@@ -19,8 +21,16 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void): Promise<(
     const silent = context.createGain();
     silent.gain.value = 0;
     writer.connect(silent).connect(context.destination);
+    let stopped = false;
+    const lost = () => {
+      if (stopped) return;
+      stopped = true;
+      onLost?.();
+    };
+    stream.getAudioTracks().forEach((track) => track.addEventListener("ended", lost));
 
     return () => {
+      stopped = true;
       writer.port.onmessage = null;
       source.disconnect();
       writer.disconnect();
