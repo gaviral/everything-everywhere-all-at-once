@@ -1,0 +1,99 @@
+/* Guide.tsx: an arrow at one part of the screen, its caption and a soft spotlight; and a caption in the corner. Both are
+   manual popovers (the top layer, over an open sheet too). A popover's own display is the browser's (hidden until
+   shown), so nothing here sets one on them. */
+.guide-layer {
+  --guide-dim: rgba(29, 29, 31, .16);
+  --guide-ring: color-mix(in srgb, var(--accent) 60%, transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--ink);
+  pointer-events: none;
+}
+@media (prefers-color-scheme: dark) {
+  .guide-layer { --guide-dim: rgba(0, 0, 0, .45); }
+}
+/* Placed before its first frame (Guide.tsx), so it never shows anywhere else first. */
+.guide-layer[data-state=""] { visibility: hidden; }
+
+/* The spotlight: the part in a ring, everything else a shade darker, only while the part is in view. */
+.guide-hole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px var(--guide-ring), 0 0 0 200vmax var(--guide-dim);
+  animation: guide-in .2s ease-out backwards;
+}
+.guide-layer:not([data-state="aimed"]) .guide-hole { display: none; }
+
+/* The arrow: the accent's blue on a halo of the card's color, so it reads on the page, a card or a picture. */
+.guide-arrow { position: absolute; inset: 0; overflow: visible; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .22)); }
+.guide-layer[data-state="alone"] .guide-arrow { display: none; }
+.guide-arrow-halo { fill: var(--card); stroke: var(--card); stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; }
+.guide-arrow-line { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
+.guide-arrow-head { fill: var(--accent); stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
+/* It arrives along its own line, then nudges toward the part twice and keeps still. */
+.guide-arrow-move { animation: guide-arrive .24s cubic-bezier(.2, .7, .3, 1) backwards, guide-nudge .7s ease-in-out .55s 2; }
+
+/* The caption beside the arrow, as the tour's tip looks: who points, what they say, and where the part is when the
+   arrow shows the way to it instead. */
+.guide-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: 8px 12px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  animation: guide-in .16s ease-out backwards;
+}
+.guide-by, .guide-text, .guide-where { display: block; }
+.guide-by { color: var(--muted); font-size: 12px; font-weight: 600; }
+.guide-text { margin-top: 1px; color: var(--ink); }
+.guide-where { margin-top: 3px; color: var(--muted); font-size: 13px; }
+
+/* The corner caption: one quiet card, replaced by the next, gone once read. Its width and foot are set beside or over
+   the dock, never on the composer (Guide.tsx). */
+.guide-caption {
+  position: fixed;
+  inset: auto auto 16px 16px;
+  z-index: 30;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  height: auto;
+  margin: 0;
+  padding: 8px 14px 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.4;
+  transition: opacity .4s ease;
+  animation: guide-in .16s ease-out backwards;
+}
+.guide-caption.settled { animation: none; }
+.guide-caption.leaving { opacity: 0; }
+
+@keyframes guide-in { from { opacity: 0; } }
+@keyframes guide-arrive { from { opacity: 0; transform: translateX(-14px); } }
+@keyframes guide-nudge { 50% { transform: translateX(5px); } }

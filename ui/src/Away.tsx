@@ -178,7 +178,7 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
   if (!items.length) return null;
   const flip = (key: string) => setWhy((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
   const close = () => { onDismiss(); onDismissFocus(); };
-  return <section className="away" aria-labelledby="away-title" onKeyDown={(event) => {
+  return <section className="away" data-guide="away" aria-labelledby="away-title" onKeyDown={(event) => {
     if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); }
   }}>
     <div className="away-top">

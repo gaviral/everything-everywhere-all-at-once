@@ -9,7 +9,7 @@ export function UndoButton({ id, onUndo, what, mac, offline = false }: { id: num
   const key = undoKeyLabel(mac);
   return (
     // Away from the core it couldn't reach it: disabled, as the window's other core buttons are, until it's back.
-    <button className="undo" disabled={offline} onClick={() => onUndo(id)} aria-label={`Undo “${what}”`} aria-keyshortcuts={mac ? "Meta+Z" : "Control+Z"}
+    <button className="undo" data-guide="undo" disabled={offline} onClick={() => onUndo(id)} aria-label={`Undo “${what}”`} aria-keyshortcuts={mac ? "Meta+Z" : "Control+Z"}
       title={`Takes back “${what}”. ${key} or say “undo that” work too, after this goes.`}>
       Undo <kbd aria-hidden="true">{key}</kbd>
     </button>

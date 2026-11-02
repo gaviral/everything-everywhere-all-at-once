@@ -55,6 +55,7 @@ import { SendCard } from "./SendCard";
 import { BRICKS, useBricksOn } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import { Catalog } from "./Catalog";
+import { Guide } from "./Guide";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -931,7 +932,7 @@ export default function App() {
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         {/* What you can say comes first: asking for this list by voice is how most people open it. */}
-        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div ref={helpList} className="keyboard-hint">
+        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands" data-guide="help">?</summary><div ref={helpList} className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
           <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
@@ -956,14 +957,14 @@ export default function App() {
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
           <Symbols />
         </div></details>
-        <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
+        <button className="recap-button" data-guide="recap" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
         {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
-        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
+        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown" data-guide="export">
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
-        <div className="status">
+        <div className="status" data-guide="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
           {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
           <span aria-hidden="true">{core.connected && core.resting && !core.listening ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
@@ -984,6 +985,7 @@ export default function App() {
           <motion.div
             ref={noticeRef}
             className="notice"
+            data-guide="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
             onMouseEnter={() => setNoticeHeld(true)}
@@ -1014,22 +1016,22 @@ export default function App() {
 
       {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
-          <div className="palace-switch" role="group" aria-label="View">
-            <button aria-pressed={view === "map"} onClick={() => showView("map")}>Map</button>
-            <button aria-pressed={view === "palace"} onClick={() => showView("palace")}>Palace</button>
-            {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)}>{brick.info.name}</button>)}
+          <div className="palace-switch" role="group" aria-label="View" data-guide="views">
+            <button aria-pressed={view === "map"} onClick={() => showView("map")} data-guide="view:map">Map</button>
+            <button aria-pressed={view === "palace"} onClick={() => showView("palace")} data-guide="view:palace">Palace</button>
+            {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)} data-guide={`view:${brick.info.id}`}>{brick.info.name}</button>)}
           </div>
-          {view === "map" && <><label className="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          {view === "map" && <><label className="search" data-guide="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
           {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
               while on: pressed is its state, as a toggle button's is. */}
-          {world.threads.length > 1 && <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active}>Focus</button>}
-          {world.threads.length > 1 && world.active && <button className="back-to-active" onClick={jumpToActive}>Back to active</button>}
+          {world.threads.length > 1 && <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active} data-guide="focus">Focus</button>}
+          {world.threads.length > 1 && world.active && <button className="back-to-active" onClick={jumpToActive} data-guide="back-to-active">Back to active</button>}
           </>}
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
+        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1075,7 +1077,7 @@ export default function App() {
             {!hasAway && pullBack && (
               <motion.div
                 key={dropKey(pullBack)}
-                className="pullback" role="status" data-dock-card
+                className="pullback" role="status" data-dock-card data-guide="unfinished"
                 style={roomStyle(rooms.get(pullBack.id))}
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1109,13 +1111,13 @@ export default function App() {
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
-          <div className="pending">
+          <div className="pending" data-guide="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
-          <form className="composer" onSubmit={submit}>
+          <form className="composer" onSubmit={submit} data-guide="composer">
             <input
               id={COMPOSER_ID}
               ref={composerRef}
@@ -1134,6 +1136,8 @@ export default function App() {
       <BrickSlot kind="input" host={brickHost} />
       <Tips />
       <Catalog />
+      {/* Another participant pointing at a part of the screen, or saying a caption (docs/guide.md). */}
+      <Guide world={world} view={view} query={query} focus={focusMode} />
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
@@ -1410,6 +1414,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
     <motion.section
       layout={reducedMotion ? false : true}
       id={`thread-${thread.id}`}
+      data-guide={`thread:${thread.id}`}
       aria-labelledby={`title-${thread.id}`}
       className={classes}
       style={roomStyle(rooms.get(thread.id))}
@@ -1543,7 +1548,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
   // changed left a point that had just landed in a branch drawn ≈ 100 px under its card for 13–15 s after "Show" on a
   // card above (its card moved, Motion projected it from its old box: the move counted twice). scripts/points-check.mjs.
   return (
-    <motion.li id={`point-${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
+    <motion.li id={`point-${thought.id}`} data-guide={`point:${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
       onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget, taken: event.defaultPrevented })) { event.preventDefault(); flip(); } } : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}

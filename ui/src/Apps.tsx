@@ -115,7 +115,7 @@ export function Apps({ core }: { core: Core }) {
     }, 50);
   };
   const enabledCount = core.world.apps.filter((a) => a.enabled).length;
-  return <aside className={`apps-panel${open ? " is-open" : ""}${core.apps.soundPending ? " has-sound" : ""}`} aria-label="Apps">
+  return <aside className={`apps-panel${open ? " is-open" : ""}${core.apps.soundPending ? " has-sound" : ""}`} aria-label="Apps" data-guide="apps">
     <div className="apps-heading">
       <button className="apps-title" aria-expanded={open} aria-controls="apps-content" onClick={() => setOpen(!open)}>
         <strong>Apps</strong><span>{enabledCount} on</span><span className="apps-toggle">{open ? "Close" : "Open"}</span>
@@ -143,7 +143,7 @@ export function Apps({ core }: { core: Core }) {
         {deciding(build) && <Decisions build={build} core={core} />}
         {decided(build) && <p role="status">{build.message}</p>}
       </div>}
-      <form className="apps-form" onSubmit={submit}>
+      <form className="apps-form" onSubmit={submit} data-guide="make-app">
         <label htmlFor="app-request">What would you like an app to do?</label>
         <div><input id="app-request" value={request} onChange={(e) => setRequest(e.target.value)} maxLength={2000}
           placeholder="Show a card when I mention the demo" disabled={waiting} />
@@ -170,7 +170,7 @@ export function Apps({ core }: { core: Core }) {
         </article>)}
       </div>
       {/* The app's own parts, under the apps people make: the Catalog switches them (Catalog.tsx, docs/bricks.md). */}
-      <div className="apps-catalog"><p>More views and tools you can switch on</p><button type="button" aria-haspopup="dialog" onClick={openCatalog}>Catalog</button></div>
+      <div className="apps-catalog"><p>More views and tools you can switch on</p><button type="button" aria-haspopup="dialog" onClick={openCatalog} data-guide="catalog">Catalog</button></div>
     </div>}
   </aside>;
 }

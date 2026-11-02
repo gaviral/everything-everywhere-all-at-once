@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
+import { receiveGuide } from "./guide-core";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -721,6 +722,8 @@ export function useCore(speaker?: string) {
         if (receiveApps(msg)) return;
         if (receiveStep(msg)) return;
         if (receiveRoute(msg)) return;
+        // Someone pointing at a part of the screen, or a caption (Guide.tsx): never the map.
+        if (receiveGuide(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);

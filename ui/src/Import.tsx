@@ -297,7 +297,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   return (
     <>
       {/* On a phone the header has no room for words: an icon, or the percentage while importing. */}
-      <button className="import-open" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={label}>
+      <button className="import-open" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={label} data-guide="import">
         <span className="import-long">{label}</span>
         <span className="import-short">{percent || <ImportIcon />}</span>
       </button>

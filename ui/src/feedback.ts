@@ -35,7 +35,7 @@ const NOT_CONNECTED = "notice: “Not connected — try again when connected.”
 
 export const ACTIONS: Action[] = [
   // The dock: what you say or type.
-  { id: "type-a-thought", how: "form", at: [["App.tsx", `<form className="composer" onSubmit={submit}>`]], pressed: INSTANT, waits: "model",
+  { id: "type-a-thought", how: "form", at: [["App.tsx", `<form className="composer" onSubmit={submit}`]], pressed: INSTANT, waits: "model",
     done: "the field clears and the thought shows at once in the dock, then lands on the map with the landing highlight",
     working: "the pending thought: “Finding a place for your thought…”, then where it stands", failed: NOT_CONNECTED + "; a thought that can't be placed yet says why in the dock",
     says: ["Finding a place for your thought…", "Not connected — try again when connected."] },
@@ -49,6 +49,10 @@ export const ACTIONS: Action[] = [
   { id: "undo-map-change", how: "click", at: [["App.tsx", "core.untidy(core.mapChange!.undo"]], pressed: PRESS, waits: "core",
     done: "the old title or merge comes back and the note goes", failed: NOT_CONNECTED },
   { id: "dismiss-map-change", how: "click", at: [["App.tsx", `aria-label="Dismiss map update"`]], pressed: PRESS, done: "the note goes" },
+  // Someone else's pointing (Guide.tsx): a click anywhere takes it down too (a document click, which the catalog's net
+  // doesn't list), except one on the way the arrow shows (a folded card's Show, Map), which moves it on to the part.
+  { id: "dismiss-guide", how: "key", at: [["Guide.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT,
+    done: "Esc: the arrow, its caption and the spotlight go; a click elsewhere does the same" },
   { id: "new-landing-note", how: "click", at: [["Attention.tsx", "onClick={onGo}"]], pressed: PRESS, done: "the map scrolls to the new thought, which takes the landing highlight" },
   { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },
   { id: "later", how: "click", at: [["App.tsx", "later(pullBack)"]], pressed: PRESS, done: "the card fades out" },
@@ -139,7 +143,7 @@ export const ACTIONS: Action[] = [
 
   // Apps.
   { id: "apps-panel", how: "click", at: [["Apps.tsx", "onClick={() => setOpen(!open)}"], ["Apps.tsx", `getElementById("app-request")?.focus()`]], pressed: PRESS, done: "the panel opens or closes; Make an app focuses its field" },
-  { id: "make-app", how: "form", at: [["Apps.tsx", `<form className="apps-form" onSubmit={submit}>`], ["Apps.tsx", "compose(build.instead)"], ["Apps.tsx", "core.composeApp(build.instead)"]], pressed: PRESS, waits: "model",
+  { id: "make-app", how: "form", at: [["Apps.tsx", `<form className="apps-form" onSubmit={submit}`], ["Apps.tsx", "compose(build.instead)"], ["Apps.tsx", "core.composeApp(build.instead)"]], pressed: PRESS, waits: "model",
     working: "the build card rises in the dock, one ✓ step at a time, a spinner on the step in progress", done: "Keep app or Discard", failed: "the step shows × and says why" },
   { id: "keep-app", how: "click", at: [["Apps.tsx", "onClick={() => decide(true)}"], ["Apps.tsx", "onClick={() => decide(false)}"]], pressed: PRESS, waits: "core",
     done: "the card says what happened (“Your app is on.”) and goes", failed: OFFLINE },

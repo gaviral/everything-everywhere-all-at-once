@@ -94,6 +94,7 @@ export function MicButton({ state, capturing, disabled, onClick }: { state: MicS
       ref={button}
       type="button"
       className={capturing ? "mic on" : "mic"}
+      data-guide="mic"
       data-state={state}
       data-tip={capturing && state === "starting" ? "Starting the microphone… Tap to stop." : words.tip}
       onClick={onClick}
