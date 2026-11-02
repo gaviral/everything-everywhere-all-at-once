@@ -338,9 +338,10 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
     let mut decisions = clean(answer.decisions);
     // A decision the person said in so many words is one even when the model leaves it out: its point goes in.
     for t in &source.threads {
-        if !t.decided.is_empty() && !decisions.iter().any(|d| d.thread_id == t.thread_id) {
-            decisions.extend(t.decided.iter().map(|point| Item { thread_id: t.thread_id.clone(), text: point.clone() }));
-        }
+        let listed: Vec<&Item> = decisions.iter().filter(|d| d.thread_id == t.thread_id).collect();
+        let missed: Vec<Item> = uncovered(&t.decided, &listed).into_iter()
+            .map(|point| Item { thread_id: t.thread_id.clone(), text: point.clone() }).collect();
+        decisions.extend(missed);
     }
     // The day's decisions are what a person wants back first ("What did I decide today?"), and they read better than
     // where the time went ("You circled around …"), so the summary leads with them when there are any.
@@ -357,6 +358,29 @@ fn finish(source: Source, answer: Answer, source_key: String) -> Recap {
         unfinished, actions: source.actions, thought_count: source.thought_count,
         thread_count: source.thread_count, limited: source.limited,
     }
+}
+
+/// The decided points of one thread that none of the model's decisions on it covers. Each listed decision covers at
+/// most one point, the one it shares the most words with ("Book the pottery class tonight if it's under $80" covers
+/// "If it's under $80, I'm booking it tonight"), so two decisions said on one thread and one listed leaves the other
+/// to add. A listed decision sharing no words with any point (a paraphrase) still covers one, in order, so a thread's
+/// decisions are never listed twice.
+fn uncovered<'a>(points: &'a [String], listed: &[&Item]) -> Vec<&'a String> {
+    let words: Vec<HashSet<String>> = points.iter().map(|p| content_words(p)).collect();
+    let mut open: Vec<usize> = (0..points.len()).collect();
+    let mut paraphrases = 0;
+    for item in listed {
+        let said = content_words(&item.text);
+        let best = open.iter().enumerate()
+            .map(|(at, &p)| (at, words[p].iter().filter(|w| !w.starts_with("decid") && said.contains(*w)).count()))
+            .filter(|&(_, shared)| shared > 0)
+            .max_by_key(|&(at, shared)| (shared, std::cmp::Reverse(at)));
+        match best {
+            Some((at, _)) => { open.remove(at); }
+            None => paraphrases += 1,
+        }
+    }
+    open.into_iter().skip(paraphrases).map(|p| &points[p]).collect()
 }
 
 /// True when a summary names at least one of the threads, by a word of four letters or more from its title
@@ -618,6 +642,38 @@ mod tests {
         let mut a = answer();
         a.decisions = vec![Item { thread_id: "T1".into(), text: "Book the pottery class tonight if it's under $80.".into() }];
         assert_eq!(finish(source, a, "key".into()).decisions.len(), 1);
+    }
+
+    /// Two decisions said on one thread and the model lists one: the other is added, not lost because its thread has
+    /// a decision already. A paraphrase sharing no words still counts for one, so nothing is listed twice. A head
+    /// carried on across a pause goes in once, as its carrier's point.
+    #[test]
+    fn each_decision_said_is_in_the_recap_even_two_on_one_thread() {
+        let mut world = sample(1000);
+        world.thoughts.insert(1, thought(3, "T1", 500));
+        let (a, b) = (0, 1);
+        world.thoughts[a].point = "Book the pottery class if it's under $80".into();
+        world.thoughts[a].decided = true;
+        world.thoughts[b].point = "Drive to Mom's on Saturday morning".into();
+        world.thoughts[b].decided = true;
+        let listed = |world: &World, decisions: Vec<Item>| {
+            let mut answer = answer();
+            answer.decisions = decisions;
+            let mut texts: Vec<String> = finish(slice(world, Period::Session, 1000), answer, "key".into())
+                .decisions.into_iter().filter(|d| d.thread_id == "T1").map(|d| d.text).collect();
+            texts.sort();
+            texts
+        };
+        let item = |text: &str| Item { thread_id: "T1".into(), text: text.into() };
+        assert_eq!(listed(&world, vec![item("Book the pottery class tonight, under $80.")]),
+            ["Book the pottery class tonight, under $80.", "Drive to Mom's on Saturday morning"]);
+        assert_eq!(listed(&world, vec![item("Saturday morning drive to Mom's.")]),
+            ["Book the pottery class if it's under $80", "Saturday morning drive to Mom's."]);
+        assert_eq!(listed(&world, vec![item("Book the pottery class tonight, under $80."), item("Saturday morning drive to Mom's.")]).len(), 2);
+        assert_eq!(listed(&world, vec![item("Settled the plan.")]).len(), 2, "a paraphrase covers one");
+        // a carried on by b: one decision, b's point.
+        world.notes.insert(world.thoughts[b].id.clone(), crate::chunks::Note { continues: world.thoughts[a].id.clone(), ..Default::default() });
+        assert_eq!(listed(&world, Vec::new()), ["Drive to Mom's on Saturday morning"]);
     }
 
     #[test]
