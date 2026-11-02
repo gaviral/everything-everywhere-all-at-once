@@ -50,8 +50,8 @@ function unframe(buffer) {
 }
 
 /** A stand-in core: the built UI over HTTP, alone on this laptop, and /ws. Each window that connects gets
- *  `catchUp()`'s messages (the core's catch-up: the world, and whatever else a check puts first), or is refused when it
- *  returns null; `heard` collects what windows sent, parsed. */
+ *  `catchUp(query)`'s messages (the core's catch-up: the world, and whatever else a check puts first; `query` is the
+ *  connection's URLSearchParams), or is refused when it returns null; `heard` collects what windows sent, parsed. */
 export async function standInCore(catchUp) {
   const sockets = new Set();
   const heard = [];
@@ -63,7 +63,7 @@ export async function standInCore(catchUp) {
     res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
   });
   server.on("upgrade", (req, socket) => {
-    const messages = req.url.startsWith("/ws") ? catchUp() : null;
+    const messages = req.url.startsWith("/ws") ? catchUp(new URL(req.url, "http://x").searchParams) : null;
     // A core that's away: the window's try fails, and it tries again later.
     if (!messages) { socket.destroy(); return; }
     const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");

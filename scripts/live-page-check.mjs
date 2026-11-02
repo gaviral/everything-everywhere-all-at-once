@@ -2,8 +2,9 @@
 // What the core says live, in a real page: the built UI (ui/dist) in headless Chrome over a stand-in core
 // (scripts/headless.mjs). The message card (ui/src/send-card.ts, core/src/messages.rs): a count that starts closes
 // Recap and Import, whose modal sheets would cover it, so its Stop is on top and a real click reaches it; across a
-// dropped connection its bar runs on, a Stop pressed offline goes first once back, a card the core no longer has goes,
-// an end said while away shows, and a fresh window shows no old end. Live routing (ui/src/route.ts): the landing's tag
+// dropped connection its bar runs on, a Stop pressed offline rides on the reconnection itself, a card the core no
+// longer has goes (also when another window stopped it and a newer one ended), an end said while away shows, and a
+// fresh window shows no old end. Live routing (ui/src/route.ts): the landing's tag
 // stays readable when the next thought's weighing follows at once, another speaker's active candidate is named, and a
 // card a point is dragged over keeps its drop outline. Exit 3 (skipped) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
@@ -27,7 +28,8 @@ const OFFLINE = "Not sent: your window was offline, so you couldn't stop it.";
 
 // What a window gets when it connects: the core's catch-up, as each step sets it; null refuses the connection.
 let catchUp = [snapshot];
-const core = await standInCore(() => catchUp);
+const joins = [];
+const core = await standInCore((query) => { joins.push(query.get("stop")); return catchUp; });
 let page = null;
 let failed = null;
 try {
@@ -78,18 +80,23 @@ try {
   assert.equal(await bar(), "5000ms", "the bar keeps the count's length");
   assert.match(await status(), /^Sends in [1-3]$/);
 
-  // ---- Offline, Stop waits and the window says so; once back it's the first thing the core hears.
+  // ---- Offline, Stop waits and the window says so; the reconnection itself carries it, so the core applies it before
+  // the window counts as open (core/src/main.rs `connect`), and only that one.
   catchUp = null;
   core.drop();
   await sleep(300);
   await clickStop();
   assert.ok(await until(`document.body.textContent.includes("your Stop goes as soon as this window reconnects")`), "the window says the Stop waits");
-  const before = core.heard.length;
+  joins.length = 0;
   catchUp = [card(2, "stopped", { message: "Stopped: not sent" }), snapshot];
   assert.equal(await connections(1), 1, "the window reconnects");
-  for (let waited = 0; core.heard.length === before && waited < 3000; waited += 50) await sleep(50);
-  assert.deepEqual(core.heard[before], { type: "stop_send", id: 2 }, "the waiting Stop goes first");
+  assert.equal(joins.at(-1), "2", "the reconnection carries the Stop");
   assert.ok(await until(`document.querySelector(".send-card-status")?.textContent === "Stopped: not sent"`), "its end shows");
+  joins.length = 0;
+  core.drop();
+  assert.equal(await connections(1), 1);
+  assert.deepEqual(joins.slice(-1), [null], "once applied, the Stop isn't carried again");
+  assert.ok(!core.heard.some((m) => m.type === "stop_send" && m.id === 2), "nor sent as a message");
 
   // ---- The core restarted mid-count: its catch-up says nothing about the card, which goes (never stuck on Sending…).
   core.send(card(3, "counting", { in_ms: 5000 }));
@@ -98,6 +105,15 @@ try {
   core.drop();
   assert.equal(await connections(1), 1);
   assert.ok(await until(`!document.querySelector(".send-card")`), "a count the core no longer has goes");
+
+  // ---- Away mid-count, another window stopped it and a newer one ended: the core repeats the newer end, so this
+  // window's card is over and goes (never stuck on Sending…), and the newer end, never seen here, doesn't show.
+  core.send(card(5, "counting", { in_ms: 5000 }));
+  assert.ok(await until(`!!document.querySelector(".send-card.is-counting")`));
+  catchUp = [card(6, "dry_run", { message: "Dry run: nothing sent." }), snapshot];
+  core.drop();
+  assert.equal(await connections(1), 1);
+  assert.ok(await until(`!document.querySelector(".send-card")`), "an obsolete count goes");
 
   // ---- The count ended while the window was away (here: no window of theirs open, so it didn't send): it shows how.
   core.send(card(4, "counting", { in_ms: 5000 }));

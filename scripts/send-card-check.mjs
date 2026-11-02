@@ -69,12 +69,13 @@ try {
   assert.equal(back.total, 5000, "the count's length");
   assert.equal(back.until, t0 + 5000);
   assert.equal(elapsed(back, t0 + 2000), elapsed(card, t0 + 2000), "the bar where it was");
-  // The core sends the card before the snapshot: one still counting that it didn't mention (it restarted) goes; an end
-  // still up for its reading time stays.
-  assert.equal(caughtUp(card, false), null, "never stuck on Sending…");
-  assert.equal(caughtUp(card, true), card);
-  assert.equal(caughtUp(late, false), late);
-  assert.equal(caughtUp(null, false), null);
+  // The core sends the card before the snapshot: one still counting that it didn't name goes (it restarted, or another
+  // window stopped it and a newer one ended since, whose end is what the core repeats); an end still up stays.
+  assert.equal(caughtUp(card, null), null, "never stuck on Sending…");
+  assert.equal(caughtUp(card, 1), card);
+  assert.equal(caughtUp(received(card, { ...msg("dry_run"), id: 2 }, t0 + 9000), 2), null, "another card's end: this one is over");
+  assert.equal(caughtUp(late, null), late);
+  assert.equal(caughtUp(null, null), null);
   const sent = received(card, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 5000);
   assert.equal(cardWords(sent, t0 + 5000).status, "Sent to Mia");
   const dry = received(card, msg("dry_run", { message: "Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to Mia." }), t0 + 5000);

@@ -25,10 +25,11 @@ export function received(shown: Card | null, msg: SendCardMsg, now: number): Car
 }
 
 /** The card once a (re)connection's snapshot came: the core sends the speaker's card before it (`card_for`), so a card
- *  still counting that it didn't mention is one the core no longer has (it restarted): it goes, never stuck on
- *  "Sending…". An end still up for its reading time stays. */
-export function caughtUp(shown: Card | null, told: boolean): Card | null {
-  return shown?.state === "counting" && !told ? null : shown;
+ *  still counting that it didn't name (`told`: the id it sent a card for, if any) is one the core no longer has (it
+ *  restarted, or another window stopped it and a newer one ended since): it goes, never stuck on "Sending…". An end
+ *  still up for its reading time stays. */
+export function caughtUp(shown: Card | null, told: number | null): Card | null {
+  return shown?.state === "counting" && shown.id !== told ? null : shown;
 }
 
 /** Whole seconds left, as the count shows them: 5 at the start, 1 in its last second, never below 0. */

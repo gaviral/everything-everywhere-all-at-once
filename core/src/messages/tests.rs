@@ -403,7 +403,16 @@ async fn a_count_that_ends_with_none_of_their_windows_open_never_sends() {
 #[test]
 fn stop_said_at_the_end_of_the_ask_is_never_part_of_the_message() {
     let s = full(false);
-    for said in ["Ask Mia to confirm what to bring, no, stop.", "Text Sam Lee that I'm running late. Wait, don't send it", "Tell Mia that I'm leaving now — never mind"] {
+    for said in [
+        "Ask Mia to confirm what to bring, no, stop.",
+        "Text Sam Lee that I'm running late. Wait, don't send it",
+        "Tell Mia that I'm leaving now — never mind",
+        // A closing "please" or "thanks" is said to the app; an en dash is a pause like any other.
+        "Ask Mia to bring chips, no, stop, please",
+        "Ask Mia to bring chips, no, stop please.",
+        "Tell Mia that I'm leaving now, never mind, thanks!",
+        "Tell Mia that I'm leaving now – stop",
+    ] {
         assert_eq!(read(said, &s), None, "{said}");
     }
     // A stop word inside the words is part of them.
@@ -497,6 +506,35 @@ async fn one_at_a_time_holds_while_messages_is_still_sending() {
     assert!(f.told().iter().any(|t| t.starts_with("card Sent Mia")));
     core.add_thought("me", "Text Sam Lee that I'm running late");
     assert!(f.told().iter().any(|t| t.starts_with("card Counting Sam Lee")), "free again once Messages answered");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_window_back_while_messages_still_has_it_shows_sending_then_how_it_ended() {
+    if !crate::apple::reachable() {
+        return; // A dry run never waits on Messages.
+    }
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let g = gate.clone();
+    let sender: Sender = Arc::new(move |_, _| {
+        let g = g.clone();
+        Box::pin(async move {
+            g.notified().await;
+            Ok(())
+        })
+    });
+    let mut f = Fixture::sending(full(true), sender, Arc::default(), |core| core);
+    f.core.add_thought("me", ASK);
+    settle().await;
+    wait(5_000 + LATE_STOP_MS).await;
+    f.told();
+    // Its connection dropped and came back while Messages had it: the card, "Sending…", not the end before it.
+    let back = card_for(&f.core, "me").expect("its card");
+    assert!(matches!(back, ServerMsg::SendCard { id: 1, state: SendState::Counting, in_ms: 0, .. }), "{}", serde_json::to_string(&back).unwrap());
+    assert!(card_for(&f.core, "guest").is_none(), "only the asker's windows");
+    gate.notify_one();
+    settle().await;
+    assert!(f.told().iter().any(|t| t.starts_with("card Sent Mia")));
+    assert!(matches!(card_for(&f.core, "me"), Some(ServerMsg::SendCard { id: 1, state: SendState::Sent, .. })));
 }
 
 #[tokio::test(start_paused = true)]

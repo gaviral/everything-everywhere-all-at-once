@@ -168,8 +168,9 @@ pub struct Runtime {
 struct State {
     next: u64,
     counting: Option<Counting>,
-    /// A message Messages has but hasn't answered for yet: one at a time holds until it does.
-    sending: bool,
+    /// A message Messages has but hasn't answered for yet, and whose: one at a time holds until it does, and a window
+    /// of theirs that reconnects meanwhile gets its card, "Sending…", so the answer that follows has a card to end.
+    sending: Option<(String, ServerMsg)>,
     /// A speaker whose "stop" was heard while they were still saying it: the turn it ends is that same stop.
     stopped_by_voice: Option<String>,
     /// How many windows each speaker has open (`window`): a count that ends with none of theirs open, so no Stop of
@@ -274,14 +275,24 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
 }
 
 /// Whether the turn's last clause stops it ("…, no, stop."): the request was taken back as it was said, so those words
-/// are never part of a message. A clause ends at a comma, a full stop, a question or exclamation mark, a semicolon or
-/// a dash, as speech-to-text punctuates a pause; a stop word inside a clause ("tell Mia the answer is no") is words.
+/// are never part of a message. A clause ends where speech-to-text punctuates a pause (main.rs `PAUSE`); a closing
+/// "please" or "thanks" is said to the app, so the clause before it counts ("…, stop, please"). A stop word inside a
+/// clause ("tell Mia the answer is no") is words.
 fn withdrawn(text: &str) -> bool {
-    text.trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '.' | '!' | '?' | '…' | ',' | ';' | '—' | '-'))
-        .rsplit(|c: char| matches!(c, '.' | '!' | '?' | '…' | ',' | ';' | '—'))
-        .next()
-        .is_some_and(|last| crate::words(last).len() < crate::words(text).len() && is_stop(last))
+    let pause = |c: char| crate::PAUSE.contains(&c);
+    let mut said = text;
+    loop {
+        said = said.trim_end_matches(|c: char| c.is_whitespace() || c == '-' || pause(c));
+        let last = said.rsplit(pause).next().unwrap_or_default();
+        if !COURTESY.contains(&crate::words(last).join(" ").as_str()) {
+            return crate::words(last).len() < crate::words(text).len() && is_stop(last);
+        }
+        said = &said[..said.len() - last.len()];
+    }
 }
+
+/// Said to the app after a stop, not to anyone: "stop, please", "never mind, thanks".
+const COURTESY: [&str; 3] = ["please", "thanks", "thank you"];
 
 /// The words to send, as said: only the spaces and joining punctuation around them go ("…that, I'm late." → "I'm
 /// late"), and a closing "please", said to the app (the message already asks). "For me", "now", a minus sign stay.
@@ -334,7 +345,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     let live = core.messages.live();
     let id = {
         let mut state = core.messages.state.lock().unwrap();
-        if state.counting.is_some() || state.sending {
+        if state.counting.is_some() || state.sending.is_some() {
             drop(state);
             core.send_to(speaker, ServerMsg::Notice { message: "One message at a time: say “stop”, or wait for it to send.".into() });
             return Some(Done::missed(Act::Message));
@@ -356,12 +367,14 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
 }
 
 /// The speaker's card, for a window that just (re)connected: their message still counting down, with the time the count
-/// has left; else how their last one ended, which a window only shows over that same card (ui/src/send-card.ts), so a
-/// window that lost its connection mid-count learns whether it went and a fresh one shows nothing old.
+/// has left; else one Messages still has ("Sending…"), whose end then follows; else how their last one ended, which a
+/// window only shows over that same card (ui/src/send-card.ts), so a window that lost its connection mid-count learns
+/// whether it went and a fresh one shows nothing old.
 pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
     let state = core.messages.state.lock().unwrap();
     let Some(c) = state.counting.as_ref().filter(|c| c.speaker == speaker) else {
-        return state.ended.get(speaker).cloned();
+        let sending = state.sending.as_ref().filter(|(s, _)| s == speaker).map(|(_, card)| card);
+        return sending.or_else(|| state.ended.get(speaker)).cloned();
     };
     let left = c.shown_end.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64;
     Some(card(c.id, &c.to, &c.text, SendState::Counting, left, c.live, ""))
@@ -421,7 +434,8 @@ async fn finish(core: &Arc<Core>, id: u64) {
             return;
         }
         // Live, Messages has it until it answers: one at a time holds till then.
-        state.sending = core.messages.live();
+        let c = &counting;
+        state.sending = core.messages.live().then(|| (c.speaker.clone(), card(id, &c.to, &c.text, SendState::Counting, 0, true, "")));
         counting
     };
     let Counting { speaker, to, handle, text, .. } = counting;
@@ -430,7 +444,7 @@ async fn finish(core: &Arc<Core>, id: u64) {
         return;
     }
     let result = (core.messages.sender)(handle, text.clone()).await;
-    core.messages.state.lock().unwrap().sending = false;
+    core.messages.state.lock().unwrap().sending = None;
     match result {
         Ok(()) => end(core, &speaker, card(id, &to, &text, SendState::Sent, 0, true, &format!("Sent to {to}"))),
         Err(error) => {
