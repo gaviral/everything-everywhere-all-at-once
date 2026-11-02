@@ -1,21 +1,41 @@
 # E2A2O
 
 <!-- cover: stand-in, User to pick (three options in the design repo, docs/drafts/cover) -->
-![A microphone whose cable branches into colored tiles: speech in, a map of threads out](docs/cover.webp)
+<img src="docs/cover.webp" alt="A microphone whose cable branches into colored tiles: speech in, a map of threads out" width="220" align="right">
 
 <!-- pitch: draft, User to approve -->
 For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.
 
 Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
 
+![The map mid-talk: seven threads, two with a branch; “Not Finishing Things” marked “left off”; at the bottom, a card “You didn't finish Not Finishing Things” quoting “My biggest problem is that I never finish my”, with Finish it and Later](docs/screens/left-off.webp)
+
+*A real frame, only cropped: a sentence trailed off, the talk moved on, and the card offers to go back.*
+
 ## Meta models it runs on
+
+| When you… | Meta model | Does | Proof in [a real run's trace](docs/trace.md) |
+|---|---|---|---|
+| talk | Muse Voice Transcribe 1.0 | hears you, live | [heard](docs/trace.md#heard) |
+| finish a thought | Muse Spark 1.2 | places it; notices it trailed off | [placer](docs/trace.md#placer) |
+| pause | Muse Spark 1.3 | tidies; proposes reminders and next steps | [refiner](docs/trace.md#refiner) |
+| say “make an app that…” | Muse Spark 1.3 | builds it from blocks | [composer](docs/trace.md#composer) |
+| ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | [recap](docs/trace.md#recap) |
+| let a thread settle | Muse Image 1.0 | draws its picture | [pictures](docs/trace.md#pictures) |
+| say “where was I?”, get loud | no model | rules: the jump back, the tune | [rules](docs/trace.md#rules) |
+
+**No key, no mic:** `./run.sh sample` after cloning ([Try it](#try-it)).
+
+<!-- end of the first screen -->
+
+### Every model call, with its setting
 
 Every model the app calls at runtime is Meta's, through the Meta Model API; `scripts/precheck.sh` fails on any other model SDK, endpoint or model name in the app's code.
 
 | Model | Feature and when it runs | Reasoning effort | Measured number in the README or repo |
 |---|---|---|---|
 | Muse Voice Transcribe 1.0 | Live speech to text while the mic is on; one session per window | — | — |
-| Muse Spark 1.2 Contributor (`PLACER_MODEL`) | Place each finished thought; Did you mean and auto-fix use its placement result. Explain runs when you select words and press Explain. Reads a spoken correction (“No, the bills”) that no rule reads. Falls back to Muse Spark 1.2 if the key cannot use Contributor mode. | minimal | End of speech to map: median 3.6 s, slowest 5.1 s (n = 9, one take through the real speech path, 2026-11-01); placing alone: median 2.8 s over 1,015 turns (2026-10-27 to 11-01, core/src/placer.rs `first_try`) |
+| Muse Spark 1.2 (`PLACER_MODEL`) | Place each finished thought; Did you mean and auto-fix use its placement result. Explain runs when you select words and press Explain. Reads a spoken correction (“No, the bills”) that no rule reads. Contributor mode is opt-in (`PLACER_MODEL=muse-spark-1.2-contributor`). | minimal | Measured with Contributor mode: end of speech to map median 3.6 s, slowest 5.1 s (n = 9, one take through the real speech path, 2026-11-01); placing alone median 2.8 s over 1,015 turns (2026-10-27 to 11-01, core/src/placer.rs `first_try`). Without it, placing was a little slower: median 3.3 s vs 3.0 s (n ≈ 42 each) |
 | Muse Spark 1.3 (`REFINER_MODEL`, default) | Refiner at a pause or when you return; composer when you ask to make an app; Search-first when enabled; app prompts when a watcher fires. | low | — |
 | Muse Spark 1.3 (`REFINER_MODEL`) | Take me there, with minimal effort, only when local word search finds no match | minimal | 62 paraphrases that share no word with their target: median 1.1 s, p90 1.7 s, slowest 2.8 s; 51 found it (2026-11-01, core/src/find.rs `PATIENCE`) |
 | Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | When you ask for Recap or press Recap | low | — |
@@ -62,6 +82,7 @@ cp .env.example .env                           # then open .env and paste your M
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
+- On a Mac, the key can live in the login Keychain instead of `.env`: `security add-generic-password -s e2a2o -a e2a2o -w` asks for it once, and `run.sh` reads it when there's no `.env`.
 - Open the URL printed by `./run.sh demo` as soon as it says `E2A2O core on`, then start the talk: the map builds while you watch. The key is read once, at start. After editing `.env`, press Ctrl+C and run it again.
 - `demo.mjs` types a prepared talk into the core at real speed, as a person typing would. Every placement, tidy-up, picture and app run is a real model call.
 - `scripts/demo-talk-v3.jsonl` also has a misheard model name ("Muse Bark") and an app request, and ends on "what did I decide today".
@@ -144,7 +165,7 @@ The core (`core/`, Rust with axum and tokio) holds the map in memory, journals e
 
 Each finished speech turn (Voice Transcribe's endpointing) or typed line is checked before the model sees it. Filler such as “um, so” is set aside, as are acknowledgements such as “yeah, okay” unless the last turn was a question. A turn that changes topic is split there; joining words at the cut are left out and the rest is placed next. The model may also set aside short acknowledgements, but turns over 8 words are always placed.
 
-The queue sends one thought at a time with every thread's id, title and last point, plus your active thread and, if you said it in the last 2 minutes, your previous turn word for word with the thread it went to, even with someone else's question in between (so "the cursor thing" right after a word on a subscription isn't read as the on-screen cursor). The selected card is only a hint: the words decide where they land. If the key can't use Contributor mode, placing and Explain use Muse Spark 1.2 until restart. The JSON answer says to continue the active thread, return to an earlier one or start a new one (a branch if it names a parent); it also gives a point of at most 12 words, whether the thought trailed off and any words that look misheard. Only existing thread ids are trusted. Each thought gets three tries; after three failures it returns to the queue in 15 s, then at doubling intervals up to 4 min. Measure placing time with `node scripts/latency.mjs data/journal.jsonl` (median, 90th percentile, slowest). To see where each thought went and why, start the core with `E2A2O_TRACE=1` (it appends every model call and placement to `data/<map>/trace.jsonl`; off by default) and run `node scripts/where.mjs data/<map>`. Routing cases (`scripts/routing-cases.jsonl`) run against the real model with `cd core && cargo test --release -- --ignored routing_cases --nocapture` and `MODEL_API_KEY` set.
+The queue sends one thought at a time with every thread's id, title and last point, plus your active thread and, if you said it in the last 2 minutes, your previous turn word for word with the thread it went to, even with someone else's question in between (so "the cursor thing" right after a word on a subscription isn't read as the on-screen cursor). The selected card is only a hint: the words decide where they land. The JSON answer says to continue the active thread, return to an earlier one or start a new one (a branch if it names a parent); it also gives a point of at most 12 words, whether the thought trailed off and any words that look misheard. Only existing thread ids are trusted. Each thought gets three tries; after three failures it returns to the queue in 15 s, then at doubling intervals up to 4 min. Measure placing time with `node scripts/latency.mjs data/journal.jsonl` (median, 90th percentile, slowest). To see where each thought went and why, start the core with `E2A2O_TRACE=1` (it appends every model call and placement to `data/<map>/trace.jsonl`; off by default) and run `node scripts/where.mjs data/<map>`; `node scripts/trace-summary.mjs data/<map>/trace.jsonl` counts every model call by feature and model ([one run's, shortened](docs/trace.md)). Routing cases (`scripts/routing-cases.jsonl`) run against the real model with `cd core && cargo test --release -- --ignored routing_cases --nocapture` and `MODEL_API_KEY` set.
 
 A thought said in two parts across a pause lands as one point. The prompt also quotes your latest turn that trailed off when it's still the last word on its thread and you said it in the last 2 minutes or went back to it ("where was I?"); the answer says whether the new words carry on the turn before or those unfinished words. Then they land on that thread whatever else the answer says, linked, and the card shows both parts as one point (its words said open as “first part” … “second part”) with a quiet ✦ joined: a tap on it keeps them apart, and the second part then says only its own words. Each part keeps its own "Did you mean …?" and undo of a fix, and a yes there fixes the joined point too; a search for a part lands on the point it shows in; "scratch that" and Undo bring a part back joined. A sentence that stands on its own, or a decision, is never joined. When a reading your words left open (what "it" means) took a thought away from the thread you were on, the point says so under it (“✦ Assumed 'it' is the pottery class”); one that kept it where you were isn't shown, since it changed nothing. Opening a point's words said also shows why it went there in 10 words or fewer (“Why here: finishes 'never finish my'”), except for a new topic, whose own thread is the answer, and a reason that names a thread by id. Asking for it cost no measurable time: 30 turns placed by two cores in turn, one asking and one not, median 2.90 s with it and 2.98 s without (the same turns paired: +0.1 s). Join cases for the real model are in `scripts/chunk-cases.jsonl` (`ROUTING_CASES=../scripts/chunk-cases.jsonl` with the routing-cases command).
 
@@ -202,7 +223,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
   - **App creation:** the request, local time and app catalog. If the Search-first app is enabled, it may first receive the request and catalog to look for an existing app.
   - **When an app runs:** its prompt, newest thought, up to 8 earlier points, topic and time. In a room with multiple speakers, those thoughts include speaker names.
   - **Chat import:** each selected message (up to 2,000 characters) with its date and conversation title, plus up to 240 characters of the next AI reply. A separate grouping call receives today's date, up to 80 existing thread ids and titles, topic counts and date ranges, up to 4 latest ideas per topic, and up to 150 dated open questions and 150 dated tasks. It does not receive the original messages.
-- Placing and Explain default to `muse-spark-1.2-contributor`, the cheaper Spark. Meta may keep Contributor data to improve its products. This can include imported words after they become thoughts on the map. For private talk, set `PLACER_MODEL=muse-spark-1.2`. If your key can't use Contributor mode, the core switches to `muse-spark-1.2` until a restart and says so; a `PLACER_MODEL` you set is never switched.
+- Placing and Explain use `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode: a little faster and cheaper (median 3.0 s vs 3.3 s in our test), but Meta may keep what it reads to improve its products, including imported words once they become thoughts on the map. A `PLACER_MODEL` you set is used as is.
 - On disk: `data/<map>/journal.jsonl` (each thought's full text and speaker, and every change since) and `data/<map>/images/`; with `E2A2O_TRACE=1`, also `data/<map>/trace.jsonl` (every model request and answer, never the key). `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 - In a room, everyone with the code sees the whole map, and the other laptops' audio goes through the host's core and key.
 - No accounts, analytics or telemetry.
@@ -212,7 +233,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 - Alone, the core listens on 127.0.0.1 only. A gate checks every request: the Host must name this machine (stops DNS rebinding), and an Origin, when sent, must be the app's own page, so another site open in your browser can't use the WebSocket (browsers always send Origin on one). Responses carry `Cross-Origin-Resource-Policy: same-origin`.
 - In a room, the Host must be this laptop's own address, and the map and pictures need the code (a query on the WebSocket, a `SameSite=Strict` cookie for pictures), compared in constant time. `./run.sh room` makes 8 characters from 31 letters and digits; a shorter `ROOM_CODE` starts with a warning. Approving actions and importing work only from the host's own window.
 - Model output is data: the placer trusts only existing thread ids; app specs must match a closed set of blocks (`deny_unknown_fields`, range and template checks); app prompts are told the conversation is data and that they can't act. The UI renders text only, never raw HTML.
-- `scripts/precheck.sh` runs before anything goes public, and on every merge (below). It fails on: `.env` or data files in git, key-like strings, home-directory paths, paths from the author's other projects, a core not limited to 127.0.0.1 when alone, a missing Origin and Host gate or room test, a model client without a timeout, `dangerouslySetInnerHTML`, a non-Meta model SDK, endpoint or model name in the app's code (the hackathon requires every model called at runtime to be Meta's) or any outside host but `api.meta.ai` in the core or UI, a model call that bypasses the hourly cap, or a failing `cargo test`. `scripts/model-guards.py` holds the last three, with a self-test that plants each kind of breach. With the app running, it also probes it: another site's WebSocket and a rebinding Host must get 403, and so must the map without the code in a room. It warns about open decisions: the Contributor default, `run.sh`'s Keychain lookup, the speech stream's missing read timeout, and numbers in the code marked `stand-in:` until a measurement replaces them.
+- `scripts/precheck.sh` runs before anything goes public, and on every merge (below). It fails on: `.env` or data files in git, key-like strings, home-directory paths, paths from the author's other projects, a core not limited to 127.0.0.1 when alone, a missing Origin and Host gate or room test, a model client without a timeout, `dangerouslySetInnerHTML`, a non-Meta model SDK, endpoint or model name in the app's code (the hackathon requires every model called at runtime to be Meta's) or any outside host but `api.meta.ai` in the core or UI, a model call that bypasses the hourly cap, or a failing `cargo test`. `scripts/model-guards.py` holds the last three, with a self-test that plants each kind of breach. With the app running, it also probes it: another site's WebSocket and a rebinding Host must get 403, and so must the map without the code in a room. It warns about open decisions: the speech stream's missing read timeout, and numbers in the code marked `stand-in:` until a measurement replaces them.
 
 ## How it was built
 
@@ -224,14 +245,13 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 
 - Before the event: the idea and design notes. No code.
 - Written during the event (Oct 26 to Nov 4, 2026): everything in this repository; the first commit is from Oct 31. No code from the author's other projects; `scripts/precheck.sh` fails on their paths.
-- One link to an older project: with no `.env`, `run.sh` looks for the key in a macOS Keychain entry saved by the author's earlier app, Canvas. It's a key lookup only; on other Macs it finds nothing.
 
 ## Known limits
 
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
 - Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
-- From the end of speech to the map: median 3.6 s, slowest 5.1 s (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
+- From the end of speech to the map: median 3.6 s, slowest 5.1 s with Contributor mode (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
 - Placing is a model's judgment, and there are no manual edits: you can't move a thought or rename, merge or split threads yourself, except by applying the refiner's proposals.
 - A Voice Transcribe session can end after 60 minutes. When the speech service stops, the app says “The mic stopped. Tap it to keep talking.” A stream that stalls without closing may still look on.
 - Placing is one model call at a time, in the order things were said, so each sees the map the one before left. A long turn that moves across several topics is placed one part after another, so in a burst the last part can land long after you stop (27 s in one measured run: three speakers at once in a room, with `scripts/voice.mjs`); talking alone at a normal pace keeps up (3 to 4 s). A failed or stalled try (12 s for the first) sends the thought back in line, so the rest keep landing; after three failures the app says so, and it retries after 15 seconds, then less often, up to every 4 minutes.

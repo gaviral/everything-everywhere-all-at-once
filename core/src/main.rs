@@ -800,8 +800,9 @@ async fn main() -> anyhow::Result<()> {
         placing: placer::Placing::default(),
         room: room.as_deref().map(Room::from),
         key,
-        // A key that can't use Contributor mode gets muse-spark-1.2 instead, unless PLACER_MODEL is set (model.rs).
-        placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
+        // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
+        // and cheaper, but Meta may keep what it reads.
+        placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
