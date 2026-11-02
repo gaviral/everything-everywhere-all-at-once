@@ -61,11 +61,13 @@ Browser, one page per window (ui/src)
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px above the dock, in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
+  Guide.tsx      another participant pointing (a big arrow at a part named by its `data-guide`, its caption, a soft spotlight) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
+  guide.rs       a window's `point` and `caption`, checked and passed to every other window as it comes: never journaled, no model
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the threads weighed, then where it went and why)
   chunks.rs      two parts said across a pause as one idea (the later linked to the earlier), assumptions that moved a thought

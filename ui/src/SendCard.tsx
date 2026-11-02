@@ -50,7 +50,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
   // Without motion, the bar steps with the digits instead (`--left`, the share of the count still to go).
   const bar = counting ? { animationDuration: `${card.total}ms`, animationDelay: `-${Math.round(done * card.total)}ms`, "--left": 1 - elapsed(card, now) } as React.CSSProperties : undefined;
   return (
-    <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading}>
+    <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card">
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="send-card-head" aria-hidden="true">{words.heading}</div>
       <p className="send-card-text"><Markdown text={card.text} /></p>

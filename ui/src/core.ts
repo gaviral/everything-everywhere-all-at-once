@@ -4,6 +4,7 @@ import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardSh
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
 import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
+import { receiveGuide } from "./guide-core";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -754,6 +755,8 @@ export function useCore(speaker?: string) {
         if (msg.type === "step" && msg.step === "listen" && !localMic.current) return;
         if (receiveStep(msg)) return;
         if (receiveRoute(msg)) return;
+        // Someone pointing at a part of the screen, or a caption (Guide.tsx): never the map.
+        if (receiveGuide(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);

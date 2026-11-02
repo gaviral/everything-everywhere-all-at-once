@@ -157,7 +157,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const parent = thread.id !== root.id && thread.parent_id ? byId.get(thread.parent_id) : undefined;
     // The room's heading already names its root, so only a branch of a branch says where it hangs.
     const under = parent && parent.id !== root.id ? parent : undefined;
-    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} style={roomStyle(colors.get(root.id))} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
+    return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} data-guide={`thread:${thread.id}`} style={roomStyle(colors.get(root.id))} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
       <span className="palace-art">
         <PalacePicture picture={thread.picture} />
         <span className="palace-placeholder" aria-hidden="true"><span>{firstLetter(thread.title)}</span></span>
@@ -175,7 +175,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
   const alone = rooms.filter((room) => room.members.length === 1);
 
   return (
-    <main className="palace" ref={container} aria-label="Palace of threads">
+    <main className="palace" ref={container} aria-label="Palace of threads" data-guide="palace">
       <div className="palace-intro">
         <div><span className="palace-eyebrow">A picture for every thread</span><h1>Your palace</h1></div>
         <p>Open a picture to return to its thread.</p>

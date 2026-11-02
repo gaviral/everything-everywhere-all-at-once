@@ -105,6 +105,19 @@ pub enum ServerMsg {
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         dropped: bool,
     },
+    /// Someone pointing at a part of the screen, or saying a line as a caption (guide.rs): to every window but the one
+    /// it came from, as it comes; never journaled. `target`: the part's name (docs/guide.md), none for a caption or to
+    /// take `by`'s point down; `text`: the point's caption, or the caption.
+    Guide {
+        kind: crate::guide::Kind,
+        target: Option<String>,
+        text: String,
+        by: String,
+        at_ms: u64,
+        /// The window it came from (guide.rs `window`), which doesn't get it back; not sent.
+        #[serde(skip)]
+        from: u64,
+    },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
@@ -234,4 +247,14 @@ pub enum ClientMsg {
     ImportStart { id: String },
     /// Stop the running import; what already landed stays.
     ImportCancel,
+    /// Show the other windows one part of the screen by its name (docs/guide.md), with a short caption beside the
+    /// arrow; no `target` takes this speaker's point down (guide.rs).
+    Point {
+        #[serde(default)]
+        target: Option<String>,
+        #[serde(default)]
+        caption: Option<String>,
+    },
+    /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
+    Caption { text: String },
 }
