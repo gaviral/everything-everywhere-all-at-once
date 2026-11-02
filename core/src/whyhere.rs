@@ -10,7 +10,7 @@ use crate::world::{Change, World};
 use crate::Core;
 use anyhow::bail;
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -28,8 +28,39 @@ pub const MOVED: &str = "you moved it here";
 /// What the first thought of a thread says: it is why the thread exists.
 pub const STARTED: &str = "started this thread";
 
-/// Thoughts whose reason is being asked now: a second ask while one is out spends nothing.
-static ASKING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+/// Thoughts whose reason is being asked now, with who waits for it: a second ask while one is out spends nothing,
+/// and its speaker gets the same answer (or failure) as the first.
+static ASKING: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
+
+/// Joins the ask for `thought_id`: true for the first speaker, who asks the model; later ones only wait on it.
+fn join(thought_id: &str, speaker: &str) -> bool {
+    let mut asking = ASKING.lock().unwrap();
+    let asking = asking.get_or_insert_with(HashMap::new);
+    match asking.get_mut(thought_id) {
+        Some(waiting) => {
+            if !waiting.iter().any(|s| s == speaker) {
+                waiting.push(speaker.into());
+            }
+            false
+        }
+        None => {
+            asking.insert(thought_id.into(), vec![speaker.into()]);
+            true
+        }
+    }
+}
+
+/// Ends the ask for `thought_id`: everyone who waited on it, the asker first.
+fn waiters(thought_id: &str) -> Vec<String> {
+    ASKING.lock().unwrap().get_or_insert_with(HashMap::new).remove(thought_id).unwrap_or_default()
+}
+
+/// Whether a model answer asked about `thought_id` on `thread` may still be kept: it's still there, and the map
+/// still can't say why itself (no reason given meanwhile, no move of theirs, even one that came back to `thread`).
+fn still_unexplained(w: &World, thought_id: &str, thread: &str) -> bool {
+    w.thoughts.iter().any(|t| t.id == thought_id && t.thread_id.as_deref().is_some_and(|id| w.resolve(id) == thread))
+        && known(w, thought_id).is_none()
+}
 
 /// The reason the map already holds for `thought_id`, if any; `None` when only a model can say.
 pub fn known(world: &World, thought_id: &str) -> Option<String> {
@@ -66,31 +97,26 @@ pub async fn run(core: Arc<Core>, speaker: String, thought_id: String) {
         return;
     };
     drop(world);
-    if !ASKING.lock().unwrap().get_or_insert_with(HashSet::new).insert(thought_id.clone()) {
+    if !join(&thought_id, &speaker) {
         return;
     }
     let answer = ask(&core, &notes).await.and_then(|text| {
         let why = clean(&text);
         if why.is_empty() { bail!("no usable reason in {text:?}") } else { Ok(why) }
     });
-    ASKING.lock().unwrap().get_or_insert_with(HashSet::new).remove(&thought_id);
-    match answer {
+    let msg = match answer {
         Ok(why) => {
-            // Only while it's still where it was asked about and nothing else said why meanwhile: a move or a new
+            // Only while it's still where it was asked about and the map still can't say why: a move or a new
             // reason since makes this one stale.
-            let still = |w: &World| {
-                w.thoughts.iter().any(|t| t.id == thought_id && t.thread_id.as_deref().is_some_and(|id| w.resolve(id) == thread))
-                    && w.notes.get(&thought_id).is_none_or(|n| n.why.is_empty())
-            };
             let note = core.snapshot().notes.get(&thought_id).cloned().unwrap_or_default();
             let change = Change::ThoughtNoted { thought_id: thought_id.clone(), note: Note { why: why.clone(), later: true, ..note } };
-            if core.commit_if(still, vec![change]) {
-                core.send_to(&speaker, reply(why, false));
+            if core.commit_if(|w| still_unexplained(w, &thought_id, &thread), vec![change]) {
+                reply(why, false)
             } else {
                 // Moved, or given a reason, while the model thought: say what the map says now.
                 let now = known(&core.snapshot(), &thought_id);
                 let failed = now.is_none();
-                core.send_to(&speaker, reply(now.unwrap_or_else(|| "It moved while asking. Ask again.".into()), failed));
+                reply(now.unwrap_or_else(|| "It moved while asking. Ask again.".into()), failed)
             }
         }
         Err(e) => {
@@ -104,8 +130,11 @@ pub async fn run(core: Arc<Core>, speaker: String, thought_id: String) {
             } else {
                 "Couldn't say why just now.".into()
             };
-            core.send_to(&speaker, reply(text, true));
+            reply(text, true)
         }
+    };
+    for waiting in waiters(&thought_id) {
+        core.send_to(&waiting, msg.clone());
     }
 }
 
@@ -177,7 +206,7 @@ async fn ask(core: &Core, notes: &str) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean, known, prompt, MOVED, STARTED};
+    use super::{clean, join, known, prompt, still_unexplained, waiters, MOVED, STARTED};
     use crate::chunks::Note;
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
 
@@ -306,5 +335,32 @@ mod tests {
         let (_, replayed) = crate::world::Journal::open(&path).unwrap();
         assert_eq!(replayed.notes["b"], note);
         assert_eq!(known(&replayed, "b").as_deref(), Some("names the walking tour"));
+    }
+
+    /// An answer that comes back after a move there and back again is dropped: "you moved it here" is the reason,
+    /// and a kept model answer would win over it in every window and replay.
+    #[test]
+    fn a_late_answer_never_overwrites_a_move() {
+        let mut w = map();
+        assert!(still_unexplained(&w, "e", "T2"), "nothing said why: keep the answer");
+        w.apply(&Change::ThoughtMoved { thought_id: "e".into(), thread_id: "T1".into(), from: "T2".into(), undo: false });
+        assert!(!still_unexplained(&w, "e", "T2"), "moved away");
+        w.apply(&Change::ThoughtMoved { thought_id: "e".into(), thread_id: "T2".into(), from: "T1".into(), undo: false });
+        assert_eq!(known(&w, "e").as_deref(), Some(MOVED));
+        assert!(!still_unexplained(&w, "e", "T2"), "moved back by hand: the move is the reason");
+        w.apply(&Change::ThoughtNoted { thought_id: "b".into(), note: Note { why: "names the deposit".into(), ..Note::default() } });
+        assert!(!still_unexplained(&w, "b", "T1"), "given a reason meanwhile");
+    }
+
+    /// A second speaker asking while one ask is out waits on it and gets its answer, failure included.
+    #[test]
+    fn every_waiter_hears_back() {
+        let id = format!("waiters-{}", uuid::Uuid::new_v4());
+        assert!(join(&id, "Ana"), "the first asks");
+        assert!(!join(&id, "Ben"), "the second waits");
+        assert!(!join(&id, "Ana"), "asking again waits too");
+        assert_eq!(waiters(&id), ["Ana", "Ben"]);
+        assert!(join(&id, "Ben"), "once answered, a new ask asks again");
+        assert_eq!(waiters(&id), ["Ben"]);
     }
 }
