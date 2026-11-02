@@ -1,0 +1,33 @@
+/* What just happened (index.tsx): a clock above the dock at the left, its list over it. The left, not the right: in
+   the Spine view its camera and shelf are at the right above the dock. It opens without motion, for everyone. */
+.notice-timeline-clock {
+  position: fixed; left: 16px; bottom: calc(var(--dock-height, 120px) + 16px); z-index: 7;
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--card); box-shadow: var(--shadow);
+  color: var(--muted); cursor: pointer; opacity: .7;
+}
+.notice-timeline-clock:hover, .notice-timeline-clock:focus-visible, .notice-timeline-clock[aria-expanded="true"] { opacity: 1; }
+/* Kept clear of the header and the dock, so a short window scrolls the list instead of covering either. */
+.notice-timeline-panel {
+  position: fixed; left: 16px; bottom: calc(var(--dock-height, 120px) + 56px); z-index: 7;
+  box-sizing: border-box; width: min(360px, calc(100vw - 32px));
+  max-height: max(120px, min(400px, 60vh, calc(100dvh - var(--dock-height, 120px) - var(--header-height, 64px) - 72px)));
+  overflow-y: auto; overscroll-behavior: contain; padding: 8px 0;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow);
+  color: var(--ink); font-size: 13px;
+}
+.notice-timeline-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 4px 14px; }
+.notice-timeline-top strong { font-weight: 600; }
+.notice-timeline-close { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font: inherit; font-size: 18px; cursor: pointer; }
+.notice-timeline-close:hover { background: var(--bg); color: var(--ink); }
+.notice-timeline-clock:focus-visible, .notice-timeline-close:focus-visible, .notice-timeline-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.notice-timeline-list { margin: 0; padding: 0; list-style: none; }
+.notice-timeline-entry { padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.notice-timeline-entry:last-child { border-bottom: 0; }
+.notice-timeline-text { margin: 0 0 2px; white-space: pre-wrap; }
+.notice-timeline-time { color: var(--muted); font-size: 11px; }
+.notice-timeline-empty { margin: 0; padding: 4px 14px 8px; color: var(--muted); }
+/* A phone: the list takes the width, less the 16 px edges. */
+@media (max-width: 560px) {
+  .notice-timeline-panel { width: calc(100vw - 32px); }
+}

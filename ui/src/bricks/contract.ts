@@ -1,8 +1,8 @@
 // The contract between the app and a brick (docs/bricks.md): the one file a brick imports from the app, and
 // scripts/bricks-check.mjs holds every brick to that. A brick is a React component that gets three things as props:
 // the map as it is now (read-only), the few actions it may take, and `on`, for what passes (a thought landing, the
-// mic's loudness). Nothing here runs the app's code, so a brick works the same in the app and in the playground
-// (bricks.html), which hands it a sample map instead.
+// mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the app and in the
+// playground (bricks.html), which hands it a sample map instead.
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Action, Note, Suggestion, Thought, Thread } from "../core";
@@ -101,6 +101,9 @@ export interface BrickEvents {
   landed: { thoughtId: string; threadId: string; mine: boolean };
   /** The mic's loudness, 0 to 1, every 320 ms while it's on: what the volume apps hear. */
   loudness: number;
+  /** A notice or a map update, in the words this window shows it, as it comes up: the same words again too. `time` is
+   *  when (ms since 1970). */
+  notice: { text: string; kind: "notice" | "error" | "map-change"; time: number };
 }
 
 /** Listens for one kind of event; returns the way to stop. */

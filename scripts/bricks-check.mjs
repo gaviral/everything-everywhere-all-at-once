@@ -177,6 +177,73 @@ const go = async (url) => { await cdp("Page.navigate", { url }); await sleep(150
 const width = (w, h) => cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600 });
 let closed = false;
 try {
+  // Notice timeline: a panel fed by the app's notices (on("notice")), so it's checked in the app. On an empty map and a
+  // full one: no clock before a notice; your ask opens the list (empty, it says so) and leaves focus where you typed,
+  // someone else's doesn't; a burst keeps each one, the same words twice and an error in the lane's words; the newest 50;
+  // a map update; Esc (focus back to the clock) and a click outside close it; at 320, 390 and 1280 px, dark, with
+  // reduced motion, the list stays in the window, scrolls and opens without motion.
+  if (checked.includes("notice-timeline")) {
+    if (infos["./bricks/notice-timeline/brick.json"].kind !== "panel") fail("notice-timeline", "brick.json: a panel, as its spec says");
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "notice-timeline": true }))`);
+    const ask = (id, speaker = "you") => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "What just happened?", null), placed: false, speaker } } });
+    const entries = `[...document.querySelectorAll(".notice-timeline-entry")].map((li) => ({ text: li.querySelector(".notice-timeline-text").textContent, kind: li.dataset.kind }))`;
+    for (const [label, seed] of [["empty", empty], ["full", full]]) {
+      const where = `notice-timeline (${label} map)`;
+      shown = seed;
+      await go(`${base}/`);
+      if (!await until(`!!document.querySelector(".notice-timeline")`, 8000)) { fail(where, "never mounted"); continue; }
+      if (await evaluate(`!!document.querySelector(".notice-timeline-clock")`)) fail(where, "a clock before any notice");
+      await evaluate(`document.querySelector(".composer textarea, .composer input")?.focus()`);
+      ask(`ask-${label}`);
+      if (!await until(`!!document.querySelector(".notice-timeline-empty")`, 3000)) fail(where, "your ask before any notice doesn't open the list, saying it's empty");
+      if (!await evaluate(`!!document.activeElement?.closest(".composer")`)) fail(where, "your ask took focus from the composer");
+      await evaluate(`document.querySelector(".notice-timeline-close").click()`);
+      core.send({ type: "notice", message: "First notice" });
+      if (!await until(`!!document.querySelector(".notice-timeline-clock") && !document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "× doesn't close the list, or a notice brings no clock");
+      // One burst, one render: none may be lost, the same words twice included.
+      for (const message of ["Repeated notice", "Repeated notice"]) core.send({ type: "notice", message });
+      core.send({ type: "error", message: "Couldn't place a thought: the model timed out" });
+      await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
+      if (!await until(`document.querySelectorAll(".notice-timeline-entry").length === 4 && document.activeElement === document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "the clock opens no list, or the list doesn't take focus");
+      const burst = JSON.stringify(await evaluate(entries));
+      if (burst !== JSON.stringify([{ text: "Couldn't place a thought. It's saved and will retry automatically.", kind: "error" },
+        { text: "Repeated notice", kind: "notice" }, { text: "Repeated notice", kind: "notice" }, { text: "First notice", kind: "notice" }])) fail(where, `a burst kept as ${burst}`);
+      await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      if (!await until(`!document.querySelector(".notice-timeline-panel") && document.activeElement === document.querySelector(".notice-timeline-clock")`, 2000)) fail(where, "Esc doesn't close the list, focus back on the clock");
+      for (let i = 0; i < 55; i++) core.send({ type: "notice", message: `Kept ${i}` });
+      await until(`document.querySelector(".notice > span")?.textContent === "Kept 54"`, 3000);
+      ask(`ask-other-${label}`, "Sam");
+      await settle();
+      if (await evaluate(`!!document.querySelector(".notice-timeline-panel")`)) fail(where, "someone else's ask opens your list");
+      ask(`ask-again-${label}`);
+      if (!await until(`!!document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "your ask doesn't open the list");
+      const kept = (await evaluate(entries)).map((entry) => entry.text);
+      if (kept.length !== 50 || kept[0] !== "Kept 54" || kept.at(-1) !== "Kept 5") fail(where, `keeps ${kept.length}, ${kept[0]} to ${kept.at(-1)}, not the newest 50`);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+      for (const [w, h] of [[320, 568], [390, 844], [1280, 860]]) {
+        await width(w, h);
+        await settle();
+        const box = await evaluate(`(() => { const p = document.querySelector(".notice-timeline-panel"), r = p.getBoundingClientRect(), s = getComputedStyle(p);
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, scrolls: p.scrollHeight > p.clientHeight, sideways: document.documentElement.scrollWidth - innerWidth,
+            animation: s.animationName, transition: s.transitionDuration }; })()`);
+        if (box.left < 15 || box.right > w - 15 || box.top < 0 || box.bottom > h || box.sideways > 1) fail(where, `the list leaves the window at ${w} px: ${JSON.stringify(box)}`);
+        if (!box.scrolls || box.animation !== "none" || box.transition !== "0s") fail(where, `at ${w} px the list doesn't scroll, or moves as it opens`);
+      }
+      await evaluate(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`);
+      if (!await until(`!document.querySelector(".notice-timeline-panel")`, 2000)) fail(where, "a click outside doesn't close the list");
+      if (seed === full) {
+        core.send({ type: "change", change: { type: "thread_retitled", thread_id: "T1", was: titles[0], title: "Rent paid" } });
+        await until(`document.querySelector(".map-change")?.textContent.includes("Rent paid")`, 3000);
+        await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
+        if (!await until(`document.querySelector('.notice-timeline-entry[data-kind="map-change"]')?.textContent.includes("Rent paid")`, 3000)) fail(where, "a map update isn't kept");
+      }
+      if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail(where, "it broke");
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+    }
+    await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+    shown = full;
+  }
   for (const folder of checked) {
     const info = infos[`./bricks/${folder}/brick.json`];
     for (const [sample, w] of [["student-week", 1280], ["empty", 1280], ["student-week", 390]]) {
