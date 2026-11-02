@@ -246,13 +246,15 @@ export function landingToFollow(world: World, added: Thought[], me: string, move
  * and shows its own point; the move would also set off a follow of your place, which ~120 ms later highlighted the
  * thread's newest point instead and could scroll the found one away. Either order is covered: the jump before its
  * move reaches the map (Away: the row reveals, then focus's ActiveChanged comes back) or after it (find: ActiveChanged,
- * then Found). Only a follow of your place is answered, never a landing.
+ * then Found). Only a follow of your place is answered, never a landing. A jump that moved your place also stands
+ * down any follow of your place scheduled before it, whatever its thread: the map doesn't reschedule for an answered
+ * move, so that older follow would otherwise run and pull you back off the jump.
  */
 export function jumpTracker() {
   let seq = 0;
   // A jump whose move hasn't reached the map yet.
   let pending: string | null = null;
-  let last: { thread: string; seq: number } | null = null;
+  let last: { thread: string; seq: number; moved?: boolean } | null = null;
   return {
     jumped(world: World, thread: string) {
       const id = resolve(world, thread);
@@ -264,13 +266,14 @@ export function jumpTracker() {
     moved(active: string) {
       const answered = pending === active;
       pending = null;
+      if (answered && last) last.moved = true;
       return answered;
     },
     /** Taken when a follow is scheduled, for `since`. */
     mark: () => seq,
-    /** When the follow runs: true when a jump to its thread came after it was scheduled. */
+    /** When the follow runs: true when a jump came after it was scheduled, to its thread or moving your place. */
     since(mark: number, thread: string) {
-      const answered = !!last && last.seq > mark && last.thread === thread;
+      const answered = !!last && last.seq > mark && (last.thread === thread || !!last.moved);
       if (answered) pending = null;
       return answered;
     },

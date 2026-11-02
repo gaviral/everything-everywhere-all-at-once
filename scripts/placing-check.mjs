@@ -90,6 +90,16 @@ try {
   assert.equal(jumps.moved("T3"), false);
   assert.equal(jumps.moved("T1"), false, "a later move back to the jumped thread is followed");
   assert.equal(jumps.since(jumps.mark(), "T1"), false, "a jump before the follow was scheduled doesn't stop it");
+  // A follow of an older move stands down once a jump moves your place on (2026-11-01 fix pass): a move to T1
+  // schedules its follow; before it runs, an Away row reveals T2 and T2's move arrives answered, so the map returns
+  // early and never reschedules. T1's follow must not then highlight T1 and scroll away from T2.
+  jumps = jumpTracker();
+  assert.equal(jumps.moved("T1"), false);
+  mark = jumps.mark();
+  jumps.jumped(map, "T2");
+  assert.equal(jumps.moved("T2"), true);
+  assert.equal(jumps.since(mark, "T1"), true, "an older follow stands down after a jump moved your place");
+  assert.equal(jumps.since(jumps.mark(), "T1"), false, "a follow scheduled after that jump runs");
   // App.tsx wires it: find's Found and Away's rows jump; a move a jump answered, or a look a jump came after, stands down.
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /if \(core\.found\) jumps\.jumped\(/, "find's answer counts as a jump");
