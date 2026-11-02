@@ -20,6 +20,8 @@
    tiles, none needed more than three, and tiles in a row stay level whatever their captions). */
 .palace-room-heading > span:first-child { overflow: visible; white-space: normal; text-overflow: clip; }
 .palace-point { display: block; overflow: visible; -webkit-line-clamp: unset; }
+/* Shown whole, a point keeps no word alone on its last line ("…chapters four to / six"); a no-op before Chrome 117. */
+.palace-point { text-wrap: pretty; }
 
 /* A point is a short version of what was said; the words behind it open under it by click, tap or Enter
    (App.tsx Point), where hover alone used to show them, and never on a phone. */
