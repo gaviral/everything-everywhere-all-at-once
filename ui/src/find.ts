@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { useReducedMotion } from "motion/react";
 import type { World } from "./core";
 import "./find.css";
+import { look, wordsIn } from "./Attention";
 
 export type Found = { thread_id: string; thought_id: string | null; item_id?: string; revision: number };
 
@@ -46,7 +47,6 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
 
     let target: HTMLElement | null = null;
     let frame = 0;
-    let timer = 0;
     // Let the cleared search, map view and unfolded points render before looking up the point.
     frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -54,20 +54,19 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
           ?? (found.thought_id ? document.getElementById(`point-${found.thought_id}`) : null)
           ?? document.getElementById(`thread-${id}`);
         if (!target) return;
-        target.dataset.found = "true";
         // Make the destination available to keyboard and screen-reader users as well as sighted users.
         const hadTabindex = target.hasAttribute("tabindex");
         if (!hadTabindex) target.setAttribute("tabindex", "-1");
         target.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
         target.focus({ preventScroll: true });
         if (!hadTabindex) target.addEventListener("blur", () => target?.removeAttribute("tabindex"), { once: true });
-        timer = window.setTimeout(() => target?.removeAttribute("data-found"), 4200);
+        // The one "look here" highlight (Attention.tsx), for as long as reading it takes; a thread's is on its head.
+        const title = currentWorld.current.threads.find((thread) => thread.id === id)?.title ?? "";
+        look(target.querySelector<HTMLElement>(":scope > .thread-head") ?? target, target.id.startsWith("thread-") ? title : `${title} ${wordsIn(target)}`);
       });
     });
     return () => {
       cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      target?.removeAttribute("data-found");
     };
   }, [requested, reducedMotion, setView, setQuery, setFocusMode, setExpanded]);
   return reveal;
