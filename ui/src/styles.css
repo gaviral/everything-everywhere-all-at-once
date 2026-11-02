@@ -728,6 +728,12 @@ header {
 .empty .sample-button:hover:not(:disabled) { border-color: var(--accent); }
 .empty .sample-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .empty .sample-button:disabled { opacity: .5; cursor: default; }
+.empty .more-samples { margin-top: 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted); }
+.empty .sample-links { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 14px; }
+.empty .sample-link { padding: 2px 0; white-space: nowrap; border: 0; background: none; color: var(--ink); font: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
+.empty .sample-link:hover:not(:disabled) { text-decoration-color: var(--accent); }
+.empty .sample-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.empty .sample-link:disabled { opacity: .5; cursor: default; }
 .empty .empty-models { margin-top: 24px; font-size: 12px; }
 .pullback-text { overflow-wrap: anywhere; }
 .pullback-title, .pullback-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

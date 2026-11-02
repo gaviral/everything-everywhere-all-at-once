@@ -71,7 +71,7 @@ Core, one process (core/src: axum, tokio)
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
-  sample.rs      "Try a sample map": an empty map filled with the student's week from samples/
+  sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
   perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)

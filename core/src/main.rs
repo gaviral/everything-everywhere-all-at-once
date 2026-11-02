@@ -1196,7 +1196,7 @@ async fn room_info(
     // (only with a key: without one, none runs).
     let models = if core.key.is_some() { models(&core) } else { serde_json::json!([]) };
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
-        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "models": models }))
+        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models }))
 }
 
 /// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
@@ -1420,7 +1420,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     audio = Some(start_listening(&core, &speaker, &listens));
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
-                Ok(ClientMsg::Sample) => sample::fill(&core, &speaker),
+                Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
@@ -2988,7 +2988,7 @@ mod tests {
     /// the card said "Rent is due" and "where was I?" went to "Electric bill autopay".)
     #[test]
     fn in_each_sample_where_was_i_goes_where_the_unfinished_card_points() {
-        for sample in ["student-week", "founder-day"] {
+        for sample in crate::sample::SAMPLES.iter().map(|(file, _)| *file).chain(["founder-day"]) {
             let text = std::fs::read_to_string(format!("{}/../samples/{sample}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
             let mut world = World::default();
             for line in text.lines().filter(|l| !l.trim().is_empty()) {
