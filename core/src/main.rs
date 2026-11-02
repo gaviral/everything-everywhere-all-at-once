@@ -13,6 +13,7 @@ mod decided;
 mod explain;
 mod find;
 mod import;
+mod messages;
 mod model;
 mod pictures;
 mod placer;
@@ -92,6 +93,8 @@ pub struct Core {
     came_back: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
+    /// The preset, and the message counting down on its card (messages.rs).
+    pub messages: messages::Runtime,
 }
 
 impl Core {
@@ -309,6 +312,10 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool) {
         self.touch();
+        // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
+        if messages::said(self, speaker, text) {
+            return;
+        }
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
@@ -399,6 +406,9 @@ impl Core {
         if is_new_thread(text) {
             self.new_thread(speaker);
             return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
+        }
+        if let Some(done) = messages::act(self, speaker, text) {
+            return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
             return Some(done);
@@ -948,7 +958,10 @@ async fn main() -> anyhow::Result<()> {
         imports: import::Imports::default(),
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
+        messages: messages::Runtime::from_env(),
     });
+    // Names only: a contact's handle never goes to the log.
+    tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
@@ -1199,7 +1212,7 @@ async fn room_info(
     // (only with a key: without one, none runs).
     let models = if core.key.is_some() { models(&core) } else { serde_json::json!([]) };
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
-        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "models": models }))
+        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models }))
 }
 
 /// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
@@ -1351,11 +1364,14 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
     }
 }
 
-/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress.
+/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
+/// message counting down.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    // A reload mid-count gets the card back, with its Stop: it still sends when the count ends.
+    messages.extend(crate::messages::counting_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
@@ -1423,7 +1439,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     audio = Some(start_listening(&core, &speaker, &listens));
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
-                Ok(ClientMsg::Sample) => sample::fill(&core, &speaker),
+                Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
@@ -1443,6 +1459,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Approve { .. }) => {
                     core.send_to(&speaker, ServerMsg::Notice { message: "Only the host can add this: it goes into their apps.".into() });
+                }
+                // The message card's Stop, or Esc: anyone who sees it may stop it; stopping never sends anything.
+                Ok(ClientMsg::StopSend { id }) => {
+                    messages::stop(&core, id);
                 }
                 Ok(ClientMsg::Visible) => {
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1608,6 +1628,7 @@ impl Core {
             imports: Default::default(),
             service: Default::default(),
             trace: Default::default(),
+            messages: Default::default(),
         }
     }
 }
@@ -2991,7 +3012,7 @@ mod tests {
     /// the card said "Rent is due" and "where was I?" went to "Electric bill autopay".)
     #[test]
     fn in_each_sample_where_was_i_goes_where_the_unfinished_card_points() {
-        for sample in ["student-week", "founder-day"] {
+        for sample in crate::sample::SAMPLES.iter().map(|(file, _)| *file).chain(["founder-day"]) {
             let text = std::fs::read_to_string(format!("{}/../samples/{sample}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
             let mut world = World::default();
             for line in text.lines().filter(|l| !l.trim().is_empty()) {

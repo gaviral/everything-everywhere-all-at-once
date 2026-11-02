@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
+import { received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -184,6 +186,8 @@ type Change =
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
+  // A waiting idea or task goes with the words it was made from to another thread (a move, or its Undo).
+  | { type: "item_moved"; id: string; thread_id: string }
   // The refiner brought a waiting idea or task in line with something said later; restored is its Undo (refiner.rs).
   | { type: "item_refined"; id: string; now: ItemState; was: ItemState; why: string }
   | { type: "item_restored"; id: string; to: ItemState }
@@ -213,7 +217,8 @@ type ServerMsg =
   | { type: "explanation"; id: string; text: string; failed: boolean }
   | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
-  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
+  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] }
+  | SendCardMsg;
 
 /** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
@@ -408,6 +413,14 @@ export function apply(world: World, raw: Change): World {
         actions: world.actions.map((a) => (a.id === c.id ? { ...a, status: to.status, title: to.text, when: to.when } : a)),
       };
     }
+    case "item_moved":
+      // As the core: only onto a thread that's there.
+      if (!world.threads.some((t) => t.id === c.thread_id)) return world;
+      return {
+        ...world,
+        suggestions: world.suggestions.map((s) => (s.id === c.id ? { ...s, thread_id: c.thread_id } : s)),
+        actions: world.actions.map((a) => (a.id === c.id ? { ...a, thread_id: c.thread_id } : a)),
+      };
     case "item_status":
       return {
         ...world,
@@ -635,6 +648,8 @@ export function useCore(speaker?: string) {
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+  // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
+  const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -657,6 +672,7 @@ export function useCore(speaker?: string) {
       ws.onopen = () => {
         resetApps();
         resetSteps();
+        resetRoute();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
@@ -672,6 +688,7 @@ export function useCore(speaker?: string) {
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         if (receiveStep(msg)) return;
+        if (receiveRoute(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);
@@ -765,6 +782,7 @@ export function useCore(speaker?: string) {
             setRevertAsk((n) => n + 1);
             break;
           case "placing":
+            routePlacing(msg.now);
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
           case "found":
@@ -791,6 +809,11 @@ export function useCore(speaker?: string) {
           case "import":
             setImportStatus(msg.status);
             break;
+          case "send_card": {
+            const at = Date.now();
+            setSendCard((shown) => cardReceived(shown, msg, at));
+            break;
+          }
         }
       };
       ws.onclose = () => {
@@ -836,6 +859,9 @@ export function useCore(speaker?: string) {
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
+  const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
+  const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -866,6 +892,9 @@ export function useCore(speaker?: string) {
     removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
     appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    sendCard,
+    stopSend,
+    sendCardGone,
     snapshotRevision,
     mapChange,
     partial,
@@ -893,7 +922,8 @@ export function useCore(speaker?: string) {
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
-    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
+    // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
+    undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
     undoLast: useCallback(() => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo_last" })); }, [sendOrWarn]),
     // A proposal's Rename or Merge (apply) or its ×, and the Undo on an AI rename's or a merge's note.
@@ -926,8 +956,8 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
-    // "Try a sample map": the core fills an empty map with the sample (core/src/sample.rs).
-    sample: () => sendOrWarn(JSON.stringify({ type: "sample" })),
+    // "Try a sample map": the core fills an empty map with the sample, or the one named (core/src/sample.rs).
+    sample: (name?: string) => sendOrWarn(JSON.stringify(name ? { type: "sample", name } : { type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename, remove,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,

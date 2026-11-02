@@ -1,0 +1,41 @@
+/* The ready-to-send message card (SendCard.tsx): a card in the notice lane, the words in full, a countdown that
+   empties a bar, and Stop. Colors come from the theme's tokens, so dark mode follows. */
+.send-card {
+  position: relative;
+  overflow: hidden;
+  width: min(90vw, 420px);
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  animation: send-card-in 180ms ease-out;
+}
+.send-card-head { color: var(--muted); font-size: 12px; }
+.send-card-text { margin: 4px 0 10px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.send-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+.send-card-status { font-size: 13px; font-variant-numeric: tabular-nums; }
+.send-card.is-stopped .send-card-status, .send-card.is-dry-run .send-card-status { color: var(--muted); }
+.send-card.is-failed .send-card-status { color: var(--amber); }
+.send-card-stop {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 32px; padding: 0 12px;
+  border: 0; border-radius: 8px;
+  background: var(--ink); color: var(--bg);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.send-card-stop kbd { font: inherit; font-size: 11px; font-weight: 400; opacity: .7; }
+.send-card-stop:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.send-card-bar { position: absolute; inset: auto 0 0 0; height: 3px; background: var(--accent-soft); }
+.send-card-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: send-card-count linear forwards; }
+@keyframes send-card-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes send-card-in { from { opacity: 0; transform: translateY(-6px); } }
+/* Without motion the bar doesn't glide: it steps down with each second the digits count. */
+@media (prefers-reduced-motion: reduce) {
+  .send-card-bar span { animation: none; transform: scaleX(var(--left, 1)); }
+}
+@media (max-width: 560px) {
+  .send-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; }
+}
+@media (hover: none) { .send-card-stop kbd { display: none; } }

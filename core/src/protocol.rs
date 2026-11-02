@@ -35,6 +35,10 @@ pub enum ServerMsg {
     ActionFailed { id: String, message: String },
     Snapshot { world: std::sync::Arc<World> },
     Change { change: Change },
+    /// The ready-to-send message card (messages.rs), to the asker's windows: `counting` with `in_ms` left (it sends
+    /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
+    /// `live`: the end of the count really sends (else a dry run).
+    SendCard { id: u64, to: String, text: String, state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
     /// Draft words of the turn being spoken; replaces the previous draft.
     Partial { text: String },
     Status { listening: bool, note: String },
@@ -69,6 +73,9 @@ pub enum ServerMsg {
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
     /// tries again. Any other is waiting in line. Sent whenever it changes, and on connect.
     Placing { now: Option<String>, retries: Vec<crate::placer::Retry> },
+    /// A placement deciding, for the map to show it (ui/src/route.ts): the threads the prompt names while the calls
+    /// race, then where the thought went, the model's pick, and the rule that changed it, if any (placer.rs `Route`).
+    Route { route: crate::placer::Route },
     /// One step of the work, for the window's model line (ui/src/model-line.ts): the step (the trace's feature:
     /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
     /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
@@ -150,8 +157,14 @@ pub enum ClientMsg {
     /// Approve an action: add it to Reminders or Calendar, or, where they can't be reached, say the window saved it
     /// as a calendar file (apple.rs `saved`).
     Approve { id: String },
-    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs).
-    Sample,
+    /// The message card's Stop, or Esc while it counts down: it goes down unsent (messages.rs).
+    StopSend { id: u64 },
+    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered
+    /// others (`sample::SAMPLES`), none the default.
+    Sample {
+        #[serde(default)]
+        name: Option<String>,
+    },
     /// Keep a suggested hashtag, or remove one.
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.

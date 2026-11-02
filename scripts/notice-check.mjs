@@ -256,6 +256,18 @@ try {
   // ⌘Z (or Ctrl+Z) asks the core for "undo that": the last turn, whether or not the notice is still up.
   core.undoLast();
   assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
+  // A click that races the drop says so, rather than the button going and nothing happening (review feedback #5).
+  say({ type: "notice", message: "Moved “rent” to Health" });
+  say({ type: "undoable", id: 4 });
+  await settle();
+  assert.equal(core.undoId, 4);
+  const socket = sockets.at(-1), sent = socket.sent.length;
+  socket.readyState = 3;
+  core.undo(4);
+  await settle();
+  assert.equal(socket.sent.length, sent, "nothing sent on a closed socket");
+  assert.equal(core.notice, "Not connected — try again when connected.");
+  socket.readyState = 1;
   root.unmount();
 
   // The window: a notice with Undo gets the time to act, holds while the pointer or focus is on it, and ⌘Z / Ctrl+Z
@@ -289,6 +301,11 @@ try {
   assert.match(button, /aria-label="Undo “Moved to Health”"/);
   assert.match(button, />Undo <kbd[^>]*>⌘Z<\/kbd>/);
   assert.match(button, /title="[^"]*say “undo that”/);
+  assert.doesNotMatch(button, /disabled/);
+  // Away from the core it can't reach it: disabled, as the window's other core buttons are (feedback.ts undo-notice).
+  const away = renderToStaticMarkup(React.createElement(UndoButton, { id: 3, onUndo: () => {}, what: "Moved to Health", mac: true, offline: true }));
+  assert.match(away, /<button[^>]* disabled=""/);
+  assert.match(app, /<UndoButton [^>]*offline=\{!core\.connected\}/);
 
   // Every answer the window makes for a view request passes the request, so each can stand down the same way.
   const viewAnswers = app.match(/core\.showNotice\([^;]*core\.viewAsk\)/g) ?? [];

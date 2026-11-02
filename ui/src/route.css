@@ -1,0 +1,39 @@
+/* Live routing (route.ts). An outline, never a border or a size: nothing on the map moves while a thought is placed.
+   The outline fades in over 0.1 s, the edge of what still reads as instant, so a card the placer is weighing lights
+   as the calls go; a branch's card settles one fixation after its top thread (--route-delay, route.ts `LEVEL_MS`). */
+.thread { outline: 2px solid transparent; outline-offset: 3px; }
+.thread.route-candidate { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
+.thread.route-here, .thread.route-via { outline-color: var(--accent); }
+.thread.route-via { outline-width: 1px; }
+.thread.route-here.route-deep { --route-delay: 0.2s; }
+
+/* On the card's top edge, left of where "this" sits: why the placer weighs it, then where the thought went and the rule
+   that put it there. Never cut: a tag too long for a phone's card wraps upward, into the gap above, off the title. */
+.route-tag {
+  position: absolute;
+  bottom: calc(100% - 9px);
+  left: 16px;
+  max-width: calc(100% - 96px);
+  padding: 1px 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 99px;
+  background: var(--card);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  animation: route-tag-in .1s linear both;
+}
+.route-tag.here { border-style: solid; background: var(--accent-soft); }
+.thread.route-deep > .route-tag { animation-delay: 0.2s; }
+@keyframes route-tag-in { from { opacity: 0; } }
+
+/* The race: one dot a call while they run (placer.rs `RACE`). Still, not pulsing: the pill's words already say it's
+   working, and a pulse would need a period nothing measured gives. */
+.lanes { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.lanes i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .thread { --route-delay: 0s !important; }
+  .route-tag, .thread.route-deep > .route-tag { animation: none; }
+}

@@ -281,6 +281,8 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
         Some("transcript") => {
             core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
+            // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
+            crate::messages::heard(core, speaker, &words);
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {

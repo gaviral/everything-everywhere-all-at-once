@@ -110,7 +110,7 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     let acts = [
         Act::Back, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
         Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
-        Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
+        Act::Pause, Act::Approve, Act::Message, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
         Act::Delete,
     ];
     assert_eq!(CATALOG.len(), acts.len());
@@ -124,8 +124,8 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     }
     // Only an outside action is external, and the safety net may never write one, nor an answer or a repair.
     for d in CATALOG {
-        assert_eq!(d.external, d.act == Act::Approve, "{:?}", d.act);
-        if matches!(d.act, Act::Approve | Act::Yes | Act::No | Act::Redo | Act::Undo) {
+        assert_eq!(d.external, matches!(d.act, Act::Approve | Act::Message), "{:?}", d.act);
+        if matches!(d.act, Act::Approve | Act::Message | Act::Yes | Act::No | Act::Redo | Act::Undo) {
             assert!(d.template.is_none(), "{:?}", d.act);
         }
     }
@@ -165,6 +165,11 @@ fn corrections_read_their_lead_and_keep_the_words_after_it() {
     assert_eq!(correction("No, that's not what I meant"), redo("", true));
     assert_eq!(correction("Scratch that"), Some(Correction::Scratch));
     assert_eq!(correction("Okay, undo that."), Some(Correction::Scratch));
+    // After "no", "sorry" or "oops" too (P23: 7 of 11 such lines landed as points before).
+    for scratch in ["No, scratch that", "Sorry, scratch that", "Oops, scratch that", "Oops, undo that", "No, undo that", "Nope, delete that", "Sorry, undo", "No no, take that back"] {
+        assert_eq!(correction(scratch), Some(Correction::Scratch), "{scratch}");
+    }
+    assert!(deletes("Nope, delete that") && deletes("Sorry, remove that note") && !deletes("Oops, scratch that"));
     for talk in ["No way", "No", "I meant to call Mom", "I mean the weather was nice", "I said I'd call her back", "Scratch that off the list", "Know what I meant?"] {
         assert_eq!(correction(talk), None, "{talk}");
     }
@@ -319,6 +324,16 @@ async fn scratch_that_takes_a_thought_off_and_again_puts_it_back() {
     assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
     assert!(off[2].starts_with("undoable "));
     assert_eq!(f.say("Undo that").await, ["added Buy more stakes for the beans", "notice Put back"]);
+}
+
+#[tokio::test]
+async fn oops_scratch_that_takes_the_thought_off_and_adds_none() {
+    let f = Fixture::new(garden());
+    f.say("Buy more stakes for the beans").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    let off = f.say("Oops, scratch that").await;
+    assert_eq!(off[..2], [format!("removed {id}"), "notice Removed “Buy more stakes for the beans”".into()]);
+    assert!(f.core.snapshot().thoughts.iter().all(|t| !t.text.contains("scratch")), "the command landed as a thought");
 }
 
 #[tokio::test]
