@@ -671,7 +671,8 @@ export function useCore(speaker?: string) {
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
-    showNotice: (message: string) => setNotice(message),
+    // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
+    showNotice: (message: string) => { setNotice(message); setUndoId(null); },
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const message = JSON.stringify({ type: "text", text });

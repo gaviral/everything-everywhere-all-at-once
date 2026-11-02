@@ -24,6 +24,7 @@ import { UndoButton } from "./Undo";
 import { useRevert } from "./revert";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { staysUp, upFor } from "./notice-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -305,8 +306,8 @@ export default function App() {
   // A new find result restarts the timeout even if its notice text is unchanged.
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
-    if (!core.notice || noticeFocused || core.notice === LOOKING || /MODEL_API_KEY|^(The mic|Microphone|Couldn't start the mic|Connection lost)/i.test(core.notice)) return;
-    const timer = window.setTimeout(core.clearNotice, 5000);
+    if (!core.notice || noticeFocused || core.notice === LOOKING || staysUp(core.notice)) return;
+    const timer = window.setTimeout(core.clearNotice, upFor(friendlyNotice || core.notice));
     return () => window.clearTimeout(timer);
   }, [core.notice, core.found, core.clearNotice, noticeFocused]);
 
