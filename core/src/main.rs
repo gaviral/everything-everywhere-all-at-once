@@ -26,6 +26,7 @@ mod spoken;
 mod tidy;
 mod tls;
 mod tunnel;
+mod whyhere;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -1337,6 +1338,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
+                }
+                Ok(ClientMsg::WhyHere { thought_id }) => {
+                    tokio::spawn(whyhere::run(core.clone(), speaker.clone(), thought_id));
                 }
                 Ok(ClientMsg::Item { id, status }) => apple::item(&core, id, status),
                 // Where Apple's apps can't be reached, the window saved it as a calendar file on its own computer, so

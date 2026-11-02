@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -28,6 +28,7 @@ import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
+import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { isUndoKey, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
@@ -503,6 +504,7 @@ export default function App() {
 
   const threadById = useMemo(() => new Map(world.threads.map((thread) => [thread.id, thread])), [world.threads]);
   const notes = useMemo(() => world.notes ?? {}, [world.notes]);
+  const whyAsk = useMemo(() => ({ whys: core.whys, ask: core.askWhy }), [core.whys, core.askWhy]);
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const previousThoughtGroups = useRef(new Map<string, Thought[]>());
   const thoughtsByThread = useMemo(() => {
@@ -805,6 +807,7 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
+    <WhyContext.Provider value={whyAsk}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
@@ -933,12 +936,14 @@ export default function App() {
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
+          <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();
           }} />
+          </NotesContext.Provider>
           <AnimatePresence>
             {!hasAway && pullBack && (
               <motion.div
@@ -1005,6 +1010,7 @@ export default function App() {
         });
       }} />
     </div>
+    </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>
   );
@@ -1297,10 +1303,13 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   // is a stop for Tab, as Move and Words said are their own.
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
-  // Joined across a pause, the words are each part as said; a "why here" opens with them.
-  const why = useNote(thought.id)?.why;
+  // Joined across a pause, the words are each part as said; "why here" opens with them, and every placed point has
+  // one to ask for (whyhere.tsx), so every placed point opens. The hover card says it too once it's known (C225).
+  const why = whyLine(useNote(thought.id), useContext(WhyContext).whys[thought.id]);
   const words = heads.length ? wordsSaid(heads, thought) : `“${thought.text.trim()}”`;
-  const said = heads.length > 0 || !!why || saidDiffers(thought.text, thought.point);
+  // Words that only repeat the point stay out (legible.ts); then it opens to its reason alone.
+  const differ = heads.length > 0 || saidDiffers(thought.text, thought.point);
+  const said = differ || thought.placed;
   const [open, flip] = useSaidOpen(thought.id);
   const toggle = said ? (event: React.MouseEvent) => {
     // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
@@ -1309,7 +1318,7 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
@@ -1317,14 +1326,14 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
       {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
-      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
+      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
       <MovePoint thought={thought} />
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
       <Fixes thought={thought} on={on} />
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{words}{why && <span className="why">Why here: {why}</span>}</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && words}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
     </motion.li>
   );
 });

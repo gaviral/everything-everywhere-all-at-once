@@ -27,6 +27,7 @@ Browser, one page per window (ui/src)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
+  whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
   unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
@@ -52,6 +53,7 @@ Core, one process (core/src: axum, tokio)
   tidy.rs        the refiner's renames and merges: sure ones land with Undo, the rest wait on the card as proposals
   pictures.rs    one picture per thread
   explain.rs     one sentence on a selected phrase
+  whyhere.rs     why a thought is on its thread, on request: from the map (move, first thought), else one fast call kept as its note
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
