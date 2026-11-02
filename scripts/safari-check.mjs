@@ -1,0 +1,23 @@
+// No extra dependencies: run with `node scripts/safari-check.mjs`.
+// Safari (WebKit) differences from Chrome that showed on screen when the demo flows ran in a real WebKit engine
+// (Playwright's WebKit 27.2, headless, against a test core, 2026-11-01). Every flow worked; these held, so a later
+// change can't quietly bring them back. Rules and source, not pixels.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const html = read("ui/index.html");
+const styles = read("ui/src/styles.css");
+
+// 1. Safari tints its toolbar, and an iPhone its status bar, with theme-color. A light one alone left a pale bar over
+//    the dark page: there's one per theme, each the page's own --bg for that theme.
+const bg = (block) => block.match(/--bg:\s*(#[0-9a-f]{6})/i)?.[1].toLowerCase();
+const light = bg(styles.split("@media (prefers-color-scheme: dark)")[0]);
+const dark = bg(styles.split("@media (prefers-color-scheme: dark)")[1] ?? "");
+const theme = (scheme) => html.match(new RegExp(`<meta name="theme-color" content="(#[0-9a-f]{6})" media="\\(prefers-color-scheme: ${scheme}\\)"`, "i"))?.[1].toLowerCase();
+assert.ok(light && dark, "styles.css defines --bg for both themes");
+assert.equal(theme("light"), light, "theme-color for light is the light --bg");
+assert.equal(theme("dark"), dark, "theme-color for dark is the dark --bg");
+assert.equal((html.match(/name="theme-color"/g) ?? []).length, 2, "no theme-color without a media query (it would win in both themes)");
+
+console.log("Safari checks passed: theme-color follows the theme.");
