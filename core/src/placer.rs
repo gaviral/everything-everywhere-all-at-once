@@ -134,7 +134,7 @@ impl NewThreads {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Placement {
     /// Where the turn moves on to another thread, quoted; empty when it stays on one.
     #[serde(default)]
@@ -176,8 +176,8 @@ fn yes() -> bool {
 /// Models sometimes write an empty answer as "\"\"" or "none"; treat those as empty.
 fn clean(text: &str) -> String {
     let t = text.trim().trim_matches('"').trim();
-    match t.to_lowercase().as_str() {
-        "none" | "n/a" | "null" | "-" => String::new(),
+    match t.trim_end_matches(['.', '!']).to_lowercase().as_str() {
+        "" | "none" | "n/a" | "null" | "-" => String::new(),
         _ => t.to_string(),
     }
 }
@@ -362,6 +362,11 @@ impl Placing {
         let mut state = self.0.lock().unwrap();
         let theirs: Vec<String> = state.retries.iter().filter(|(_, (s, _))| s == speaker).map(|(id, _)| id.clone()).collect();
         state.stay.extend(theirs);
+    }
+
+    /// This thought, once placed, leaves its speaker where they are: they moved while it was being placed.
+    fn stay(&self, thought_id: &str) {
+        self.0.lock().unwrap().stay.insert(thought_id.into());
     }
 
     fn stays(&self, thought_id: &str) -> bool {
@@ -575,8 +580,60 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // Landing after the speaker moved on (newer words of theirs landed, or they moved while it retried), it
     // doesn't take them back to where they were.
     let now = now_ms();
-    let moves = !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
-    let (changes, rest, rule) = settle_ruled(&world, &thought, placement, place_ms, new_thread, moves);
+    // Nor when they moved while this call ran (a click, "new thread about …", a filing): their place now isn't the
+    // one the model was asked from. Checked under the commit's lock, so a click just before it lands stands too.
+    let moved = |w: &World| {
+        let place = |of: &World| of.active_by.get(&thought.speaker).map(|id| w.resolve(id));
+        place(&world) != place(w)
+    };
+    let mut moved_meanwhile = false;
+    // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
+    let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
+    let (changes, rest, rule, landed) = loop {
+        let moves = !moved_meanwhile && !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
+        let (changes, rest, rule) = settle_ruled(&world, &thought, placement.clone(), place_ms, new_thread, moves);
+        if !waiting(&core.snapshot()) {
+            tracing::info!("placed {thought_id} after it was taken back: dropped");
+            return Ok(None);
+        }
+        // The thread it lands on (or under) must still be on the map: a delete while the model thought can take it
+        // off, and a point on no card is lost from view. Then it goes in line again and is placed on the map as it is now.
+        let added: Vec<String> = changes.iter().filter_map(|c| match c {
+            Change::ThreadAdded { thread } => Some(thread.id.clone()),
+            _ => None,
+        }).collect();
+        let targets: Vec<String> = changes.iter().filter_map(|c| match c {
+            Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
+            Change::ThreadAdded { thread } => thread.parent_id.clone(),
+            _ => None,
+        }).collect();
+        let there = |w: &World| targets.iter().all(|id| added.contains(id) || w.thread(&w.resolve(id)).is_some());
+        // The ask for a new thread is spent only when the words land: placed again, they still start it.
+        let landed = if new_thread { changes.clone() } else { Vec::new() };
+        let traced_line = || traced(&world, &thought, answer.clone(), new_thread, &changes, rest.as_deref());
+        if core.commit_if(|w| waiting(w) && there(w) && !(moves && moved(w)), changes.clone()) {
+            core.trace.write(traced_line);
+            break (changes, rest, rule, landed);
+        }
+        let now = core.snapshot();
+        if moves && waiting(&now) && there(&now) {
+            // They moved while the model thought (only that refuses it with the words waiting and their thread there):
+            // settle again without moving them.
+            moved_meanwhile = true;
+            continue;
+        }
+        core.trace.write(traced_line);
+        if waiting(&now) && !there(&now) {
+            tracing::info!("placed {thought_id} on a thread taken off the map meanwhile: placing it again");
+            let _ = core.placer_queue.send(Job::Place(thought_id.to_string()));
+        }
+        return Ok(None);
+    };
+    drop(world);
+    // A split turn's rest stays put too when it lands (`Placing::placed` passes this on).
+    if moved_meanwhile {
+        core.placing.stay(thought_id);
+    }
     // The path is filled in once the changes are on the map (`path_of`).
     let mut decided = Route::Decided {
         thought_id: thought_id.into(),
@@ -593,37 +650,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         lanes,
         ms: race_ms,
     };
-    // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
-    let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
-    if !waiting(&core.snapshot()) {
-        tracing::info!("placed {thought_id} after it was taken back: dropped");
-        return Ok(None);
-    }
-    // The thread it lands on (or under) must still be on the map: a delete while the model thought can take it off,
-    // and a point on no card is lost from view. Then it goes in line again and is placed on the map as it is now.
-    let added: Vec<String> = changes.iter().filter_map(|c| match c {
-        Change::ThreadAdded { thread } => Some(thread.id.clone()),
-        _ => None,
-    }).collect();
-    let targets: Vec<String> = changes.iter().filter_map(|c| match c {
-        Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
-        Change::ThreadAdded { thread } => thread.parent_id.clone(),
-        _ => None,
-    }).collect();
-    let there = |w: &World| targets.iter().all(|id| added.contains(id) || w.thread(&w.resolve(id)).is_some());
-    core.trace.write(|| traced(&world, &thought, answer, new_thread, &changes, rest.as_deref()));
-    drop(world);
-    // The ask for a new thread is spent only when the words land: placed again, they still start it.
-    let landed = if new_thread { changes.clone() } else { Vec::new() };
     let placing: Vec<Change> = changes.iter().filter(|c| matches!(c, Change::ThoughtPlaced { .. } | Change::ThreadAdded { .. })).cloned().collect();
-    if !core.commit_if(|w| waiting(w) && there(w), changes) {
-        let now = core.snapshot();
-        if waiting(&now) && !there(&now) {
-            tracing::info!("placed {thought_id} on a thread taken off the map meanwhile: placing it again");
-            let _ = core.placer_queue.send(Job::Place(thought_id.to_string()));
-        }
-        return Ok(None);
-    }
     if new_thread {
         core.new_threads.placed(thought_id, &landed, rest.as_deref());
     }
@@ -747,7 +774,7 @@ fn settle_ruled(
     new_thread: bool,
     moves: bool,
 ) -> (Vec<Change>, Option<String>, Option<&'static str>) {
-    let Some((before, rest)) = cut(&thought.text, &p.split) else {
+    let Some((before, rest)) = cut(&thought.text, &clean(&p.split)) else {
         // A quote that cuts nothing leaves the model unsure which words were filler: place them all.
         let mut rule = None;
         if p.action == "skip" && !clean(&p.split).is_empty() {
@@ -915,6 +942,9 @@ fn just_asked<'a>(world: &'a World, thought: &Thought) -> Option<&'a Thought> {
         .take_while(|t| t.id != thought.id)
         .filter(|t| t.at_ms <= thought.at_ms)
         .max_by_key(|t| t.at_ms)
+        // Not its own first part: the rest of a turn cut in two moved on from it. Another turn said in the same
+        // millisecond (two flushed together on a reconnect) still counts.
+        .filter(|t| world.split_from.get(&thought.id) != Some(&t.id))
         .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
 }
 
@@ -1987,7 +2017,7 @@ mod tests {
         let asked = Thought { text: "Should we say it runs on Meta's models?".into(), ..thought("q", "you", Some("T1"), true) };
         let told = Thought { text: "It runs on Meta's models.".into(), ..thought("s", "you", Some("T1"), true) };
         let prompt = |before: &Thought, text: &str| {
-            let reply = Thought { text: text.into(), ..thought("r", "you", None, true) };
+            let reply = Thought { text: text.into(), at_ms: 1, ..thought("r", "you", None, true) };
             let world = World { thoughts: vec![before.clone(), reply.clone()], ..map() };
             request(&world, &reply, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string()
         };
@@ -2409,10 +2439,435 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let world = core.snapshot();
         assert!(world.threads.is_empty() && world.thoughts.is_empty() && world.active.is_none(), "{:?}", world.threads);
-        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new(), dismissed: Vec::new() });
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new(), dismissed: Vec::new(), merged: Vec::new() });
         until(Duration::from_secs(2), || core.snapshot().thoughts.iter().any(|t| t.id == id && t.placed)).await;
         assert_eq!(core.snapshot().threads.len(), 1);
         let _ = std::fs::remove_file(&path);
+    }
+
+    // ---- End to end through `serve`, with a scripted model: clicks during a placement, splits, outages, busy ----
+
+    /// A stand-in model that answers each thought by the first phrase of `script` found in its words (else a new thread
+    /// named after them), after `delay_ms`. "@Title" in `thread_id` or `parent_id` becomes that thread's id, read from
+    /// the prompt's thread list, so an answer can name a thread the placer made. Keeps every prompt sent, in order.
+    async fn scripted(script: Vec<(&'static str, serde_json::Value)>, delay_ms: u64) -> (String, Arc<Mutex<Vec<String>>>) {
+        let prompts = Arc::new(Mutex::new(Vec::new()));
+        let seen = prompts.clone();
+        let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let asked = request["messages"][1]["content"].as_str().unwrap_or_default().to_string();
+            seen.lock().unwrap().push(asked.clone());
+            let said = asked.rsplit("NEW THOUGHT: \"").next().unwrap_or_default().trim_end_matches('"').to_string();
+            let mut placement = script
+                .iter()
+                .find(|(phrase, _)| said.contains(*phrase))
+                .map(|(_, p)| p.clone())
+                .unwrap_or_else(|| json!({"action": "new", "title": said, "point": said}));
+            for field in ["thread_id", "parent_id"] {
+                if let Some(title) = placement[field].as_str().and_then(|v| v.strip_prefix('@')).map(String::from) {
+                    let id = asked
+                        .lines()
+                        .find_map(|l| l.split_once(": ").filter(|(_, rest)| rest.starts_with(&format!("{title} ["))).map(|(id, _)| id.to_string()));
+                    placement[field] = json!(id.unwrap_or_default());
+                }
+            }
+            async move {
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                axum::Json(body(json!("stop"), json!(placement.to_string())))
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        let routes = axum::Router::new().route("/v1/chat/completions", axum::routing::post(service));
+        tokio::spawn(async move { axum::serve(listener, routes).await });
+        (url, prompts)
+    }
+
+    /// A keyed core whose placer asks `url` as shipped (two racing calls, the real patience): what `add_thought` feeds.
+    fn placing_core(url: String) -> (Arc<Core>, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("e2a2o-gaps-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), placer_race: super::RACE, ..Core::test(journal, world) });
+        let placer = core.clone();
+        tokio::spawn(async move { super::serve(placer, queue, &url, super::PATIENCE).await });
+        (core, path)
+    }
+
+    /// The video's opening (its first 30 seconds), said through `add_thought` as the mic hands it over, with
+    /// the model's answers scripted as the takes gave them: the half-sentence is left off, the swerve leaves its thread
+    /// unfinished for you, "Wait, where was I?" goes back by rule, and "Sentences." joins it though answered "new".
+    #[tokio::test]
+    async fn the_catch_beat_lands_end_to_end() {
+        let half = "My biggest problem is that I never finish my";
+        let swerve = "Oh, and rent is due Friday and I still haven't sent it.";
+        let finish = "Sentences. I never finish my sentences.";
+        let (url, prompts) = scripted(
+            vec![
+                ("My biggest problem", json!({"action": "new", "title": "Never finishing things", "point": "My biggest problem: I never finish my", "complete": false})),
+                ("rent is due Friday", json!({"action": "new", "title": "Rent", "point": "Rent due Friday, not sent yet"})),
+                ("Sentences.", json!({"action": "new", "title": "Sentences", "point": "My biggest problem: I never finish my sentences", "joins": "unfinished"})),
+            ],
+            20,
+        )
+        .await;
+        let (core, path) = placing_core(url);
+        let here = |core: &Core| core.snapshot().active_for("you").cloned();
+        core.add_thought("you", half);
+        until(Duration::from_secs(5), || landed(&core, half)).await;
+        let head = core.snapshot().thoughts.iter().find(|t| t.text == half).unwrap().clone();
+        let t1 = head.thread_id.clone().unwrap();
+        assert!(!head.complete, "left off");
+        core.add_thought("you", swerve);
+        until(Duration::from_secs(5), || landed(&core, swerve)).await;
+        let rent = id_of_thread(&core, swerve);
+        let world = core.snapshot();
+        let left = world.thread(&t1).unwrap();
+        assert_ne!(rent, t1);
+        assert_eq!((left.status, left.dropped_by.as_str()), (ThreadStatus::Dropped, "you"), "the card offers it back");
+        assert_eq!(here(&core), Some(rent.clone()));
+        let calls = prompts.lock().unwrap().len();
+        core.add_thought("you", "Wait, where was I?");
+        assert_eq!(here(&core), Some(t1.clone()), "back, by rule, at once");
+        let world = core.snapshot();
+        assert_eq!((world.thoughts.len(), world.thread(&t1).unwrap().status), (2, ThreadStatus::Open), "not a thought; open again");
+        assert_eq!(prompts.lock().unwrap().len(), calls, "no model call");
+        core.add_thought("you", finish);
+        until(Duration::from_secs(5), || landed(&core, finish)).await;
+        let world = core.snapshot();
+        let joined = world.thoughts.iter().find(|t| t.text == finish).unwrap();
+        assert_eq!(joined.thread_id.as_ref(), Some(&t1), "with the words it finishes");
+        assert_eq!(world.threads.len(), 2, "no thread for half a sentence");
+        assert_eq!(world.notes.get(&joined.id).map(|n| n.continues.as_str()), Some(head.id.as_str()));
+        assert_eq!(world.thread(&t1).unwrap().last_point, "My biggest problem: I never finish my sentences");
+        assert_eq!(here(&core), Some(t1.clone()));
+        let asked = prompts.lock().unwrap().iter().rev().find(|p| p.ends_with(&format!("NEW THOUGHT: \"{finish}\""))).cloned().unwrap();
+        assert!(asked.contains(&format!("Left unfinished (placed in {t1}): \"{half}\"")), "{asked}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The ramble (the video, 0:30–0:56): each decision lands on the thread it decides and is marked, though the model
+    /// branches it off as a topic of its own (as in the 2026-11-01 take), so its card and Recap lead with it; the loud
+    /// line lands on the birthday, unmarked.
+    #[tokio::test]
+    async fn the_ramble_beat_lands_each_decision_on_its_thread() {
+        let lines = [
+            "Mom's birthday is Saturday. She keeps talking about that pottery class on Main Street.",
+            "Okay, decided: if it's under eighty dollars, I'm booking it tonight.",
+            "My stats midterm is Thursday, chapters four to six.",
+            "Decided: I'll study with Priya on Wednesday night.",
+            "And Mom is going to love that pottery class, I'm so excited!",
+        ];
+        let (url, _) = scripted(
+            vec![
+                ("Mom's birthday is Saturday", json!({"action": "new", "title": "Mom's birthday", "point": "Mom's birthday Saturday; she wants the pottery class"})),
+                ("under eighty dollars", json!({"action": "new", "title": "Pottery Class Cost", "parent_id": "@Mom's birthday", "point": "Book the class tonight if under $80"})),
+                ("stats midterm", json!({"action": "new", "title": "Stats midterm", "point": "Stats midterm Thursday, chapters 4-6"})),
+                ("study with Priya", json!({"action": "new", "title": "Study with Priya", "parent_id": "@Stats midterm", "point": "Study with Priya Wednesday night"})),
+                ("going to love", json!({"action": "return", "thread_id": "@Mom's birthday", "point": "Mom will love the pottery class"})),
+            ],
+            20,
+        )
+        .await;
+        let (core, path) = placing_core(url);
+        for line in lines {
+            core.add_thought("you", line);
+            until(Duration::from_secs(5), || landed(&core, line)).await;
+        }
+        let world = core.snapshot();
+        let titles: Vec<&str> = world.threads.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["Mom's birthday", "Stats midterm"], "no branch for a decision");
+        let mut got = Vec::new();
+        for line in lines {
+            let t = world.thoughts.iter().find(|t| t.text == line).unwrap();
+            got.push((world.thread(t.thread_id.as_deref().unwrap()).unwrap().title.clone(), t.decided));
+        }
+        let want = [("Mom's birthday", false), ("Mom's birthday", true), ("Stats midterm", false), ("Stats midterm", true), ("Mom's birthday", false)];
+        assert_eq!(got, want.map(|(title, decided)| (title.to_string(), decided)));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// You click a card while a thought of yours is still on its first try: when it lands it goes on the map but leaves
+    /// you where you clicked, as a retry already does (`Placing::moved`) and as "where was I?" and a search avoid by
+    /// waiting their turn (find.rs `placing`).
+    #[tokio::test]
+    async fn a_click_while_a_thought_is_placing_stands_when_it_lands() {
+        let (core, path, _updates) = burst_core().await;
+        let here = |core: &Core| core.snapshot().active_for("Ana").cloned();
+        core.add_thought("Ana", "the kitchen needs paint");
+        until(Duration::from_secs(2), || landed(&core, "the kitchen needs paint")).await;
+        let kitchen = here(&core).unwrap();
+        core.add_thought("Ana", "the party is on Saturday");
+        until(Duration::from_secs(2), || landed(&core, "the party is on Saturday")).await;
+        // Its call takes 300 ms: the click comes while it runs.
+        core.add_thought("Ana", "slow: the caterer needs a head count");
+        let slow = id_of(&core, "slow: the caterer needs a head count");
+        until(Duration::from_secs(2), || matches!(core.placing.message(), ServerMsg::Placing { now: Some(ref id), .. } if *id == slow)).await;
+        core.focus("Ana", &kitchen);
+        assert_eq!(here(&core), Some(kitchen.clone()));
+        until(Duration::from_secs(2), || landed(&core, "slow: the caterer needs a head count")).await;
+        assert_eq!(here(&core), Some(kitchen), "the click stands");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A two-topic turn still on its first try when you click a card: neither part moves you when it lands, its rest
+    /// (placed next, from a map that already has the click) included.
+    #[tokio::test]
+    async fn a_click_while_a_split_turn_is_placing_stands_through_its_rest() {
+        let (url, _) = scripted(split_script(), 300).await;
+        let (core, path) = placing_core(url);
+        let here = |core: &Core| core.snapshot().active_for("you").cloned();
+        core.add_thought("you", "the bike needs brakes");
+        until(Duration::from_secs(5), || landed(&core, "the bike needs brakes")).await;
+        let bike = here(&core).unwrap();
+        core.add_thought("you", "the kitchen needs paint");
+        until(Duration::from_secs(5), || landed(&core, "the kitchen needs paint")).await;
+        assert_ne!(here(&core), Some(bike.clone()));
+        core.add_thought("you", "I need to pay rent before Friday and also the demo is on Tuesday");
+        let turn = id_of(&core, "I need to pay rent before Friday and also the demo is on Tuesday");
+        until(Duration::from_secs(2), || matches!(core.placing.message(), ServerMsg::Placing { now: Some(ref id), .. } if *id == turn)).await;
+        core.focus("you", &bike);
+        until(Duration::from_secs(5), || landed(&core, "the demo is on Tuesday")).await;
+        assert_eq!(here(&core), Some(bike), "the click stands after the rest lands too");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "New thread about …" said while your words before it are still on their first try: the thread it starts is
+    /// where you stay when those words land.
+    #[tokio::test]
+    async fn new_thread_about_said_while_placing_stands_when_the_words_before_land() {
+        let (core, path, _updates) = burst_core().await;
+        let here = |core: &Core| core.snapshot().active_for("Ana").cloned();
+        core.add_thought("Ana", "the kitchen needs paint");
+        until(Duration::from_secs(2), || landed(&core, "the kitchen needs paint")).await;
+        core.add_thought("Ana", "slow: the garage door squeaks");
+        let slow = id_of(&core, "slow: the garage door squeaks");
+        until(Duration::from_secs(2), || matches!(core.placing.message(), ServerMsg::Placing { now: Some(ref id), .. } if *id == slow)).await;
+        core.add_thought("Ana", "New thread about the garden shed");
+        let shed = here(&core).unwrap();
+        assert_eq!(core.snapshot().thread(&shed).map(|t| t.title.clone()).as_deref(), Some("Garden shed"));
+        until(Duration::from_secs(2), || landed(&core, "slow: the garage door squeaks")).await;
+        assert_eq!(here(&core), Some(shed), "the new thread stands");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Models write an empty answer as "none" (`clean`); a split is no different. "none" must cut nothing, even in
+    /// words that say "none" (else "We have" lands as a thought of its own).
+    #[test]
+    fn a_split_written_as_none_cuts_nothing() {
+        let said = turn("We have none of the slides ready and the demo is tomorrow");
+        for split in ["none", "None", "None.", "\"none\""] {
+            let p = reply(json!({"split": split, "action": "continue", "thread_id": "T1", "point": "No slides ready; demo tomorrow"}));
+            let (changes, rest) = settle(&map(), &said, p, 0, false, true);
+            assert!(rest.is_none() && !changes.iter().any(|c| matches!(c, Change::ThoughtSplit { .. })), "{split}: {changes:?}");
+        }
+    }
+
+    /// Venue Wi-Fi drops mid-talk: a thought's third failed try is said once, later rounds are not, and its tries keep
+    /// to 0.5 s, 1 s, then 15 s doubling. A URL the client turns down at once stands in for the outage, so no socket
+    /// waits under the paused clock.
+    #[tokio::test(start_paused = true)]
+    async fn an_outage_is_said_once_per_thought_and_retries_keep_their_schedule() {
+        use tokio::sync::mpsc;
+        let path = std::env::temp_dir().join(format!("e2a2o-gaps-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let (placer_queue, mut retries) = mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), ..Core::test(journal, world) });
+        let mut updates = core.updates.subscribe();
+        core.commit(vec![Change::ThoughtAdded { thought: thought("t1", "you", None, true) }]);
+        let (jobs, queue) = mpsc::unbounded_channel();
+        let placer = core.clone();
+        tokio::spawn(async move { super::serve(placer, queue, "unreachable://model.invalid/v1", super::PATIENCE).await });
+        jobs.send(super::Job::Place("t1".into())).unwrap();
+        let start = tokio::time::Instant::now();
+        let mut at = Vec::new();
+        while let Ok(Some(job)) = tokio::time::timeout_at(start + Duration::from_secs(100), retries.recv()).await {
+            at.push((start.elapsed().as_millis() as u64 + 50) / 100);
+            jobs.send(job).unwrap();
+        }
+        assert_eq!(at, [5, 15, 165, 170, 180, 480, 485, 495], "tenths of a second: 0.5 s, 1 s, then a round 15 s on, doubling");
+        let errors: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|o| match o.message {
+                ServerMsg::Error { message } => Some(message),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(errors.len(), 1, "said once, at the third failure: {errors:?}");
+        assert!(errors[0].starts_with("Couldn't place a thought:"), "{errors:?}");
+        assert!(!core.snapshot().thoughts[0].placed, "still waiting, saved");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A busy service (429): the whole line waits out the pause, nothing shows as an error (model.rs says "busy" once a
+    /// spell), and the busy thought and the one said after it both land, once each.
+    #[tokio::test]
+    async fn a_busy_service_pauses_the_line_and_every_thought_still_lands_once() {
+        let calls: Arc<Mutex<Vec<String>>> = Default::default();
+        let seen = calls.clone();
+        let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let asked = request["messages"][1]["content"].as_str().unwrap_or_default().to_string();
+            let said = asked.rsplit("NEW THOUGHT: \"").next().unwrap_or_default().trim_end_matches('"').to_string();
+            let first = {
+                let mut calls = seen.lock().unwrap();
+                calls.push(said.clone());
+                calls.iter().filter(|s| **s == said).count() == 1
+            };
+            async move {
+                if said.contains("busy") && first {
+                    return (axum::http::StatusCode::TOO_MANY_REQUESTS, axum::Json(json!({"error": {"message": "slow down"}})));
+                }
+                let placement = json!({"action": "new", "title": said, "point": said});
+                (axum::http::StatusCode::OK, axum::Json(body(json!("stop"), json!(placement.to_string()))))
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+        let path = std::env::temp_dir().join(format!("e2a2o-gaps-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), ..Core::test(journal, world) });
+        let mut updates = core.updates.subscribe();
+        let placer = core.clone();
+        tokio::spawn(async move { super::serve(placer, queue, &url, super::PATIENCE).await });
+        core.add_thought("Ana", "busy: the landlord wants the lease back");
+        core.add_thought("Ana", "the bike needs brakes");
+        let bike_in = until(Duration::from_secs(5), || landed(&core, "the bike needs brakes")).await;
+        assert!(bike_in >= Duration::from_millis(450), "the line waited out the 0.5 s pause: {bike_in:?}");
+        until(Duration::from_secs(5), || landed(&core, "busy: the landlord wants the lease back")).await;
+        let (mut placed, mut errors, mut notices) = (std::collections::HashMap::new(), 0, Vec::new());
+        while let Ok(out) = updates.try_recv() {
+            match out.message {
+                ServerMsg::Change { change: Change::ThoughtPlaced { thought_id, .. } } => *placed.entry(thought_id).or_insert(0) += 1,
+                ServerMsg::Error { .. } => errors += 1,
+                ServerMsg::Notice { message } => notices.push(message),
+                _ => {}
+            }
+        }
+        assert!(placed.len() == 2 && placed.values().all(|&n| n == 1), "{placed:?}");
+        assert_eq!(errors, 0, "a busy pause isn't an error");
+        assert_eq!(notices.iter().filter(|n| n.contains("busy")).count(), 1, "{notices:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    fn split_script() -> Vec<(&'static str, serde_json::Value)> {
+        vec![
+            ("pay rent before Friday", json!({"action": "new", "title": "Rent", "point": "Pay rent before Friday", "split": "the demo is on Tuesday"})),
+            ("the demo is on Tuesday", json!({"action": "new", "title": "Demo", "point": "Demo is on Tuesday"})),
+        ]
+    }
+
+    /// A turn cut in two: its rest is placed next, before words said after the turn, and in the order said.
+    #[tokio::test]
+    async fn the_rest_of_a_split_turn_lands_before_words_said_after_it() {
+        let (url, prompts) = scripted(split_script(), 150).await;
+        let (core, path) = placing_core(url);
+        core.add_thought("you", "I need to pay rent before Friday and also the demo is on Tuesday");
+        core.add_thought("you", "the bike needs brakes");
+        until(Duration::from_secs(5), || landed(&core, "the bike needs brakes") && landed(&core, "the demo is on Tuesday")).await;
+        let mut asked: Vec<String> =
+            prompts.lock().unwrap().iter().map(|p| p.rsplit("NEW THOUGHT: \"").next().unwrap().trim_end_matches('"').to_string()).collect();
+        asked.dedup();
+        assert_eq!(asked, ["I need to pay rent before Friday and also the demo is on Tuesday", "the demo is on Tuesday", "the bike needs brakes"]);
+        let world = core.snapshot();
+        let texts: Vec<&str> = world.thoughts.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["I need to pay rent before Friday", "the demo is on Tuesday", "the bike needs brakes"]);
+        assert_eq!(world.active_for("you"), world.thoughts[2].thread_id.as_ref(), "where your last words went");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Where was I?" said right after a two-topic turn waits for both parts (the rest is your words too), so the rest
+    /// landing can't undo it: you end up back on the first topic.
+    #[tokio::test]
+    async fn where_was_i_after_a_split_turn_waits_for_its_rest() {
+        let (url, _) = scripted(split_script(), 150).await;
+        let (core, path) = placing_core(url);
+        core.add_thought("you", "I need to pay rent before Friday and also the demo is on Tuesday");
+        core.add_thought("you", "Where was I?");
+        until(Duration::from_secs(5), || landed(&core, "the demo is on Tuesday")).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let world = core.snapshot();
+        let rent = world.thoughts.iter().find(|t| t.text == "I need to pay rent before Friday").and_then(|t| t.thread_id.clone());
+        assert!(rent.is_some());
+        assert_eq!(world.active_for("you").cloned(), rent, "back from the detour the rest started, not undone by it");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "Should I book the pottery class? Also the bike needs brakes." cut in two: the rest is a topic of its own, not the
+    /// answer to its own first part, so its prompt doesn't say that question was just asked.
+    #[test]
+    fn the_rest_of_a_split_turn_is_never_the_answer_to_its_own_question() {
+        let said = turn("Should I book the pottery class? Also the bike needs brakes.");
+        let world = World { thoughts: vec![said.clone()], ..map() };
+        let p = reply(json!({"action": "continue", "thread_id": "T1", "point": "Book the pottery class?", "split": "Also the bike needs brakes."}));
+        let (changes, rest) = settle(&world, &said, p, 0, false, true);
+        let mut after = world.clone();
+        for c in &changes {
+            after.apply(c);
+        }
+        let rest = after.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap().clone();
+        assert_eq!(rest.text, "the bike needs brakes.");
+        let prompt = request(&after, &rest, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(!prompt.contains("Just asked"), "{prompt}");
+    }
+
+    /// A question and a short answer said as two turns in the same millisecond (a reconnect flushes queued turns
+    /// together): the answer is still told what was just asked. Only a split's own first part is passed over.
+    #[test]
+    fn an_answer_said_in_the_same_millisecond_as_its_question_still_answers_it() {
+        let asked = Thought { text: "Should I book the pottery class?".into(), at_ms: 5, ..thought("q", "you", Some("T1"), true) };
+        let yes = Thought { text: "Yes.".into(), at_ms: 5, ..thought("y", "you", None, false) };
+        let world = World { thoughts: vec![asked, yes.clone()], ..map() };
+        let prompt = request(&world, &yes, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt.contains("Just asked"), "{prompt}");
+        // The same two as one turn cut in two: the rest moved on from its first part.
+        let mut split = world.clone();
+        split.split_from.insert("y".into(), "q".into());
+        let prompt = request(&split, &yes, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(!prompt.contains("Just asked"), "{prompt}");
+    }
+
+    /// A sure fix in the first part of a split turn is made there: its words and point say the guess, the heard words
+    /// are kept for undo, and the rest keeps its own words.
+    #[test]
+    fn a_sure_fix_in_the_first_part_of_a_split_is_made_there() {
+        let said = turn("The README should name the Muse Bark models and also I should email the landlord");
+        let p = reply(json!({"split": "I should email the landlord", "action": "continue", "thread_id": "T1",
+            "point": "README names the Muse Bark models", "unclear": "Muse Bark", "guess": "Muse Spark", "sure": true}));
+        let world = World { thoughts: vec![said.clone()], ..map() };
+        let (changes, rest) = settle(&world, &said, p, 0, false, true);
+        let mut after = world.clone();
+        for c in &changes {
+            after.apply(c);
+        }
+        let first = after.thoughts.iter().find(|t| t.id == said.id).unwrap();
+        assert_eq!(
+            (first.text.as_str(), first.point.as_str(), first.heard.as_str(), first.fixed.as_str(), first.unclear.as_str()),
+            ("The README should name the Muse Spark models", "README names the Muse Spark models", "Muse Bark", "Muse Spark", "")
+        );
+        let rest = after.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap();
+        assert_eq!((rest.text.as_str(), rest.placed), ("I should email the landlord", false));
+    }
+
+    /// An answer naming a thread that isn't on the map ("T9") lands where you are; with nowhere yet, it starts a thread
+    /// titled from the words. Never a thought on no thread.
+    #[test]
+    fn an_answer_naming_a_missing_thread_lands_where_you_are() {
+        let landed_on = |changes: &[Change]| {
+            changes
+                .iter()
+                .find_map(|c| match c {
+                    Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let said = turn("and the paint should be matte");
+        let changes = decide(&map(), &said, reply(json!({"action": "continue", "thread_id": "T9"})), 0, false, true);
+        assert_eq!(landed_on(&changes), "T1");
+        assert!(!changes.iter().any(|c| matches!(c, Change::ThreadAdded { .. })), "{changes:?}");
+        let changes = decide(&World::default(), &said, reply(json!({"action": "return", "thread_id": "T9"})), 0, false, true);
+        assert_eq!(landed_on(&changes), "T1");
+        assert!(changes.iter().any(|c| matches!(c, Change::ThreadAdded { thread } if thread.title == "and the paint should be")), "{changes:?}");
     }
 }
 

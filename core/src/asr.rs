@@ -31,10 +31,15 @@ fn refused(answer: &Value) -> String {
     format!("Voice Transcribe refused the session: {}", message.unwrap_or("it didn't start"))
 }
 
-pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
+pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
+    run_at(URL, core, speaker, audio).await
+}
+
+/// `run` against the service at `url` (a test's stand-in on this machine).
+async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
     let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
-    let (socket, _) = tokio::time::timeout(QUIET_MAX, tokio_tungstenite::connect_async(format!("{URL}?sessionId={session}")))
+    let (socket, _) = tokio::time::timeout(QUIET_MAX, tokio_tungstenite::connect_async(format!("{url}?sessionId={session}")))
         .await
         .map_err(|_| anyhow!("Voice Transcribe didn't answer"))?
         .context("couldn't reach Voice Transcribe")?;
@@ -250,8 +255,9 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
         return false;
     }
     let primer_turn = primer.turn.is_some() && turn == primer.turn;
-    // A new turn means the primer's is over, even if its end never came: later words are left as said.
-    if event["type"] == "speechStart" && !primer_turn {
+    // A new turn means the primer's is over, even if its end never came: later words are left as said. A later
+    // turn's end says so too, for a service that skipped that turn's start.
+    if !primer_turn && (event["type"] == "speechStart" || (event["type"] == "speechComplete" && turn.is_some())) {
         primer.open = false;
     }
     if primer.open && (event["type"] == "transcript" || primer_turn) {
@@ -320,6 +326,9 @@ mod tests {
     use crate::world::{Journal, World};
     use crate::Core;
     use std::sync::Arc;
+
+    mod session;
+    mod speech;
 
     /// A spoken "stop listening" pauses the window's mic and ends the stream (the caller stops reading it), so words
     /// the service still sends after it are never kept; a turn that only mentions it is a thought, and the stream goes on.

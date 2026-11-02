@@ -592,6 +592,8 @@ fn changes_on(world: &World, mut pass: Pass, today: &str) -> Vec<Change> {
         })
         .chain(world.suggestions.iter().map(|s| &s.id).chain(world.actions.iter().map(|a| &a.id)).filter(|id| withdrawn_by_ai(world, id)).cloned())
         .collect();
+    // One rename, or one question about one, per thread in a pass: a second would be asked right after the first's ×.
+    let mut retitled: HashSet<String> = HashSet::new();
     for t in pass.titles {
         // A new title is short and more than a change of case, and a name the person gave stays theirs
         // ("we're calling this Project Falcon"), unless they later gave it the proposed name.
@@ -604,15 +606,17 @@ fn changes_on(world: &World, mut pass: Pass, today: &str) -> Vec<Change> {
                 || last_named(&th.title).is_some_and(|old| !last_named(&t.title).is_some_and(|new| new > old))
         };
         // A title the person chose is theirs (tidy.rs).
-        if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) || world.titled.contains(&t.thread_id) {
+        if t.title.split_whitespace().count() > 5 || world.thread(&t.thread_id).is_some_and(keep) || world.titled.contains(&t.thread_id) || retitled.contains(&t.thread_id) {
             continue;
         }
         let current = world.thread(&t.thread_id).map(|th| th.title.as_str());
         let title = t.title.trim();
         if exists(&t.thread_id) && !title.is_empty() && current != Some(title) && !names_an_id(title) {
             if sure_title(world, &t.thread_id, title) {
+                retitled.insert(t.thread_id.clone());
                 out.push(Change::ThreadRetitled { thread_id: t.thread_id, title: title.into(), was: current.unwrap_or_default().into() });
             } else if !world.proposals.iter().any(|p| p.kind == Kind::Rename && p.thread_id == t.thread_id && (p.status == ItemStatus::New || words(&p.title) == words(title))) {
+                retitled.insert(t.thread_id.clone());
                 out.push(proposal(Kind::Rename, &t.thread_id, title, ""));
             }
         }
@@ -2295,6 +2299,204 @@ mod tests {
         assert!(replayed.restored.contains("ac-0a1b2c3d4e5f") && replayed.refined.is_empty());
     }
 
+    /// "Scratch that" (or Delete) on the words a withdrawal or correction came from, while the pass was out.
+    #[test]
+    fn words_taken_back_while_the_pass_was_out_withdraw_and_correct_nothing() {
+        // The pass read "Forget Lisbon…" and "Dev dropped out…"; both were taken back before it landed. The take-home's
+        // words still stand.
+        let sent = stale_map();
+        let mut now = sent.clone();
+        for said in ["Forget Lisbon", "Dev dropped out"] {
+            let id = now.thoughts.iter().find(|t| t.text.starts_with(said)).unwrap().id.clone();
+            now.apply(&Change::ThoughtSkipped { thought_id: id });
+        }
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}, {"id": "ac-1b2c3d", "why": "take-home sent"}],
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+        }))
+        .unwrap();
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let core = crate::Core::test(journal, now);
+        land(&core, pass, &sent, "test");
+        let after = core.snapshot();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(item(&after, "sg-2c3d4e5f6a7b").status, ItemStatus::New, "Lisbon is on again: its idea stays");
+        assert_eq!(item(&after, "sg-3d4e5f6a7b8c").text, "Plan a session with Maya and Dev", "Dev is in again");
+        assert_eq!(item(&after, "ac-1b2c3d4e5f6a").status, ItemStatus::Dismissed, "words still on the map still count");
+    }
+
+    /// One rename, or one question about one, per thread in a pass.
+    #[test]
+    fn a_pass_renames_or_asks_at_most_once_per_thread() {
+        let world = map(&[
+            ("T1", "Topic", &["Buy oat milk."]),
+            ("T2", "Quarterly taxes", &["I need to file the quarterly taxes by January fifteenth.", "And renew the car registration before the new year."]),
+        ]);
+        let pass = || -> Pass {
+            serde_json::from_value(serde_json::json!({ "titles": [
+                {"thread_id": "T1", "title": "Grocery list"},
+                {"thread_id": "T1", "title": "Shopping list"},
+                {"thread_id": "T2", "title": "Taxes and car registration"},
+                {"thread_id": "T2", "title": "Car registration and taxes"},
+                {"thread_id": "T2", "title": "Year-end admin tasks"},
+            ]}))
+            .unwrap()
+        };
+        assert_eq!(shown(&changes_on(&world, pass(), TODAY)), ["T1 proposes title Grocery list", "T2 title Taxes and car registration"]);
+        // × ("Keep the title") on the one asked leaves nothing else waiting on that card.
+        let mut after = world.clone();
+        changes_on(&world, pass(), TODAY).iter().for_each(|c| after.apply(c));
+        let asked = after.proposals.iter().find(|p| p.thread_id == "T1").unwrap().id.clone();
+        after.apply(&Change::ItemStatus { id: asked, status: ItemStatus::Dismissed, done_ms: None });
+        assert!(!after.proposals.iter().any(|p| p.thread_id == "T1" && p.status == ItemStatus::New), "asked again right after ×");
+    }
+
+    /// The note's Undo on a withdrawn or corrected item (`restore`), through a live core and its journal.
+    #[test]
+    fn the_notes_undo_puts_an_item_back_once_and_never_over_the_persons_own_call() {
+        let start = stale_map();
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let core = crate::Core::test(journal, start.clone());
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+        }))
+        .unwrap();
+        land(&core, pass, &start, "test");
+        // The person keeps the corrected idea, then presses the note's Undo: their call stands.
+        core.commit(vec![Change::ItemStatus { id: "sg-3d4e5f6a7b8c".into(), status: ItemStatus::Kept, done_ms: None }]);
+        super::restore(&core, "sg-3d4e5f6a7b8c");
+        let kept = item(&core.snapshot(), "sg-3d4e5f6a7b8c");
+        assert_eq!((kept.status, kept.text.as_str()), (ItemStatus::Kept, "Plan a session with Maya"));
+        // The withdrawn idea comes back, once; a second Undo, or one for an item never changed, writes nothing.
+        super::restore(&core, "sg-2c3d4e5f6a7b");
+        assert_eq!(item(&core.snapshot(), "sg-2c3d4e5f6a7b").status, ItemStatus::New);
+        let written = std::fs::read_to_string(&path).unwrap();
+        super::restore(&core, "sg-2c3d4e5f6a7b");
+        super::restore(&core, "ac-1b2c3d4e5f6a");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), written, "nothing more was written");
+        // Put back, it's the person's: a later pass can't withdraw it again.
+        let again: Pass = serde_json::from_value(serde_json::json!({ "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}] })).unwrap();
+        land(&core, again, &core.snapshot(), "test");
+        assert_eq!(item(&core.snapshot(), "sg-2c3d4e5f6a7b").status, ItemStatus::New);
+        // The journal rebuilds the same map, Undo state included.
+        let mut replayed = start;
+        for line in std::fs::read_to_string(&path).unwrap().lines() {
+            replayed.apply(&serde_json::from_str(line).unwrap());
+        }
+        let now = core.snapshot();
+        assert_eq!(serde_json::to_string(&replayed).unwrap(), serde_json::to_string(&*now).unwrap());
+        assert_eq!(replayed.restored, now.restored);
+        assert_eq!(replayed.refined.keys().collect::<Vec<_>>(), ["sg-3d4e5f6a7b8c"]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The person keeps an idea between the pass's check and its commit: it stays as they left it.
+    #[test]
+    fn an_idea_kept_as_the_pass_lands_stays_as_kept_and_the_rest_of_the_pass_lands() {
+        let start = stale_map();
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let core = crate::Core::test(journal, start.clone());
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+            "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
+        }))
+        .unwrap();
+        let kept = std::sync::atomic::AtomicBool::new(false);
+        land_racing(&core, pass, &start, "in a test", || {
+            if !kept.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                core.commit(vec![Change::ItemStatus { id: "sg-3d4e5f6a7b8c".into(), status: ItemStatus::Kept, done_ms: None }]);
+            }
+        });
+        let now = core.snapshot();
+        let maya = item(&now, "sg-3d4e5f6a7b8c");
+        assert_eq!((maya.status, maya.text.as_str()), (ItemStatus::Kept, "Plan a session with Maya and Dev"), "never reset to new");
+        assert_eq!(item(&now, "sg-2c3d4e5f6a7b").status, ItemStatus::Dismissed, "the rest of the pass still lands");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// When a pass goes (`due`): the README's cadence, and the demo's hands-up pause.
+    #[test]
+    fn a_pass_goes_at_a_pause_after_two_thoughts_or_a_new_thread_or_a_look_and_rests_between() {
+        // (new thoughts, a new thread, ms quiet, ms since the last pass, failed passes in a row, came back to the window)
+        let due = |n, thread, quiet, since_pass_ms, failures, looked| super::due(n, thread, quiet, since_pass_ms >= rest_ms(failures), looked);
+        // The video's hands-up pause: four thoughts since the catch's pass, then quiet.
+        assert!(due(2, false, 4_000, 10_000, 0, false) && due(4, true, 6_000, 40_000, 0, false));
+        // One thought that started a thread is enough; one more on an old thread waits for a second, a look, or a
+        // longer pause (`LONE_QUIET_MS`).
+        assert!(due(1, true, 4_000, 10_000, 0, false));
+        assert!(!due(1, false, 7_999, 60_000, 0, false) && due(1, false, 8_000, 60_000, 0, false));
+        // Never mid-sentence: under 4 s of quiet nothing goes, however much is new (unless you just came back, below).
+        assert!(!due(9, true, 3_999, 60_000, 0, false));
+        // Back at the window: at once.
+        assert!(due(1, false, 0, 10_000, 0, true));
+        // Nothing new placed: nothing to tidy.
+        assert!(!due(0, true, 60_000, 60_000, 0, true));
+        // At least 10 s apart, doubling after each failed pass (20 s, 40 s, … ≈ 5 min at most).
+        assert!(!due(2, false, 4_000, 9_999, 0, true));
+        assert!(!due(2, false, 4_000, 19_999, 1, false) && due(2, false, 4_000, 20_000, 1, false));
+        assert!(!due(2, false, 4_000, 319_999, 9, false) && due(2, false, 4_000, 320_000, 9, false));
+    }
+
+    /// The video's rent line on the days it is recorded: a Friday reminder, never a past or wrong day.
+    #[test]
+    fn the_demos_rent_line_proposes_a_friday_reminder_on_each_recording_day() {
+        for today in ["2026-11-02 (Monday)", "2026-11-03 (Tuesday)", "2026-11-04 (Wednesday)"] {
+            let mut world = map(&[("T2", "Rent", &["Oh, and rent is due Friday and I still haven't sent it."])]);
+            world.thoughts[0].at_ms = crate::clock::ms(&format!("{} 10:00", &today[..10])).unwrap();
+            let pass = |when: &str| serde_json::from_value::<Pass>(serde_json::json!({ "actions": [
+                {"thread_id": "T2", "kind": "reminder", "title": "Send rent", "when": when}
+            ]})).unwrap();
+            // Right; the year slipped; a Saturday; no day.
+            for (when, kept) in [("2026-11-06", "2026-11-06"), ("2025-11-06", "2026-11-06"), ("2026-11-07", ""), ("", "")] {
+                assert_eq!(shown(&changes_on(&world, pass(when), today)), [format!("T2 reminder Send rent {kept}")], "{today}: {when:?}");
+            }
+        }
+    }
+
+    /// Taken back after its thread merged while the pass was out.
+    #[test]
+    fn words_taken_back_after_their_thread_merged_still_leave_nothing_from_the_pass() {
+        let sent = map(&[
+            ("T1", "Rent", &["Pay rent on Friday."]),
+            ("T2", "Lease", &["Ask Sam to cancel the lease."]),
+            ("T3", "Groceries", &["Buy oat milk."]),
+        ]);
+        let mut now = sent.clone();
+        now.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        let lease = now.thoughts.iter().find(|t| t.text.starts_with("Ask Sam")).unwrap().id.clone();
+        now.apply(&Change::ThoughtSkipped { thought_id: lease });
+        let mut pass: Pass = serde_json::from_value(serde_json::json!({
+            "suggestions": [{"thread_id": "T1", "text": "Email Sam about the lease"}, {"thread_id": "T3", "text": "Check the pantry first"}],
+            "actions": [{"thread_id": "T2", "kind": "reminder", "title": "Ask Sam to cancel the lease", "when": ""}],
+            "tags": [{"thread_id": "T1", "tags": ["#home"]}],
+        }))
+        .unwrap();
+        drop_taken_back(&mut pass, &sent, &now);
+        assert_eq!(shown(&changes_on(&now, pass, TODAY)), ["T3 idea Check the pantry first"]);
+    }
+
+    /// Two open items that share a short id ("then neither is changed", `short`).
+    #[test]
+    fn two_items_that_share_a_short_id_are_both_left_alone() {
+        let mut world = stale_map();
+        world.suggestions.push(Suggestion { id: "sg-2c3d4e999999".into(), thread_id: "T4".into(), text: "Book a study room".into(), status: ItemStatus::New });
+        let pass = |id: &str| serde_json::from_value::<Pass>(serde_json::json!({ "retire": [{"id": id, "why": "conference cancelled"}] })).unwrap();
+        assert!(changes_on(&world, pass("sg-2c3d4e"), TODAY).is_empty(), "which one is meant can't be told");
+        let out = changes_on(&world, pass("sg-2c3d4e5f6a7b"), TODAY);
+        assert!(matches!(out.as_slice(), [Change::ItemRefined { id, .. }] if id == "sg-2c3d4e5f6a7b"), "the full id still names one: {out:?}");
+    }
+
+    /// A corrupt journal's branch cycle ends the walk up (`above`).
+    #[test]
+    fn a_branch_cycle_ends_the_walk_up_instead_of_looping() {
+        let world = World { threads: vec![thread("T1", Some("T2")), thread("T2", Some("T1")), thread("T3", None)], ..World::default() };
+        assert!(super::above(&world, "T2", "T1") && super::above(&world, "T1", "T2"));
+        assert!(!super::above(&world, "T3", "T1"));
+    }
 }
 
 /// Live checks against the real model (ignored unless asked for; see the file).

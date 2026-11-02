@@ -191,6 +191,10 @@ pub struct World {
     /// Ideas and tasks the person put back after the refiner changed them: theirs now, never changed by it again.
     #[serde(default, skip_serializing)]
     pub restored: std::collections::HashSet<String>,
+    /// The rest of each turn the placer cut in two → the part it was cut from (`ThoughtSplit`): which words were one
+    /// turn, never guessed from a shared time (two turns flushed together on a reconnect can share a millisecond).
+    #[serde(default, skip_serializing)]
+    pub split_from: std::collections::HashMap<String, String>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -226,6 +230,9 @@ pub enum Change {
         decided: bool,
     },
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
+    /// A card's last point said again after its points changed (a delete, a move, their Undo): unlike `ThreadTouched`,
+    /// it neither reopens nor touches the thread, so a thread left unfinished stays so, and Undo is one step back.
+    LastPoint { thread_id: String, last_point: String },
     /// `speaker`: whose move it was; a thread is dropped for the person who left it.
     ThreadStatus {
         thread_id: String,
@@ -406,6 +413,7 @@ impl World {
                 if !self.thoughts.iter().any(|t| t.id == rest.id) {
                     self.thoughts.insert(i + 1, rest.clone());
                 }
+                self.split_from.insert(rest.id.clone(), thought_id.clone());
             }
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
             // as it was (chunks.rs); a note for a thought off the map shows nothing.
@@ -487,6 +495,11 @@ impl World {
                     th.touched_ms = *at_ms;
                     th.status = ThreadStatus::Open;
                     th.dropped_by.clear();
+                }
+            }
+            Change::LastPoint { thread_id, last_point } => {
+                if let Some(th) = self.thread_mut(thread_id) {
+                    th.last_point = last_point.clone();
                 }
             }
             Change::ThreadStatus { thread_id, status, speaker } => {
@@ -700,6 +713,7 @@ impl World {
         let id = match change {
             Change::ThoughtPlaced { thread_id, .. }
             | Change::ThreadTouched { thread_id, .. }
+            | Change::LastPoint { thread_id, .. }
             | Change::ThreadStatus { thread_id, .. }
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
@@ -726,6 +740,7 @@ impl World {
         match &mut c {
             Change::ThoughtPlaced { thread_id, .. }
             | Change::ThreadTouched { thread_id, .. }
+            | Change::LastPoint { thread_id, .. }
             | Change::ThreadStatus { thread_id, .. }
             | Change::ActiveChanged { thread_id, .. }
             | Change::ThreadRenamed { thread_id, .. }
@@ -749,6 +764,27 @@ impl World {
     }
 
     /// Where a speaker is: their own active thread, else where the talk is now (they just joined).
+    /// Every part of the turn `id` belongs to, cut by the placer however many times, itself included.
+    pub fn turn_parts(&self, id: &str) -> Vec<String> {
+        let first = |id: &str| {
+            let mut at = id.to_string();
+            // Each rest names the part before it; the bound only guards a malformed journal.
+            for _ in 0..=self.split_from.len() {
+                match self.split_from.get(&at) {
+                    Some(up) => at = up.clone(),
+                    None => break,
+                }
+            }
+            at
+        };
+        let head = first(id);
+        let mut parts: Vec<String> = self.thoughts.iter().filter(|t| first(&t.id) == head).map(|t| t.id.clone()).collect();
+        if !parts.iter().any(|p| p == id) {
+            parts.push(id.to_string());
+        }
+        parts
+    }
+
     pub fn active_for(&self, speaker: &str) -> Option<&String> {
         self.active_by.get(speaker).or(self.active.as_ref())
     }
@@ -1269,6 +1305,8 @@ mod tests {
             Change::ThoughtAdded { thought: test_thought("a", "Ana", "T1") },
             placed("a", "T1", "", "", false),
             Change::ThreadTouched { thread_id: "T1".into(), last_point: "Ask Muse Spark about a".into(), at_ms: 10 },
+            // Another point than the one just touched, so a window that skips this kind is caught at this step.
+            Change::LastPoint { thread_id: "T1".into(), last_point: "Muse Spark, about a".into() },
             Change::ActiveChanged { thread_id: "T1".into(), speaker: "Ana".into() },
             Change::ThoughtAdded { thought: test_thought("b", "Sam", "T1") },
             placed("b", "T3", "muse bark", "Muse Spark", true),
@@ -1400,6 +1438,7 @@ mod tests {
                 | Change::ThreadAdded { .. }
                 | Change::ThoughtPlaced { .. }
                 | Change::ThreadTouched { .. }
+                | Change::LastPoint { .. }
                 | Change::ThreadStatus { .. }
                 | Change::ActiveChanged { .. }
                 | Change::ThreadRenamed { .. }
@@ -1440,12 +1479,29 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 41, "one of each kind of change");
+        assert_eq!(kinds.len(), 42, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
             assert_eq!(json, serde_json::to_string(&back).unwrap(), "a field was lost");
         }
+    }
+
+    /// Every kind of change and the map it makes, for the window's own `apply` to replay (scripts/world-mirror-check.mjs
+    /// sets E2A2O_FIXTURE_DIR); without it, nothing to write.
+    #[test]
+    fn every_change_mirror_fixture() {
+        let Ok(dir) = std::env::var("E2A2O_FIXTURE_DIR") else { return };
+        let changes = every_change();
+        // The map after every change, not only the last: a kind whose effect a later change covers is still checked.
+        let mut world = World::default();
+        let mut worlds = Vec::new();
+        for change in &changes {
+            world.apply(change);
+            worlds.push(serde_json::to_value(&world).unwrap());
+        }
+        let fixture = serde_json::json!({ "changes": changes, "world": world, "worlds": worlds });
+        std::fs::write(std::path::Path::new(&dir).join("every.json"), serde_json::to_string(&fixture).unwrap()).unwrap();
     }
 
     #[test]

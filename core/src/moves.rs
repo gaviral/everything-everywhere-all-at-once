@@ -53,7 +53,8 @@ pub enum To {
 /// How a move is taken back: these thoughts go from `to` back to `from` (only those still where the move put them),
 /// with the notes the move cleared; `from`, if the move left it empty and it went into `to` (`emptied`), comes back
 /// first; `started`, a thread the move made, leaves the map once empty; the cards that went with them (`cards`) go
-/// back too; and the speaker, if the move took them along (`back`), goes back too.
+/// back too, but never one already waiting where they went (`stayed`); and the speaker, if the move took them along
+/// (`back`), goes back too.
 #[derive(Clone, Debug)]
 pub struct Unmove {
     pub thoughts: Vec<String>,
@@ -63,6 +64,7 @@ pub struct Unmove {
     pub emptied: bool,
     pub started: Option<String>,
     pub cards: Vec<String>,
+    pub stayed: Vec<String>,
     pub back: Option<String>,
 }
 
@@ -489,7 +491,7 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     // back where it stood in the list.
     let emptied = !world.thoughts.iter().any(|t| t.placed && on(&world, t, &from) && !ids.contains(&t.id))
         && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(from.as_str()));
-    changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now).into_iter().filter(|c| !emptied || !matches!(c, Change::ThreadTouched { thread_id, .. } if *thread_id == from)));
+    changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now).into_iter().filter(|c| !emptied || !matches!(c, Change::ThreadTouched { thread_id, .. } | Change::LastPoint { thread_id, .. } if *thread_id == from)));
     // Their newest words on the thread they're on: "that" there, said last of what they said on it.
     let latest = newest(&world, now, |t| t.speaker == speaker && on(&world, t, &from)).is_some_and(|t| ids.contains(&t.id));
     let back = (latest && world.active_for(speaker).map(|id| world.resolve(id)).as_deref() == Some(from.as_str())).then(|| from.clone());
@@ -505,6 +507,12 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
         Change::ItemMoved { id, .. } => Some(id.clone()),
         _ => None,
     }).collect();
+    // The cards already waiting where they go: an Undo, reading the words again, leaves these where they were.
+    let target_id = world.resolve(&target);
+    let waiting_there = |at: &str, status: ItemStatus| status == ItemStatus::New && world.resolve(at) == target_id;
+    let stayed: Vec<String> = world.suggestions.iter().filter(|s| waiting_there(&s.thread_id, s.status)).map(|s| s.id.clone())
+        .chain(world.actions.iter().filter(|a| waiting_there(&a.thread_id, a.status)).map(|a| a.id.clone()))
+        .collect();
     let cards = cards(carried.len());
     changes.extend(carried);
     if emptied {
@@ -515,7 +523,7 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     drop(world);
     core.commit(changes);
     notice(core, speaker, if started.is_some() { format!("Moved “{what}”{cards} to a new thread: {title}") } else { format!("Moved “{what}”{cards} to {title}") });
-    Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, cards: moved_cards, back })))
+    Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, cards: moved_cards, stayed, back })))
 }
 
 /// The waiting cards on `from` made from thoughts `ids` alone (catalog.rs `made_from`), moved to `to` with them.
@@ -552,14 +560,20 @@ fn last_points(world: &World, ids: &[String], from: &str, to: &str, new: bool, n
     if let Some(thread) = world.thread(from) {
         if world.thoughts.iter().any(|t| moving(t) && !t.point.is_empty() && t.point == thread.last_point) {
             let point = newest(world, now, |t| on(t, from) && !moving(t)).map(|t| t.point.clone()).unwrap_or_default();
-            out.push(Change::ThreadTouched { thread_id: from.into(), last_point: point, at_ms: thread.touched_ms });
+            // A move isn't talk: the card's copy of its point changes, and an unfinished thread stays unfinished.
+            out.push(Change::LastPoint { thread_id: from.into(), last_point: point });
         }
     }
     let theirs = newest(world, now, moving);
     let own = newest(world, now, |t| on(t, to) && !moving(t));
-    if let Some(moved) = theirs.filter(|m| own.is_none_or(|o| m.said_at(now) >= o.said_at(now))) {
-        let touched = if new { now } else { world.thread(to).map_or(now, |t| t.touched_ms) };
-        out.push(Change::ThreadTouched { thread_id: to.into(), last_point: moved.point.clone(), at_ms: touched });
+    // Newest as `newest` reads it: by when it was said, then by place in the list (a sample dated ahead counts all as 0).
+    let at = |t: &Thought| (t.said_at(now), world.thoughts.iter().position(|x| x.id == t.id));
+    if let Some(moved) = theirs.filter(|m| own.is_none_or(|o| at(m) > at(o))) {
+        out.push(if new {
+            Change::ThreadTouched { thread_id: to.into(), last_point: moved.point.clone(), at_ms: now }
+        } else {
+            Change::LastPoint { thread_id: to.into(), last_point: moved.point.clone() }
+        });
     }
     out
 }
@@ -605,10 +619,10 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
             && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(id.as_str()))
     });
     let now = now_ms();
-    changes.extend(last_points(&world, &ids, &on, &back, false, now).into_iter().filter(|c| !matches!(c, Change::ThreadTouched { thread_id, .. } if Some(thread_id) == emptied.as_ref())));
+    changes.extend(last_points(&world, &ids, &on, &back, false, now).into_iter().filter(|c| !matches!(c, Change::ThreadTouched { thread_id, .. } | Change::LastPoint { thread_id, .. } if Some(thread_id) == emptied.as_ref())));
     // The cards that went with them come back too, by id: read again from the words, a card sharing a word with the
     // title a new thread took from them would stay and leave with that thread. Any made from them alone where they
-    // were put comes along.
+    // were put comes along, but none already waiting there before the move (`stayed`).
     let carried = if world.thread(&back).is_some() && !ids.is_empty() {
         let waiting = |at: &str, status: ItemStatus| status == ItemStatus::New && world.resolve(at) == on;
         let mut cards: Vec<String> = world.suggestions.iter().filter(|s| u.cards.contains(&s.id) && waiting(&s.thread_id, s.status)).map(|s| s.id.clone())
@@ -616,7 +630,7 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
             .collect();
         for change in carry(&world, &ids, &on, &back) {
             if let Change::ItemMoved { id, .. } = change {
-                if !cards.contains(&id) {
+                if !cards.contains(&id) && !u.stayed.contains(&id) {
                     cards.push(id);
                 }
             }

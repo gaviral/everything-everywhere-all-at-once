@@ -448,4 +448,75 @@ mod tests {
         assert_eq!(replayed.titled, core.snapshot().titled);
         std::fs::remove_file(&path).unwrap();
     }
+
+    /// The card's × through `decide`, as the window sends it; a second click on an answered card.
+    #[test]
+    fn the_cards_x_keeps_things_as_they_are_and_a_second_click_does_nothing() {
+        let mut world = map();
+        let proposal = |id: &str, kind, on: &str, title: &str, into: &str| Change::TidyProposed {
+            proposal: Proposal { id: id.into(), kind, thread_id: on.into(), title: title.into(), into: into.into(), status: ItemStatus::New },
+        };
+        world.apply(&proposal("p1", Kind::Rename, "T4", "Groceries", ""));
+        world.apply(&proposal("p2", Kind::Merge, "T2", "", "T1"));
+        let start = world.clone();
+        let (core, path) = core(world);
+        super::decide(&core, "you", "p1", false);
+        super::decide(&core, "you", "p2", false);
+        super::decide(&core, "you", "p2", true);
+        let now = core.snapshot();
+        assert_eq!(shape(&now), shape(&start), "nothing renamed or merged");
+        assert_eq!(now.proposals.iter().map(|p| p.status).collect::<Vec<_>>(), [ItemStatus::Dismissed, ItemStatus::Dismissed]);
+        assert!(now.titled.contains("T4") && !now.titled.contains("T2"), "a rename turned down makes the title theirs; a merge doesn't");
+        let lines: Vec<String> = std::fs::read_to_string(&path).unwrap().lines().map(String::from).collect();
+        assert_eq!(lines.len(), 2, "one line per answer: {lines:?}");
+        let mut replayed = start;
+        for line in &lines {
+            replayed.apply(&serde_json::from_str(line).unwrap());
+        }
+        assert_eq!((shape(&replayed), &replayed.titled), (shape(&now), &now.titled));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// An AI rename's Undo after the person renamed the thread: says why, writes nothing.
+    #[test]
+    fn an_ai_rename_undo_after_the_person_renamed_it_says_why_and_changes_nothing() {
+        let mut world = map();
+        world.apply(&Change::ThreadRetitled { thread_id: "T1".into(), title: "Rent".into(), was: "Topic T1".into() });
+        world.apply(&Change::TitleChosen { thread_id: "T1".into(), title: "Pay rent".into() });
+        let (core, path) = core(world);
+        let mut told = core.updates.subscribe();
+        super::undo(&core, "you", Kind::Rename, "T1");
+        assert_eq!(core.snapshot().thread("T1").unwrap().title, "Pay rent");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "", "nothing was written");
+        let said: Vec<String> = std::iter::from_fn(|| told.try_recv().ok()).map(|o| serde_json::to_string(&o.message).unwrap()).collect();
+        assert!(said.iter().any(|m| m.contains("can't be undone any more")), "{said:?}");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A merge undone after the thread it went into merged on: its points come back from where they went.
+    #[test]
+    fn a_merge_undone_after_the_thread_it_went_into_merged_on_comes_back_whole() {
+        let before = map();
+        let mut chained = before.clone();
+        // T2 into T1, then T1 into T4: what T2 held is on T4 now.
+        chained.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+        chained.apply(&Change::ThreadMerged { from: "T1".into(), into: "T4".into() });
+        {
+            let (core, path) = core(chained.clone());
+            super::undo(&core, "you", Kind::Merge, "T2");
+            let now = core.snapshot();
+            let on = |id: &str| now.thoughts.iter().find(|t| t.id == id).unwrap().thread_id.clone().unwrap();
+            assert_eq!([on("b"), on("c"), on("a")], ["T2", "T2", "T4"], "T2's points back; T1's stay where T1 went");
+            assert_eq!(now.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "its branch");
+            assert_eq!((now.suggestions[0].thread_id.as_str(), now.actions[0].thread_id.as_str()), ("T2", "T2"));
+            assert_eq!((now.active.as_deref(), now.active_by.get("Sam").map(String::as_str)), (Some("T2"), Some("T2")));
+            std::fs::remove_file(&path).unwrap();
+        }
+        // Newest first, as the window's notes allow: the map is exactly as it was.
+        let (core, path) = core(chained);
+        super::undo(&core, "you", Kind::Merge, "T1");
+        super::undo(&core, "you", Kind::Merge, "T2");
+        assert_eq!(shape(&core.snapshot()), shape(&before));
+        std::fs::remove_file(&path).unwrap();
+    }
 }

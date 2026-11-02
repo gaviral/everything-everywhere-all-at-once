@@ -101,7 +101,9 @@ try {
   const due = { ...world, actions: [{ ...world.actions[0], kind: "event", title: "Midterm", when: "2026-11-10" }] };
   const moved = { type: "item_refined", id: "ac", was: state("new", "Midterm", "2026-11-10"), now: state("new", "Midterm", "2026-11-11"), why: "midterm is Wednesday" };
   const movedNote = tidyNote(due, moved);
-  assert.equal(movedNote.text, "AI moved “Midterm” to Wed, Nov 11: midterm is Wednesday");
+  // The day in this machine's own words, as the row writes it ("Wed, Nov 11" in the US, "Wed 11 Nov" in the UK).
+  const wed = new Date(2026, 10, 11, 9).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  assert.equal(movedNote.text, `AI moved “Midterm” to ${wed}: midterm is Wednesday`);
   assert.deepEqual([movedNote.ai, movedNote.restore, movedNote.undo], [true, ["ac"], undefined]);
   const after = apply(due, moved);
   assert.deepEqual([after.actions[0].when, after.actions[0].status, after.actions.length], ["2026-11-11", "new", 1]);
@@ -109,11 +111,11 @@ try {
   const dropped = { type: "item_refined", id: "sg", was: state("new", "idea"), now: state("dismissed", "idea"), why: "trip cancelled" };
   assert.equal(apply(world, dropped).suggestions[0].status, "dismissed");
   const both = joinNotes(movedNote, tidyNote(world, dropped));
-  assert.equal(both.text, "AI moved “Midterm” to Wed, Nov 11 and took back “idea”");
+  assert.equal(both.text, `AI moved “Midterm” to ${wed} and took back “idea”`);
   assert.deepEqual(both.restore, ["ac", "sg"]);
   const withRename = joinNotes(both, note("T1", "Topic T1", "Rent"));
   assert.deepEqual([withRename.restore.length, withRename.undo.length], [2, 1], "a rename in the same pass keeps every Undo");
-  assert.equal(withRename.text, "AI renamed “Topic T1” to “Rent” · AI moved “Midterm” to Wed, Nov 11 and took back “idea”");
+  assert.equal(withRename.text, `AI renamed “Topic T1” to “Rent” · AI moved “Midterm” to ${wed} and took back “idea”`);
   assert.deepEqual(apply(after, { type: "item_restored", id: "ac", to: moved.was }).actions[0], due.actions[0]);
 
   // The map shows them, the note offers Undo, and every tip fits.

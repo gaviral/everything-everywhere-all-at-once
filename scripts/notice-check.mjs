@@ -30,6 +30,9 @@ const React = (await import(new URL("node_modules/react/index.js", ui))).default
 const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
 const app0 = () => readFileSync(new URL("src/App.tsx", ui), "utf8");
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+// Waits for what a message leads to, up to 3 s: on a machine busy with builds, 20 ms was sometimes too short for React
+// to render and run the window's effect (5 runs in 20 at load average 76, 2026-11-02).
+const until = async (done) => { for (let waited = 0; !done() && waited < 3000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10)); };
 
 const server = await uiServer();
 try {
@@ -130,7 +133,7 @@ try {
   await settle();
   assert.equal(core.listenedRevision, listened);
   say({ type: "status", listening: true, note: "Listening" });
-  await settle();
+  await until(() => core.listenedRevision === listened + 1);
   assert.equal(core.listenedRevision, listened + 1);
   const appSource = readFileSync(new URL("src/App.tsx", ui), "utf8");
   assert.match(appSource, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
@@ -163,17 +166,17 @@ try {
 
   // The words of a voice error stay readable for the window's "The mic stopped" notice.
   say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
-  await settle();
+  await until(() => core.voiceError !== "");
   assert.equal(core.voiceError, "Speech service error: Voice Transcribe stopped answering");
   assert.equal(core.notice, "", "a voice error isn't shown raw");
 
   // A notice made in the window is a newer answer: it clears the Undo an earlier one offered.
   say({ type: "notice", message: "Expanded everything." });
   say({ type: "undoable", id: 1 });
-  await settle();
+  await until(() => core.undoId === 1);
   assert.equal(core.undoId, 1);
   core.showNotice("Sound isn't available in this browser right now.");
-  await settle();
+  await until(() => core.undoId === null);
   assert.equal(core.undoId, null);
 
   // Words heard after an Undo was offered: the core now remembers those (each turn's `correctable`, catalog.rs
@@ -182,19 +185,19 @@ try {
   say({ type: "notice", message: "Moved “rent” to Pottery Class Budget" });
   say({ type: "correctable", for_ms: 8000, back_to: null });
   say({ type: "undoable", id: 2 });
-  await settle();
+  await until(() => core.undoId === 2);
   assert.equal(core.undoId, 2, "a turn's own correctable comes before its Undo: that Undo stays");
   say({ type: "correctable", for_ms: 8000, back_to: null });
-  await settle();
+  await until(() => core.undoId === null);
   assert.equal(core.undoId, null, "a newer turn: the Undo the core can no longer honor goes");
 
   // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review).
   const before = core.answerRevision;
   say({ type: "view", view: "pause" });
-  await settle();
+  await until(() => core.notice === "The mic is already off.");
   assert.equal(core.notice, "The mic is already off.");
   say({ type: "view", view: "pause" });
-  await settle();
+  await until(() => core.answerRevision === before + 2);
   assert.equal(core.notice, "The mic is already off.");
   assert.equal(core.answerRevision, before + 2);
   const app = readFileSync(new URL("src/App.tsx", ui), "utf8");
@@ -220,18 +223,36 @@ try {
   say({ type: "view", view: "pause" });
   say({ type: "notice", message: "Did “stop listening” instead. Your earlier words are off the map." });
   say({ type: "undoable", id: 7 });
-  await settle();
+  await until(() => core.undoId === 7);
+  await settle(); // the window's own answer had its chance to (wrongly) replace the correction
   assert.equal(core.notice, "Did “stop listening” instead. Your earlier words are off the map.");
   assert.equal(core.undoId, 7);
   // Rendered one at a time, the window answers first and the correction replaces it, with its Undo.
   say({ type: "view", view: "pause" });
-  await settle();
+  await until(() => core.notice === "The mic is already off.");
   assert.equal(core.notice, "The mic is already off.");
   say({ type: "notice", message: "Did “stop listening” instead." });
   say({ type: "undoable", id: 8 });
-  await settle();
+  await until(() => core.undoId === 8);
   assert.equal(core.notice, "Did “stop listening” instead.");
   assert.equal(core.undoId, 8);
+  // The core takes back only the turn an Undo was shown for (catalog.rs `undo_click`): any newer turn says so with its
+  // `correctable` (a thought kept says nothing else), so the button goes; a request's own Undo comes right after it.
+  say({ type: "notice", message: "Deleted “Buy stakes”" });
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  say({ type: "undoable", id: 9 });
+  await settle();
+  assert.equal(core.undoId, 9, "a request's own Undo shows");
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  await settle();
+  assert.equal(core.undoId, null, "a newer turn takes down the Undo it can no longer use");
+  // A new connection (maybe to a restarted core, whose Undo ids start again at 1) takes down an Undo from before it.
+  say({ type: "notice", message: "Moved “Buy stakes” to Garden" });
+  say({ type: "undoable", id: 1 });
+  await settle();
+  say({ type: "snapshot", world: { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false, recaps: [] } });
+  await settle();
+  assert.equal(core.undoId, null, "a snapshot takes down an Undo from before it");
   // ⌘Z (or Ctrl+Z) asks the core for "undo that": the last turn, whether or not the notice is still up.
   core.undoLast();
   assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
