@@ -90,8 +90,9 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
   const dialog = useRef<HTMLDialogElement>(null);
   // Recaps marked off in this window, by period and when each was made.
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
-  // The wait named: the model the core is asking for this recap, from its own call (model-line.ts).
-  const reading = runningModel(useSteps().state, "recap");
+  // The wait named: the model the core is asking for this recap, from its own call (model-line.ts); a draft being made
+  // when asked is waited for and answers it (recap.rs).
+  const reading = runningModel(useSteps().state, "recap", "recap draft");
   const open = !!view;
   useEffect(() => {
     if (!open) return;

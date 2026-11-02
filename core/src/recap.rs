@@ -382,8 +382,15 @@ async fn generate(core: &Core, source: &Source, quiet: bool) -> anyhow::Result<A
     // One call, no automatic retries. A failure leaves the last saved recap intact.
     let body = model_body(source)?;
     let patience = Duration::from_secs(40);
-    let value = if quiet { core.call_model_quietly(URL, &body, patience).await? } else { core.call_model(URL, &body, patience).await? };
+    let value = if quiet { core.call_model_quietly(URL, &body, patience, noting(quiet)).await? } else { core.call_model(URL, &body, patience).await? };
     read_answer(value)
+}
+
+/// The step a recap call is for, on the model line and the trace: a draft nobody asked for is "recap draft", which runs
+/// behind (ui/src/model-line.ts), so it never says "reading your day" ≈ 0.5 s after each landing; one asked for is
+/// "recap" (from its prompt cache key).
+fn noting(quiet: bool) -> serde_json::Value {
+    if quiet { json!({"feature": "recap draft"}) } else { serde_json::Value::Null }
 }
 
 fn model_body(source: &Source) -> anyhow::Result<serde_json::Value> {
@@ -898,6 +905,15 @@ mod tests {
             assert_eq!(recap.unwrap().thought_count, 0);
         }
         assert_eq!(std::fs::read_to_string(&fixture.path).unwrap().lines().count(), 1);
+    }
+
+    /// A draft is its own step, "recap draft", so the model line keeps it behind; the recap asked for stays "recap".
+    #[test]
+    fn a_draft_is_told_as_its_own_step_and_an_asked_recap_as_recap() {
+        let now = crate::now_ms();
+        let body = model_body(&slice(&sample(now), Period::Today, now)).unwrap();
+        assert_eq!(crate::trace::feature(&body, &noting(true)), "recap draft");
+        assert_eq!(crate::trace::feature(&body, &noting(false)), "recap");
     }
 
     /// The draft kept in the background (`keep`): made when a bare "Recap" would say something new, never while a

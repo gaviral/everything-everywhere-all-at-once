@@ -86,6 +86,34 @@ try {
   state = stepped(stepped(EMPTY_LINE, failed, 0), end(failed, 40000, false), 40000);
   assert.deepEqual([lineFor(state, 40000, false).model, lineFor(state, 40000, false).text], ["Muse Image 1.0", "didn't answer"]);
 
+  // A placement races 2 calls (placer.rs): the slower one, cut off once the first answers, is dropped, not failed. The
+  // line says the winner answered, with its time, for the whole hold (take cleanup1: 9 of 9 said "didn't answer").
+  const lane0 = start("placer", "muse-spark-1.2"), lane1 = start("placer", "muse-spark-1.2");
+  state = stepped(stepped(EMPTY_LINE, lane0, 0), lane1, 0);
+  state = stepped(state, end(lane0, 2000), 2000);
+  state = stepped(state, { ...end(lane1, 2001, false), dropped: true }, 2001);
+  assert.deepEqual(state.running, [], "the dropped lane no longer runs");
+  for (const at of [2001, 2000 + HOLD_MS - 1]) {
+    assert.deepEqual([lineFor(state, at, false).model, lineFor(state, at, false).text], ["Muse Spark 1.2", "answered · 2.0 s"],
+      "a race's loser never reads as the model failing");
+  }
+  // A dropped call with nothing else showing says nothing, not "didn't answer" (Search-first past its patience).
+  const gaveUp = start("app search", "muse-spark-1.3");
+  assert.equal(lineFor(stepped(stepped(EMPTY_LINE, gaveUp, 0), { ...end(gaveUp, 4000, false), dropped: true }, 4000), 4000, false), null);
+
+  // A Recap draft nobody asked for (recap.rs, ≈ 0.5 s after each landing) runs behind: never "reading your day", never
+  // over the placing time it follows; the Recap you ask for is still a step you wait on.
+  const placed = start("placer", "muse-spark-1.2");
+  state = stepped(EMPTY_LINE, placed, 0);
+  state = stepped(state, end(placed, 2300), 2300);
+  const draft = start("recap draft", "muse-spark-1.3");
+  state = stepped(state, draft, 2800);
+  assert.equal(lineFor(state, 2800, false).text, "answered · 2.3 s", "a draft starting never covers the placing time");
+  state = stepped(state, end(draft, 1800), 4600);
+  assert.equal(lineFor(state, 2300 + HOLD_MS - 1, false).text, "answered · 2.3 s", "nor does it finishing");
+  assert.equal(lineFor(stepped(EMPTY_LINE, draft, 0), 0, false).text, "keeping your recap ready");
+  assert.equal(lineFor(stepped(stepped(EMPTY_LINE, draft, 0), start("recap", "muse-spark-1.3"), 10), 10, false).text, "reading your day");
+
   // Rules: no model named, and said so.
   for (const step of ["back", "tune"]) {
     const rule = { type: "step", id: ++id, step, model: null, done: true, ok: true, ms: 0 };
@@ -98,6 +126,9 @@ try {
   state = stepped(EMPTY_LINE, start("recap", "muse-spark-1.3"), 0);
   assert.equal(runningModel(state, "recap"), "Muse Spark 1.3");
   assert.equal(runningModel(state, "placer"), null);
+  // Asked while a draft is being made: the core waits for that draft and answers with it, so the wait names its model.
+  state = stepped(EMPTY_LINE, start("recap draft", "muse-spark-1.3"), 0);
+  assert.equal(runningModel(state, "recap", "recap draft"), "Muse Spark 1.3");
 
   // Screen readers: each model once per kind of step.
   const said = new Set();
@@ -110,7 +141,7 @@ try {
   const src = (f) => readFileSync(new URL(`../ui/src/${f}`, import.meta.url), "utf8");
   assert.match(src("core.ts"), /if \(receiveStep\(msg\)\) return;/);
   assert.match(src("App.tsx"), /<form className="composer"[\s\S]*<ModelLine [\s\S]*<MicButton/);
-  assert.match(src("Recap.tsx"), /runningModel\(useSteps\(\)\.state, "recap"\)/);
+  assert.match(src("Recap.tsx"), /runningModel\(useSteps\(\)\.state, "recap", "recap draft"\)/);
   // And the core tells every model call from the one place they all pass (core/src/model.rs).
   const model = readFileSync(new URL("../core/src/model.rs", import.meta.url), "utf8");
   assert.equal((model.match(/self\.step_began\(/g) ?? []).length, 3, "call_model_noting, ask_model and its stand-in");
