@@ -8,7 +8,8 @@
   border-radius: 6px;
   transition: background-color 1s ease-out, box-shadow 1s ease-out;
 }
-:is(.points li, .thread-head, .ai, .action)[data-look="on"] {
+/* It also wins over a point's hover tint (legible.css), so a pointer resting on the landing doesn't thin the wash. */
+:is(.points li, .thread-head, .ai, .action)[data-look="on"], .points li.has-said[data-look="on"]:hover {
   background-color: var(--accent-soft);
   box-shadow: 0 0 0 4px var(--accent-soft);
   transition: none;

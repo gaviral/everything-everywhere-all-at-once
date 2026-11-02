@@ -21,6 +21,10 @@ import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
+import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { composerHint, MicButton, micState } from "./MicButton";
+import { Symbols } from "./Symbols";
+import { Tips, TIPS } from "./Tips";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -379,6 +383,10 @@ export default function App() {
 
   // Your own thoughts on their way; in a room the other person's land on the map with their name.
   const pending = useMemo(() => world.thoughts.filter((t) => !t.placed && t.speaker === me), [world.thoughts, me]);
+  // While you talk the map quiets all but where you are (legible.css); at a natural pause everything reads again.
+  // On its way means about to land: not a thought waiting for a key or for a retry, which can wait for minutes.
+  const onItsWay = core.noKey || core.keyRefused ? 0 : pending.filter((t) => core.placing.retryAt[t.id] === undefined).length;
+  const talking = useTalking({ heard: core.partial || core.handoff, inFlight: onItsWay });
   const activePath = useMemo(() => {
     const path = new Set<string>();
     const byId = new Map(world.threads.map((thread) => [thread.id, thread]));
@@ -717,6 +725,9 @@ export default function App() {
     });
   };
 
+  const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
+    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused });
+
   const friendlyNotice = core.notice && (
     !core.keyRefused && core.notice.includes("MODEL_API_KEY") ? "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example)."
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
@@ -758,9 +769,7 @@ export default function App() {
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
-          <strong>On the map</strong>
-          <div>✦ added or suggested by AI</div>
-          <div>A bar beside a point · your newest, until the next lands · A dot by a title · changed since you looked</div>
+          <Symbols />
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
@@ -791,7 +800,7 @@ export default function App() {
       </AnimatePresence>
 
       {core.mapChange && mapChangeVisible && (
-        <div className="map-change"><span aria-hidden="true">✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+        <div className="map-change"><span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -814,7 +823,7 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className="map" aria-label="Thread map">
+      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
@@ -867,7 +876,8 @@ export default function App() {
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}{world.active && <ThisEcho title={threadById.get(world.active)?.title ?? ""} />}</div>}
+          {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
+          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}{world.active && <ThisEcho title={threadById.get(world.active)?.title ?? ""} />}</span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
@@ -879,24 +889,16 @@ export default function App() {
               ref={composerRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={core.listening ? "Listening… or type" : core.connected ? "Type a thought, or tap the mic" : "Type a thought — it will send when connected"}
+              placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
-            <button
-              type="button"
-              className={stopMic ? "mic on" : "mic"}
-              onClick={toggleMic}
-              disabled={startingMic || (!core.connected && !stopMic)}
-              aria-label={stopMic ? "Stop listening" : "Start listening"}
-              aria-pressed={!!stopMic}
-            >
-              <MicIcon />
-            </button>
+            <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
+      <Tips />
       <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
@@ -1048,8 +1050,11 @@ type MapProps = {
 // The composer, live transcript and pull-back timer update independently of the map.
 const MapCards = memo(function MapCards(props: MapProps) {
   const roots = props.childrenByParent.get(null) ?? [];
-  return roots.length === 0 ? <p className="no-results">No threads match. Try another search.</p>
-    : roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
+  // A wide window holds two columns (legible.ts); a lone thread sits in the middle (legible.css).
+  const two = useTwoColumns();
+  if (roots.length === 0) return <p className="no-results">No threads match. Try another search.</p>;
+  if (!two) return roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
+  return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
 });
 
 function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
@@ -1099,7 +1104,8 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
                   className={t.kept ? "tag kept" : "tag"}
                   aria-label={`${t.kept ? "Kept tag" : "AI-suggested tag"}: ${t.name}`}
                   aria-pressed={t.kept}
-                  title={t.kept ? "Remove tag" : "Keep this tag"}
+                  title={t.kept ? "Remove tag" : undefined}
+                  data-tip={t.kept ? undefined : TIPS.tag}
                   onClick={() => on.tag(thread.id, t.name, !t.kept)}
                 >
                   {!t.kept && <span aria-hidden="true">✦ </span>}{t.name}
@@ -1126,7 +1132,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       </ul>
       {ideas.map((s) => (
         <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span>
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
             <span className="ai-actions">
@@ -1164,7 +1170,7 @@ function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: bo
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
       {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
-      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture">✦</span>}
+      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture" data-tip={TIPS.picture}>✦</span>}
     </span>
   );
 }
@@ -1177,12 +1183,23 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
   const { latest, arriving } = usePointMarks(thought.id);
   const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
+  // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
+  // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
+  const said = saidDiffers(thought.text, thought.point);
+  const [open, flip] = useSaidOpen(thought.id);
+  const toggle = said ? (event: React.MouseEvent) => {
+    // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
+    // Tips.tsx) and selecting words to explain keep their jobs.
+    if ((event.target as HTMLElement).closest("button, [data-tip]") || !(window.getSelection()?.isCollapsed ?? true)) return;
+    flip();
+  } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={thought.text} className={other ? "other" : undefined} tabIndex={thought.place_ms != null ? 0 : undefined}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
+      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
@@ -1192,7 +1209,8 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
       )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
-          <span className="ai-mark" role="img" aria-label="AI suggestion">✦</span> Did you mean “{thought.guess}”?
+          {/* title="": the point's own title (its words said) would show a second, system tip over this one. */}
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “{thought.guess}”?
           <button onClick={() => on.correct(thought.id, true)}>Yes</button>
           <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
             No
@@ -1200,12 +1218,13 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
         </span>
       ) : (
         thought.unclear && (
-          <span className="unclear" title={`Might be misheard: ${thought.unclear}`} role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
+          <span className="unclear" data-tip={TIPS.unclear(thought.unclear)} title="" role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
             ?
           </span>
         )
       )}
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>“{thought.text.trim()}”</span>}
     </motion.li>
   );
 });
@@ -1228,7 +1247,8 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
   const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
   return (
     <motion.div id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}>{action.status === "done" ? "✓" : "✦"}</span>
+      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
+        data-tip={action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
         {action.title}
         {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
@@ -1248,15 +1268,6 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
         </span>
       )}
     </motion.div>
-  );
-}
-
-function MicIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <rect x="9" y="3" width="6" height="11" rx="3" />
-      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-    </svg>
   );
 }
 

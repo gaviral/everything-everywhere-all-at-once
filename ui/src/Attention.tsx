@@ -36,10 +36,10 @@ function readable(element: HTMLElement | null) {
 }
 
 /** The words a highlight asks you to read: an element's text without what's only for screen readers, the hover-only
- *  placing time, or its buttons. */
+ *  placing time, its buttons, or what's hidden (a point's words said while closed, legible.ts). */
 export function wordsIn(element: HTMLElement): string {
   const copy = element.cloneNode(true) as HTMLElement;
-  copy.querySelectorAll(".sr-only, .speed, button").forEach((part) => part.remove());
+  copy.querySelectorAll(".sr-only, .speed, button, [hidden]").forEach((part) => part.remove());
   return copy.textContent ?? "";
 }
 
@@ -252,11 +252,12 @@ export function usePointMarks(id: string) {
 /** The opacity a point arrives with: under Reduce Motion a fade as long as the eye takes to get there. */
 export const ARRIVE = { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { opacity: { duration: LOOK_MS / 1000, ease: "easeOut" } } } as const;
 
-/** In a thread's head: a dot while it holds a change you haven't seen (as Mail marks unread). */
+/** In a thread's head: a dot while it holds a change you haven't seen (as Mail marks unread). Its words show as every
+ *  mark's do, in the shared tip (Tips.tsx), not a system title. */
 export function UnseenDot({ thread }: { thread: string }) {
   const mark = useContext(Context).unseen.get(thread);
   if (!mark) return null;
-  return <span className="unseen-dot" role="img" aria-label={`Changed since you looked: ${mark.line}`} title={`New since you looked: ${mark.line}`} />;
+  return <span className="unseen-dot" role="img" aria-label={`Changed since you looked: ${mark.line}`} data-tip={`New since you looked: ${mark.line}`} />;
 }
 
 /** On a card's edge: "this", while the words being said point at it. */

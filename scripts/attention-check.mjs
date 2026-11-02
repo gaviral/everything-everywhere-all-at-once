@@ -2,6 +2,7 @@
 // Checks the attention guide's rules (ui/src/attention-core.ts): timings from reading, what counts as an unseen
 // change, where marks go after a merge, the "latest" mark, and which spoken words point at "this".
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
@@ -66,6 +67,16 @@ try {
   assert.equal(direction({ top: 800, bottom: 830 }, band), "↓");
   assert.equal(direction({ top: 20, bottom: 90 }, band), "↑");
   assert.equal(direction({ top: 300, bottom: 330 }, band), null);
+  // Beside legibility (legible.ts, legible.css): a highlight's reading time counts the words on screen only, so a
+  // point's words said stay out while closed; the live line rolls up as one block, so "· this: …" runs on after the
+  // words instead of taking one of its two lines.
+  const ui = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url), "utf8");
+  assert.match(ui("Attention.tsx"), /querySelectorAll\("[^"]*\[hidden\][^"]*"\)/, "wordsIn skips hidden words");
+  assert.match(ui("App.tsx"), /"live words" : "live"\}><span>[^\n]*<ThisEcho [^\n]*<\/span><\/div>/, "the live words and their echo share one span");
+  // The unseen dot explains itself as every mark does (Tips.tsx), and the ? list's Symbols names it and the bar.
+  assert.match(ui("Attention.tsx"), /className="unseen-dot"[^>]*data-tip=/, "the dot's words in the shared tip");
+  assert.match(ui("Symbols.tsx"), /className="symbol-latest"/);
+  assert.match(ui("Symbols.tsx"), /className="unseen-dot"/);
   console.log("attention-check: ok");
 } finally {
   await server.close();
