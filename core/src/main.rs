@@ -5,6 +5,8 @@
 mod apple;
 mod apps;
 mod asr;
+mod catalog;
+mod chunks;
 mod clock;
 mod explain;
 mod find;
@@ -13,8 +15,11 @@ mod model;
 mod pictures;
 mod placer;
 mod refiner;
+mod trace;
 mod recap;
 mod protocol;
+mod spoken;
+mod tidy;
 mod world;
 #[cfg(test)]
 mod perf;
@@ -41,6 +46,8 @@ use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
     find: find::Runtime,
+    /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
+    catalog: catalog::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
     world: Mutex<Arc<World>>,
@@ -49,6 +56,8 @@ pub struct Core {
     placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Who said "new thread", and the thought that starts each one.
     new_threads: placer::NewThreads,
+    /// The thought being placed, and those waiting to try again.
+    pub placing: placer::Placing,
     /// Set when a room is open.
     room: Option<Room>,
     pub key: Option<String>,
@@ -65,6 +74,10 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
+    hosts: Mutex<std::collections::HashSet<String>>,
+    /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
+    pub trace: trace::Trace,
 }
 
 impl Core {
@@ -88,8 +101,17 @@ impl Core {
 
     /// Applies a batch of changes together, journals each one, then tells every UI.
     pub fn commit(&self, changes: Vec<Change>) {
+        self.commit_if(|_| true, changes);
+    }
+
+    /// Commits `changes` only while `still` holds, checked under the same lock as the commit, so nothing comes
+    /// between: a placement whose words were taken back while the model thought (catalog.rs) changes nothing.
+    pub fn commit_if(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>) -> bool {
         {
             let mut world = self.world.lock().unwrap();
+            if !still(&world) {
+                return false;
+            }
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
@@ -100,6 +122,15 @@ impl Core {
         }
         for change in changes {
             self.send(ServerMsg::Change { change });
+        }
+        true
+    }
+
+    /// Journals a change that only the record keeps (an Explain answer, a mark on one): the world and the windows
+    /// don't change.
+    pub fn record(&self, change: Change) {
+        if let Err(e) = self.journal.lock().unwrap().append(&change) {
+            tracing::error!("journal write failed: {e:#}");
         }
     }
 
@@ -127,6 +158,7 @@ impl Core {
     fn move_to(&self, speaker: &str, thread_id: &str) {
         let world = self.snapshot();
         let Some(thread) = world.thread(thread_id) else { return };
+        self.placing.moved(speaker);
         let mut changes = vec![Change::ActiveChanged { thread_id: thread_id.into(), speaker: speaker.into() }];
         if thread.status == ThreadStatus::Dropped {
             changes.push(Change::ThreadStatus { thread_id: thread_id.into(), status: ThreadStatus::Open, speaker: speaker.into() });
@@ -220,6 +252,11 @@ impl Core {
         self.send_to(speaker, ServerMsg::Notice { message: "New thread: your next thought starts it".into() });
     }
 
+    /// Whether the speaker's window runs on this machine. Alone, only this machine's pages get in.
+    fn is_host(&self, speaker: &str) -> bool {
+        self.room.is_none() || self.hosts.lock().unwrap().contains(speaker)
+    }
+
     /// A new thought lands in the speaker's active thread at once; the placer moves it if needed. Filler
     /// never becomes a thought, a request is never one, and a spoken command keeps its place among the words:
     /// one the turn opens with goes ahead of the words after it, one it ends with waits behind the words before
@@ -235,47 +272,101 @@ impl Core {
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
+        // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
+        // first: "yeah" is filler otherwise.
+        if catalog::answer(self, speaker, text) {
+            return;
+        }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
         if filler(text, asked) {
             return;
         }
         find::stop(self, speaker);
-        if let Some(period) = recap::command(text) {
-            let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
-            return recap::request(self.clone(), speaker.into(), period);
+        catalog::newer(self, speaker);
+        if let Some(done) = self.request(speaker, text, search) {
+            return catalog::did(self, speaker, text, done);
         }
-        if let Some(request) = apps::command(text) {
-            return apps::compose(self.clone(), request);
-        }
-        if let Some(view) = view(text) {
-            return self.send_to(speaker, ServerMsg::View { view });
-        }
-        if is_new_thread(text) {
-            return self.new_thread(speaker);
+        // "No, I meant …" and "scratch that": the speaker's previous turn, redone or taken back.
+        if catalog::correct(self, speaker, text, search) {
+            return;
         }
         let (first, said, then) = turn(text);
-        // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
-        if first.is_none() {
-            if let Some(ask) = find::command(text) {
-                if !search {
-                    return find::dropped(self, speaker, ask, text);
-                }
-                return find::request(self.clone(), speaker.into(), ask, text.into());
-            }
-        }
         if let Some(job) = first {
             self.run_command(speaker, job);
         }
         if !filler(said, asked) {
-            self.keep(speaker, said);
+            let id = self.keep(speaker, said);
+            catalog::kept(self, speaker, said, vec![id]);
         }
         if let Some(job) = then {
             self.run_command(speaker, job);
         }
     }
 
+    /// Acts on `text` when the whole turn is a request (catalog.rs), and says what it did and how to take it back;
+    /// None leaves it to be talk. The same path for words said, typed, and the safety net's reading of a correction.
+    fn request(self: &Arc<Self>, speaker: &str, text: &str, search: bool) -> Option<catalog::Done> {
+        use catalog::{Act, Done, Undo};
+        let before = self.snapshot().active_for(speaker).cloned();
+        if let Some(period) = recap::command(text) {
+            let period = if recap::unqualified(text) { recap::default_period(&self.snapshot(), now_ms()) } else { period };
+            recap::request(self.clone(), speaker.into(), period);
+            return Some(Done::new(Act::Recap));
+        }
+        if let Some(request) = apps::command(text) {
+            apps::compose(self.clone(), request);
+            return Some(Done::new(Act::Compose));
+        }
+        if let Some(view) = view(text) {
+            // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
+            // back too. Bare "focus" stays on the thread you're on, as its button does.
+            let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
+            if view == View::Focus && to.is_none() && before.is_none() {
+                let empty = self.snapshot().threads.is_empty();
+                let message = if empty { "Nothing on the map yet: say a thought first" } else { "Point at a thread, then say “focus on this”" };
+                self.send_to(speaker, ServerMsg::Notice { message: message.into() });
+                return Some(Done::missed(Act::Focus));
+            }
+            let moved = to.filter(|to| before.as_ref() != Some(to));
+            if let Some(to) = &moved {
+                self.focus(speaker, to);
+            }
+            self.send_to(speaker, ServerMsg::View { view });
+            let mut done = Done::view(view);
+            if let (Some(_), Some(from)) = (moved, before) {
+                done.undo = Some(Undo::Each(done.undo.into_iter().chain([Undo::Move { to: from }]).collect()));
+            }
+            return Some(done);
+        }
+        if is_new_thread(text) {
+            self.new_thread(speaker);
+            return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
+        }
+        if let Some(done) = spoken::act(self, speaker, text) {
+            return Some(done);
+        }
+        let (first, said, then) = turn(text);
+        // "Take me back to where I was" is a command, not a search: only a command that opens the turn comes first.
+        if first.is_none() {
+            if let Some(ask) = find::command(text) {
+                if !search {
+                    find::dropped(self, speaker, ask, text);
+                } else {
+                    find::request(self.clone(), speaker.into(), ask, text.into());
+                }
+                return Some(Done::moved(Act::Search, before));
+            }
+        }
+        if let (Some(job), "", None) = (first, said, then) {
+            self.run_command(speaker, job);
+            return Some(Done::moved(catalog::of_job(job), before));
+        }
+        None
+    }
+
     /// Words to place: a thought in the speaker's active thread, queued for the placer.
-    pub fn keep(&self, speaker: &str, text: &str) {
+    pub fn keep(&self, speaker: &str, text: &str) -> String {
         let thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
@@ -295,28 +386,35 @@ impl Core {
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
         self.commit(vec![Change::ThoughtAdded { thought }]);
-        let _ = self.placer_queue.send(placer::Job::Place(id));
+        let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
+        id
     }
 
     /// "Where was I?", "next one" or "last one" acts at once, unless words the speaker said before it are still
-    /// being placed: landing moves them to its thread and would undo it, so then it waits behind them in the
-    /// placer's queue. Always waiting would put it behind every placement queued, the other person's and
-    /// retries included, each up to a minute when the model is slow. A "new thread" said before it ends as it's
-    /// said: the speaker chose a thread to be on.
+    /// waiting for their first try: landing moves them to its thread and would undo it, so then it waits behind
+    /// them in the placer's line, and acts as soon as they're placed or their try fails (`placer::serve`). It never
+    /// waits for the other person's words, or for a retry: a thought that lands after its speaker moved on
+    /// doesn't move them. A "new thread" said before it ends as it's said: the speaker chose a thread to be on.
     fn run_command(&self, speaker: &str, job: Command) {
         self.new_threads.cancel(speaker);
-        let now = now_ms();
-        // One still unplaced after a minute failed and waits for a retry (as recap.rs `placing`). Without a working
-        // key none lands, so there's nothing to wait for.
+        // Without a working key none lands, so there's nothing to wait for.
         let waiting = self.key().is_ok()
-            && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && now.saturating_sub(t.at_ms) < 60_000);
-        match job(speaker.into()) {
-            placer::Job::Back(speaker) if !waiting => self.go_back(&speaker),
-            placer::Job::Next(speaker) if !waiting => self.go_next(&speaker),
-            placer::Job::Previous(speaker) if !waiting => self.go_previous(&speaker),
-            job => {
-                let _ = self.placer_queue.send(job);
-            }
+            && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && !self.placing.failed(&t.id));
+        let job = job(speaker.into());
+        if waiting {
+            let _ = self.placer_queue.send(job);
+        } else {
+            self.act(job);
+        }
+    }
+
+    /// A spoken command, now.
+    pub(crate) fn act(&self, job: placer::Job) {
+        match job {
+            placer::Job::Back(speaker) => self.go_back(&speaker),
+            placer::Job::Next(speaker) => self.go_next(&speaker),
+            placer::Job::Previous(speaker) => self.go_previous(&speaker),
+            placer::Job::Place(_) => {}
         }
     }
 }
@@ -606,7 +704,8 @@ fn view(text: &str) -> Option<View> {
         "map", "the map", "go to the map", "go back to the map", "back to the map", "show the map", "show me the map", "open the map",
         "switch to the map", "take me back to the map", "let s go back to the map", "let s see the map",
     ];
-    let focus = ["focus", "let s focus", "focus on this", "focus on this thread", "focus on this one", "turn on focus"];
+    let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
+    let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -622,6 +721,22 @@ fn view(text: &str) -> Option<View> {
     } else {
         None
     }
+}
+
+/// What "focus on …" points at as "this" (catalog.rs `this`: selected, else pointed, else the card the pointer just
+/// left, else the thread you're on). ui/src/attention-core.ts mirrors it for the "this" mark (attention-check reads it).
+const FOCUS_ON: [&str; 8] = ["this", "this one", "this thread", "this card", "that", "that one", "that thread", "that card"];
+
+/// "Focus on this" and its kin, with "let's" too: a whole-turn focus on the card "this" means. "Focus on the budget"
+/// stays a thought: only a pointing word focuses.
+fn focus_this_asks() -> Vec<String> {
+    ["focus on", "let s focus on"].iter().flat_map(|verb| FOCUS_ON.map(|on| format!("{verb} {on}"))).collect()
+}
+
+/// Whether the whole turn focuses "this" rather than the thread you're on ("Focus", "let's focus").
+fn focuses_this(text: &str) -> bool {
+    let asks = focus_this_asks();
+    is_command(text, &asks.iter().map(String::as_str).collect::<Vec<_>>(), &["mode"])
 }
 
 /// True when the whole utterance is one of the asks, after words that lead into it (`lead_in`: "Okay, where was
@@ -671,6 +786,7 @@ async fn main() -> anyhow::Result<()> {
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
         find: find::Runtime::default(),
+        catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
         world: Mutex::new(world.into()),
@@ -678,6 +794,8 @@ async fn main() -> anyhow::Result<()> {
         updates,
         placer_queue,
         new_threads: placer::NewThreads::default(),
+        hosts: Default::default(),
+        placing: placer::Placing::default(),
         room: room.as_deref().map(Room::from),
         key,
         // A key that can't use Contributor mode gets muse-spark-1.2 instead, unless PLACER_MODEL is set (model.rs).
@@ -691,7 +809,8 @@ async fn main() -> anyhow::Result<()> {
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
-        service: model::Service::default(),
+        service: model::Service::from_env(),
+        trace: trace::Trace::from_env(Path::new(&data)),
     });
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
@@ -1010,15 +1129,26 @@ fn speaker_name(name: &str, here: bool) -> String {
     }
 }
 
+/// Journals a window's "off" mark on an Explain or a Recap. Anything else, or an id no answer could have, is
+/// ignored: a mark is a label for later, never an instruction.
+fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
+    let fits = !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if matches!(kind.as_str(), "explain" | "recap") && fits {
+        core.record(Change::AnswerMarked { kind, id, off, speaker: speaker.into(), at_ms: now_ms() });
+    }
+}
+
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
-    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }];
+    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
         messages.push(ServerMsg::Notice { message: model::REFUSED.into() });
+    } else if let Some(message) = core.capped_message() {
+        messages.push(ServerMsg::Notice { message });
     }
     messages
 }
@@ -1041,6 +1171,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         if write(&mut out, &notice).await.is_err() { return; }
     }
     let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone()));
+    if here {
+        core.hosts.lock().unwrap().insert(speaker.clone());
+    }
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
     // This window's listening sessions, counted, so only the latest one says listening stopped: after a
@@ -1083,9 +1216,13 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
                     core.commit(vec![change]);
                 }
-                Ok(ClientMsg::Correct { thought_id, accept }) => {
-                    core.commit(vec![Change::ThoughtCorrected { thought_id, accept }]);
-                }
+                Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
+                Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
+                Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
+                Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
+                Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
+                Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
+                Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::ImportStart { id }) => import::start(core.clone(), id, speaker.clone(), here),
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
@@ -1170,6 +1307,7 @@ impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
             find: Default::default(),
+            catalog: Default::default(),
             recap: Default::default(),
             apps: Default::default(),
             world: Mutex::new(world.into()),
@@ -1177,6 +1315,8 @@ impl Core {
             updates: broadcast::channel(1024).0,
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
+            hosts: Default::default(),
+            placing: Default::default(),
             room: None,
             key: None,
             placer_model: "test".into(),
@@ -1190,6 +1330,7 @@ impl Core {
             wake: Default::default(),
             imports: Default::default(),
             service: Default::default(),
+            trace: Default::default(),
         }
     }
 }
@@ -1221,6 +1362,32 @@ mod tests {
         let (journal, _) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = mpsc::unbounded_channel();
         (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
+    }
+
+    #[test]
+    fn an_off_mark_is_journaled_for_later_and_changes_nothing_else() {
+        let (core, _queue, path) = test_core(None);
+        let mut updates = core.updates.subscribe();
+        super::mark(&core, "User", "explain".into(), "x1a2b".into(), true);
+        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), true);
+        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), false);
+        // Only the two kinds, with an id an answer could have.
+        super::mark(&core, "User", "thread".into(), "T1".into(), true);
+        super::mark(&core, "User", "explain".into(), "../../etc".into(), true);
+        super::mark(&core, "User", "explain".into(), "x".repeat(81), true);
+        let lines: Vec<serde_json::Value> =
+            std::fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let marks: Vec<(&str, &str, bool)> = lines
+            .iter()
+            .filter(|l| l["type"] == "answer_marked")
+            .map(|l| (l["kind"].as_str().unwrap(), l["id"].as_str().unwrap(), l["off"].as_bool().unwrap()))
+            .collect();
+        assert_eq!(marks, [("explain", "x1a2b", true), ("recap", "today-1793547629176", true), ("recap", "today-1793547629176", false)]);
+        assert!(lines.iter().all(|l| l["speaker"] == "User" && l["at_ms"].as_u64().is_some()));
+        assert!(updates.try_recv().is_err(), "no window is sent a mark");
+        let (_, reopened) = crate::Journal::open(&path).unwrap();
+        assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
+        let _ = std::fs::remove_file(&path);
     }
 
     fn thread(id: &str, touched_ms: u64, dropped_by: &str) -> Thread {
@@ -1439,6 +1606,11 @@ mod tests {
             ("Cool, palace.", View::Palace),
             ("Can you show me the palace?", View::Palace),
             ("Please focus.", View::Focus),
+            ("Let's focus on this.", View::Focus),
+            ("Okay, focus on that one", View::Focus),
+            ("Focus on this please", View::Focus),
+            ("Please focus on this mode please", View::Focus),
+            ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
         ] {
@@ -1449,6 +1621,8 @@ mod tests {
             "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
             "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
+            // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
+            "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1529,7 +1703,12 @@ mod tests {
             ServerMsg::Notice { message } if message.starts_with("Back to ") => "back".into(),
             ServerMsg::Notice { message } if message.starts_with("On to ") => "next".into(),
             ServerMsg::Notice { message } if message.starts_with("Previous: ") => "previous".into(),
+            ServerMsg::Notice { message } if message.starts_with("New thread: “") => "new thread with".into(),
             ServerMsg::Notice { message } if message.starts_with("New thread: ") => "new thread".into(),
+            ServerMsg::Notice { message } if message.starts_with("Added to ") => "added".into(),
+            ServerMsg::Notice { message } if message.starts_with("I couldn't find") => "not found".into(),
+            ServerMsg::Notice { message } if message.starts_with("Nothing is waiting to be added") => "approve".into(),
+            ServerMsg::Unfold { open, .. } => if *open { "unfold" } else { "fold" }.into(),
             ServerMsg::Found { message, .. } if message.starts_with("Here: ") => "found".into(),
             ServerMsg::View { view } => format!("{view:?}").to_lowercase(),
             ServerMsg::RecapState { period, .. } => format!("recap {period:?}").to_lowercase(),
@@ -1638,6 +1817,108 @@ mod tests {
         }
     }
 
+    /// The spoken command pack (spoken.rs), as the asks table above: each command the "?" list and the README teach
+    /// acts said alone and after each lead-in, and is never kept as a thought, except "add … to X", whose words land
+    /// where it said (the thought is the turn as said); the look-alikes stay thoughts.
+    #[tokio::test]
+    async fn every_pack_command_acts_alone_and_its_look_alikes_stay_thoughts() {
+        let now = super::now_ms();
+        // Two threads you spoke on, you on the first, and one you left unfinished (the card is up).
+        let world = |dropped: bool| World {
+            threads: [thread("Garden", 1, ""), thread("Bills", 2, "")].into_iter().chain(dropped.then(|| thread("Trip", 3, "you"))).collect(),
+            thoughts: vec![
+                Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 120_000) },
+                Thought { point: "The electric bill is due Friday".into(), ..said("b", "you", "Bills", now - 60_000) },
+            ],
+            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            ..World::default()
+        };
+        let documented = [
+            // The "?" list.
+            ("Add tomato stakes to the garden", "added"),
+            ("Add milk to the shopping list", "added"),
+            ("New thread about the garden shed", "new thread with"),
+            ("What was I thinking?", "back"),
+            ("Let me finish my thought", "back"),
+            ("Forget it", "forget"),
+            ("Never mind", "forget"),
+            ("Expand the garden", "unfold"),
+            ("Expand everything", "unfold"),
+            ("Collapse this", "fold"),
+            ("Stop listening", "pause"),
+            ("Add it to Reminders", "approve"),
+            ("Finish it", "finish"),
+            ("Later", "later"),
+            // The README.
+            ("Put the receipt in the bills thread", "added"),
+            ("Add to the shopping list: oat milk", "added"),
+            ("Start a new thread about why the build is slow", "new thread with"),
+            ("New thread. I want to learn piano.", "new thread with"),
+            ("What was I going to say?", "back"),
+            ("It's okay, I forgot", "forget"),
+            ("Not now", "later"),
+            ("Expand all the sub cards inside the bills", "unfold"),
+            ("Show me everything under the garden", "unfold"),
+            ("Show me the bills", "unfold"),
+            ("Fold the garden", "fold"),
+            ("Expand everything in the attic", "not found"),
+            ("Pause listening", "pause"),
+            ("Turn off the mic", "pause"),
+            ("Add that to my calendar", "approve"),
+        ];
+        let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
+        for (phrase, does) in documented {
+            for lead in &leads {
+                let said = if lead.is_empty() { phrase.to_string() } else { format!("{lead}, {phrase}") };
+                let kept: Vec<String> = match does {
+                    "added" => vec![said.clone()],
+                    "new thread with" => vec![super::spoken::tests_first(phrase)],
+                    _ => vec![],
+                };
+                assert_eq!(did(world(true), &said).await, (vec![does.to_string()], kept), "{said}");
+            }
+            // By rule: nothing goes to the placer, so nothing waits on the model, and without a key each still acts
+            // ("new thread about …" queued a placement before the review of 88ace4d).
+            let (core, mut queue, path) = keyless(world(true));
+            core.add_thought("you", phrase);
+            let _ = std::fs::remove_file(&path);
+            assert!(queue.try_recv().is_err(), "{phrase} asked the placer");
+        }
+        // Look-alikes: talk about these things, or a command only partway through a turn, is a thought.
+        for said in [
+            "Put this in perspective",
+            "Put the kids in the car",
+            "Add salt to taste",
+            "Add a deck to the house",
+            "Add it to the list",
+            "Save money on groceries",
+            "I need to add milk to the shopping list",
+            "A new thread about the budget came up on Slack",
+            "New topic on the agenda is hiring",
+            "I bought a boat. What was I thinking?",
+            "Forget it, I'll just buy a new one",
+            "Never mind the weather, the trip is on",
+            "Expand the business into Europe",
+            "Show Dana the photos",
+            "Hide the presents",
+            "Fold the laundry",
+            "Close everything before you leave",
+            "Open the window",
+            "Stop listening to him",
+            "I should stop listening to podcasts at night",
+            "I'll add it to reminders later",
+            // With no card up, and no app waiting, these are answers or talk.
+            "Later",
+            "Not now",
+            "Finish it",
+            "Keep it",
+        ] {
+            assert_eq!(did(world(false), said).await, (vec![], vec![said.to_string()]), "{said}");
+        }
+        // "Let me think" is a pause to think: filler, neither a move nor a thought.
+        assert_eq!(did(world(true), "Let me think").await, (vec![], vec![]));
+    }
+
     // A search said while a thought is still placing waits on a task, so this runs inside a runtime like the app.
     #[tokio::test]
     async fn filler_never_becomes_a_thought_and_commands_keep_their_place_among_the_words() {
@@ -1717,6 +1998,8 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
         assert_eq!(received(&mut window).await["type"], "snapshot");
+        // Where unplaced thoughts stand, so a window that reconnects shows its pills as they are: nothing yet.
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "placing", "now": null, "retries": []}));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
         core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
@@ -1728,6 +2011,8 @@ mod tests {
         let change = received(&mut window).await;
         assert_eq!((change["type"].as_str(), change["change"]["type"].as_str()), (Some("change"), Some("thought_added")));
         assert_eq!(core.snapshot().thoughts[0].text, "the rent is due Friday");
+        // How long that turn can be corrected, and that undoing it moves nobody (catalog.rs `Correctable`).
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "correctable", "for_ms": 120_000, "back_to": null}));
         window.send(Message::Text(r#"{"type":"listen","on":true}"#.into())).await.unwrap();
         assert_eq!(received(&mut window).await["message"], "Speech service error: MODEL_API_KEY is not set");
         let status = received(&mut window).await;
@@ -1866,10 +2151,11 @@ mod tests {
             Change::ThreadAdded { thread: thread("T1", 1, "User") },
             Change::ThreadAdded { thread: thread("T2", 2, "") },
             Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
-            // Sam's words are being placed, and one of User's failed a minute ago and waits for a retry.
+            // Sam's words are being placed, and one of User's failed and waits for a retry.
             Change::ThoughtAdded { thought: unplaced("sam", "Sam", now) },
             Change::ThoughtAdded { thought: unplaced("old", "User", now - 61_000) },
         ]);
+        core.placing.retry(&core, "old", "User", std::time::Duration::from_secs(15));
         // Neither holds User up: no wait behind the other person's placements or a retry.
         core.add_thought("User", "Where was I?");
         assert!(jobs().is_empty());
@@ -1989,20 +2275,24 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought.
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. Focus
+    /// on an empty map says why nothing changes.
     #[test]
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
         core.add_thought("Sam", "Let's go to the palace!");
         core.add_thought("Sam", "Okay, focus.");
-        let views: Vec<(Option<String>, View)> = std::iter::from_fn(|| updates.try_recv().ok())
-            .map(|out| match out.message {
-                ServerMsg::View { view } => (out.to, view),
-                _ => panic!("only views"),
+        let views: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::View { view } => Some((out.to, format!("{view:?}"))),
+                ServerMsg::Notice { message } => Some((out.to, message)),
+                ServerMsg::Correctable { .. } => None,
+                _ => panic!("only views and answers"),
             })
             .collect();
-        assert_eq!(views, [(Some("Sam".into()), View::Palace), (Some("Sam".into()), View::Focus)]);
+        let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
+        assert_eq!(views, [sam("Palace"), sam("Nothing on the map yet: say a thought first")]);
         assert!(core.snapshot().thoughts.is_empty());
         core.add_thought("Sam", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);
@@ -2089,6 +2379,26 @@ mod tests {
         assert!(Seat::take(&alone, "you", host).is_some());
         for path in [path, alone_path] {
             let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// The sample is a judge's first map, and its tour says to type "where was I?": that goes where the unfinished
+    /// card points, before and after the sample's own date. (Its last line once trailed off on another thread, so
+    /// the card said "Rent is due" and "where was I?" went to "Electric bill autopay".)
+    #[test]
+    fn in_each_sample_where_was_i_goes_where_the_unfinished_card_points() {
+        for sample in ["student-week", "founder-day"] {
+            let text = std::fs::read_to_string(format!("{}/../samples/{sample}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let mut world = World::default();
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                world.apply(&serde_json::from_str(line).unwrap());
+            }
+            let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "you")
+                .max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
+            assert!(card.is_some(), "{sample}: the sample shows an unfinished card");
+            for now in [1, u64::MAX / 2] {
+                assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
+            }
         }
     }
 }

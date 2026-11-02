@@ -13,6 +13,12 @@
   --ai-button-ink: #fff;
   --accent-button-ink: #fff;
   --amber-button-ink: #fff;
+  /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
+  --room-red: #b4253f; --room-red-soft: #fbe1e5;
+  --room-green: #1d7a43; --room-green-soft: #dcf2e3;
+  --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
+  --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
+  --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.04);
   color-scheme: light;
 }
@@ -33,6 +39,11 @@
     --ai-button-ink: #20152f;
     --accent-button-ink: #102344;
     --amber-button-ink: #30200b;
+    --room-red: #ff8a9c; --room-red-soft: #3a1d23;
+    --room-green: #76d39c; --room-green-soft: #1b3125;
+    --room-pink: #f293d2; --room-pink-soft: #341c2e;
+    --room-teal: #6fd2ca; --room-teal-soft: #17302f;
+    --room-lime: #c2da6a; --room-lime-soft: #2b3117;
     --shadow: 0 2px 12px rgba(0, 0, 0, .24);
     color-scheme: dark;
   }
@@ -610,6 +621,19 @@ header {
   cursor: pointer;
 }
 
+/* An "off" mark on this answer: quiet until pressed, a toggle so it can be taken back. */
+.explain-actions button.explain-off {
+  margin-right: auto;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.explain-actions button.explain-off[aria-pressed="true"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
 .explain-actions button.quiet {
   background: transparent;
   color: var(--muted);
@@ -691,7 +715,9 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */
-.map { padding-bottom: calc(var(--dock-height, 150px) + 32px); }
+/* The page's end leaves the dock its room (--dock-room, App.tsx useDockRoom): the last card can rise above the dock,
+   and the page never gets shorter under you when a dock card goes. */
+.map { padding-bottom: calc(var(--dock-room, var(--dock-height, 150px)) + 32px); }
 /* A card brought to the top stops under the header and tools, as measured, one card gap (12px) below them. */
 .thread { scroll-margin-top: calc(var(--header-height, 64px) + var(--tools-height, 50px) + 12px); scroll-margin-bottom: calc(var(--dock-height, 150px) + 20px); }
 .thread.collapsed { padding-block: 10px; }
@@ -717,6 +743,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .live { color: var(--ink); font-style: normal; font-size: 14px; }
 .first-hint { color: var(--muted); font-size: 13px; }
 .pending-label { color: var(--accent); font-weight: 600; }
+/* A retry is said calmly: it's saved and will land, nothing to act on. */
+.pending-label.retrying { color: var(--muted); }
 .pill { border-style: solid; color: var(--ink); }
 .notice { display: flex; align-items: flex-start; gap: 12px; width: max-content; max-width: min(90vw, 540px); cursor: default; }
 .notice button { flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
@@ -738,13 +766,11 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .keyboard-hint strong { display: block; margin-top: 10px; }
 .keyboard-hint strong:first-child { margin-top: 0; }
 .keyboard-hint { max-height: min(70vh, 560px); overflow-y: auto; }
-/* The picture slot: the thread's first letter, quiet (color is for meaning), until the picture fades in over it. */
+/* The picture slot: the thread's first letter in its room's soft color, so the picture fades in over the same color. */
 .picture-wrap { position: relative; flex: none; display: grid; }
 .picture-wrap > .picture { grid-area: 1 / 1; }
-.picture-letter { display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 20px/1 Georgia, serif; }
+.picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
 .thread.collapsed .picture-letter { font-size: 16px; }
-.picture-wrap > img.picture { opacity: 0; transition: opacity .2s ease-out; }
-.picture-wrap > img.picture.is-shown { opacity: 1; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
 .point-mark { font-size: 11px; }
 .map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
@@ -836,3 +862,20 @@ header:has(.shortcuts[open]) { z-index: 11; }
   .composer { position: sticky; bottom: 0; flex: none; }
   .away-items { max-height: 15dvh; }
 }
+
+/* The rail that holds a room's branches wears the room's color, the one its pictures are painted in; titles stay
+   ink, so color stays scarce enough to mean something. */
+.branches { border-left-color: color-mix(in srgb, var(--room, var(--line)) 55%, transparent); }
+/* A folded thread's proposals still waiting for you: amber, as everything that needs you. */
+.chip.waiting { color: var(--amber); background: var(--amber-soft); }
+/* How soon an action is due, in amber's shades (what needs you): later stays quiet, overdue is strongest. */
+.when.due { color: var(--amber); }
+.when.due.tomorrow { color: color-mix(in srgb, var(--amber) 70%, var(--muted)); }
+.when.due.overdue { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); font-weight: 650; }
+
+/* Every picture slot (pictures.ts): hidden until it decodes, then a short fade over its letter tile; one already
+   decoded when it mounts (a card back from the Palace) shows at once. A failed picture is never shown, so no
+   broken-image glyph. The fade stays under Reduce Motion: it moves nothing. */
+img.slot-picture { opacity: 0; transition: opacity .2s ease-out; }
+img.slot-picture.is-shown { opacity: 1; }
+img.slot-picture[data-instant] { transition: none; }

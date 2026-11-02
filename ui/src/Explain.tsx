@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 // crypto.randomUUID needs a secure page; a guest laptop in a room loads plain http from the LAN.
 const newId = () => (window.isSecureContext && crypto.randomUUID ? crypto.randomUUID() : `x${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 import type { Explanation } from "./core";
+import { TIPS } from "./Tips";
 
 // A word, a phrase or a sentence; longer selections are usually for copying.
 const LONGEST = 160;
@@ -17,11 +18,20 @@ const control = (target: EventTarget | null) =>
   target instanceof Element && !!target.closest("button, a, input, textarea, select, summary, [contenteditable]");
 
 // Select a word or phrase on the map to get it explained in its thread.
-export function Explain({ explanations, explain }: {
+export function Explain({ explanations, explain, mark }: {
   explanations: Record<string, Explanation>;
   explain: (id: string, text: string, context: string, threadId: string | null) => boolean;
+  /** Marks an answer as off, or takes the mark back; false when it couldn't be sent. */
+  mark: (kind: "explain", id: string, off: boolean) => boolean;
 }) {
   const [picked, setPicked] = useState<Picked | null>(null);
+  // Answers marked off in this window, so the toggle shows its state while the card is open.
+  const [off, setOff] = useState<ReadonlySet<string>>(new Set());
+  const toggleOff = (id: string) => {
+    const next = !off.has(id);
+    if (!mark("explain", id, next)) return;
+    setOff((marked) => { const copy = new Set(marked); if (next) copy.add(id); else copy.delete(id); return copy; });
+  };
   const [lost, setLost] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const previous = useRef<HTMLElement | null>(null);
@@ -150,13 +160,17 @@ export function Explain({ explanations, explain }: {
             </>
           ) : answer ? (
             <>
-              <span className="ai-mark" role="img" aria-label="AI explanation">✦</span> {answer.text}
+              <span className="ai-mark" role="img" aria-label="AI explanation" data-tip={TIPS.explanation}>✦</span> {answer.text}
             </>
           ) : (
             <span className="explain-wait">Explaining…</span>
           )}</div>
           <span className="explain-actions">
             {failed && <button onClick={() => ask(picked)}>Try again</button>}
+            {answer && !failed && <button className="explain-off" aria-pressed={off.has(picked.id)} onClick={() => toggleOff(picked.id)}
+              title={off.has(picked.id) ? "Marked off. Click to take it back." : "Off the mark? Note it, so explanations improve."}>
+              {off.has(picked.id) ? "Marked off" : "Off?"}
+            </button>}
             <button ref={dismiss} className="quiet" onClick={() => { previous.current?.focus({ preventScroll: true }); setPicked(null); }} aria-label="Dismiss explanation">×</button>
           </span>
         </div>

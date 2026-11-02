@@ -1,0 +1,18 @@
+{"id":101,"request":"Make an app that plays a silly tune if we get loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":102,"request":"Make an app that plays a funny song when we get too loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":103,"request":"Can you make an app that plays a silly tune whenever we start shouting?","expect":["build"],"watcher":["volume"],"level":[0.076,0.15],"prompt":false,"publishers":["sound"]}
+{"id":104,"request":"Make an app that plays music if it gets loud in here.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":105,"request":"Build me an app that plays a goofy sound when people raise their voices.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":106,"request":"Make an app that plays a tune when it gets noisy.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":107,"request":"make an app that place a silly tune if we get loud","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":108,"request":"Create an app to play something silly when we're being loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":109,"request":"Make an app that plays a silly tune when the room gets loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":110,"request":"Make an app that lightens the mood with a tune when we're yelling.","expect":["build"],"watcher":["volume"],"level":[0.076,0.15],"prompt":false,"publishers":["sound"]}
+{"id":111,"request":"Make an app that plays a silly tune if I get loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"]}
+{"id":112,"request":"Make an app that plays a silly tune and shows a card if we get loud.","expect":["build"],"watcher":["volume"],"level":[0.076,0.1],"prompt":false,"publishers":["sound"],"all":["sound","card"]}
+{"id":120,"request":"Make an app that books me a flight to New York.","expect":["refuse"],"words":["flight","book"],"instead":true}
+{"id":121,"request":"Make an app that emails my team when we get loud.","expect":["refuse"],"words":["email","e-mail"],"instead":true}
+{"id":122,"request":"Make an app that turns the lights red when we get loud.","expect":["refuse"],"words":["light"],"instead":true}
+{"id":123,"request":"Make an app that plays my Spotify playlist when we get loud.","expect":["refuse"],"words":["spotify","playlist","song","music"],"instead":true}
+{"id":124,"request":"Make an app that texts my mom if we get loud.","expect":["refuse"],"words":["text","message","send"],"instead":true}
+{"id":125,"request":"Make an app that calls 911 if someone screams.","expect":["refuse"],"words":["call","phone"],"instead":true}

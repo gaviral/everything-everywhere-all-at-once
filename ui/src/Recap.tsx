@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Action, World } from "./core";
 import "./recap.css";
+import { TIPS } from "./Tips";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -65,7 +66,7 @@ export function useRecap() {
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, noKey, listening, onRequest, onClose, onFocus }: {
+export function Recap({ view, world, connected, noKey, listening, onRequest, onMark, onClose, onFocus }: {
   view: View | null;
   world: World;
   connected: boolean;
@@ -73,10 +74,14 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onC
   /** The mic is on, so a spoken command reaches the core. */
   listening: boolean;
   onRequest: (period: RecapPeriod) => void;
+  /** Marks a recap as off, or takes the mark back; false when it couldn't be sent. */
+  onMark: (kind: "recap", id: string, off: boolean) => boolean;
   onClose: () => void;
   onFocus: (id: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // Recaps marked off in this window, by period and when each was made.
+  const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   const open = !!view;
   useEffect(() => {
     if (!open) return;
@@ -94,6 +99,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onC
   }, [open]);
   if (!view) return null;
   const recap = noKey ? null : view.recap;
+  const recapId = recap ? `${recap.period}-${recap.generated_ms}` : "";
   const resolve = (id: string) => {
     for (let hops = Object.keys(world.merged).length; hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     return id;
@@ -122,7 +128,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onC
   return <dialog ref={dialog} className="recap-sheet" aria-labelledby="recap-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}>
     <div className="recap-top">
-      <span className="recap-eyebrow"><span aria-hidden="true">✦</span> Recap <span className="sr-only">by AI</span></span>
+      <span className="recap-eyebrow"><span aria-hidden="true" data-tip={TIPS.recap}>✦</span> Recap <span className="sr-only">by AI</span></span>
       <button className="recap-close" onClick={onClose} aria-label="Close recap">×</button>
     </div>
     <div className="recap-intro">
@@ -176,6 +182,14 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onC
     <footer className="recap-footer">
       {/* Saying "map" works only while the mic listens: the composer sits behind the sheet. */}
       <span>{listening ? "Say “map” to close, or press Esc" : "Press Esc to close"}</span>
+      {recapId && !view.loading && <button className="recap-off" aria-pressed={off.has(recapId)} disabled={!connected}
+        onClick={() => {
+          const next = !off.has(recapId);
+          if (onMark("recap", recapId, next)) setOff((marked) => { const copy = new Set(marked); if (next) copy.add(recapId); else copy.delete(recapId); return copy; });
+        }}
+        title={off.has(recapId) ? "Marked off. Click to take it back." : "Off the mark? Note it, so recaps improve."}>
+        {off.has(recapId) ? "Marked off" : "Off?"}
+      </button>}
       <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
     </footer>
   </dialog>;
