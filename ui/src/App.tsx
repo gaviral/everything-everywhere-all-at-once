@@ -351,6 +351,8 @@ export default function App() {
   const toolsRef = useRef<HTMLElement>(null);
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
+  const laneRef = useRef<HTMLDivElement>(null);
+  useLaneRoom(laneRef, headerRef, dockRef);
 
   // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
   // kept every later notice up for good: on each change, look where focus is now.
@@ -934,7 +936,7 @@ export default function App() {
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
-      <div className="notice-lane">
+      <div ref={laneRef} className="notice-lane">
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -1169,6 +1171,40 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
     observer.observe(element);
     return () => { observer.disconnect(); document.documentElement.style.removeProperty(name); };
   }, [present]);
+}
+
+/** Where the notice lane may be on a phone or a short window (styles.css): --lane-top, just under the header or 8 px
+ *  from the top once a short window's header has scrolled away (there the lane is fixed: in the flow, the tour above
+ *  it left it 22 px), and --lane-room, from where the lane is to the dock's top, so a stack of notices never runs
+ *  under the composer (at 320 × 568 the message card's Stop was under the mic). The laptop's lane reads neither. */
+function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const lane = ref.current;
+    if (!lane) return;
+    let frame = 0;
+    const set = (name: string, px: number) => { if (lane.style.getPropertyValue(name) !== `${px}px`) lane.style.setProperty(name, `${px}px`); };
+    const measure = () => {
+      frame = 0;
+      const laneTop = Math.max(8, Math.round((headerRef.current?.getBoundingClientRect().bottom ?? 0) + 6));
+      set("--lane-top", laneTop);
+      const top = getComputedStyle(lane).position === "fixed" ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
+      const dock = dockRef.current?.getBoundingClientRect().top ?? window.innerHeight;
+      set("--lane-room", Math.max(0, Math.floor(dock - top - 8)));
+    };
+    const soon = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    // What moves the lane, the header or the dock without a scroll: the Apps panel, the tour, a dock card, a notice.
+    const observer = new ResizeObserver(soon);
+    for (const element of [document.body, lane, headerRef.current, dockRef.current]) if (element) observer.observe(element);
+    window.addEventListener("scroll", soon, { passive: true });
+    window.addEventListener("resize", soon);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("scroll", soon);
+      window.removeEventListener("resize", soon);
+    };
+  }, []);
 }
 
 /** The room the page's end leaves for the dock, as --dock-room: the map and the Palace pad their ends with it. It

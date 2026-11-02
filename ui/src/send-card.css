@@ -35,7 +35,4 @@
 @media (prefers-reduced-motion: reduce) {
   .send-card-bar span { animation: none; transform: scaleX(var(--left, 1)); }
 }
-@media (max-width: 560px) {
-  .send-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; }
-}
 @media (hover: none) { .send-card-stop kbd { display: none; } }

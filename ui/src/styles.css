@@ -682,7 +682,7 @@ header {
 }
 .notice-lane > * { flex: none; }
 /* An open Apps panel can run past the screen's foot, and a sticky lane can't rise above where it sits: fixed while
-   it's open, so its answers (a request too long to build) are seen. On a phone too, where the lane is otherwise contents. */
+   it's open, so its answers (a request too long to build) are seen. On a phone too (its lane is below). */
 .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; display: flex; }
 
 .notice {
@@ -912,13 +912,6 @@ header:has(.room-menu[open]) { z-index: 11; }
 }
 
 @media (max-width: 560px) {
-  /* Notices participate in the page flow so they cannot obscure the tour. */
-  /* Sticky below the header: they stay in view while scrolling, without covering the tour. */
-  .notice-lane { display: contents; }
-  .notice, .map-change {
-    position: sticky; top: 64px; z-index: 6; left: auto; translate: none;
-    width: auto; max-width: none; margin: 8px 16px;
-  }
   .dock { max-height: 50dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .pullback { flex-wrap: nowrap; gap: 4px; padding: 2px 4px 2px 10px; }
@@ -952,6 +945,61 @@ img.slot-picture { opacity: 0; transition: opacity .2s ease-out; }
 img.slot-picture.is-shown { opacity: 1; }
 img.slot-picture[data-instant] { transition: none; }
 
+/* ── A phone (scripts/phone-check.mjs) ─────────────────────────────────────────────────────────────────────────── */
+
+/* iOS zooms into any field under 16 px when it's tapped, and stays zoomed: the page's right side went off screen. On
+   touch every field is 16 px; a laptop keeps its sizes. */
+@media (hover: none) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), textarea, select { font-size: 16px !important; }
+}
+
+@media (max-width: 560px) {
+  /* The header in two rows: the name, this session's count and the status dot; then the controls. In one row it was
+     up to 69 px wider than the screen (the page scrolled sideways), the Room button covered "E2A2O", and "This
+     session…" showed 10 to 40 of its 196 px. */
+  header { flex-wrap: wrap; justify-content: flex-start; column-gap: 8px; row-gap: 0; padding: 8px 16px; }
+  header::after { content: ""; order: 2; flex-basis: 100%; height: 6px; }
+  .header-actions { display: contents; }
+  .header-actions > * { order: 3; }
+  .header-actions > .status { order: 1; }
+  header > .brand { order: 0; flex: 1 1 0; flex-wrap: nowrap; column-gap: 8px; min-width: 0; }
+  .brand small { display: none; }
+  .session-count { flex: 0 1 auto; flex-basis: auto; min-width: 0; }
+  .recap-button { padding-inline: 11px; }
+  /* At 16 px a placeholder can outrun a 320 px composer: it ends in "…", not mid-word under the mic. */
+  .composer input { text-overflow: ellipsis; }
+  /* The tools row scrolls away with the page: pinned, its rows took 152 of a 664 px screen and left the map 54%. */
+  .map-tools { position: static; }
+  .thread { scroll-margin-top: calc(var(--header-height, 64px) + 12px); }
+  /* Notices in one stack under the header, in the flow at the top (the tour stays clear) and sticking as the map
+     scrolls; each one stuck at the same 64 px before, over the header's foot and each other, and at 320 × 568 the
+     stack ran onto the composer. Capped above the dock, it scrolls past that. The lane is see-through to taps. */
+  .notice-lane {
+    display: flex; position: sticky; top: calc(var(--header-height, 64px) + 6px); z-index: 6; height: auto; align-items: stretch;
+    max-height: min(calc(100dvh - var(--header-height, 64px) - var(--dock-height, 120px) - 12px), var(--lane-room, 100dvh)); overflow-y: auto; overscroll-behavior: contain;
+    padding: 8px 16px; pointer-events: none;
+  }
+  .notice-lane:empty { padding: 0; }
+  .notice-lane > * { pointer-events: auto; }
+  .notice-lane > .notice, .notice-lane > .map-change, .notice-lane > .send-card { width: auto; max-width: none; margin: 0; }
+  /* A message about to go out comes first, so its Stop is never scrolled out of a short stack. */
+  .notice-lane > .send-card { order: -1; }
+  .apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; }
+}
+/* The status in words where there's room beside the count; under 380 px the dot alone (its name says it). */
+@media (max-width: 379px) {
+  .header-actions > .status > span[aria-hidden="true"] { display: none; }
+}
+
+/* A tapped point's Delete and Move get a row of their own under its words, 8 px apart: over the first line they hid
+   "submit; rent", and Delete sat 4 px from Move. */
+@media (hover: none) {
+  .points li:focus-within > .move-point, .points li > .move-point:has(> [aria-expanded="true"]) {
+    position: static; display: flex; flex-basis: 100%; justify-content: flex-end; gap: 8px;
+  }
+  .points li > .move-point .delete-button { margin-right: 0; }
+}
+
 /* The page's first Tab stop (App.tsx): off screen until focused, then above everything at the top left. */
 .skip-link { position: fixed; top: 8px; left: 8px; z-index: 20; padding: 8px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; text-decoration: none; translate: 0 -200%; }
 .skip-link:focus { translate: none; outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -968,7 +1016,16 @@ img.slot-picture[data-instant] { transition: none; }
   .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .composer { position: sticky; bottom: 0; flex: none; }
-  /* No header to clear: the lane (the notices on a phone) sticks at the top. */
-  .notice-lane, .notice, .map-change { top: 8px; }
-  .notice ~ .map-change { top: 60px; }
+  /* The notice lane under the header, or 8 px from the top once the header has scrolled away (App.tsx useLaneRoom),
+     over the page as on a laptop and capped above the dock, scrolling past that. Of no height at 8 px, a stack covered
+     the header's buttons and ran onto the composer; in the flow, the tour above it left it no room. */
+  .notice-lane, .apps-panel.is-open ~ .notice-lane {
+    position: fixed; inset-inline: 0; top: var(--lane-top, 8px); height: auto; max-height: var(--lane-room, 60dvh);
+    overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 8px; pointer-events: none;
+  }
+  .notice-lane:empty { padding: 0; }
+  .notice-lane > * { pointer-events: auto; }
+  .notice-lane > .send-card { order: -1; }
+  /* The unfinished card keeps its title and buttons; its quote of your last words gave the dock a line the map needs. */
+  .pullback-quote { display: none; }
 }
