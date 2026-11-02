@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
+import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -663,6 +664,7 @@ export function useCore(speaker?: string) {
       ws.onopen = () => {
         resetApps();
         resetSteps();
+        resetRoute();
         setConnected(true);
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
@@ -678,6 +680,7 @@ export function useCore(speaker?: string) {
         if (receiveRecap(msg)) return;
         if (receiveApps(msg)) return;
         if (receiveStep(msg)) return;
+        if (receiveRoute(msg)) return;
         switch (msg.type) {
           case "snapshot":
             setFound(null);
@@ -769,6 +772,7 @@ export function useCore(speaker?: string) {
             setRevertAsk((n) => n + 1);
             break;
           case "placing":
+            routePlacing(msg.now);
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
           case "found":

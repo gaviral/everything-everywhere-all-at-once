@@ -27,6 +27,7 @@ Browser, one page per window (ui/src)
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
+  route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
@@ -53,7 +54,7 @@ Core, one process (core/src: axum, tokio)
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
   asr.rs         relay to Muse Voice Transcribe
-  placer.rs      places one thought at a time
+  placer.rs      places one thought at a time, telling the map as it decides (`Route`: the threads weighed, then where it went and why)
   chunks.rs      two parts said across a pause as one idea (the later linked to the earlier), assumptions that moved a thought
   decided.rs     decisions said out loud ("Decided: …", "let's go with …"), found by rule, so the point is marked and Recap leads with them
   trace.rs       E2A2O_TRACE=1: every model request (a contributor model's turned-away try too), placement and saved picture to data/<map>/trace.jsonl
