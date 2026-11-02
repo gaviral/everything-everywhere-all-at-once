@@ -1,0 +1,84 @@
+// No extra dependencies: run with `node scripts/marks-check.mjs`.
+// Every mark explains itself and every mic state is its own: the mic's state rules, its ring scale, the words each
+// state shows, and a scan that fails when a ✦ in the UI has no tip.
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+
+const src = new URL("../ui/src/", import.meta.url);
+const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
+  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+try {
+  const { micState, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
+  const { TIPS } = await server.ssrLoadModule("/src/Tips.tsx");
+  const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
+
+  const base = { connected: true, capturing: false, starting: false, serviceOn: false, words: false, paused: false, noKey: false, refused: false };
+  const state = (extra) => micState({ ...base, ...extra });
+  assert.equal(state({}), "off");
+  assert.equal(state({ starting: true }), "starting");
+  assert.equal(state({ capturing: true }), "starting", "capturing before the speech service says it listens");
+  assert.equal(state({ capturing: true, serviceOn: true }), "listening");
+  assert.equal(state({ capturing: true, serviceOn: true, words: true }), "hearing");
+  assert.equal(state({ paused: true }), "paused");
+  assert.equal(state({ noKey: true }), "nokey");
+  assert.equal(state({ noKey: true, refused: true }), "refused");
+  assert.equal(state({ connected: false }), "offline");
+  // Never "off" (or paused, or keyless) while the browser is taking sound, whatever else is true.
+  for (const connected of [true, false]) for (const noKey of [true, false]) for (const paused of [true, false]) for (const serviceOn of [true, false]) {
+    assert.ok(["starting", "listening", "hearing"].includes(state({ capturing: true, connected, noKey, paused, serviceOn })));
+  }
+  // Each state has its own words, and its own placeholder where one shows.
+  const states = Object.keys(MIC_WORDS);
+  assert.equal(states.length, 8);
+  assert.equal(new Set(states.map((s) => MIC_WORDS[s].tip)).size, states.length, "every state's tip differs");
+  assert.equal(new Set(states.map((s) => MIC_WORDS[s].label)).size, states.length, "every state's name differs");
+  for (const s of ["off", "starting", "paused", "nokey", "refused", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);
+  assert.equal(composerHint("listening"), composerHint("hearing"), "words in the strip already say you're heard");
+  assert.match(MIC_WORDS.nokey.tip, /MODEL_API_KEY/);
+  // The ring: silent rooms leave it thin, the three measured voices fill most of it, a shout fills it.
+  assert.equal(ringFill(0), 0);
+  assert.equal(ringFill(0.01), 0);
+  assert.ok(ringFill(0.075) > 0.7 && ringFill(0.075) < 0.8, `normal speech ${ringFill(0.075)}`);
+  assert.ok(ringFill(0.1) > ringFill(0.075) && ringFill(0.1) < 1);
+  assert.equal(ringFill(0.15), 1);
+  assert.equal(ringFill(0.5), 1);
+  assert.equal(ringFill(NaN), 0);
+
+  // Every tip says something, and the ✦ ones name a way back where there is one.
+  for (const [name, tip] of Object.entries(TIPS)) {
+    const text = typeof tip === "function" ? tip("Reminders") : tip;
+    assert.ok(text.length > 10 && text.length <= 120, `${name}: ${text.length} chars`);
+  }
+  assert.match(TIPS.suggestion, /×/);
+  assert.match(TIPS.action("Calendar"), /Add to Calendar/);
+
+  // The away card's rule matches the code's.
+  assert.match(AWAY_WHEN, new RegExp(`${AWAY_AFTER_MS / 1000} s`));
+  assert.match(AWAY_WHAT, /thoughts landed/);
+
+  // Every ✦ in the UI carries its tip on its own element, or sits in a control that explains it. Allowed without:
+  // the ? list's legend, the tip texts themselves, a suggested tag's ✦ (its button has the tip) and "✦ fixed"
+  // (its button turns into "heard … · undo" on hover and focus).
+  const missing = [];
+  for (const file of readdirSync(src).filter((name) => name.endsWith(".tsx"))) {
+    if (["Symbols.tsx", "Tips.tsx"].includes(file)) continue;
+    const text = readFileSync(new URL(file, src), "utf8");
+    const lines = text.split("\n");
+    for (let at = text.indexOf("✦"); at !== -1; at = text.indexOf("✦", at + 1)) {
+      const i = text.slice(0, at).split("\n").length - 1;
+      const line = lines[i];
+      if (/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(line)) continue;
+      // The element the ✦ is in: its opening tag may run over several lines.
+      const tag = text.slice(text.lastIndexOf("<", at), at);
+      if (tag.includes("data-tip")) continue;
+      if (/fixed|heard/.test(line)) continue;
+      if (/!t\.kept/.test(line) && lines.slice(Math.max(0, i - 8), i).some((l) => l.includes("data-tip"))) continue;
+      missing.push(`${file}:${i + 1}: ${line.trim()}`);
+    }
+  }
+  assert.deepEqual(missing, [], "a ✦ without a tip");
+  console.log("Marks checks passed: mic states (never off while capturing), each with its own words and placeholder, the ring's scale, every tip, the away card's rule, and every ✦ in the UI has a tip.");
+} finally {
+  await server.close();
+}
