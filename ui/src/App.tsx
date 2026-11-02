@@ -20,7 +20,7 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
-import { intoColumns, saidDiffers, useTalking, useTwoColumns } from "./legible";
+import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -1160,20 +1160,21 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();
-  // The words behind the point open under it by click, tap or Enter, not by hover alone (a phone has none).
+  // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
+  // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
   const said = saidDiffers(thought.text, thought.point);
-  const [open, setOpen] = useState(false);
-  const toggle = said ? (event: React.MouseEvent | React.KeyboardEvent) => {
-    // Its own buttons (undo a fix, did you mean) and selecting words to explain keep their jobs.
+  const [open, flip] = useSaidOpen(thought.id);
+  const toggle = said ? (event: React.MouseEvent) => {
+    // Its own buttons (undo a fix, did you mean, Words said) and selecting words to explain keep their jobs.
     if ((event.target as HTMLElement).closest("button") || !(window.getSelection()?.isCollapsed ?? true)) return;
-    if ("key" in event) { if ((event.key !== "Enter" && event.key !== " ") || event.target !== event.currentTarget || event.defaultPrevented) return; event.preventDefault(); }
-    setOpen((was) => !was);
+    flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={said || thought.place_ms != null ? 0 : undefined} onClick={toggle} onKeyDown={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} transition={spring} title={said && !open ? thought.text : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
+      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
       {thought.heard && thought.fixed && (
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
@@ -1197,7 +1198,7 @@ const Point = memo(function Point({ thought, on, layoutDependency }: { thought: 
         )
       )}
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {open && <span className="said">“{thought.text.trim()}”</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>“{thought.text.trim()}”</span>}
     </motion.li>
   );
 });

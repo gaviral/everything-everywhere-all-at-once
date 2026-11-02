@@ -26,6 +26,11 @@
 .points li.has-said { cursor: pointer; border-radius: 6px; }
 .points li.has-said:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
 .said { flex-basis: 100%; color: var(--muted); font-size: 13px; line-height: 1.45; }
+/* Its keyboard and screen-reader control is a real button ("Words said", expanded or not), out of sight like
+   .sr-only so the point's words don't shift; when it has focus the whole point shows the focus ring a focused point
+   has (styles.css), since that is what it opens. */
+.said-toggle { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.points li:has(> .said-toggle:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
 /* A point's placing time sits at the right of its first line, in room the point always leaves it (the widest,
    "12.3 s" at 11 px, is ≈ 31 px, plus the 8 px gap between a point's parts). In the flow it dropped to a line of its

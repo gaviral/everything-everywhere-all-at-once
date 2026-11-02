@@ -49,6 +49,15 @@ export function useTwoColumns() {
   return two;
 }
 
+/** Which points have their original words open, kept outside the cards: crossing the two-column width rebuilds every
+ *  card, and folding a thread unmounts its points, and neither should close words the person opened. */
+const saidOpen = new Set<string>();
+export function useSaidOpen(id: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => saidOpen.has(id));
+  const toggle = () => setOpen((was) => { if (was) saidOpen.delete(id); else saidOpen.add(id); return !was; });
+  return [open, toggle];
+}
+
 /** Root threads in two columns, by their place in the map's order: first left, second right, and so on. Each column
  *  stacks on its own, so a tall card leaves no hole beside it, and a thread's column never changes as cards open,
  *  close or land (only a thread leaving the top level, or a search, reorders them). */

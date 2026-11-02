@@ -27,6 +27,12 @@ try {
   const before = intoColumns(["a", "b", "c"]), after = intoColumns(["a", "b", "c", "d"]);
   assert.deepEqual([after[0].slice(0, 2), after[1].slice(0, 1)], [before[0], before[1]], "a new thread moves no other");
 
+  // The words behind a point open by a real disclosure button (name, expanded state, what it opens), not a bare <li>.
+  const point = read("App.tsx").match(/const Point = memo[\s\S]*?\n\}\);/)[0];
+  assert.match(point, /<button type="button" className="said-toggle" aria-expanded=\{open\} aria-controls=\{`said-\$\{thought\.id\}`\}[^>]*>Words said<\/button>/, "a Words said button");
+  assert.match(point, /id=\{`said-\$\{thought\.id\}`\}/, "the words it controls carry the id");
+  assert.doesNotMatch(point, /onKeyDown/, "no key handler on the <li>: the button is the keyboard path");
+
   // Numbers that live in two files say the same thing.
   const css = read("legible.css"), app = read("App.tsx");
   assert.match(TWO_COLUMNS, /min-width: 1100px/);
