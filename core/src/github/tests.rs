@@ -126,6 +126,8 @@ fn requests_for_pull_requests_read_as_one_and_to_dos_about_them_stay_thoughts() 
         "Pull up the open PRs on GitHub",
         "Show me the pull requests for this app",
         "Show me the open pull requests in this repo",
+        "Show me the pull request from GitHub",
+        "Any open PRs in GitHub?",
     ] {
         assert_eq!(read(said), open(None), "{said}");
     }
@@ -137,6 +139,11 @@ fn requests_for_pull_requests_read_as_one_and_to_dos_about_them_stay_thoughts() 
     assert_eq!(read("Show me PR number 7 in acme/garden-planner"), Some(Ask { which: Which::One(7), repo: Some("acme/garden-planner".into()) }));
     assert_eq!(read("Show me the merged PRs"), Some(Ask { which: Which::Merged, repo: None }));
     assert_eq!(read("list closed pull requests"), Some(Ask { which: Which::Closed, repo: None }));
+    // A name in any script is read whole, never cut inside a character.
+    assert_eq!(read("show me PRs in 日本語"), open(Some("日本語")));
+    assert_eq!(read("show me PRs in the 日本語 repo"), open(Some("日本語")));
+    assert_eq!(read("show me PRs in 日本語プロジェクト"), open(Some("日本語プロジェクト")));
+    assert_eq!(crate::catalog::classify("show me PRs in é日本語 repo"), Some(Act::GitHub));
     for talk in [
         "I need to review Sam's PR tomorrow",
         "Check the PR before lunch",
@@ -163,6 +170,10 @@ fn a_repo_said_points_at_a_named_one_an_owner_and_name_or_your_own() {
     assert_eq!(target(Some("acme slash garden planner"), &settings), Target::Repo("acme/garden-planner".into()));
     assert_eq!(target(Some("seed swap"), &settings), Target::Mine("seed-swap".into()));
     assert_eq!(target(Some("a/b/c"), &settings), Target::Mine("a-b-c".into()));
+    // A bare name already spelled as GitHub would is that repo, not its words joined.
+    assert_eq!(target(Some("foo_bar"), &settings), Target::Mine("foo_bar".into()));
+    assert_eq!(target(Some("site.v2"), &settings), Target::Mine("site.v2".into()));
+    assert_eq!(target(Some("garden-planner"), &settings), Target::Mine("garden-planner".into()));
     assert_eq!(target(Some("…"), &settings), Target::Unclear);
 }
 
@@ -178,6 +189,9 @@ fn only_reads_ever_pass_never_a_comment_review_merge_or_close() {
         &["pr", "close", "42"],
         &["pr", "edit", "42", "--title", "x"],
         &["pr", "view", "42", "--web"],
+        &["pr", "view", "42", "--web=true"],
+        &["pr", "list", "-w"],
+        &["pr", "list", "-wR", "acme/garden-planner"],
         &["api", "-X", "POST", "repos/acme/garden-planner/issues/42/comments"],
         &["api", "user", "--method", "PATCH"],
         &["issue", "comment", "42"],

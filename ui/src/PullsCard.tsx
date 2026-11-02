@@ -7,8 +7,11 @@ import "./pulls-card.css";
 const CHECK_MARK: Record<string, string> = { passing: "✓", failing: "✕", running: "●", none: "" };
 
 export function PullsCard({ card, onGone }: { card: Card | null; onGone: (id: number) => void }) {
-  const [held, setHeld] = useState(false);
-  // "Updated 3 h ago" is read against when the answer came; the card is up for well under a minute.
+  // Held while the pointer or focus is on it, each kept apart: moving the pointer off leaves a focused row up.
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
+  // "Updated 3 h ago" is read against when the answer came; the card is up a minute or two, so it stays true enough.
   const now = useMemo(() => Date.now(), [card]);
 
   useEffect(() => {
@@ -26,10 +29,10 @@ export function PullsCard({ card, onGone }: { card: Card | null; onGone: (id: nu
     <section
       className={`pulls-card ${CARD_CLASS[card.state]}`}
       aria-label={card.repo ? `${card.title} in ${card.repo}` : card.title}
-      onMouseEnter={() => setHeld(true)}
-      onMouseLeave={() => setHeld(false)}
-      onFocus={() => setHeld(true)}
-      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
       onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onGone(card.id); } }}
     >
       <div className="sr-only" role="status">{announcement(card)}</div>

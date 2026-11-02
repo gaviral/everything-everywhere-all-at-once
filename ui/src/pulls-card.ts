@@ -12,12 +12,24 @@ export type CardState = "loading" | "ready" | "failed";
 export type PullsCardMsg = { type: "pulls_card"; id: number; title: string; repo: string; state: CardState; pulls: Pull[]; more: boolean; message: string };
 export type Card = Omit<PullsCardMsg, "type">;
 
-/** The card after the core's message: a newer ask replaces the card up; a late answer to an older one is dropped, so
- *  the card never jumps back to what was asked before. */
-export function received(shown: Card | null, msg: PullsCardMsg): Card | null {
-  if (shown && msg.id < shown.id) return shown;
+/** The card shown (or none), the newest ask the core has answered or started on, and the newest one closed. Kept apart
+ *  from the card, so closing it doesn't forget which ask is newest. */
+export type Pulls = { card: Card | null; latest: number; closed: number };
+/** A new connection's: the core numbers asks from 1 again after a restart. */
+export const NO_PULLS: Pulls = { card: null, latest: 0, closed: 0 };
+
+/** After the core's message: a newer ask replaces the card up; a late answer to an older ask, or to one closed while it
+ *  waited, is dropped, so the card never jumps back to what was asked before or comes back once closed. */
+export function received(pulls: Pulls, msg: PullsCardMsg): Pulls {
+  if (msg.id < pulls.latest || msg.id <= pulls.closed) return pulls;
   const { type: _type, ...card } = msg;
-  return card;
+  return { ...pulls, card, latest: msg.id };
+}
+
+/** After × , Esc or its time is up: card `id` goes, and its answer, should one still come, stays away. */
+export function gone(pulls: Pulls, id: number): Pulls {
+  if (id <= pulls.closed) return pulls;
+  return { ...pulls, card: pulls.card?.id === id ? null : pulls.card, closed: id };
 }
 
 /** Classes as whole words, so the stylesheet check can see each one used. */

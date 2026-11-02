@@ -24,9 +24,10 @@ use std::time::Duration;
 
 /// Rows on the card. Worked back from a 900-px-tall laptop window: the card starts under the header (about 70 px),
 /// each row is two lines in 48 px (Apple's 44-px least tap target, plus its meta line's air), and with its heading
-/// and "See all" (about 80 px) 10 rows end near 630 px, above the composer, so none needs a scroll. A title longer
-/// than a line (about 60 characters at the card's 480 px) wraps rather than being cut, and the composer leaves room
-/// for a few. More stay on GitHub, a click away.
+/// and "See all" (about 80 px) 10 one-line rows end near 630 px, above the composer, so none needs a scroll. A title
+/// longer than a line (about 60 characters at the card's 480 px) wraps rather than being cut; past the room above the
+/// composer the card scrolls inside itself (pulls-card.css), so every row and "See all" stay in reach. More stay on
+/// GitHub, a click away.
 pub const ROWS: usize = 10;
 
 /// How long the card waits for GitHub before it says it gave up: 10 s, the limit for keeping attention on a wait
@@ -98,12 +99,14 @@ pub enum Failure {
 /// Runs `gh` with these arguments, its output or why not. `gh` on this laptop in the app; a stand-in in tests.
 pub type Gh = Arc<dyn Fn(Vec<String>) -> Pin<Box<dyn Future<Output = Result<String, Failure>> + Send>> + Send + Sync>;
 
-/// Whether `args` only read: `gh pr list`, `gh pr view` (never `--web`, which opens a browser on the host), or the
-/// signed-in account's name. Every call goes through this, so nothing here can comment, review, merge or close.
+/// Whether `args` only read: `gh pr list`, `gh pr view` (never `--web` in any spelling, `--web=true` or `-w` among other
+/// short flags, which opens a browser on the host), or the signed-in account's name. Every call goes through this, so
+/// nothing here can comment, review, merge or close.
 pub fn read_only(args: &[String]) -> bool {
+    let web = |r: &str| r.starts_with("--web") || (r.starts_with('-') && !r.starts_with("--") && r.contains('w'));
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     match a.as_slice() {
-        ["pr", "list" | "view", rest @ ..] => !rest.iter().any(|r| *r == "--web" || *r == "-w"),
+        ["pr", "list" | "view", rest @ ..] => !rest.iter().any(|r| web(r)),
         ["api", "user", "--jq", ".login"] => true,
         _ => false,
     }
@@ -218,7 +221,7 @@ const DETERMINERS: &[&str] = &["the", "my", "our", "all", "that", "this", "those
 const NOUNS: &[&str] = &["pull requests", "pull request", "p r s", "pr s", "prs", "p r", "pr"];
 /// Words that may end the turn without changing what it asks.
 const TAILS: &[&str] = &[
-    "are open", "are there", "are waiting", "right now", "today", "on github", "doing", "going", "looking", "look like", "now", "status",
+    "are open", "are there", "are waiting", "right now", "today", "on github", "from github", "in github", "doing", "going", "looking", "look like", "now", "status",
 ];
 /// Words that name the repo after them.
 const PREPOSITIONS: &[&str] = &["in", "on", "for", "from", "of"];
@@ -315,15 +318,16 @@ pub fn read(text: &str) -> Option<Ask> {
 }
 
 /// A repo as said, without "the" before it or "repo" after it ("the garden planner repo" → "garden planner").
+/// Compared by `get`, so a name in any script ("日本語") is never cut inside a character.
 fn repo_words(said: &str) -> String {
     let mut t = said.trim();
     for lead in ["the ", "my ", "our "] {
-        if t.len() > lead.len() && t[..lead.len()].eq_ignore_ascii_case(lead) {
+        if t.len() > lead.len() && t.get(..lead.len()).is_some_and(|h| h.eq_ignore_ascii_case(lead)) {
             t = &t[lead.len()..];
         }
     }
     for tail in [" repository", " repo", " project"] {
-        if t.len() > tail.len() && t[t.len() - tail.len()..].eq_ignore_ascii_case(tail) {
+        if t.len() > tail.len() && t.get(t.len() - tail.len()..).is_some_and(|h| h.eq_ignore_ascii_case(tail)) {
             t = &t[..t.len() - tail.len()];
         }
     }
@@ -360,6 +364,11 @@ fn target(said: Option<&str>, settings: &Settings) -> Target {
     let joined = said.split_whitespace().collect::<Vec<_>>().join(" ").replace(" slash ", "/").replace(" / ", "/").replace(' ', "-");
     if slug(&joined) {
         return Target::Repo(joined);
+    }
+    // A bare name already spelled as GitHub would ("foo_bar", "site.v2") is that repo, not its words joined.
+    let typed = said.trim();
+    if slug(&format!("me/{typed}")) {
+        return Target::Mine(typed.to_string());
     }
     let name = words.join("-");
     if !name.is_empty() && slug(&format!("me/{name}")) {
@@ -472,7 +481,7 @@ fn pull(p: GhPull) -> Pull {
     Pull { number: p.number, title: p.title.trim().to_string(), state, checks, failing, total, updated: p.updated_at, url }
 }
 
-/// The owner/name in a pull request's link ("https://github.com/acme/garden/pull/7" → "acme/garden").
+/// The owner/name in a pull request's web link (".../acme/garden/pull/7" → "acme/garden").
 fn repo_of(url: &str) -> Option<String> {
     let path = url.strip_prefix("https://")?.split_once('/')?.1;
     let mut parts = path.split('/');

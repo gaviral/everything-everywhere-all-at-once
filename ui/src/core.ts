@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
-import { received as pullsReceived, type Card as PullsCardShown, type PullsCardMsg } from "./pulls-card";
+import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -652,8 +652,8 @@ export function useCore(speaker?: string) {
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
   const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
-  // The GitHub card, from asking until it's read or closed (pulls-card.ts).
-  const [pullsCard, setPullsCard] = useState<PullsCardShown | null>(null);
+  // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
+  const [pulls, setPulls] = useState<Pulls>(NO_PULLS);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -821,7 +821,7 @@ export function useCore(speaker?: string) {
             break;
           }
           case "pulls_card":
-            setPullsCard((shown) => pullsReceived(shown, msg));
+            setPulls((shown) => pullsReceived(shown, msg));
             break;
         }
       };
@@ -836,6 +836,8 @@ export function useCore(speaker?: string) {
         setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
+        // The GitHub card's answer can't come on a closed connection, and a restarted core numbers its asks from 1.
+        setPulls(NO_PULLS);
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -870,7 +872,7 @@ export function useCore(speaker?: string) {
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
   const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
-  const pullsCardGone = useCallback((id: number) => setPullsCard((shown) => (shown?.id === id ? null : shown)), []);
+  const pullsCardGone = useCallback((id: number) => setPulls((shown) => pullsGone(shown, id)), []);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
@@ -905,7 +907,7 @@ export function useCore(speaker?: string) {
     sendCard,
     stopSend,
     sendCardGone,
-    pullsCard,
+    pullsCard: pulls.card,
     pullsCardGone,
     snapshotRevision,
     mapChange,

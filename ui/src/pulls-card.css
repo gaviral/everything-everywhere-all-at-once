@@ -1,5 +1,6 @@
 /* The GitHub card (PullsCard.tsx): a card in the notice lane, one row a pull request, each a link. Colors come from the
-   theme's tokens, so dark mode follows. Rows are 48 px (github.rs `ROWS` says why ten fit). */
+   theme's tokens, so dark mode follows. Rows are at least 48 px (github.rs `ROWS` says why ten short ones fit); long
+   titles wrap, so past the room between the header and the composer (about 96 px with its air) the card scrolls. */
 .pulls-card {
   width: min(92vw, 480px);
   padding: 10px 6px 6px;
@@ -8,6 +9,9 @@
   background: var(--card);
   box-shadow: var(--shadow);
   color: var(--ink);
+  max-height: calc(100dvh - var(--header-height, 64px) - 6px - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: pulls-card-in 180ms ease-out;
 }
 .pulls-card-head { display: flex; align-items: baseline; gap: 8px; padding: 0 4px 0 10px; min-height: 28px; }
@@ -42,6 +46,6 @@ a.pulls-card-row:hover { background: var(--bg); }
 .pulls-card-all:hover { background: var(--bg); }
 @keyframes pulls-card-in { from { opacity: 0; transform: translateY(-6px); } }
 @media (max-width: 560px) {
-  .pulls-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; }
+  .pulls-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; max-height: calc(100dvh - 64px - 16px - 96px); }
 }
 .pulls-card-checks.is-running > span[aria-hidden] { font-size: 8px; vertical-align: 2px; }

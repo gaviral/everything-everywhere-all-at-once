@@ -12,7 +12,7 @@ const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url)
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { received, checksWords, ago, safeUrl, allUrl, statusLine, rowWords, lingerMs, announcement } = await server.ssrLoadModule("/src/pulls-card.ts");
+  const { received, gone, NO_PULLS, checksWords, ago, safeUrl, allUrl, statusLine, rowWords, lingerMs, announcement } = await server.ssrLoadModule("/src/pulls-card.ts");
   const { upFor, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const now = Date.parse("2026-11-02T12:00:00Z");
   const pull = (extra = {}) => ({ number: 42, title: "Water the raised beds on a schedule", state: "open", checks: "passing", failing: 0, total: 2, updated: "2026-11-02T09:00:00Z", url: "https://github.com/acme/garden-planner/pull/42", ...extra });
@@ -44,11 +44,28 @@ try {
   assert.equal(allUrl({ ...msg(), pulls: [] }), null);
 
   // A newer ask replaces the card; a late answer to an older one never does.
-  const first = received(null, msg({ state: "loading", pulls: [] }));
-  assert.equal(first.state, "loading");
+  const first = received(NO_PULLS, msg({ state: "loading", pulls: [] }));
+  assert.equal(first.card.state, "loading");
   const second = received(first, msg({ id: 2, state: "loading", pulls: [], title: "Pull request #7" }));
   assert.equal(received(second, msg({ id: 1 })), second, "the older answer is dropped");
-  assert.equal(received(second, msg({ id: 2, title: "Pull request #7" })).state, "ready");
+  assert.equal(received(second, msg({ id: 2, title: "Pull request #7" })).card.state, "ready");
+  // Closed while it waits: its answer doesn't bring it back, and neither does an older ask's.
+  const closed = gone(second, 2);
+  assert.equal(closed.card, null);
+  assert.equal(received(closed, msg({ id: 2 })), closed, "a closed ask's answer stays away");
+  assert.equal(received(closed, msg({ id: 1 })), closed, "an older ask's answer stays away after the newer one closed");
+  assert.equal(received(closed, msg({ id: 3, state: "loading", pulls: [] })).card.id, 3, "a new ask still shows");
+  assert.equal(gone(second, 1).card, second.card, "closing an older ask leaves the newer card up");
+  // A new connection starts over: a restarted core numbers its asks from 1, and they show.
+  assert.equal(received(NO_PULLS, msg({ id: 1, state: "loading", pulls: [] })).card.id, 1);
+  assert.match(src("core.ts"), /ws\.onclose = \(\) => \{[\s\S]*?setPulls\(NO_PULLS\)[\s\S]*?\n      \};/, "the card and its order reset when the connection ends");
+
+  // Held by the pointer and by focus apart: moving the pointer off leaves a focused card up.
+  const view = src("PullsCard.tsx");
+  assert.match(view, /const held = hovered \|\| focused;/);
+  assert.match(view, /onMouseLeave=\{\(\) => setHovered\(false\)\}/);
+  // Long titles wrap, so the card scrolls inside itself rather than running under the composer.
+  assert.match(src("pulls-card.css"), /\.pulls-card \{[^}]*max-height:[^}]*overflow-y: auto;/);
 
   // Its lines: waiting, nothing there, and a calm failure.
   assert.equal(statusLine(msg({ state: "loading", pulls: [] })), "Asking GitHub…");
