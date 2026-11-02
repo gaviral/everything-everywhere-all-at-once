@@ -110,7 +110,7 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     let acts = [
         Act::Back, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
         Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
-        Act::Pause, Act::Approve, Act::Message, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
+        Act::Pause, Act::Approve, Act::Message, Act::GitHub, Act::Note, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
         Act::Delete,
     ];
     assert_eq!(CATALOG.len(), acts.len());
@@ -124,8 +124,8 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     }
     // Only an outside action is external, and the safety net may never write one, nor an answer or a repair.
     for d in CATALOG {
-        assert_eq!(d.external, matches!(d.act, Act::Approve | Act::Message), "{:?}", d.act);
-        if matches!(d.act, Act::Approve | Act::Message | Act::Yes | Act::No | Act::Redo | Act::Undo) {
+        assert_eq!(d.external, matches!(d.act, Act::Approve | Act::Message | Act::Note), "{:?}", d.act);
+        if matches!(d.act, Act::Approve | Act::Message | Act::Note | Act::Yes | Act::No | Act::Redo | Act::Undo) {
             assert!(d.template.is_none(), "{:?}", d.act);
         }
     }
@@ -144,6 +144,11 @@ fn the_safety_net_runs_only_an_act_it_may_pick_written_as_the_rules_read_it() {
     no("yes", "yes");
     no("thought", "");
     no("delete_everything", "expand Garden");
+    // Words Notes takes as a save never come from the model, though the rules read "put this in Notes" as a move: in
+    // Full it would write a note no one said.
+    assert_eq!(classify("put this in Notes"), Some(Act::Move));
+    no("move", "put this in Notes");
+    no("move", "put that in my notes");
     // The prompt offers only those acts, and the schema only their names and "thought".
     let body = body("m", &prompt("expand the garden", "did this", "no, the bills", &["Garden", "Bills"]));
     let names = body["response_format"]["json_schema"]["schema"]["properties"]["act"]["enum"].as_array().unwrap().clone();

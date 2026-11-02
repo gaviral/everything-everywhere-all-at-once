@@ -1,0 +1,48 @@
+/* The note card (NoteCard.tsx): a card in the notice lane, as the message card is, with the note's title, its points
+   in a list that scrolls past a few lines, and its status. Colors come from the theme's tokens, so dark mode follows.
+   A column whose points give first: when the lane is short of room (styles.css .notice-stack) the list scrolls in less
+   height, and the heading, title, status and Open in Notes stay whole. */
+.note-card {
+  display: flex;
+  flex-direction: column;
+  width: min(90vw, 440px);
+  padding: 12px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  animation: note-card-in 180ms ease-out;
+}
+.note-card > * { flex: none; }
+.note-card-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.note-card-close { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 18px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.note-card-close:focus-visible, .note-card-open:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.note-card-title { margin: 4px 0 6px; font-size: 16px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+/* About 9 one-line points (14 px at 1.45 line height, 2 px apart) show before it scrolls: a short thread whole at a
+   glance; past that it scrolls, so the card never walls off the map (40vh on a short window). */
+.note-card-body { flex: 0 1 auto; min-height: 0; max-height: min(40vh, 220px); overflow-y: auto; overscroll-behavior: contain; }
+.note-card-branch { margin: 8px 0 2px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.note-card-points { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.45; }
+.note-card-points li { overflow-wrap: anywhere; }
+.note-card-points li + li { margin-top: 2px; }
+.note-card-points li.is-unfinished > span:not(.note-card-mark) { color: var(--muted); }
+.note-card-mark { display: inline-block; margin: 0 6px; padding: 0 6px; border-radius: 6px; background: var(--accent-soft); color: var(--muted); font-size: 11px; line-height: 18px; vertical-align: 1px; }
+/* A decision as the map marks it (styles.css `.decided`), so the note reads like the card it came from. */
+.note-card-points .decided { margin-right: 6px; }
+.note-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.note-card-status { font-size: 13px; }
+.note-card.is-dry-run .note-card-status, .note-card.is-saving .note-card-status { color: var(--muted); }
+.note-card.is-failed .note-card-status { color: var(--amber); }
+.note-card-open {
+  flex: none;
+  min-height: 32px; padding: 0 12px;
+  border: 0; border-radius: 8px;
+  background: var(--ink); color: var(--bg);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+@keyframes note-card-in { from { opacity: 0; transform: translateY(-6px); } }
+/* On a phone the notice lane stacks, spaces and bounds its cards (styles.css), this one with them. */
+@media (max-width: 560px) {
+  .note-card { width: auto; }
+}

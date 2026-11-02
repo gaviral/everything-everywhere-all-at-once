@@ -162,6 +162,10 @@ pub struct World {
     /// Thought id → what the placer read into it: the words it carries on, an assumption, why it went there (chunks.rs).
     #[serde(default)]
     pub notes: std::collections::HashMap<String, crate::chunks::Note>,
+    /// Thread or thought id → where a person or an AI participant put it on the canvas (positions.rs); one not here
+    /// is laid out automatically. A place goes with its thread or thought when that leaves the map.
+    #[serde(default)]
+    pub positions: std::collections::HashMap<String, crate::positions::Position>,
     /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
     #[serde(default, skip_serializing)]
     pub read_ms: std::collections::HashSet<u64>,
@@ -311,6 +315,12 @@ pub enum Change {
     /// A thread or thought an Undo brought back goes where it stood, just before `before` (catalog.rs `places`), so
     /// the map's order, its colors and "next one" are as they were. Either missing: nothing moves.
     PutBack { id: String, before: String },
+    /// A thread's card or a thought's point put somewhere on the canvas, by a person's window or an AI participant
+    /// (`by`: the speaker): `x` and `y` are absolute canvas coordinates of its top-left; both none puts it back in the
+    /// automatic layout. Only for a thread on the map or a thought (positions.rs refuses the rest, and one of the two
+    /// missing). Every step of a drag reaches every window; the journal keeps at most one line per item per
+    /// `positions::JOURNAL_EVERY`, its latest.
+    Positioned { id: String, x: Option<f64>, y: Option<f64>, by: String, at_ms: u64 },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
     ExplainAnswered {
@@ -416,8 +426,11 @@ impl World {
                 self.split_from.insert(rest.id.clone(), thought_id.clone());
             }
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
-            // as it was (chunks.rs); a note for a thought off the map shows nothing.
-            Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            // as it was (chunks.rs); a note for a thought off the map shows nothing. Its place on the canvas goes.
+            Change::ThoughtSkipped { thought_id } => {
+                self.thoughts.retain(|t| &t.id != thought_id);
+                self.positions.remove(thought_id);
+            }
             Change::ThoughtDecided { thought_id, decided } => {
                 if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
                     t.decided = *decided;
@@ -438,6 +451,7 @@ impl World {
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
                 if !held && self.thread(thread_id).is_some() {
                     self.threads.retain(|t| &t.id != thread_id);
+                    self.positions.remove(thread_id);
                     self.removed += 1;
                     if self.active.as_ref() == Some(thread_id) {
                         self.active = None;
@@ -449,6 +463,16 @@ impl World {
                 put_back(&mut self.threads, |t| &t.id, id, before);
                 put_back(&mut self.thoughts, |t| &t.id, id, before);
             }
+            Change::Positioned { id, x, y, by, at_ms } => match (x, y) {
+                (Some(x), Some(y)) if self.placeable(id) => {
+                    self.positions.insert(id.clone(), crate::positions::Position { x: *x, y: *y, by: by.clone(), at_ms: *at_ms });
+                }
+                (None, None) => {
+                    self.positions.remove(id);
+                }
+                // Off the map, or only one of the two: positions.rs refuses both, so only an edited journal holds one.
+                _ => {}
+            },
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
             Change::ItemRefined { id, now, was, .. } => {
                 if self.set_item(id, now) {
@@ -638,6 +662,8 @@ impl World {
             *id = into.into();
         }
         self.threads.retain(|t| t.id != from);
+        // Its card's place goes with it; `into` keeps its own (a late place for `from` isn't followed through the merge).
+        self.positions.remove(from);
         self.merged.insert(from.into(), into.into());
     }
 
@@ -800,6 +826,11 @@ impl World {
 
     pub fn thread(&self, id: &str) -> Option<&Thread> {
         self.threads.iter().find(|t| t.id == id)
+    }
+
+    /// Whether the canvas can place `id`: a thread on the map (not one merged away), or a thought (positions.rs).
+    pub fn placeable(&self, id: &str) -> bool {
+        self.thread(id).is_some() || self.thoughts.iter().any(|t| t.id == id)
     }
 
     /// Where a speaker is: their own active thread, else where the talk is now (they just joined).
@@ -1351,6 +1382,14 @@ mod tests {
             placed("b", "T3", "muse bark", "Muse Spark", true),
             Change::ThreadTouched { thread_id: "T3".into(), last_point: "Ask Muse Spark about b".into(), at_ms: 20 },
             Change::ActiveChanged { thread_id: "T3".into(), speaker: "Sam".into() },
+            // Places on the canvas: a person's and an AI participant's, one at the edge then back in the layout; none
+            // for a thread off the map, nor with one number missing (only an edited journal holds either).
+            Change::Positioned { id: "T1".into(), x: Some(120.5), y: Some(-40.0), by: "Ana".into(), at_ms: 21 },
+            Change::Positioned { id: "b".into(), x: Some(300.0), y: Some(80.25), by: "AI".into(), at_ms: 22 },
+            Change::Positioned { id: "T3".into(), x: Some(-1_000_000.0), y: Some(1_000_000.0), by: "Sam".into(), at_ms: 23 },
+            Change::Positioned { id: "T3".into(), x: None, y: None, by: "Sam".into(), at_ms: 24 },
+            Change::Positioned { id: "T9".into(), x: Some(1.0), y: Some(1.0), by: "Ana".into(), at_ms: 25 },
+            Change::Positioned { id: "T2".into(), x: Some(5.0), y: None, by: "Ana".into(), at_ms: 26 },
             Change::ThoughtNoted {
                 thought_id: "b".into(),
                 note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into(), later: false },
@@ -1401,6 +1440,8 @@ mod tests {
             Change::ThreadRetitled { thread_id: "T3".into(), title: "Muse Spark questions".into(), was: "Topic T3".into() },
             Change::TitleChosen { thread_id: "T3".into(), title: "Muse Spark".into() },
             Change::ThreadAdded { thread: test_thread("T4", None) },
+            // A place on a thread that's merged away goes with it; its merge undone, it's back in the layout.
+            Change::Positioned { id: "T4".into(), x: Some(40.0), y: Some(40.0), by: "AI".into(), at_ms: 30 },
             Change::ThreadMerged { from: "T4".into(), into: "T1".into() },
             Change::ThreadUnmerged {
                 unmerge: crate::tidy::Unmerge {
@@ -1424,8 +1465,13 @@ mod tests {
             Change::ThoughtMoved { thought_id: "a".into(), thread_id: "T3".into(), from: "T1".into(), undo: false },
             Change::ThoughtAdded { thought: test_thought("c", "Ana", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "Ana", "T1") },
+            // A thought's place goes when it's set aside, and an empty thread's when it's taken off.
+            Change::Positioned { id: "d".into(), x: Some(7.0), y: Some(8.0), by: "Ana".into(), at_ms: 31 },
             Change::ThoughtSkipped { thought_id: "d".into() },
             Change::ThoughtDecided { thought_id: "c".into(), decided: true },
+            Change::ThreadAdded { thread: test_thread("T5", None) },
+            Change::Positioned { id: "T5".into(), x: Some(-3.5), y: Some(0.0), by: "Sam".into(), at_ms: 32 },
+            Change::ThreadRemoved { thread_id: "T5".into() },
             Change::ThreadRemoved { thread_id: "T9".into() },
             Change::PutBack { id: "T9".into(), before: "T1".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
@@ -1556,6 +1602,7 @@ mod tests {
                 | Change::ThoughtRepointed { .. }
                 | Change::ThreadRemoved { .. }
                 | Change::PutBack { .. }
+                | Change::Positioned { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
@@ -1569,7 +1616,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 42, "one of each kind of change");
+        assert_eq!(kinds.len(), 43, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1639,6 +1686,12 @@ mod tests {
         assert!(matches!(w.apps[0].publishers[..], [crate::apps::Publisher::Sound {}, crate::apps::Publisher::Card { .. }]) && !w.apps[0].enabled);
         assert!(w.apps[0].purpose.contains("tune"), "the purpose says what it does");
         assert_eq!(w.recaps[0].plans[0].text, "Show the Palace view at the end.");
+        // A person's place and an AI participant's stay, through merges into T1 and moves of b; the one taken back to
+        // the layout, and those on a thread merged away, a thought set aside and a thread taken off, are gone.
+        let mut placed: Vec<(&str, f64, f64, &str, u64)> = w.positions.iter().map(|(id, p)| (id.as_str(), p.x, p.y, p.by.as_str(), p.at_ms)).collect();
+        placed.sort_by(|a, b| a.0.cmp(b.0));
+        assert_eq!(placed, [("T1", 120.5, -40.0, "Ana", 21), ("b", 300.0, 80.25, "AI", 22)]);
+        assert!(w.thread("T4").is_some() && !w.positions.contains_key("T4"), "a merge undone brings the card back in the layout");
     }
 
     #[test]

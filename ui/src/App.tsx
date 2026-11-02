@@ -52,6 +52,8 @@ import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 import { SendCard } from "./SendCard";
+import { PullsCard } from "./PullsCard";
+import { NoteCard } from "./NoteCard";
 import { BRICKS, useBricksOn } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import { Catalog } from "./Catalog";
@@ -355,6 +357,7 @@ export default function App() {
   const toolsRef = useRef<HTMLElement>(null);
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
+  // The notice lane's notices and cards share the room down to the dock (useLaneRoom).
   const laneRef = useRef<HTMLDivElement>(null);
   useLaneRoom(laneRef, headerRef, dockRef);
 
@@ -894,6 +897,7 @@ export default function App() {
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),
+    position: core.position,
   });
   const bricksOn = useBricksOn();
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -977,8 +981,11 @@ export default function App() {
       <div id="tour-map" />
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
-      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
+      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. Its notices
+          and cards are one column (styles.css .notice-stack; on a phone or a short window the lane's own), so they
+          stack instead of covering each other. */}
       <div ref={laneRef} className="notice-lane">
+      <div className="notice-stack">
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -1000,6 +1007,8 @@ export default function App() {
       </AnimatePresence>
 
       <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
+      <PullsCard card={core.pullsCard} onGone={core.pullsCardGone} />
+      <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
 
       {core.mapChange && (
         <div className="map-change">
@@ -1008,6 +1017,7 @@ export default function App() {
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
+      </div>
       </div>
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -1224,7 +1234,7 @@ function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present 
  *  window, the stack of notices (a lane of its own height there; the laptop's lane has no height, so it's left out). */
 function mapTop() {
   const bars = Array.from(document.querySelectorAll<HTMLElement>("header, .map-tools, .notice-lane"))
-    .filter((bar) => !bar.classList.contains("notice-lane") || (bar.offsetHeight > 0 && bar.childElementCount > 0));
+    .filter((bar) => !bar.classList.contains("notice-lane") || (bar.offsetHeight > 0 && !!bar.querySelector(".notice-stack > *")));
   return Math.max(0, ...bars.map((bar) => bar.getBoundingClientRect().bottom));
 }
 
@@ -1243,16 +1253,21 @@ function leastHeight(notice: HTMLElement) {
   return Math.ceil(total);
 }
 
-/** Where the notice lane may be on a phone or a short window (styles.css): --lane-top, just under the header or 8 px
- *  from the top once a short window's header has scrolled away (there the lane is fixed: in the flow, the tour above
- *  it left it 22 px), and --lane-room, from where the lane is to the dock's top, so a stack of notices never runs
- *  under the composer (at 320 × 568 the message card's Stop was under the mic), and at most half of that, so the map
- *  keeps a band to show a point in. The laptop's lane reads neither. A fixed lane also goes below the tour's tip while
- *  it's on screen (scripts/phone-check.mjs). */
+/** Where the notice lane may be, and the room its notices and cards share (styles.css). --lane-top, on a phone or a
+ *  short window: just under the header, or 8 px from the top once a short window's header has scrolled away (there the
+ *  lane is fixed: in the flow, the tour above it left it 22 px). --lane-room: from where the lane is to the dock's top,
+ *  less 8 px of air. On a laptop all of it bounds the lane's column (.notice-stack), and past it the GitHub list and the
+ *  note's points scroll inside their cards: with ten pull requests, a note and a message up at once, the note card ran
+ *  335 px past a 900 px window and the GitHub card covered the composer (scripts/lane-check.mjs). On a phone or a short
+ *  window the lane itself is the stack: never under the composer (at 320 × 568 the message card's Stop was under the
+ *  mic), and at most half of the room, so the map keeps a band to show a point in. Measured on scroll too, as the lane
+ *  moves up to stick. A fixed lane also goes below the tour's tip while it's on screen (scripts/phone-check.mjs). */
 function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const lane = ref.current;
     if (!lane) return;
+    // Where the lane itself stacks the notices (styles.css); a laptop's lane has no height and its column hangs from it.
+    const stacked = window.matchMedia("(max-width: 560px), (max-height: 560px)");
     let frame = 0;
     const set = (name: string, px: number) => { if (lane.style.getPropertyValue(name) !== `${px}px`) lane.style.setProperty(name, `${px}px`); };
     const measure = () => {
@@ -1264,18 +1279,20 @@ function useLaneRoom(ref: RefObject<HTMLElement | null>, headerRef: RefObject<HT
       // screen: on its side, the stack covered its words and Next. Where both don't fit, the first notice stays whole
       // and covers only the tip's foot. Once you're on the map (a point tapped), the map's band comes first.
       // The first notice as it's drawn (the message card comes first by its CSS order), and the least it shows whole in.
-      const first = (Array.from(lane.children) as HTMLElement[]).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      const notices = Array.from(lane.querySelector(":scope > .notice-stack")?.children ?? []) as HTMLElement[];
+      const first = notices.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
       const least = first ? leastHeight(first) : 0;
       const tip = fixed ? document.querySelector(".tour-tip") : null;
       const tour = tip?.contains(document.activeElement) ? tip.getBoundingClientRect() : undefined;
       if (tour && tour.bottom > laneTop && tour.top < dock) laneTop = Math.max(laneTop, Math.round(Math.min(tour.bottom + 6, dock - 16 - least)));
       set("--lane-top", laneTop);
-      const top = fixed ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
-      // The stack gets at most half of what's left above the dock, the map the rest: at 320 × 568 and on its side three
-      // notices took it all, and a point tapped or landing had nowhere to show. The first notice always shows whole
-      // (the message card's Stop), and the rest scroll in the lane.
+      // A laptop's lane, fixed or not, is where its own CSS puts it (it reads no --lane-top).
+      const top = fixed && stacked.matches ? laneTop : Math.max(0, lane.getBoundingClientRect().top);
+      // On a phone or a short window the stack gets at most half of what's left above the dock, the map the rest: at
+      // 320 × 568 and on its side three notices took it all, and a point tapped or landing had nowhere to show. The
+      // first notice always shows whole (the message card's Stop), and the rest scroll in the lane.
       const left = Math.max(0, Math.floor(dock - top - 8));
-      set("--lane-room", Math.min(left, Math.max(least + 16, Math.floor(left / 2))));
+      set("--lane-room", stacked.matches ? Math.min(left, Math.max(least + 16, Math.floor(left / 2))) : left);
     };
     const soon = () => { if (!frame) frame = requestAnimationFrame(measure); };
     measure();
