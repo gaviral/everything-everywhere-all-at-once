@@ -92,6 +92,8 @@ try {
     ".pill": "phone",
     // A phone's header count ("This session · 30 thoughts · 8 threads") is a status, not content.
     ".session-count": "phone",
+    // A phone's composer hint at 16 px (iOS zooms into a smaller field) can outrun a 320 px composer; typed words scroll.
+    ".composer input": "phone",
     // Screen-reader-only text is never seen.
     ".sr-only": "hidden",
   };
