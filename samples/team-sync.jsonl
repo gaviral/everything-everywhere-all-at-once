@@ -1,0 +1,35 @@
+{"type":"thread_added","thread":{"id":"T1","title":"Launch date","parent_id":null,"status":"open","last_point":"","touched_ms":1793728800000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T1","tag":"launch"}
+{"type":"active_changed","thread_id":"T1"}
+{"type":"thought_added","thought":{"id":"th-1","speaker":"you","text":"First thing, the launch date. We said November 17, and the store review hasn't started yet.","point":"Nov 17 launch; store review not started","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793728800000,"place_ms":2370,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Nov 17 launch; store review not started","at_ms":1793728800000}
+{"type":"thought_added","thought":{"id":"th-2","speaker":"Sam","text":"Review takes us about three days, so if we submit on Friday the seventeenth still works.","point":"Submit Friday → Nov 17 still works","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793728860000,"place_ms":2740,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Submit Friday → Nov 17 still works","at_ms":1793728860000}
+{"type":"thought_added","thought":{"id":"th-3","speaker":"you","text":"Okay, so who's going to submit the build on Friday, is that","point":"Who submits the build Friday?","thread_id":"T1","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":false,"at_ms":1793728920000,"place_ms":3110,"decided":false}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Who submits the build Friday?","at_ms":1793728920000}
+{"type":"thread_status","thread_id":"T1","status":"dropped"}
+{"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T1","text":"Name who submits Friday's build before the call ends","status":"new"}}
+{"type":"thread_picture","thread_id":"T1","path":"/images/T1-43abef0cc08f44ce8197619a034c0109-small.webp"}
+{"type":"thread_added","thread":{"id":"T2","title":"Pricing page","parent_id":"T1","status":"open","last_point":"","touched_ms":1793728980000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T2","tag":"pricing"}
+{"type":"tag_suggested","thread_id":"T2","tag":"website"}
+{"type":"active_changed","thread_id":"T2"}
+{"type":"thought_added","thought":{"id":"th-4","speaker":"Lena","text":"Oh, that reminds me, the pricing page still shows the old nine dollar plan.","point":"Pricing page still shows old $9 plan","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793728980000,"place_ms":3480,"decided":false}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Pricing page still shows old $9 plan","at_ms":1793728980000}
+{"type":"thought_added","thought":{"id":"th-5","speaker":"Sam","text":"We moved to twelve a month in October, so the store screenshots are wrong too.","point":"Price is $12 since October; store screenshots wrong too","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793729040000,"place_ms":2350,"decided":false}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Price is $12 since October; store screenshots wrong too","at_ms":1793729040000}
+{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Decided: Lena updates the pricing page and the store screenshots by Thursday.","point":"Lena updates pricing page and screenshots by Thursday","thread_id":"T2","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793729100000,"place_ms":2720,"decided":true}}
+{"type":"thread_touched","thread_id":"T2","last_point":"Lena updates pricing page and screenshots by Thursday","at_ms":1793729100000}
+{"type":"action_proposed","action":{"id":"ac-1","thread_id":"T2","kind":"reminder","title":"Lena: pricing page and store screenshots","when":"2026-11-05","status":"new","done_ms":null}}
+{"type":"thread_picture","thread_id":"T2","path":"/images/T2-308a90a477e34e6db28b331fc7d5c1d2-small.webp"}
+{"type":"thread_added","thread":{"id":"T3","title":"Dark mode requests","parent_id":null,"status":"open","last_point":"","touched_ms":1793729220000,"tags":[],"picture":null}}
+{"type":"tag_suggested","thread_id":"T3","tag":"customers"}
+{"type":"active_changed","thread_id":"T3"}
+{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"Next, customer emails. Three people asked for dark mode this week.","point":"Three dark mode requests this week","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793729220000,"place_ms":3090,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Three dark mode requests this week","at_ms":1793729220000}
+{"type":"thought_added","thought":{"id":"th-8","speaker":"Sam","text":"Dark mode is about two days of work if we only do the main screens.","point":"Dark mode ≈ 2 days, main screens only","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793729280000,"place_ms":3460,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Dark mode ≈ 2 days, main screens only","at_ms":1793729280000}
+{"type":"thought_added","thought":{"id":"th-9","speaker":"you","text":"Let's do dark mode after launch and tell those three people it's planned.","point":"Dark mode after launch; tell the three it's planned","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793729340000,"place_ms":2330,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Dark mode after launch; tell the three it's planned","at_ms":1793729340000}
+{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Reply to the three dark mode requests","when":"2026-11-04","status":"new","done_ms":null}}
+{"type":"thread_picture","thread_id":"T3","path":"/images/T3-4bdbd1fc190547d28bd5b3e8acd255d0-small.webp"}

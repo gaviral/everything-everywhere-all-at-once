@@ -8,15 +8,23 @@ import { dated } from "./action-line";
 import { saveFile } from "./save-file";
 
 export type Model = { step: string; model: string };
-export type Site = { hosted: boolean; calendarFile: boolean; sample: boolean; models: Model[] };
-export type SiteDoor = { hosted?: boolean; calendar_file?: boolean; sample?: boolean; models?: Model[] };
+/** A sample map the empty map offers (core/src/sample.rs `SAMPLES`): its file's name and what its button says. */
+export type SampleChoice = { id: string; label: string };
+export type Site = { hosted: boolean; calendarFile: boolean; sample: boolean; samples: SampleChoice[]; models: Model[] };
+export type SiteDoor = { hosted?: boolean; calendar_file?: boolean; sample?: boolean; samples?: SampleChoice[]; models?: Model[] };
 
 /** Before the core answers, or a core from before these fields: a laptop, as it always was. */
-export const LOCAL: Site = { hosted: false, calendarFile: false, sample: false, models: [] };
+export const LOCAL: Site = { hosted: false, calendarFile: false, sample: false, samples: [], models: [] };
 
 export function siteFrom(door: SiteDoor | null): Site {
   if (!door) return LOCAL;
-  return { hosted: !!door.hosted, calendarFile: !!door.calendar_file, sample: !!door.sample, models: door.models ?? [] };
+  return { hosted: !!door.hosted, calendarFile: !!door.calendar_file, sample: !!door.sample, samples: door.samples ?? [], models: door.models ?? [] };
+}
+
+/** The shorter sample maps under "Try a sample map" (which opens the first, the student's week): each another moment
+ *  where talking into a live map helps. None when the core offers only the one, or is from before the choice. */
+export function moreSamples(samples: SampleChoice[]): SampleChoice[] {
+  return samples.slice(1);
 }
 
 export const SiteContext = createContext<Site>(LOCAL);

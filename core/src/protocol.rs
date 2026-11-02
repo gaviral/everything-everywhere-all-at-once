@@ -150,8 +150,12 @@ pub enum ClientMsg {
     /// Approve an action: add it to Reminders or Calendar, or, where they can't be reached, say the window saved it
     /// as a calendar file (apple.rs `saved`).
     Approve { id: String },
-    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs).
-    Sample,
+    /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered
+    /// others (`sample::SAMPLES`), none the default.
+    Sample {
+        #[serde(default)]
+        name: Option<String>,
+    },
     /// Keep a suggested hashtag, or remove one.
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.

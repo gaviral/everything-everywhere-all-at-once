@@ -243,7 +243,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 
 ### Hosting it
 
-A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each core (off by default, so a laptop and `scripts/trial.sh` read as before). The window then says thoughts are saved on the site's server, never points at `.env` or the host's computer, and saves a dated item as a calendar file (`.ics`) instead of adding it to Reminders or Calendar; so does any core not on a Mac. An empty map offers Try a sample map, which fills it with the student's week from `samples/` (the core reads `E2A2O_SAMPLES`, else `../samples` beside its working folder; without it the button stays hidden). The first screen names the Meta models the core asks, by step.
+A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each core (off by default, so a laptop and `scripts/trial.sh` read as before). The window then says thoughts are saved on the site's server, never points at `.env` or the host's computer, and saves a dated item as a calendar file (`.ics`) instead of adding it to Reminders or Calendar; so does any core not on a Mac. An empty map offers Try a sample map, which fills it with the student's week from `samples/`, and under it three shorter maps (a team meeting, a bug left for a call, a walk through a house, each with its pictures) (the core reads `E2A2O_SAMPLES`, else `../samples` beside its working folder; without it the button stays hidden). The first screen names the Meta models the core asks, by step.
 
 ## Privacy and data
 
