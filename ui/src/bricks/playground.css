@@ -1,0 +1,29 @@
+/* The playground (playground.tsx): a slim bar of choices, the brick where the app would put it, and a log of what it
+   asked for. Plain on purpose: what's on show is the brick. */
+.playground { min-height: 100vh; }
+.playground button, .playground select, .playground input { font: inherit; color: inherit; }
+.playground-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 13px; }
+.playground-bar > strong { margin-right: 8px; }
+.playground-bar label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.playground-bar select { min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+.playground-bar button { min-height: 34px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+.playground-bar :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.playground-about { margin: 0; padding: 10px 24px; color: var(--muted); font-size: 13px; }
+.playground-about strong { color: var(--ink); }
+.playground-wrong { color: var(--amber); }
+/* Room on the right for the log; a card sits at the foot, as in the dock. */
+.playground-stage { min-height: 60vh; margin-right: 300px; }
+.playground-dock { position: fixed; right: 300px; bottom: 0; left: 0; padding: 0 24px 20px; }
+.playground-dock > * { max-width: 760px; margin: 0 auto; }
+.playground-hint { margin: 48px 24px; color: var(--muted); font-size: 13px; text-align: center; }
+.playground-log { position: fixed; top: 58px; right: 0; bottom: 0; width: 300px; overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--line); background: var(--card); font-size: 12px; }
+.playground-log ol { margin: 8px 0 0; padding-left: 18px; }
+.playground-log li { margin-bottom: 6px; }
+.playground-log p { color: var(--muted); }
+.playground-map { margin-top: 16px; }
+.playground-notice { position: fixed; top: 70px; left: 50%; z-index: 9; transform: translateX(-50%); padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); font-size: 14px; }
+@media (max-width: 760px) {
+  .playground-stage { margin-right: 0; }
+  .playground-dock { right: 0; }
+  .playground-log { position: static; width: auto; border-left: 0; border-top: 1px solid var(--line); }
+}

@@ -971,6 +971,9 @@ export function useCore(speaker?: string) {
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
+    // A brick's `select` (bricks/contract.ts): that thread is "this", as a card selected on the map would be, until your
+    // attention moves again.
+    select: useCallback((thread_id: string | null) => attention.current.tell(thread_id, null, send), [send]),
     // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
     undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).

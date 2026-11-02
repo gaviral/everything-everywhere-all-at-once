@@ -1,0 +1,53 @@
+/* Bricks in the app (BrickSlot.tsx) and the Catalog that switches them (Catalog.tsx). A brick styles only its own
+   classes (scripts/bricks-check.mjs); what's here is the room the app gives each kind. */
+
+/* A view stands where the map would, padded as the Palace is: clear of the dock at the end, 16 px a side on a phone. */
+.brick-view { max-width: 1180px; margin: 0 auto; padding: 16px 32px calc(var(--dock-room, var(--dock-height, 150px)) + 48px); }
+@media (max-width: 560px) { .brick-view { padding: 16px 16px calc(var(--dock-room, var(--dock-height, 150px)) + 32px); } }
+/* A card that has nothing to say right now takes no gap in the dock. */
+.brick-card:empty { display: none; }
+/* A panel or an input places itself: its wrapper only names it, with no box of its own. */
+.brick-float { display: contents; }
+
+/* A brick that broke: one line where it was, and its switch. A floating one keeps to the dock's left, as the Level
+   meter does, so it never covers the composer. */
+.brick-broke { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--muted); font-size: 13px; }
+.brick-broke button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.brick-broke-floating { position: fixed; left: 16px; bottom: calc(var(--dock-height, 120px) + 8px); z-index: 7; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
+
+/* The Apps panel's way in: one quiet row at its foot, under the apps. */
+.apps-catalog { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px; padding: 10px 0 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.apps-catalog p { margin: 0; }
+.apps-panel .apps-catalog button { flex: none; min-height: 40px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font-size: 13px; }
+
+/* The sheet, as Recap's: centered, a soft blur behind it. */
+.catalog { position: fixed; inset: 0; width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 64px); padding: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--card); color: var(--ink); box-shadow: 0 24px 100px #0003; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.catalog::backdrop { background: color-mix(in srgb, var(--bg) 55%, #0005); backdrop-filter: blur(5px); }
+.catalog[open] { animation: catalog-arrive .22s ease-out; }
+@keyframes catalog-arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.catalog button { font: inherit; color: inherit; cursor: pointer; }
+.catalog :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.catalog-top { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 16px 8px 24px; background: var(--card); }
+.catalog-top h2 { margin: 6px 0 4px; font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+.catalog-top p { margin: 0; color: var(--muted); font-size: 13px; }
+.catalog-close { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted) !important; font-size: 23px !important; }
+.catalog-close:hover { color: var(--ink) !important; }
+.catalog-group { padding: 0 24px; }
+.catalog-group h3 { margin: 18px 0 2px; font-size: 12px; font-weight: 600; }
+.catalog-group h3 span { margin-left: 6px; color: var(--muted); font-weight: 400; }
+.catalog-group ul { margin: 0; padding: 0; list-style: none; }
+.catalog-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.catalog-row > div { flex: 1; min-width: 0; }
+.catalog-row strong { font-size: 14px; font-weight: 600; }
+.catalog-row p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+.catalog .apps-switch.on { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+.catalog-more { padding: 4px 0 0; }
+.catalog-more > summary { width: fit-content; min-height: 32px; margin: 14px 24px 0; padding: 6px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+.catalog-foot { margin: 0; padding: 18px 24px 22px; color: var(--muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .catalog { width: calc(100% - 24px); max-height: calc(100dvh - 32px); border-radius: 18px; }
+  .catalog-top { padding: 14px 10px 6px 16px; }
+  .catalog-group { padding: 0 16px; }
+  .catalog-more > summary { margin-inline: 16px; }
+  .catalog-foot { padding: 16px 16px 18px; }
+}
