@@ -49,13 +49,21 @@ export function Tips() {
       setShown({ text, el });
     };
     const hide = () => { current.current = null; setShown(null); };
-    const over = (event: PointerEvent) => { const el = target(event.target); if (el && el !== current.current) show(el); };
+    // A control pressed with the mouse: its tip has said its piece, and stays down until the pointer leaves it. The
+    // mic's sat above the live line, over the words it had just started hearing (win audit, 2026-11-01).
+    const pressed = { current: null as HTMLElement | null };
+    const over = (event: PointerEvent) => { const el = target(event.target); if (el && el !== current.current && el !== pressed.current) show(el); };
     const out = (event: PointerEvent) => {
-      const el = current.current;
+      const left = (el: HTMLElement | null) => !!el && !el.contains(event.relatedTarget as Node | null);
+      if (left(pressed.current)) pressed.current = null;
       // A tap shows the tip and leaves it up until the next tap, as a touch screen has no hover to end it.
-      if (el && event.pointerType === "mouse" && !el.contains(event.relatedTarget as Node | null)) hide();
+      if (left(current.current) && event.pointerType === "mouse") hide();
     };
-    const down = (event: PointerEvent) => { if (current.current && !current.current.contains(event.target as Node)) hide(); };
+    const down = (event: PointerEvent) => {
+      const el = current.current;
+      if (el && !el.contains(event.target as Node)) hide();
+      else if (el && event.pointerType === "mouse" && el.matches("button")) { pressed.current = el; hide(); }
+    };
     // Keyboard focus only: a click focuses a button too, and the pointer already showed or hid its tip.
     const focus = (event: FocusEvent) => { const el = target(event.target); if (el && el === event.target && el.matches(":focus-visible")) show(el); };
     const blur = (event: FocusEvent) => { if (current.current && current.current === event.target) hide(); };
