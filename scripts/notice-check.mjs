@@ -103,7 +103,7 @@ try {
   await settle();
   assert.equal(core.listenedRevision, listened + 1);
   const appSource = readFileSync(new URL("src/App.tsx", ui), "utf8");
-  assert.match(appSource, /const ended = !core\.listening && core\.voiceStatusRevision > voiceStartedAt\.current && core\.listenedRevision > voiceListenedAt\.current;/);
+  assert.match(appSource, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
   assert.match(appSource, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
 
   // The words of a voice error stay readable for the window's "The mic stopped" notice.

@@ -9,7 +9,7 @@ const src = new URL("../ui/src/", import.meta.url);
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { micState, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
+  const { micState, micEnds, MIC_WORDS, composerHint, ringFill } = await server.ssrLoadModule("/src/MicButton.tsx");
   const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");
   const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
 
@@ -56,6 +56,17 @@ try {
   assert.equal(state({ noKey: true }), "nokey");
   assert.equal(state({ noKey: true, refused: true }), "refused");
   assert.equal(state({ connected: false }), "offline");
+  // The running mic stops when the connection drops, even before the speech service said it listens: no "not
+  // listening" follows then, and a reconnect never starts the stream again (bug hunt: "Starting" for good).
+  const ends = (extra) => micEnds({ connected: true, listening: false, failed: false, statusNew: false, listenedNew: false, ...extra });
+  assert.equal(ends({}), "", "starting: the service hasn't answered yet");
+  assert.equal(ends({ connected: false, statusNew: true }), "offline", "dropped before the service said it listens");
+  assert.equal(ends({ connected: false, listening: false, statusNew: true, listenedNew: true }), "offline");
+  assert.equal(ends({ failed: true }), "failed");
+  assert.equal(ends({ statusNew: true }), "", "an old stream's late end is passed over");
+  assert.equal(ends({ statusNew: true, listenedNew: true }), "ended");
+  assert.equal(ends({ listening: true, statusNew: true, listenedNew: true }), "");
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /micEnds\(\{ connected: core\.connected,[^]*?\}, \[core\.connected, core\.listening,/);
   // Never "off" (or paused, or keyless) while the browser is taking sound, whatever else is true.
   for (const connected of [true, false]) for (const noKey of [true, false]) for (const paused of [true, false]) for (const serviceOn of [true, false]) {
     assert.ok(["starting", "listening", "hearing"].includes(state({ capturing: true, connected, noKey, paused, serviceOn })));

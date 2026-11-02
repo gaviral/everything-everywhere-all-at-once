@@ -32,7 +32,7 @@ import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoCol
 import { micStopped, staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
-import { composerHint, MicButton, micState } from "./MicButton";
+import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
@@ -371,16 +371,16 @@ export default function App() {
   const voiceRevisions = useRef({ status: 0, error: 0, listened: 0 });
   voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision, listened: core.listenedRevision };
   useEffect(() => {
-    const failed = core.voiceErrorRevision > voiceErrorStartedAt.current;
     // Only this mic's stream can end it: the mic tapped off and on fast, the old stream's late "not listening"
     // comes before the new one's "listening" and is passed over.
-    const ended = !core.listening && core.voiceStatusRevision > voiceStartedAt.current && core.listenedRevision > voiceListenedAt.current;
-    if (liveStop.current && (ended || failed)) {
+    const ends = micEnds({ connected: core.connected, listening: core.listening, failed: core.voiceErrorRevision > voiceErrorStartedAt.current,
+      statusNew: core.voiceStatusRevision > voiceStartedAt.current, listenedNew: core.listenedRevision > voiceListenedAt.current });
+    if (liveStop.current && ends) {
       releaseMic();
       core.listen(false);
-      core.showNotice(core.noKey ? core.keyNotice : micStopped(failed ? core.voiceError : ""));
+      core.showNotice(ends === "offline" ? MIC_OFFLINE : core.noKey ? core.keyNotice : micStopped(ends === "failed" ? core.voiceError : ""));
     }
-  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
+  }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
     if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();

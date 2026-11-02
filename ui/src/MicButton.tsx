@@ -23,6 +23,18 @@ export function micState(s: { connected: boolean; capturing: boolean; starting: 
   return s.paused ? "paused" : "off";
 }
 
+/** Said when the connection drops while the mic runs: the words would go nowhere. */
+export const MIC_OFFLINE = "The mic stopped: the connection was lost. Tap it once reconnected; you can still type below.";
+
+/** Why the running mic must stop now, or "" to keep it: the connection gone (even before the speech service said it
+ * listens: no "not listening" follows, and a reconnect never starts the stream again), a voice error, or this mic's
+ * stream ended (`statusNew`, `listenedNew`: news since this mic started, so an old stream's late end is passed over). */
+export function micEnds(s: { connected: boolean; listening: boolean; failed: boolean; statusNew: boolean; listenedNew: boolean }): "" | "offline" | "failed" | "ended" {
+  if (!s.connected) return "offline";
+  if (s.failed) return "failed";
+  return !s.listening && s.statusNew && s.listenedNew ? "ended" : "";
+}
+
 /** What the state is and what a tap does, for the tip and the button's name. */
 export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
   offline: { tip: "Connecting… The mic works once the app is connected.", label: "Microphone, connecting" },
