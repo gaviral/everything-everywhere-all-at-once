@@ -8,7 +8,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, thisBase, direction } = await server.ssrLoadModule("/src/attention-core.ts");
+  const { readMs, LOOK_MS, READ_WPM, changes, carry, sameOr, newestOwn, newestSaid, pointsAtThis, thisKind, thisBase, direction } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Reading time: one look over, then the words at 238 a minute. Never a fixed clock.
   assert.equal(readMs(""), LOOK_MS);
@@ -43,6 +43,14 @@ try {
   // A new title's mark points at the joined thread's title: the old title's card is gone, so it could never be read.
   assert.deepEqual(carry([{ thread: "T1", element: "title-T1", line: "x" }], merged), [{ thread: "T2", element: "title-T2", line: "T2" }]);
   assert.deepEqual(carry([{ thread: "T9", element: "title-T9", line: "x" }], merged), []);
+  // A map change that leaves the marks as they were keeps the very same list, so their reading timers run on instead
+  // of restarting with every change while someone talks (bug hunt 15); a changed one is the new list.
+  const marks = [{ thread: "T2", element: "point-a", line: "x" }];
+  assert.equal(sameOr(marks, carry(marks, merged)), marks);
+  const moved = carry([{ thread: "T1", element: "point-a", line: "x" }], merged);
+  assert.equal(sameOr([{ thread: "T1", element: "point-a", line: "x" }], moved), moved);
+  const attentionSource = readFileSync(new URL("../ui/src/Attention.tsx", import.meta.url), "utf8");
+  assert.equal((attentionSource.match(/setUnseen\(\(marks\) => sameOr\(marks, carry\(/g) ?? []).length, 2, "both carries keep an unchanged list");
 
   // "Latest" moves to your newest landing only; someone else's leaves it where it was.
   assert.equal(newestOwn([thought("a", "T1"), thought("b", "T1"), thought("c", "T2", "Sam")], "Ana"), "b");

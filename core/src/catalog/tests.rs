@@ -260,6 +260,29 @@ async fn words_taken_back_take_the_thread_they_started_with_them() {
     assert_eq!(f.core.snapshot().thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T2"));
 }
 
+/// "Remind me to call the dentist" got its own thread, and the refiner proposed a reminder and an idea on it; "scratch
+/// that" takes the words and the thread away, and what was proposed from them goes too, instead of following the
+/// thread's id into the bills or staying on with no thread. What waits elsewhere stays.
+#[tokio::test]
+async fn scratch_that_sets_aside_what_was_proposed_on_the_thread_it_takes_away() {
+    use crate::world::Suggestion;
+    let mut world = garden();
+    world.threads.push(thread("T5", "Dentist", 5));
+    let action = |id: &str, on: &str| Action { id: id.into(), thread_id: on.into(), kind: "reminder".into(), title: "Call the dentist".into(), when: String::new(), status: ItemStatus::New, done_ms: None };
+    world.actions = vec![action("ac-5", "T5"), action("ac-1", "T1")];
+    world.suggestions = vec![Suggestion { id: "sg-5".into(), thread_id: "T5".into(), text: "Ask about the cleaning too".into(), status: ItemStatus::New }];
+    let f = Fixture::new(world);
+    f.say("Remind me to call the dentist").await;
+    let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
+    f.place(&id, "T5", "Call the dentist");
+    let off = f.say("Scratch that").await;
+    assert!(off.contains(&"merged T5 into T2".to_string()), "{off:?}");
+    let world = f.core.snapshot();
+    let status = |id: &str| world.actions.iter().map(|a| (&a.id, a.status)).chain(world.suggestions.iter().map(|s| (&s.id, s.status))).find(|(i, _)| *i == id).unwrap().1;
+    assert_eq!((status("ac-5"), status("sg-5")), (ItemStatus::Dismissed, ItemStatus::Dismissed));
+    assert_eq!(status("ac-1"), ItemStatus::New);
+}
+
 #[tokio::test]
 async fn a_relative_move_is_redone_from_where_you_were() {
     let mut world = garden();
@@ -487,6 +510,15 @@ async fn a_spoken_yes_no_or_short_fix_answers_the_open_question() {
     let f = Fixture::new(asked());
     assert_eq!(f.say("Palace").await, ["view palace"]);
     assert_eq!(f.say("Yes").await, ["added Yes"]);
+    // "Stop listening" after the answer pauses the mic; it's never taken into the fix (bug hunt: "No, Muse. Stop
+    // listening." wrote "Muse. Stop listening" into the thought, and the mic stopped without "Paused").
+    for (said, did) in [
+        ("No, Muse. Stop listening.", vec!["corrected true Muse", "notice Changed to “Muse”", "view pause"]),
+        ("Yes. Stop listening.", vec!["corrected true", "notice Changed to “Muse Spark”", "view pause"]),
+    ] {
+        let f = Fixture::new(asked());
+        assert_eq!(f.say(said).await, did, "{said}");
+    }
 }
 
 #[tokio::test]

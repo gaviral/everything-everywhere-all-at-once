@@ -88,6 +88,18 @@ export function useDropPoint(thread: string) {
   const moves = useContext(MovesContext);
   const [over, setOver] = useState(false);
   const carries = (event: React.DragEvent) => event.dataTransfer.types.includes(DRAG_TYPE);
+  // A drop on a branch inside this card (or a drag given up) ends the drag here too: the branch keeps the drop to
+  // itself, and the pointer never left this card, so nothing else would clear its highlight.
+  useEffect(() => {
+    if (!over) return;
+    const end = () => setOver(false);
+    document.addEventListener("drop", end, true);
+    document.addEventListener("dragend", end, true);
+    return () => {
+      document.removeEventListener("drop", end, true);
+      document.removeEventListener("dragend", end, true);
+    };
+  }, [over]);
   return {
     over,
     props: {
@@ -119,6 +131,9 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   const moves = useContext(MovesContext);
   const [editing, setEditing] = useState(false);
   const done = useRef(false);
+  // The title when the edit began: a rename that lands meanwhile (the AI's tidy-up, someone in the room) is kept
+  // when the field is left as it was, not reverted to the old words still in it.
+  const before = useRef(thread.title);
   // Enter or Esc ends the edit from the keyboard: focus goes back to the title, so Enter edits it again and j/k carry
   // on from its card. Leaving the field by click or Tab keeps focus where it went.
   const refocus = useRef(false);
@@ -135,7 +150,7 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
     if (done.current) return;
     done.current = true;
     setEditing(false);
-    const title = typed === null ? null : typedTitle(typed, thread.title);
+    const title = typed === null ? null : typedTitle(typed, before.current);
     if (title) moves.rename(thread.id, title);
   };
   if (editing) {
@@ -155,7 +170,7 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   return (
     <div {...heading}>
       <button ref={button} type="button" className="title-button" title="Rename"
-        onClick={() => { done.current = false; setEditing(true); }}>{thread.title}</button>
+        onClick={() => { done.current = false; before.current = thread.title; setEditing(true); }}>{thread.title}</button>
     </div>
   );
 }

@@ -71,6 +71,14 @@ export function carry(unseen: Unseen[], world: World): Unseen[] {
   return [...out.values()];
 }
 
+/** `next`, or `marks` itself when `next` holds the same marks: the marks' reading timers restart whenever the list is
+ *  a new one, so a map that changes every few seconds while someone talks would never let a mark clear. */
+export function sameOr(marks: Unseen[], next: Unseen[]): Unseen[] {
+  const same = marks.length === next.length
+    && marks.every((m, i) => m.thread === next[i].thread && m.element === next[i].element && m.line === next[i].line);
+  return same ? marks : next;
+}
+
 /** Your newest landing among `added` (placed this message), or null: the "latest" mark moves to it. */
 export function newestOwn(added: { id: string; speaker: string }[], me: string): string | null {
   return [...added].reverse().find((t) => t.speaker === me || t.speaker === "you")?.id ?? null;

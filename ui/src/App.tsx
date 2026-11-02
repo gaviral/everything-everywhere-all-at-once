@@ -30,14 +30,14 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
-import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { isUndoKey, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
-import { composerHint, MicButton, micState } from "./MicButton";
+import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
@@ -347,7 +347,12 @@ export default function App() {
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
-  useEffect(() => { if (!core.notice) { setNoticeFocused(false); setNoticeHeld(false); } }, [core.notice]);
+  // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
+  // kept every later notice up for good: on each change, look where focus is now.
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setNoticeFocused(!!core.notice && !!noticeRef.current?.contains(document.activeElement)); }, [core.notice, core.undoId]);
+  // The pointer leaves with the notice: a mouseleave never comes when the notice is gone.
+  useEffect(() => { if (!core.notice) setNoticeHeld(false); }, [core.notice]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
@@ -358,40 +363,53 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [core.notice, core.answerRevision, core.clearNotice, core.undoId, noticeFocused, noticeHeld]);
 
-  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
-  // so the next tap starts a fresh session.
-  const voiceStartedAt = useRef(0);
-  const voiceErrorStartedAt = useRef(0);
-  const voiceRevisions = useRef({ status: 0, error: 0 });
-  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
-  useEffect(() => {
-    if (stopMic && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || core.voiceErrorRevision > voiceErrorStartedAt.current)) {
-      stopMic();
-      setStopMic(null);
-      core.listen(false);
-      core.showNotice(core.noKey ? core.keyNotice : "The mic stopped. Tap it to keep talking.");
-    }
-  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
-
-  useEffect(() => {
-    if (stopMic && core.notice.includes("MODEL_API_KEY")) {
-      stopMic();
-      setStopMic(null);
-    }
-  }, [core.notice, stopMic]);
+  // The running mic's stop, as effects of one render see it: the first to stop the mic clears it at once, so the
+  // next effect in the same render finds the mic off (`stopMic` there is still the render's value).
+  const liveStop = useRef<(() => void) | null>(null);
+  liveStop.current = stopMic;
+  /** Stops the mic if it runs; false if it was already off. */
+  const releaseMic = () => {
+    const stop = liveStop.current;
+    liveStop.current = null;
+    setStopMic(null);
+    stop?.();
+    return !!stop;
+  };
 
   // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
-  // would need it to keep listening). The core has ended the stream already and drops anything heard after.
+  // would need it to keep listening). The core has ended the stream already and drops anything heard after. Before
+  // the stream's end below: both often arrive in one render, and then "Paused" is the answer, not "The mic stopped".
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (core.viewAsk?.view !== "pause") return;
-    if (!stopMic) { core.showNotice("The mic is already off.", core.viewAsk); return; }
-    stopMic();
-    setStopMic(null);
+    if (!releaseMic()) { core.showNotice("The mic is already off.", core.viewAsk); return; }
     core.listen(false);
     setPaused(true);
     core.showNotice("Paused: nothing is heard until you tap the mic.", core.viewAsk);
   }, [core.viewAsk]);
+
+  // Stop local audio when the service reports a stop or the connection drops, and tell the core,
+  // so the next tap starts a fresh session.
+  const voiceStartedAt = useRef(0);
+  const voiceErrorStartedAt = useRef(0);
+  const voiceListenedAt = useRef(0);
+  const voiceRevisions = useRef({ status: 0, error: 0, listened: 0 });
+  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision, listened: core.listenedRevision };
+  useEffect(() => {
+    // Only this mic's stream can end it: the mic tapped off and on fast, the old stream's late "not listening"
+    // comes before the new one's "listening" and is passed over.
+    const ends = micEnds({ connected: core.connected, listening: core.listening, failed: core.voiceErrorRevision > voiceErrorStartedAt.current,
+      statusNew: core.voiceStatusRevision > voiceStartedAt.current, listenedNew: core.listenedRevision > voiceListenedAt.current });
+    if (liveStop.current && ends) {
+      releaseMic();
+      core.listen(false);
+      core.showNotice(ends === "offline" ? MIC_OFFLINE : core.noKey ? core.keyNotice : micStopped(ends === "failed" ? core.voiceError : ""));
+    }
+  }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
+
+  useEffect(() => {
+    if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
+  }, [core.notice, stopMic]);
 
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
@@ -410,19 +428,22 @@ export default function App() {
     setStartingMic(true);
     try {
       let stopped = false;
-      // The browser ended the mic itself (another app took it, it was unplugged): off, and said so.
+      // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
+      // "Listening" to nothing. Starts "The mic stopped", so it stays up until the mic is tapped (notice-rules.ts).
       const ended = () => {
         if (stopped || !mounted.current) return;
         stopped = true;
+        if (liveStop.current === stop) liveStop.current = null;
         setStopMic(null);
         core.listen(false);
-        core.showNotice("The microphone stopped. Tap the mic to listen again, or type below.");
+        core.showNotice("The mic stopped: the microphone went away. Tap it to listen again, or type below.");
       };
       const stopAudio = await startMic(core.sendAudio, ended);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
+      voiceListenedAt.current = voiceRevisions.current.listened;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();
@@ -807,8 +828,6 @@ export default function App() {
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
     (site.hosted || !core.keyRefused) && core.notice.includes("MODEL_API_KEY") ? keyWords(site.hosted, core.keyRefused, "notice")
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
-    : core.notice.startsWith("Voice Transcribe:") ? "The voice service reported a problem. You can type below or try the microphone again."
-    : core.notice.startsWith("Speech service error:") ? "The voice service stopped. You can type below; check your connection and try the microphone again."
     : core.notice
   );
 
@@ -872,6 +891,7 @@ export default function App() {
       <AnimatePresence>
         {core.notice && (
           <motion.div
+            ref={noticeRef}
             className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
@@ -1321,9 +1341,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   const said = differ || thought.placed;
   const [open, flip] = useSaidOpen(thought.id);
   const toggle = said ? (event: React.MouseEvent) => {
-    // Its own buttons (undo a fix, did you mean, Words said), its marks (a tap on ✦ or ? shows that mark's tip,
-    // Tips.tsx) and selecting words to explain keep their jobs.
-    if ((event.target as HTMLElement).closest("button, [data-tip]") || !(window.getSelection()?.isCollapsed ?? true)) return;
+    // Its own controls (legible.ts `POINT_OWN`; marks' tips in Tips.tsx) and selecting words to explain keep their jobs.
+    if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
     flip();
   } : undefined;
   return (
