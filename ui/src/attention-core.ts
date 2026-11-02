@@ -9,10 +9,10 @@ export const READ_WPM = 238;
 /** The time the eye takes to start moving to something that appears (saccade latency, ≈ 200 ms). A cross-fade this
  *  short has finished by the time the eye arrives, so under Reduce Motion it never delays reading. */
 export const LOOK_MS = 200;
-/** How long a highlight or a "seen" check gives you to find and read `text`: one look over, then its words. */
-export function readMs(text: string): number {
+/** How long a highlight or a "seen" check gives you to find and read `text`: one look over, then its words at `wpm`. */
+export function readMs(text: string, wpm = READ_WPM): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return LOOK_MS + Math.round((words * 60_000) / READ_WPM);
+  return LOOK_MS + Math.round((words * 60_000) / wpm);
 }
 
 /** A thread changed while you weren't looking: the element that shows the change, and the words that say it. */
