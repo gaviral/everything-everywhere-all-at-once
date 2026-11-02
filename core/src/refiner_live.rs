@@ -38,6 +38,8 @@ struct Case {
     wrong_tags: &'static [(&'static str, &'static str)],
     /// An action whose title has one of these words is wrong (it's done already).
     no_actions: &'static [&'static str],
+    /// Threads whose latest point names a concern without saying what: an idea there must be one question.
+    vague: &'static [&'static str],
 }
 
 fn thought(n: usize, thread: &str, text: &str, point: &str) -> Thought {
@@ -327,6 +329,17 @@ fn cases() -> Vec<Case> {
             no_actions: &["gas"],
             ..Default::default()
         },
+        Case {
+            name: "vague-note",
+            stages: one(map(&[
+                ("T1", "Palace pictures", "", &["The pictures in the Palace need to be looked at."]),
+                ("T2", "Recap sheet", "", &["The recap sheet should open faster, it takes four seconds right now."]),
+                ("T3", "Onboarding", "", &["Something about the first screen feels off."]),
+                ("T4", "Pricing page", "", &["We should revisit the pricing page at some point."]),
+            ])),
+            vague: &["T1", "T3", "T4"],
+            ..Default::default()
+        },
         Case { name: "demo-sunday", stages: demo(), dates: demo_dates, ..Default::default() },
         Case { name: "demo-tuesday", today: TUESDAY, stages: demo(), dates: &[("cooking", "2026-11-03", "2026-11-06", ""), ("class", "2026-11-03", "2026-11-06", ""), ("birthday", "2026-11-06", "2026-11-06", "friday"), ("lease", "2026-11-03", "2026-11-10", ""), ("landlord", "2026-11-03", "2026-11-10", "")], ..Default::default() },
     ]
@@ -396,10 +409,11 @@ fn problems(case: &Case, before: &World, out: &[Change]) -> Vec<(&'static str, S
     let mut actions: Vec<String> = before.actions.iter().map(|a| a.title.clone()).collect();
     for change in out {
         match change {
-            Change::ThreadMerged { from, into } if !case.merges.contains(&(from.as_str(), into.as_str())) => {
-                found.push(("merge", format!("{from}→{into} ({:?} into {:?})", titles.get(from).cloned().unwrap_or_default(), titles.get(into).cloned().unwrap_or_default())));
+            Change::TidyProposed { proposal: p } if p.kind == crate::tidy::Kind::Merge && !case.merges.contains(&(p.thread_id.as_str(), p.into.as_str())) => {
+                let (from, into) = (&p.thread_id, &p.into);
+                found.push(("merge proposed", format!("{from}→{into} ({:?} into {:?})", titles.get(from).cloned().unwrap_or_default(), titles.get(into).cloned().unwrap_or_default())));
             }
-            Change::ThreadRenamed { thread_id, title } => {
+            Change::ThreadRetitled { thread_id, title, .. } => {
                 let old = titles.get(thread_id).cloned().unwrap_or_default();
                 if case.named.contains(&thread_id.as_str()) {
                     found.push(("renamed a title the person gave", format!("{old:?} to {title:?}")));
@@ -421,11 +435,16 @@ fn problems(case: &Case, before: &World, out: &[Change]) -> Vec<(&'static str, S
                 titles.insert(thread_id.clone(), title.clone());
             }
             Change::SuggestionAdded { suggestion: s } => {
+                if case.vague.contains(&s.thread_id.as_str()) && !s.text.trim_end().ends_with('?') {
+                    found.push(("vague note not asked about", format!("{:?}", s.text)));
+                }
                 let said = before.thoughts.iter().filter(|p| p.thread_id.as_deref() == Some(s.thread_id.as_str())).map(|p| p.text.clone());
                 if names_an_id(before, &s.text) {
                     found.push(("names a thread id", format!("idea {:?}", s.text)));
                 }
-                if let Some(p) = said.chain(actions.iter().cloned()).find(|p| restates(&s.text, p)) {
+                // On a vague point, the question asking what it meant reuses its words by nature.
+                let asking = case.vague.contains(&s.thread_id.as_str()) && s.text.trim_end().ends_with('?');
+                if let Some(p) = said.chain(actions.iter().cloned()).find(|p| !asking && restates(&s.text, p)) {
                     found.push(("idea repeats a point", format!("{:?} repeats {p:?}", s.text)));
                 }
             }
@@ -476,8 +495,9 @@ fn problems(case: &Case, before: &World, out: &[Change]) -> Vec<(&'static str, S
 
 fn show(change: &Change) -> Option<String> {
     Some(match change {
-        Change::ThreadRenamed { thread_id, title } => format!("rename {thread_id} {title:?}"),
-        Change::ThreadMerged { from, into } => format!("merge {from}→{into}"),
+        Change::ThreadRetitled { thread_id, title, .. } => format!("rename {thread_id} {title:?}"),
+        Change::TidyProposed { proposal: p } if p.kind == crate::tidy::Kind::Rename => format!("propose rename {} {:?}", p.thread_id, p.title),
+        Change::TidyProposed { proposal: p } => format!("propose merge {}→{}", p.thread_id, p.into),
         Change::SuggestionAdded { suggestion: s } => format!("idea {} {:?}", s.thread_id, s.text),
         Change::ActionProposed { action: a } => format!("{} {} {:?} {}", a.kind, a.thread_id, a.title, a.when),
         Change::TagSuggested { thread_id, tag } => format!("tag {thread_id} {tag}"),
@@ -563,8 +583,8 @@ async fn run(index: usize, case: Case, number: usize, source: Source) -> Outcome
         };
         for c in &out {
             match c {
-                Change::ThreadRenamed { thread_id, .. } => *renamed.entry(thread_id.clone()).or_default() += 1,
-                Change::ThreadMerged { from, into } if case.merges.contains(&(from.as_str(), into.as_str())) => merged += 1,
+                Change::ThreadRetitled { thread_id, .. } => *renamed.entry(thread_id.clone()).or_default() += 1,
+                Change::TidyProposed { proposal: p } if p.kind == crate::tidy::Kind::Merge && case.merges.contains(&(p.thread_id.as_str(), p.into.as_str())) => merged += 1,
                 _ => {}
             }
         }
@@ -606,6 +626,10 @@ async fn check_all(source: Source, runs: usize, label: &str) {
             *kinds.entry(kind).or_default() += 1;
         }
         let mut wrong = kinds.iter().map(|(k, n)| format!("{k} ({n})")).collect::<Vec<_>>().join(", ");
+        if !case.vague.is_empty() {
+            let asked: usize = mine.iter().map(|o| case.vague.iter().filter(|id| o.log.split("; ").any(|c| c.contains(&format!("idea {id} \"")) && c.trim_end().ends_with("?\""))).count()).sum();
+            wrong += &format!("{}questions on vague points: {asked} of {}", if wrong.is_empty() { "" } else { "; " }, case.vague.len() * mine.len());
+        }
         if !case.merges.is_empty() {
             wrong += &format!("{}right merge made in {}/{}", if wrong.is_empty() { "" } else { "; " }, mine.iter().map(|o| o.merged.min(1)).sum::<usize>(), mine.len());
         }
@@ -656,4 +680,150 @@ fn refiner_show_demo() {
     let stages = demo();
     let body = request(&stages[2], stages[1].thoughts.iter().map(|t| t.at_ms).max().unwrap(), SUNDAY);
     println!("{}", body["messages"][1]["content"].as_str().unwrap());
+}
+
+/// A journal read into a map without writing to it, with the refiner's own renames and merges left out, so a pass
+/// meets the titles the placer gave (a map tidied already would hide what the refiner does to a fresh one). `upto`
+/// keeps the map as it stood after that many thoughts were placed.
+fn from_journal(path: &str, upto: Option<usize>) -> World {
+    let mut world = World::default();
+    let mut placed = 0;
+    for line in std::fs::read_to_string(path).unwrap_or_default().lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(change) = serde_json::from_str::<Change>(line) else { continue };
+        if matches!(change, Change::ThreadRenamed { .. } | Change::ThreadMerged { .. }) {
+            continue;
+        }
+        let places = matches!(change, Change::ThoughtPlaced { .. }) || matches!(&change, Change::ThoughtAdded { thought } if thought.placed);
+        if places && upto.is_some_and(|n| placed >= n) {
+            break;
+        }
+        world.apply(&change);
+        placed += places as usize;
+    }
+    world
+}
+
+/// The refiner's answers on real maps, to define "sure" from them (decisions/refinersure.md): MAPS holds
+/// `name=path[@n,n…]` items (the numbers cut the map after that many placed thoughts), RUNS the passes per map
+/// (default 5), OUT the folder for each answer and the map it was given (never the repo: maps hold people's words).
+///   MODEL_API_KEY=… MAPS=… OUT=… cargo test --release -- --ignored refiner_sure_live --nocapture
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "calls the real model; needs MODEL_API_KEY, MAPS and OUT"]
+async fn refiner_sure_live() {
+    let key = std::env::var("MODEL_API_KEY").ok().filter(|k| !k.trim().is_empty()).expect("MODEL_API_KEY");
+    let runs: usize = std::env::var("RUNS").ok().and_then(|r| r.parse().ok()).unwrap_or(5);
+    let out = PathBuf::from(std::env::var("OUT").expect("OUT"));
+    std::fs::create_dir_all(&out).unwrap();
+    let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(120)).build().unwrap();
+    let gate = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut set = tokio::task::JoinSet::new();
+    for item in std::env::var("MAPS").expect("MAPS").split(',').filter(|s| !s.trim().is_empty()) {
+        let (name, rest) = item.split_once('=').expect("name=path");
+        let (path, cuts) = rest.split_once('@').map(|(p, c)| (p, c.split('.').filter_map(|n| n.parse().ok()).map(Some).collect())).unwrap_or((rest, vec![None]));
+        for upto in cuts {
+            let world = from_journal(path, upto);
+            let stage = format!("{name}-{}", upto.map(|n| n.to_string()).unwrap_or_else(|| "all".into()));
+            std::fs::write(out.join(format!("{stage}.world.json")), serde_json::to_string(&world).unwrap()).unwrap();
+            for run in 1..=runs {
+                let source = Source::Live { http: http.clone(), key: key.clone(), gate: gate.clone(), save: out.clone() };
+                let (world, stage) = (world.clone(), stage.clone());
+                set.spawn(async move {
+                    let body = request(&world, 0, SUNDAY);
+                    let file = format!("{stage}.{run}.json");
+                    let answer = source.answer(&body, &file).await;
+                    (file, answer.map(|a| serde_json::from_str::<Pass>(&a).map(|p| changes_on(&world, p, SUNDAY).len())))
+                });
+            }
+        }
+    }
+    while let Some(done) = set.join_next().await {
+        let (file, result) = done.unwrap();
+        println!("{file}: {}", match result { Ok(Ok(n)) => format!("{n} changes"), Ok(Err(e)) => format!("bad JSON: {e}"), Err(e) => format!("error: {e}") });
+    }
+}
+
+/// Prints each rename and merge the guards keep from the answers `refiner_sure_live` saved in OUT, one per line
+/// (tab-separated: stage, run, kind, thread, from, to), to be labeled and measured.
+#[test]
+#[ignore = "reads answers saved by refiner_sure_live"]
+fn refiner_sure_rows() {
+    let out = PathBuf::from(std::env::var("OUT").expect("OUT"));
+    let mut files: Vec<_> = std::fs::read_dir(&out).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    files.sort();
+    for file in files.iter().filter(|f| f.ends_with(".json") && !f.ends_with(".world.json")) {
+        let (stage, run) = file.trim_end_matches(".json").rsplit_once('.').unwrap();
+        let world: World = serde_json::from_str(&std::fs::read_to_string(out.join(format!("{stage}.world.json"))).unwrap()).unwrap();
+        let Ok(pass) = serde_json::from_str::<Pass>(&std::fs::read_to_string(out.join(file)).unwrap()) else { continue };
+        for change in changes_on(&world, pass, SUNDAY) {
+            match change {
+                Change::ThreadRetitled { thread_id, title, was } => println!("ROW\t{stage}\t{run}\trename\t{thread_id}\t{was}\t{title}"),
+                Change::TidyProposed { proposal: p } => {
+                    let name = |id: &str| world.thread(id).map(|t| t.title.clone()).unwrap_or_default();
+                    let to = if p.into.is_empty() { p.title.clone() } else { name(&p.into) };
+                    println!("ROW\t{stage}\t{run}\tpropose {:?}\t{}\t{}\t{to}", p.kind, p.thread_id, name(&p.thread_id));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Every rename the refiner gave in the saved answers and journals, with what `sure_title` makes of it, to label
+/// and count (decisions/refinersure.md): OUT folders of `refiner_sure_live` (DIRS, comma-separated), the crafted
+/// cases' saved answers (LABEL, default "final"), and the renames journals hold (JOURNALS, a file listing paths).
+#[test]
+#[ignore = "reads saved answers and journals"]
+fn refiner_sure_eval() {
+    let row = |source: &str, world: &World, id: &str, title: &str| {
+        let Some(thread) = world.thread(id) else { return };
+        let verdict = if super::sure_title(world, id, title) { "act" } else { "propose" };
+        let points = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(id)).count();
+        println!("EVAL\t{source}\t{id}\t{}\t{title}\t{verdict}\t{points}", thread.title);
+    };
+    for dir in std::env::var("DIRS").unwrap_or_default().split(',').filter(|d| !d.is_empty()) {
+        let out = PathBuf::from(dir);
+        let mut files: Vec<_> = std::fs::read_dir(&out).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        files.sort();
+        for file in files.iter().filter(|f| f.ends_with(".json") && !f.ends_with(".world.json")) {
+            let (stage, _) = file.trim_end_matches(".json").rsplit_once('.').unwrap();
+            let world: World = serde_json::from_str(&std::fs::read_to_string(out.join(format!("{stage}.world.json"))).unwrap()).unwrap();
+            let Ok(pass) = serde_json::from_str::<Pass>(&std::fs::read_to_string(out.join(file)).unwrap()) else { continue };
+            for t in pass.titles {
+                // Only those the guards before `sure_title` keep.
+                let kept = changes_on(&world, Pass { titles: vec![super::Title { thread_id: t.thread_id.clone(), title: t.title.clone() }], ..Pass::default() }, SUNDAY);
+                if !kept.is_empty() {
+                    row(file, &world, &t.thread_id, t.title.trim());
+                }
+            }
+        }
+    }
+    let label = std::env::var("LABEL").unwrap_or_else(|_| "final".into());
+    for case in cases() {
+        for number in 1..=5 {
+            let mut world = World::default();
+            for (stage, base) in case.stages.iter().enumerate() {
+                world = { let mut w = base.clone(); w.proposals = world.proposals.clone(); w };
+                let file = format!("{}-{number}-{stage}.json", case.name);
+                let Ok(text) = std::fs::read_to_string(folder(&label).join(&file)) else { continue };
+                let Ok(pass) = serde_json::from_str::<Pass>(&text) else { continue };
+                for t in &pass.titles {
+                    let kept = changes_on(&world, Pass { titles: vec![super::Title { thread_id: t.thread_id.clone(), title: t.title.clone() }], ..Pass::default() }, case.today);
+                    if !kept.is_empty() {
+                        row(&file, &world, &t.thread_id, t.title.trim());
+                    }
+                }
+            }
+        }
+    }
+    let Ok(list) = std::env::var("JOURNALS") else { return };
+    for path in std::fs::read_to_string(list).unwrap().lines().filter(|l| !l.trim().is_empty()) {
+        let mut world = World::default();
+        for line in std::fs::read_to_string(path).unwrap_or_default().lines().filter(|l| !l.trim().is_empty()) {
+            let Ok(change) = serde_json::from_str::<Change>(line) else { continue };
+            if let Change::ThreadRenamed { thread_id, title } = &change {
+                row(path, &world, thread_id, title);
+            }
+            world.apply(&change);
+        }
+    }
 }

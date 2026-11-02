@@ -1,0 +1,24 @@
+/* The one tip every mark shares (Tips.tsx): ink on the card color, as the ? list and the notices are, so it reads as
+   the app's own words; a hairline and the page's shadow lift it off a card. It never takes the pointer, so it can't
+   cover the mark it explains or the button beside it. */
+.mark-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: none;
+}
+
+/* A mark too small to aim at gets an invisible pad around it: about 24 px across, the size WCAG asks of a target,
+   without moving anything (`:where` keeps a mark that is placed already, the picture's, where it is). */
+:where(span[data-tip]) { position: relative; cursor: help; }
+:where(span[data-tip])::after { content: ""; position: absolute; inset: -6px; }

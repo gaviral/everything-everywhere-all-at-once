@@ -18,6 +18,14 @@ check "no key-like strings tracked" "[ -z \"\$(tracked '(sk|pk|key)-[A-Za-z0-9_-
 check "no key-like strings anywhere in git history" "! git log --all -p 2>/dev/null | grep -qE '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}'"
 check "run.sh parses" "sh -n run.sh"
 if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"; else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
+# Every demo beat has an offline check (scripts/*-check.mjs); a broken beat fails here, so it can't merge.
+# composer-check needs a live core and real model calls, so it isn't one of them.
+if [ -d ui/node_modules ]; then
+  for c in scripts/*-check.mjs; do
+    case "$c" in *composer-check.mjs) continue ;; esac
+    check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
+  done
+else warn "UI checks skipped: run ./run.sh once to install"; fi
 [ -f LICENSE ] || warn "no LICENSE file yet (User's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "no code or paths from the author's other projects (hackathon rule: new work only)" "[ -z \"\$(tracked '/code/(e2a2o|e2a2o|canvas)|e2a2o-memory|e2a2o|e2a2o (codex|muse|cursor)')\" ]"
@@ -25,6 +33,9 @@ check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_so
 check "core refuses other sites (Origin and Host)" "grep -q 'header::ORIGIN' core/src/main.rs && grep -q 'header::HOST' core/src/main.rs && grep -q 'from_fn_with_state(core.clone(), gate)' core/src/main.rs"
 check "a room keeps the map behind its code (tested)" "grep -q 'fn a_room_lets_the_other_laptop_in_with_the_code' core/src/main.rs"
 check "model calls have a timeout (test fixtures aside)" "python3 -c 'import glob, sys; sys.exit(any(\"reqwest::Client::new()\" in open(f).read().split(\"#[cfg(test)]\")[0] for f in glob.glob(\"core/src/**/*.rs\", recursive=True) if not f.endswith(\"tests.rs\")))'"
+check "model guards catch what they should (self-test)" "python3 scripts/model-guards.py self-test > /dev/null"
+check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
+check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
 # A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.

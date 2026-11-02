@@ -1,6 +1,6 @@
 //! Pictures: once a thread has stayed quiet, Muse Image draws one vivid picture
 //! for it, a memory anchor in the spirit of a memory palace. A few at a time, in the background.
-//! The map shows a small copy; the full picture stays beside it on disk.
+//! The map shows a small copy and the Palace a larger one; the full picture stays beside them on disk.
 
 use crate::world::{Change, Thread, World};
 use crate::Core;
@@ -14,24 +14,31 @@ use std::time::Duration;
 
 const URL: &str = "https://api.meta.ai/v1/images/generations";
 
-/// The house style, so pictures read as one set and each still stands out: one concrete thing
-/// with a twist (vivid, odd images are the ones a memory palace keeps), never a diagram,
-/// drawn the same way every time, on a background color of its own.
-const STYLE: &str = "A memory-palace picture: turn the topic into one concrete, physical thing (an object or a creature) \
-doing something vivid and a little absurd, so it sticks in the mind: oversized, made of an unexpected material, \
-or in an odd situation, yet clearly about the topic. If the topic is serious or painful, make it gentle instead of absurd. \
-Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself. \
-Never a diagram, chart, flowchart, collage, set of icons or screen. \
-House style, the same for every picture: bold, simple 3D clay-style illustration, chunky rounded shapes, saturated colors, \
-soft studio light, the subject centered and filling most of the square, on a plain flat background with nothing else on it. \
-It must read at a glance as a tiny thumbnail. No text, letters, numbers, logos or borders.";
+/// What a picture is: the one object anyone would name for the topic, so it reads at 38 px on a folded card.
+/// In blind matching on the sample at map size, busy clay scenes got 12-16 of 32 thumbnails paired with the right
+/// title; one recognizable object, distinct from the map's other topics, got 30-32.
+const SUBJECT: &str = "A picture that stands for the topic at a glance: the single most recognizable everyday object for it \
+(for example an umbrella for a worry about the weather, a passport for a trip), alone. A twist only in material or scale, \
+never one that hides what the object is. If the topic is serious or painful, keep it gentle. \
+Exactly one object: no second object, no props, no scene, no ground line. Its outline must be unmistakable as a tiny silhouette. \
+Avoid cultural, ethnic or national stereotypes. Never a diagram, chart, collage, set of icons or screen. \
+The object is centered and fills most of the square, on a plain flat background with nothing else on it. \
+No text, letters, numbers, logos or borders.";
 
-/// Background colors, warm and cool in turn, so threads started one after another never look alike.
-const COLORS: [&str; 10] =
-    ["coral", "teal", "mustard yellow", "cornflower blue", "tangerine", "mint green", "rose pink", "lavender", "lime green", "sky blue"];
+/// Each room's color, in the order rooms started: none near the blue, amber or purple the app keeps for where you
+/// are, what needs you and what the AI added. Siblings share it (their objects tell them apart), so a room reads as
+/// one group in the Palace; the UI tints the room's titles with the same family (`ui/src/rooms.ts`).
+// Cool and warm take turns, so neighboring rooms never look alike; a calm green comes first, red only fourth.
+const FAMILIES: [&str; 5] = ["emerald green", "orchid pink", "teal", "raspberry red", "lime green"];
+
+/// The other topics a prompt names, newest first: a Palace screen shows 18 tiles side by side (3 rows of 6).
+const OTHERS: usize = 18;
 
 /// The map shows pictures at 52 px or less; 128 px stays sharp on 2x and 3x screens.
 const SMALL: u32 = 128;
+/// The Palace's widest tile is ≈ 200 CSS px (its grid at a 700 px window; 171 px at full width), 400 pixels on a
+/// 2x screen, where the map's 128 px copy was stretched ≈ 3×. 512 px keeps that sharp with room for larger tiles.
+const PALACE: u32 = 512;
 
 /// Attempts per thread, so a passing failure (a timeout, a rate limit) doesn't cost it its picture.
 const TRIES: u32 = 3;
@@ -102,13 +109,14 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                 .filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
                 .map(|p| p.point.clone())
                 .collect();
+            let prompt = prompt(&world, thread, &points);
             let attempt = attempts.entry(thread.id.clone()).or_default();
             attempt.count += 1;
             attempt.in_flight = true;
             let (core, dir, thread) = (core.clone(), dir.clone(), thread.clone());
             drawing.push(async move {
                 let started = crate::now_ms();
-                let result = draw(&core, &dir, &thread, &points).await;
+                let result = draw(&core, &dir, &thread, &prompt).await;
                 if result.is_ok() {
                     tracing::info!("picture for {} drawn in {} ms", thread.id, crate::now_ms().saturating_sub(started));
                 }
@@ -148,26 +156,53 @@ pub(crate) fn perf(world: &World, now: u64) {
         ready(world, &HashMap::new(), now + SETTLE_MS, QUIET_MS).iter().map(|thread| {
             let points = world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(thread.id.as_str()))
                 .map(|p| p.point.clone()).collect::<Vec<_>>();
-            prompt(thread, &points)
+            prompt(world, thread, &points)
         }).collect::<Vec<_>>()
     }, |prompts| prompts.iter().map(String::len).sum());
 }
 
-/// What Muse Image is asked for: the house style, the thread's own color, then what the thread is about.
-fn prompt(thread: &Thread, points: &[String]) -> String {
-    // Numbered threads take turns through the colors; others (imported ones) get one picked from their id.
-    let number: usize = thread.id.trim_start_matches('T').parse()
-        .unwrap_or_else(|_| thread.id.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)));
-    let color = COLORS[number % COLORS.len()];
-    // The first few points say what the thread is; more only makes the prompt longer.
-    let details = points.iter().take(6).map(String::as_str).collect::<Vec<_>>().join("; ");
-    format!("{STYLE} Background color: {color}. Topic: {}. Details: {details}.", thread.title)
+/// What Muse Image is asked for: the object rule, the room's look, the topic, and the topics to keep it apart from.
+fn prompt(world: &World, thread: &Thread, points: &[String]) -> String {
+    let family = family(world, thread);
+    let look = format!(
+        "House style: bold, simple 3D clay-style illustration, chunky rounded shapes, soft studio light. Colors: the \
+object is made entirely of {family} clay in a few shades of {family}, on a pale, light {family} background; nothing in any other color."
+    );
+    let mut prompt = format!("{SUBJECT} {look} Topic: {}.", thread.title);
+    // The first point says what the thread is; more details invite props.
+    if let Some(point) = points.first() {
+        prompt += &format!(" Detail: {point}.");
+    }
+    let mut others: Vec<&Thread> = world.threads.iter().filter(|t| t.id != thread.id).collect();
+    others.sort_by_key(|t| std::cmp::Reverse(t.touched_ms));
+    let others = others.iter().take(OTHERS).map(|t| t.title.as_str()).collect::<Vec<_>>();
+    if !others.is_empty() {
+        prompt += &format!(
+            " Other topics on this map: {}. Pick an object clearly different from what any of them would get.",
+            others.join("; ")
+        );
+    }
+    prompt
 }
 
-async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> anyhow::Result<String> {
+/// The color family of a thread's room: rooms take turns through `FAMILIES` in the order their first thread started.
+fn family(world: &World, thread: &Thread) -> &'static str {
+    let mut root = thread;
+    // A parent chain can't be longer than the map; the bound keeps a broken one from looping.
+    for _ in 0..world.threads.len() {
+        match root.parent_id.as_deref().and_then(|id| world.thread(id)) {
+            Some(parent) => root = parent,
+            None => break,
+        }
+    }
+    let index = world.threads.iter().filter(|t| t.parent_id.is_none()).position(|t| t.id == root.id).unwrap_or(0);
+    FAMILIES[index % FAMILIES.len()]
+}
+
+async fn draw(core: &Core, dir: &Path, thread: &Thread, prompt: &str) -> anyhow::Result<String> {
     let body = serde_json::json!({
         "model": "muse-image-1.0",
-        "prompt": prompt(thread, points),
+        "prompt": prompt,
         "n": 1,
         // Sets the shape only; Muse Image draws at its own size (1600 px).
         "size": "1024x1024",
@@ -175,7 +210,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
         // A picture needs no searching or code, and the person's thoughts stay out of web searches.
         "tool_enablement": {"enable_image_search": false, "enable_web_search": false, "enable_shell": false},
     });
-    let value = core.call_model(URL, &body, PATIENCE).await?;
+    let value = core.call_model_noting(URL, &body, PATIENCE, serde_json::json!({"feature": "picture", "thread": thread.id})).await?;
     let encoded = value["data"][0]["b64_json"].as_str().context("no image in the answer")?;
     let bytes = decode(encoded)?;
     // Muse Image returns WebP ("RIFF" header); fall back to PNG's extension otherwise.
@@ -183,20 +218,41 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, points: &[String]) -> an
     let name = format!("{}-{}.{ext}", thread.id, uuid::Uuid::new_v4().simple());
     tokio::fs::create_dir_all(dir).await?;
     tokio::fs::write(dir.join(&name), &bytes).await?;
-    match shrink(dir, &name, bytes).await {
-        Ok(path) => Ok(path),
+    let path = match shrink(dir, &name, bytes).await {
+        Ok(path) => path,
         Err(e) => {
             tracing::warn!("no small copy of {name}, showing the full picture: {e:#}");
-            Ok(format!("/images/{name}"))
+            format!("/images/{name}")
         }
-    }
+    };
+    core.trace.write(|| serde_json::json!({"kind": "picture", "thread": thread.id, "saved": name, "shown": path}));
+    Ok(path)
 }
 
-/// Pictures drawn before small copies existed get one now, so older maps load light too.
+/// Pictures drawn before the copies existed get them now, so older maps load light and their Palace stays sharp.
 async fn shrink_old(core: &Core, dir: &Path) {
     for thread in core.snapshot().threads.clone() {
         let Some(name) = thread.picture.as_deref().and_then(|p| p.strip_prefix("/images/")) else { continue };
-        if !name.ends_with(".webp") || name.ends_with("-small.webp") || name.contains(['/', '\\']) {
+        if !name.ends_with(".webp") || name.contains(['/', '\\']) {
+            continue;
+        }
+        if let Some(stem) = name.strip_suffix("-small.webp") {
+            // A map copy from before Palace copies: make one if the full picture is still there (a shipped
+            // sample keeps only its copies, and the Palace shows the map copy instead).
+            let palace = dir.join(format!("{stem}-palace.webp"));
+            if !tokio::fs::try_exists(&palace).await.unwrap_or(true) {
+                if let Ok(bytes) = tokio::fs::read(dir.join(format!("{stem}.webp"))).await {
+                    let copy = tokio::task::spawn_blocking(move || square_copy(&bytes, PALACE, 8)).await;
+                    match copy.map_err(anyhow::Error::from).and_then(|copy| copy) {
+                        Ok(copy) => {
+                            if let Err(e) = tokio::fs::write(&palace, copy).await {
+                                tracing::warn!("no Palace copy of {name}: {e:#}");
+                            }
+                        }
+                        Err(e) => tracing::warn!("no Palace copy of {name}: {e:#}"),
+                    }
+                }
+            }
             continue;
         }
         let small = match tokio::fs::read(dir.join(name)).await {
@@ -210,26 +266,30 @@ async fn shrink_old(core: &Core, dir: &Path) {
     }
 }
 
-/// Writes the small copy of the full picture `name` next to it; returns the copy's path for the map.
+/// Writes the map's and the Palace's copies of the full picture `name` next to it; returns the map copy's path.
+/// The Palace finds its copy by name ("-palace" for "-small").
 async fn shrink(dir: &Path, name: &str, bytes: Vec<u8>) -> anyhow::Result<String> {
     let stem = name.strip_suffix(".webp").context("not a WebP picture")?;
-    let small = tokio::task::spawn_blocking(move || small_copy(&bytes)).await??;
+    let (small, palace) =
+        tokio::task::spawn_blocking(move || anyhow::Ok((square_copy(&bytes, SMALL, 6)?, square_copy(&bytes, PALACE, 8)?))).await??;
+    tokio::fs::write(dir.join(format!("{stem}-palace.webp")), palace).await?;
     let name = format!("{stem}-small.webp");
     tokio::fs::write(dir.join(&name), small).await?;
     Ok(format!("/images/{name}"))
 }
 
-/// A square copy at most `SMALL` pixels wide: the center, each new pixel the average of the ones it
-/// covers, six bits a channel (no visible change this small, and half the bytes), lossless WebP.
-fn small_copy(webp: &[u8]) -> anyhow::Result<Vec<u8>> {
+/// A square copy at most `side` pixels wide: the center, each new pixel the average of the ones it covers,
+/// lossless WebP with `bits` a channel (six halve the bytes with no visible change at map size; the Palace's
+/// larger copy keeps eight, so soft shading doesn't band).
+fn square_copy(webp: &[u8], side: u32, bits: u32) -> anyhow::Result<Vec<u8>> {
     let mut decoder = image_webp::WebPDecoder::new(Cursor::new(webp))?;
     let (width, height) = decoder.dimensions();
     let channels = if decoder.has_alpha() { 4 } else { 3 };
     let mut pixels = vec![0u8; decoder.output_buffer_size().context("picture too large")?];
     decoder.read_image(&mut pixels)?;
-    let side = width.min(height);
+    let (out, side) = (side.min(width.min(height)), width.min(height));
     let (left, top) = ((width - side) / 2, (height - side) / 2);
-    let out = SMALL.min(side);
+    let drop = 8 - bits.min(8);
     let mut small = Vec::with_capacity((out * out * channels) as usize);
     for y in 0..out {
         let (y0, y1) = (top + y * side / out, top + (y + 1) * side / out);
@@ -247,7 +307,8 @@ fn small_copy(webp: &[u8]) -> anyhow::Result<Vec<u8>> {
             let count = (x1 - x0) * (y1 - y0);
             for total in &sum[..channels as usize] {
                 let value = ((total + count / 2) / count) as u8;
-                small.push((value & !3) | (value >> 6));
+                // Dropped low bits repeat the high ones, so white stays white.
+                small.push(if drop == 0 { value } else { (value >> drop << drop) | (value >> (8 - drop)) });
             }
         }
     }
@@ -433,31 +494,39 @@ mod tests {
         }
         let mut full = Vec::new();
         image_webp::WebPEncoder::new(&mut full).encode(&pixels, width, height, image_webp::ColorType::Rgb8).unwrap();
-        let small = small_copy(&full).unwrap();
-        let mut decoder = image_webp::WebPDecoder::new(Cursor::new(&small)).unwrap();
-        assert_eq!(decoder.dimensions(), (SMALL, SMALL));
-        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
-        decoder.read_image(&mut out).unwrap();
-        assert!(out.chunks(3).all(|p| p == [0, 0, 255]), "only the blue middle is kept");
+        for (side, bits, expect) in [(SMALL, 6, SMALL), (PALACE, 8, 200)] {
+            let copy = square_copy(&full, side, bits).unwrap();
+            let mut decoder = image_webp::WebPDecoder::new(Cursor::new(&copy)).unwrap();
+            assert_eq!(decoder.dimensions(), (expect, expect), "never larger than the picture's square");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+            decoder.read_image(&mut out).unwrap();
+            assert!(out.chunks(3).all(|p| p == [0, 0, 255]), "only the blue middle is kept");
+        }
     }
 
     #[test]
-    fn neighboring_threads_get_different_colors() {
-        let thread = |id: &str| Thread {
+    fn rooms_take_turns_through_the_colors_and_branches_share_their_room() {
+        let thread = |id: &str, parent: Option<&str>, title: &str, touched_ms: u64| Thread {
             id: id.into(),
-            title: "Laundry".into(),
-            parent_id: None,
+            title: title.into(),
+            parent_id: parent.map(Into::into),
             status: crate::world::ThreadStatus::Open,
             last_point: String::new(),
-            touched_ms: 0,
+            touched_ms,
             tags: vec![],
             picture: None,
             dropped_by: String::new(),
         };
-        let points = vec!["Fold it tonight".to_string()];
-        assert_ne!(prompt(&thread("T3"), &points), prompt(&thread("T4"), &points));
-        assert!(prompt(&thread("T3"), &points).ends_with("Topic: Laundry. Details: Fold it tonight."));
-        assert!(prompt(&thread("T3"), &points)
-            .contains("Avoid cultural, ethnic or national stereotypes; prefer objects and scenes about the topic itself."));
+        let mut world = World::default();
+        world.threads = vec![thread("T1", None, "Laundry", 1), thread("T2", None, "Rent", 2), thread("T3", Some("T1"), "Socks", 3)];
+        assert_eq!(family(&world, &world.threads[0]), FAMILIES[0]);
+        assert_eq!(family(&world, &world.threads[1]), FAMILIES[1]);
+        assert_eq!(family(&world, &world.threads[2]), FAMILIES[0], "a branch has its room's color");
+        let points = vec!["Fold it tonight".to_string(), "Buy softener".to_string()];
+        let laundry = prompt(&world, &world.threads[0], &points);
+        assert!(laundry.contains("of emerald green clay"), "{laundry}");
+        assert!(laundry.contains("Topic: Laundry. Detail: Fold it tonight. Other topics on this map: Socks; Rent."), "{laundry}");
+        assert!(!laundry.contains("Buy softener"), "one point says what it is");
+        assert!(laundry.contains("Avoid cultural, ethnic or national stereotypes."));
     }
 }

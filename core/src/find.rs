@@ -257,7 +257,7 @@ struct Ranked {
 }
 
 /// Small English stems, with whole words so "rent" never matches "parent".
-fn stem(word: &str) -> String {
+pub(crate) fn stem(word: &str) -> String {
     let mut word = word.to_string();
     if word.is_ascii() {
         if word.len() > 4 && word.ends_with("ies") {
@@ -281,7 +281,8 @@ fn stem(word: &str) -> String {
     word
 }
 
-fn words(text: &str) -> Vec<String> {
+/// A text's words that say what it's about, stemmed, each once.
+pub(crate) fn words(text: &str) -> Vec<String> {
     const SKIP: &[&str] = &[
         "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "at", "for", "from", "with", "about",
         "i", "me", "my", "we", "our", "you", "your", "it", "its", "this", "that", "these", "those", "there",
@@ -342,6 +343,11 @@ fn best(ranked: &[Ranked], query: &str) -> Option<Found> {
     let best = ranked.first()?;
     // Partial overlap is a clue for the model, never enough to move someone on its own.
     (best.rank.words == words(query).len()).then(|| best.found.clone())
+}
+
+/// The thread whose title, tags or a point hold every word of `query`, as a search with no model call finds it.
+pub(crate) fn thread_for(world: &World, query: &str) -> Option<String> {
+    best(&rank(world, query), query).map(|found| world.resolve(&found.thread_id))
 }
 
 #[cfg(test)]
@@ -438,6 +444,8 @@ enum Miss {
 /// paraphrases), and the words the search held.
 fn missed(core: &Arc<Core>, speaker: &str, request: u64, why: Miss, topic: &str) {
     let Some(search) = core.find.end(speaker, request) else { return };
+    // A correction redone as this search keeps the words it replaced (catalog.rs).
+    crate::catalog::searched(core, speaker, false);
     let message = match (why, search.said.is_empty()) {
         // Trying again can't help a refused key.
         (Miss::Failed, _) if core.key_refused() => crate::model::REFUSED.into(),
@@ -445,6 +453,9 @@ fn missed(core: &Arc<Core>, speaker: &str, request: u64, why: Miss, topic: &str)
         (Miss::Failed, false) => "I couldn't search just now, so I kept it as a thought.".into(),
         (_, false) => format!("I couldn't find “{topic}”, so I kept it as a thought."),
         (Miss::Empty, true) => "Nothing on the map yet: say a thought first".into(),
+        (Miss::NoKey, true) if core.key.is_some() && !core.key_refused() => {
+            format!("I couldn't find “{topic}” by its words, and search by meaning is paused this hour. Try a few words you used.")
+        }
         (Miss::NoKey, true) => format!("I couldn't find “{topic}”. Searching by meaning needs the AI key."),
         (Miss::NotFound, true) => format!("I couldn't find “{topic}”. Try a few words you used."),
     };
@@ -470,6 +481,7 @@ fn show(core: &Arc<Core>, speaker: &str, request: u64, found: Found, topic: &str
     let Some(search) = core.find.end(speaker, request) else { return };
     core.focus(speaker, &id);
     core.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id: found.thought_id, message });
+    crate::catalog::searched(core, speaker, true);
     // Said after the question, they go on where it landed.
     held(core, speaker, (search.rest, String::new()), true);
 }
