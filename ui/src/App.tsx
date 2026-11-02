@@ -892,13 +892,21 @@ export default function App() {
   };
 
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
-  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does.
+  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does, listen is the mic
+  // button's tap (the Keys brick's ⌘D). It starts the mic only inside a click or key press in this tab, as the tap does,
+  // and not while the button can't be pressed (starting, or offline with nothing to stop).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, {
     addThought: core.sendText,
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),
     position: core.position,
+    listen: (on) => {
+      const capturing = !!stopMic;
+      if (on === capturing || startingMic || (!core.connected && !capturing)) return;
+      if (!capturing && navigator.userActivation?.isActive === false) return;
+      void toggleMic();
+    },
   });
   const bricksOn = useBricksOn();
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));

@@ -24,6 +24,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
     select: (id) => latest.current.select(id),
     notify: (text) => latest.current.notify(text),
     position: (id, x, y) => latest.current.position(id, x, y),
+    listen: (on) => latest.current.listen(on),
   }), []);
   const [events] = useState(brickEvents);
   const on = useMemo<BrickOn>(() => (name, listener) => name === "loudness" ? onReading(listener as (level: number) => void) : events.on(name, listener), [events]);
