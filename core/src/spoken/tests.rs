@@ -179,6 +179,7 @@ fn leaving_a_thought_unfinished_for_a_filing_offers_it_back() {
         complete: false,
         at_ms: 1,
         place_ms: Some(0),
+        decided: false,
     });
     let f = Fixture::new(world);
     assert!(act(&f.core, "you", "Add milk to the shopping list").is_some());

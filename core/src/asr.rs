@@ -48,6 +48,8 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
         return Err(anyhow!("Voice Transcribe refused the session: {first}"));
     }
     core.send_to(&speaker, ServerMsg::Status { listening: true, note: "Listening".into() });
+    let step = crate::model::STEP_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    core.listen_step(&speaker, step, MODEL, false);
 
     // Audio out, paced by the microphone itself; when the UI stops, end the stream.
     let writer = tokio::spawn(async move {
@@ -64,6 +66,7 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
     let ended = hear(&core, &speaker, &mut stream).await;
     writer.abort();
     core.send_to(&speaker, ServerMsg::Partial { text: String::new() });
+    core.listen_step(&speaker, step, MODEL, true);
     ended
 }
 
@@ -92,12 +95,15 @@ where
     }
 }
 
+/// The model that hears the words, named on screen while listening (`Core::listen_step`).
+const MODEL: &str = "muse-voice-transcribe-1.0";
+
 /// The session's first message: how to listen, and the words to expect.
 fn handshake(key: &str) -> Value {
     json!({
         "authorization": {"accessToken": format!("Bearer {key}")},
         "audioEncoding": "PCM_24KHZ",
-        "model": "muse-voice-transcribe-1.0",
+        "model": MODEL,
         "mode": "ENDPOINTING",
         "partialMode": "CUMULATIVE",
         // Every frame heard is reported, so a quiet room still shows the stream is alive (`QUIET_MAX`).

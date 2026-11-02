@@ -9,6 +9,7 @@ mod asr;
 mod catalog;
 mod chunks;
 mod clock;
+mod decided;
 mod explain;
 mod find;
 mod import;
@@ -68,6 +69,8 @@ pub struct Core {
     pub key: Option<String>,
     /// Placing and Explain's model (model.rs).
     pub placer_model: model::Setting,
+    /// How many of the same placement call race, the first good answer winning (placer.rs `RACE`).
+    pub placer_race: usize,
     pub http: reqwest::Client,
     /// When the person last spoke or typed; background work waits for a pause.
     last_activity: std::sync::atomic::AtomicU64,
@@ -81,6 +84,8 @@ pub struct Core {
     service: model::Service,
     /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
     hosts: Mutex<std::collections::HashSet<String>>,
+    /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
+    came_back: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
 }
@@ -177,19 +182,31 @@ impl Core {
     /// "Where was I?": see `way_back`. With nowhere to go back to it still answers, as every request does (the
     /// tour teaches it on an empty map): where the speaker is, shown as Take me there shows a point, or why
     /// there's nothing yet.
+    /// Sent back once, asking again before they speak or move shows where they are: going back to B from a thread
+    /// reached without speaking leaves the map looking like one line said away from A, and it mustn't bounce on.
     fn go_back(&self, speaker: &str) {
         let world = self.snapshot();
-        if let Some(id) = way_back(&world, speaker, now_ms()) {
+        let mark = |w: &World| {
+            (w.active_by.get(speaker).map(|id| w.resolve(id)), w.thoughts.iter().rev().find(|t| t.speaker == speaker).map(|t| t.id.clone()))
+        };
+        let back_already = self.came_back.lock().unwrap().get(speaker) == Some(&mark(&world));
+        if let Some(id) = way_back(&world, speaker, now_ms()).filter(|_| !back_already) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
+            self.came_back.lock().unwrap().insert(speaker.into(), mark(&self.snapshot()));
             return;
         }
-        // Nothing else to go back to: every point of theirs is on the thread they're on. Their latest, by when it
-        // was said (a split turn's rest, said at the same time, comes later in the list).
+        // Nothing to go back to: they're where they were. Their newest point on the thread they're on, else the
+        // newest anyone made there, else their latest anywhere, by when it was said (a split turn's rest, said at the
+        // same time, comes later in the list).
         let now = now_ms();
-        let latest = world.thoughts.iter().filter(|t| t.placed && t.speaker == speaker).max_by_key(|t| t.said_at(now));
+        let newest = |keep: &dyn Fn(&Thought) -> bool| world.thoughts.iter().filter(|t| t.placed && keep(t)).max_by_key(|t| t.said_at(now));
+        let here = world.active_by.get(speaker).map(|id| world.resolve(id));
+        let on_here = |t: &Thought| here.is_some() && t.thread_id.as_deref().map(|id| world.resolve(id)) == here;
+        let latest = newest(&|t| t.speaker == speaker && on_here(t)).or_else(|| newest(&on_here)).or_else(|| newest(&|t| t.speaker == speaker));
         match latest.and_then(|t| Some((t, world.thread(&world.resolve(t.thread_id.as_deref()?))?))) {
             Some((thought, thread)) => self.send_to(
                 speaker,
@@ -416,6 +433,7 @@ impl Core {
             complete: true,
             at_ms: now_ms(),
             place_ms: None,
+            decided: false,
         };
         let id = thought.id.clone();
         // Before it's queued, so the placer knows when it's the first after "new thread".
@@ -653,10 +671,15 @@ pub(crate) fn starts(text: &str) -> Vec<usize> {
 
 /// Where "where was I?" takes a speaker: where their last line trailed off, even the thread they're on (that's
 /// where they left off; moving them away would also keep it from being marked unfinished when they move on);
-/// else the thread they most recently dropped; else the last other one they spoke on. Never the other
+/// else the thread they most recently dropped; else back from a detour: one line said away from where they were
+/// ("sorry, Leo spilled juice") goes back to where they were, and a thread they went to without speaking ("next
+/// one") goes back to where they last spoke. Otherwise nowhere: they're where they were ("this" with nothing
+/// pointed at, catalog.rs `this`), and `go_back` shows where on it: two lines on the thread they're on is staying,
+/// not a detour, and back from one already, asking again doesn't send them away again. Not the card they point at:
+/// the question has no pointing word, and what you look at is as often what took you away. Never the other
 /// person's: in a room each has their own way back.
 fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
-    let current = world.active_by.get(speaker);
+    let current = world.active_by.get(speaker).map(|id| world.resolve(id));
     // Newest first by when it was said (see `Thought::said_at`). Reversed first, so the stable sort keeps
     // a split turn's rest (same time) ahead of its first part.
     let mut theirs: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed && t.speaker == speaker).collect();
@@ -670,7 +693,19 @@ fn way_back(world: &World, speaker: &str, now: u64) -> Option<String> {
             .max_by_key(|t| t.touched_ms)
             .map(|t| t.id.clone())
     };
-    trailed_off.or_else(dropped).or_else(|| theirs.iter().filter_map(|t| t.thread_id.clone()).find(|id| Some(id) != current))
+    let thread = |t: &Thought| t.thread_id.as_deref().map(|id| world.resolve(id));
+    let detour = || {
+        // Where their newest line is, how many lines in a row they said there, and where they spoke before that.
+        let last = theirs.first().and_then(|t| thread(t))?;
+        let run = theirs.iter().take_while(|t| thread(t).as_ref() == Some(&last)).count();
+        let before = theirs.iter().filter_map(|t| thread(t)).find(|id| *id != last);
+        match &current {
+            Some(here) if *here == last => (run == 1).then_some(before).flatten(),
+            Some(here) if run == 1 && before.as_ref() == Some(here) => None,
+            _ => Some(last),
+        }
+    };
+    trailed_off.or_else(dropped).or_else(detour)
 }
 
 /// Why "where was I?", "next one" or "last one" has nowhere to go: an empty map, or nothing of the speaker's on it
@@ -741,6 +776,12 @@ fn view(text: &str) -> Option<View> {
     ];
     let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
     let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
+    // "Export my map" and its kin: a file of the map ("save my map" too, as a Save button would). Only the whole turn,
+    // so "export the photos" and "I should save the map for Dana" stay thoughts.
+    let export = [
+        "export", "export map", "export my map", "export the map", "export this map", "download my map", "download the map",
+        "save my map", "save the map",
+    ];
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -753,6 +794,8 @@ fn view(text: &str) -> Option<View> {
         Some(View::Focus)
     } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
         Some(View::All)
+    } else if is_command(text, &export, &["as markdown", "to markdown", "as a markdown file", "as a file"]) {
+        Some(View::Export)
     } else {
         None
     }
@@ -831,12 +874,14 @@ async fn main() -> anyhow::Result<()> {
         placer_queue,
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
+        came_back: Default::default(),
         placing: placer::Placing::default(),
         room: room.as_deref().map(|code| Room { tunnel: tunnel.clone(), ..Room::from(code) }),
         key,
         // Private by default. Contributor mode, opt-in through PLACER_MODEL (.env.example), is a little faster
         // and cheaper, but Meta may keep what it reads.
         placer_model: model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+        placer_race: placer::race_from_env(),
         // Without a limit, one hung model call stalls its block for good; two minutes is far past any real answer.
         http: reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -873,7 +918,7 @@ async fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
-            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
+            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT={} ./run.sh", port.saturating_add(1))
         } else {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }
@@ -1306,6 +1351,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
                 Ok(ClientMsg::Attention { selected, pointed }) => catalog::attend(&core, &speaker, selected, pointed),
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
+                Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
                 Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
@@ -1418,10 +1464,13 @@ impl Core {
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
             hosts: Default::default(),
+            came_back: Default::default(),
             placing: Default::default(),
             room: None,
             key: None,
             placer_model: "test".into(),
+            // One call a placement, so a stand-in's answers are used in order; racing has its own test (placer.rs).
+            placer_race: 1,
             // One for every test core: making one reads the system's certificates, and a test may make thousands.
             http: {
                 static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
@@ -1552,6 +1601,7 @@ mod tests {
             complete: true,
             at_ms,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1746,6 +1796,11 @@ mod tests {
             ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
+            ("Export my map", View::Export),
+            ("Okay, export the map as Markdown, please.", View::Export),
+            ("Can you download my map?", View::Export),
+            ("Save the map as a file", View::Export),
+            ("Export.", View::Export),
         ] {
             assert_eq!(view(text), Some(asked), "{text}");
         }
@@ -1756,6 +1811,8 @@ mod tests {
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
             // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
+            // Export takes only the map, whole: these are talk.
+            "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1855,14 +1912,15 @@ mod tests {
     #[tokio::test]
     async fn every_documented_request_acts_alone_and_after_each_lead_in() {
         let now = super::now_ms();
-        // Two threads you spoke on, you on the first; one point to find.
+        // Two threads you spoke on, you on the second after one line there (so "where was I?" goes back); one point
+        // to find.
         let world = || World {
             threads: vec![thread("Garden", 1, ""), thread("Bills", 2, "")],
             thoughts: vec![
                 Thought { point: "Plant the tomatoes".into(), ..said("a", "you", "Garden", now - 120_000) },
                 Thought { point: "The electric bill is due Friday".into(), ..said("b", "you", "Bills", now - 60_000) },
             ],
-            active_by: HashMap::from([("you".into(), "Garden".into())]),
+            active_by: HashMap::from([("you".into(), "Bills".into())]),
             ..World::default()
         };
         // A recap that names no period covers today, or the last session when nothing landed today.
@@ -2337,6 +2395,63 @@ mod tests {
         assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
     }
 
+    /// "Where was I?" means the thread you're on ("this" with nothing pointed at: catalog.rs `this`) unless you
+    /// detoured: a line that trailed off, a thread you dropped, or one line said away from where you were. The
+    /// persona runs of 2026-11-01 (synthetic): a parent's two finished lines on Maya's shoes went "Back to" the cake
+    /// thread before; a PM asking twice was sent back and forth.
+    #[test]
+    fn where_was_i_stays_on_this_thread_unless_you_detoured() {
+        let now = super::now_ms();
+        let line = |id: &str, thread: &str, ago: u64, point: &str| Thought { point: point.into(), ..said(id, "you", thread, now - ago) };
+        let ask = |core: &Arc<Core>| -> Vec<String> {
+            let mut updates = core.updates.subscribe();
+            core.add_thought("you", "Where was I?");
+            std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|out| match out.message {
+                    ServerMsg::Notice { message } => Some(message),
+                    ServerMsg::Found { thread_id, message, .. } => Some(format!("{thread_id}: {message}")),
+                    _ => None,
+                })
+                .collect()
+        };
+        let map = |thoughts: Vec<Thought>, on: &str| World {
+            threads: vec![thread("Groceries", 1, ""), thread("Cake", 2, ""), thread("Maya", 3, "")],
+            thoughts,
+            active_by: HashMap::from([("you".into(), on.into())]),
+            ..World::default()
+        };
+        // Two finished lines on Maya's shoes: you're there, so it shows where, and doesn't move you to the cake.
+        let (core, _queue, path) = keyless(map(
+            vec![line("g", "Groceries", 60_000, "Eggs and dish soap"), line("c", "Cake", 40_000, "Cake from Safeway or bake one"),
+                line("m1", "Maya", 20_000, "Maya needs gym shoes"), line("m2", "Maya", 10_000, "Gym shoes on the Target run")],
+            "Maya",
+        ));
+        assert_eq!(ask(&core), ["Maya: You're on Maya: “Gym shoes on the Target run”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Maya"));
+        let _ = std::fs::remove_file(&path);
+        // One line away from Groceries ("sorry, Leo spilled juice"): back; asked again, you stay (no back and forth).
+        let (core, _queue, path) = keyless(map(
+            vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
+                line("j", "Cake", 10_000, "Leo spilled juice")],
+            "Cake",
+        ));
+        assert_eq!(ask(&core), ["Back to Groceries"]);
+        assert_eq!(ask(&core), ["Groceries: You're on Groceries: “Eggs and dish soap”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Groceries"));
+        let _ = std::fs::remove_file(&path);
+        // Two lines on Groceries, one on Cake, then to Maya without speaking: back to Cake, where you last spoke;
+        // asked again, you stay on Cake (it now looks like one line away from Groceries, but you just came back).
+        let (core, _queue, path) = keyless(map(
+            vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
+                line("c", "Cake", 10_000, "Cake from Safeway or bake one")],
+            "Maya",
+        ));
+        assert_eq!(ask(&core), ["Back to Cake"]);
+        assert_eq!(ask(&core), ["Cake: You're on Cake: “Cake from Safeway or bake one”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Cake"));
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn where_was_i_goes_by_when_things_were_said_not_by_imports_landing_last() {
         let now = 1_800_000_000_000;
@@ -2555,6 +2670,7 @@ mod tests {
                     fixed: String::new(),
                     complete: true,
                     place_ms: 900,
+                    decided: false,
                 }]),
                 Job::Back(speaker) => core.go_back(&speaker),
                 Job::Next(speaker) => core.go_next(&speaker),

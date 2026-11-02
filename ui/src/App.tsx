@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
@@ -29,11 +30,15 @@ import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { micStopped, staysUp, upFor } from "./notice-rules";
+import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+
+/** ⌘ or Ctrl: which one Undo uses here. */
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
@@ -117,6 +122,13 @@ export default function App() {
     } else restoreMap.current = true;
     setView(next);
   };
+  // Export, or "export my map": the whole map as a Markdown file, made here from the map this window holds (export-md.ts).
+  const exportMap = (asked?: ViewAsk | null) => {
+    if (!world.threads.length && !world.thoughts.length) { core.showNotice("Nothing on the map yet to export.", asked); return; }
+    const file = mapMarkdown(world);
+    download(file);
+    core.showNotice(exportedNotice(file), asked);
+  };
   // "Scratch that" after a view or fold said aloud: what this window showed before it (revert.ts).
   const keepShown = useRevert(core.revertAsk, () => ({ view, focusMode, query, expanded, kept: [...keptOpen.current] }), (shown) => {
     showView(shown.view);
@@ -140,6 +152,7 @@ export default function App() {
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
+    if (asked === "export") { exportMap(core.viewAsk); return; }
     keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
@@ -154,10 +167,14 @@ export default function App() {
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLInputElement>(null);
+  // Typed in the composer since the last thought went: ⌘Z there then restores the typing, not the last turn.
+  const typedSinceSend = useRef(false);
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const [noticeFocused, setNoticeFocused] = useState(false);
+  // The pointer on the notice: on its way to Undo or ×, so the notice waits for it.
+  const [noticeHeld, setNoticeHeld] = useState(false);
   const lastNavigation = useRef(0);
   const following = useRef(false);
   useEffect(() => {
@@ -231,7 +248,7 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.decided ? "Decided: " : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
       ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
       // A retry that landed late isn't followed (you've moved on): the dock says where it went.
@@ -330,13 +347,17 @@ export default function App() {
   // kept every later notice up for good: on each change, look where focus is now.
   const noticeRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setNoticeFocused(!!core.notice && !!noticeRef.current?.contains(document.activeElement)); }, [core.notice, core.undoId]);
+  // The pointer leaves with the notice: a mouseleave never comes when the notice is gone.
+  useEffect(() => { if (!core.notice) setNoticeHeld(false); }, [core.notice]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
-    if (!core.notice || noticeFocused || core.notice === LOOKING || staysUp(core.notice)) return;
-    const timer = window.setTimeout(core.clearNotice, upFor(friendlyNotice || core.notice));
+    if (!core.notice || noticeFocused || noticeHeld || core.notice === LOOKING || staysUp(core.notice)) return;
+    // With Undo, long enough to act on it, not just read it (notice-rules.ts `undoUpFor`).
+    const shown = friendlyNotice || core.notice;
+    const timer = window.setTimeout(core.clearNotice, core.undoId ? undoUpFor(shown) : upFor(shown));
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.answerRevision, core.clearNotice, noticeFocused]);
+  }, [core.notice, core.answerRevision, core.clearNotice, core.undoId, noticeFocused, noticeHeld]);
 
   // The running mic's stop, as effects of one render see it: the first to stop the mic clears it at once, so the
   // next effect in the same render finds the mic off (`stopMic` there is still the render's value).
@@ -437,7 +458,7 @@ export default function App() {
     if (draft.trim()) {
       setHelpOpen(false);
       if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
-      if (core.sendText(draft.trim())) setDraft("");
+      if (core.sendText(draft.trim())) { setDraft(""); typedSinceSend.current = false; }
     }
   };
 
@@ -626,6 +647,16 @@ export default function App() {
         document.querySelector<HTMLElement>(".shortcuts summary")?.focus();
         return;
       }
+      // ⌘Z / Ctrl+Z: "undo that", the last turn, with or without the notice up. A field with words in it keeps the
+      // browser's own undo of typing; the empty composer after sending a thought doesn't (persona run 2026-11-01).
+      const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+      const goesTo = isUndoKey(event, MAC) ? undoKeyGoesTo({ repeat: event.repeat, field, composer: target === composerRef.current,
+        composerEmpty: !composerRef.current?.value, typedSinceSend: typedSinceSend.current }) : "browser";
+      if (goesTo !== "browser") {
+        event.preventDefault();
+        if (goesTo === "app") core.undoLast();
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
@@ -646,7 +677,7 @@ export default function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [world.threads, activePath, hasAway, away.dismiss]);
+  }, [world.threads, activePath, hasAway, away.dismiss, core.undoLast]);
 
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
@@ -812,10 +843,12 @@ export default function App() {
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Export my map” · saves it as a Markdown file, as Export does</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
           <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
+          <div>{undoKeyLabel(MAC)} · undoes your last turn, as “Scratch that” does, after its notice has gone too</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
@@ -823,6 +856,11 @@ export default function App() {
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
+        {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
+        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
+          <span className="import-long">Export</span>
+          <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
+        </button>}
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
           <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
@@ -840,12 +878,14 @@ export default function App() {
             className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}
+            onMouseEnter={() => setNoticeHeld(true)}
+            onMouseLeave={() => setNoticeHeld(false)}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
-            <UndoButton id={core.undoId} onUndo={core.undo} />
+            <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -952,10 +992,11 @@ export default function App() {
             <input
               ref={composerRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
+            <ModelLine hearing={!!core.partial} hidden={!!draft} />
             <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>
@@ -1278,6 +1319,9 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
+      {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
+          which points are settled at a glance, and they're what Recap leads with. */}
+      {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
