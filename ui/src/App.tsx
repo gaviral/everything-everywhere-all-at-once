@@ -31,7 +31,7 @@ import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, This
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { Tips, TIPS } from "./Tips";
@@ -542,6 +542,10 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
+    // Found threads show best first (up to RANK_LIMIT): matches come ranked, so a thread joins visibleIds at its best
+    // found branch's place.
+    const place = search && matches.size <= RANK_LIMIT ? new Map([...visibleIds].map((id, i) => [id, i])) : undefined;
+    if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
