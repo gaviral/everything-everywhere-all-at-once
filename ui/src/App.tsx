@@ -55,6 +55,7 @@ import { SendCard } from "./SendCard";
 import { BRICKS, useBricksOn } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import { Catalog } from "./Catalog";
+import { Markdown } from "./md";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -1087,7 +1088,7 @@ export default function App() {
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
                   </div>
-                  {lastWords && <div className="pullback-quote">“{lastWords}”</div>}
+                  {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => goBack(pullBack)}>Finish it</button>
@@ -1108,7 +1109,7 @@ export default function App() {
           <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
@@ -1550,7 +1551,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
           which points are settled at a glance, and they're what Recap leads with. */}
       {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
-      <span>{capitalized(thought.point)}</span>
+      <span><Markdown text={capitalized(thought.point)} /></span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
       <MovePoint thought={thought} />
@@ -1559,7 +1560,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
       <Fixes thought={thought} on={on} />
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && words}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && [...heads, thought].flatMap((part, i) => [i > 0 ? " … " : "", "“", <Markdown key={part.id} text={part.text.trim()} />, "”"])}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
     </motion.li>
   );
 });
@@ -1572,13 +1573,13 @@ function Fixes({ thought, on }: { thought: Thought; on: Handlers }) {
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
           <span><span aria-hidden="true">✦</span> fixed</span>
-          <span><span aria-hidden="true">✦</span> heard “{thought.heard}” · undo</span>
+          <span><span aria-hidden="true">✦</span> heard “<Markdown text={thought.heard} />” · undo</span>
         </button>
       )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           {/* title="": the point's own title (its words said) would show a second, system tip over this one. */}
-          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “{thought.guess}”?
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “<Markdown text={thought.guess} />”?
           <button onClick={() => on.correct(thought.id, true)}>Yes</button>
           <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
             No
@@ -1670,7 +1671,7 @@ function PendingThought({ thought, placing, noKey, refused, resting, reducedMoti
   const lanes = useLanes(thought.id);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span>
-    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} {thought.text}
+    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} <Markdown text={thought.text} />
   </motion.span>;
 }
 
