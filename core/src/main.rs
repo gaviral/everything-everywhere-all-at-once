@@ -347,6 +347,11 @@ impl Core {
             // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
             // back too. Bare "focus" stays on the thread you're on, as its button does.
             let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            // The Palace or every thread of an empty map: the window would show nothing new, so say why.
+            if matches!(view, View::Palace | View::All) && self.snapshot().threads.is_empty() {
+                self.send_to(speaker, ServerMsg::Notice { message: "Nothing on the map yet: say a thought first".into() });
+                return Some(Done::missed(if view == View::Palace { Act::Palace } else { Act::All }));
+            }
             // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
             if view == View::Focus && to.is_none() && before.is_none() {
                 let empty = self.snapshot().threads.is_empty();
@@ -2490,8 +2495,8 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. Focus
-    /// on an empty map says why nothing changes.
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. The
+    /// Palace and Focus on an empty map say why nothing changes.
     #[test]
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
@@ -2507,7 +2512,11 @@ mod tests {
             })
             .collect();
         let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
-        assert_eq!(views, [sam("Palace"), sam("Nothing on the map yet: say a thought first")]);
+        let empty = sam("Nothing on the map yet: say a thought first");
+        assert_eq!(views, [empty.clone(), empty]);
+        core.commit(vec![Change::ThreadAdded { thread: thread("T1", 1, "") }]);
+        core.add_thought("Sam", "Palace.");
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Palace })));
         assert!(core.snapshot().thoughts.is_empty());
         core.add_thought("Sam", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);
