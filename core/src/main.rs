@@ -1367,11 +1367,13 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
 /// message counting down.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
-    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
+    // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
+    // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
+    // card back with its Stop; one whose count ended while the window was away gets how it ended.
+    let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).into_iter().collect();
+    messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
-    // A reload mid-count gets the card back, with its Stop: it still sends when the count ends.
-    messages.extend(crate::messages::counting_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
@@ -1391,6 +1393,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
     }
+    // Counted before its catch-up, so a count that ends now still has this window to stop it (messages.rs `finish`).
+    let _window = messages::window(&core, &speaker);
     let updates = core.updates.subscribe();
     for message in catch_up(&core, &speaker) {
         if write(&mut out, &message).await.is_err() { return; }

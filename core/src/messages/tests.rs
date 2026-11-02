@@ -13,6 +13,8 @@ struct Fixture {
     sent: Sent,
     out: Receiver<Outgoing>,
     path: std::path::PathBuf,
+    /// The asker's window, open unless a test closes it (`finish` sends nothing with none of theirs open).
+    window: Option<Window>,
 }
 
 impl Fixture {
@@ -36,7 +38,8 @@ impl Fixture {
         let (journal, _) = Journal::open(&path).unwrap();
         let core = Arc::new(adjust(Core { messages: Runtime::with(settings, sender), ..Core::test(journal, World::default()) }));
         let out = core.updates.subscribe();
-        Self { core, sent, out, path }
+        let window = Some(window(&core, "me"));
+        Self { core, sent, out, path, window }
     }
 
     fn sends(&self) -> usize {
@@ -339,13 +342,117 @@ async fn a_reloaded_window_gets_the_counting_card_back_with_the_time_left() {
     settle().await;
     f.told();
     wait(2_000).await;
-    let back = counting_card(&f.core, "me").expect("still counting");
+    let back = card_for(&f.core, "me").expect("still counting");
     assert!(matches!(back, ServerMsg::SendCard { id: 1, state: SendState::Counting, in_ms: 3_000, .. }), "{}", serde_json::to_string(&back).unwrap());
-    assert!(counting_card(&f.core, "guest").is_none(), "only the asker's windows");
+    assert!(card_for(&f.core, "guest").is_none(), "only the asker's windows");
     let caught = crate::catch_up(&f.core, "me");
-    assert!(caught.iter().any(|m| matches!(m, ServerMsg::SendCard { id: 1, .. })));
+    // Before the world: the window reads the snapshot as the end of what the core says about its card.
+    assert!(matches!(caught[0], ServerMsg::SendCard { id: 1, .. }) && matches!(caught[1], ServerMsg::Snapshot { .. }));
     wait(3_000 + LATE_STOP_MS).await;
-    assert!(counting_card(&f.core, "me").is_none(), "ended");
+    let ended = card_for(&f.core, "me").expect("how it ended");
+    assert!(matches!(ended, ServerMsg::SendCard { id: 1, state: SendState::DryRun, in_ms: 0, .. }), "{}", serde_json::to_string(&ended).unwrap());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_window_back_after_the_count_ended_learns_how_it_went() {
+    // Its connection dropped mid-count and the end was said while it was away: catch-up says it, before the world.
+    for (stopped, state) in [(true, SendState::Stopped), (false, SendState::DryRun)] {
+        let f = Fixture::new(full(false));
+        f.core.add_thought("me", ASK);
+        settle().await;
+        wait(1_000).await;
+        if stopped {
+            assert!(stop(&f.core, 1));
+        }
+        wait(60_000).await;
+        let caught = crate::catch_up(&f.core, "me");
+        assert!(matches!(&caught[0], ServerMsg::SendCard { id: 1, state: s, .. } if *s == state), "{state:?}");
+        assert!(crate::catch_up(&f.core, "guest").iter().all(|m| !matches!(m, ServerMsg::SendCard { .. })), "only the asker's");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_count_that_ends_with_none_of_their_windows_open_never_sends() {
+    // A phone's window lost its connection mid-count: a Stop pressed there never reached the core.
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.told();
+    wait(2_000).await;
+    f.window = None;
+    wait(60_000).await;
+    assert_eq!(f.sends(), 0, "nothing goes out unseen");
+    let live = crate::apple::reachable();
+    let offline = format!("card Stopped Mia: {TEXT} (0 ms, live {live})");
+    assert_eq!(f.told(), vec![offline]);
+    // Back: the window learns why.
+    let back = window(&f.core, "me");
+    assert!(matches!(&crate::catch_up(&f.core, "me")[0], ServerMsg::SendCard { state: SendState::Stopped, message, .. } if message == OFFLINE));
+    drop(back);
+    // A window back before the end: it can stop it again, so it sends as before.
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.window = None;
+    wait(2_000).await;
+    f.window = Some(window(&f.core, "me"));
+    wait(60_000).await;
+    assert_eq!(f.sends(), usize::from(live));
+}
+
+#[test]
+fn stop_said_at_the_end_of_the_ask_is_never_part_of_the_message() {
+    let s = full(false);
+    for said in ["Ask Mia to confirm what to bring, no, stop.", "Text Sam Lee that I'm running late. Wait, don't send it", "Tell Mia that I'm leaving now — never mind"] {
+        assert_eq!(read(said, &s), None, "{said}");
+    }
+    // A stop word inside the words is part of them.
+    assert_eq!(read("Tell Mia that the answer is no", &s).map(|a| a.text), Some("Hi Mia, the answer is no.".into()));
+    assert_eq!(read("Ask Mia to wait for me", &s).map(|a| a.text), Some("Hi Mia, could you wait for me?".into()));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_ask_taken_back_in_the_same_breath_counts_nothing_down_and_is_no_thought() {
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", "Ask Mia to confirm what to bring, no, stop.");
+    wait(60_000).await;
+    assert_eq!(f.sends(), 0);
+    assert_eq!(f.told(), vec!["notice Not sent: you said “stop” at the end.".to_string()]);
+    assert!(f.thoughts().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stopped_messages_late_timer_leaves_one_at_a_time_holding() {
+    if !crate::apple::reachable() {
+        return; // A dry run never waits on Messages.
+    }
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let g = gate.clone();
+    let sender: Sender = Arc::new(move |_, _| {
+        let g = g.clone();
+        Box::pin(async move {
+            g.notified().await;
+            Ok(())
+        })
+    });
+    let mut f = Fixture::sending(full(true), sender, Arc::default(), |core| core);
+    let core = f.core.clone();
+    // A long message (a longer count), stopped; then a short one, whose count ends first and goes to Messages.
+    let long = "Ask Mia to confirm what to bring on Saturday, and whether the park still has the covered tables by the lake";
+    core.add_thought("me", long);
+    settle().await;
+    let long_ms = countdown_ms(&read(long, &full(true)).unwrap().text);
+    assert!(long_ms > COUNTDOWN_MS + 2_000, "{long_ms}");
+    assert!(stop(&core, 1));
+    core.add_thought("me", ASK);
+    settle().await;
+    wait(COUNTDOWN_MS + LATE_STOP_MS).await;
+    // Messages has the short one and hasn't answered; the long one's timer ends now.
+    wait(long_ms).await;
+    f.told();
+    core.add_thought("me", "Text Sam Lee that I'm running late");
+    assert_eq!(f.told(), vec!["notice One message at a time: say “stop”, or wait for it to send.".to_string()]);
+    gate.notify_one();
 }
 
 #[test]
