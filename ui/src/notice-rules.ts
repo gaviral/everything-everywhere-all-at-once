@@ -7,8 +7,9 @@ export const SHORTEST_MS = 5000;
 /** Notices that stay until dismissed: each asks for something only the person can do (tap the mic again, allow it,
  *  fix a refused key and restart) or says the core is gone. "No AI key" is not one: the header, the composer's
  *  placeholder, the mic and the tour keep saying it, and kept up it covered the Apps bar and the tour's last step.
- *  "The mic is already off." is not one either: it answers "stop listening" and has nothing to ask. */
-const STAYS = /^(The mic stopped|Microphone|Couldn't start the mic|Connection lost|The AI key was refused)/i;
+ *  "The mic is already off." is not one either: it answers "stop listening" and has nothing to ask, nor is
+ *  "Microphone allowed. Tap to talk.", news that the blocked mic works again (mic.ts `micFailure` has the others). */
+const STAYS = /^(The mic stopped|Couldn't start the mic|Connection lost|The AI key was refused|[^.]* is blocking the microphone|No microphone|The microphone|Live audio)/i;
 
 /** What the window says when the mic stops on its own: why, when the core said (the voice service went quiet or the
  *  connection to it broke, or the service's own words), else only that it stopped. Each starts "The mic stopped", so

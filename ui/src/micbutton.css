@@ -22,9 +22,10 @@
 .mic-badge { position: absolute; right: -3px; bottom: -3px; display: flex; gap: 2px; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 50%; background: var(--card); }
 .mic-badge i { width: 2px; height: 7px; border-radius: 1px; background: var(--ink); }
 
-/* No key, or a refused one: amber (what needs you), the mic struck through. It stays pressable to say why. */
-.composer .mic:is([data-state="nokey"], [data-state="refused"]) { background: var(--amber-soft); color: var(--amber); }
-.composer .mic:is([data-state="nokey"], [data-state="refused"]):hover { background: color-mix(in srgb, var(--amber) 18%, var(--amber-soft)); }
+/* No key, a refused one, the day's free tries used up, or the mic blocked: amber (what needs you), the mic struck
+   through. It stays pressable to say why. */
+.composer .mic:is([data-state="nokey"], [data-state="refused"], [data-state="resting"], [data-state="blocked"]) { background: var(--amber-soft); color: var(--amber); }
+.composer .mic:is([data-state="nokey"], [data-state="refused"], [data-state="resting"], [data-state="blocked"]):hover { background: color-mix(in srgb, var(--amber) 18%, var(--amber-soft)); }
 
 /* Connecting: faded and not pressable (.mic:disabled in styles.css). */
 

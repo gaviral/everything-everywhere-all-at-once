@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
@@ -14,7 +14,7 @@ type Handlers = {
   correct: (thoughtId: string, accept: boolean) => void;
   unlink: (thoughtId: string) => void;
 };
-import { startMic } from "./mic";
+import { micFailure, micPlace, startMic, watchMicPermission } from "./mic";
 import { Apps, buildInTheWay, DockBuild, DockTune } from "./Apps";
 import { Explain } from "./Explain";
 import { Palace } from "./Palace";
@@ -163,6 +163,11 @@ export default function App() {
     }
   }, [core.viewAsk]);
   const [startingMic, setStartingMic] = useState(false);
+  // The browser ("site") or the computer ("mac") keeps the mic from this page: it looks blocked until that changes
+  // (mic.ts `micFailure`, `watchMicPermission`); a tap still tries, and says how to allow it.
+  const [micBlocked, setMicBlocked] = useState<"" | "site" | "mac">("");
+  const micBlockedNow = useRef(micBlocked);
+  micBlockedNow.current = micBlocked;
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -404,8 +409,21 @@ export default function App() {
   }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
-    if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
+    if (liveStop.current && aboutKey(core.notice)) releaseMic();
   }, [core.notice, stopMic]);
+
+  // The site's mic permission, where the browser says it: "denied" looks blocked; allowed later (from the address
+  // bar's icon), it says so and looks ready, without a reload. A block by the computer shows no change here: it lifts
+  // when the browser is reopened.
+  const showNotice = useRef(core.showNotice);
+  showNotice.current = core.showNotice;
+  useEffect(() => watchMicPermission(navigator.permissions, (state) => {
+    if (state === "denied") setMicBlocked("site");
+    else if (micBlockedNow.current === "site") {
+      setMicBlocked("");
+      showNotice.current("Microphone allowed. Tap to talk.");
+    }
+  }), []);
 
   const toggleMic = async () => {
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
@@ -437,6 +455,7 @@ export default function App() {
       const stopAudio = await startMic(core.sendAudio, ended);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
       if (!mounted.current) { stop(); return; }
+      setMicBlocked("");
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
       voiceListenedAt.current = voiceRevisions.current.listened;
@@ -449,8 +468,11 @@ export default function App() {
     } catch (err) {
       if (!mounted.current) return;
       core.listen(false);
-      const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
-      core.showNotice(denied ? "Microphone access is off. Allow it in your browser settings, or type below." : `Couldn't start the mic. ${err instanceof Error ? err.message : "Try again."} You can type below.`);
+      // The browser's own words go to the console; the window says where to fix it (mic.ts).
+      console.warn("The mic didn't start:", err);
+      const failed = micFailure(err, micPlace());
+      if (failed.blocked) setMicBlocked(failed.blocked);
+      core.showNotice(failed.words);
     } finally {
       if (mounted.current) setStartingMic(false);
     }
@@ -821,11 +843,13 @@ export default function App() {
   };
 
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
-    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused });
+    words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
+
+  const status = statusLine({ connected: core.connected, listening: core.listening, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
   const friendlyNotice = core.notice && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
-    (site.hosted || !core.keyRefused) && core.notice.includes("MODEL_API_KEY") ? keyWords(site.hosted, core.keyRefused, "notice")
+    (site.hosted || !core.keyRefused) && aboutKey(core.notice) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
     : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
     : core.notice
   );
@@ -878,8 +902,9 @@ export default function App() {
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
         <div className="status">
-          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
-          <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
+          <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
+          {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
+          <span aria-hidden="true">{core.connected && core.resting && !core.listening ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
           {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
@@ -939,7 +964,7 @@ export default function App() {
         {world.threads.length === 0 ? (
           <div className="empty">
             <h1>Think out loud.</h1>
-            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
+            <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.resting ? "Saved. Thoughts find their place tomorrow, when the free tries are back." : core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
@@ -1009,7 +1034,7 @@ export default function App() {
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -1026,10 +1051,10 @@ export default function App() {
           </form>
         </div>
       </section>
-      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} />}
+      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       {LevelMeter && <Suspense fallback={null}><LevelMeter apps={world.apps} /></Suspense>}
       <Tips />
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1458,7 +1483,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
 }
 
 /** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
-function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; reducedMotion: boolean }) {
+function PendingThought({ thought, placing, noKey, refused, resting, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; resting: boolean; reducedMotion: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (noKey || refused) return;
@@ -1466,7 +1491,7 @@ function PendingThought({ thought, placing, noKey, refused, reducedMotion }: { t
     return () => window.clearInterval(interval);
   }, [noKey, refused]);
   const retryAt = placing.retryAt[thought.id];
-  const label = pendingLabel(thought, placing, now, noKey, refused);
+  const label = pendingLabel(thought, placing, now, noKey, refused, resting);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span> {thought.text}
   </motion.span>;
