@@ -301,6 +301,7 @@ impl Core {
     pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
         let key = self.key()?;
         self.spend()?;
+        let step = self.step_began(body, &extra);
         let started = std::time::Instant::now();
         let result = async {
             let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
@@ -308,8 +309,37 @@ impl Core {
             answer(response).await
         }
         .await;
+        self.step_ended(step, body, &extra, started, result.is_ok());
         self.trace.call(body, started, result.as_ref(), extra);
         result
+    }
+
+    /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The id
+    /// pairs it with its end (`step_ended`).
+    fn step_began(&self, sent: &Value, extra: &Value) -> u64 {
+        let id = STEP_IDS.fetch_add(1, Ordering::Relaxed);
+        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(Into::into));
+        self.send(ServerMsg::Step { id, step, model, done: false, ok: false, ms: 0 });
+        id
+    }
+
+    fn step_ended(&self, id: u64, sent: &Value, extra: &Value, started: std::time::Instant, ok: bool) {
+        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(Into::into));
+        self.send(ServerMsg::Step { id, step, model, done: true, ok, ms: started.elapsed().as_millis() as u64 });
+    }
+
+    /// A step a rule did, with no model ("Where was I?", an app's tune): to `speaker`'s windows, or every window.
+    pub fn rule_step(&self, speaker: Option<&str>, step: &str) {
+        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0 };
+        match speaker {
+            Some(speaker) => self.send_to(speaker, message),
+            None => self.send(message),
+        }
+    }
+
+    /// Listening began (`done` false) or ended, with `model` hearing the words: to `speaker`'s windows only.
+    pub fn listen_step(&self, speaker: &str, id: u64, model: &str, done: bool) {
+        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0 });
     }
 
     /// Asks a feature's model at `url`: `body` builds the request for one model name, posted with the key and
@@ -331,13 +361,16 @@ impl Core {
         let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
         self.spend()?;
         let (mut sent, mut started) = (body(model), std::time::Instant::now());
+        let mut step = self.step_began(&sent, &extra);
         let mut response = post(&sent).await;
         let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
         if let (Some(status), Some(base)) = (turned_away, setting.base.as_deref().filter(|base| *base != model)) {
             tracing::info!("{model} answered {status}: asking {base} instead");
+            self.step_ended(step, &sent, &extra, started, false);
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
             (sent, started) = (body(base), std::time::Instant::now());
+            step = self.step_began(&sent, &extra);
             response = post(&sent).await;
             // Two features finding out at once say it once.
             if response.as_ref().is_ok_and(|r| r.status().is_success()) && !setting.on_base.swap(true, Ordering::Relaxed) {
@@ -351,10 +384,14 @@ impl Core {
             answer(response).await
         }
         .await;
+        self.step_ended(step, &sent, &extra, started, result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result
     }
 }
+
+/// Ids for `ServerMsg::Step`, one per step, shared by every core in the process (tests run several).
+pub static STEP_IDS: AtomicU64 = AtomicU64::new(1);
 
 /// The JSON of a model's answer, once `check` has read its status. Any other failure ends the call with the
 /// service's own words, such as "400 Bad Request: …".
@@ -656,6 +693,54 @@ mod tests {
         let said = notices(&mut updates);
         assert_eq!(said.last().map(String::as_str), Some(REFUSED), "{said:?}");
         assert!(!said.iter().any(|s| s.starts_with("Using")), "{said:?}");
+    }
+
+    /// The model line names, at each step, the model that was actually asked (model-line.ts): every call is told
+    /// as it starts and ends, with the step it's for and the model in the request sent, a turned-away try as failed
+    /// and the model asked instead as a new step. A step with no model, or another model's name, fails here.
+    #[tokio::test]
+    async fn every_model_call_tells_the_windows_its_step_and_the_model_asked() {
+        use serde_json::json;
+        let (url, _) = stand_in().await;
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        let steps = |updates: &mut broadcast::Receiver<Outgoing>| {
+            std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|o| match o.message {
+                    ServerMsg::Step { id, step, model, done, ok, .. } => Some((id, step, model, done, ok)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let reply = json!({"choices": [{"message": {"content": "hi"}}]});
+        for (body, extra, step) in [
+            (json!({"model": "muse-spark-1.3", "prompt_cache_key": "e2a2o-refiner"}), json!(null), "refiner"),
+            (json!({"model": "muse-spark-1.3", "prompt_cache_key": "e2a2o-recap"}), json!(null), "recap"),
+            (json!({"model": "muse-image-1.0"}), json!({"feature": "picture", "thread": "T1"}), "picture"),
+            (json!({"model": "muse-spark-1.3"}), json!({"feature": "app"}), "app"),
+        ] {
+            let mut sent = body.clone();
+            sent["status"] = json!(200);
+            sent["answer"] = reply.clone();
+            core.call_model_noting(&url, &sent, std::time::Duration::from_secs(5), extra).await.unwrap();
+            let told = steps(&mut updates);
+            let model = body["model"].as_str().map(String::from);
+            assert_eq!(told.len(), 2, "{step}: {told:?}");
+            assert_eq!(told[0].0, told[1].0, "start and end share an id");
+            assert_eq!((told[0].1.as_str(), &told[0].2, told[0].3), (step, &model, false), "{told:?}");
+            assert_eq!((told[1].1.as_str(), &told[1].2, told[1].3, told[1].4), (step, &model, true, true), "{told:?}");
+        }
+        // Placing on a key that can't use Contributor mode: the turned-away try ends failed, the base model starts.
+        let setting = Setting::new(None, CONTRIBUTOR);
+        let body = |model: &str| json!({"model": model, "prompt_cache_key": "e2a2o-placer", "status": if model == CONTRIBUTOR { 403 } else { 200 }, "answer": {}});
+        core.ask_model(&setting, &url, std::time::Duration::from_secs(5), body, json!(null)).await.unwrap();
+        let told: Vec<_> = steps(&mut updates).into_iter().map(|(_, step, model, done, ok)| (step, model.unwrap_or_default(), done, ok)).collect();
+        let placer = |model: &str, done, ok| ("placer".to_string(), model.to_string(), done, ok);
+        assert_eq!(told, [placer(CONTRIBUTOR, false, false), placer(CONTRIBUTOR, true, false), placer(BASE, false, false), placer(BASE, true, true)]);
+        // A rule's step names no model.
+        core.rule_step(None, "tune");
+        assert_eq!(steps(&mut updates).into_iter().map(|(_, s, m, d, _)| (s, m, d)).collect::<Vec<_>>(), [("tune".to_string(), None, true)]);
     }
 
     /// A turned-away try is a model call too: the trace has a line for it and one for the try that answered,
