@@ -136,7 +136,9 @@ function useShelf(map: BrickProps["map"]) {
     } catch { return new Map(); }
   };
   const [held, setHeld] = useState(() => ({ key, items: read(key) }));
-  const items = held.key === key ? held.items : read(key);
+  // Another map: its own shelf, read once, not on every render (the layout redoes everything when this changes).
+  const fresh = useMemo(() => (held.key === key ? null : read(key)), [held.key, key]);
+  const items = fresh ?? held.items;
   const write = (next: Map<string, number>) => {
     try { if (key) localStorage.setItem(key, JSON.stringify([...next])); } catch { /* private mode: for this visit */ }
     setHeld({ key, items: next });

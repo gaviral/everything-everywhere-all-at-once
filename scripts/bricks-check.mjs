@@ -357,6 +357,8 @@ try {
   const middle = (selector) => evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { x: r.left + Math.min(40, r.width / 2), y: r.top + Math.min(10, r.height / 2) }; })()`);
   const nodesAt = `Object.fromEntries([...document.querySelectorAll(".react-flow__node")].map((n) => [n.dataset.id, n.style.transform]))`;
   if (checked.includes("spine")) {
+    // Motion as the app has it, whatever this machine's own Reduce Motion is (a check before this one hands it back).
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
     await go(`${base}/bricks.html?brick=spine&sample=student-week`);
     if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine", "the canvas never showed");
     await settle();

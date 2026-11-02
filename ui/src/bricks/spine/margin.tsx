@@ -2,7 +2,7 @@
 // draws them). One mechanism with tangents (a note is a tangent anchored to words), so a note made here reaches every
 // window the way a tangent does. Picking words: double-click a point's words (a press and drag still moves the point),
 // then drag or shift-click to take more; R on a focused point answers all its words.
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { BrickActions, MapSnapshot, Thread } from "../contract";
 import type { MarginInput } from "./layout";
 
@@ -37,23 +37,29 @@ export function useMargins(map: MapSnapshot, actions: BrickActions) {
     } catch { return []; }
   };
   const [held, setHeld] = useState(() => ({ key, notes: read(key) }));
-  const kept = held.key === key ? held.notes : read(key);
+  // Another map (or its first thought now known): its own notes, read once, not on every render.
+  const fresh = useMemo(() => (held.key === key ? null : read(key)), [held.key, key]);
+  const kept = fresh ?? held.notes;
   const told = useRef(false);
 
-  const anchored = new Set<string>();
-  const margins: MarginInput[] = [];
-  const said = new Map<string, MapSnapshot["thoughts"][number][]>();
-  for (const t of map.thoughts) if (t.thread_id) said.set(t.thread_id, [...(said.get(t.thread_id) ?? []), t]);
-  for (const thread of map.threads) {
-    const anchor = anchorOf(thread);
-    if (!anchor) continue;
-    anchored.add(thread.id);
-    const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ by: t.speaker || "you", text: (t.point || t.text).trim() }));
-    // An unanswered question from someone else folds to "…?" until it's opened; yours never hides from you.
-    const theirs = entries[0] && entries[0].by !== map.me && entries[0].by !== "you";
-    margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
-  }
-  for (const note of kept) margins.push({ id: note.id, thoughtId: note.thoughtId, quote: note.quote, entries: note.entries, question: false });
+  // Worked out again only when the map or the kept notes change: the layout redoes everything when these do.
+  const { margins, anchored } = useMemo(() => {
+    const anchored = new Set<string>();
+    const margins: MarginInput[] = [];
+    const said = new Map<string, MapSnapshot["thoughts"][number][]>();
+    for (const t of map.thoughts) if (t.thread_id) said.set(t.thread_id, [...(said.get(t.thread_id) ?? []), t]);
+    for (const thread of map.threads) {
+      const anchor = anchorOf(thread);
+      if (!anchor) continue;
+      anchored.add(thread.id);
+      const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ by: t.speaker || "you", text: (t.point || t.text).trim() }));
+      // An unanswered question from someone else folds to "…?" until it's opened; yours never hides from you.
+      const theirs = entries[0] && entries[0].by !== map.me && entries[0].by !== "you";
+      margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
+    }
+    for (const note of kept) margins.push({ id: note.id, thoughtId: note.thoughtId, quote: note.quote, entries: note.entries, question: false });
+    return { margins, anchored };
+  }, [map.threads, map.thoughts, map.me, kept]);
 
   const add = (thoughtId: string, quote: string, text: string) => {
     const annotate = annotateOf(actions);

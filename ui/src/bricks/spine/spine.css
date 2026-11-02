@@ -231,8 +231,13 @@
   border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
 .spine-frame .spine-reply-field { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; }
 
-/* The Pictures stop: each topic its picture, held at a size you can see; no bars. */
-.spine-stop-pictures .spine-bars { display: none; }
+/* Far out, the far label stands for the head's title and line (they stay for the keyboard and screen readers). */
+.spine-head-far .spine-title, .spine-head-far .spine-head-meta { opacity: 0; }
+
+/* The Pictures stop: each topic its picture, held at a size you can see, its spine a faint line; no words' bars, and
+   what hangs beside (tangents, notes) waits for Titles or Words. */
+.spine-stop-pictures .spine-point .spine-bars, .spine-stop-pictures .spine-card, .spine-stop-pictures .spine-margin, .spine-stop-pictures .spine-link-branch,
+.spine-stop-pictures .spine-link-note, .spine-stop-pictures .spine-link-end, .spine-stop-pictures .spine-link-pulled { visibility: hidden; }
 .spine-stop-pictures .spine-tile { scale: calc(var(--spine-k, 1) * 1.5); }
 .spine-stop-pictures .spine-label { top: calc(66px * var(--spine-k, 1)); }
 .spine-stop-pictures .spine-link-spine, .spine-stop-pictures .spine-link-slot { opacity: .2; }

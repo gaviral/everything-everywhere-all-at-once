@@ -124,7 +124,7 @@ function Head({ data, now }: { data: ItemData; now: number }) {
   const top = Math.max(0, (G.tile - lines * G.titleLine - G.headMeta) / 2);
   const meta = headMeta(item, now);
   return <div className={cls("spine-head", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh",
-    data.dim && "spine-dim", data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+    data.dim && "spine-dim", data.cut && "spine-cut", zoomedOut && "spine-head-far")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     <Tile item={item} />
     <button type="button" className="spine-title" style={{ left: G.titleX, top, width: G.titleW, WebkitLineClamp: G.titleMax }}
       title={item.title} onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
