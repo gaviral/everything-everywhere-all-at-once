@@ -373,8 +373,11 @@ header {
 
 .ai.kept { background: var(--card); border: 1px solid var(--line); }
 .ai-mark, .action-icon { color: var(--ai); }
+.action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .action { border: 1px dashed color-mix(in srgb, var(--ai) 55%, var(--line)); background: var(--ai-soft); }
 .action.done { border: 1px solid var(--line); background: var(--card); }
+/* Amber is what needs you: an approval that didn't add its item, and what to do about it. */
+.action-failed { display: block; margin-top: 4px; color: var(--amber); font-size: 13px; }
 
 .when {
   color: var(--muted);

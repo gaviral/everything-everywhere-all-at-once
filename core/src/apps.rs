@@ -723,8 +723,32 @@ async fn execute(core: &Core, app: &MiniApp, target: Option<(String, String)>) -
     drop(world);
     core.commit(changes);
     // Loud voices get the playful tune, meant to break the tension; timers and words get the calm one.
-    if sound { core.send(ServerMsg::AppsSound { name: app.name.clone(), playful: matches!(app.watcher, Watcher::Volume { .. }) }); }
+    if sound { core.send(ServerMsg::AppsSound { name: app.name.clone(), playful: matches!(app.watcher, Watcher::Volume { .. }), why: why(&app.watcher) }); }
     Ok(())
+}
+
+/// What set an app off, in a few words after its name ("Loud Silly Tune: voices stayed loud for 3 s"), so a tune
+/// out of nowhere says which app played it and why. It reads the watcher's own settings, which is what fired it.
+fn why(watcher: &Watcher) -> String {
+    let span = |secs: u64| match secs {
+        86_400 => "day".into(),
+        s if s % 86_400 == 0 => format!("{} days", s / 86_400),
+        s if s % 3600 == 0 => format!("{} h", s / 3600),
+        s if s % 60 == 0 => format!("{} min", s / 60),
+        s => format!("{s} s"),
+    };
+    match watcher {
+        Watcher::Volume { level, seconds } if *level >= SHOUT => format!("voices stayed at a shout for {seconds} s"),
+        Watcher::Volume { seconds, .. } => format!("voices stayed loud for {seconds} s"),
+        Watcher::Phrase { phrase } => format!("you said “{}”", phrase.trim()),
+        Watcher::Topic { topic } => format!("{} came up", topic.trim()),
+        Watcher::Time { every_secs, .. } if *every_secs > 0 => format!("its timer, every {}", span(*every_secs)),
+        Watcher::Time { at_ms, .. } => crate::clock::local(*at_ms).and_then(|t| t.get(11..16).map(|hm| format!("it was set for {hm}")))
+            .unwrap_or_else(|| "its set time came".into()),
+        Watcher::NewThought { min_points } if *min_points > 1 => format!("a thread reached {min_points} points"),
+        Watcher::NewThought { .. } => "a new thought landed".into(),
+        Watcher::AppRequest {} => "you asked for it".into(),
+    }
 }
 
 /// The points and the newest thought as an app's prompt sees them. With more than one speaker (a room),
