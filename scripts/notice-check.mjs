@@ -306,6 +306,8 @@ try {
   const away = renderToStaticMarkup(React.createElement(UndoButton, { id: 3, onUndo: () => {}, what: "Moved to Health", mac: true, offline: true }));
   assert.match(away, /<button[^>]* disabled=""/);
   assert.match(app, /<UndoButton [^>]*offline=\{!core\.connected\}/);
+  // So is the map change's Undo: pressed offline, its click went nowhere and the note went with it.
+  assert.match(app, /core\.mapChange\.restore\) && <button className="undo" disabled=\{!core\.connected\}/);
 
   // Every answer the window makes for a view request passes the request, so each can stand down the same way.
   const viewAnswers = app.match(/core\.showNotice\([^;]*core\.viewAsk\)/g) ?? [];

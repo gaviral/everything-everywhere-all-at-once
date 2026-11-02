@@ -603,8 +603,13 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
     if !can_unmove(&core.snapshot(), u) {
         return;
     }
-    if let Some(unmerge) = comes_back(&core.snapshot(), u) {
-        core.commit(vec![Change::ThreadUnmerged { unmerge }]);
+    let world = core.snapshot();
+    if let Some(unmerge) = comes_back(&world, u) {
+        let change = crate::tidy::unmerging(&world, &unmerge);
+        drop(world);
+        core.commit(vec![change]);
+    } else {
+        drop(world);
     }
     let world = core.snapshot();
     let (on, back) = (world.resolve(&u.to), world.resolve(&u.from));
@@ -635,7 +640,9 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
                 }
             }
         }
-        cards.into_iter().map(|id| Change::ItemMoved { id, thread_id: back.clone() }).collect()
+        // Aimed at the thread they came from, as the thoughts are: merged away since, they land where it went and
+        // its merge's record takes them along (`World::apply`), so undoing that merge brings them back with the words.
+        cards.into_iter().map(|id| Change::ItemMoved { id, thread_id: u.from.clone() }).collect()
     } else {
         Vec::new()
     };
@@ -649,7 +656,7 @@ pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
     drop(world);
     core.commit(changes);
     if follow {
-        core.focus(speaker, &back);
+        core.back_to(speaker, &back);
     }
 }
 

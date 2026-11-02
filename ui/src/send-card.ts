@@ -13,12 +13,23 @@ export type SendCardMsg = { type: "send_card"; id: number; to: string; text: str
 export type Card = { id: number; to: string; text: string; state: SendState; live: boolean; message: string; until: number; total: number };
 
 /** The card after the core's message at `now`: a new message's card replaces the one up; an end (stopped, sent…)
- *  changes the card it's about, or shows on its own when none is up (a window opened after the count ended still
- *  learns how it went), so a late word on an older one never takes down the newer. */
+ *  changes only the card it's about, so a late word on an older one never takes down the newer, and the end a
+ *  reconnect's catch-up repeats (core/src/messages.rs `card_for`) shows only on a window that was counting it down,
+ *  never as something old on a fresh one. The same count again (a reconnect says the time left) keeps the count's
+ *  length, so the bar runs on from where it was; the same end again leaves the card as it is, its time up included. */
 export function received(shown: Card | null, msg: SendCardMsg, now: number): Card | null {
-  if (msg.state !== "counting" && shown && shown.id !== msg.id) return shown;
-  const total = msg.state === "counting" ? msg.in_ms : shown?.total ?? 0;
+  const same = shown?.id === msg.id;
+  if (msg.state !== "counting" && (!same || shown!.state === msg.state)) return shown;
+  const total = msg.state !== "counting" ? shown!.total : same && shown!.state === "counting" ? shown!.total : msg.in_ms;
   return { id: msg.id, to: msg.to, text: msg.text, state: msg.state, live: msg.live, message: msg.message, until: now + msg.in_ms, total };
+}
+
+/** The card once a (re)connection's snapshot came: the core sends the speaker's card before it (`card_for`), so a card
+ *  still counting that it didn't name (`told`: the id it sent a card for, if any) is one the core no longer has (it
+ *  restarted, or another window stopped it and a newer one ended since): it goes, never stuck on "Sending…". An end
+ *  still up for its reading time stays. */
+export function caughtUp(shown: Card | null, told: number | null): Card | null {
+  return shown?.state === "counting" && shown.id !== told ? null : shown;
 }
 
 /** Whole seconds left, as the count shows them: 5 at the start, 1 in its last second, never below 0. */

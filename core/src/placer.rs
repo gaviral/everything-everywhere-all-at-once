@@ -433,7 +433,8 @@ pub enum Route {
     /// Placed (or set aside as filler, `skipped`): `path` runs from the top thread down to the one it landed on (a
     /// branch has its parent first), `new` when that thread was made for it. `pick` is what the model answered, and
     /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` gave the first good
-    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the calls went. Sent only once the changes are on the map.
+    /// answer (another may have answered sooner with one that couldn't be read), `ms` after the first calls went (a round
+    /// cut off and asked again counts). Sent only once the changes are on the map.
     Decided {
         thought_id: String,
         path: Vec<String>,
@@ -532,6 +533,8 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let candidates = candidates(&world, &thought);
+    // From when the first calls went, so a round cut off and asked again counts too: the tag says what the wait was.
+    let went = std::time::Instant::now();
     let (lane, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
@@ -541,7 +544,6 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         let lanes = if core.calls_left() >= lanes { lanes } else { 1 };
         // The map shows the threads the prompt names lighting up while these calls run (ui/src/route.ts).
         core.send(ServerMsg::Route { route: Route::Weighing { thought_id: thought_id.into(), candidates: candidates.clone(), lanes } });
-        let went = std::time::Instant::now();
         let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
             .map(|lane| {
                 let call = core.ask_model(
@@ -1053,18 +1055,28 @@ pub(crate) mod rules {
     pub const NOT_FILLER: &str = "too long to be filler";
     pub const SAYS_DECIDED: &str = "says a decision: kept";
     pub const FILLER_UNCLEAR: &str = "unclear what was filler";
+    pub const ANSWERS: &str = "answers a question: kept";
 }
 
 /// `decide`, with the rule that put the thought somewhere other than the model's pick, if one did (`rules`).
 fn decide_ruled(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> (Vec<Change>, Option<&'static str>) {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
     // Never words that say a decision: "Okay, decided:" cut off by a pause is two words, and the rest needs it.
-    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
+    // Nor a short turn right after a question (`just_asked`): it answers it ("The blue."), as the prompt asks of the
+    // model too ("never skip … any other answer"); the code holds it to that.
+    let answers = just_asked(world, thought).is_some();
+    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) && !answers {
         return (vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }], None);
     }
-    // Kept for one of two reasons, and the map says which: it's long, or it says a decision.
+    // Kept for one of three reasons, and the map says which: it's long, it says a decision, or it answers a question.
     let mut rule = (p.action == "skip").then(|| {
-        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS { rules::NOT_FILLER } else { rules::SAYS_DECIDED }
+        if thought.text.split_whitespace().count() > SKIP_MAX_WORDS {
+            rules::NOT_FILLER
+        } else if crate::decided::said(&thought.text) {
+            rules::SAYS_DECIDED
+        } else {
+            rules::ANSWERS
+        }
     });
     let now = now_ms();
     let speaker = &thought.speaker;

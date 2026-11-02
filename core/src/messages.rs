@@ -17,6 +17,7 @@ use crate::catalog::{Act, Done};
 use crate::protocol::ServerMsg;
 use crate::Core;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -167,10 +168,17 @@ pub struct Runtime {
 struct State {
     next: u64,
     counting: Option<Counting>,
-    /// A message Messages has but hasn't answered for yet: one at a time holds until it does.
-    sending: bool,
+    /// A message Messages has but hasn't answered for yet, and whose: one at a time holds until it does, and a window
+    /// of theirs that reconnects meanwhile gets its card, "Sending…", so the answer that follows has a card to end.
+    sending: Option<(String, ServerMsg)>,
     /// A speaker whose "stop" was heard while they were still saying it: the turn it ends is that same stop.
     stopped_by_voice: Option<String>,
+    /// How many windows each speaker has open (`window`): a count that ends with none of theirs open, so no Stop of
+    /// theirs could reach the core, ends unsent.
+    windows: HashMap<String, usize>,
+    /// Each speaker's last card end (stopped, sent, dry run, failed), for a window that reconnects: one that was
+    /// showing that card counting learns how it went, though the end was said while it was away (`card_for`).
+    ended: HashMap<String, ServerMsg>,
 }
 
 struct Counting {
@@ -239,6 +247,9 @@ pub fn kind(text: &str) -> Option<Act> {
 /// could you confirm what to bring?". "Tell Sam that I'm running late" → "Hi Sam, I'm running late." None when the
 /// turn isn't one, or names no one on the list.
 pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
+    if withdrawn(text) {
+        return None;
+    }
     let said = crate::spoken::plain(text);
     // `said` is part of `text`: where it starts there, so the words sent are cut from the turn as said.
     let at = said.as_ptr() as usize - text.as_ptr() as usize;
@@ -262,6 +273,26 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     let text = if asking { format!("Hi {to}, could you {rest}?") } else { format!("Hi {to}, {rest}.") };
     Some(Ask { to: to.to_string(), handle: handle.to_string(), text })
 }
+
+/// Whether the turn's last clause stops it ("…, no, stop."): the request was taken back as it was said, so those words
+/// are never part of a message. A clause ends where speech-to-text punctuates a pause (main.rs `PAUSE`); a closing
+/// "please" or "thanks" is said to the app, so the clause before it counts ("…, stop, please"). A stop word inside a
+/// clause ("tell Mia the answer is no") is words.
+fn withdrawn(text: &str) -> bool {
+    let pause = |c: char| crate::PAUSE.contains(&c);
+    let mut said = text;
+    loop {
+        said = said.trim_end_matches(|c: char| c.is_whitespace() || c == '-' || pause(c));
+        let last = said.rsplit(pause).next().unwrap_or_default();
+        if !COURTESY.contains(&crate::words(last).join(" ").as_str()) {
+            return crate::words(last).len() < crate::words(text).len() && is_stop(last);
+        }
+        said = &said[..said.len() - last.len()];
+    }
+}
+
+/// Said to the app after a stop, not to anyone: "stop, please", "never mind, thanks".
+const COURTESY: [&str; 3] = ["please", "thanks", "thank you"];
 
 /// The words to send, as said: only the spaces and joining punctuation around them go ("…that, I'm late." → "I'm
 /// late"), and a closing "please", said to the app (the message already asks). "For me", "now", a minus sign stay.
@@ -288,6 +319,11 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     if settings.preset != Preset::Full {
         return None;
     }
+    // "Ask Mia to bring chips, no, stop": taken back in the same breath, so nothing counts down, and it's no thought.
+    if kind(text).is_some() && withdrawn(text) {
+        core.send_to(speaker, ServerMsg::Notice { message: "Not sent: you said “stop” at the end.".into() });
+        return Some(Done::missed(Act::Message));
+    }
     let Some(ask) = read(text, settings) else {
         if kind(text).is_some() {
             let words = crate::words(crate::spoken::plain(text));
@@ -309,7 +345,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     let live = core.messages.live();
     let id = {
         let mut state = core.messages.state.lock().unwrap();
-        if state.counting.is_some() || state.sending {
+        if state.counting.is_some() || state.sending.is_some() {
             drop(state);
             core.send_to(speaker, ServerMsg::Notice { message: "One message at a time: say “stop”, or wait for it to send.".into() });
             return Some(Done::missed(Act::Message));
@@ -330,13 +366,48 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     Some(Done::with(Act::Message, Some(crate::catalog::Undo::Unsend { id })))
 }
 
-/// The speaker's message still counting down, for a window that just opened (a reload): its card, with the time the
-/// count has left.
-pub fn counting_card(core: &Core, speaker: &str) -> Option<ServerMsg> {
+/// The speaker's card, for a window that just (re)connected: their message still counting down, with the time the count
+/// has left; else one Messages still has ("Sending…"), whose end then follows; else how their last one ended, which a
+/// window only shows over that same card (ui/src/send-card.ts), so a window that lost its connection mid-count learns
+/// whether it went and a fresh one shows nothing old.
+pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
     let state = core.messages.state.lock().unwrap();
-    let c = state.counting.as_ref().filter(|c| c.speaker == speaker)?;
+    let Some(c) = state.counting.as_ref().filter(|c| c.speaker == speaker) else {
+        let sending = state.sending.as_ref().filter(|(s, _)| s == speaker).map(|(_, card)| card);
+        return sending.or_else(|| state.ended.get(speaker)).cloned();
+    };
     let left = c.shown_end.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64;
     Some(card(c.id, &c.to, &c.text, SendState::Counting, left, c.live, ""))
+}
+
+/// One of the speaker's windows, open while this lives (main.rs `session`).
+pub struct Window {
+    core: Arc<Core>,
+    speaker: String,
+}
+
+/// Counts a window open for `speaker` until the returned guard drops.
+pub fn window(core: &Arc<Core>, speaker: &str) -> Window {
+    *core.messages.state.lock().unwrap().windows.entry(speaker.to_string()).or_default() += 1;
+    Window { core: core.clone(), speaker: speaker.to_string() }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        let mut state = self.core.messages.state.lock().unwrap();
+        if let Some(n) = state.windows.get_mut(&self.speaker) {
+            *n -= 1;
+            if *n == 0 {
+                state.windows.remove(&self.speaker);
+            }
+        }
+    }
+}
+
+/// A card's end: to the speaker's windows, and kept for one that reconnects (`card_for`).
+fn end(core: &Core, speaker: &str, message: ServerMsg) {
+    core.messages.state.lock().unwrap().ended.insert(speaker.to_string(), message.clone());
+    core.send_to(speaker, message);
 }
 
 /// Whether message `id` is still counting down (an Undo of it can still take it back).
@@ -348,33 +419,44 @@ fn card(id: u64, to: &str, text: &str, state: SendState, in_ms: u64, live: bool,
     ServerMsg::SendCard { id, to: to.into(), text: text.into(), state, in_ms, live, message: message.into() }
 }
 
-/// The countdown ended: the message goes, unless it was stopped (then it's no longer counting, and nothing happens).
+/// The countdown ended: the message goes, unless it was stopped (then it's no longer counting, and nothing happens),
+/// or none of the speaker's windows is open: a Stop pressed while theirs was offline never reached the core, so it ends
+/// unsent rather than going out unseen.
 async fn finish(core: &Arc<Core>, id: u64) {
-    let Some(counting) = ({
+    let counting = {
         let mut state = core.messages.state.lock().unwrap();
-        let taken = if state.counting.as_ref().is_some_and(|c| c.id == id) { state.counting.take() } else { None };
+        // A stopped message's timer still ends here: it leaves `sending` alone, which may be another message's.
+        let Some(counting) = state.counting.take_if(|c| c.id == id) else { return };
+        if !state.windows.contains_key(&counting.speaker) {
+            drop(state);
+            let Counting { speaker, to, text, live, .. } = counting;
+            end(core, &speaker, card(id, &to, &text, SendState::Stopped, 0, live, OFFLINE));
+            return;
+        }
         // Live, Messages has it until it answers: one at a time holds till then.
-        state.sending = taken.is_some() && core.messages.live();
-        taken
-    }) else {
-        return;
+        let c = &counting;
+        state.sending = core.messages.live().then(|| (c.speaker.clone(), card(id, &c.to, &c.text, SendState::Counting, 0, true, "")));
+        counting
     };
     let Counting { speaker, to, handle, text, .. } = counting;
     if !core.messages.live() {
-        core.send_to(&speaker, card(id, &to, &text, SendState::DryRun, 0, false, &dry_run(&to, core.messages.settings.live)));
+        end(core, &speaker, card(id, &to, &text, SendState::DryRun, 0, false, &dry_run(&to, core.messages.settings.live)));
         return;
     }
     let result = (core.messages.sender)(handle, text.clone()).await;
-    core.messages.state.lock().unwrap().sending = false;
+    core.messages.state.lock().unwrap().sending = None;
     match result {
-        Ok(()) => core.send_to(&speaker, card(id, &to, &text, SendState::Sent, 0, true, &format!("Sent to {to}"))),
+        Ok(()) => end(core, &speaker, card(id, &to, &text, SendState::Sent, 0, true, &format!("Sent to {to}"))),
         Err(error) => {
             // Only the error's number: Messages' own words can carry the handle, which never goes to the log.
             tracing::warn!("Messages didn't send it (error {})", error_number(&error));
-            core.send_to(&speaker, card(id, &to, &text, SendState::Failed, 0, true, &failure(&error)));
+            end(core, &speaker, card(id, &to, &text, SendState::Failed, 0, true, &failure(&error)));
         }
     }
 }
+
+/// A count that ended with none of the speaker's windows open.
+const OFFLINE: &str = "Not sent: your window was offline, so you couldn't stop it.";
 
 /// A dry run's end, saying what would have made it send: the setting, or, with it on, a Mac running the core for its
 /// own person (not Linux, not a hosted core).
@@ -416,7 +498,7 @@ pub fn stop(core: &Core, id: u64) -> bool {
 }
 
 fn stopped(core: &Core, c: Counting) {
-    core.send_to(&c.speaker, card(c.id, &c.to, &c.text, SendState::Stopped, 0, c.live, "Stopped: not sent"));
+    end(core, &c.speaker, card(c.id, &c.to, &c.text, SendState::Stopped, 0, c.live, "Stopped: not sent"));
 }
 
 /// Words that stop a message while it counts down, said or typed as the whole turn. Read as said, then without a

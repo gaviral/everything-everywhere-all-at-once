@@ -753,3 +753,82 @@ async fn undoing_a_move_to_a_new_thread_brings_its_card_back() {
     assert_eq!(card(&f), ("T1".to_string(), ItemStatus::New), "Undo takes the card back with its words");
     assert!(f.core.snapshot().thread(&on).is_none(), "the thread the move started leaves the map");
 }
+
+/// A move undone after the thread it came from merged away: the card that went with the words goes back with them,
+/// into that merge's record, so undoing the merge too takes both back to their own card.
+#[tokio::test]
+async fn a_moves_card_goes_back_with_its_words_through_a_merge() {
+    let mut world = slipped();
+    world.actions = vec![Action { id: "r1".into(), thread_id: "T1".into(), kind: "reminder".into(), title: "Book a wheel throwing lesson".into(), when: String::new(), status: ItemStatus::New, done_ms: None }];
+    let base = world.clone();
+    let f = Fixture::new(world);
+    let card = |f: &Fixture| f.core.snapshot().actions.iter().find(|a| a.id == "r1").map(|a| a.thread_id.clone()).unwrap();
+    let lines = f.say("Move that to pottery").await;
+    assert_eq!((f.on("w"), card(&f)), ("T2".to_string(), "T2".to_string()), "{lines:?}");
+    // Garden (still holding the tomatoes) merged into Bills; then the move is undone: both go to Bills.
+    f.core.commit(vec![Change::ThreadMerged { from: "T1".into(), into: "T3".into() }]);
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert_eq!((f.on("w"), card(&f)), ("T3".to_string(), "T3".to_string()));
+    let unmerge = f.core.snapshot().unmerge.get("T1").cloned().unwrap();
+    f.core.commit(vec![Change::ThreadUnmerged { unmerge }]);
+    assert_eq!((f.on("w"), card(&f)), ("T1".to_string(), "T1".to_string()), "the card is back with its words");
+    let replayed = f.replayed(base);
+    assert_eq!(serde_json::to_value(&*f.core.snapshot()).unwrap(), serde_json::to_value(&replayed).unwrap());
+}
+
+/// Undo takes back what it says and nothing more: a thread dropped since the move (or since the jump) stays dropped
+/// when Undo takes the speaker back to it.
+#[tokio::test]
+async fn undo_takes_you_back_without_reopening_a_dropped_thread() {
+    let base = slipped();
+    let f = Fixture::new(base.clone());
+    let status = |f: &Fixture| f.core.snapshot().thread("T1").map(|t| t.status).unwrap();
+    let lines = f.say("Move that to pottery").await;
+    f.core.commit(vec![Change::ThreadStatus { thread_id: "T1".into(), status: ThreadStatus::Dropped, speaker: "you".into() }]);
+    let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert!(undone.contains(&"on T1".to_string()), "{undone:?}");
+    assert_eq!((f.on("w"), status(&f)), ("T1".to_string(), ThreadStatus::Dropped));
+    // A jump undone ("next one", a search): back to where they were, as it was.
+    f.core.commit(vec![Change::ActiveChanged { thread_id: "T3".into(), speaker: "you".into() }]);
+    catalog::run_undo(&f.core, "you", &catalog::Undo::Move { to: "T1".into() });
+    let world = f.core.snapshot();
+    assert_eq!((world.active_for("you").map(String::as_str), status(&f)), (Some("T1"), ThreadStatus::Dropped));
+}
+
+/// A delete undone after the thread merged away: the card it went into keeps the point it showed, as if the delete
+/// had never happened (a merge leaves the card's point as it was); with no merge, the point comes back as it was.
+#[tokio::test]
+async fn a_delete_undone_after_a_merge_leaves_the_cards_point_as_it_was() {
+    let f = Fixture::new(slipped());
+    let undo = crate::catalog::take_off(&f.core, &["w".to_string()]).unwrap();
+    f.core.commit(vec![Change::ThreadMerged { from: "T1".into(), into: "T2".into() }]);
+    catalog::run_undo(&f.core, "you", &undo);
+    let world = f.core.snapshot();
+    assert_eq!(f.on("w"), "T2");
+    assert_eq!(world.thread("T2").unwrap().last_point, "Pottery class is on Thursdays");
+    drop(world);
+    let f = Fixture::new(slipped());
+    let undo = crate::catalog::take_off(&f.core, &["w".to_string()]).unwrap();
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the tomatoes");
+    catalog::run_undo(&f.core, "you", &undo);
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Learn to throw on the wheel");
+}
+
+/// A delete undone leaves a card's point alone when the delete didn't change it: a correction made since stays on
+/// the card (the newest words back on it never showed there).
+#[tokio::test]
+async fn a_delete_undone_keeps_a_correction_made_since_on_the_card() {
+    let mut world = slipped();
+    // Its newest words were moved in; the card still shows the older point, unsure of a word.
+    world.threads[0].last_point = "Plant the tomatoes".into();
+    world.thoughts[0].unclear = "tomatoes".into();
+    world.thoughts[0].guess = "potatoes".into();
+    let f = Fixture::new(world);
+    let undo = crate::catalog::take_off(&f.core, &["w".to_string()]).unwrap();
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the tomatoes");
+    f.core.commit(vec![Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() }]);
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the potatoes");
+    catalog::run_undo(&f.core, "you", &undo);
+    assert_eq!(f.on("w"), "T1");
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the potatoes");
+}
