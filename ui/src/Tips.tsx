@@ -59,13 +59,20 @@ export function Tips() {
     // Keyboard focus only: a click focuses a button too, and the pointer already showed or hid its tip.
     const focus = (event: FocusEvent) => { const el = target(event.target); if (el && el === event.target && el.matches(":focus-visible")) show(el); };
     const blur = (event: FocusEvent) => { if (current.current && current.current === event.target) hide(); };
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && current.current) hide(); };
+    // An Escape that hides a tip is the tip's only, as Explain's is its box's: it doesn't also fold the map's quiet
+    // threads (App.tsx listens on the document, after this). Typed in a field, the field keeps it too.
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !current.current) return;
+      hide();
+      const typing = event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]");
+      if (!typing) event.stopPropagation();
+    };
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerout", out);
     document.addEventListener("pointerdown", down, true);
     document.addEventListener("focusin", focus);
     document.addEventListener("focusout", blur);
-    document.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     // The tip is placed once; anything that moves its mark ends it rather than leaving it pointing at nothing.
     window.addEventListener("scroll", hide, true);
     window.addEventListener("resize", hide);
@@ -75,7 +82,7 @@ export function Tips() {
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("focusin", focus);
       document.removeEventListener("focusout", blur);
-      document.removeEventListener("keydown", key);
+      window.removeEventListener("keydown", key, true);
       window.removeEventListener("scroll", hide, true);
       window.removeEventListener("resize", hide);
     };

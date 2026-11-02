@@ -13,6 +13,12 @@ try {
   const { TIPS, follow } = await server.ssrLoadModule("/src/Tips.tsx");
   const { AWAY_AFTER_MS, AWAY_WHAT, AWAY_WHEN } = await server.ssrLoadModule("/src/Away.tsx");
 
+  // Escape that hides a tip hides only the tip: heard before the document's listener (App.tsx folds the quiet threads
+  // on Escape there), and stopped unless typed in a field (bug hunt 18).
+  const tipsSource = readFileSync(new URL("../ui/src/Tips.tsx", import.meta.url), "utf8");
+  assert.match(tipsSource, /window\.addEventListener\("keydown", key, true\)/);
+  assert.match(tipsSource, /if \(event\.key !== "Escape" \|\| !current\.current\) return;\s*hide\(\);[^]*?if \(!typing\) event\.stopPropagation\(\);/);
+
   const base = { connected: true, capturing: false, starting: false, serviceOn: false, words: false, paused: false, noKey: false, refused: false };
   const state = (extra) => micState({ ...base, ...extra });
   assert.equal(state({}), "off");
