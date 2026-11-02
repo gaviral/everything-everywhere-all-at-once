@@ -243,7 +243,9 @@ pub enum Undo {
     Move { to: String },
     /// `thought` comes off the map; `started`, the thread it began, goes into `to` while it holds nothing else (or
     /// leaves the map, with nowhere to go).
-    Unfile { thought: String, started: Option<String>, to: Option<String> },
+    /// `reopen`: the filing itself dropped `to` (spoken.rs `land`: its last words trailed off), so going back opens it
+    /// again; a thread dropped before the filing, or since, stays dropped.
+    Unfile { thought: String, started: Option<String>, to: Option<String>, reopen: bool },
     /// `thoughts` come back, and `threads`, every thread they were on as it was: one off the map by then comes back
     /// first (it left with them, or a later delete emptied it), so none comes back to a card that isn't there.
     /// `order`: the map's ids as they stood, so each comes back where it was (`places`). `dismissed`: the AI's
@@ -1080,7 +1082,7 @@ pub(crate) fn short(text: &str) -> String {
 pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
     match undo {
         Undo::Move { to } => core.back_to(speaker, to),
-        Undo::Unfile { thought, started, to } => {
+        Undo::Unfile { thought, started, to, reopen } => {
             let world = core.snapshot();
             let filed: Vec<Thought> = world.thoughts.iter().filter(|t| &t.id == thought).cloned().collect();
             let gone = |t: &Thought| &t.id == thought;
@@ -1102,10 +1104,11 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
             changes.extend(repoint(&world, &landed, &filed));
             drop(world);
             core.commit(changes);
-            // `focus`, not `back_to`: filing can itself drop the thread it left (spoken.rs `land` marks one whose last
-            // words trailed off), and undoing the filing reopens it.
-            if let Some(to) = to {
-                core.focus(speaker, &to);
+            // Undo takes back its own act: a drop the filing made comes undone with it; any other stays.
+            match to {
+                Some(to) if *reopen => core.focus(speaker, &to),
+                Some(to) => core.back_to(speaker, &to),
+                None => {}
             }
         }
         Undo::Restore { thoughts, threads, order, dismissed, merged, on, active } => {
@@ -1186,7 +1189,13 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 let thread = world.thread(id)?;
                 let latest = newest(&world, id, |_| false).filter(|t| restored(t))?;
                 let was = threads.iter().find(|t| t.id == *id).map(|t| t.last_point.clone()).filter(|p| !p.is_empty());
-                let point = was.unwrap_or_else(|| latest.point.clone());
+                // Only a point the delete took off (`repoint`) comes back: one it left alone may have been corrected
+                // since, and the card shows that.
+                let point = match was {
+                    Some(was) if thoughts.iter().any(|r| r.placed && r.point == was) => was,
+                    Some(_) => return None,
+                    None => latest.point.clone(),
+                };
                 (point != thread.last_point).then(|| Change::LastPoint { thread_id: id.clone(), last_point: point })
             }).collect();
             drop(world);

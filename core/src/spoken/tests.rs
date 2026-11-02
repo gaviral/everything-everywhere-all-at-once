@@ -347,3 +347,41 @@ fn without_apples_apps_only_a_dated_item_is_sent_to_download_ics() {
         assert!(words.contains("no day") && words.contains('×'), "{when}: {words}");
     }
 }
+
+/// Undo of a filing takes back the filing and nothing more: a thread it dropped (the last words there trailed off)
+/// opens again; one already dropped before the filing stays dropped as the speaker goes back to it.
+#[test]
+fn undoing_a_filing_reopens_only_a_thread_the_filing_dropped() {
+    for (trailed, dropped_before) in [(true, false), (false, true)] {
+        let mut world = map(vec![thread("T1", "Rent", 1), thread("T2", "Shopping list", 2)]);
+        if dropped_before {
+            world.threads[0].status = ThreadStatus::Dropped;
+            world.threads[0].dropped_by = "you".into();
+        }
+        world.active_by.insert("you".into(), "T1".into());
+        world.active = Some("T1".into());
+        world.thoughts.push(Thought {
+            id: "a".into(),
+            speaker: "you".into(),
+            text: "The rent is due on the".into(),
+            point: "Rent is due".into(),
+            thread_id: Some("T1".into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: !trailed,
+            at_ms: 1,
+            place_ms: Some(0),
+            decided: false,
+        });
+        let f = Fixture::new(world);
+        let done = act(&f.core, "you", "Add milk to the shopping list").unwrap();
+        assert_eq!(f.core.snapshot().thread("T1").unwrap().status, ThreadStatus::Dropped);
+        crate::catalog::run_undo(&f.core, "you", done.undo.as_ref().unwrap());
+        let world = f.core.snapshot();
+        let want = if dropped_before { ThreadStatus::Dropped } else { ThreadStatus::Open };
+        assert_eq!((world.active_for("you").map(String::as_str), world.thread("T1").unwrap().status), (Some("T1"), want), "trailed {trailed}");
+    }
+}

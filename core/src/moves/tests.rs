@@ -813,3 +813,22 @@ async fn a_delete_undone_after_a_merge_leaves_the_cards_point_as_it_was() {
     catalog::run_undo(&f.core, "you", &undo);
     assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Learn to throw on the wheel");
 }
+
+/// A delete undone leaves a card's point alone when the delete didn't change it: a correction made since stays on
+/// the card (the newest words back on it never showed there).
+#[tokio::test]
+async fn a_delete_undone_keeps_a_correction_made_since_on_the_card() {
+    let mut world = slipped();
+    // Its newest words were moved in; the card still shows the older point, unsure of a word.
+    world.threads[0].last_point = "Plant the tomatoes".into();
+    world.thoughts[0].unclear = "tomatoes".into();
+    world.thoughts[0].guess = "potatoes".into();
+    let f = Fixture::new(world);
+    let undo = crate::catalog::take_off(&f.core, &["w".to_string()]).unwrap();
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the tomatoes");
+    f.core.commit(vec![Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() }]);
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the potatoes");
+    catalog::run_undo(&f.core, "you", &undo);
+    assert_eq!(f.on("w"), "T1");
+    assert_eq!(f.core.snapshot().thread("T1").unwrap().last_point, "Plant the potatoes");
+}

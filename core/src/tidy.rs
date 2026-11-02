@@ -111,8 +111,24 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     world.merged.remove(&from);
     world.unmerge.remove(&from);
     // A branch whose parent merged away since goes under the thread that parent went into; one off the map, to the top.
+    // It joins each merge's record on the way there, so undoing that merge too takes it back under its own parent.
     let mut thread = u.thread.clone();
-    thread.parent_id = thread.parent_id.map(|p| world.resolve(&p)).filter(|p| *p != from && world.thread(p).is_some());
+    let parent = thread.parent_id.take();
+    thread.parent_id = parent.as_ref().map(|p| world.resolve(p)).filter(|p| *p != from && world.thread(p).is_some());
+    if let (Some(mut id), Some(to)) = (parent, thread.parent_id.as_ref()) {
+        for _ in 0..world.merged.len() {
+            if id == *to {
+                break;
+            }
+            if let Some(record) = world.unmerge.get_mut(&id).filter(|r| !r.branches.contains(&from)) {
+                record.branches.push(from.clone());
+            }
+            match world.merged.get(&id) {
+                Some(next) => id = next.clone(),
+                None => break,
+            }
+        }
+    }
     world.threads.insert(u.at.min(world.threads.len()), thread);
     let back = |ids: &[String], id: &str, on: &mut String| {
         if ids.iter().any(|x| x == id) && *on == into {
@@ -552,6 +568,29 @@ mod tests {
         world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge["T3"].clone() });
         assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T1"));
         assert_eq!(world.thoughts.iter().find(|t| t.id == "d").unwrap().thread_id.as_deref(), Some("T3"));
+        // Undoing the parent's merge too: the branch goes back under its own parent, as before both merges.
+        world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge["T2"].clone() });
+        assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T2"));
+    }
+
+    /// The same through a chain (T2 into T1, T1 into T4), each merge undone in either order: the branch ends under
+    /// its own parent.
+    #[test]
+    fn a_branch_comes_back_under_its_parent_through_a_chain_of_merges() {
+        for parent_first in [true, false] {
+            let mut world = map();
+            world.threads.push(thread("T9", None));
+            world.apply(&Change::ThreadMerged { from: "T3".into(), into: "T9".into() });
+            world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+            world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T4".into() });
+            world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge["T3"].clone() });
+            assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T4"));
+            let order = if parent_first { ["T2", "T1"] } else { ["T1", "T2"] };
+            for id in order {
+                world.apply(&Change::ThreadUnmerged { unmerge: world.unmerge[id].clone() });
+            }
+            assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "parent first: {parent_first}");
+        }
     }
 
     /// Replay gives the map the person saw: an undone merge's card shows the point it showed live, whatever the

@@ -713,9 +713,10 @@ impl World {
             for id in carriers {
                 self.repoint(&id, |p| swap(p, &from, &to));
             }
-            // And the part that said them, when that's where they were: its words said show the fix (each part's own
-            // text is what "words said" quotes), as does its own point if the two are kept apart; its own question
-            // about the same words is answered with it.
+            // And the parts it carries on, when that's where they were: each one's point reads the parts before it
+            // too, so each takes the swap (shown if the parts are kept apart); the part that said them has its words
+            // said fixed (each part's own text is what "words said" quotes), and its own question about the same
+            // words answered with it.
             if in_heads {
                 let mut seen = vec![thought_id.to_string()];
                 while let Some(head) = self.notes.get(seen.last().unwrap()).map(|n| n.continues.clone()).filter(|h| !h.is_empty() && !seen.contains(h)) {
@@ -725,8 +726,8 @@ impl World {
                             h.unclear.clear();
                             h.guess.clear();
                         }
-                        self.repoint(&head, |p| swap(p, &from, &to));
                     }
+                    self.repoint(&head, |p| swap(p, &from, &to));
                     seen.push(head);
                 }
             }
@@ -1469,6 +1470,27 @@ mod tests {
             placed("f", "T1", "", "", true),
             Change::ThoughtNoted { thought_id: "f".into(), note: crate::chunks::Note { continues: "e".into(), ..crate::chunks::Note::default() } },
             Change::ThoughtCorrected { thought_id: "f".into(), accept: true, with: String::new() },
+            // Three parts, the yes on the last: the middle one's point reads the first's words, so it takes the fix.
+            Change::ThoughtAdded { thought: test_thought("g", "Ana", "T1") },
+            placed("g", "T1", "", "", false),
+            Change::ThoughtAdded { thought: Thought { text: "and".into(), ..test_thought("h", "Ana", "T1") } },
+            Change::ThoughtPlaced {
+                thought_id: "h".into(),
+                thread_id: "T1".into(),
+                point: "Ask Muse Bark about g and".into(),
+                unclear: String::new(),
+                guess: String::new(),
+                heard: String::new(),
+                fixed: String::new(),
+                complete: false,
+                place_ms: 2400,
+                decided: false,
+            },
+            Change::ThoughtAdded { thought: Thought { text: "the lease".into(), ..test_thought("i", "Ana", "T1") } },
+            placed("i", "T1", "", "", true),
+            Change::ThoughtNoted { thought_id: "h".into(), note: crate::chunks::Note { continues: "g".into(), ..crate::chunks::Note::default() } },
+            Change::ThoughtNoted { thought_id: "i".into(), note: crate::chunks::Note { continues: "h".into(), ..crate::chunks::Note::default() } },
+            Change::ThoughtCorrected { thought_id: "i".into(), accept: true, with: String::new() },
             // A branch's merge undone after its parent merged away: it comes back under where the parent went, and
             // with no point carried (a journal from before), its card's point is read as it always was.
             Change::ThreadAdded { thread: test_thread("T6", None) },
@@ -1597,6 +1619,8 @@ mod tests {
         assert_eq!(w.thread("T7").unwrap().parent_id.as_deref(), Some("T1"), "under the thread its parent went into");
         let e = w.thoughts.iter().find(|t| t.id == "e").unwrap();
         assert_eq!((e.text.as_str(), e.unclear.as_str()), ("ask Muse Spark about e", ""), "a yes on the joined point fixes the part that said it");
+        let h = w.thoughts.iter().find(|t| t.id == "h").unwrap();
+        assert_eq!((h.text.as_str(), h.point.as_str()), ("and", "Ask Muse Spark about g and"), "and the middle part's point");
         assert_eq!((w.proposals.len(), w.proposals[0].into.as_str()), (1, "T1"));
         assert_eq!(w.thread("T3").unwrap().title, "Budget and demo", "a change aimed at a merged thread follows it");
         assert_eq!((w.active_for("Ana").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));

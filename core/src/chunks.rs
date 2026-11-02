@@ -397,4 +397,25 @@ mod tests {
         assert_eq!((w.thoughts[0].text.as_str(), w.thoughts[0].point.as_str()), ("ask Muse Spark about", "Ask Muse Spark about"), "words said keep no old word");
         assert_eq!(w.thoughts[1].text, "the lease");
     }
+
+    /// Three parts: the words said in the first, the yes on the third. The middle part's point reads the first's
+    /// words too, so it takes the fix though its own words don't hold them.
+    #[test]
+    fn a_yes_on_a_three_part_join_fixes_the_middle_point_too() {
+        let mut w = world(vec![said("a", "T1", 1, false), said("b", "T1", 2, false), said("c", "T1", 3, true)], "T1");
+        w.thoughts[0].text = "ask muse bark".into();
+        w.thoughts[0].point = "Ask muse bark".into();
+        w.thoughts[1].text = "about".into();
+        w.thoughts[1].point = "Ask muse bark about".into();
+        w.thoughts[2].text = "the lease".into();
+        w.thoughts[2].point = "Ask muse bark about the lease".into();
+        w.thoughts[2].unclear = "muse bark".into();
+        w.thoughts[2].guess = "Muse Spark".into();
+        w.apply(&Change::ThoughtNoted { thought_id: "b".into(), note: Note { continues: "a".into(), ..Note::default() } });
+        w.apply(&Change::ThoughtNoted { thought_id: "c".into(), note: Note { continues: "b".into(), ..Note::default() } });
+        w.apply(&Change::ThoughtCorrected { thought_id: "c".into(), accept: true, with: String::new() });
+        let points: Vec<&str> = w.thoughts.iter().map(|t| t.point.as_str()).collect();
+        assert_eq!(points, ["Ask Muse Spark", "Ask Muse Spark about", "Ask Muse Spark about the lease"]);
+        assert_eq!((w.thoughts[0].text.as_str(), w.thoughts[1].text.as_str()), ("ask Muse Spark", "about"));
+    }
 }

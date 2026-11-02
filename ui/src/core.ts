@@ -557,10 +557,14 @@ export function apply(world: World, raw: Change): World {
         for (let head = world.notes?.[t.id]?.continues; head && !seen.includes(head); head = world.notes?.[head]?.continues) {
           seen.push(head);
           const h = out.thoughts.find((x) => x.id === head);
-          if (!h || swap(h.text, t.unclear, to) === h.text) continue;
-          const answered = h.unclear.toLowerCase() === t.unclear.toLowerCase();
-          const fixed = { ...h, text: swap(h.text, t.unclear, to), ...(answered ? { unclear: "", guess: "" } : {}) };
-          out = repoint({ ...out, thoughts: out.thoughts.map((x) => (x.id === head ? fixed : x)) }, head, correct);
+          if (!h) continue;
+          // Each part's point reads the ones before it, so each takes the swap; its words said only where they are.
+          if (swap(h.text, t.unclear, to) !== h.text) {
+            const answered = h.unclear.toLowerCase() === t.unclear.toLowerCase();
+            const fixed = { ...h, text: swap(h.text, t.unclear, to), ...(answered ? { unclear: "", guess: "" } : {}) };
+            out = { ...out, thoughts: out.thoughts.map((x) => (x.id === head ? fixed : x)) };
+          }
+          out = repoint(out, head, correct);
         }
       }
       return out;
