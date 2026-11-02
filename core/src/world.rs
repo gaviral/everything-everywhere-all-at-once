@@ -76,6 +76,9 @@ pub struct Thought {
     pub at_ms: u64,
     /// How long placement took, for the speed readout.
     pub place_ms: Option<u64>,
+    /// The words say a decision was made ("Decided: …", decided.rs): marked on the point and led with in Recap.
+    #[serde(default)]
+    pub decided: bool,
 }
 
 impl Thought {
@@ -218,6 +221,9 @@ pub enum Change {
         #[serde(default = "yes")]
         complete: bool,
         place_ms: u64,
+        /// The words say a decision was made (decided.rs); placements journaled before this have none.
+        #[serde(default)]
+        decided: bool,
     },
     ThreadTouched { thread_id: String, last_point: String, at_ms: u64 },
     /// `speaker`: whose move it was; a thread is dropped for the person who left it.
@@ -281,6 +287,9 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// A placed thought's decision mark read again after its words changed (a correction, or a join taken apart):
+    /// decided.rs `remarked`.
+    ThoughtDecided { thought_id: String, decided: bool },
     /// What the placer read into a placed thought (chunks.rs); an empty note takes it away ("not one idea").
     ThoughtNoted { thought_id: String, note: crate::chunks::Note },
     /// A point said anew: a joined thought taken apart says only its own words again (chunks.rs `unlink`).
@@ -395,6 +404,11 @@ impl World {
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
             // as it was (chunks.rs); a note for a thought off the map shows nothing.
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::ThoughtDecided { thought_id, decided } => {
+                if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
+                    t.decided = *decided;
+                }
+            }
             Change::ThoughtNoted { thought_id, note } => {
                 if note.is_empty() {
                     self.notes.remove(thought_id);
@@ -437,7 +451,7 @@ impl World {
                     self.threads.push(thread.clone());
                 }
             }
-            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, heard, fixed, complete, place_ms } => {
+            Change::ThoughtPlaced { thought_id, thread_id, point, unclear, guess, heard, fixed, complete, place_ms, decided } => {
                 if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
                     t.thread_id = Some(thread_id.clone());
                     t.point = point.clone();
@@ -452,6 +466,7 @@ impl World {
                     t.complete = *complete;
                     t.placed = true;
                     t.place_ms = Some(*place_ms);
+                    t.decided = *decided;
                 }
             }
             Change::ThreadTouched { thread_id, last_point, at_ms } => {
@@ -882,6 +897,30 @@ mod tests {
     }
 
     #[test]
+    fn a_removed_threads_id_is_never_handed_out_again() {
+        // Scratch that on Sam's first thread removes T3 while Ana's T4 stays: the next new topic must not get T4,
+        // or it lands in Ana's thread; nor T3, or a late picture drawn for the old T3 lands on it.
+        let line = |id: &str| format!(r#"{{"type":"thread_added","thread":{{"id":"{id}","title":"{id}","parent_id":null,"status":"open","last_point":"","touched_ms":1}}}}"#);
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3", "T4"] {
+            world.apply(&serde_json::from_str::<Change>(&line(id)).unwrap());
+        }
+        world.apply(&Change::ThreadRemoved { thread_id: "T3".into() });
+        let next = world.next_thread_id();
+        assert!(!["T1", "T2", "T3", "T4"].contains(&next.as_str()), "reused {next}");
+        assert!(!["S1", "S2", "S3", "S4"].contains(&crate::spoken::fresh_id(&world).as_str()));
+        // Removing a thread that isn't there changes nothing, and a merged id is skipped too.
+        let mut merged = World::default();
+        merged.apply(&serde_json::from_str::<Change>(&line("T1")).unwrap());
+        merged.merged.insert("T2".into(), "T1".into());
+        merged.apply(&Change::ThreadRemoved { thread_id: "T9".into() });
+        assert_eq!(merged.next_thread_id(), "T3");
+        merged.merged.insert("T3".into(), "T1".into());
+        merged.merged.remove("T2");
+        assert_eq!(merged.next_thread_id(), "T4");
+    }
+
+    #[test]
     fn old_journals_load_as_one_speaker() {
         // From before rooms: no speaker on a move or a drop, no dropped_by on a thread.
         let lines = [
@@ -940,6 +979,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut world = World { thoughts: vec![thought("a"), thought("b")], ..World::default() };
         world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() });
@@ -1011,6 +1051,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let path = std::env::temp_dir().join(format!("e2a2o-split-{}.jsonl", std::process::id()));
         let (mut journal, mut world) = super::Journal::open(&path).unwrap();
@@ -1143,6 +1184,7 @@ mod tests {
             complete: true,
             at_ms: 2,
             place_ms: None,
+            decided: false,
         }
     }
 
@@ -1177,6 +1219,7 @@ mod tests {
             fixed: fixed.into(),
             complete,
             place_ms: 2400,
+            decided: false,
         };
         let changes = vec![
             Change::AppsSeeded,
@@ -1269,6 +1312,7 @@ mod tests {
             Change::ThoughtAdded { thought: test_thought("c", "Ana", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "Ana", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::ThoughtDecided { thought_id: "c".into(), decided: true },
             Change::ThreadRemoved { thread_id: "T9".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
@@ -1341,6 +1385,7 @@ mod tests {
                 | Change::ThoughtMoved { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
+                | Change::ThoughtDecided { .. }
                 | Change::ThoughtNoted { .. }
                 | Change::ThoughtRepointed { .. }
                 | Change::ThreadRemoved { .. }
@@ -1357,7 +1402,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 38, "one of each kind of change");
+        assert_eq!(kinds.len(), 39, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

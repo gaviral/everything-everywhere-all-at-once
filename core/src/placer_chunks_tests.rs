@@ -34,6 +34,7 @@ fn said(id: &str, text: &str, thread: &str, at_s: u64, complete: bool) -> Though
         complete,
         at_ms: at_s * 1000,
         place_ms: Some(1),
+        decided: false,
     }
 }
 
@@ -169,4 +170,71 @@ fn the_trace_line_carries_the_note() {
     let changes = decide(&world, &said, answer(serde_json::json!({"action": "continue", "thread_id": "T1", "joins": "unfinished"})), 900, false, true);
     let line = super::traced(&world, &said, ("continue".into(), "T1".into(), String::new(), String::new()), false, &changes, None);
     assert_eq!(line["note"]["continues"], "a");
+}
+
+/// A decision cut in two by a pause is one: the part carrying it on is marked even though its own words name no
+/// decision ("Priya on Wednesday night"), so the map shows the joined point as decided and Recap gets it once. A cut
+/// "Okay, decided:" is never set aside as filler, or the rest would have nothing to carry on.
+#[test]
+fn a_decision_cut_by_a_pause_is_marked_on_the_part_that_carries_it_on() {
+    let mut world = World { threads: vec![thread("T1", "Stats midterm"), thread("T2", "Bike brakes")], ..World::default() };
+    world.thoughts = vec![Thought { decided: true, ..said("a", "Decided: I'll study with", "T1", 20, false) }];
+    world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() });
+    let rest = turn("Priya on Wednesday night.", 23);
+    let joined = decide(&world, &rest, answer(serde_json::json!({"action": "new", "title": "Study with Priya", "point": "Study with Priya on Wednesday night", "joins": "before"})), 900, false, true);
+    let decided = |changes: &[Change]| changes.iter().find_map(|c| match c { Change::ThoughtPlaced { decided, .. } => Some(*decided), _ => None });
+    assert_eq!((landed(&joined), decided(&joined)), (Some("T1"), Some(true)), "{joined:?}");
+    // Not joined, its own words decide nothing.
+    let alone = decide(&world, &rest, answer(serde_json::json!({"action": "return", "thread_id": "T2", "joins": "none"})), 900, false, true);
+    assert_eq!(decided(&alone), Some(false));
+    // Joined, a question isn't a decision: "We decided" … "or did we?".
+    world.thoughts[0].text = "We decided".into();
+    let asked = decide(&world, &turn("or did we?", 23), answer(serde_json::json!({"action": "return", "thread_id": "T1", "joins": "before"})), 900, false, true);
+    assert_eq!(decided(&asked), Some(false));
+    // The marker alone, cut off, is placed, not skipped.
+    let skip = || answer(serde_json::json!({"action": "skip"}));
+    let marker = decide(&world, &turn("Okay, decided:", 30), skip(), 900, false, true);
+    assert!(marker.iter().any(|c| matches!(c, Change::ThoughtPlaced { decided: true, .. })), "{marker:?}");
+    let filler = decide(&world, &turn("Okay, yeah.", 30), skip(), 900, false, true);
+    assert!(matches!(filler[..], [Change::ThoughtSkipped { .. }]), "{filler:?}");
+}
+
+/// A correction changes the words the mark was read from: "We divided on Thursday" fixed to "decided" is a decision,
+/// and its undo isn't; a join taken apart reads the carrier's own words again.
+#[test]
+fn a_correction_or_an_unlink_reads_the_mark_again() {
+    let mut world = World { threads: vec![thread("T1", "Stats midterm")], ..World::default() };
+    world.thoughts = vec![Thought { unclear: "divided".into(), guess: "decided".into(), ..said("a", "We divided on Thursday for the study session.", "T1", 20, true) }];
+    let fixed = crate::decided::remarked(&world, vec![Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() }]);
+    assert!(matches!(&fixed[..], [_, Change::ThoughtDecided { thought_id, decided: true }] if thought_id == "a"), "{fixed:?}");
+    for change in &fixed {
+        world.apply(change);
+    }
+    assert!(world.thoughts[0].decided);
+    // A fix made without asking, said no to: the words go back as heard, and so does the mark.
+    world.thoughts[0].heard = "divided".into();
+    world.thoughts[0].fixed = "decided".into();
+    let undone = crate::decided::remarked(&world, vec![Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() }]);
+    assert!(matches!(&undone[..], [_, Change::ThoughtDecided { decided: false, .. }]), "{undone:?}");
+    for change in &undone {
+        world.apply(change);
+    }
+    // A correction that leaves the mark as it was adds nothing.
+    let same = crate::decided::remarked(&world, vec![Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() }]);
+    assert_eq!(same.len(), 1, "{same:?}");
+    // A correction on a head reads its carrier again; taking the join apart reads the carrier alone.
+    let mut world = World { threads: vec![thread("T1", "Stats midterm")], ..World::default() };
+    world.thoughts = vec![
+        Thought { unclear: "Divided".into(), guess: "Decided".into(), ..said("h", "Divided: I'll study with", "T1", 20, false) },
+        said("c", "Priya on Wednesday night.", "T1", 23, true),
+    ];
+    world.apply(&Change::ThoughtNoted { thought_id: "c".into(), note: Note { continues: "h".into(), ..Note::default() } });
+    let fixed = crate::decided::remarked(&world, vec![Change::ThoughtCorrected { thought_id: "h".into(), accept: true, with: String::new() }]);
+    let marked: Vec<&str> = fixed.iter().filter_map(|c| match c { Change::ThoughtDecided { thought_id, decided: true } => Some(thought_id.as_str()), _ => None }).collect();
+    assert_eq!(marked, ["h", "c"], "{fixed:?}");
+    for change in &fixed {
+        world.apply(change);
+    }
+    let apart = crate::decided::remarked(&world, vec![Change::ThoughtNoted { thought_id: "c".into(), note: Note::default() }]);
+    assert!(matches!(&apart[..], [_, Change::ThoughtDecided { thought_id, decided: false }] if thought_id == "c"), "{apart:?}");
 }

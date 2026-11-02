@@ -47,7 +47,7 @@ const TAGS: usize = 3;
 /// not two minutes on.
 const PATIENCE: Duration = Duration::from_secs(52);
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 struct Pass {
     #[serde(default)]
     titles: Vec<Title>,
@@ -70,14 +70,14 @@ struct Pass {
     revise: Vec<Revise>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Retire {
     id: String,
     #[serde(default)]
     why: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Revise {
     id: String,
     #[serde(default)]
@@ -88,31 +88,31 @@ struct Revise {
     why: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Tags {
     thread_id: String,
     tags: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Title {
     thread_id: String,
     title: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Merge {
     from: String,
     into: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Idea {
     thread_id: String,
     text: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Task {
     thread_id: String,
     kind: String,
@@ -192,21 +192,41 @@ pub async fn run(core: Arc<Core>) {
 
 /// Puts a pass on the map. Checked against the map as it is now, not as it was sent (`sent`): an app's card or
 /// reminder may have landed while the model worked (a second idea on that thread would only repeat it), a thread
-/// merged, or a thread heard more (see `drop_stale_titles`).
-fn land(core: &Core, mut answer: Pass, sent: &World, when: &str) {
-    let world = core.snapshot();
-    drop_stale_titles(&mut answer, sent, &world);
-    let mut changes = changes(&world, answer);
-    tracing::info!("refiner pass {when}: {} changes", changes.len());
-    // An idea or task the person approved or dismissed while this was worked out is theirs: its correction is dropped,
-    // checked under the commit's lock, so it never puts back a row that's being added (`as_left`).
+/// merged, a thread heard more (see `drop_stale_titles`), or words it read were taken back (see `drop_taken_back`).
+/// An idea or task the person approved or dismissed while this was worked out is theirs: its correction is dropped,
+/// checked under the commit's lock, so it never puts back a row that's being added (`as_left`).
+fn land(core: &Core, answer: Pass, sent: &World, when: &str) {
+    land_racing(core, answer, sent, when, || {});
+}
+
+/// `land`, with `between` run after the check and before the commit (a test takes words back there). The check
+/// is made on a snapshot, so words can be taken back before the commit: the commit holds only while every word the
+/// pass read and the check kept is still on the map (`commit_if`), else the pass is checked again on the new map.
+fn land_racing(core: &Core, answer: Pass, sent: &World, when: &str, between: impl Fn()) {
     for _ in 0..3 {
-        if changes.is_empty() || core.commit_if(|w| changes.iter().all(|c| as_left(w, c)), changes.clone()) {
+        let world = core.snapshot();
+        let mut pass = answer.clone();
+        drop_stale_titles(&mut pass, sent, &world);
+        drop_taken_back(&mut pass, sent, &world);
+        let present: HashSet<&str> = world.thoughts.iter().map(|t| t.id.as_str()).collect();
+        let read: Vec<String> =
+            sent.thoughts.iter().filter(|t| t.placed && present.contains(t.id.as_str())).map(|t| t.id.clone()).collect();
+        let changes = changes(&world, pass);
+        tracing::info!("refiner pass {when}: {} changes", changes.len());
+        if changes.is_empty() {
             return;
         }
-        let now = core.snapshot();
-        changes.retain(|c| as_left(&now, c));
+        between();
+        let still = |now: &World| {
+            let on: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
+            read.iter().all(|id| on.contains(id.as_str())) && changes.iter().all(|c| as_left(now, c))
+        };
+        if core.commit_if(still, changes.clone()) {
+            return;
+        }
     }
+    // Words keep being taken back, or items keep changing: the next pass reads the map as it is then.
+    tracing::warn!("refiner pass {when}: dropped, words were taken back or its items changed while it landed");
 }
 
 /// True unless `c` corrects an idea or task that is no longer as the pass saw it.
@@ -236,6 +256,28 @@ fn drop_stale_titles(pass: &mut Pass, sent: &World, now: &World) {
     };
     pass.retire.retain(|r| fresh(&r.id));
     pass.revise.retain(|r| fresh(&r.id));
+}
+
+/// Leaves out all a pass says about a thread whose words it read were taken back while it was out ("scratch that",
+/// catalog.rs): its reminder, idea, question, title, tags or merge may come from those words alone. A first user said
+/// "I'm getting her the Breville one", then "scratch that", and "Buy Breville espresso machine · Add to Reminders"
+/// landed anyway (win audit, 2026-11-01). The thread's other words are read again by the next pass.
+fn drop_taken_back(pass: &mut Pass, sent: &World, now: &World) {
+    let kept: HashSet<&str> = now.thoughts.iter().map(|t| t.id.as_str()).collect();
+    let gone: HashSet<&str> = sent.thoughts.iter()
+        .filter(|t| t.placed && !kept.contains(t.id.as_str()))
+        .filter_map(|t| t.thread_id.as_deref())
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    let on = |id: &str| gone.contains(id);
+    pass.titles.retain(|t| !on(&t.thread_id));
+    pass.merges.retain(|m| !on(&m.from) && !on(&m.into));
+    pass.suggestions.retain(|s| !on(&s.thread_id));
+    pass.questions.retain(|q| !on(&q.thread_id));
+    pass.actions.retain(|a| !on(&a.thread_id));
+    pass.tags.retain(|t| !on(&t.thread_id));
 }
 
 /// The least time between passes: 10 s, doubling with each failed pass in a row up to about 5 min,
@@ -945,8 +987,8 @@ fn chrono_today() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        changes, changes_on, day, describe, describe_in, drop_stale_titles, existing, named_at, request_in, rest_ms, Pass,
-        Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
+        changes, changes_on, day, describe, describe_in, drop_stale_titles, drop_taken_back, existing, land_racing, named_at,
+        request_in, rest_ms, Pass, Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
     };
     use std::collections::HashSet;
     use crate::tidy::Kind;
@@ -1143,6 +1185,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         let mut world = World {
             threads: vec![thread("T1", None), thread("T2", None)],
@@ -1177,6 +1220,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         // T7 branches from T5, and T9 from T7.
         let world = World {
@@ -1315,6 +1359,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         };
         world.thoughts.push(said("a", "you"));
         let alone = describe(&world, 0, TODAY);
@@ -1354,6 +1399,7 @@ mod tests {
             complete: true,
             at_ms: n,
             place_ms: None,
+            decided: false,
         };
         let world = World {
             threads: vec![thread("T1", 5), thread("T2", 100)],
@@ -1447,6 +1493,7 @@ mod tests {
                     complete: true,
                     at_ms: touched_ms - 8 + k,
                     place_ms: None,
+                    decided: false,
                 });
             }
         }
@@ -1606,6 +1653,7 @@ mod tests {
                     complete: true,
                     at_ms,
                     place_ms: None,
+                    decided: false,
                 });
             }
         }
@@ -1682,6 +1730,66 @@ mod tests {
             now.thoughts.push(Thought { id: "eagle".into(), text: "Actually, call it Eagle.".into(), placed, ..sent.thoughts[0].clone() });
             assert_eq!(titles(&now), ["T2 proposes title Grocery list"], "placed: {placed}");
         }
+    }
+
+    #[test]
+    fn words_taken_back_while_the_pass_was_out_leave_nothing_from_it_on_their_thread() {
+        // The first user's trace: the pass read "the Breville one", then "scratch that" took it off a thread that
+        // keeps its other words, and the pass came back with a reminder for it.
+        let sent = map(&[
+            ("T1", "Mom's Birthday", &["Maybe a nice espresso machine, she loves coffee.", "Decided: I'm getting her the espresso machine, the Breville one."]),
+            ("T2", "Groceries", &["Buy oat milk and coffee beans."]),
+        ]);
+        let mut now = sent.clone();
+        now.thoughts.retain(|t| !t.text.contains("Breville"));
+        let landed = |now: &World| {
+            let mut pass: Pass = serde_json::from_value(serde_json::json!({
+                "titles": [{"thread_id": "T1", "title": "Breville gift"}, {"thread_id": "T2", "title": "Coffee shopping"}],
+                "merges": [{"from": "T2", "into": "T1"}],
+                "suggestions": [{"thread_id": "T1", "text": "Check Breville prices this week"}, {"thread_id": "T2", "text": "Try a local roaster"}],
+                "questions": [{"thread_id": "T1", "text": "Which Breville model?"}],
+                "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Buy Breville espresso machine", "when": ""},
+                            {"thread_id": "T2", "kind": "reminder", "title": "Buy oat milk", "when": ""}],
+                "tags": [{"thread_id": "T1", "tags": ["gift"]}, {"thread_id": "T2", "tags": ["errands"]}]
+            }))
+            .unwrap();
+            drop_taken_back(&mut pass, &sent, now);
+            shown(&changes_on(now, pass, TODAY))
+        };
+        let all = landed(&sent);
+        assert!(all.iter().any(|c| c.starts_with("T1 reminder Buy Breville")), "nothing taken back: the pass stands: {all:?}");
+        let after = landed(&now);
+        assert!(after.iter().all(|c| c.starts_with("T2 ")), "nothing lands on the thread that lost words: {after:?}");
+        assert!(after.contains(&"T2 reminder Buy oat milk ".to_string()) && after.contains(&"T2 #errands".to_string()), "{after:?}");
+        assert!(!after.iter().any(|c| c.contains("into T1")), "no merge into it either: {after:?}");
+    }
+
+    #[test]
+    fn words_taken_back_as_a_pass_lands_leave_nothing_from_it_on_their_thread() {
+        // The check passes on a snapshot; "scratch that" commits before the pass does (another worker).
+        let world = map(&[
+            ("T1", "Mom's Birthday", &["Maybe a nice espresso machine, she loves coffee.", "Decided: I'm getting her the espresso machine, the Breville one."]),
+            ("T2", "Groceries", &["Buy oat milk and coffee beans."]),
+        ]);
+        let breville = world.thoughts.iter().find(|t| t.text.contains("Breville")).unwrap().id.clone();
+        let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::Journal::open(&path).unwrap();
+        let core = crate::Core::test(journal, world.clone());
+        let pass: Pass = serde_json::from_value(serde_json::json!({
+            "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Buy Breville espresso machine", "when": ""},
+                        {"thread_id": "T2", "kind": "reminder", "title": "Buy oat milk", "when": ""}]
+        }))
+        .unwrap();
+        let taken = std::sync::atomic::AtomicBool::new(false);
+        land_racing(&core, pass, &world, "in a test", || {
+            if !taken.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                core.commit(vec![Change::ThoughtSkipped { thought_id: breville.clone() }]);
+            }
+        });
+        let now = core.snapshot();
+        let landed: Vec<String> = now.actions.iter().map(|a| format!("{} {}", a.thread_id, a.title)).collect();
+        assert_eq!(landed, ["T2 Buy oat milk"], "checked again after the race: only the other thread's reminder");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
