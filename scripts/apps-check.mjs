@@ -98,6 +98,7 @@ try {
   // of nowhere doesn't read as a glitch on camera.
   const tuneHtml = render(DockTune, { core: core(null, false, null, { name: "Loud Silly Tune", why, id: 1 }) });
   assert.ok(tuneHtml.includes('role="status"') && text(tuneHtml).startsWith("♪ Loud Silly Tune") && tuneHtml.includes(`<strong>Loud Silly Tune</strong>: ${why}`), tuneHtml);
+  assert.ok(tuneHtml.includes("data-dock-card"), "the tune line grows the dock as a card does, so a fresh landing moves clear of it");
   assert.equal(render(DockTune, { core: core(null) }), "", "nothing played: no line");
   // The first click, tap or key press lets the page play (useApps listens for it); then the message plays the silly
   // tune: three quick hops up and a sliding whistle, done in under a second.

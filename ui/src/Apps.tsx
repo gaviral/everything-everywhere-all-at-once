@@ -181,7 +181,9 @@ const readingMs = (text: string) => 1000 + 250 * (text.match(/[\p{L}\p{N}']+/gu)
 
 /** A tune an app just played, said in the dock beside your live words, where your eyes are when it plays (the Apps
  *  panel above the map is often scrolled away): "♪ Loud Silly Tune: voices stayed loud for 3 s". Up for reading
- *  time (`readingMs`, about 3 s), as the line after Keep is; a second tune restarts it. */
+ *  time (`readingMs`, about 3 s), as the line after Keep is; a second tune restarts it. It grows the dock as a card
+ *  does, so it carries data-dock-card: a thought that just landed under it moves clear (App.tsx). A tune played from
+ *  the Apps panel's "Play tune" shows no line: that card said which app and why where you clicked. */
 export function DockTune({ core }: { core: Core }) {
   const played = core.apps.played;
   const { setPlayed } = core.apps;
@@ -191,7 +193,7 @@ export function DockTune({ core }: { core: Core }) {
     return () => window.clearTimeout(timer);
   }, [played?.id]);
   return <AnimatePresence>
-    {played && <motion.div key="dock-tune" className="dock-tune" role="status" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
+    {played && <motion.div key="dock-tune" className="dock-tune" role="status" data-dock-card initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
       <span className="dock-tune-mark" aria-hidden="true">♪</span><span><strong>{played.name}</strong>{played.why ? `: ${played.why}` : " played its tune"}</span>
     </motion.div>}
   </AnimatePresence>;
