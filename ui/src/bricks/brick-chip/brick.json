@@ -1,0 +1,8 @@
+{
+  "id": "brick-chip",
+  "name": "Brick chip",
+  "does": "A small chip on each point that came while it's on, shown when you point at it or tap it.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": false
+}

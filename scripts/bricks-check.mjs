@@ -378,6 +378,69 @@ try {
     await evaluate(`document.querySelector('[aria-label="Open Hackathon plan on the map"]').click()`);
     if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread Hackathon plan")`, 2000)) fail("spine", "a thread doesn't open on the map");
   }
+  // Brick chip: a panel that marks the app's points (the playground draws none), so it's checked in the app. Nothing on
+  // the map that was there, nor on an empty one; a chip naming the brick on each point that lands after, anyone's,
+  // first in the point's tools; quiet at rest; pointed at, it shows clear of Delete, Move and the placing time; on a
+  // phone (touch, dark, reduced motion) a tap shows it in the row under the words, at once; a card folded and opened
+  // gets its chips back; switched off, none stay.
+  if (checked.includes("brick-chip")) {
+    if (infos["./bricks/brick-chip/brick.json"].kind !== "panel") fail("brick-chip", "brick.json: a panel, as its spec says");
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    const switched = (on) => evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "brick-chip": ${on} })); window.dispatchEvent(new StorageEvent("storage", { key: "e2a2o.bricks" }))`);
+    const chips = `document.querySelectorAll(".brick-chip").length`;
+    await switched(true);
+    shown = full;
+    await go(`${base}/`);
+    if (!await until(`!!document.querySelector('[data-brick="brick-chip"]') && !!document.querySelector(".points li")`, 8000)) fail("brick-chip", "never mounted on a full map");
+    else {
+      await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+      await settle();
+      if (await evaluate(chips)) fail("brick-chip", "chips on points that were on the map before");
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("chip-1", "Ask the landlord about the broken heater before the weekend", "T1") } });
+      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("chip-2", "The bike is fine", "T1"), speaker: "Sam" } } });
+      if (!await until(`${chips} === 2`, 4000)) fail("brick-chip", "no chip on each new point, yours and someone else's");
+      const chip = (id) => `document.querySelector("#point-${id} .brick-chip")`;
+      const marks = await evaluate(`[...document.querySelectorAll(".brick-chip")].map((c) => ({ text: c.textContent, first: c === c.parentElement.firstElementChild && c.parentElement.matches(".move-point"), opacity: getComputedStyle(c).opacity }))`);
+      if (marks.some((m) => m.text !== "Brick chip" || !m.first || m.opacity !== "0")) fail("brick-chip", `not the brick's name, first in the point's tools and quiet at rest: ${JSON.stringify(marks)}`);
+      const at = await evaluate(`(() => { const r = document.getElementById("point-chip-1").getBoundingClientRect(); return { x: r.left + 20, y: r.top + 6 }; })()`);
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+      if (!await until(`getComputedStyle(${chip("chip-1")}).opacity === "1"`, 2000)) fail("brick-chip", "pointing at the point doesn't show its chip");
+      // Clear of the point's own tools and its time: the chip's box crosses none of theirs.
+      const clear = `(() => { const c = ${chip("chip-1")}.getBoundingClientRect(), p = document.getElementById("point-chip-1");
+        return [...p.querySelectorAll(".move-button, .speed")].every((o) => { const r = o.getBoundingClientRect(); return c.right <= r.left + 0.5 || c.left >= r.right - 0.5 || c.bottom <= r.top + 0.5 || c.top >= r.bottom - 0.5; })
+          && c.left >= 0 && c.right <= innerWidth; })()`;
+      if (!await evaluate(clear)) fail("brick-chip", "the chip covers Delete, Move or the placing time, or leaves the window");
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+      if (!await until(`getComputedStyle(${chip("chip-1")}).opacity === "0"`, 2000)) fail("brick-chip", "the pointer gone, its chip stays");
+      await evaluate(`document.querySelector("#thread-T1 > .thread-head .thread-toggle").click()`);
+      await until(`!document.getElementById("point-chip-1")`, 3000);
+      await evaluate(`document.querySelector("#thread-T1 > .thread-head .thread-toggle").click()`);
+      if (!await until(`${chips} === 2`, 3000)) fail("brick-chip", "a card folded and opened doesn't get exactly its chips back");
+      await width(390, 844);
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+      await settle();
+      await evaluate(`document.getElementById("point-chip-1").focus()`);
+      const phone = await evaluate(`(() => { const c = ${chip("chip-1")}, s = getComputedStyle(c), words = document.querySelector("#point-chip-1 > span:not(.sr-only)").getBoundingClientRect();
+        return { touch: matchMedia("(hover: none)").matches, shown: s.opacity, instant: s.transitionDuration === "0s", color: s.color, below: c.getBoundingClientRect().top >= words.bottom - 1,
+          sideways: document.documentElement.scrollWidth - innerWidth }; })()`);
+      if (!phone.touch || phone.shown !== "1" || !phone.instant || phone.color !== "rgb(196, 165, 255)" || !phone.below || phone.sideways > 1 || !await evaluate(clear)) fail("brick-chip", `a tap on a dark phone, reduced motion: ${JSON.stringify(phone)}`);
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await width(1280, 860);
+      await switched(false);
+      if (!await until(`!document.querySelector('[data-brick="brick-chip"]') && ${chips} === 0`, 3000)) fail("brick-chip", "switched off, chips stay");
+      await switched(true);
+      await until(`!!document.querySelector('[data-brick="brick-chip"]')`, 3000);
+      await settle();
+      if (await evaluate(chips)) fail("brick-chip", "switched off and on, the old chips come back");
+      core.send({ type: "snapshot", world: empty });
+      await until(`!!document.querySelector(".empty h1")`, 3000);
+      if (await evaluate(`${chips} || document.querySelector('[data-brick="brick-chip"]').textContent.trim().length`)) fail("brick-chip", "shows something on an empty map");
+      if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail("brick-chip", "it broke");
+    }
+    await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+  }
   if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
   // 6. The app with every brick at its default; then each view brick switched on in the Catalog.
