@@ -2,6 +2,8 @@
 name = "e2a2o-core"
 version = "0.1.0"
 edition = "2021"
+# The oldest Rust that builds it: the highest any locked crate needs (uuid 1.29). run.sh checks it before building.
+rust-version = "1.89"
 publish = false
 
 [dependencies]
