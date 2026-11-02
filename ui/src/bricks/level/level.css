@@ -1,4 +1,4 @@
-/* ?level (Level.tsx): a developer's meter, just above the dock on the left, near the mic it measures. */
+/* ?level (index.tsx): a developer's meter, just above the dock on the left, near the mic it measures. */
 .level-meter {
   position: fixed;
   left: 16px;

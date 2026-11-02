@@ -1,0 +1,9 @@
+{
+  "id": "level",
+  "name": "Level meter",
+  "does": "Every loudness reading the core hears, to set a volume app's level.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": false,
+  "flag": "level"
+}

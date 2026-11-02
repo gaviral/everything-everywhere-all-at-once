@@ -51,14 +51,15 @@ function unframe(buffer) {
 
 /** A stand-in core: the built UI over HTTP, alone on this laptop, and /ws. Each window that connects gets
  *  `joinReply(query)`'s messages (the core's catch-up: the world, and whatever else a check puts first; `query` is the
- *  connection's URLSearchParams), or is refused when it returns null; `heard` collects what windows sent, parsed. */
-export async function standInCore(joinReply) {
+ *  connection's URLSearchParams), or is refused when it returns null; `heard` collects what windows sent, parsed.
+ *  `door`: what /room says (alone on a laptop unless a check opens a room, or runs as the hosted site). */
+export async function standInCore(joinReply, { door = { room: false, member: true } } = {}) {
   const sockets = new Set();
   const heard = [];
   const server = createServer((req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
     const file = join(dist, path === "/" ? "index.html" : path);
-    if (path === "/room") { res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ room: false, member: true })); return; }
+    if (path === "/room") { res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(door)); return; }
     if (!file.startsWith(dist) || !existsSync(file) || file.endsWith("/")) { res.writeHead(404).end(); return; }
     res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
   });

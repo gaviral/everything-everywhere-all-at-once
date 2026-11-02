@@ -1,0 +1,8 @@
+{
+  "id": "_template",
+  "name": "Template",
+  "does": "Counts the threads and thoughts on the map, and opens the thread you're on.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

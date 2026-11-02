@@ -64,7 +64,7 @@ export const ACTIONS: Action[] = [
   { id: "export", how: "click", at: [["App.tsx", "exportMap()"]], pressed: PRESS, waits: "file", done: "the file downloads: “Exported … as …”",
     working: "none needed: the file is written in the page, in one frame", failed: "notice: “Nothing on the map yet to export.”",
     says: ["Nothing on the map yet to export."] },
-  { id: "map-or-palace", how: "click", at: [["App.tsx", `showView("map")`], ["App.tsx", `showView("palace")`]], pressed: PRESS, done: "the view changes and its button stays pressed" },
+  { id: "map-or-palace", how: "click", at: [["App.tsx", `showView("map")`], ["App.tsx", `showView("palace")`], ["App.tsx", "showView(brick.info.id)"]], pressed: PRESS, done: "the view changes and its button stays pressed" },
   { id: "search", how: "key", at: [["App.tsx", "searchRef}"]], pressed: INSTANT, done: "matching threads stay, “N threads found” with Clear; Esc clears", says: ["found"] },
   { id: "clear-search", how: "click", at: [["App.tsx", `onClick={() => setQuery("")}`]], pressed: PRESS, done: "the whole map is back" },
   { id: "focus-mode", how: "click", at: [["App.tsx", "setFocusMode((value) => !value)"]], pressed: PRESS, done: "the map shows one thread; Focus stays pressed while on" },
@@ -148,6 +148,14 @@ export const ACTIONS: Action[] = [
   { id: "app-on-off", how: "click", at: [["Apps.tsx", "core.toggleApp(app.id, !app.enabled)"]], pressed: PRESS, waits: "core", done: "the switch says On or Off", failed: OFFLINE },
   { id: "app-remove", how: "click", at: [["Apps.tsx", "core.removeApp(app.id)"]], pressed: PRESS, waits: "core", done: "the app's row goes", failed: OFFLINE },
   { id: "app-output", how: "pick", at: [["Apps.tsx", "core.appOutput(app.id"]], pressed: INSTANT, waits: "core", done: "the menu shows the choice", failed: OFFLINE },
+
+  // Bricks (docs/bricks.md): the Catalog, opened from the Apps panel, and the switches in it. A switch is this
+  // browser's own, so it waits on nothing.
+  { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Catalog sheet opens: every brick with its line and its switch" },
+  { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Catalog" },
+  { id: "catalog-backdrop", how: "click", at: [["Catalog.tsx", "if (event.target === event.currentTarget) closeCatalog()"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
+  { id: "brick-switch", how: "click", at: [["Catalog.tsx", "switchBrick(info.id, !shown)"], ["BrickSlot.tsx", "switchBrick(info.id, false)"]], pressed: PRESS,
+    done: "the switch says On or Off and the brick shows or goes at once (a view's name joins or leaves Map and Palace); a broken brick's line goes" },
 
   // Import.
   { id: "import-open", how: "click", at: [["Import.tsx", "setOpen(true)"], ["Import.tsx", "import-close"], ["Import.tsx", "onClick={(event) => {"]], pressed: PRESS, done: "the import dialog opens or closes" },

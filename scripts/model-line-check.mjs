@@ -8,7 +8,7 @@ import { uiServer } from "./ui-server.mjs";
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { modelName, stepped, lineFor, announcement, runningModel, EMPTY_LINE, HOLD_MS } = await server.ssrLoadModule("/src/model-line.ts");
+  const { modelName, stepped, lineFor, announcement, runningModel, together, EMPTY_LINE, HOLD_MS } = await server.ssrLoadModule("/src/model-line.ts");
   let id = 0;
   const start = (step, model) => ({ type: "step", id: ++id, step, model, done: false, ok: false, ms: 0 });
   const end = (msg, ms = 2300, ok = true) => ({ ...msg, done: true, ok, ms });
@@ -38,6 +38,25 @@ try {
     // The call answered; whether the feature then did its thing is the map's to show, so no "placed it".
     assert.equal(line.text, "answered · 2.3 s", `${step} done says it answered and how long it took`);
     assert.equal(lineFor(state, 1000 + HOLD_MS, false), null, `${step}: gone once its hold is up, the mic off`);
+  }
+
+  // A placement's race, each lane on its own model (core/src/placer.rs `MODELS`): both named while they run, then
+  // the one that won, and the dropped one never covers it.
+  assert.deepEqual(together(["muse-spark-1.3", "muse-spark-1.2"]), { model: "Muse Spark 1.3 + 1.2", id: "muse-spark-1.3, muse-spark-1.2" });
+  assert.deepEqual(together(["muse-spark-1.2", "muse-spark-1.2-contributor"]), { model: "Muse Spark 1.2", id: "muse-spark-1.2, muse-spark-1.2-contributor" });
+  assert.equal(together(["muse-spark-1.3", "muse-image-1.0"]).model, "Muse Spark 1.3 + Muse Image 1.0");
+  {
+    const lane0 = start("placer", "muse-spark-1.3");
+    const lane1 = start("placer", "muse-spark-1.2");
+    let race = stepped(stepped(EMPTY_LINE, lane0, 0), lane1, 1);
+    assert.deepEqual(lineFor(race, 1, false), { model: "Muse Spark 1.3 + 1.2", id: "muse-spark-1.3, muse-spark-1.2", text: "placing your thought" });
+    for (const [won, lost] of [[lane1, lane0], [lane0, lane1]]) {
+      const after = stepped(stepped(race, end(won, 1800), 1800), { ...lost, done: true, dropped: true }, 1801);
+      assert.deepEqual(lineFor(after, 1900, false), { model: modelName(won.model), id: won.model, text: "answered · 1.8 s" }, `won by ${won.model}`);
+    }
+    // Two lanes on one model (PLACER_MODEL): named once.
+    const same = stepped(stepped(EMPTY_LINE, start("placer", "muse-spark-1.2"), 0), start("placer", "muse-spark-1.2"), 1);
+    assert.equal(lineFor(same, 1, false).model, "Muse Spark 1.2");
   }
 
   // Listening: the model hearing the words; anything you wait on takes the line, then it comes back.

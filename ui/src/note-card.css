@@ -42,7 +42,7 @@
   font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
 }
 @keyframes note-card-in { from { opacity: 0; transform: translateY(-6px); } }
-/* On a phone the lane's column sticks under the header and spaces its cards (styles.css .notice-stack). */
+/* On a phone the notice lane stacks, spaces and bounds its cards (styles.css), this one with them. */
 @media (max-width: 560px) {
   .note-card { width: auto; }
 }

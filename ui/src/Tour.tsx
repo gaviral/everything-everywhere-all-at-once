@@ -39,7 +39,11 @@ export function Tour({ populated, noKey, resting = false }: { populated: boolean
   const focusNext = useRef(true);
   useLayoutEffect(() => {
     if (step >= 0 && focusNext.current) {
-      nextRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+      // In a short window (a phone on its side) the tip goes to the top, its header scrolled away: centred, the notices
+      // fixed under it (App.tsx useLaneRoom) had no room left and covered its words and Next.
+      const tip = nextRef.current?.closest<HTMLElement>(".tour-tip");
+      if (tip && !tip.closest(".dock") && window.matchMedia("(max-height: 560px)").matches) tip.scrollIntoView({ block: "start", behavior: "instant" });
+      else nextRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
       nextRef.current?.focus({ preventScroll: true });
       focusNext.current = false;
     }

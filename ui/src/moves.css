@@ -20,11 +20,14 @@
 .delete-button { margin-right: 4px; cursor: pointer; }
 .delete-button:active { cursor: pointer; }
 
-/* The list it opens: under the button, right-aligned with it, above the cards beside it. 6 rows show before it scrolls
+/* The list it opens: under the button, right-aligned with it (shifted into view when that would cross the screen's edge),
+   above the cards beside it. 6 rows show before it scrolls
    (a map's live threads fit; an imported one narrows by typing). */
 .move-menu {
-  position: absolute; top: calc(100% + 4px); right: 0; width: min(260px, 80vw); padding: 6px; border: 1px solid var(--line);
+  position: absolute; top: calc(100% + 4px); right: 0; width: min(260px, calc(100vw - 32px)); padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--card); box-shadow: 0 8px 28px rgba(0, 0, 0, .14); z-index: 20;
+  /* onscreen.ts shifts it into view (a point near a phone's left edge) and sets the room it has; past that it scrolls. */
+  max-height: var(--fit-height, none); overflow-y: auto; overscroll-behavior: contain;
 }
 .move-menu input {
   width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);

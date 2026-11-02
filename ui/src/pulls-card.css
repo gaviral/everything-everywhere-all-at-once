@@ -45,7 +45,7 @@ a.pulls-card-row:hover { background: var(--bg); }
 .pulls-card-all { display: block; margin: 2px 0 0; padding: 8px 10px; border-radius: 8px; color: var(--accent); font-size: 13px; text-decoration: none; }
 .pulls-card-all:hover { background: var(--bg); }
 @keyframes pulls-card-in { from { opacity: 0; transform: translateY(-6px); } }
-/* On a phone the lane's column sticks under the header, spaces its cards and bounds them (styles.css .notice-stack). */
+/* On a phone the notice lane stacks, spaces and bounds its cards (styles.css), this one with them. */
 @media (max-width: 560px) {
   .pulls-card { width: auto; }
 }

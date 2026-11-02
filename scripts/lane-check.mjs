@@ -3,12 +3,13 @@
 // (scripts/headless.mjs). Ten pull requests (ui/src/PullsCard.tsx), a long note (NoteCard.tsx) and a message counting
 // down (SendCard.tsx) share the notice lane's room between the Apps pill and the dock: none runs under the composer or
 // off the screen, none covers another, and each card's ×, its title, the note's status and the message's Stop stay
-// on top where they're drawn. On a laptop at the page's top and scrolled, and on a phone, where the cards are in the
-// page's flow and the map scrolls under them. Before (connectors, 2026-11-02), the note card ran past a 900 px window
-// and the GitHub card covered the composer; on a phone the cards stuck on top of each other and the note card covered
-// the message's Stop. And the cards' holds: with focus in the note card, the pointer crossing it to the GitHub card
-// doesn't let it go (it closed under the focus, as the GitHub card once did); after either is closed by its ×, the
-// next one goes on its own (it stayed up for good). Exit 3 (skipped) when this machine has no Chrome or ui/dist.
+// on top where they're drawn. On a laptop at the page's top and scrolled, and on a phone, where the lane itself is the
+// stack, in the page's flow, at most half the room above the dock and scrolling past that (scripts/phone-check.mjs).
+// Before (connectors, 2026-11-02), the note card ran past a 900 px window and the GitHub card covered the composer; on
+// a phone the cards stuck on top of each other and the note card covered the message's Stop. And the cards' holds: with
+// focus in the note card, the pointer crossing it to the GitHub card doesn't let it go (it closed under the focus, as
+// the GitHub card once did); after either is closed by its ×, the next one goes on its own (it stayed up for good).
+// Exit 3 (skipped) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
@@ -52,7 +53,9 @@ const MEASURE = `(() => {
     const hit = document.elementFromPoint(x, y); return hit && (hit === e || e.contains(hit)) ? "ok" : "under " + (hit?.closest("[class]")?.className ?? hit?.tagName); };
   const cards = {};
   for (const [name, selector] of [["message", ".send-card"], ["GitHub", ".pulls-card"], ["note", ".note-card"]]) if (q(selector)) cards[name] = box(q(selector));
-  return { scrollY: Math.round(scrollY), composer: box(q("#type-a-thought")), cards, noteBody: q(".note-card-body") ? Math.round(q(".note-card-body").getBoundingClientRect().height) : 0,
+  // A lane past its room scrolls (a phone's: its cards at their least, the rest a scroll of the lane away).
+  const lane = q(".notice-lane"), laneFull = getComputedStyle(lane).overflowY !== "visible" && lane.scrollHeight > lane.clientHeight + 1;
+  return { scrollY: Math.round(scrollY), composer: box(q("#type-a-thought")), cards, laneFull, noteBody: q(".note-card-body") ? Math.round(q(".note-card-body").getBoundingClientRect().height) : 0,
     on: { "the composer": onTop(q("#type-a-thought")), "the message's Stop": q(".send-card") ? onTop(q(".send-card-stop")) : null, "the message's words": q(".send-card") ? onTop(q(".send-card-text")) : null,
       "the GitHub card's ×": onTop(q(".pulls-card-close")), "the GitHub card's title": onTop(q(".pulls-card-title")), "the first pull request": onTop(q(".pulls-card-row")),
       "the note card's ×": onTop(q(".note-card-close")), "the note's title": onTop(q(".note-card-title")), "the note's status": onTop(q(".note-card-status")) } };
@@ -72,8 +75,10 @@ function together(where, m, names, { underDock = false } = {}) {
     if (state === null || (underDock && /status/.test(what))) continue;
     assert.equal(state, "ok", `${at}: ${what} is ${state}`);
   }
-  // The note keeps two points in view (the rest scroll inside it).
-  if (!underDock) assert.ok(m.noteBody >= 40, `${at}: the note shows ${m.noteBody} px of its points`);
+  // The note keeps two points in view (the rest scroll inside it). Not where the lane itself is past its room: a phone's
+  // lane takes at most half the room above the dock (phone-check.mjs), and with the message and GitHub cards up too the
+  // note keeps its least, its title and status (asserted above; styles.css .notice-stack), its points a scroll away.
+  if (!underDock && !m.laneFull) assert.ok(m.noteBody >= 40, `${at}: the note shows ${m.noteBody} px of its points`);
 }
 
 const core = await standInCore(() => [{ type: "snapshot", world }]);

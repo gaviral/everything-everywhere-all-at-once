@@ -1,8 +1,9 @@
 // Rooms: two people think out loud on one map, each on their own laptop. When the core runs with a
 // room code, everyone joins with a short name (remembered in this browser), and a laptop other than
 // the host's also needs the code. Alone, nothing changes: your thoughts are "you".
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import "./room.css";
+import { useOnScreen } from "./onscreen";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 
 type Seat = { me: string; code: string };
@@ -31,6 +32,8 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
   const actions = useContext(RoomActions);
   const me = useMe();
   const { hosted } = useSite();
+  const panel = useRef<HTMLDivElement>(null);
+  useOnScreen(panel, { rendered: !!actions });
   if (!actions) return null;
   const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
   return (
@@ -41,7 +44,7 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
       event.currentTarget.querySelector("summary")?.focus();
     }}>
       <summary aria-label="Room details">Room <span aria-hidden="true">⌄</span></summary>
-      <div className="room-panel">
+      <div ref={panel} className="room-panel">
         <div className="room-panel-title">This room</div>
         <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
         {hosted ? <p className="room-guest">{savedWhere(true)}</p>

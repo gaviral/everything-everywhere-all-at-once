@@ -64,7 +64,10 @@ try {
   assert.match(rule("header"), /position:\s*relative/, "the header scrolls away and keeps its z-index");
   assert.match(styles, /header:has\(\.shortcuts\[open\]\) \{ z-index: 11; \}/, "open, the ? list's header goes over the notice (10)");
   assert.match(styles.match(/\.notice-lane \{[^}]*\}/)?.[0] ?? "", /z-index: 10;/, "the notice lane sits at 10");
-  assert.match(css, /\.notice-lane, \.notice, \.map-change \{ top: 8px; \}/, "with the header scrolled away, notices stick at the top");
+  // Notices sit under the header, or 8 px from the top once it has scrolled away (App.tsx useLaneRoom), capped above
+  // the dock (scripts/phone-check.mjs measures it on a phone on its side).
+  assert.match(rule(".notice-lane, .apps-panel.is-open ~ .notice-lane"), /position:\s*fixed;[^}]*top:\s*var\(--lane-top, 8px\)/, "with the header scrolled away, notices stay at the top");
+  assert.match(rule(".notice-lane, .apps-panel.is-open ~ .notice-lane"), /max-height:\s*var\(--lane-room/, "a stack of notices stops above the dock");
   assert.match(rule(".thread, .palace-tile"), /scroll-margin-top:\s*12px/, "a card brought to the top has no bars to clear");
   const dock = rule(".dock");
   const cap = +(dock.match(/max-height:\s*(\d+)dvh/)?.[1] ?? 100);

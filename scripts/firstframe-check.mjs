@@ -48,6 +48,9 @@ try {
   // Recap on its own model (RECAP_MODEL): named apart, never folded into a group it isn't in.
   assert.equal(modelsLine([models[2], models[3], { step: "recaps", model: "muse-spark-1.2" }]), "Tidies, builds: Muse Spark 1.3 · Recaps: Muse Spark 1.2");
   assert.equal(modelsLine([]), "");
+  // Placing's racing calls on two models (core/src/placer.rs `MODELS`, one entry each): one step, both named.
+  const mixed = [models[0], { step: "places", model: "muse-spark-1.3" }, { step: "places", model: "muse-spark-1.2" }, ...models.slice(2)];
+  assert.equal(modelsLine(mixed), "Hears: Muse Voice Transcribe 1.0 · Places: Muse Spark 1.3 + 1.2 · Tidies, builds, recaps: Muse Spark 1.3 · Draws: Muse Image 1.0");
 
   // 2. The Palace starts each tile from the map's copy, already decoded (no fade, no letter), with the large copy
   //    fading in over it; and while any picture is on its way, the letter stays hidden (the room's color shows).

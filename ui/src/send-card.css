@@ -35,8 +35,11 @@
 @media (prefers-reduced-motion: reduce) {
   .send-card-bar span { animation: none; transform: scaleX(var(--left, 1)); }
 }
-/* On a phone the lane's column sticks under the header and spaces its cards (styles.css .notice-stack). */
-@media (max-width: 560px) {
-  .send-card { width: auto; }
-}
 @media (hover: none) { .send-card-stop kbd { display: none; } }
+/* In a phone's or a short window's lane (styles.css caps the card at the lane's height): the words scroll and the
+   heading and Stop stay, so a long message never pushes Stop out of sight while it counts down. */
+@media (max-width: 560px), (max-height: 560px) {
+  .notice-stack > .send-card { display: flex; flex-direction: column; }
+  .notice-stack > .send-card > :not(.send-card-text) { flex: none; }
+  .notice-stack > .send-card > .send-card-text { flex: 0 1 auto; min-height: 1.4em; overflow-y: auto; overscroll-behavior: contain; }
+}
