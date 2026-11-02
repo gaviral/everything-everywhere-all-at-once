@@ -1717,10 +1717,10 @@ mod tests {
         let errors: Vec<&str> = calls.iter().filter_map(|c| c["error"].as_str()).collect();
         assert_eq!((calls.len(), errors.len()), (2, 1), "both calls traced: {calls:?}");
         assert!(errors[0].starts_with("dropped before its answer"), "{errors:?}");
-        // The windows hear the winner answered and the loser superseded, never that a placing call failed: the model
-        // line would say "didn't answer" over every placed thought.
-        let told: Vec<_> = ends.iter().map(|m| (m["step"].as_str(), m["ok"].as_bool(), m["superseded"].as_bool())).collect();
-        assert_eq!(told, [(Some("placer"), Some(true), Some(false)), (Some("placer"), Some(false), Some(true))], "{ends:?}");
+        // The windows hear the winner answered and the loser dropped (`dropped`, omitted when false), never that a
+        // placing call failed: the model line would say "didn't answer" over every placed thought.
+        let told: Vec<_> = ends.iter().map(|m| (m["step"].as_str(), m["ok"].as_bool(), m["dropped"].as_bool().unwrap_or(false))).collect();
+        assert_eq!(told, [(Some("placer"), Some(true), false), (Some("placer"), Some(false), true)], "{ends:?}");
     }
 
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
