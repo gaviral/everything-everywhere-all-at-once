@@ -290,6 +290,12 @@ impl Core {
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
+        // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops. First,
+        // so a short fix to the open question below never takes the stop into its words ("No, Muse. Stop listening.").
+        if let Some((before, stop)) = spoken::stop_tail(text) {
+            self.add_turn(speaker, before, search);
+            return self.add_turn(speaker, stop, search);
+        }
         // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
         // first: "yeah" is filler otherwise.
         if catalog::answer(self, speaker, text) {
@@ -301,11 +307,6 @@ impl Core {
                 self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
             }
             return;
-        }
-        // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops.
-        if let Some((before, stop)) = spoken::stop_tail(text) {
-            self.add_turn(speaker, before, search);
-            return self.add_turn(speaker, stop, search);
         }
         find::stop(self, speaker);
         catalog::newer(self, speaker);

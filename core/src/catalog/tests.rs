@@ -498,6 +498,15 @@ async fn a_spoken_yes_no_or_short_fix_answers_the_open_question() {
     let f = Fixture::new(asked());
     assert_eq!(f.say("Palace").await, ["view palace"]);
     assert_eq!(f.say("Yes").await, ["added Yes"]);
+    // "Stop listening" after the answer pauses the mic; it's never taken into the fix (bug hunt: "No, Muse. Stop
+    // listening." wrote "Muse. Stop listening" into the thought, and the mic stopped without "Paused").
+    for (said, did) in [
+        ("No, Muse. Stop listening.", vec!["corrected true Muse", "notice Changed to “Muse”", "view pause"]),
+        ("Yes. Stop listening.", vec!["corrected true", "notice Changed to “Muse Spark”", "view pause"]),
+    ] {
+        let f = Fixture::new(asked());
+        assert_eq!(f.say(said).await, did, "{said}");
+    }
 }
 
 #[tokio::test]
