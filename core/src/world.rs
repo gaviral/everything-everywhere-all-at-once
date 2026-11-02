@@ -135,6 +135,10 @@ pub struct World {
     /// Merged thread id → the thread it became, so late changes still land.
     #[serde(default)]
     pub merged: std::collections::HashMap<String, String>,
+    /// How many threads a ThreadRemoved took off the map, so new ids keep counting up and never land on a
+    /// thread made after the removed one. Rebuilt by replay, as the journal keeps every removal.
+    #[serde(default, skip_serializing)]
+    pub removed: usize,
     #[serde(default)]
     pub apps: Vec<crate::apps::MiniApp>,
     #[serde(default)]
@@ -359,8 +363,9 @@ impl World {
             Change::ThreadRemoved { thread_id } => {
                 let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
-                if !held {
+                if !held && self.thread(thread_id).is_some() {
                     self.threads.retain(|t| &t.id != thread_id);
+                    self.removed += 1;
                     if self.active.as_ref() == Some(thread_id) {
                         self.active = None;
                     }
@@ -659,9 +664,22 @@ impl World {
         self.threads.iter_mut().find(|t| t.id == id)
     }
 
-    /// Never reuses an id, even after merges remove threads.
+    /// Every thread id ever made: on the map, merged away or removed. New ids count up from here.
+    pub fn threads_made(&self) -> usize {
+        self.threads.len() + self.merged.len() + self.removed
+    }
+
+    /// Never reuses an id, even after merges or removals take threads off the map; skips any id
+    /// still in use, as a backstop.
     pub fn next_thread_id(&self) -> String {
-        format!("T{}", self.threads.len() + self.merged.len() + 1)
+        let mut n = self.threads_made() + 1;
+        loop {
+            let id = format!("T{n}");
+            if self.thread(&id).is_none() && !self.merged.contains_key(&id) {
+                return id;
+            }
+            n += 1;
+        }
     }
 }
 
@@ -809,6 +827,30 @@ mod tests {
     }
 
     #[test]
+    fn a_removed_threads_id_is_never_handed_out_again() {
+        // Scratch that on Sam's first thread removes T3 while Ana's T4 stays: the next new topic must not get T4,
+        // or it lands in Ana's thread; nor T3, or a late picture drawn for the old T3 lands on it.
+        let line = |id: &str| format!(r#"{{"type":"thread_added","thread":{{"id":"{id}","title":"{id}","parent_id":null,"status":"open","last_point":"","touched_ms":1}}}}"#);
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3", "T4"] {
+            world.apply(&serde_json::from_str::<Change>(&line(id)).unwrap());
+        }
+        world.apply(&Change::ThreadRemoved { thread_id: "T3".into() });
+        let next = world.next_thread_id();
+        assert!(!["T1", "T2", "T3", "T4"].contains(&next.as_str()), "reused {next}");
+        assert!(!["S1", "S2", "S3", "S4"].contains(&crate::spoken::fresh_id(&world).as_str()));
+        // Removing a thread that isn't there changes nothing, and a merged id is skipped too.
+        let mut merged = World::default();
+        merged.apply(&serde_json::from_str::<Change>(&line("T1")).unwrap());
+        merged.merged.insert("T2".into(), "T1".into());
+        merged.apply(&Change::ThreadRemoved { thread_id: "T9".into() });
+        assert_eq!(merged.next_thread_id(), "T3");
+        merged.merged.insert("T3".into(), "T1".into());
+        merged.merged.remove("T2");
+        assert_eq!(merged.next_thread_id(), "T4");
+    }
+
+    #[test]
     fn old_journals_load_as_one_speaker() {
         // From before rooms: no speaker on a move or a drop, no dropped_by on a thread.
         let lines = [
@@ -838,17 +880,17 @@ mod tests {
             dropped_by: String::new(),
         };
         let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
-        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "Ana".into() });
         world.apply(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() });
         assert_eq!(world.active.as_deref(), Some("T2"), "the talk is where the last move went");
-        assert_eq!(world.active_for("User").map(String::as_str), Some("T1"));
+        assert_eq!(world.active_for("Ana").map(String::as_str), Some("T1"));
         assert_eq!(world.active_for("Lee").map(String::as_str), Some("T2"), "someone new starts where the talk is");
-        world.apply(&Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() });
-        assert_eq!(world.threads[0].dropped_by, "User");
+        world.apply(&Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "Ana".into() });
+        assert_eq!(world.threads[0].dropped_by, "Ana");
         world.apply(&Change::ThreadTouched { thread_id: "T1".into(), last_point: "back".into(), at_ms: 5 });
         assert_eq!(world.threads[0].dropped_by, "", "picking it up again clears the drop");
         world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
-        assert_eq!(world.active_for("User").map(String::as_str), Some("T2"), "a merge moves everyone on it");
+        assert_eq!(world.active_for("Ana").map(String::as_str), Some("T2"), "a merge moves everyone on it");
     }
 
     #[test]
@@ -972,14 +1014,14 @@ mod tests {
             world.apply(&Change::ThreadAdded { thread: test_thread(id, parent) });
         }
         let new = super::ItemStatus::New;
-        world.apply(&Change::ThoughtAdded { thought: test_thought("a", "User", "T1") });
+        world.apply(&Change::ThoughtAdded { thought: test_thought("a", "Ana", "T1") });
         world.apply(&Change::SuggestionAdded {
             suggestion: super::Suggestion { id: "s".into(), thread_id: "T1".into(), text: "Ask Sam".into(), status: new },
         });
         world.apply(&Change::ActionProposed {
             action: super::Action { id: "x".into(), thread_id: "T1".into(), kind: "reminder".into(), title: "Pay".into(), when: String::new(), status: new, done_ms: None },
         });
-        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() });
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "Ana".into() });
         // Never into itself, or into a thread that isn't there.
         world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T1".into() });
         world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T9".into() });
@@ -989,7 +1031,7 @@ mod tests {
         assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T2"));
         assert_eq!(world.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "its branch");
         assert_eq!((world.suggestions[0].thread_id.as_str(), world.actions[0].thread_id.as_str()), ("T2", "T2"));
-        assert_eq!((world.active.as_deref(), world.active_for("User").map(String::as_str)), (Some("T2"), Some("T2")));
+        assert_eq!((world.active.as_deref(), world.active_for("Ana").map(String::as_str)), (Some("T2"), Some("T2")));
         world.apply(&Change::ThreadRenamed { thread_id: "T1".into(), title: "Rent".into() });
         assert_eq!(world.thread("T2").unwrap().title, "Rent", "a late change follows the merge");
     }
@@ -1116,10 +1158,10 @@ mod tests {
             Change::ThreadAdded { thread: test_thread("T1", None) },
             Change::ThreadAdded { thread: test_thread("T2", Some("T1")) },
             Change::ThreadAdded { thread: test_thread("T3", None) },
-            Change::ThoughtAdded { thought: test_thought("a", "User", "T1") },
+            Change::ThoughtAdded { thought: test_thought("a", "Ana", "T1") },
             placed("a", "T1", "", "", false),
             Change::ThreadTouched { thread_id: "T1".into(), last_point: "Ask Muse Spark about a".into(), at_ms: 10 },
-            Change::ActiveChanged { thread_id: "T1".into(), speaker: "User".into() },
+            Change::ActiveChanged { thread_id: "T1".into(), speaker: "Ana".into() },
             Change::ThoughtAdded { thought: test_thought("b", "Sam", "T1") },
             placed("b", "T3", "muse bark", "Muse Spark", true),
             Change::ThreadTouched { thread_id: "T3".into(), last_point: "Ask Muse Spark about b".into(), at_ms: 20 },
@@ -1129,7 +1171,7 @@ mod tests {
                 note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into() },
             },
             Change::ThoughtRepointed { thought_id: "b".into(), point: "Ask Muse Spark about b".into() },
-            Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "User".into() },
+            Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "Ana".into() },
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget".into() },
             Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
             Change::TagKept { thread_id: "T2".into(), tag: "#money".into() },
@@ -1183,8 +1225,8 @@ mod tests {
             Change::ThoughtMoved { thought_id: "b".into(), thread_id: "T3".into(), from: "T2".into(), undo: false },
             Change::ThoughtMoved { thought_id: "b".into(), thread_id: "T2".into(), from: "T3".into(), undo: true },
             Change::ThoughtMoved { thought_id: "a".into(), thread_id: "T3".into(), from: "T1".into(), undo: false },
-            Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
-            Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
+            Change::ThoughtAdded { thought: test_thought("c", "Ana", "T1") },
+            Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "Ana", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
             Change::ThreadRemoved { thread_id: "T9".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
@@ -1200,7 +1242,7 @@ mod tests {
                 text: "Meta's fast model, which this app uses to place thoughts.".into(),
                 at_ms: 40,
             },
-            Change::AnswerMarked { kind: "explain".into(), id: "x1".into(), off: true, speaker: "User".into(), at_ms: 50 },
+            Change::AnswerMarked { kind: "explain".into(), id: "x1".into(), off: true, speaker: "Ana".into(), at_ms: 50 },
             // Aimed at the merged thread, so it follows the merge on replay too.
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget and demo".into() },
             Change::RecapSaved {
@@ -1304,8 +1346,8 @@ mod tests {
         assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T3", "T4"], "a merge undone puts its thread back");
         assert_eq!((w.proposals.len(), w.proposals[0].into.as_str()), (1, "T1"));
         assert_eq!(w.thread("T3").unwrap().title, "Budget and demo", "a change aimed at a merged thread follows it");
-        assert_eq!((w.active_for("User").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));
-        assert_eq!(w.thread("T1").unwrap().dropped_by, "User");
+        assert_eq!((w.active_for("Ana").unwrap().as_str(), w.active_for("Sam").unwrap().as_str()), ("T1", "T3"));
+        assert_eq!(w.thread("T1").unwrap().dropped_by, "Ana");
         assert!(w.thread("T1").unwrap().tags.is_empty());
         assert_eq!(w.thoughts[0].text, "ask Muse Spark about a", "yes to Did you mean");
         assert_eq!(w.thoughts[1].text, "ask muse bark about b", "no to a sure fix puts the words back");

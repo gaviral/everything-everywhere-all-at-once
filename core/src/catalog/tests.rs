@@ -141,7 +141,7 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     let acts = [
         Act::Back, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
         Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
-        Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename,
+        Act::Pause, Act::Approve, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
     ];
     assert_eq!(CATALOG.len(), acts.len());
     for act in acts {
@@ -288,6 +288,17 @@ async fn a_request_is_redone_by_a_bare_no_and_the_first_one_undone() {
     assert_eq!(f.say("No, I was asking about the other one").await, ["added No, I was asking about the other one"]);
 }
 
+/// "Export my map" asks only the speaker's window for the file (it holds the map): the words aren't kept as a thought,
+/// nothing on the map changes, and there's nothing to take back.
+#[tokio::test]
+async fn export_my_map_asks_the_window_for_the_file_and_changes_nothing() {
+    let f = Fixture::new(garden());
+    let before = serde_json::to_string(&f.core.snapshot()).unwrap();
+    assert_eq!(f.say("Export my map").await, ["view export"]);
+    assert_eq!(serde_json::to_string(&f.core.snapshot()).unwrap(), before);
+    assert_eq!(f.say("Export the photos to Dana").await, ["added Export the photos to Dana"]);
+}
+
 #[tokio::test]
 async fn a_view_and_a_move_are_redone_and_scratched() {
     let f = Fixture::new(garden());
@@ -393,7 +404,7 @@ async fn focus_on_this_focuses_the_card_this_means() {
     // Nothing pointed or selected: the thread you're on, so nothing moves.
     let f = Fixture::new(garden());
     assert_eq!(f.say("Focus on this").await, ["view focus"]);
-    // Nothing to focus on: said, not a silent view the window can't show (Sol's review); bare "Focus" too.
+    // Nothing to focus on: said, not a silent view the window can't show (review); bare "Focus" too.
     let f = Fixture::new(World::default());
     for said in ["Let's focus on that one", "Focus"] {
         assert_eq!(f.say(said).await, ["notice Nothing on the map yet: say a thought first"], "{said}");
@@ -424,7 +435,7 @@ async fn correctable(f: &Fixture, act: impl FnOnce()) -> Vec<(u64, Option<String
 #[tokio::test]
 async fn the_window_learns_where_a_correction_starts_from() {
     // "Next one" took you to Bills; "No, I meant collapse this" undoes the move first, so "this" is Garden, and the
-    // window's mark must say so (Sol's review: it marked Bills).
+    // window's mark must say so (review: it marked Bills).
     let f = Fixture::new(garden());
     let next = correctable(&f, || f.core.add_thought("you", "Next one")).await;
     assert_eq!(next, [(JUST_BEFORE_MS, Some("T1".into()))]);
@@ -532,6 +543,7 @@ async fn each_request_undoes_as_its_definition_says() {
         ("Finish it", Act::Finish),
         ("Stop listening", Act::Pause),
         ("Add it to Reminders", Act::Approve),
+        ("Export my map", Act::Export),
     ] {
         let f = Fixture::new(world.clone());
         let done = f.core.request("you", said, true).unwrap_or_else(|| panic!("{said}"));

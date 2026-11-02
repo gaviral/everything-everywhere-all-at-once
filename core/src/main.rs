@@ -180,6 +180,7 @@ impl Core {
         if let Some(id) = way_back(&world, speaker, now_ms()) {
             let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
             self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+            self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
             return;
@@ -714,6 +715,12 @@ fn view(text: &str) -> Option<View> {
     ];
     let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
     let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
+    // "Export my map" and its kin: a file of the map ("save my map" too, as a Save button would). Only the whole turn,
+    // so "export the photos" and "I should save the map for Dana" stay thoughts.
+    let export = [
+        "export", "export map", "export my map", "export the map", "export this map", "download my map", "download the map",
+        "save my map", "save the map",
+    ];
     let all =
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
@@ -726,6 +733,8 @@ fn view(text: &str) -> Option<View> {
         Some(View::Focus)
     } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
         Some(View::All)
+    } else if is_command(text, &export, &["as markdown", "to markdown", "as a markdown file", "as a file"]) {
+        Some(View::Export)
     } else {
         None
     }
@@ -827,6 +836,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
+    tokio::spawn(recap::keep(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -845,7 +855,7 @@ async fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
-            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
+            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT={} ./run.sh", port.saturating_add(1))
         } else {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }
@@ -1442,13 +1452,13 @@ mod tests {
     fn an_off_mark_is_journaled_for_later_and_changes_nothing_else() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
-        super::mark(&core, "User", "explain".into(), "x1a2b".into(), true);
-        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), true);
-        super::mark(&core, "User", "recap".into(), "today-1793547629176".into(), false);
+        super::mark(&core, "Ana", "explain".into(), "x1a2b".into(), true);
+        super::mark(&core, "Ana", "recap".into(), "today-1793547629176".into(), true);
+        super::mark(&core, "Ana", "recap".into(), "today-1793547629176".into(), false);
         // Only the two kinds, with an id an answer could have.
-        super::mark(&core, "User", "thread".into(), "T1".into(), true);
-        super::mark(&core, "User", "explain".into(), "../../etc".into(), true);
-        super::mark(&core, "User", "explain".into(), "x".repeat(81), true);
+        super::mark(&core, "Ana", "thread".into(), "T1".into(), true);
+        super::mark(&core, "Ana", "explain".into(), "../../etc".into(), true);
+        super::mark(&core, "Ana", "explain".into(), "x".repeat(81), true);
         let lines: Vec<serde_json::Value> =
             std::fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
         let marks: Vec<(&str, &str, bool)> = lines
@@ -1457,7 +1467,7 @@ mod tests {
             .map(|l| (l["kind"].as_str().unwrap(), l["id"].as_str().unwrap(), l["off"].as_bool().unwrap()))
             .collect();
         assert_eq!(marks, [("explain", "x1a2b", true), ("recap", "today-1793547629176", true), ("recap", "today-1793547629176", false)]);
-        assert!(lines.iter().all(|l| l["speaker"] == "User" && l["at_ms"].as_u64().is_some()));
+        assert!(lines.iter().all(|l| l["speaker"] == "Ana" && l["at_ms"].as_u64().is_some()));
         assert!(updates.try_recv().is_err(), "no window is sent a mark");
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
@@ -1687,6 +1697,11 @@ mod tests {
             ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
+            ("Export my map", View::Export),
+            ("Okay, export the map as Markdown, please.", View::Export),
+            ("Can you download my map?", View::Export),
+            ("Save the map as a file", View::Export),
+            ("Export.", View::Export),
         ] {
             assert_eq!(view(text), Some(asked), "{text}");
         }
@@ -1697,6 +1712,8 @@ mod tests {
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
             // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
+            // Export takes only the map, whole: these are talk.
+            "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1952,7 +1969,7 @@ mod tests {
                 assert_eq!(did(world(true), &said).await, (vec![does.to_string()], kept), "{said}");
             }
             // By rule: nothing goes to the placer, so nothing waits on the model, and without a key each still acts
-            // ("new thread about …" queued a placement before the review of 88ace4d).
+            // ("new thread about …" queued a placement before a review).
             let (core, mut queue, path) = keyless(world(true));
             core.add_thought("you", phrase);
             let _ = std::fs::remove_file(&path);
@@ -2258,13 +2275,13 @@ mod tests {
         let said = |id: &str, speaker: &str, thread: &str| said(id, speaker, thread, 0);
         let now = 1;
         let mut world = World {
-            threads: vec![thread("T1", 1, "User"), thread("T2", 2, "Sam"), thread("T3", 3, ""), thread("T4", 4, "")],
+            threads: vec![thread("T1", 1, "Ana"), thread("T2", 2, "Sam"), thread("T3", 3, ""), thread("T4", 4, "")],
             thoughts: vec![said("a", "Lee", "T3"), said("b", "Sam", "T4"), said("c", "Lee", "T4")],
             ..World::default()
         };
         world.active_by.insert("Lee".into(), "T4".into());
-        // Sam dropped T2 more recently, but User's way back is User's own.
-        assert_eq!(way_back(&world, "User", now).as_deref(), Some("T1"));
+        // Sam dropped T2 more recently, but Ana's way back is Ana's own.
+        assert_eq!(way_back(&world, "Ana", now).as_deref(), Some("T1"));
         assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T2"));
         // Nothing dropped: the last other thread Lee spoke on.
         assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T3"));
@@ -2310,26 +2327,26 @@ mod tests {
         let unplaced = |id: &str, speaker: &str, at_ms| Thought { placed: false, thread_id: None, ..said(id, speaker, "", at_ms) };
         let now = super::now_ms();
         core.commit(vec![
-            Change::ThreadAdded { thread: thread("T1", 1, "User") },
+            Change::ThreadAdded { thread: thread("T1", 1, "Ana") },
             Change::ThreadAdded { thread: thread("T2", 2, "") },
-            Change::ActiveChanged { thread_id: "T2".into(), speaker: "User".into() },
-            // Sam's words are being placed, and one of User's failed and waits for a retry.
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "Ana".into() },
+            // Sam's words are being placed, and one of Ana's failed and waits for a retry.
             Change::ThoughtAdded { thought: unplaced("sam", "Sam", now) },
-            Change::ThoughtAdded { thought: unplaced("old", "User", now - 61_000) },
+            Change::ThoughtAdded { thought: unplaced("old", "Ana", now - 61_000) },
         ]);
-        core.placing.retry(&core, "old", "User", std::time::Duration::from_secs(15));
-        // Neither holds User up: no wait behind the other person's placements or a retry.
-        core.add_thought("User", "Where was I?");
+        core.placing.retry(&core, "old", "Ana", std::time::Duration::from_secs(15));
+        // Neither holds Ana up: no wait behind the other person's placements or a retry.
+        core.add_thought("Ana", "Where was I?");
         assert!(jobs().is_empty());
-        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T1"));
-        core.add_thought("User", "Okay, next one");
-        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"));
-        // User's own words still placing: landing would undo the command, so it waits behind them.
-        core.add_thought("User", "The caterer needs the head count by Friday, okay, where was I?");
+        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T1"));
+        core.add_thought("Ana", "Okay, next one");
+        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T2"));
+        // Ana's own words still placing: landing would undo the command, so it waits behind them.
+        core.add_thought("Ana", "The caterer needs the head count by Friday, okay, where was I?");
         assert_eq!(jobs(), ["place", "back"]);
-        core.add_thought("User", "Where was I? The menu is final.");
+        core.add_thought("Ana", "Where was I? The menu is final.");
         assert_eq!(jobs(), ["back", "place"]);
-        assert_eq!(core.snapshot().active_for("User").map(String::as_str), Some("T2"), "not yet");
+        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T2"), "not yet");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -2407,9 +2424,9 @@ mod tests {
         core.commit(vec![
             Change::ThreadAdded { thread: thread("Rent", 1, "") },
             Change::ThreadAdded { thread: thread("Party", 2, "") },
-            Change::ActiveChanged { thread_id: "Rent".into(), speaker: "User".into() },
+            Change::ActiveChanged { thread_id: "Rent".into(), speaker: "Ana".into() },
         ]);
-        core.add_thought("User", "Create a new one.");
+        core.add_thought("Ana", "Create a new one.");
         assert!(core.snapshot().thoughts.is_empty() && queue.try_recv().is_err(), "nothing to place");
         let told: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message {
@@ -2417,21 +2434,21 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(told, [(Some("User".into()), "New thread: your next thought starts it".into())]);
-        // Sam's thought is Sam's; User's next one starts the thread, and only that one.
+        assert_eq!(told, [(Some("Ana".into()), "New thread: your next thought starts it".into())]);
+        // Sam's thought is Sam's; Ana's next one starts the thread, and only that one.
         core.add_thought("Sam", "The DJ wants a deposit");
-        core.add_thought("User", "The kitchen needs paint");
-        core.add_thought("User", "Blue, I think");
+        core.add_thought("Ana", "The kitchen needs paint");
+        core.add_thought("Ana", "Blue, I think");
         let starts = |core: &Core| core.snapshot().thoughts.iter().map(|t| core.new_threads.starts(&t.id)).collect::<Vec<_>>();
         assert_eq!(starts(&core), [false, true, false]);
-        // Moving to a thread first, by voice or by a click, ends it: the next thought goes where User went.
-        core.add_thought("User", "New topic");
-        core.add_thought("User", "Where was I?");
-        core.add_thought("User", "The landlord called");
-        core.add_thought("User", "New thread");
-        core.focus("User", "Party");
-        core.add_thought("User", "The cake is ordered");
-        core.add_thought("User", "create a new one for the kitchen");
+        // Moving to a thread first, by voice or by a click, ends it: the next thought goes where Ana went.
+        core.add_thought("Ana", "New topic");
+        core.add_thought("Ana", "Where was I?");
+        core.add_thought("Ana", "The landlord called");
+        core.add_thought("Ana", "New thread");
+        core.focus("Ana", "Party");
+        core.add_thought("Ana", "The cake is ordered");
+        core.add_thought("Ana", "create a new one for the kitchen");
         assert_eq!(starts(&core), [false, true, false, false, false, false]);
         assert_eq!(core.snapshot().thoughts[5].text, "create a new one for the kitchen");
         let _ = std::fs::remove_file(&path);
@@ -2519,10 +2536,10 @@ mod tests {
         let other_window = link("192.168.1.20:51002");
         let other_guest = link("192.168.1.21:51001");
         let taken = |name: &str, link| core.room.as_ref().unwrap().names.lock().unwrap().taken(name, link);
-        // The host joined as User: another laptop can't be User, in any case, even while the host's window reconnects.
-        drop(Seat::take(&core, "User", host).unwrap());
-        assert!(Seat::take(&core, "User", guest).is_none() && taken("User", guest));
-        assert!(Seat::take(&core, "User", host).is_some(), "the host's other windows share it");
+        // The host joined as Ana: another laptop can't be Ana, in any case, even while the host's window reconnects.
+        drop(Seat::take(&core, "Ana", host).unwrap());
+        assert!(Seat::take(&core, "ana", guest).is_none() && taken("ANA", guest));
+        assert!(Seat::take(&core, "Ana", host).is_some(), "the host's other windows share it");
         // A second tab or overlapping reload shares Sam's name only from the same laptop's IP.
         let sam = Seat::take(&core, "Sam", guest).unwrap();
         let another_tab = Seat::take(&core, "sAM", other_window).unwrap();

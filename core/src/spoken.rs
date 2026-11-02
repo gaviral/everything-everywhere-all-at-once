@@ -2,7 +2,7 @@
 //! first thought ("new thread about the garden"), get back to a lost thought ("what was I thinking?") or set it
 //! aside ("forget it"), open or fold a thread with all its branches ("expand the garden"), stop listening, and the
 //! demo's buttons by voice (add the proposed reminder, keep the app just built, Later on the unfinished card).
-//! By rule, with no model call, and only as the whole turn, as every request is (decisions/commands.md): the same
+//! By rule, with no model call, and only as the whole turn, as every request is: the same
 //! words inside a longer sentence are a thought, and so is anything a rule here can't place for sure.
 
 use crate::catalog::{Act, Done, Undo};
@@ -241,7 +241,7 @@ fn new_thread_about(text: &str) -> Option<String> {
     let t = crate::lead_in(text).trim_start_matches(|c: char| !c.is_alphanumeric());
     let l = t.to_ascii_lowercase();
     // Only the marks between the ask and the words come off: "New thread about can you review the contract?" keeps
-    // "Can you review the contract?" (review of 88ace4d), since nothing else keeps the turn.
+    // "Can you review the contract?" (review), since nothing else keeps the turn.
     let first = |rest: &str| {
         let rest = rest.trim_start_matches(|c: char| !c.is_alphanumeric()).trim_end();
         rest.chars().any(char::is_alphanumeric).then(|| capital(rest))
@@ -543,9 +543,9 @@ pub(crate) fn title_for(first: &str) -> String {
 
 /// An id for a thread the pack starts, apart from the placer's "T…": a placement still waiting on the model counts
 /// from the map it was asked with, so "T" + the next number could be the one it's about to make, and the thought it
-/// places would land in this thread (review of 88ace4d). Imports keep "I…" apart the same way.
+/// places would land in this thread (review). Imports keep "I…" apart the same way.
 pub(crate) fn fresh_id(world: &World) -> String {
-    let mut n = world.threads.len() + world.merged.len() + 1;
+    let mut n = world.threads_made() + 1;
     loop {
         let id = format!("S{n}");
         if world.thread(&id).is_none() && !world.merged.contains_key(&id) {
