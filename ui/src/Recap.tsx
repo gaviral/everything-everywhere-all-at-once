@@ -75,11 +75,13 @@ export function useRecap() {
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, noKey, listening, onRequest, onMark, onClose, onFocus }: {
+export function Recap({ view, world, connected, noKey, resting = false, listening, onRequest, onMark, onClose, onFocus }: {
   view: View | null;
   world: World;
   connected: boolean;
   noKey: boolean;
+  /** Past the hosted site's daily limit: the key is back tomorrow. */
+  resting?: boolean;
   /** The mic is on, so a spoken command reaches the core. */
   listening: boolean;
   onRequest: (period: RecapPeriod) => void;
@@ -159,7 +161,7 @@ export function Recap({ view, world, connected, noKey, listening, onRequest, onM
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
-        {noKey ? <p>Recap needs a working AI key.</p> : view.loading ? <p className="recap-loading">{reading ? <><span aria-hidden="true">{reading} is {recap ? "bringing this up to date" : "reading your day"}…</span><span className="sr-only">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</span></> : recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
+        {noKey ? <p>{resting ? "Recap is back tomorrow: today's free tries are used up." : "Recap needs a working AI key."}</p> : view.loading ? <p className="recap-loading">{reading ? <><span aria-hidden="true">{reading} is {recap ? "bringing this up to date" : "reading your day"}…</span><span className="sr-only">{recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</span></> : recap ? "Bringing this up to date…" : "Gathering your thoughts…"}</p>
           : view.message ? <p className="recap-error">{view.message}{recap ? " Showing your last saved recap." : ""}</p>
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>

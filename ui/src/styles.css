@@ -854,6 +854,11 @@ header:has(.shortcuts[open]) { z-index: 11; }
   .recap-button { padding-inline: 9px; }
   .status { font-size: 12px; }
 }
+.status-short { display: none; }
+@media (max-width: 560px) {
+  .status-long { display: none; }
+  .status-short { display: inline; }
+}
 
 /* Keep the marker with the first line even when point content wraps. */
 .points li { position: relative; padding-left: 13px; }

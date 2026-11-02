@@ -11,6 +11,7 @@ import { failureNotice } from "./action-line";
 import { applyMove, type MoveChange } from "./moves-core";
 import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
+import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
@@ -217,8 +218,9 @@ export type Placing = { now: string | null; retryAt: Record<string, number> };
 
 /** What a pending thought's pill says: waiting in line, being placed, or retrying after a failed try (with when).
  *  Seconds count from when it was said, after the first 5. */
-export function pendingLabel(thought: Thought, placing: Placing, now: number, noKey: boolean, refused: boolean) {
+export function pendingLabel(thought: Thought, placing: Placing, now: number, noKey: boolean, refused: boolean, resting = false) {
   if (refused) return "Waiting for a working key";
+  if (resting) return "Saved · placed tomorrow";
   if (noKey) return "Needs the AI key";
   const since = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
   const after = since > 5 ? ` · ${since}s` : "";
@@ -232,6 +234,18 @@ export function pendingLabel(thought: Thought, placing: Placing, now: number, no
   // for this one is running.
   return `Waiting${after}`;
 }
+
+/** The header's word for where things stand (its dot reads the same). Past the hosted site's daily limit the key is
+ *  held back until tomorrow, not missing (site.ts `isResting`). */
+export function statusLine(s: { connected: boolean; listening: boolean; noKey: boolean; refused: boolean; resting: boolean; paused: boolean }): string {
+  if (!s.connected) return "Connecting…";
+  if (s.listening) return "Listening";
+  if (s.noKey) return s.refused ? "AI key refused" : s.resting ? "Free tries back tomorrow" : "No AI key";
+  return s.paused ? "Paused" : "Ready";
+}
+
+/** A notice about the key: the core's (it names MODEL_API_KEY), or the hosted site's daily limit right after it. */
+export const aboutKey = (message: string) => message.includes("MODEL_API_KEY") || isResting(message);
 
 export type Landing = { thread: string; thought: string; mine: boolean };
 
@@ -658,7 +672,7 @@ export function useCore(speaker?: string) {
             setFound(null);
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
             setKeyNotice("");
-            setNotice((shown) => (shown.includes("MODEL_API_KEY") ? "" : shown));
+            setNotice((shown) => (aboutKey(shown) ? "" : shown));
             // The core sends a running import's status right after the snapshot; one it doesn't has ended
             // (it finished while this window was away, or the core restarted).
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
@@ -724,7 +738,9 @@ export function useCore(speaker?: string) {
             }
           // Other errors and notices use the same notice area.
           case "notice":
-            if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
+            // Past the daily limit the core has no key, so a later "needs MODEL_API_KEY" (making an app) is the same
+            // limit: the window keeps saying back tomorrow until the next snapshot.
+            if (aboutKey(msg.message)) setKeyNotice((held) => (isResting(held) && !isResting(msg.message) ? held : msg.message));
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
             // A newer answer: the Undo shown was for the one before.
             if (msg.message) { setUndoId(null); answered(); }
@@ -854,6 +870,7 @@ export function useCore(speaker?: string) {
     answerRevision,
     noKey,
     keyRefused: keyNotice.includes("refused"),
+    resting: isResting(keyNotice),
     keyNotice,
     found,
     viewAsk,

@@ -28,6 +28,8 @@ try {
   assert.equal(pendingLabel(said, idle, 1_000, false, false), "Waiting");
   assert.equal(pendingLabel(said, idle, 1_000, true, false), "Needs the AI key");
   assert.equal(pendingLabel(said, idle, 1_000, false, true), "Waiting for a working key");
+  // Past the hosted site's daily limit the key is held back, not missing: the pill says when it's placed.
+  assert.equal(pendingLabel(said, idle, 1_000, true, false, true), "Saved · placed tomorrow");
 
   // A failed; newer B landed on T2, so Ana is on T2. A lands on T1 at last and doesn't move her: not followed.
   const threads = ["T1", "T2", "T3"].map((id) => ({ id, title: id }));

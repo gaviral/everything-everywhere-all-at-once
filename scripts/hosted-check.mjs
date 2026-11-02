@@ -33,6 +33,23 @@ try {
   assert.match(site.savedWhere(true), /server/);
   assert.match(site.siteText("The AI key was refused. Check MODEL_API_KEY in .env, then restart.", true), /refused/);
   assert.match(site.keyWords(true, false, "notice"), /no AI key/);
+  // Past the hosted site's daily limit (the proxy's notice): every line says the free tries are used up until
+  // tomorrow, never "no AI key" or "until its owner fixes it" (the site would read broken, not resting).
+  const proxyLine = "Today's free tries are used up; back tomorrow. Your map is still here to read.";
+  assert.ok(site.isResting(proxyLine));
+  assert.ok(!site.isResting("MODEL_API_KEY is not set: listening and placement are off."));
+  for (const hosted of [true, false]) for (const what of ["notice", "mic", "tour"]) {
+    const words = site.keyWords(hosted, false, what, true);
+    assert.match(words, /^Today's free tries are used up/, words);
+    assert.match(words, /until tomorrow/, words);
+    assert.doesNotMatch(words, /AI key|owner|\.env|MODEL_API_KEY/, words);
+  }
+  assert.match(site.keyWords(true, false, "notice", true), /midnight Pacific/);
+  // Recap and the empty map say it too (wiring: they render with the core's `resting`).
+  const appSource = readFileSync(`${root}/src/App.tsx`, "utf8");
+  assert.match(readFileSync(`${root}/src/Recap.tsx`, "utf8"), /resting \? "Recap is back tomorrow: today's free tries are used up\."/);
+  for (const prop of ["<Recap ", "<Tour ", "<PendingThought "]) assert.match(appSource, new RegExp(`${prop}[^\\n]*resting=\\{core\\.resting\\}`), prop);
+  assert.match(site.keyWords(true, false, "notice", true), /type/, "typing still works, and is placed then");
   // On a laptop the words are as they were: the .env fix is yours (marks-check holds the mic's).
   assert.equal(site.savedWhere(false), "Your thoughts are saved on the host's computer.");
   assert.equal(site.keyWords(false, false, "notice"), "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example).");

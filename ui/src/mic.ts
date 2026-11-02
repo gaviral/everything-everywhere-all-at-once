@@ -6,11 +6,70 @@
 // refuses a mic in a context at another rate, and Safari's has had bugs.
 export const RATE = 24000;
 
+/** A reason the page itself gives, already in plain words: said as it is (`micFailure`). */
+export class MicUnavailable extends Error {}
+
+/** Where to send someone whose mic is blocked: the browser's own settings differ by browser, and a block by the
+ *  computer itself is lifted in its system settings. */
+export type MicPlace = { safari: boolean; os: "mac" | "windows" | "ios" | "other" };
+
+/** An iPad says it's a Mac; its touch points tell them apart (as Install.tsx does). */
+export function micPlace(ua = navigator.userAgent, platform = navigator.platform || ua, touchPoints = navigator.maxTouchPoints ?? 0): MicPlace {
+  const safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|OPR\/|Android/.test(ua);
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Mac/.test(platform) && touchPoints > 1);
+  const os = ios ? "ios" : /Mac/.test(platform) ? "mac" : /Win/.test(platform) ? "windows" : "other";
+  return { safari, os };
+}
+
+/** Why the mic didn't start, as the window says it, and whether the mic now looks blocked ("site": this site, in the
+ *  browser; "mac": the computer blocks the browser). Never the browser's own message: it goes to the console. */
+export function micFailure(error: unknown, place: MicPlace): { words: string; blocked: "" | "site" | "mac" } {
+  if (error instanceof MicUnavailable) return { words: error.message, blocked: "" };
+  const name = error instanceof Error || error instanceof DOMException ? error.name : "";
+  const message = error instanceof Error || error instanceof DOMException ? error.message : "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    // Chrome says "by system" when macOS or Windows keeps the browser itself from the mic: the site's setting is fine.
+    if (/by system/i.test(message)) {
+      if (place.os === "windows") return { words: "Windows is blocking the microphone for this browser. Turn it on in Settings › Privacy & security › Microphone, then reopen the browser.", blocked: "mac" };
+      if (place.os === "mac") return { words: "Your Mac is blocking the microphone for this browser. Turn it on in System Settings › Privacy & Security › Microphone, then reopen the browser.", blocked: "mac" };
+      return { words: "Your computer is blocking the microphone for this browser. Allow it in the system's privacy settings, then reopen the browser.", blocked: "mac" };
+    }
+    // The prompt closed without an answer: the next tap asks again.
+    if (/dismissed/i.test(message)) return { words: "The microphone wasn't allowed. Tap the mic and choose Allow, or type below.", blocked: "" };
+    // Safari on an iPhone or iPad has no Settings menu: its site settings are in the page menu in the address bar.
+    if (place.safari && place.os === "ios") return { words: "Safari is blocking the microphone for this site. Allow it in Website Settings, from the page menu in the address bar, then tap the mic. You can type meanwhile.", blocked: "site" };
+    if (place.safari) return { words: "Safari is blocking the microphone for this site. Allow it in Safari › Settings for This Website, then tap the mic. You can type meanwhile.", blocked: "site" };
+    return { words: "The browser is blocking the microphone for this site. Allow it from the icon beside the address, then tap the mic. You can type meanwhile.", blocked: "site" };
+  }
+  if (["NotFoundError", "OverconstrainedError", "DevicesNotFoundError"].includes(name)) {
+    return { words: "No microphone found. Connect one, then tap the mic, or type below.", blocked: "" };
+  }
+  if (["NotReadableError", "AbortError", "TrackStartError"].includes(name)) {
+    return { words: "The microphone is busy in another app or didn't start. Close that app, then tap the mic, or type below.", blocked: "" };
+  }
+  return { words: "Couldn't start the mic. Tap it to try again, or type below.", blocked: "" };
+}
+
+/** Follows this site's mic permission where the browser tells it (Chrome, Edge, Safari 16+): `onState` with its state
+ *  now and on each change. Firefox throws for "microphone" and older Safari has no `permissions`: nothing then.
+ *  Returns a function that stops following. */
+export function watchMicPermission(permissions: Pick<Permissions, "query"> | undefined, onState: (state: PermissionState) => void): () => void {
+  let status: PermissionStatus | null = null;
+  let stopped = false;
+  permissions?.query({ name: "microphone" as PermissionName }).then((s) => {
+    if (stopped) return;
+    status = s;
+    onState(s.state);
+    s.onchange = () => onState(s.state);
+  }).catch(() => { /* this browser doesn't say */ });
+  return () => { stopped = true; if (status) status.onchange = null; };
+}
+
 export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: () => void): Promise<() => void> {
   if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) {
-    throw new Error(window.isSecureContext === false
+    throw new MicUnavailable(window.isSecureContext === false
       ? "Live audio needs a secure page (https). Open the link that starts with https."
-      : "Live audio isn't available in this browser.");
+      : "Live audio isn't available in this browser. You can type below.");
   }
   // Before any await, so it counts as part of the click.
   let context = atRate();

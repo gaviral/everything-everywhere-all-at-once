@@ -61,6 +61,18 @@ try {
   assert.equal(state({ noKey: true }), "nokey");
   assert.equal(state({ noKey: true, refused: true }), "refused");
   assert.equal(state({ connected: false }), "offline");
+  // A blocked mic has its own state: struck, calm, and still pressable to say how to allow it.
+  assert.equal(state({ blocked: true }), "blocked");
+  assert.equal(state({ blocked: true, paused: true }), "blocked");
+  assert.equal(state({ blocked: true, connected: false }), "offline");
+  // Past the hosted site's daily limit: no key for now, but not a missing one.
+  assert.equal(state({ noKey: true, resting: true }), "resting");
+  assert.equal(state({ noKey: true, resting: true, blocked: true }), "resting", "the AI is out first; allowing the mic wouldn't help yet");
+  assert.match(MIC_WORDS.resting.tip, /^Today's free tries are used up, so listening is off until tomorrow\./);
+  assert.doesNotMatch(MIC_WORDS.resting.tip + MIC_WORDS.resting.label + composerHint("resting"), /AI key|owner/);
+  assert.match(composerHint("resting"), /tomorrow/);
+  assert.match(MIC_WORDS.blocked.tip, /blocked/);
+  assert.match(composerHint("blocked"), /blocked/);
   // The running mic stops when the connection drops, even before the speech service said it listens: no "not
   // listening" follows then, and a reconnect never starts the stream again (bug hunt: "Starting" for good).
   const ends = (extra) => micEnds({ connected: true, listening: false, failed: false, statusNew: false, listenedNew: false, ...extra });
@@ -78,10 +90,10 @@ try {
   }
   // Each state has its own words, and its own placeholder where one shows.
   const states = Object.keys(MIC_WORDS);
-  assert.equal(states.length, 8);
+  assert.equal(states.length, 10);
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].tip)).size, states.length, "every state's tip differs");
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].label)).size, states.length, "every state's name differs");
-  for (const s of ["off", "starting", "paused", "nokey", "refused", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);
+  for (const s of ["off", "starting", "paused", "nokey", "refused", "resting", "blocked", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);
   assert.equal(composerHint("listening"), composerHint("hearing"), "words in the strip already say you're heard");
   assert.match(MIC_WORDS.nokey.tip, /MODEL_API_KEY/);
   // The ring: silent rooms leave it thin, the three measured voices fill most of it, a shout fills it.
