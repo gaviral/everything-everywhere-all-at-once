@@ -319,6 +319,13 @@ impl Core {
             // "Focus on this" moves you to the card "this" means first, as "collapse this" folds it; Undo moves you
             // back too. Bare "focus" stays on the thread you're on, as its button does.
             let to = if focuses_this(text) { catalog::this(self, &self.snapshot(), speaker) } else { None };
+            // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
+            if view == View::Focus && to.is_none() && before.is_none() {
+                let empty = self.snapshot().threads.is_empty();
+                let message = if empty { "Nothing on the map yet: say a thought first" } else { "Point at a thread, then say “focus on this”" };
+                self.send_to(speaker, ServerMsg::Notice { message: message.into() });
+                return Some(Done::missed(Act::Focus));
+            }
             let moved = to.filter(|to| before.as_ref() != Some(to));
             if let Some(to) = &moved {
                 self.focus(speaker, to);
@@ -1596,6 +1603,9 @@ mod tests {
             ("Please focus.", View::Focus),
             ("Let's focus on this.", View::Focus),
             ("Okay, focus on that one", View::Focus),
+            ("Focus on this please", View::Focus),
+            ("Please focus on this mode please", View::Focus),
+            ("Let's focus on that card, please.", View::Focus),
             ("I see. Go to the palace.", View::Palace),
             ("I mean, the map", View::Map),
         ] {
@@ -1606,6 +1616,8 @@ mod tests {
             "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
             "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
+            // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
+            "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -1994,6 +2006,8 @@ mod tests {
         let change = received(&mut window).await;
         assert_eq!((change["type"].as_str(), change["change"]["type"].as_str()), (Some("change"), Some("thought_added")));
         assert_eq!(core.snapshot().thoughts[0].text, "the rent is due Friday");
+        // How long that turn can be corrected, and that undoing it moves nobody (catalog.rs `Correctable`).
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "correctable", "for_ms": 120_000, "back_to": null}));
         window.send(Message::Text(r#"{"type":"listen","on":true}"#.into())).await.unwrap();
         assert_eq!(received(&mut window).await["message"], "Speech service error: MODEL_API_KEY is not set");
         let status = received(&mut window).await;
@@ -2256,20 +2270,24 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought.
+    /// A view said aloud goes only to the speaker's windows and places nothing; with more words it's a thought. Focus
+    /// on an empty map says why nothing changes.
     #[test]
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
         core.add_thought("Sam", "Let's go to the palace!");
         core.add_thought("Sam", "Okay, focus.");
-        let views: Vec<(Option<String>, View)> = std::iter::from_fn(|| updates.try_recv().ok())
-            .map(|out| match out.message {
-                ServerMsg::View { view } => (out.to, view),
-                _ => panic!("only views"),
+        let views: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::View { view } => Some((out.to, format!("{view:?}"))),
+                ServerMsg::Notice { message } => Some((out.to, message)),
+                ServerMsg::Correctable { .. } => None,
+                _ => panic!("only views and answers"),
             })
             .collect();
-        assert_eq!(views, [(Some("Sam".into()), View::Palace), (Some("Sam".into()), View::Focus)]);
+        let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
+        assert_eq!(views, [sam("Palace"), sam("Nothing on the map yet: say a thought first")]);
         assert!(core.snapshot().thoughts.is_empty());
         core.add_thought("Sam", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);

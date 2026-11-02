@@ -358,8 +358,23 @@ pub fn kept(core: &Core, speaker: &str, said: &str, ids: Vec<String>) {
 
 fn remember(core: &Core, speaker: &str, said: &str, was: Was) -> u64 {
     let id = core.catalog.ids.fetch_add(1, Ordering::Relaxed) + 1;
+    let back_to = match &was {
+        Was::Request { undo: Some(undo), .. } => back_to(undo),
+        _ => None,
+    };
     core.catalog.last.lock().unwrap().insert(speaker.into(), Last { at_ms: now_ms(), said: said.into(), was, id });
+    core.send_to(speaker, ServerMsg::Correctable { for_ms: JUST_BEFORE_MS, back_to });
     id
+}
+
+/// Where undoing `undo` moves the speaker (`run_undo`: the last move among its parts wins), if anywhere.
+fn back_to(undo: &Undo) -> Option<String> {
+    match undo {
+        Undo::Move { to } => Some(to.clone()),
+        Undo::Unfile { to, .. } => to.clone(),
+        Undo::Each(parts) => parts.iter().filter_map(back_to).last(),
+        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread => None,
+    }
 }
 
 /// The speaker's previous turn, if it was just before.
@@ -888,6 +903,7 @@ pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
             let message = if act == Act::Undo { "Put back".to_string() } else { format!("Undone: {}", def(act).does) };
             core.send_to(speaker, ServerMsg::Notice { message });
             core.catalog.last.lock().unwrap().remove(speaker);
+            core.send_to(speaker, ServerMsg::Correctable { for_ms: 0, back_to: None });
         }
         _ => core.send_to(speaker, ServerMsg::Notice { message: "That can't be undone any more: something newer happened".into() }),
     }

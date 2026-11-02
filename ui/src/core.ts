@@ -159,6 +159,7 @@ type ServerMsg =
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
   | { type: "undoable"; id: number }
+  | { type: "correctable"; for_ms: number; back_to: string | null }
   | { type: "revert" }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
@@ -449,6 +450,9 @@ export function useCore(speaker?: string) {
   const [undoId, setUndoId] = useState<number | null>(null);
   // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
   const [revertAsk, setRevertAsk] = useState(0);
+  // Whether your last turn can still be corrected, until when here, and where undoing it takes you (catalog.rs
+  // `Correctable`): the "this" mark previews a correction from it (attention-core.ts `thisBase`).
+  const [correctable, setCorrectable] = useState<{ until: number; back_to: string | null } | null>(null);
   // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
   const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
@@ -563,6 +567,9 @@ export function useCore(speaker?: string) {
           case "undoable":
             setUndoId(msg.id);
             break;
+          case "correctable":
+            setCorrectable(msg.for_ms > 0 ? { until: Date.now() + msg.for_ms, back_to: msg.back_to } : null);
+            break;
           case "revert":
             setRevertAsk((n) => n + 1);
             break;
@@ -596,6 +603,8 @@ export function useCore(speaker?: string) {
         setHandoff("");
         // No answer comes on a closed connection.
         setNotice((shown) => (shown === LOOKING ? "" : shown));
+        // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
+        setCorrectable(null);
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -668,6 +677,7 @@ export function useCore(speaker?: string) {
     clearNotice: useCallback(() => setNotice(""), []),
     undoId,
     revertAsk,
+    correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
     attending: attention.current,
     undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },

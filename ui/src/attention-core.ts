@@ -118,9 +118,11 @@ export const CORRECTION = ["i meant to say", "i meant", "what i meant was", "i w
 export const AFTER_NO = ["i mean", "i said"];
 export const NO = ["no", "nope", "nah", "sorry", "oops", "wait", "actually"];
 
-function focusesThis(said: string): boolean {
-  const rest = said.replace(/^(?:let s )?focus on /, "").replace(/ mode$/, "");
-  return rest !== said && FOCUS_ON.includes(rest);
+/** Whether main.rs `focuses_this` reads the turn (its leads already off) as focusing "this": only its own tail, "mode",
+ *  and a "please" after it, not the wider TAILS ("focus on that card now" is a thought there). */
+function focusesThis(led: string): boolean {
+  const asked = led.replace(/ please$/, "").replace(/ mode$/, "").match(/^(?:let s )?focus on (.+)$/);
+  return !!asked && FOCUS_ON.includes(asked[1]);
 }
 
 /** What a correction asks for (catalog.rs `correction`: its lead skipped), or null when it isn't one. The bare
@@ -161,18 +163,36 @@ function unfoldsThis(said: string): boolean {
 }
 
 /** "card" when the words being said are a whole command the core acts on "this" with (opening, folding or focusing
- *  the card you selected or point at, else your active thread: this-card.ts `resolveThis`), else null. */
-export function thisKind(words: string, correcting = true): "card" | null {
-  let said = words.toLowerCase().replace(/['’]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
-  for (let again = true; again;) {
-    again = false;
-    for (const lead of LEADS) if (said.startsWith(`${lead} `)) { said = said.slice(lead.length + 1); again = true; }
-    for (const tail of TAILS) if (said.endsWith(` ${tail}`)) { said = said.slice(0, -tail.length - 1); again = true; }
-  }
-  if (focusesThis(said) || unfoldsThis(said)) return "card";
+ *  the card you selected or point at, else your active thread: this-card.ts `resolveThis`); "correction" when they
+ *  redo the last turn as one ("No, I meant collapse this"), which acts only while the core says there's a turn to
+ *  correct, and from where undoing it takes you (`thisBase`); else null. */
+export function thisKind(words: string, correcting = true): "card" | "correction" | null {
+  const strip = (said: string, tails: string[]) => {
+    for (let again = true; again;) {
+      again = false;
+      for (const lead of LEADS) if (said.startsWith(`${lead} `)) { said = said.slice(lead.length + 1); again = true; }
+      for (const tail of tails) if (said.endsWith(` ${tail}`)) { said = said.slice(0, -tail.length - 1); again = true; }
+    }
+    return said;
+  };
+  const said = words.toLowerCase().replace(/['’]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
+  const led = strip(said, []);
+  if (focusesThis(led) || unfoldsThis(strip(said, TAILS))) return "card";
   // A correction redoes what it names, read as its own turn; never a correction of a correction (catalog.rs).
-  const rest = correcting ? corrected(said) : null;
-  return rest ? thisKind(rest, false) : null;
+  const rest = correcting ? corrected(led) : null;
+  return rest && thisKind(rest, false) ? "correction" : null;
+}
+
+/** What the core will pick "this" from, as of `now`: for a command, your active thread when nothing is selected or
+ *  pointed at; for a correction, where undoing your last turn takes you (catalog.rs `redo` undoes it first: after
+ *  "Next one" took you to Bills, "No, I meant collapse this" folds the card you were on), and none at all, so no
+ *  mark, once the core has no turn to correct (catalog.rs `correct`: none within its window, or a restarted core).
+ *  `correctable` is the core's word on that (`Correctable`, with when it runs out here). */
+export function thisBase(kind: "card" | "correction" | null, correctable: { until: number; back_to: string | null } | null,
+  active: string | null, now: number): { active: string | null } | null {
+  if (kind === "card") return { active };
+  if (kind === "correction" && correctable && now <= correctable.until) return { active: correctable.back_to ?? active };
+  return null;
 }
 
 /** Whether the words being said are a command the core will act on "this" with. */

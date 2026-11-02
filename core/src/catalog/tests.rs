@@ -393,6 +393,53 @@ async fn focus_on_this_focuses_the_card_this_means() {
     // Nothing pointed or selected: the thread you're on, so nothing moves.
     let f = Fixture::new(garden());
     assert_eq!(f.say("Focus on this").await, ["view focus"]);
+    // Nothing to focus on: said, not a silent view the window can't show (Sol's review); bare "Focus" too.
+    let f = Fixture::new(World::default());
+    for said in ["Let's focus on that one", "Focus"] {
+        assert_eq!(f.say(said).await, ["notice Nothing on the map yet: say a thought first"], "{said}");
+    }
+    let f = Fixture::new(World { active: None, active_by: HashMap::new(), ..garden() });
+    assert_eq!(f.say("Focus").await, ["notice Point at a thread, then say “focus on this”"]);
+    // Pointed at, it moves you there even from nowhere.
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
+}
+
+/// What the window is told about correcting the last turn, after `act` (`ServerMsg::Correctable`).
+async fn correctable(f: &Fixture, act: impl FnOnce()) -> Vec<(u64, Option<String>)> {
+    let mut updates = f.core.updates.subscribe();
+    act();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    let mut out = Vec::new();
+    while let Ok(o) = updates.try_recv() {
+        if let ServerMsg::Correctable { for_ms, back_to } = o.message {
+            out.push((for_ms, back_to));
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn the_window_learns_where_a_correction_starts_from() {
+    // "Next one" took you to Bills; "No, I meant collapse this" undoes the move first, so "this" is Garden, and the
+    // window's mark must say so (Sol's review: it marked Bills).
+    let f = Fixture::new(garden());
+    let next = correctable(&f, || f.core.add_thought("you", "Next one")).await;
+    assert_eq!(next, [(JUST_BEFORE_MS, Some("T1".into()))]);
+    assert_eq!(f.say("No, I meant collapse this").await, ["on T1", "fold T1", "notice Folded Garden"]);
+    // A thought kept, or a view: undoing it moves nobody.
+    let f = Fixture::new(garden());
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Buy more seeds")).await, [(JUST_BEFORE_MS, None)]);
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Palace")).await, [(JUST_BEFORE_MS, None)]);
+    // "Focus on this" moved you: the view's undo, then the move back.
+    attend(&f.core, "you", None, Some("T2".into()));
+    assert_eq!(correctable(&f, || f.core.add_thought("you", "Focus on this")).await, [(JUST_BEFORE_MS, Some("T1".into()))]);
+    // Undo pressed: nothing left to correct.
+    let f = Fixture::new(garden());
+    let id = undoable(&f.say("Collapse the garden").await);
+    assert_eq!(correctable(&f, || { f.click_undo(id); }).await, [(0, None)]);
 }
 
 /// The latest thought asks "Did you mean “Muse Spark”?".

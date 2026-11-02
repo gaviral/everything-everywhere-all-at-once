@@ -8,7 +8,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, direction } = await server.ssrLoadModule("/src/attention-core.ts");
+  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, thisBase, direction } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Reading time: one look over, then the words at 238 a minute. Never a fixed clock.
   assert.equal(readMs(""), LOOK_MS);
@@ -67,13 +67,27 @@ try {
   for (const said of ["Okay, this is actually working! This is so exciting", "Rent is due Friday", "Show me the garden", "this weekend I'll fix it",
     "It's due Friday", "collapse this weekend", "Expand this thread about rent", "Hide it", "Let's open this card", "move this thread up", "Collapse",
     "Focus", "Let's focus", "Focus on the budget", "Focus on it", "Add this to Reminders", "No, I meant this is great", "I meant to collapse this",
-    "No, I said this is great", "I mean this is great", "No, collapse this", "No, I meant no, I meant collapse this", "No, I meant"])
+    "No, I said this is great", "I mean this is great", "No, collapse this", "No, I meant no, I meant collapse this", "No, I meant",
+    // Focus takes only the core's own tail ("mode", main.rs `focuses_this`) and "please": these stay thoughts there
+    // (Sol's review: the mark showed for them).
+    "Let's focus on that card now", "Focus on this for me", "No, I meant focus on this now", "Focus on this please mode"])
     assert.ok(!pointsAtThis(said), said);
+  for (const said of ["Focus on this please", "Please focus on this mode please", "Let's focus on that card, please."])
+    assert.equal(thisKind(said), "card", said);
   // One rule for every kind: opening, folding and focusing all take the card you selected or point at (this-card.ts
   // `resolveThis`, as catalog.rs `this`), else your active thread.
-  for (const said of ["Collapse this", "Um, so, can you unfold it please?", "Let's collapse this card", "focus on this", "Focus on this thread",
-    "No, I meant focus on this"])
+  for (const said of ["Collapse this", "Um, so, can you unfold it please?", "Let's collapse this card", "focus on this", "Focus on this thread"])
     assert.equal(thisKind(said), "card", said);
+  // A correction is its own kind: it acts only while the core has a turn to correct, and from where undoing that turn
+  // takes you (catalog.rs `redo` undoes it first; Sol's review: after "Next one" the mark named Bills, Garden folded).
+  for (const said of ["No, I meant focus on this", "No, I meant collapse this please", "Wait, I meant collapse this", "Actually no, I mean collapse this"])
+    assert.equal(thisKind(said), "correction", said);
+  assert.deepEqual(thisBase("card", null, "T2", 5), { active: "T2" });
+  assert.deepEqual(thisBase("correction", { until: 10, back_to: "T1" }, "T2", 5), { active: "T1" }, "where the undo takes you");
+  assert.deepEqual(thisBase("correction", { until: 10, back_to: null }, "T2", 5), { active: "T2" }, "an undo that doesn't move you");
+  assert.equal(thisBase("correction", { until: 10, back_to: "T1" }, "T2", 11), null, "past the core's window: no mark");
+  assert.equal(thisBase("correction", null, "T2", 5), null, "no turn to correct (a restarted core): no mark");
+  assert.equal(thisBase(null, { until: 10, back_to: "T1" }, "T2", 5), null);
   // Everything under a pointing word is "this" too, with any open or fold verb (spoken.rs `unfold`, catalog); the first
   // "everything" word that fits counts, so "open all of it" is every thread, and so is "open all this" (no link word).
   for (const said of ["Open everything under it", "Hide everything inside of it", "Open all of this", "Show me all the branches of that one",
