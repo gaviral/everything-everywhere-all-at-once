@@ -923,7 +923,9 @@ img.slot-picture[data-instant] { transition: none; }
    scrolling inside a dock capped at 40% of the window (scripts/a11y-check.mjs). 560 px covers 200% of 1280 × 1024
    (512) and leaves a 600 px laptop window as it was. */
 @media (max-height: 560px) {
-  header, .map-tools { position: static; }
+  /* The header stays positioned (relative, not static) so its z-index holds: open, the ? list goes over a notice. */
+  header { position: relative; }
+  .map-tools { position: static; }
   .thread, .palace-tile { scroll-margin-top: 12px; }
   .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }

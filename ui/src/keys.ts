@@ -10,7 +10,8 @@ export function opensHelp({ key, field, modified }: { key: string; field: boolea
 }
 
 /** "Tab to it and press Enter" (README): Enter or Space on a focused point opens or closes its words, as a click
- *  does. Only on the point itself: its own buttons (Words said, Move, Delete) keep their keys. */
-export function togglesPoint({ key, onPoint }: { key: string; onPoint: boolean }) {
-  return onPoint && (key === "Enter" || key === " ");
+ *  does. Only on the point itself: its own buttons (Words said, Move, Delete) keep their keys. A key already taken
+ *  (Enter asking to explain words selected in it, Explain.tsx) leaves the words open, as a click does with a selection. */
+export function togglesPoint({ key, onPoint, taken = false }: { key: string; onPoint: boolean; taken?: boolean }) {
+  return onPoint && !taken && (key === "Enter" || key === " ");
 }

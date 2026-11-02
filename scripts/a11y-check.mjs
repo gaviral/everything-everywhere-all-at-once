@@ -40,7 +40,9 @@ try {
   assert.equal(keys.togglesPoint({ key: " ", onPoint: true }), true);
   assert.equal(keys.togglesPoint({ key: "Enter", onPoint: false }), false, "a point's own buttons keep their Enter");
   assert.equal(keys.togglesPoint({ key: "a", onPoint: true }), false);
-  assert.match(app, /onKeyDown=\{said \? \(event\) => \{ if \(togglesPoint\(\{ key: event\.key, onPoint: event\.target === event\.currentTarget \}\)\)/,
+  // Enter that asked to explain words selected in the point (Explain.tsx, window capture) leaves them showing.
+  assert.equal(keys.togglesPoint({ key: "Enter", onPoint: true, taken: true }), false, "Explain's Enter doesn't also fold the words");
+  assert.match(app, /onKeyDown=\{said \? \(event\) => \{ if \(togglesPoint\(\{ key: event\.key, onPoint: event\.target === event\.currentTarget, taken: event\.defaultPrevented \}\)\)/,
     "the point's keydown asks togglesPoint");
   // The ? list says both keys, so they can be found without the README.
   const help = app.slice(app.indexOf("<strong>Keyboard</strong>"), app.indexOf("<Symbols />"));
@@ -56,7 +58,12 @@ try {
   const [, limit, css] = short[0];
   assert.ok(+limit >= 512 && +limit < 600, `the short-window limit ${limit}px covers 200% of 1280 × 1024 and leaves a 600 px laptop window alone`);
   const rule = (selector) => css.match(new RegExp(`(?:^|\\n)\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
-  assert.match(rule("header, .map-tools"), /position:\s*static/, "header and tools scroll away");
+  assert.match(rule(".map-tools"), /position:\s*static/, "the tools scroll away");
+  // The header scrolls away too, but stays positioned: static, its z-index stopped applying and its backdrop-filter
+  // kept the open ? list under the no-key notice (headless Chrome, 720 × 450).
+  assert.match(rule("header"), /position:\s*relative/, "the header scrolls away and keeps its z-index");
+  assert.match(styles, /header:has\(\.shortcuts\[open\]\) \{ z-index: 11; \}/, "open, the ? list's header goes over the notice (10)");
+  assert.match(styles.match(/\.notice \{\s*position: fixed;[^}]*\}/)?.[0] ?? "", /z-index: 10;/, "the notice sits at 10");
   assert.match(rule(".thread, .palace-tile"), /scroll-margin-top:\s*12px/, "a card brought to the top has no bars to clear");
   const dock = rule(".dock");
   const cap = +(dock.match(/max-height:\s*(\d+)dvh/)?.[1] ?? 100);

@@ -1359,7 +1359,7 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   } : undefined;
   return (
     <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
-      onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget })) { event.preventDefault(); flip(); } } : undefined}>
+      onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget, taken: event.defaultPrevented })) { event.preventDefault(); flip(); } } : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
