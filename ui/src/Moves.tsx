@@ -88,6 +88,18 @@ export function useDropPoint(thread: string) {
   const moves = useContext(MovesContext);
   const [over, setOver] = useState(false);
   const carries = (event: React.DragEvent) => event.dataTransfer.types.includes(DRAG_TYPE);
+  // A drop on a branch inside this card (or a drag given up) ends the drag here too: the branch keeps the drop to
+  // itself, and the pointer never left this card, so nothing else would clear its highlight.
+  useEffect(() => {
+    if (!over) return;
+    const end = () => setOver(false);
+    document.addEventListener("drop", end, true);
+    document.addEventListener("dragend", end, true);
+    return () => {
+      document.removeEventListener("drop", end, true);
+      document.removeEventListener("dragend", end, true);
+    };
+  }, [over]);
   return {
     over,
     props: {

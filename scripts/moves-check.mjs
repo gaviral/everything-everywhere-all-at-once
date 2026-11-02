@@ -55,6 +55,9 @@ try {
   const titleSource = readFileSync(new URL("../ui/src/Moves.tsx", import.meta.url), "utf8");
   assert.match(titleSource, /typedTitle\(typed, before\.current\)/);
   assert.match(titleSource, /before\.current = thread\.title; setEditing\(true\);/);
+  // A card lit by a drag clears on any drop or given-up drag, a drop on a branch inside it included (bug hunt 16).
+  const dropPoint = titleSource.slice(titleSource.indexOf("export function useDropPoint"));
+  assert.match(dropPoint, /if \(!over\) return;\s*const end = \(\) => setOver\(false\);\s*document\.addEventListener\("drop", end, true\);\s*document\.addEventListener\("dragend", end, true\);/);
   assert.equal(typedTitle("Pottery class ", "Pottery class"), null);
 
   // The map wires them: every point has a Move, every card title renames, every card takes a dropped point, and the
