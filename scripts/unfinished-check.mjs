@@ -2,10 +2,9 @@
 // The unfinished card (ui/src/unfinished.ts), as in the demo: a line trails off, the card rises only after 2.5 s
 // without new words, quotes the words you trailed off on, and Later hides it.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { leftOff, cardAt, putOff, lastWords, NONE_HIDDEN, PAUSE_MS, LATER_MS } = await server.ssrLoadModule("/src/unfinished.ts");
   const thread = (id, title, extra = {}) => ({ id, title, parent_id: null, status: "open", last_point: "", touched_ms: 1,

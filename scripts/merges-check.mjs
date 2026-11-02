@@ -4,10 +4,9 @@
 // still answers instead of freezing the tab. No other file in ui/src keeps its own copy of the loop.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { resolveMerged } = await server.ssrLoadModule("/src/merges.ts");
   assert.equal(resolveMerged({ merged: {} }, "T1"), "T1", "a thread never merged is itself");

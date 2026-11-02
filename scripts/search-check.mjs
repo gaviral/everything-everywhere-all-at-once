@@ -5,11 +5,10 @@
 // and a cleared search comes back at once (jumps scroll to a card on the next frame).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
 const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 try {
   const { searchMatches, heldOpen, mapQuery, OPEN_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");
 

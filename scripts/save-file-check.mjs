@@ -4,10 +4,9 @@
 // ui/src makes its own.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 
-const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
-  server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
+const server = await uiServer();
 const { createObjectURL, revokeObjectURL } = URL;
 try {
   const { downloadIcs } = await server.ssrLoadModule("/src/site.ts");
