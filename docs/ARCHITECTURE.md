@@ -17,10 +17,19 @@ Browser, one page per window (ui/src)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
+  ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
+  unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
+  Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
+  tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
+  rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
+  apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
+  apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
+  Level.tsx      `?level` in the address: every loudness reading the core receives, to set a volume app's level
+  level-stretches.ts  stretches of talk in those readings, and each stretch's typical reading
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"
@@ -40,10 +49,15 @@ Core, one process (core/src: axum, tokio)
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
-  model.rs       a refused or busy key; a default Contributor model gives way when the key can't use it; the hourly call cap
+  model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   import.rs      past AI chats into threads
   apple.rs       AppleScript into Reminders and Calendar
+  tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
+  perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
+  refiner_live.rs  the refiner against the real model, on maps built to tempt it (`--ignored refiner_live`)
 ```
+
+Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept beside the code (`*_tests.rs`, `*/tests.rs`). `node scripts/readme-check.mjs` fails when a source file is missing from this list.
 
 ## State and the journal
 
@@ -83,7 +97,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 | Call | Model (setting) | Reasoning | Timeout | Tries | Cache key |
 |---|---|---|---|---|---|
 | Speech | `muse-voice-transcribe-1.0` | | none on reads | none; press the mic again | |
-| Placing | `PLACER_MODEL`, default `muse-spark-1.2-contributor`, or `muse-spark-1.2` once the key can't use it (401, 403 or 404 on the default only) | minimal | 12 s first, then 20 s; more for a long turn | back in line after each failure; after 3, again 15 s later, doubling to 4 min | `e2a2o-placer` |
+| Placing | `PLACER_MODEL`, default `muse-spark-1.2` (Contributor mode is opt-in) | minimal | 12 s first, then 20 s; more for a long turn | back in line after each failure; after 3, again 15 s later, doubling to 4 min | `e2a2o-placer` |
 | Explain | the placer's model | minimal | 20 s | 1; the UI offers Try again | `e2a2o-explain` |
 | Refiner | `REFINER_MODEL`, default `muse-spark-1.3` | low | 52 s | at the next pause, at least 10 s apart, doubling after each failure to about 5 min | `e2a2o-refiner` |
 | Recap | `RECAP_MODEL`, else `REFINER_MODEL`, else `muse-spark-1.3` | low | 40 s | 1 | `e2a2o-recap` |
@@ -98,7 +112,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 `gate` in `main.rs` runs before every route and gives each request one of three levels: refused (403), the page only, or the map.
 - Host: must be `localhost`, `127.0.0.1` or `[::1]` when the connection comes from this machine, or, in a room, the exact address and port the connection reached. A name a site could point at this laptop never passes, which stops DNS rebinding.
-- Origin, when present: a page on this machine for a local connection, or `http://` plus the Host in a room. Browsers always send it on a WebSocket handshake, so another site can't open `/ws`.
+- Origin, when present: a page on this machine for a local connection, or, in a room, the listener's scheme (`https://` on the HTTPS listener, else `http://`) plus the Host. Browsers always send it on a WebSocket handshake, so another site can't open `/ws`.
 - In a room, a connection from another machine without the code gets only the page's own files (`/`, `/index.html`, `/room`, `/pcm-worklet.js`, `/assets/*`); with it, everything else (`/ws`, `/images`, …). The code comes from `?room=` or a `room` cookie, is compared as lowercase letters and digits, in constant time.
 - Every response that passes carries `Cross-Origin-Resource-Policy: same-origin`. Approving actions and importing also need a connection from this machine.
 - Hashed files under `/assets/` and images get `Cache-Control: public, max-age=31536000, immutable`; pages and other responses get `no-cache`. A missing file that falls back to the page also gets `no-cache`, so an update is checked before the old page can be reused.
@@ -107,6 +121,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 ## Rooms
 
 - `ROOM_CODE` binds the core to `0.0.0.0`; without it, to `127.0.0.1`.
+- With `ROOM_HTTPS=1` too (`./run.sh room` sets it; `ROOM_HTTPS=0` turns it off), the host keeps plain HTTP on `127.0.0.1` and guests get HTTPS on the laptop's network address, the same port, so a guest's browser treats the page as secure and lets its mic work. The certificate names that address, this machine's name and localhost, and is reused across restarts.
 - Each outgoing message goes to every window or to one speaker's windows: live words, mic status, "Back to …" notes, Recap progress and import progress go only to their speaker.
 - Per speaker: the active thread (`active_by`), who dropped a thread (`dropped_by`), the way back, and what the placer sees as "active".
 - Another laptop that asks for no name, or for "you" (the host's own name), joins as "Guest" and is told so.
@@ -131,4 +146,5 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - `node scripts/away-check.mjs`, `node scripts/recap-check.mjs`, `node scripts/placing-check.mjs`, `node scripts/picture-check.mjs`, `node scripts/marks-check.mjs`, `node scripts/legible-check.mjs`, `node scripts/attention-check.mjs` and `node scripts/catalog-check.mjs` check UI rules through Vite, with no browser or extra dependencies: what the away card lists, which messages close an open Recap, what a pending thought's pill says and when a landing moves the map, the picture-slot rule (letter until decoded, next copy, capped refetches, one more when the core is back), the mic's states and that every ✦ has a tip, legibility (which points open their words, the two columns, numbers shared between files, and that no CSS cuts text with an ellipsis or clamp unless listed with its reason), the attention rules (reading times, what counts as unseen, where a mark goes after a merge, which words point at "this"), and which card "this" is and when the core is told, with a spoken fix of "Did you mean …?" mirrored.
 - `node scripts/notice-check.mjs`: which notices stay until dismissed, how long the rest are up; on the real useCore hook with a stand-in socket, that a notice made in the window drops an older Undo, that the same answer again restarts its time, and that a correction's answer and Undo outlast the window's answer to the view it asked for.
 - Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, someone else's turn in between, the words and where they may land; or a journal up to a thought, for a real miss kept outside the repo. `node scripts/where.mjs data/<map>` prints each thought's thread, with the model's answer when a trace exists.
+- `node scripts/readme-check.mjs`: the README's first screen (the pitch, a screenshot that exists, each Meta model the core calls named with its job, links into docs/trace.md, which shows a real call by each), the words it may hold, this parts list against the source files, and `scripts/trace-summary.mjs` on a small trace.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. It runs `scripts/model-guards.py`: only Meta's models and API in the app's code (`meta-only`), and every model call counted by the hourly cap (`counted`: only `call_model_noting`, which `call_model` wraps, and `ask_model` send the key, and both spend first). The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.

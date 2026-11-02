@@ -346,7 +346,7 @@ mod tests {
             cores.insert(map, Arc::new(Core {
                 key: Some(key.clone()),
                 // As main.rs.
-                placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2-contributor"),
+                placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
                 http: reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build().unwrap(),
                 ..Core::test(journal, world)
             }));
