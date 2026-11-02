@@ -545,7 +545,7 @@ pub(crate) fn title_for(first: &str) -> String {
 /// from the map it was asked with, so "T" + the next number could be the one it's about to make, and the thought it
 /// places would land in this thread (review). Imports keep "I…" apart the same way.
 pub(crate) fn fresh_id(world: &World) -> String {
-    let mut n = world.threads.len() + world.merged.len() + 1;
+    let mut n = world.threads_made() + 1;
     loop {
         let id = format!("S{n}");
         if world.thread(&id).is_none() && !world.merged.contains_key(&id) {
