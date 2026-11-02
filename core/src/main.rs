@@ -2304,6 +2304,13 @@ mod tests {
             ("Pause listening", "pause"),
             ("Turn off the mic", "pause"),
             ("Add that to my calendar", "approve"),
+            // docs/COMMANDS.md: saying you lost your place is "where was I?".
+            ("Going back to what I was saying", "back"),
+            ("Going back to what you were saying", "back"),
+            ("I lost my place", "back"),
+            ("I lost my train of thought", "back"),
+            ("I don't remember what I was saying", "back"),
+            ("Where did I leave off?", "back"),
         ];
         let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
         for (phrase, does) in documented {
@@ -2335,6 +2342,12 @@ mod tests {
             "A new thread about the budget came up on Slack",
             "New topic on the agenda is hiring",
             "I bought a boat. What was I thinking?",
+            "I lost my place in line at the DMV",
+            "The phone rang and I lost my train of thought",
+            "Going back to what I was saying about the rent, it's due Friday",
+            "I don't remember the name of that restaurant",
+            // Alone, as often an answer to a question as a lost thought.
+            "I don't remember",
             "Forget it, I'll just buy a new one",
             "Never mind the weather, the trip is on",
             "Expand the business into Europe",
