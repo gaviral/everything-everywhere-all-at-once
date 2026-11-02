@@ -78,7 +78,7 @@ If port 4321 is busy, use another one: `PORT=4400 ./run.sh sample`. Open http://
 
 ```sh
 cp .env.example .env                           # then open .env and paste your Meta Model API key after MODEL_API_KEY= (dev.meta.ai)
-./run.sh demo                                  # its own map in data/demo; the three seed apps start on
+./run.sh demo                                  # its own map in data/demo; seed apps start off
 node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same folder; --speed 2 goes faster
 ```
 
