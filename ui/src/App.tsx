@@ -41,6 +41,7 @@ import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules
 import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { useOnScreen } from "./onscreen";
 import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { useLanes, useRouteMark } from "./route";
@@ -95,6 +96,9 @@ export default function App() {
   // The "?" list of what you can say, opened by its button or by asking ("What can I say?"). It closes on your next
   // turn, Esc or a click outside it, never on a timer: what you say next is your own sign you're done reading.
   const [helpOpen, setHelpOpen] = useState(false);
+  // On a phone the "?" sits mid-header: the list shifts into view rather than run past an edge (onscreen.ts).
+  const helpList = useRef<HTMLDivElement>(null);
+  useOnScreen(helpList);
   // Ahead of the view effect: a spoken turn's end and the list it asked for can arrive in one render.
   useEffect(() => { if (core.handoff) setHelpOpen(false); }, [core.handoff]);
   useEffect(() => {
@@ -883,7 +887,7 @@ export default function App() {
         <div className="header-actions">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         {/* What you can say comes first: asking for this list by voice is how most people open it. */}
-        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div className="keyboard-hint">
+        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands">?</summary><div ref={helpList} className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
           <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
