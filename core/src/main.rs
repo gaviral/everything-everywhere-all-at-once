@@ -835,6 +835,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
+    tokio::spawn(recap::keep(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -853,7 +854,7 @@ async fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
-            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT=4322 ./run.sh")
+            anyhow::anyhow!("port {port} is already in use: stop the other app, or start with PORT={} ./run.sh", port.saturating_add(1))
         } else {
             anyhow::anyhow!("couldn't open port {port}: {e}")
         }

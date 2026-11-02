@@ -36,6 +36,9 @@ fi
 if [ "$1" = room ]; then
   export ROOM_HTTPS="${ROOM_HTTPS:-1}"
 fi
+# Before the build, as the core will see it (environment, then .env): demo and room stop without a key, and a busy
+# port (on every address this mode opens) is reported with the same command on the next port. Prints the port.
+port="$(node scripts/start.mjs "$@")" || exit 1
 # `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
 # or a founder's day); it starts fresh from samples/ each time. Its pictures were drawn once, by the app's
 # own picture pipeline, and the sample's journal names them: they go where the core serves /images from
@@ -49,13 +52,12 @@ fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
-[ -d ui/node_modules ] || (cd ui && npm install)
+[ -d ui/node_modules ] || (cd ui && npm install --no-audit --no-fund --no-update-notifier)
 if ! out="$(cd ui && npm run build 2>&1)"; then
   echo "$out" >&2
   echo "The UI build failed (see above)." >&2
   exit 1
 fi
-port="${PORT:-4321}"
 case "${1:-}" in
   demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
   room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
