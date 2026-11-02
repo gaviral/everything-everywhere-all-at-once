@@ -1,0 +1,22 @@
+/* The model line (ModelLine.tsx): one quiet line inside the composer, in its type and colors, so both themes follow
+   the tokens. 12px at 1440 × 900 is ≈ 16 px on a 1080p video (×1.33), the size of the header's session count. */
+.model-line {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.model-name { color: var(--ink); font-weight: 500; }
+/* No cut: the longest line ("Muse Voice Transcribe 1.0 · hearing you") is ≈ 250 px of a ≥ 500 px composer. */
+.model-step { animation: model-step-in .18s ease-out; }
+@keyframes model-step-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .model-step { animation: none; } }
+/* ?recording (main.tsx): a notch bigger, as the live words are, so it reads in a scaled-down video. */
+.recording .model-line { font-size: 13px; }
+/* A phone: the name alone, so the words you type keep the room. */
+@media (max-width: 560px) { .model-dot, .model-step { display: none; } }
