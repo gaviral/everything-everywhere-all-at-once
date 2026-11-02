@@ -1,28 +1,29 @@
 /* The attention guide (Attention.tsx). Nothing here changes a size or a position: every mark sits over the card's
    padding or paints a background, so a mark coming or going moves nothing on the map. */
 
-/* "Look here": a steady wash and ring, no pulse; it fades out slowly (FADE_OUT_MS) so its end doesn't pull the eye. */
+/* "Look here": a steady wash, no ring and no pulse (a ring beside the active card's border read as three lines); the
+   shadow carries the wash 4px past the text without moving it. It fades out slowly (FADE_OUT_MS) so its end doesn't
+   pull the eye. */
 :is(.points li, .thread-head, .ai, .action)[data-look] {
-  border-radius: 8px;
-  outline: 2px solid transparent;
-  outline-offset: 4px;
-  transition: background-color 1s ease-out, outline-color 1s ease-out;
+  border-radius: 6px;
+  transition: background-color 1s ease-out, box-shadow 1s ease-out;
 }
 :is(.points li, .thread-head, .ai, .action)[data-look="on"] {
   background-color: var(--accent-soft);
-  outline-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
   transition: none;
 }
 
-/* Your newest point keeps a quiet rail in the card's margin until your next one lands. */
+/* Your newest point keeps a quiet bar at its left, at the wash's edge, until your next one lands; well inside the
+   card's border, so it never doubles the active card's edge. */
 .points li { position: relative; }
 .points li[data-latest]::after {
   content: "";
   position: absolute;
   top: 3px;
   bottom: 3px;
-  left: -10px;
-  width: 3px;
+  left: -4px;
+  width: 2px;
   border-radius: 2px;
   background: var(--accent);
   opacity: .6;

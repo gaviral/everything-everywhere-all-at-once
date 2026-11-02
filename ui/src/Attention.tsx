@@ -121,8 +121,10 @@ export function useAttention({ world, revision, me, view, words, reveal }: {
     const wasPlaced = new Set(last.world.thoughts.filter((t) => t.placed).map((t) => t.id));
     const mine = newestOwn(placed.filter((t) => !wasPlaced.has(t.id)), me);
     if (mine) setLatest(mine);
-    // A change already in view when it happens is seen happening; only what changed out of sight is marked.
-    const fresh = view === "map" ? changes(last.world, world, me).filter((c) => !readable(document.getElementById(c.element))) : changes(last.world, world, me);
+    // A change already in view when it happens is seen happening; only what changed out of sight is marked. A
+    // proposal in a folded thread already says "N to review" there: one cue per change.
+    const folded = (c: Unseen) => c.element.startsWith("item-") && !!document.getElementById(`thread-${c.thread}`)?.classList.contains("collapsed");
+    const fresh = view === "map" ? changes(last.world, world, me).filter((c) => !readable(document.getElementById(c.element)) && !folded(c)) : changes(last.world, world, me);
     setUnseen((marks) => carry([...marks.filter((m) => !fresh.some((f) => f.thread === m.thread)), ...fresh], world));
   }, [world, revision, me]);
 
