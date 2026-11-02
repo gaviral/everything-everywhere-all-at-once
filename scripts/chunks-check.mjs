@@ -70,7 +70,7 @@ try {
   // The marks say what the AI did and what a tap does; the map shows them on every point and counts ideas.
   assert.match(CHUNK_TIPS.joined, /pause/);
   assert.match(CHUNK_TIPS.joined, /apart/);
-  assert.match(CHUNK_TIPS.assumed, /no undo/);
+  assert.match(CHUNK_TIPS.assumed, /Move it/, "the reading has no undo, but a wrong place is fixed by Move (moves.rs)");
   for (const tip of Object.values(CHUNK_TIPS)) assert.ok(tip.length > 10 && tip.length <= 120, tip);
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /<PointNote thought=\{thought\} heads=\{heads\} unlink=\{on\.unlink\} \/>/);

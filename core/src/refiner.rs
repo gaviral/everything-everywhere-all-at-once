@@ -196,7 +196,22 @@ fn existing(world: &World) -> Vec<String> {
             Kind::Merge => format!("merge proposed: {} into {}", p.thread_id, p.into),
         }))
         .chain(world.titled.iter().filter(|id| world.thread(id).is_some()).map(|id| format!("title the person chose: {id}")))
+        .chain(kept_apart(world).into_iter().map(|(a, b)| format!("threads the person keeps apart (never merge): {a} and {b}")))
         .collect()
+}
+
+/// Pairs of threads on the map that the person set apart by moving a thought between them (`World::apart`), each
+/// once, in the order they were made.
+fn kept_apart(world: &World) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for (_, from, to) in &world.moves {
+        let (a, b) = (world.resolve(from), world.resolve(to));
+        let on_map = a != b && world.thread(&a).is_some() && world.thread(&b).is_some();
+        if on_map && world.apart(&a, &b) && !pairs.iter().any(|(x, y)| (*x == a && *y == b) || (*x == b && *y == a)) {
+            pairs.push((a, b));
+        }
+    }
+    pairs
 }
 
 /// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on it.
@@ -317,7 +332,8 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
     }
     // A merge is never sure (decisions/refinersure.md): each is proposed on the card of the thread that would go, once
     // per pair and one at a time. A thread never goes into its own branch, which would make the branch its own parent
-    // and drop it from the map, and two threads with no word in common aren't one topic.
+    // and drop it from the map, and two threads with no word in common aren't one topic. Two threads the person set
+    // apart by moving a thought from one to the other stay apart (moves.rs).
     let mut proposed: Vec<(String, String)> = world.proposals.iter().filter(|p| p.kind == Kind::Merge).map(|p| (p.thread_id.clone(), world.resolve(&p.into))).collect();
     let mut waits = HashSet::new();
     for m in pass.merges {
@@ -325,7 +341,7 @@ fn changes_on(world: &World, pass: Pass, today: &str) -> Vec<Change> {
         let shared = || !vocabulary(world, &from).is_disjoint(&vocabulary(world, &into));
         let waiting = world.proposals.iter().any(|p| p.kind == Kind::Merge && p.thread_id == from && p.status == ItemStatus::New) || waits.contains(&from);
         let asked = proposed.iter().any(|(a, b)| (*a == from && *b == into) || (*a == into && *b == from));
-        if from != into && exists(&from) && exists(&into) && !above(world, &from, &into) && shared() && !waiting && !asked {
+        if from != into && exists(&from) && exists(&into) && !above(world, &from, &into) && !world.apart(&from, &into) && shared() && !waiting && !asked {
             proposed.push((from.clone(), into.clone()));
             waits.insert(from.clone());
             out.push(proposal(Kind::Merge, &from, "", &into));
@@ -809,6 +825,40 @@ mod tests {
             task("T1", "Pay water bill", "reminder", "2026-11-04"),
         ]), TODAY);
         assert_eq!(distinct.len(), 3, "containment needs a real matching date; shared words alone aren't duplicates");
+    }
+
+    #[test]
+    fn two_threads_the_person_set_apart_by_a_move_are_never_proposed_as_one() {
+        let thought = |id: &str, thread: &str, text: &str| Thought {
+            id: id.into(),
+            speaker: "you".into(),
+            text: text.into(),
+            point: text.into(),
+            thread_id: Some(thread.into()),
+            placed: true,
+            unclear: String::new(),
+            guess: String::new(),
+            heard: String::new(),
+            fixed: String::new(),
+            complete: true,
+            at_ms: 0,
+            place_ms: None,
+        };
+        let mut world = World {
+            threads: vec![thread("T1", None), thread("T2", None)],
+            thoughts: vec![thought("a", "T1", "pottery wheel"), thought("b", "T2", "pottery glaze"), thought("c", "T1", "pottery kiln")],
+            ..World::default()
+        };
+        let merge = |world: &World| {
+            let pass: Pass = serde_json::from_value(serde_json::json!({ "merges": [{"from": "T2", "into": "T1"}] })).unwrap();
+            changes(world, pass).iter().filter(|c| matches!(c, Change::TidyProposed { .. })).count()
+        };
+        assert_eq!(merge(&world), 1, "before the move, the two read as one topic");
+        world.apply(&Change::ThoughtMoved { thought_id: "c".into(), thread_id: "T2".into(), from: "T1".into(), undo: false });
+        assert_eq!(merge(&world), 0, "the person's move says they're two");
+        assert!(existing(&world).iter().any(|line| line == "threads the person keeps apart (never merge): T1 and T2"));
+        world.apply(&Change::ThoughtMoved { thought_id: "c".into(), thread_id: "T1".into(), from: "T2".into(), undo: true });
+        assert_eq!(merge(&world), 1, "a move undone takes its reason back");
     }
 
     #[test]

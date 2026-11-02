@@ -23,6 +23,7 @@ import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
+import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
 import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
@@ -767,6 +768,7 @@ export default function App() {
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
           <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
           <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
+          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
@@ -847,7 +849,9 @@ export default function App() {
         ) : (
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
+          <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </MovesProvider>
           </TidyProvider>
           </NotesContext.Provider>
         )}
@@ -1089,7 +1093,9 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   // Your own unfinished thread is flagged; someone else's tag just says whose it is.
   const me = useMe();
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
-  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : ""].join(" ");
+  // A point dragged by its Move lands on the card under it (Moves.tsx).
+  const drop = useDropPoint(thread.id);
+  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
 
   const toggle = (event: React.MouseEvent) => {
     if (searching && matches.has(thread.id)) return;
@@ -1110,6 +1116,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
+      {...drop.props}
     >
       <ThisTag thread={thread.id} />
       {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
@@ -1120,7 +1127,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
         <ThreadPicture thread={thread} marked />
         <div className="head-text">
           <div className="head-line">
-            <div className="title" id={`title-${thread.id}`} role="heading" aria-level={Math.min(depth, 6)}>{thread.title}</div>
+            <ThreadTitle thread={thread} depth={depth} />
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
@@ -1209,6 +1216,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
   // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
   const { latest, arriving } = usePointMarks(thought.id);
   const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
+  // Every point takes focus from a tap, so a phone shows its Move (moves.css); only one with a placement time to read
+  // is a stop for Tab, as Move and Words said are their own.
   // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
   // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
   // Joined across a pause, the words are each part as said; a "why here" opens with them.
@@ -1223,12 +1232,13 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : undefined} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}
+      <MovePoint thought={thought} />
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}

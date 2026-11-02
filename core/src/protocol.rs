@@ -124,6 +124,15 @@ pub enum ClientMsg {
     Tidy { id: String, apply: bool },
     /// The Undo on the note about a rename or merge: `thread_id` is the renamed thread, or the one merged away.
     Untidy { kind: crate::tidy::Kind, thread_id: String },
+    /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
+    /// (moves.rs).
+    Move {
+        thought_id: String,
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    /// A title typed on a thread's card (moves.rs).
+    Rename { thread_id: String, title: String },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.
