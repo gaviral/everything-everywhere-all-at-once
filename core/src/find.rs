@@ -451,6 +451,9 @@ fn missed(core: &Arc<Core>, speaker: &str, request: u64, why: Miss, topic: &str)
         (Miss::Failed, false) => "I couldn't search just now, so I kept it as a thought.".into(),
         (_, false) => format!("I couldn't find “{topic}”, so I kept it as a thought."),
         (Miss::Empty, true) => "Nothing on the map yet: say a thought first".into(),
+        (Miss::NoKey, true) if core.key.is_some() && !core.key_refused() => {
+            format!("I couldn't find “{topic}” by its words, and search by meaning is paused this hour. Try a few words you used.")
+        }
         (Miss::NoKey, true) => format!("I couldn't find “{topic}”. Searching by meaning needs the AI key."),
         (Miss::NotFound, true) => format!("I couldn't find “{topic}”. Try a few words you used."),
     };

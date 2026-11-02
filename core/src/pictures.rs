@@ -210,7 +210,7 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, prompt: &str) -> anyhow:
         // A picture needs no searching or code, and the person's thoughts stay out of web searches.
         "tool_enablement": {"enable_image_search": false, "enable_web_search": false, "enable_shell": false},
     });
-    let value = core.call_model(URL, &body, PATIENCE).await?;
+    let value = core.call_model_noting(URL, &body, PATIENCE, serde_json::json!({"feature": "picture", "thread": thread.id})).await?;
     let encoded = value["data"][0]["b64_json"].as_str().context("no image in the answer")?;
     let bytes = decode(encoded)?;
     // Muse Image returns WebP ("RIFF" header); fall back to PNG's extension otherwise.
@@ -218,13 +218,15 @@ async fn draw(core: &Core, dir: &Path, thread: &Thread, prompt: &str) -> anyhow:
     let name = format!("{}-{}.{ext}", thread.id, uuid::Uuid::new_v4().simple());
     tokio::fs::create_dir_all(dir).await?;
     tokio::fs::write(dir.join(&name), &bytes).await?;
-    match shrink(dir, &name, bytes).await {
-        Ok(path) => Ok(path),
+    let path = match shrink(dir, &name, bytes).await {
+        Ok(path) => path,
         Err(e) => {
             tracing::warn!("no small copy of {name}, showing the full picture: {e:#}");
-            Ok(format!("/images/{name}"))
+            format!("/images/{name}")
         }
-    }
+    };
+    core.trace.write(|| serde_json::json!({"kind": "picture", "thread": thread.id, "saved": name, "shown": path}));
+    Ok(path)
 }
 
 /// Pictures drawn before the copies existed get them now, so older maps load light and their Palace stays sharp.

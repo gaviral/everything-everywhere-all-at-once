@@ -2,9 +2,17 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Ke
 import { capitalized, firstLetter, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
+import { usePicture } from "./pictures";
 import "./palace.css";
 
 type Room = { root: Thread; members: Thread[] };
+
+/** A tile's picture, by the one picture-slot rule (pictures.ts): the letter tile under it shows until it decodes.
+ *  A map without a Palace copy (a shipped sample's older pictures) shows the map's copy instead. */
+function PalacePicture({ picture }: { picture: string | null }) {
+  const { img } = usePicture(picture ? [palaceCopy(picture), picture] : []);
+  return img && <img key={img.src} {...img} loading="lazy" />;
+}
 
 // The core writes a 512 px copy beside the map's 128 px one, named alike, so tiles stay sharp at Palace size.
 const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palace.webp");
@@ -139,11 +147,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
     const under = parent && parent.id !== root.id ? parent : undefined;
     return <button className={`palace-tile${isActive ? " is-active" : ""}`} key={thread.id} data-thread={thread.id} style={roomStyle(colors.get(root.id))} onClick={() => onOpen(thread)} onKeyDown={navigate} onFocus={(event) => { focused.current = event.currentTarget; }} aria-describedby={thread.last_point ? `palace-point-${thread.id}` : undefined}>
       <span className="palace-art">
-        {thread.picture ? <img src={palaceCopy(thread.picture)} alt="" loading="lazy" onError={(event) => {
-          // A map that has no Palace copy (a shipped sample's older pictures) shows the map's copy instead.
-          const img = event.currentTarget;
-          if (img.dataset.small) img.hidden = true; else { img.dataset.small = "1"; img.src = thread.picture!; }
-        }} /> : null}
+        <PalacePicture picture={thread.picture} />
         <span className="palace-placeholder" aria-hidden="true"><span>{firstLetter(thread.title)}</span></span>
         <span className="palace-badges">{isActive && <span className="palace-badge active">Active</span>}{thread.status === "dropped" && <span className="palace-badge unfinished">{leftBy(thread, me) ? `${leftBy(thread, me)} left off` : "Left off"}</span>}</span>
       </span>

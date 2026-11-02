@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 
 pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
-    let key = core.key()?.to_string();
+    let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio_tungstenite::connect_async(format!("{URL}?sessionId={session}"))
         .await
@@ -91,7 +91,10 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {
-            let words = sentence_case(event["transcript"].as_str().unwrap_or_default().trim());
+            let raw = event["transcript"].as_str().unwrap_or_default();
+            let words = sentence_case(raw.trim());
+            // As heard and as kept, to tell the transcriber's punctuation from ours.
+            core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);

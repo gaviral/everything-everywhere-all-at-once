@@ -227,11 +227,12 @@ pub fn compose(core: Arc<Core>, request: String) {
         if let Err(e) = compose_inner(&core, &b.id, &request).await {
             tracing::warn!("composer failed: {e:#}");
             // Trying again can't help with a refused key or none.
-            let message = if core.key_refused() { crate::model::REFUSED }
-                else if core.key.is_none() { "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart." }
-                else { "Couldn't make this app just now. Please try again." };
-            progress(&core, &b.id, "failed", message, None, None);
-            notice(&core, message);
+            let message = if core.key_refused() { crate::model::REFUSED.into() }
+                else if core.key.is_none() { "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart.".into() }
+                else if let Some(capped) = core.capped_message() { capped }
+                else { "Couldn't make this app just now. Please try again.".to_string() };
+            progress(&core, &b.id, "failed", &message, None, None);
+            notice(&core, &message);
         }
     });
 }

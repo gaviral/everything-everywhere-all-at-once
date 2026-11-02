@@ -128,8 +128,10 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             }
             Err(e) => {
                 tracing::warn!("recap failed: {e:#}");
-                let message = if core.key_refused() { crate::model::REFUSED } else { "Couldn't make a recap just now. Your thoughts are still here. Try again." };
-                state(&core, &speaker, period, false, message, None);
+                let message = if core.key_refused() { crate::model::REFUSED.into() }
+                    else if let Some(capped) = core.capped_message() { capped }
+                    else { "Couldn't make a recap just now. Your thoughts are still here. Try again.".to_string() };
+                state(&core, &speaker, period, false, &message, None);
             }
         }
     });

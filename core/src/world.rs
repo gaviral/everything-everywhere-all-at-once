@@ -209,6 +209,29 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
+    /// the map doesn't change, and other windows aren't sent it.
+    ExplainAnswered {
+        id: String,
+        phrase: String,
+        context: String,
+        #[serde(default)]
+        thread_id: Option<String>,
+        model: String,
+        ms: u64,
+        text: String,
+        at_ms: u64,
+    },
+    /// The person marked an AI answer as off (`kind` "explain" or "recap"), or took the mark back. Journal only, the
+    /// last mark for an answer counts: the labels a change to the prompt is checked against.
+    AnswerMarked {
+        kind: String,
+        id: String,
+        off: bool,
+        #[serde(default = "you")]
+        speaker: String,
+        at_ms: u64,
+    },
     /// An import finished reading these messages; old journal entries only recorded their times.
     MessagesRead {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -270,6 +293,7 @@ impl World {
                 }
             }
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
             Change::MessagesRead { at_ms, keys } => {
                 self.read_ms.extend(at_ms);
                 self.read_keys.extend(keys.iter().cloned());
@@ -970,6 +994,18 @@ mod tests {
             Change::ThoughtSkipped { thought_id: "d".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
+            // Kept for judging answers; replaying them changes nothing on the map.
+            Change::ExplainAnswered {
+                id: "x1".into(),
+                phrase: "Muse Spark".into(),
+                context: "Ask Muse Spark about a".into(),
+                thread_id: Some("T1".into()),
+                model: "muse-spark-1.2-contributor".into(),
+                ms: 1_400,
+                text: "Meta's fast model, which this app uses to place thoughts.".into(),
+                at_ms: 40,
+            },
+            Change::AnswerMarked { kind: "explain".into(), id: "x1".into(), off: true, speaker: "User".into(), at_ms: 50 },
             // Aimed at the merged thread, so it follows the merge on replay too.
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget and demo".into() },
             Change::RecapSaved {
@@ -1020,7 +1056,9 @@ mod tests {
                 | Change::ThoughtCorrected { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
-                | Change::MessagesRead { .. } => {}
+                | Change::MessagesRead { .. }
+                | Change::ExplainAnswered { .. }
+                | Change::AnswerMarked { .. } => {}
             }
         }
         changes
@@ -1031,7 +1069,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 26, "one of each kind of change");
+        assert_eq!(kinds.len(), 28, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
