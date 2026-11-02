@@ -24,8 +24,10 @@ const words = first.replace(/<!--[\s\S]*?-->/g, "").replace(/!\[[^\]]*\]\([^)]*\
   .replace(/\]\([^)]*\)/g, "]").split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
 assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words; at most ${MAX_WORDS}`);
 
-// What it does, for a person: the pitch, word for word as User left it (his call is open).
-assert.ok(first.includes("For people who think out loud and lose their threads."), "the pitch is not on the first screen");
+// What it does, for a person: the pitch, word for word as User left it (his call is open), as one whole paragraph.
+// When User changes the pitch, change it here too: a cut that only this check sees is the point.
+const PITCH = "For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.";
+assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn't User's, word for word (whole paragraph)");
 
 // Shows it: every image there exists.
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
@@ -49,15 +51,34 @@ for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)
   const id = m[0].toLowerCase().replace(/ /g, "-");
   assert.ok([...called].some((c) => c.startsWith(id)), `the first screen names ${m[0]}, which the core never calls`);
 }
-// Rules aren't called AI: the row for "where was I?" says no model.
-assert.match(first, /where was I\?[^\n]*\|[^\n]*no model/i, "the first screen doesn't say “where was I?” runs with no model");
-
-// The proof: links to docs/trace.md, whose excerpt shows a real call by each chat and picture model.
+// Which Meta model does what, row by row: each role's row names its model (or "no model") and links to the
+// trace.md section that proves it; that section shows the feature's own traced call by that model (or, for rules,
+// none at all). Removing a row, its link or its evidence fails here.
+const ROLES = [
+  { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /"kind":"heard"/ },
+  { anchor: "placer", model: "Muse Spark 1.2 Contributor", proof: /"feature":"placer","model":"muse-spark-1\.2-contributor"/ },
+  { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
+  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"composer","model":"muse-spark-1\.3"/ },
+  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap","model":"muse-spark-1\.3"/ },
+  { anchor: "pictures", model: "Muse Image 1.0", proof: /"feature":"picture","model":"muse-image-1\.0"/ },
+  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"Wait, where was I\?"/, none: /"model":/ },
+];
 assert.ok(/\(docs\/trace\.md(#[a-z0-9-]+)?\)/.test(first), "the first screen doesn't link to docs/trace.md");
 const trace = read("docs/trace.md");
-for (const anchor of first.matchAll(/\(docs\/trace\.md#([a-z0-9-]+)\)/g)) {
-  const slugs = [...trace.matchAll(/^#+ (.+)$/gm)].map((h) => h[1].toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-"));
-  assert.ok(slugs.includes(anchor[1]), `docs/trace.md has no heading for #${anchor[1]}`);
+const slug = (h) => h.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
+const sections = new Map(trace.split(/^(?=## )/m).map((part) => [slug(part.split("\n")[0].replace(/^## /, "")), part]));
+const rows = first.split("\n").filter((l) => /^\|.*\(docs\/trace\.md#[a-z0-9-]+\)/.test(l));
+assert.equal(rows.length, ROLES.length, `the first screen has ${rows.length} model rows with proof; expected ${ROLES.length}`);
+for (const { anchor, model, when, proof, none } of ROLES) {
+  const row = rows.find((l) => l.includes(`(docs/trace.md#${anchor})`));
+  assert.ok(row, `the first screen has no row linking to docs/trace.md#${anchor}`);
+  const cells = row.split("|").map((c) => c.trim());
+  assert.ok(cells.includes(model), `the #${anchor} row doesn't name ${model} as its model`);
+  if (when) assert.match(row, when, `the #${anchor} row isn't the one for ${when}`);
+  const section = sections.get(anchor);
+  assert.ok(section, `docs/trace.md has no section for #${anchor}`);
+  assert.match(section, proof, `docs/trace.md#${anchor} shows no evidence for its row (${proof})`);
+  if (none) assert.doesNotMatch(section, none, `docs/trace.md#${anchor} says no model, but shows a model call`);
 }
 for (const id of ["muse-spark-1.2-contributor", "muse-spark-1.3", "muse-image-1.0"]) {
   assert.ok(trace.includes(`"model":"${id}"`), `docs/trace.md shows no call by ${id}`);
