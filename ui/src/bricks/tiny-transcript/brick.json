@@ -1,8 +1,9 @@
 {
   "id": "tiny-transcript",
   "name": "Tiny transcript",
-  "does": "Your latest words, quietly above the dock, with a size you can adjust on first use.",
+  "does": "Your words as you say them, very small above the dock, instead of its big line.",
   "kind": "panel",
   "defaultOn": false,
-  "demoSafe": true
+  "demoSafe": true,
+  "showsLiveWords": true
 }

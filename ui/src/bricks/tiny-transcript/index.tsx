@@ -1,6 +1,6 @@
-// Tiny transcript (docs/bricks.md, a panel): your words on their way, very small, just above the dock, so you stay in
-// the thought rather than the typing. The contract has no live words (the dock's line while you talk), so it shows
-// the newest of your thoughts not yet placed; the first time, a hint says it's small on purpose, with a size slider.
+// Tiny transcript (docs/bricks.md, a panel): your words as you say them, very small, just above the dock, so you stay
+// in the thought rather than the typing. They're `map.partial`, and brick.json's `showsLiveWords` takes them from the
+// dock's big live line, so they never show twice. The first time, a hint says it's small on purpose, with a size slider.
 import { useEffect, useRef, useState } from "react";
 import type { BrickProps } from "../contract";
 import "./tiny-transcript.css";
@@ -25,20 +25,13 @@ export default function TinyTranscript({ map }: BrickProps) {
     return Number.isInteger(saved) && saved >= 9 && saved <= 16 ? saved : 11;
   });
   const [hinted, setHinted] = useState(() => readSetting(HINTED) !== null);
-  // The words the hint first showed with: they stay up with it after their thought is placed (≈ 3 s), so there's
-  // time to try the slider; the hint goes only when dismissed.
+  // The words the hint first showed with: they stay up with it once the turn ends and its words go, so there's time
+  // to try the slider; the hint goes only when dismissed.
   const [held, setHeld] = useState("");
   const hint = useRef<HTMLDivElement>(null);
 
-  // The contract orders thoughts by arrival; placed thoughts and other speakers stay out.
-  let text = "";
-  for (let i = map.thoughts.length - 1; i >= 0; i--) {
-    const thought = map.thoughts[i];
-    if (!thought.placed && thought.speaker === map.me && thought.text.trim()) {
-      text = thought.text;
-      break;
-    }
-  }
+  // Only ever yours: the core sends a speaker's live words to that speaker's windows alone.
+  const text = map.partial.trim();
   useEffect(() => { if (text && !hinted) setHeld(text); }, [text, hinted]);
   const showHint = !hinted && !!(text || held);
   const shown = text || (showHint ? held : "");
@@ -69,6 +62,7 @@ export default function TinyTranscript({ map }: BrickProps) {
           saveSetting(SIZE, String(next));
         }} />
     </div>}
-    <div className="tiny-transcript-text" style={{ fontSize: size }}>{shown}</div>
+    {/* The words in an isolate of their own: the line runs from its end (the CSS), and they keep their own order. */}
+    <div className="tiny-transcript-text" style={{ fontSize: size }}><bdi>{shown}</bdi></div>
   </div>;
 }

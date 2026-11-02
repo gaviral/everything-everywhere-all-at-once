@@ -2,7 +2,7 @@
 // needs neither the core, a key nor the whole app. `?brick=<id>` picks the brick (the template too) and `&sample=`
 // the map ("empty" for none). It's mounted as the app mounts it (BrickSlot.tsx), and what it asks for is answered
 // here as the app would and logged: a thought added lands on the thread you're on a moment later.
-import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { received } from "../apps-audio";
 import { BrickMount, useBrickHost } from "../BrickSlot";
@@ -35,6 +35,10 @@ function sampleWorld(name: string): World {
 
 // What "Add a thought" says: lines a person might, each landing on the thread you're on.
 const LINES = ["Ask Priya about the slides before Friday", "Maybe the bus is faster than biking in the rain", "Write down the three numbers for the budget"];
+// "Say a thought": a word heard every 250 ms (talk at about 150 words a minute, as the transcriber sends its drafts),
+// and the turn's end 600 ms after the last (the pause the transcriber waits for before it calls a turn done).
+const WORD_MS = 250;
+const TURN_END_MS = 600;
 // The loudness readings of the Level meter's own test (its help line): normal talk, a pause, a raised voice, a pause,
 // a shout; at the voices apps.rs gives (0.075, 0.1, a shout above 0.15), a reading every 320 ms, pauses of two seconds.
 const PAUSE = Array(7).fill(0.01);
@@ -48,6 +52,9 @@ function Playground() {
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
+  // Your words as they're heard (`map.partial`), while "Say a thought" talks.
+  const [partial, setPartial] = useState("");
+  const talk = useRef<number[]>([]);
   const [log, setLog] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [errors, setErrors] = useState(0);
@@ -100,9 +107,20 @@ function Playground() {
     }), 1200);
     return true;
   };
+  const latestAdd = useRef(add);
+  useLayoutEffect(() => { latestAdd.current = add; });
+
+  /** A thought said aloud, as the core passes it on: its words as heard, one more at a time (`map.partial`), then at
+   *  the turn's end no words and the thought itself, which lands as one added does. */
+  const say = (text: string) => {
+    for (const timer of talk.current) window.clearTimeout(timer);
+    const words = text.split(" ");
+    talk.current = words.map((_, i) => window.setTimeout(() => setPartial(words.slice(0, i + 1).join(" ")), i * WORD_MS));
+    talk.current.push(window.setTimeout(() => { setPartial(""); latestAdd.current(text); }, (words.length - 1) * WORD_MS + TURN_END_MS));
+  };
 
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
-  const host = useBrickHost(world, revision, "you", connected, rooms, {
+  const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the thread you're on in 1.2 s" : " → refused"}`); return ok; },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the Map, that thread open and highlighted`);
@@ -132,6 +150,7 @@ function Playground() {
         <option value="empty">empty</option>
       </select></label>
       <button type="button" onClick={() => add(LINES[count.current % LINES.length])}>Add a thought</button>
+      <button type="button" onClick={() => say(LINES[count.current % LINES.length])}>Say a thought</button>
       <button type="button" onClick={hum}>Talk, then shout</button>
       <label className="playground-check"><input type="checkbox" checked={!connected} onChange={(event) => setConnected(!event.target.checked)} /> Core away</label>
     </div>

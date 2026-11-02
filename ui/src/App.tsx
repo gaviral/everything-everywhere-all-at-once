@@ -893,7 +893,7 @@ export default function App() {
 
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
   // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does.
-  const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, {
+  const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
     addThought: core.sendText,
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
@@ -901,6 +901,8 @@ export default function App() {
     position: core.position,
   });
   const bricksOn = useBricksOn();
+  // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
+  const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
   const viewBrick = viewBricks.find((brick) => brick.info.id === view);
   // A view brick switched off while it's shown hands the window back to the map.
@@ -1119,7 +1121,7 @@ export default function App() {
           <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, wordsElsewhere, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />

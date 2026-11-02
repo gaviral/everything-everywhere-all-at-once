@@ -8,11 +8,15 @@
   max-width: min(480px, calc(100vw - 16px));
 }
 
+/* One line that runs from its end: what you're saying now stays in view, and a long turn's start goes behind a "…"
+   at the left (right to left, the start is the right edge, so the words overflow and the ellipsis falls leftward). */
 .tiny-transcript-text {
   box-sizing: border-box;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
   padding: 2px 8px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 90%, transparent);
