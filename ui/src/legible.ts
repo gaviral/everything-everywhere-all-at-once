@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /** The app's natural pause: the quiet after which the unfinished card rises (App.tsx, the pull-back). The map stays
  *  in its talking state until the same length of quiet has passed, counted from your last landing as well as your
@@ -35,18 +35,48 @@ export function saidDiffers(text: string, point: string) {
 /** Two map columns fit from this width (legible.css has the arithmetic, and the same number). */
 export const TWO_COLUMNS = "(min-width: 1100px)";
 
-/** Whether the window holds two map columns, following resizes. */
+/** Whether the window holds two map columns, following resizes. Crossing the width rebuilds every card (they move
+ *  into or out of their column), which would drop keyboard focus to the page and send j/k back to the first thread:
+ *  the control that had focus gets it back on its new card. */
 export function useTwoColumns() {
   const query = typeof window === "undefined" ? null : window.matchMedia(TWO_COLUMNS);
   const [two, setTwo] = useState(() => !!query?.matches);
+  const spot = useRef<FocusSpot | null>(null);
   useEffect(() => {
     if (!query) return;
-    const change = () => setTwo(query.matches);
+    const change = () => { spot.current = focusSpot(); setTwo(query.matches); };
     change();
     query.addEventListener("change", change);
     return () => query.removeEventListener("change", change);
   }, []);
+  useLayoutEffect(() => {
+    const was = spot.current;
+    spot.current = null;
+    if (was) restoreFocus(was);
+  }, [two]);
   return two;
+}
+
+/** Where focus is, in terms that survive a card being rebuilt: the nearest element with an id (a point, a card) and
+ *  the control's place among what can take focus inside it. */
+export type FocusSpot = { element: HTMLElement; id: string; index: number };
+const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex='-1'])";
+
+export function focusSpot(doc: Document = document): FocusSpot | null {
+  const element = doc.activeElement as HTMLElement | null;
+  const holder = element && element !== doc.body ? element.closest<HTMLElement>("[id]") : null;
+  if (!element || !holder) return null;
+  return { element, id: holder.id, index: Array.from(holder.querySelectorAll(FOCUSABLE)).indexOf(element) };
+}
+
+/** Puts focus back where `spot` was, if a rebuild took it away (the element left the page); the holder itself when the
+ *  control is gone. Focusing scrolls it into view if the new layout moved it off screen. */
+export function restoreFocus(spot: FocusSpot, doc: Document = document) {
+  if (spot.element.isConnected) return;
+  const holder = doc.getElementById(spot.id);
+  if (!holder) return;
+  const target = spot.index < 0 ? holder : holder.querySelectorAll<HTMLElement>(FOCUSABLE)[spot.index] ?? holder;
+  target.focus();
 }
 
 /** Which points have their original words open, kept outside the cards: crossing the two-column width rebuilds every

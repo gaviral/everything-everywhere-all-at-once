@@ -11,7 +11,7 @@ const read = (name) => readFileSync(new URL(name, src), "utf8");
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { saidDiffers, intoColumns, NATURAL_PAUSE_MS, TWO_COLUMNS } = await server.ssrLoadModule("/src/legible.ts");
+  const { saidDiffers, intoColumns, NATURAL_PAUSE_MS, TWO_COLUMNS, focusSpot, restoreFocus } = await server.ssrLoadModule("/src/legible.ts");
 
   // A point opens its words only when they say more than the point: case and punctuation don't count.
   assert.equal(saidDiffers("Okay so the deadline is tomorrow at 9 PM", "Deadline tomorrow 9 PM"), true, "a short version");
@@ -26,6 +26,41 @@ try {
   assert.deepEqual(intoColumns(["a", "b", "c", "d", "e"]), [["a", "c", "e"], ["b", "d"]]);
   const before = intoColumns(["a", "b", "c"]), after = intoColumns(["a", "b", "c", "d"]);
   assert.deepEqual([after[0].slice(0, 2), after[1].slice(0, 1)], [before[0], before[1]], "a new thread moves no other");
+
+  // Crossing the two-column width rebuilds the cards: focus goes back to the same control on the rebuilt card.
+  // A small stand-in for the page: a card (with an id) holding focusable controls.
+  const page = () => {
+    const doc = { body: { id: "" }, activeElement: null, byId: new Map(), getElementById: (id) => doc.byId.get(id) ?? null };
+    const node = (id, parent, focusable) => {
+      const n = { id, parent, focusable, kids: [], isConnected: true,
+        closest: () => { let at = n; while (at && !at.id) at = at.parent; return at ?? null; },
+        querySelectorAll: () => { const all = []; const walk = (x) => x.kids.forEach((k) => { if (k.focusable) all.push(k); walk(k); }); walk(n); return all; },
+        focus: () => { doc.activeElement = n; } };
+      parent?.kids.push(n);
+      if (id) doc.byId.set(id, n);
+      return n;
+    };
+    return { doc, node };
+  };
+  {
+    const { doc, node } = page();
+    const card = node("thread-a", null, false), head = node("", card, false);
+    node("", head, true); const toggle = node("", head, true);
+    doc.activeElement = toggle;
+    const spot = focusSpot(doc);
+    assert.deepEqual([spot.id, spot.index], ["thread-a", 1], "the card and the control's place in it");
+    // The rebuild: the old card leaves, a new one with the same id and controls arrives.
+    card.isConnected = toggle.isConnected = false; doc.activeElement = doc.body;
+    const again = node("thread-a", null, false), head2 = node("", again, false);
+    node("", head2, true); const toggle2 = node("", head2, true);
+    restoreFocus(spot, doc);
+    assert.equal(doc.activeElement, toggle2, "focus returns to the same control on the rebuilt card");
+    // Focus that survived (nothing was rebuilt) is left alone.
+    doc.activeElement = again; restoreFocus({ element: toggle2, id: "thread-a", index: 0 }, doc);
+    assert.equal(doc.activeElement, again, "a control still on the page keeps its focus");
+    doc.activeElement = doc.body;
+    assert.equal(focusSpot(doc), null, "nothing focused, nothing to restore");
+  }
 
   // The words behind a point open by a real disclosure button (name, expanded state, what it opens), not a bare <li>.
   const point = read("App.tsx").match(/const Point = memo[\s\S]*?\n\}\);/)[0];
