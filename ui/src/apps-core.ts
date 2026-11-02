@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { playTune, unlockTune } from "./apps-audio";
+import { siteText, useSite } from "./site";
 
 export type Watcher =
   | { kind: "new_thought"; min_points?: number }
@@ -114,6 +115,9 @@ const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown"] as const;
 
 export function useApps() {
   const [build, setBuild] = useState<AppBuild | null>(null);
+  // Hosted, a build that failed for the key says so in the site's words (site.ts).
+  const hosted = useRef(false);
+  hosted.current = useSite().hosted;
   // A build asked for in the Apps panel's own form (or by its "Make that instead") shows there, where it was asked.
   // Any other (said, typed in the composer, or still waiting when this window connected) shows in the dock.
   const [panelBuild, setPanelBuild] = useState<string | null>(null);
@@ -139,7 +143,7 @@ export function useApps() {
         panelRequest.current = null;
         setPanelBuild((previous) => panelBuildFor(msg.build, asked, previous));
       }
-      setBuild(msg.build);
+      setBuild(hosted.current ? { ...msg.build, message: siteText(msg.build.message, true) } : msg.build);
       return true;
     }
     if (msg.type === "apps_sound") {

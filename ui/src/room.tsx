@@ -1,14 +1,16 @@
 // Rooms: two people think out loud on one map, each on their own laptop. When the core runs with a
 // room code, everyone joins with a short name (remembered in this browser), and a laptop other than
 // the host's also needs the code. Alone, nothing changes: your thoughts are "you".
-import { createContext, useContext, useEffect, useLayoutEffect, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./room.css";
+import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 
 type Seat = { me: string; code: string };
 // What the core says at /room: is a room open, may this page use the map, and (asked with a name) does
 // another laptop hold that name? Private things (live words, the mic, notices) go to every window with a name.
 // `tunnel`: a trial link (scripts/trial.sh), a fresh map for one person that whoever sent it may watch.
-type Door = { room: boolean; member: boolean; taken?: boolean; tunnel?: boolean };
+// The rest says how the core runs (site.ts): hosted or on someone's computer, and what that changes on screen.
+type Door = { room: boolean; member: boolean; taken?: boolean; tunnel?: boolean } & SiteDoor;
 
 const ALONE: Seat = { me: "you", code: "" };
 const NAME = "e2a2o.name";
@@ -28,6 +30,7 @@ const RoomActions = createContext<{ leave: () => void } | null>(null);
 export function RoomControl({ speakers }: { speakers: string[] }) {
   const actions = useContext(RoomActions);
   const me = useMe();
+  const { hosted } = useSite();
   if (!actions) return null;
   const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
   return (
@@ -41,7 +44,8 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
       <div className="room-panel">
         <div className="room-panel-title">This room</div>
         <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
-        {GUEST_MACHINE && <p className="room-guest">Guest on this map · Your thoughts are saved on the host's computer.</p>}
+        {hosted ? <p className="room-guest">{savedWhere(true)}</p>
+          : GUEST_MACHINE && <p className="room-guest">Guest on this map · {savedWhere(false)}</p>}
         {others.length > 0 ? <>
           <p className="room-panel-label">Also on this map</p>
           <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
@@ -196,14 +200,17 @@ export function Room({ children }: { children: ReactNode }) {
     }
   };
 
+  const site = useMemo(() => siteFrom(door), [door]);
   if (current) {
     // A new seat is a new connection: the map starts fresh under the new name.
     return (
+      <SiteContext.Provider value={site}>
       <Me.Provider key={`${current.me}|${current.code}`} value={current.me}>
         <RoomActions.Provider value={current === ALONE ? null : { leave }}>
           {children}
         </RoomActions.Provider>
       </Me.Provider>
+      </SiteContext.Provider>
     );
   }
   if (!door) return <div className="join"><div className="join-loading" role="status">Opening the room…</div></div>;
@@ -251,7 +258,7 @@ export function Room({ children }: { children: ReactNode }) {
             aria-describedby={note ? "join-note" : "name-hint"}
           />
           <small id="name-hint">
-            {door.tunnel ? "Shown next to your thoughts. Whoever sent you this link can watch along." : "The other person will see this next to your thoughts."}
+            {door.hosted ? "Shown next to your thoughts." : door.tunnel ? "Shown next to your thoughts. Whoever sent you this link can watch along." : "The other person will see this next to your thoughts."}
           </small>
         </label>
         {note && <div id="join-note" className="join-note" role="status">{note}</div>}

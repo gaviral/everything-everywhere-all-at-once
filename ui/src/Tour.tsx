@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { keyWords, useSite } from "./site";
 
 const TOURED_KEY = "e2a2o.toured";
 let dismissedInMemory = false;
@@ -19,12 +20,13 @@ type Step = { slot: string; title: string; text: string };
 
 export function Tour({ populated, noKey }: { populated: boolean; noKey: boolean }) {
   // The initial snapshot determines the path, even if the map changes during the tour.
+  const { hosted } = useSite();
   const [order] = useState(() => populated ? ["tour-map", "tour-composer", "tour-tools"] : ["tour-composer", "tour-map", "tour-tools"]);
   // Without a key the tour teaches what works (a sample map is for exploring), never the mic or a model's answer.
   // Read each render: the core's word about the key comes right after the snapshot that mounts the tour.
   const copy: Record<string, Step> = {
     "tour-composer": noKey
-      ? { slot: "tour-composer", title: "Type to move around", text: "Without an AI key, this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter. To talk and add thoughts, put MODEL_API_KEY in .env." }
+      ? { slot: "tour-composer", title: "Type to move around", text: keyWords(hosted, false, "tour") }
       : { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" },
     "tour-map": { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." },
     "tour-tools": noKey

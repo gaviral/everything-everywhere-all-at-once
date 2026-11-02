@@ -203,6 +203,9 @@ fn proposed<'a>(core: &Core, world: &'a World, speaker: &str) -> Option<&'a crat
 /// Adds the proposed reminder or event, and says so; false when there was none to add, or it isn't the host's.
 fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
     let (message, adding) = match proposed(core, world, speaker) {
+        // Without Apple's apps the window saves a calendar file, which only a click can start.
+        Some(action) if !crate::apple::reachable() =>
+            (format!("To add “{}”, choose Download .ics on its row: your calendar app opens it.", action.title), false),
         // As a click on Add: it goes into the host's apps, so it's the host's call.
         Some(_) if !core.is_host(speaker) => ("Only the host can add this: it goes into their apps.".to_string(), false),
         Some(action) => {

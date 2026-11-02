@@ -234,9 +234,13 @@ Choose Import chats (top right), then a ChatGPT or Claude `conversations.json` e
 
 Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then sent to every window; on start the core replays it, so the map opens where you left it. `./run.sh NAME` uses `data/NAME`; plain `./run.sh` uses `data/`.
 
+### Hosting it
+
+A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each core (off by default, so a laptop and `scripts/trial.sh` read as before). The window then says thoughts are saved on the site's server, never points at `.env` or the host's computer, and saves a dated item as a calendar file (`.ics`) instead of adding it to Reminders or Calendar; so does any core not on a Mac. An empty map offers Try a sample map, which fills it with the student's week from `samples/` (the core reads `E2A2O_SAMPLES`, else `../samples` beside its working folder; without it the button stays hidden). The first screen names the Meta models the core asks, by step.
+
 ## Privacy and data
 
-- The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
+- The core runs on your laptop (hosted, on the site's server: one core and map folder per person). The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser.
 - Model inputs go to `api.meta.ai`:
   - **Speech:** while the mic is on, raw 24 kHz audio and setup data (session id, model, audio format, endpointing mode, English bias and keywords). The client sends no transcript as input.
   - **Placing:** the full new thought; every thread's id, title, status and last point; the active thread id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text. It also sends your own previous thought's full text and its thread id, if you said it in the last 2 minutes and it isn't that question.
@@ -270,7 +274,7 @@ Every change is appended as one JSON line to `data/<map>/journal.jsonl`, then se
 ## Known limits
 
 - Every model feature needs `api.meta.ai` and a key; there's no local or offline model.
-- Reminders and Calendar need macOS. Tested on macOS only; on Linux the build also needs OpenSSL headers.
+- Reminders and Calendar need macOS; elsewhere, and hosted, a dated item downloads as an `.ics` file for any calendar app, and one without a day can only be dismissed. Tested on macOS only; on Linux the build also needs OpenSSL headers.
 - Set up for English: Voice Transcribe is biased to English. It can spell names and uncommon words differently; “Did you mean” catches some misheard words.
 - From the end of speech to the map: median 3.6 s, slowest 5.1 s with Contributor mode (n = 9 thoughts, one synthesized-voice take through the real speech path, 2026-11-01). The live words show about 1 s after you start.
 - Placing is a model's judgment. You can move a thought and rename a thread yourself, by voice or click, with Undo; you can't merge or split threads yourself, except by applying the refiner's proposals, nor move a whole thread under another.

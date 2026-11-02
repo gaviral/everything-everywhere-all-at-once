@@ -830,6 +830,8 @@ export function useCore(speaker?: string) {
     sendAudio: (frame: ArrayBuffer) => { volume.feed(frame); send(frame); },
     listen: (on: boolean) => { volume.reset(); return send(JSON.stringify({ type: "listen", on })); },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    // "Try a sample map": the core fills an empty map with the sample (core/src/sample.rs).
+    sample: () => sendOrWarn(JSON.stringify({ type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,

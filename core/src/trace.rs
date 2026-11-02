@@ -18,7 +18,7 @@ pub struct Trace {
 }
 
 /// True for a switch that says on: "1", "on", "true" or "yes".
-fn on(value: &str) -> bool {
+pub(crate) fn on(value: &str) -> bool {
     matches!(
         value.trim().to_lowercase().as_str(),
         "1" | "on" | "true" | "yes"
