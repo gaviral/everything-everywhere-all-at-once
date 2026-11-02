@@ -28,11 +28,11 @@ import { UndoButton } from "./Undo";
 import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
 import { useRevert } from "./revert";
-import { carriedIds, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
+import { ideaCounts, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
 import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
-import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
+import { isUndoKey, micNotice, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -65,18 +65,8 @@ export default function App() {
     const times = world.thoughts.map((thought) => thought.at_ms).filter((time) => time <= Date.now()).sort((a, b) => a - b);
     let start = times.at(-1) ?? 0;
     for (let i = times.length - 1; i > 0 && times[i] - times[i - 1] < 30 * 60 * 1000; i--) start = times[i - 1];
-    const threads = new Set<string>();
-    const threadIds = new Set(world.threads.map((thread) => thread.id));
-    const card = (thought: Thought) => thought.thread_id && resolveMerged(world, thought.thread_id);
-    // Ideas, as the cards count them: a part said before a pause and carried on by a later one is in that one.
-    const carried = carriedIds(world.thoughts, world.notes ?? {}, card);
-    let thoughts = 0;
-    for (const thought of world.thoughts) {
-      if (!thought.placed || !thought.thread_id || thought.at_ms < start || thought.at_ms > Date.now() || carried.has(thought.id)) continue;
-      const id = card(thought)!;
-      if (threadIds.has(id)) { thoughts++; threads.add(id); }
-    }
-    return { thoughts, threads: threads.size };
+    // Ideas, as the cards count them, and as Recap does.
+    return ideaCounts(world, start, Date.now());
   }, [world.thoughts, world.threads, world.merged, world.notes]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
   const mounted = useRef(true);
@@ -422,6 +412,7 @@ export default function App() {
       return;
     }
     setStartingMic(true);
+    if (micNotice(core.notice)) core.clearNotice();
     try {
       let stopped = false;
       // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
@@ -936,8 +927,9 @@ export default function App() {
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map">
+        {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
-          <div className="empty">
+          core.snapshotRevision === 0 ? null : <div className="empty">
             <h1>Think out loud.</h1>
             <p>{startingMic ? "Starting the microphone…" : core.listening ? "Listening. Say what's on your mind." : pending.length ? (core.noKey ? "Saved. Thoughts find their place once the AI key works." : "Finding a place for your thought…") : "Start with whatever is on your mind."}</p>
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
