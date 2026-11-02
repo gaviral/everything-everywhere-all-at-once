@@ -581,6 +581,8 @@ export function useCore(speaker?: string) {
     explanations,
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.
+    mark: (kind: "explain" | "recap", id: string, off: boolean) => send(JSON.stringify({ type: "mark", kind, id, off })),
     importStatus,
     startImport: (id: string) => send(JSON.stringify({ type: "import_start", id })),
     cancelImport: () => send(JSON.stringify({ type: "import_cancel" })),
