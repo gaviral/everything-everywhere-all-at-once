@@ -27,6 +27,9 @@ pub struct Note {
     /// Why it went where it went, in at most `WHY_WORDS` words, naming the words that show it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub why: String,
+    /// `why` was asked for afterwards (whyhere.rs), not what decided the placement: the map says it as a likely reason.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub later: bool,
 }
 
 impl Note {
@@ -104,6 +107,7 @@ pub(crate) fn note(head: Option<&Thought>, assumed: &str, why: &str, moved: bool
         continues: head.map(|h| h.id.clone()).unwrap_or_default(),
         assumed: if head.is_none() && moved { words(assumed, ASSUMED_WORDS) } else { String::new() },
         why: words(why, WHY_WORDS),
+        later: false,
     }
 }
 
@@ -301,7 +305,7 @@ mod tests {
         let core = crate::Core::test(journal, world(vec![said("a", "T1", 1, false), said("b", "T1", 2, true)], "T1"));
         let noted = |continues: &str, why: &str| Change::ThoughtNoted {
             thought_id: "b".into(),
-            note: Note { continues: continues.into(), assumed: String::new(), why: why.into() },
+            note: Note { continues: continues.into(), assumed: String::new(), why: why.into(), later: false },
         };
         core.commit(vec![noted("a", "finishes the sentence")]);
         super::unlink(&core, "b");

@@ -42,6 +42,9 @@ pub enum ServerMsg {
     Unfold { thread_id: Option<String>, open: bool },
     /// The answer to an Explain request; `failed` when there's none, so the UI can offer to try again.
     Explanation { id: String, text: String, failed: bool },
+    /// The answer to a "Why here?" (whyhere.rs): why the thought is on its thread; `failed` when there's none, so the
+    /// window can offer to ask again. Only to the asker's windows; a model's answer also lands as the thought's note.
+    WhyHere { thought_id: String, text: String, failed: bool },
     /// How an import of past chats is going; only to the person importing, and again if they reconnect mid-import.
     Import { status: crate::import::Status },
     /// Where unplaced thoughts stand: the one being placed now, and each that failed a try, with the time until it
@@ -100,6 +103,8 @@ pub enum ClientMsg {
         #[serde(default)]
         thread_id: Option<String>,
     },
+    /// Why a thought is on its thread, asked from its point or a "While you were away" row (whyhere.rs).
+    WhyHere { thought_id: String },
     /// Mark an AI answer as off, or take the mark back: `kind` is "explain" (the request's id) or "recap"
     /// (its period and when it was made, as "today-1793547629176").
     Mark { kind: String, id: String, off: bool },

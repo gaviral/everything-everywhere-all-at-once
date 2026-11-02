@@ -48,6 +48,8 @@ export interface Note {
   continues?: string;
   assumed?: string;
   why?: string;
+  /** `why` was asked for afterwards (whyhere.tsx), not what decided the placement. */
+  later?: boolean;
 }
 
 /** A point as it shows: with a capital first letter, the stored words unchanged. A first word that already
@@ -66,6 +68,9 @@ export type ItemStatus = "new" | "kept" | "dismissed" | "done";
 
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
+
+// An answer to "Why here?" (whyhere.tsx); pending until it comes, failed when there's none.
+export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
 
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
@@ -189,6 +194,7 @@ type ServerMsg =
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "unfold"; thread_id: string | null; open: boolean }
   | { type: "explanation"; id: string; text: string; failed: boolean }
+  | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
 
@@ -531,6 +537,7 @@ export function useCore(speaker?: string) {
   const [queuedCount, setQueuedCount] = useState(0);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
+  const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
@@ -669,6 +676,9 @@ export function useCore(speaker?: string) {
           case "explanation":
             setExplanations((e) => ({ ...e, [msg.id]: { text: msg.text, failed: msg.failed } }));
             break;
+          case "why_here":
+            setWhys((w) => ({ ...w, [msg.thought_id]: { text: msg.text, failed: msg.failed } }));
+            break;
           case "import":
             setImportStatus(msg.status);
             break;
@@ -682,6 +692,7 @@ export function useCore(speaker?: string) {
         setHandoff("");
         // No answer comes on a closed connection.
         setNotice((shown) => (shown === LOOKING ? "" : shown));
+        setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
         recapDisconnected();
@@ -794,6 +805,16 @@ export function useCore(speaker?: string) {
     setItem, approve, correct, unlink, tag, move, rename,
     visible: useCallback(() => send(JSON.stringify({ type: "visible" })), [send]),
     explanations,
+    whys,
+    // "Why here?" on a point or a "While you were away" row: one ask at a time per thought; the core answers from the
+    // map when it can, else asks the model once and keeps the answer as the thought's note.
+    askWhy: useCallback((thought_id: string) => {
+      if (!send(JSON.stringify({ type: "why_here", thought_id }))) {
+        setWhys((w) => ({ ...w, [thought_id]: { text: "Not connected. Try again when connected.", failed: true } }));
+        return;
+      }
+      setWhys((w) => ({ ...w, [thought_id]: { text: "", failed: false, pending: true } }));
+    }, [send]),
     explain: (id: string, text: string, context: string, thread_id: string | null) =>
       send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
     // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.
