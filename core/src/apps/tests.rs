@@ -271,6 +271,44 @@ async fn a_failed_search_still_makes_the_app() {
     assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "the search, then the composition");
 }
 
+/// A search slower than its patience doesn't hold the build: the composition, asked at the same time, is shown once
+/// the search is cut at `SEARCH_PATIENCE`, not when the search would have answered.
+#[tokio::test(start_paused = true)]
+async fn a_search_past_its_patience_is_cut_and_the_composition_is_shown() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 16_200, "answer": {"match_id":"app-volume", "text":"Too late to count."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Demo nudge", "purpose":"Show a card when the demo comes up.",
+            "watcher":{"kind":"phrase","phrase":"demo"}, "prompt":null, "publishers":[{"kind":"card","text":"Rehearse."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "show a card when I mention the demo".into());
+    tokio::time::sleep(SEARCH_PATIENCE - Duration::from_millis(100)).await;
+    assert_eq!(build(&fixture.core).unwrap().stage, "searching", "the search still has its time");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "ready", "{:?}", b.steps);
+    assert_eq!(b.draft.unwrap().name, "Demo nudge");
+    assert_eq!(fixture.core.apps.asked.lock().unwrap().len(), 2, "asked at once: no composer call after the cut");
+}
+
+/// A composition that answers first waits for the search: a match the search finds within its patience is offered
+/// instead, and the composition is thrown away.
+#[tokio::test(start_paused = true)]
+async fn a_search_match_wins_over_a_composition_that_answered_first() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, true);
+    fixture.core.apps.answers.lock().unwrap().extend([
+        json!({"wait_ms": 3_000, "answer": {"match_id":"app-volume", "text":"A quiet pause for loud voices."}}),
+        json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud card", "purpose":"Show a card when voices get loud.",
+            "watcher":{"kind":"phrase","phrase":"loud"}, "prompt":null, "publishers":[{"kind":"card","text":"Pause."}], "cooldown_secs":30}})]);
+    compose(fixture.core.clone(), "help us take a pause when our voices get loud".into());
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let b = build(&fixture.core).unwrap();
+    assert_eq!(b.stage, "matched", "{:?}", b.steps);
+    assert_eq!(b.match_id.as_deref(), Some("app-volume"));
+    assert!(b.draft.is_none() && b.steps.len() == 2, "the composition is never shown: {:?}", b.steps);
+}
+
 #[test]
 fn a_window_that_connects_sees_a_build_only_while_it_is_composing_or_waiting() {
     let fixture = Fixture::new();

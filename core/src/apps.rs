@@ -759,7 +759,15 @@ async fn model(core: &Core, system: &str, user: &str, name: &str, schema: Value)
     #[cfg(test)]
     core.apps.asked.lock().unwrap().push(user.into());
     #[cfg(test)]
-    if let Some(answer) = core.apps.answers.lock().unwrap().pop_front() { return Ok(answer); }
+    {
+        let canned = core.apps.answers.lock().unwrap().pop_front();
+        // {"wait_ms", "answer"} is a slow answer, for what waits on a model (Search-first's patience).
+        if let Some(ms) = canned.as_ref().and_then(|a| a["wait_ms"].as_u64()) {
+            tokio::time::sleep(Duration::from_millis(ms)).await;
+            return Ok(canned.unwrap()["answer"].clone());
+        }
+        if let Some(answer) = canned { return Ok(answer); }
+    }
     let body = json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort":"low", "max_tokens":2500,
