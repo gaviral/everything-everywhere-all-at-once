@@ -224,7 +224,9 @@ fn slice(world: &World, period: Period, through_ms: u64) -> Source {
             // The original words preserve explicit choices and question wording.
             points: thoughts[thoughts.len().saturating_sub(MAX_POINTS)..].iter()
                 .map(|t| short(&format!("{}: {}{}", t.speaker, t.text, if t.unclear.is_empty() { "" } else { " [may be misheard]" }), 700)).collect(),
-            decided: thoughts.iter().filter(|t| t.decided).map(|t| short(if t.point.trim().is_empty() { &t.text } else { &t.point }, 240)).collect(),
+            // A head carried on across a pause is one idea with its carrier, whose point says both parts: once.
+            decided: thoughts.iter().filter(|t| t.decided && crate::chunks::carriers(world, &t.id).next().is_none())
+                .map(|t| short(if t.point.trim().is_empty() { &t.text } else { &t.point }, 240)).collect(),
         })
     }).collect();
     threads.sort_by(|a, b| b.touched_ms.cmp(&a.touched_ms).then_with(|| a.thread_id.cmp(&b.thread_id)));

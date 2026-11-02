@@ -259,6 +259,9 @@ pub enum Change {
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// A placed thought's decision mark read again after its words changed (a correction, or a join taken apart):
+    /// decided.rs `remarked`.
+    ThoughtDecided { thought_id: String, decided: bool },
     /// What the placer read into a placed thought (chunks.rs); an empty note takes it away ("not one idea").
     ThoughtNoted { thought_id: String, note: crate::chunks::Note },
     /// A point said anew: a joined thought taken apart says only its own words again (chunks.rs `unlink`).
@@ -354,6 +357,11 @@ impl World {
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
             // as it was (chunks.rs); a note for a thought off the map shows nothing.
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::ThoughtDecided { thought_id, decided } => {
+                if let Some(t) = self.thoughts.iter_mut().find(|t| &t.id == thought_id) {
+                    t.decided = *decided;
+                }
+            }
             Change::ThoughtNoted { thought_id, note } => {
                 if note.is_empty() {
                     self.notes.remove(thought_id);
@@ -1197,6 +1205,7 @@ mod tests {
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::ThoughtDecided { thought_id: "c".into(), decided: true },
             Change::ThreadRemoved { thread_id: "T9".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
@@ -1267,6 +1276,7 @@ mod tests {
                 | Change::ThoughtMoved { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
+                | Change::ThoughtDecided { .. }
                 | Change::ThoughtNoted { .. }
                 | Change::ThoughtRepointed { .. }
                 | Change::ThreadRemoved { .. }
@@ -1283,7 +1293,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 36, "one of each kind of change");
+        assert_eq!(kinds.len(), 37, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

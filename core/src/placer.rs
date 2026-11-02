@@ -837,7 +837,8 @@ fn capitalized(text: &str) -> Vec<String> {
 /// `new_thread`: the speaker asked for one, so whatever is placed starts it (see `NewThreads`).
 fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thread: bool, moves: bool) -> Vec<Change> {
     // Nothing to place ("yeah" when nothing was asked): out of the map. A longer turn is placed anyway.
-    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS {
+    // Never words that say a decision: "Okay, decided:" cut off by a pause is two words, and the rest needs it.
+    if p.action == "skip" && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS && !crate::decided::said(&thought.text) {
         return vec![Change::ThoughtSkipped { thought_id: thought.id.clone() }];
     }
     let now = now_ms();
@@ -861,8 +862,10 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     let head = if new_thread { None } else { crate::chunks::heads(world, thought, just_asked(world, thought)).joined(world, thought, &p.joins) };
     let was = world.active_for(speaker).cloned();
 
-    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said.
-    let decided = crate::decided::said(&fix(&thought.text));
+    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said. Carrying on
+    // words cut off by a pause, read on from them: "Decided: I'll study with" … "Priya on Wednesday night" is one
+    // decision, and the map shows the two as one point with this one's mark.
+    let decided = crate::decided::said_after(head.as_ref().map(|h| h.text.as_str()), &fix(&thought.text));
     let target = match p.action.as_str() {
         _ if head.is_some() => head.as_ref().and_then(|h| h.thread_id.clone()),
         // A decision goes on the thread it decides, not a branch of its own: the model branched "decided: if it's

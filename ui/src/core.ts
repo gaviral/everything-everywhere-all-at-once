@@ -156,6 +156,7 @@ type Change =
   | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "thought_decided"; thought_id: string; decided: boolean }
   | { type: "thought_noted"; thought_id: string; note: Note }
   | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
@@ -356,6 +357,9 @@ export function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thought_decided":
+      // The core read the mark again after the words changed (a correction, or a join taken apart).
+      return { ...world, thoughts: world.thoughts.map((t) => (t.id === c.thought_id ? { ...t, decided: c.decided } : t)) };
     case "thought_noted": {
       // As the core: an empty note takes it away; a note only for a thought that's there.
       const notes = { ...world.notes };
