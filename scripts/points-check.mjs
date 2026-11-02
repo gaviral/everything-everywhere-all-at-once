@@ -6,21 +6,13 @@
 // served with a stand-in core (a snapshot, then the core's changes), in headless Chrome, and measures every point
 // against its card on every frame while the cards move, and every point once they settle. Exit 3 (precheck's WARN) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, extname, normalize } from "node:path";
-import { spawn } from "node:child_process";
+import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
-const dist = new URL("../ui/dist/", import.meta.url).pathname;
-const chromePath = [process.env.CHROME, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium"]
-  .find((p) => p && existsSync(p));
-if (!chromePath || !existsSync(join(dist, "index.html"))) {
-  console.log(`SKIP points-check: ${chromePath ? "no ui/dist (build the UI first)" : "no Chrome (set CHROME)"}`);
+const why = ready();
+if (why) {
+  console.log(`SKIP points-check: ${why}`);
   process.exit(3);
 }
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---- The map at the moment it went wrong: Rent above Stats in one column, Stats open (the active thread).
 const now = Date.now();
@@ -43,73 +35,16 @@ const later = [
   [{ type: "active_changed", thread_id: "T4", speaker: "you" }, 1500],
 ];
 
-// ---- A stand-in core: the built UI over HTTP, and /ws sending the snapshot and then the changes.
-const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".woff2": "font/woff2" };
-const sockets = new Set();
-const frame = (text) => {
-  const body = Buffer.from(text), n = body.length;
-  const head = n < 126 ? Buffer.from([0x81, n]) : n < 65536 ? Buffer.from([0x81, 126, n >> 8, n & 255]) : Buffer.concat([Buffer.from([0x81, 127]), (() => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; })()]);
-  return Buffer.concat([head, body]);
-};
-const send = (msg) => { for (const s of sockets) s.write(frame(JSON.stringify(msg))); };
-const server = createServer((req, res) => {
-  const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
-  const file = join(dist, path === "/" ? "index.html" : path);
-  // Alone on this laptop, as the core answers when no room is open.
-  if (path === "/room") { res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ room: false, member: true })); return; }
-  if (!file.startsWith(dist) || !existsSync(file) || file.endsWith("/")) { res.writeHead(404).end(); return; }
-  res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
-});
-server.on("upgrade", (req, socket) => {
-  if (!req.url.startsWith("/ws")) { socket.destroy(); return; }
-  const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
-  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-  socket.on("error", () => {});
-  socket.on("close", () => sockets.delete(socket));
-  socket.on("data", () => {}); // what the page says (hello, focus) needs no answer here
-  sockets.add(socket);
-  socket.write(frame(JSON.stringify({ type: "snapshot", world })));
-});
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-const port = server.address().port;
-
-// ---- Headless Chrome over the DevTools protocol.
-const profile = mkdtempSync(join(tmpdir(), "points-check-"));
-const chrome = spawn(chromePath, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
-  "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", "--window-size=1440,900", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+// ---- A stand-in core sending the snapshot and then the changes, and the built UI in headless Chrome.
+const core = await standInCore(() => [{ type: "snapshot", world }]);
+let page = null;
 let failed = null;
 try {
-  const devtools = await new Promise((resolve, reject) => {
-    let err = "";
-    chrome.stderr.on("data", (d) => { err += d; const m = err.match(/DevTools listening on (ws:\/\/\S+)/); if (m) resolve(m[1]); });
-    chrome.on("exit", () => reject(new Error("Chrome exited")));
-    setTimeout(() => reject(new Error("Chrome did not start")), 15000);
-  });
-  const browser = new WebSocket(devtools);
-  await new Promise((resolve, reject) => { browser.onopen = resolve; browser.onerror = reject; });
-  let id = 0;
-  const waiting = new Map();
-  browser.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } };
-  const cdp = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
-    const n = ++id;
-    waiting.set(n, (m) => (m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result)));
-    browser.send(JSON.stringify({ id: n, method, params, sessionId }));
-  });
-  const { targetId } = await cdp("Target.createTarget", { url: "about:blank" });
-  const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
-  const page = (method, params) => cdp(method, params, sessionId);
-  const evaluate = async (expression) => {
-    const r = await page("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  // The app's own motion (a Mac with Reduce Motion on passes "reduce", and the app then animates no layout).
-  await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
-  await page("Page.navigate", { url: `http://127.0.0.1:${port}/` });
+  page = await openPage(`http://127.0.0.1:${core.port}/`);
+  const { evaluate } = page;
   for (let i = 0; i < 100 && !(await evaluate(`!!document.querySelector("#thread-T3 li[id^='point-']")`).catch(() => false)); i++) await sleep(100);
   await sleep(800);
-  for (const [change, wait] of later) { send({ type: "change", change }); await sleep(wait || 60); }
+  for (const [change, wait] of later) { core.send({ type: "change", change }); await sleep(wait || 60); }
 
   // Every point's box (as drawn, transforms included) against its own card's.
   const probe = `[...document.querySelectorAll("li[id^='point-']")].map((li) => {
@@ -142,17 +77,11 @@ try {
     assert.deepEqual(worst, [], `during and after ${step} on the card above, every point of the cards it moves stays inside its card (px outside, worst frame)`);
     assert.deepEqual(stray(await evaluate(probe)), [], `after ${step} settles, every point is inside its card`);
   }
-  browser.close();
 } catch (error) {
   failed = error;
 } finally {
-  const exited = new Promise((resolve) => (chrome.exitCode !== null ? resolve() : chrome.once("exit", resolve)));
-  chrome.kill();
-  await Promise.race([exited, sleep(3000)]);
-  server.close();
-  for (const s of sockets) s.destroy();
-  // The throwaway profile in the system's temp folder; Chrome may still be closing files in it.
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the OS clears its temp folder */ }
+  await page?.close();
+  core.close();
 }
 if (failed) { console.error(failed.message); process.exit(1); }
 console.log("points-check: every point of a moving card stays inside it on every frame, and every point once the cards settle");
