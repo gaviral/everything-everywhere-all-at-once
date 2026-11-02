@@ -22,6 +22,11 @@ pub const TAG_MAX: usize = 40;
 /// two thoughts (2 × 6,000 characters × up to 4 bytes ≈ 48 KB with its JSON); a mic frame is 3,840. The default
 /// was 64 MiB, so a room guest could make the core hold gigabytes (256 queued audio frames).
 pub const FRAME_MAX: usize = 64 << 10;
+/// How far from the canvas's origin a place may be, on either axis, in canvas pixels: 260 widths of a 4K screen, far
+/// past where anyone drags, so only a script meets it. Within it an f64 (JavaScript's number) holds a coordinate to
+/// better than a billionth of a pixel, and a script's 1e308 can't turn the canvas's sums (its bounds, a zoom to fit)
+/// into infinity (positions.rs).
+pub const POSITION_MAX: f64 = 1_000_000.0;
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -39,6 +44,12 @@ pub enum ServerMsg {
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
     /// `live`: the end of the count really sends (else a dry run).
     SendCard { id: u64, to: String, text: String, state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
+    /// The GitHub card (github.rs), to the asker's windows: `loading` as soon as it's asked, then `ready` with the pull
+    /// requests (at most `ROWS`, `more` when GitHub has others) or `failed` with `message` saying why in one line.
+    PullsCard { id: u64, title: String, repo: String, state: crate::github::CardState, pulls: Vec<crate::github::Pull>, more: bool, message: String },
+    /// The note card (notes.rs), to the asker's windows: the note's title and sections as Notes gets them, `saving`
+    /// then `saved` (Open in Notes) or `failed`, or at once `dry_run`, with `message` saying so. `live`: it really writes.
+    NoteCard { id: u64, title: String, sections: Vec<crate::notes::NoteSection>, state: crate::notes::NoteState, live: bool, message: String },
     /// Draft words of the turn being spoken; replaces the previous draft.
     Partial { text: String },
     Status { listening: bool, note: String },
@@ -172,6 +183,8 @@ pub enum ClientMsg {
     Approve { id: String },
     /// The message card's Stop, or Esc while it counts down: it goes down unsent (messages.rs).
     StopSend { id: u64 },
+    /// The note card's Open in Notes: Notes shows the note that card saved (notes.rs). It never changes the note.
+    OpenNote { id: u64 },
     /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered
     /// others (`sample::SAMPLES`), none the default.
     Sample {
@@ -216,6 +229,16 @@ pub enum ClientMsg {
     Rename { thread_id: String, title: String },
     /// The point's Delete: the thought (with the words it carries on) off the map, with Undo (moves.rs).
     Delete { thought_id: String },
+    /// Put a thread's card or a thought's point (`id`) at `x`, `y` on the canvas, absolute canvas coordinates of its
+    /// top-left within ±`POSITION_MAX`; both null: back to the automatic layout (positions.rs). A person's window or an
+    /// AI participant's alike; never a model call.
+    Position {
+        id: String,
+        #[serde(default)]
+        x: Option<f64>,
+        #[serde(default)]
+        y: Option<f64>,
+    },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

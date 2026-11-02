@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
+import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
@@ -17,6 +19,7 @@ import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
+import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -149,6 +152,8 @@ export interface World extends AppsWorld {
   notes?: Record<string, Note>;
   /** Renames and merges the AI wasn't sure of, waiting on their cards (tidy-core.ts). */
   proposals?: Proposal[];
+  /** Thread or thought id → where a person or an AI participant put it on the canvas (positions-core.ts). */
+  positions?: Record<string, Position>;
 }
 
 type Change =
@@ -186,6 +191,7 @@ type Change =
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | MoveChange
+  | PositionChange
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
@@ -221,7 +227,9 @@ type ServerMsg =
   | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] }
-  | SendCardMsg;
+  | SendCardMsg
+  | PullsCardMsg
+  | NoteCardMsg;
 
 /** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
@@ -344,7 +352,14 @@ export function actionFailed(world: World, id: string, message: string): World {
   return { ...world, actions: world.actions.map((a) => (a.id === id ? { ...a, failed: message } : a)) };
 }
 
+/** The window's copy of a change, as the core applies it (world.rs `World::apply`). A thread or thought that leaves the
+ *  map takes its place on the canvas with it (positions-core.ts). */
 export function apply(world: World, raw: Change): World {
+  if (raw.type === "positioned") return applyPosition(world, raw);
+  return keepPlaced(applyChange(world, raw));
+}
+
+function applyChange(world: World, raw: Exclude<Change, PositionChange>): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
@@ -671,6 +686,10 @@ export function useCore(speaker?: string) {
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
   const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
+  // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
+  const [pulls, setPulls] = useState<Pulls>(NO_PULLS);
+  // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
+  const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
@@ -713,6 +732,9 @@ export function useCore(speaker?: string) {
         attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
+        // A new connection, maybe to a restarted core whose note ids start again at 1: the card from before it goes, and
+        // the core's catch-up sends the one still current (notes.rs `shown_card`).
+        setNoteCard(null);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -858,6 +880,13 @@ export function useCore(speaker?: string) {
             if (comesFirst(msg)) closeRecap();
             break;
           }
+          case "pulls_card":
+            setPulls((shown) => pullsReceived(shown, msg));
+            break;
+          case "note_card":
+            setNoteCard((shown) => noteReceived(shown, msg));
+            if (noteFirst(msg)) closeRecap();
+            break;
         }
       };
       ws.onclose = () => {
@@ -871,6 +900,8 @@ export function useCore(speaker?: string) {
         setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
+        // The GitHub card's answer can't come on a closed connection, and a restarted core numbers its asks from 1.
+        setPulls(NO_PULLS);
         recapDisconnected();
         setConnected(false);
         setListening(false);
@@ -895,6 +926,7 @@ export function useCore(speaker?: string) {
     socket.current.send(data);
     return true;
   }, []);
+  const placeAt = useMemo(() => placeSender((data) => send(data)), [send]);
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
@@ -913,7 +945,11 @@ export function useCore(speaker?: string) {
     answered();
     return false;
   }, [send]);
+  const pullsCardGone = useCallback((id: number) => setPulls((shown) => pullsGone(shown, id)), []);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
+  // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
+  const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);
+  const noteCardGone = useCallback((id: number) => setNoteCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -947,6 +983,11 @@ export function useCore(speaker?: string) {
     sendCard,
     stopSend,
     sendCardGone,
+    pullsCard: pulls.card,
+    pullsCardGone,
+    noteCard,
+    openNote,
+    noteCardGone,
     snapshotRevision,
     mapChange,
     partial,
@@ -977,6 +1018,9 @@ export function useCore(speaker?: string) {
     // A brick's `select` (bricks/contract.ts): that thread is "this", as a card selected on the map would be, until your
     // attention moves again.
     select: useCallback((thread_id: string | null) => attention.current.tell(thread_id, null, send), [send]),
+    // A brick's `position` (bricks/contract.ts): a card or a point put somewhere on the canvas, for every window; a
+    // drag's steps go at most once a frame, its last one on the drop (positions-core.ts `placeSender`).
+    position: placeAt,
     // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
     undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).

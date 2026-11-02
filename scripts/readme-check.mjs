@@ -26,7 +26,7 @@ assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words
 
 // What it does, for a person: the pitch, word for word as approved, as one whole paragraph.
 // When the pitch changes, change it here too: a cut that only this check sees is the point.
-const PITCH = "For people who think out loud and lose their threads. You talk (or type), and E2A2O puts each thought on the right thread of a live map a few seconds later: a topic, or a tangent branching off one. When you jump to something new halfway through a sentence, it marks the thread you left, and at the next pause it offers to take you back. While you're quiet, it tidies titles, suggests a next step, gives each thread with a few thoughts a picture, and proposes reminders and calendar events from what you decided; nothing reaches your Reminders or Calendar until you approve it. It can also start from your past AI chats.";
+const PITCH = "**Think out loud. Keep your place.** You start a sentence, a better thought cuts in, and the first is gone. E2A2O files each thought you say on its thread of a live map, about 3 to 4 seconds after you stop. Jump to something new mid-sentence, and at the next pause it quotes your half-sentence back. Say “where was I?” and you're there.";
 assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn't the approved one, word for word (whole paragraph)");
 
 // Shows it: every image there exists.

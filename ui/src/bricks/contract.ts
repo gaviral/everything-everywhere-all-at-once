@@ -6,8 +6,9 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Action, Note, Suggestion, Thought, Thread } from "../core";
+import type { Position } from "../positions-core";
 
-export type { Action, MiniApp, Note, Suggestion, Thought, Thread };
+export type { Action, MiniApp, Note, Position, Suggestion, Thought, Thread };
 
 /** Where a brick shows:
  *  - view: another way to see the map; its name joins the Map and Palace switch, and it shows in the map's place
@@ -54,6 +55,10 @@ export interface MapSnapshot {
   readonly points: ReadonlyMap<string, number>;
   /** Each thread's room color (a thread and its branches share one): `var(--room-<color>)`, `var(--room-<color>-soft)`. */
   readonly rooms: ReadonlyMap<string, string>;
+  /** What was placed by hand on a canvas, by id (a thread's card, or a thought's point): where (absolute canvas
+   *  coordinates of its top-left), by whom (a person or an AI participant) and when. Only what someone placed is here;
+   *  a view lays out the rest itself, and never moves these. */
+  readonly positions: Readonly<Record<string, Position>>;
   /** Who is at this window: "you" alone, or the name they joined a room with. A thought's `speaker` is the same. */
   readonly me: string;
   /** Whether the core is there: while it isn't, actions that change the map say so instead. */
@@ -73,6 +78,10 @@ export interface BrickActions {
   select(threadId: string | null): void;
   /** Says one short line in the notice lane, up for its reading time. */
   notify(text: string): void;
+  /** Puts a thread's card or a thought's point (by id) at x, y on the canvas, its top-left in canvas units, for every
+   *  window on the map; it stays there until someone moves it. Both null: back to the view's own layout. Call it as
+   *  often as a drag moves: steps go at most once a frame, and your own come back in `positions` (with `by` you). */
+  position(id: string, x: number | null, y: number | null): void;
 }
 
 /** What passes, for `on`. */
