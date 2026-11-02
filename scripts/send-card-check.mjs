@@ -13,7 +13,7 @@ const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url)
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { received, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS, comesFirst } = await server.ssrLoadModule("/src/send-card.ts");
+  const { received, caughtUp, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS, comesFirst } = await server.ssrLoadModule("/src/send-card.ts");
   const { upFor } = await server.ssrLoadModule("/src/notice-rules.ts");
   const text = "Hi Mia, could you confirm what to bring?";
   const msg = (state, extra = {}) => ({ type: "send_card", id: 1, to: "Mia", text, state, in_ms: 0, live: false, message: "", ...extra });
@@ -56,11 +56,25 @@ try {
   assert.equal(lingerMs(stopped), upFor("Stopped: not sent"), "up for its reading time, as any answer");
   const newer = received(card, { ...msg("counting", { in_ms: 5000 }), id: 2, to: "Sam" }, t0 + 100);
   assert.equal(received(newer, msg("dry_run"), t0 + 5000), newer, "an older card's end leaves the newer up");
-  // A window opened (or reloaded) after the count ended still learns how it went.
-  const late = received(null, msg("sent", { live: true, message: "Sent to Mia" }), t0);
+  // The core repeats the speaker's last end on every (re)connection (core/src/messages.rs `card_for`): a fresh window
+  // shows nothing old; one that was counting that card down while its connection was away learns how it went.
+  assert.equal(received(null, msg("sent", { live: true, message: "Sent to Mia" }), t0), null, "a fresh window shows no old end");
+  const late = received(card, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 9000);
   assert.equal(late.state, "sent");
   assert.equal(cardWords(late, t0).status, "Sent to Mia");
   assert.equal(lingerMs(late), upFor("Sent to Mia"));
+  assert.equal(received(late, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 9500), late, "the same end again: its time up doesn't start over");
+  // Back mid-count, the core says the time left: the bar keeps the count's length, so it runs on from where it was.
+  const back = received(card, msg("counting", { in_ms: 3000 }), t0 + 2000);
+  assert.equal(back.total, 5000, "the count's length");
+  assert.equal(back.until, t0 + 5000);
+  assert.equal(elapsed(back, t0 + 2000), elapsed(card, t0 + 2000), "the bar where it was");
+  // The core sends the card before the snapshot: one still counting that it didn't mention (it restarted) goes; an end
+  // still up for its reading time stays.
+  assert.equal(caughtUp(card, false), null, "never stuck on Sending…");
+  assert.equal(caughtUp(card, true), card);
+  assert.equal(caughtUp(late, false), late);
+  assert.equal(caughtUp(null, false), null);
   const sent = received(card, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 5000);
   assert.equal(cardWords(sent, t0 + 5000).status, "Sent to Mia");
   const dry = received(card, msg("dry_run", { message: "Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to Mia." }), t0 + 5000);

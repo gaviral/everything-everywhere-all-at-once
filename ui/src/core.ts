@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
-import { comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -95,6 +95,8 @@ export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: num
 // Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
 // when something newer stops the search.
 export const LOOKING = "Looking through your threads…";
+/** The message card's Stop pressed with the connection down (`stopSend`). */
+export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
 
 export interface Suggestion {
   id: string;
@@ -652,6 +654,8 @@ export function useCore(speaker?: string) {
   const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
+  // A message card's Stop pressed while the connection was down: it goes first once it's back.
+  const stopWaiting = useRef<string | null>(null);
 
   useEffect(() => {
     let closed = false;
@@ -662,6 +666,8 @@ export function useCore(speaker?: string) {
     let lastPartial = "";
     let awaitingThought = false;
     let handoffTimer: number | undefined;
+    // Whether the core said anything about the message card since this connection opened or its last snapshot.
+    let cardTold = false;
     const asked = movesAsked(speaker);
 
     const open = () => {
@@ -675,6 +681,9 @@ export function useCore(speaker?: string) {
         resetRoute();
         setConnected(true);
         retry = 500;
+        cardTold = false;
+        if (stopWaiting.current) ws.send(stopWaiting.current);
+        stopWaiting.current = null;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
         attention.current.resend((message) => ws.send(message));
@@ -700,6 +709,12 @@ export function useCore(speaker?: string) {
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
             // A new connection, maybe to a restarted core whose Undo ids start again at 1: no Undo from before it.
             setUndoId(null);
+            // The core sends the card first (send-card.ts `caughtUp`).
+            {
+              const told = cardTold;
+              cardTold = false;
+              setSendCard((shown) => caughtUp(shown, told));
+            }
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);
@@ -810,6 +825,7 @@ export function useCore(speaker?: string) {
             setImportStatus(msg.status);
             break;
           case "send_card": {
+            cardTold = true;
             const at = Date.now();
             setSendCard((shown) => cardReceived(shown, msg, at));
             // Recap is modal: the countdown and its Stop would sit under it, out of reach.
@@ -862,7 +878,16 @@ export function useCore(speaker?: string) {
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
-  const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
+  // Pressed while the connection is down, the Stop waits and goes first once it's back. A count that ends first, with
+  // none of the speaker's windows connected, ends unsent anyway (core/src/messages.rs `finish`).
+  const stopSend = useCallback((id: number) => {
+    const message = JSON.stringify({ type: "stop_send", id });
+    if (send(message)) return true;
+    stopWaiting.current = message;
+    setNotice(STOP_WAITS);
+    answered();
+    return false;
+  }, [send]);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
