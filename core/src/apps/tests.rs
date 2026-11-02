@@ -768,3 +768,10 @@ fn in_a_room_an_app_hears_who_said_what() {
     assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));
     assert_eq!(said(&[&rent, &friday], Some(&agree)), ("User: rent is due\nAvi: pay it friday".to_string(), "Sam: friday works".to_string()));
 }
+
+/// The model line says what a call was for (model-line.ts): one of your apps running when a watcher wakes it, or a
+/// search for one you have, never "building your app".
+#[test]
+fn running_or_finding_an_app_is_never_told_as_building_one() {
+    assert_eq!([feature("AppSpec"), feature("AppSearch"), feature("AppOutput")], ["app", "app search", "app run"]);
+}

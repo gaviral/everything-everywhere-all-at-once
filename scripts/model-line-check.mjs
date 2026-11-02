@@ -23,7 +23,8 @@ try {
   // Every step the core has (trace features), and one it might add: named while it runs and once it's done.
   const steps = [["placer", "muse-spark-1.2-contributor"], ["refiner", "muse-spark-1.3"], ["picture", "muse-image-1.0"],
     ["recap", "muse-spark-1.3"], ["app", "muse-spark-1.3"], ["find", "muse-spark-1.3"], ["explain", "muse-spark-1.2"],
-    ["safety net", "muse-spark-1.2"], ["import-chatgpt", "muse-spark-1.2"], ["something-new", "muse-spark-1.3"]];
+    ["safety net", "muse-spark-1.2"], ["import-chatgpt", "muse-spark-1.2"], ["app search", "muse-spark-1.3"],
+    ["app run", "muse-spark-1.3"], ["something-new", "muse-spark-1.3"]];
   for (const [step, model] of steps) {
     const msg = start(step, model);
     let state = stepped(EMPTY_LINE, msg, 0);
@@ -35,12 +36,14 @@ try {
     state = stepped(state, end(msg), 1000);
     line = lineFor(state, 1000 + HOLD_MS - 1, false);
     assert.equal(line?.model, modelName(model), `${step} done names the model that answered`);
-    assert.match(line.text, /2\.3 s$/, `${step} done says how long it took`);
+    // The call answered; whether the feature then did its thing is the map's to show, so no "placed it".
+    assert.equal(line.text, "answered · 2.3 s", `${step} done says it answered and how long it took`);
     assert.equal(lineFor(state, 1000 + HOLD_MS, false), null, `${step}: gone once its hold is up, the mic off`);
   }
 
   // Listening: the model hearing the words; anything you wait on takes the line, then it comes back.
-  let state = stepped(EMPTY_LINE, start("listen", "muse-voice-transcribe-1.0"), 0);
+  const mic = start("listen", "muse-voice-transcribe-1.0");
+  let state = stepped(EMPTY_LINE, mic, 0);
   assert.deepEqual(lineFor(state, 0, false), { model: "Muse Voice Transcribe 1.0", id: "muse-voice-transcribe-1.0", text: "listening" });
   assert.equal(lineFor(state, 0, true).text, "hearing you");
   // Placing and a picture at once (a new thread's picture starts as the next line is placed): never the wrong model.
@@ -50,14 +53,29 @@ try {
   assert.equal(lineFor(state, 200, true).model, "Muse Spark 1.2", "the step you wait on, not the one behind");
   assert.equal(lineFor(state, 200, true).text, "placing your thought");
   state = stepped(state, end(place), 2400);
-  assert.deepEqual([lineFor(state, 2500, true).model, lineFor(state, 2500, true).text], ["Muse Spark 1.2", "placed it · 2.3 s"],
+  assert.deepEqual([lineFor(state, 2500, true).model, lineFor(state, 2500, true).text], ["Muse Spark 1.2", "answered · 2.3 s"],
     "the placing time holds over the picture behind it");
   assert.deepEqual([lineFor(state, 2400 + HOLD_MS, true).model, lineFor(state, 2400 + HOLD_MS, true).text], ["Muse Image 1.0", "drawing a picture"]);
+  // The picture finishing 0.1 s later leaves the placing time up for its whole hold.
+  const quick = stepped(state, end(picture, 2400), 2500);
+  assert.deepEqual([lineFor(quick, 2600, true).model, lineFor(quick, 2400 + HOLD_MS - 1, true).text], ["Muse Spark 1.2", "answered · 2.3 s"],
+    "a step behind never covers a placing time");
   state = stepped(state, end(picture, 6100), 8000);
   assert.equal(lineFor(state, 8000, true).model, "Muse Image 1.0");
   assert.equal(lineFor(state, 8000 + HOLD_MS, true).model, "Muse Voice Transcribe 1.0", "back to the one listening");
-  state = stepped(state, end(start("listen", "muse-voice-transcribe-1.0"), 0), 9000);
+  state = stepped(state, end(mic, 0), 9000);
   assert.equal(state.listening, null, "mic off: nobody listening");
+  // Mic off and on quickly: the old session ends after the new one began, and clears only itself.
+  const oldMic = start("listen", "muse-voice-transcribe-1.0"), newMic = start("listen", "muse-voice-transcribe-1.0");
+  state = stepped(stepped(stepped(EMPTY_LINE, oldMic, 0), newMic, 100), end(oldMic, 0), 200);
+  assert.equal(lineFor(state, 200, false)?.model, "Muse Voice Transcribe 1.0", "a late end of an old session");
+  assert.equal(stepped(state, end(newMic, 0), 300).listening, null);
+  // An app a watcher woke runs behind: never "building your app", never over the step you wait on.
+  const placing = start("placer", "muse-spark-1.2");
+  state = stepped(stepped(EMPTY_LINE, placing, 0), start("app run", "muse-spark-1.3"), 10);
+  assert.equal(lineFor(state, 10, false).text, "placing your thought");
+  state = stepped(state, end(placing), 2300);
+  assert.equal(lineFor(state, 2300 + HOLD_MS, false).text, "running your app");
 
   // A turned-away try and its stand-in: the line names the model that's asked now.
   const tried = start("placer", "muse-spark-1.2-contributor");

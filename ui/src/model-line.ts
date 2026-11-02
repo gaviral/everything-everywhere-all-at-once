@@ -15,29 +15,33 @@ export function modelName(id: string): string {
     .join(" ");
 }
 
-/** What each step is called while it runs and once it's done, in the person's terms. A step the core adds later
- *  still shows its model ("working"), so no step goes unnamed. */
-const STEPS: Record<string, [string, string]> = {
-  listen: ["listening", "listening"],
-  placer: ["placing your thought", "placed it"],
-  refiner: ["tidying the map", "tidied the map"],
-  picture: ["drawing a picture", "drew a picture"],
-  recap: ["reading your day", "wrote your recap"],
-  app: ["building your app", "built your app"],
-  find: ["searching your threads", "searched your threads"],
-  explain: ["explaining", "explained it"],
-  "safety net": ["checking that", "checked that"],
-  import: ["reading your chats", "read your chats"],
+/** What each step is called while it runs, in the person's terms. Once its call answers, the line says "answered"
+ *  and how long it took, never what the feature then did: the core checks and applies the answer after the call (a
+ *  placement can fail its checks and retry, an app request can come back "can't"), so "placed it" could be untrue.
+ *  A step the core adds later still shows its model ("working"), so no step goes unnamed. */
+const STEPS: Record<string, string> = {
+  listen: "listening",
+  placer: "placing your thought",
+  refiner: "tidying the map",
+  picture: "drawing a picture",
+  recap: "reading your day",
+  app: "building your app",
+  "app search": "looking for an app you have",
+  "app run": "running your app",
+  find: "searching your threads",
+  explain: "explaining",
+  "safety net": "checking that",
+  import: "reading your chats",
 };
 const RULES: Record<string, string> = { back: "back to your thread", tune: "played the tune" };
 
-/** Steps you asked for and wait on; the rest (pictures, tidying) run behind, so they never cover a placing time. */
-const FOREGROUND = new Set(["placer", "recap", "app", "find", "explain", "safety net", "import"]);
+/** Steps you asked for and wait on, "Where was I?" included; the rest (pictures, tidying, an app a watcher woke)
+ *  run behind, so they never cover a placing time. */
+const FOREGROUND = new Set(["placer", "recap", "app", "app search", "find", "explain", "safety net", "import", "back"]);
 
 const kind = (step: string) => (step.startsWith("import") ? "import" : step);
 export function verb(step: string, done: boolean): string {
-  const words = STEPS[kind(step)];
-  return words ? words[done ? 1 : 0] : done ? "answered" : "working";
+  return done ? "answered" : STEPS[kind(step)] ?? "working";
 }
 
 /** How long a finished step's line stays: reading its 6–8 words at about 3.3 words a second (200 a minute) is ≈ 2.1 s,
@@ -47,14 +51,22 @@ export const HOLD_MS = 3000;
 
 export interface Running { id: number; step: string; model: string; at: number }
 export interface Finished { step: string; model: string | null; ok: boolean; ms: number; at: number }
-export interface LineState { running: Running[]; last: Finished | null; listening: string | null }
+/** `listening` keeps its session's id: a session that ends late (mic off and on quickly) clears only itself. */
+export interface LineState { running: Running[]; last: Finished | null; listening: { id: number; model: string } | null }
 export const EMPTY_LINE: LineState = { running: [], last: null, listening: null };
 
 /** The state after one step message, at `now`. */
 export function stepped(state: LineState, msg: StepMsg, now: number): LineState {
   const running = state.running.filter((r) => r.id !== msg.id);
-  if (msg.step === "listen") return { ...state, running, listening: msg.done ? null : msg.model };
+  if (msg.step === "listen") {
+    if (!msg.done) return { ...state, running, listening: msg.model ? { id: msg.id, model: msg.model } : null };
+    return { ...state, running, listening: state.listening?.id === msg.id ? null : state.listening };
+  }
   if (!msg.done && msg.model) return { ...state, running: [...running, { id: msg.id, step: msg.step, model: msg.model, at: now }] };
+  // A step behind that finishes during a waited-on step's hold leaves that one's time showing (a picture done 0.1 s
+  // after a placing never covers it).
+  const last = state.last;
+  if (last && FOREGROUND.has(kind(last.step)) && !FOREGROUND.has(kind(msg.step)) && now - last.at < HOLD_MS) return { ...state, running };
   return { ...state, running, last: { step: msg.step, model: msg.model, ok: msg.ok, ms: msg.ms, at: now } };
 }
 
@@ -75,7 +87,7 @@ export function lineFor(state: LineState, now: number, hearing: boolean): Line |
   }
   const behind = running(latest(state.running));
   if (behind) return behind;
-  if (state.listening) return { model: modelName(state.listening), id: state.listening, text: hearing ? "hearing you" : "listening" };
+  if (state.listening) return { model: modelName(state.listening.model), id: state.listening.model, text: hearing ? "hearing you" : "listening" };
   return null;
 }
 
