@@ -1,0 +1,15 @@
+// No extra dependencies: run with `node scripts/css-check.mjs`.
+// Every class the window's stylesheets style is one its code still uses: a rule left behind when its element went
+// (the Palace's keyboard line, the Apps bar's ✦ and a point's mark, 2026-11-01) is dead weight that reads as live.
+// A class counts as used when its name appears anywhere in ui/src's code, ui/index.html or ui/public's scripts.
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+
+const ui = new URL("../ui/", import.meta.url);
+const files = (dir, test) => readdirSync(new URL(dir, ui)).filter(test).map((f) => readFileSync(new URL(dir + f, ui), "utf8"));
+const code = [...files("src/", (f) => /\.tsx?$/.test(f)), ...files("public/", (f) => f.endsWith(".js")), readFileSync(new URL("index.html", ui), "utf8")].join("\n");
+const css = files("src/", (f) => f.endsWith(".css")).join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
+const classes = new Set([...css.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]).filter((c) => !/^\d/.test(c)));
+const unused = [...classes].filter((c) => !code.includes(c)).sort();
+assert.deepEqual(unused, [], "styled classes no code uses: drop their rules");
+console.log(`css-check: ok (${classes.size} classes)`);

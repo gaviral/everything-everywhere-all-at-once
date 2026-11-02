@@ -67,7 +67,6 @@
 .apps-panel:not(.is-open):not(.has-sound) { width: fit-content; max-width: calc(100% - 48px); margin: 8px auto 10px; background: transparent; }
 .apps-heading { padding: 4px 8px; }
 .apps-title { gap: 8px; padding: 0 8px; font-size: 13px; cursor: pointer; }
-.apps-title .apps-mark { color: var(--ai); font-size: 14px; }
 .apps-title .apps-toggle { margin-left: auto; padding-left: 14px; color: var(--muted); font-size: 12px; }
 .apps-title:hover .apps-toggle { color: var(--ink); }
 .apps-panel .apps-new { background: var(--accent-soft); }
