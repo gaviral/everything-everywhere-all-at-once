@@ -364,16 +364,20 @@ export default function App() {
   // so the next tap starts a fresh session.
   const voiceStartedAt = useRef(0);
   const voiceErrorStartedAt = useRef(0);
-  const voiceRevisions = useRef({ status: 0, error: 0 });
-  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision };
+  const voiceListenedAt = useRef(0);
+  const voiceRevisions = useRef({ status: 0, error: 0, listened: 0 });
+  voiceRevisions.current = { status: core.voiceStatusRevision, error: core.voiceErrorRevision, listened: core.listenedRevision };
   useEffect(() => {
     const failed = core.voiceErrorRevision > voiceErrorStartedAt.current;
-    if (liveStop.current && ((!core.listening && core.voiceStatusRevision > voiceStartedAt.current) || failed)) {
+    // Only this mic's stream can end it: the mic tapped off and on fast, the old stream's late "not listening"
+    // comes before the new one's "listening" and is passed over.
+    const ended = !core.listening && core.voiceStatusRevision > voiceStartedAt.current && core.listenedRevision > voiceListenedAt.current;
+    if (liveStop.current && (ended || failed)) {
       releaseMic();
       core.listen(false);
       core.showNotice(core.noKey ? core.keyNotice : micStopped(failed ? core.voiceError : ""));
     }
-  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, stopMic]);
+  }, [core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
     if (liveStop.current && core.notice.includes("MODEL_API_KEY")) releaseMic();
@@ -401,6 +405,7 @@ export default function App() {
       if (!mounted.current) { stop(); return; }
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
+      voiceListenedAt.current = voiceRevisions.current.listened;
       setStopMic(() => stop);
       if (!core.listen(true)) {
         stop();

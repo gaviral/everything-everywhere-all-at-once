@@ -93,6 +93,19 @@ try {
   await settle();
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
 
+  // A stream's "listening" is counted, so a window that starts its mic again can tell the old stream's late "not
+  // listening" (before the new one's "listening") from its own stream ending (bug hunt 13).
+  const listened = core.listenedRevision;
+  say({ type: "status", listening: false, note: "Stopped listening" });
+  await settle();
+  assert.equal(core.listenedRevision, listened);
+  say({ type: "status", listening: true, note: "Listening" });
+  await settle();
+  assert.equal(core.listenedRevision, listened + 1);
+  const appSource = readFileSync(new URL("src/App.tsx", ui), "utf8");
+  assert.match(appSource, /const ended = !core\.listening && core\.voiceStatusRevision > voiceStartedAt\.current && core\.listenedRevision > voiceListenedAt\.current;/);
+  assert.match(appSource, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
+
   // The words of a voice error stay readable for the window's "The mic stopped" notice.
   say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
   await settle();
@@ -127,7 +140,7 @@ try {
   const streamEndAt = app.indexOf("core.voiceStatusRevision > voiceStartedAt.current");
   assert.ok(pauseAt > 0 && pauseAt < streamEndAt, "the pause effect is declared before the stream-end effect");
   assert.match(app.slice(pauseAt, streamEndAt), /if \(!releaseMic\(\)\)/);
-  assert.match(app.slice(streamEndAt - 200, streamEndAt), /if \(liveStop\.current &&/);
+  assert.match(app.slice(streamEndAt, streamEndAt + 300), /if \(liveStop\.current && /);
   assert.match(app, /const releaseMic = \(\) => \{\s*const stop = liveStop\.current;\s*liveStop\.current = null;/);
 
   // "No, I meant stop listening": the core sends the view, then "Did … instead" with its Undo. Arriving in one render,
