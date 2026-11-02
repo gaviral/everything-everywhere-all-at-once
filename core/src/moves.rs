@@ -632,6 +632,10 @@ fn rename(core: &Arc<Core>, speaker: &str, thread: &str, title: String) -> Done 
         notice(core, speaker, "Say the new title: “rename this to …”".into());
         return Done::missed(Act::Rename);
     }
+    if title.chars().count() > crate::protocol::TITLE_MAX {
+        notice(core, speaker, format!("Titles stay short: {} characters at most.", crate::protocol::TITLE_MAX));
+        return Done::missed(Act::Rename);
+    }
     if title == was {
         notice(core, speaker, format!("It's already called “{title}”"));
         return Done::missed(Act::Rename);

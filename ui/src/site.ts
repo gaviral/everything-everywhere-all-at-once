@@ -27,8 +27,19 @@ export function savedWhere(hosted: boolean): string {
   return hosted ? "Your thoughts are saved with your account, on this site's server." : "Your thoughts are saved on the host's computer.";
 }
 
-/** What a missing or refused AI key means, and who can fix it: on a laptop you, in .env; hosted, the site's owner. */
-export function keyWords(hosted: boolean, refused: boolean, what: "notice" | "mic" | "tour"): string {
+/** The hosted site's daily limit: past it, the site's proxy starts each core without the key until midnight Pacific
+ *  and follows the core's "MODEL_API_KEY is not set" with a line of its own that starts with these words. */
+const RESTING = "Today's free tries are used up";
+export const isResting = (message: string) => message.startsWith(RESTING);
+
+/** What a missing or refused AI key means, and who can fix it: on a laptop you, in .env; hosted, the site's owner.
+ *  `resting`: the key is held back for the rest of the day (the daily limit), so nothing needs fixing: it says when. */
+export function keyWords(hosted: boolean, refused: boolean, what: "notice" | "mic" | "tour", resting = false): string {
+  if (resting && !refused) {
+    if (what === "mic") return `${RESTING}, so listening is off until tomorrow. You can still type.`;
+    if (what === "tour") return `${RESTING}, so until tomorrow this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter.`;
+    return `${RESTING} until tomorrow (midnight Pacific). You can browse the map and type; what you type is placed then.`;
+  }
   if (hosted) {
     const why = refused ? "This site's AI key was refused" : "This site has no AI key right now";
     if (what === "mic") return `${why}, so listening is off. You can still type.`;
@@ -51,10 +62,16 @@ export function modelName(id: string): string {
     .map((part) => (/^\d/.test(part) ? part : part[0].toUpperCase() + part.slice(1))).join(" ");
 }
 
-/** The first screen's line: which Meta model does what, as the core asks them; empty without a key (none runs). */
+/** The first screen's line: which Meta model does what, as the core asks them, in the end card's words (one model, its
+ *  steps together: "Tidies, builds, recaps: Muse Spark 1.3"), so the video's first and last frames name them alike.
+ *  Empty without a key (none runs). */
 export function modelsLine(models: Model[]): string {
-  if (!models.length) return "";
-  return `Runs on Meta's models: ${models.map((m) => `${modelName(m.model)} ${m.step}`).join(" · ")}`;
+  const groups = new Map<string, string[]>();
+  for (const m of models) groups.set(modelName(m.model), [...(groups.get(modelName(m.model)) ?? []), m.step]);
+  return [...groups].map(([name, steps]) => {
+    const said = steps.join(", ");
+    return `${said[0].toUpperCase()}${said.slice(1)}: ${name}`;
+  }).join(" · ");
 }
 
 /** A dated item as a calendar file: one all-day event, which Apple, Google and Outlook calendars open. Null without a

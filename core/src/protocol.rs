@@ -4,6 +4,25 @@
 use crate::world::{Change, World};
 use serde::{Deserialize, Serialize};
 
+// Bounds on what a window sends (ui/src/limits.ts holds the same numbers; scripts/limits-check.mjs keeps them equal).
+// Each is the longest real use plus a wide margin, so no one meets it by talking or typing; past it, one paste or a
+// guest's script would ride along in every later model call (each placement lists every title).
+
+/// A typed thought, in characters: the placer's answer room grows with a turn to its ceiling at 6,000 bytes
+/// (placer.rs `room_for`, `MAX_ROOM`), so a longer one could lose its answer. Longest real thought: 302 (2026-11-01).
+pub const THOUGHT_MAX: usize = 6_000;
+/// What a window hears past `THOUGHT_MAX` (the page says it first and keeps the draft: ui/src/limits.ts).
+pub const THOUGHT_TOO_LONG: &str = "Too long for one thought: 6,000 characters at most. Send it in parts.";
+/// A typed or said title, in characters: the prompts ask for 5 words; longest real title 49; search already
+/// clips one to 100 (find.rs).
+pub const TITLE_MAX: usize = 100;
+/// A hashtag, in characters with its #: the refiner asks for short ones; longest real one 13.
+pub const TAG_MAX: usize = 40;
+/// One WebSocket message, in bytes: the biggest the window sends is Explain with a phrase and its context, at most
+/// two thoughts (2 × 6,000 characters × up to 4 bytes ≈ 48 KB with its JSON); a mic frame is 3,840. The default
+/// was 64 MiB, so a room guest could make the core hold gigabytes (256 queued audio frames).
+pub const FRAME_MAX: usize = 64 << 10;
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
@@ -54,10 +73,18 @@ pub enum ServerMsg {
     /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
     /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
     /// `ms` and `ok`), sharing `id`. Sent from where every call goes through (model.rs), so the name shown is the
-    /// name asked, never a label kept by hand. `superseded`: a racing call (placer.rs) dropped unanswered because
-    /// another of the same call answered first, or the race was called off; not a failure, so the line only stops
-    /// showing it as running.
-    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64, superseded: bool },
+    /// name asked, never a label kept by hand. `dropped`: an end that is no failure, the call cut off unanswered on
+    /// purpose (the slower of a placement's racing calls, a search past its patience); omitted when false.
+    Step {
+        id: u64,
+        step: String,
+        model: Option<String>,
+        done: bool,
+        ok: bool,
+        ms: u64,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        dropped: bool,
+    },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's

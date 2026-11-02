@@ -23,12 +23,20 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 # composer-check needs a live core and real model calls, so it isn't one of them.
 if [ -d ui/node_modules ]; then
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
+    # points-check drives headless Chrome; a machine without one (exit 3) gets a WARN, not a pass.
+    if [ "$(basename "$c")" = points-check.mjs ]; then
+      node "$c" > /dev/null 2>&1; rc=$?
+      if [ $rc = 3 ]; then warn "points-check skipped: no Chrome found (set CHROME)"; continue; fi
+      if [ $rc = 0 ]; then pass "points-check passes"; else fail "points-check passes"; fi
+      continue
+    fi
     check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
-# links-check needs only node, so a fresh clone runs it too.
+# links-check and dates-check need only node, so a fresh clone runs them too.
 check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
+check "dates-check passes" "node scripts/dates-check.mjs > /dev/null 2>&1"
 [ -f LICENSE ] || warn "no LICENSE file yet (the owner's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"
@@ -64,6 +72,8 @@ samples_have_pictures() {
 check "samples: every thread has its picture shipped (no blank Palace without a key)" samples_have_pictures
 
 port=${PORT:-4321}
+# Another local server's port for the Origin probe: never the core's own, which is rightly let in.
+other=3000; [ "$port" = 3000 ] && other=3001
 # Local room probes accept our self-signed certificate; this does not install trust anywhere.
 code() { curl -ks --max-time 2 -o /dev/null -w '%{http_code}' "$@"; }
 ws() { code -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$@"; }
@@ -83,6 +93,7 @@ elif [ "$(code http://127.0.0.1:$port/)" = 403 ]; then
   warn "the core on :$port refuses this laptop (a trial's?): run again with PUBLIC_URL set to probe it"
 elif curl -s --max-time 2 -o /dev/null http://127.0.0.1:$port/; then
   check "live: another site's WebSocket is refused" "[ \"\$(ws -H 'Origin: https://example.com' http://127.0.0.1:$port/ws)\" = 403 ]"
+  check "live: another local server's page is refused" "[ \"\$(ws -H 'Origin: http://localhost:$other' http://127.0.0.1:$port/ws)\" = 403 ]"
   check "live: a rebinding Host is refused" "[ \"\$(code -H 'Host: example.com' http://127.0.0.1:$port/)\" = 403 ]"
   check "live: the app's own page still connects" "[ \"\$(ws -H 'Origin: http://localhost:$port' http://127.0.0.1:$port/ws)\" = 101 ]"
   # Through this laptop's network address, the way another laptop comes in.

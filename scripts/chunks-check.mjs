@@ -74,7 +74,7 @@ try {
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /<PointNote thought=\{thought\} heads=\{heads\} unlink=\{on\.unlink\} \/>/);
   assert.match(app, /\{points\.length\} \{points\.length === 1 \? "thought" : "thoughts"\}/);
-  assert.match(app, /const carried = carriedIds\(/, "the header counts ideas too");
+  assert.match(app, /return ideaCounts\(world, start, Date\.now\(\)\);/, "the header counts ideas too (recap-check runs ideaCounts)");
   // Each part keeps its own speech fixes; a search lands on the point a part shows in.
   assert.match(app, /heads\.map\(\(head\) => <Fixes key=\{head\.id\} thought=\{head\} on=\{on\} \/>\)/);
   assert.match(app, /data-heads=\{heads\.map/);

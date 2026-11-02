@@ -339,9 +339,9 @@ impl Core {
         self.call(url, body, patience, extra, true).await
     }
 
-    /// `call_model` for work nobody is waiting on (a recap draft): a busy service turns it away without a notice.
-    pub async fn call_model_quietly(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
-        self.call(url, body, patience, Value::Null, false).await
+    /// `call_model_noting` for work nobody is waiting on (a recap draft): a busy service turns it away without a notice.
+    pub async fn call_model_quietly(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
+        self.call(url, body, patience, extra, false).await
     }
 
     async fn call(&self, url: &str, body: &Value, patience: Duration, extra: Value, say_busy: bool) -> anyhow::Result<Value> {
@@ -361,21 +361,19 @@ impl Core {
     }
 
     /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The
-    /// guard tells its end, sharing the id: `end` with the answer, or as failed when the call is dropped unanswered
-    /// (a search past its patience, an import stopped), so no window waits on it forever. A racing call (placer.rs
-    /// marks each with its `lane`) dropped unanswered lost the race, so it ends superseded, not failed: else the
-    /// line would say "didn't answer" over every thought the winner placed.
+    /// guard tells its end, sharing the id: `end` with the answer, or as dropped when the call is dropped unanswered
+    /// (a placement's slower racing call, a search past its patience, an import stopped), so no window waits on it
+    /// forever and none reads it as the model failing.
     fn step_began(&self, sent: &Value, extra: &Value) -> StepGuard<'_> {
         let id = STEP_IDS.fetch_add(1, Ordering::Relaxed);
         let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(String::from));
-        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0, superseded: false });
-        let racing = extra.get("lane").is_some();
-        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false, racing }
+        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0, dropped: false });
+        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false }
     }
 
     /// A step a rule did, with no model ("Where was I?", an app's tune): to `speaker`'s windows, or every window.
     pub fn rule_step(&self, speaker: Option<&str>, step: &str) {
-        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0, superseded: false };
+        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0, dropped: false };
         match speaker {
             Some(speaker) => self.send_to(speaker, message),
             None => self.send(message),
@@ -384,7 +382,7 @@ impl Core {
 
     /// Listening began (`done` false) or ended, with `model` hearing the words: to `speaker`'s windows only.
     pub fn listen_step(&self, speaker: &str, id: u64, model: &str, done: bool) {
-        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0, superseded: false });
+        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0, dropped: false });
     }
 
     /// Asks a feature's model at `url`: `body` builds the request for one model name, posted with the key and
@@ -458,7 +456,7 @@ impl Drop for Unanswered<'_> {
 pub static STEP_IDS: AtomicU64 = AtomicU64::new(1);
 
 /// A model call the windows were told began (`Core::step_began`): tells its end exactly once, from `end`, or as
-/// failed when dropped first (the call's future canceled before an answer), or superseded when it was `racing`.
+/// dropped when dropped first (the call's future canceled before an answer: not ok, and not a failure either).
 struct StepGuard<'a> {
     core: &'a Core,
     id: u64,
@@ -466,7 +464,6 @@ struct StepGuard<'a> {
     model: Option<String>,
     started: std::time::Instant,
     ended: bool,
-    racing: bool,
 }
 
 impl StepGuard<'_> {
@@ -474,17 +471,16 @@ impl StepGuard<'_> {
         self.tell(ok, false);
     }
 
-    fn tell(&mut self, ok: bool, superseded: bool) {
+    fn tell(&mut self, ok: bool, dropped: bool) {
         if std::mem::replace(&mut self.ended, true) { return; }
         let ms = self.started.elapsed().as_millis() as u64;
-        let (id, step, model) = (self.id, self.step.clone(), self.model.clone());
-        self.core.send(ServerMsg::Step { id, step, model, done: true, ok, ms, superseded });
+        self.core.send(ServerMsg::Step { id: self.id, step: self.step.clone(), model: self.model.clone(), done: true, ok, ms, dropped });
     }
 }
 
 impl Drop for StepGuard<'_> {
     fn drop(&mut self) {
-        self.tell(false, self.racing);
+        self.tell(false, true);
     }
 }
 
@@ -860,7 +856,7 @@ mod tests {
         let told: Vec<_> = steps(&mut updates).into_iter().map(|(_, step, model, done, ok)| (step, model.unwrap_or_default(), done, ok)).collect();
         let placer = |model: &str, done, ok| ("placer".to_string(), model.to_string(), done, ok);
         assert_eq!(told, [placer(CONTRIBUTOR, false, false), placer(CONTRIBUTOR, true, false), placer(BASE, false, false), placer(BASE, true, true)]);
-        // A call dropped before it answers (Search-first past its patience, an import stopped) still ends, failed.
+        // A call dropped before it answers (Search-first past its patience, an import stopped) still ends, not ok.
         let slow = json!({"model": "muse-spark-1.3", "status": 200, "answer": reply, "wait_ms": 2000});
         let dropped = core.call_model_noting(&url, &slow, std::time::Duration::from_secs(5), json!({"feature": "app search"}));
         assert!(tokio::time::timeout(std::time::Duration::from_millis(100), dropped).await.is_err());
@@ -870,6 +866,42 @@ mod tests {
         // A rule's step names no model.
         core.rule_step(None, "tune");
         assert_eq!(steps(&mut updates).into_iter().map(|(_, s, m, d, _)| (s, m, d)).collect::<Vec<_>>(), [("tune".to_string(), None, true)]);
+    }
+
+    /// A placement races 2 calls and drops the slower (placer.rs): that one is told dropped, never as the model failing,
+    /// while the winner is told answered. A call that really fails is never told dropped. (Take cleanup1: the dropped
+    /// lane read "didn't answer" after 9 of 9 placements.)
+    #[tokio::test]
+    async fn a_raced_call_cut_off_is_told_dropped_and_the_winner_answered() {
+        use futures_util::StreamExt;
+        use serde_json::json;
+        let (url, _) = stand_in().await;
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        let setting = Setting::new(None, BASE);
+        let lane = |wait_ms: u64| {
+            core.ask_model(&setting, &url, std::time::Duration::from_secs(5),
+                move |model| json!({"model": model, "prompt_cache_key": "e2a2o-placer", "status": 200, "answer": {}, "wait_ms": wait_ms}),
+                json!({"lane": wait_ms}))
+        };
+        let mut calls: futures_util::stream::FuturesUnordered<_> = [lane(0), lane(2000)].into_iter().collect();
+        assert!(calls.next().await.unwrap().is_ok());
+        drop(calls);
+        let ends: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|o| match o.message {
+                ServerMsg::Step { step, done: true, ok, dropped, .. } => Some((step, ok, dropped)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ends, [("placer".to_string(), true, false), ("placer".to_string(), false, true)]);
+        // A call that fails is told failed, not dropped.
+        let failed = json!({"model": BASE, "status": 503, "answer": {}});
+        assert!(core.call_model(&url, &failed, std::time::Duration::from_secs(5)).await.is_err());
+        let told: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|o| match o.message { ServerMsg::Step { done: true, ok, dropped, .. } => Some((ok, dropped)), _ => None })
+            .collect();
+        assert_eq!(told, [(false, false)]);
     }
 
     /// A turned-away try is a model call too: the trace has a line for it and one for the try that answered,

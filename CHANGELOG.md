@@ -141,3 +141,4 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 ### Security
 - Alone, the core listens on 127.0.0.1; Origin and Host checks refuse other sites and DNS rebinding; in a room, the map and pictures need the code, compared in constant time.
 - `scripts/precheck.sh`: static checks, `cargo test` and live probes; the merge gate runs it.
+- From this machine, only the core's own port passes the Origin check (another local server's page is another site); a typed thought, a title, a tag and a WebSocket message have caps (6,000 characters, 100, 40, 64 KiB), and the window says so before sending.

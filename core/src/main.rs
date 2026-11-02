@@ -870,14 +870,18 @@ pub fn hosted() -> bool {
 }
 
 /// The Meta models this core asks, by step, for the first screen: the same settings each step reads (a test below
-/// holds the fixed names to the files that send them). Pictures only while they're on.
+/// holds the fixed names to the files that send them). The steps are the end card's words; the window puts one
+/// model's steps together ("Tidies, builds, recaps: Muse Spark 1.3", site.ts). Pictures only while they're on.
 fn models(core: &Core) -> serde_json::Value {
     let tidy = std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into());
+    let recap = std::env::var("RECAP_MODEL").unwrap_or_else(|_| tidy.clone());
     let pictures = !std::env::var("PICTURES").is_ok_and(|value| value.eq_ignore_ascii_case("off"));
     let mut models = vec![
-        serde_json::json!({ "step": "listens", "model": "muse-voice-transcribe-1.0" }),
+        serde_json::json!({ "step": "hears", "model": "muse-voice-transcribe-1.0" }),
         serde_json::json!({ "step": "places", "model": core.placer_model.name() }),
         serde_json::json!({ "step": "tidies", "model": tidy }),
+        serde_json::json!({ "step": "builds", "model": tidy }),
+        serde_json::json!({ "step": "recaps", "model": recap }),
     ];
     if pictures {
         models.push(serde_json::json!({ "step": "draws", "model": "muse-image-1.0" }));
@@ -1131,7 +1135,10 @@ fn access(room: bool, link: Link, host: Option<&str>, origin: Option<&str>, has_
     let Some(host) = host.filter(|h| ours(h)) else { return Access::None };
     // A room Origin must name the exact Host and the listener's scheme, including its port.
     let scheme = if link.tls { "https://" } else { "http://" };
-    let ours_too = |origin: &str| (link.here() && local(origin)) || (room && origin.strip_prefix(scheme) == Some(host));
+    // From this machine, only the core's own port: another server here (a judge running another repo on :3000) is
+    // another site. The name may differ (127.0.0.1 for localhost); Vite's dev proxy keeps its Host, so it passes.
+    let own_port = |origin: &str| port(origin, 0).is_some() && port(origin, 0) == port(host, if link.tls { 443 } else { 80 });
+    let ours_too = |origin: &str| (link.here() && local(origin) && own_port(origin)) || (room && origin.strip_prefix(scheme) == Some(host));
     if !origin.is_none_or(ours_too) {
         return Access::None;
     }
@@ -1277,6 +1284,21 @@ fn local(value: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
 
+/// The port a Host or Origin names, else the default: its scheme's for an Origin, `default` for a Host.
+/// None for a scheme other than http or https.
+fn port(value: &str, default: u16) -> Option<u16> {
+    let (default, rest) = match value.split_once("://") {
+        Some(("http", rest)) => (80, rest),
+        Some(("https", rest)) => (443, rest),
+        Some(_) => return None,
+        None => (default, value),
+    };
+    match rest.rsplit_once(':') {
+        Some((_, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => port.parse().ok(),
+        _ => Some(default),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct Join {
     /// The name this window joined a room with; none alone.
@@ -1296,6 +1318,8 @@ async fn connect(
     let Some(seat) = Seat::take(&core, &speaker, link) else {
         return (StatusCode::CONFLICT, "That name is taken in this room.").into_response();
     };
+    // Bounded (protocol.rs `FRAME_MAX`): axum's default is 64 MiB a message.
+    let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
     upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, seat))
 }
 
@@ -1366,7 +1390,15 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // quick off and on, the old session's late end mustn't switch the new mic off.
     let listens = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let volume_source = uuid::Uuid::new_v4().to_string();
-    while let Some(Ok(message)) = incoming.next().await {
+    while let Some(message) = incoming.next().await {
+        // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
+        let message = match message {
+            Ok(message) => message,
+            Err(e) => {
+                tracing::warn!("closed {speaker}'s window: {e}");
+                break;
+            }
+        };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
@@ -1379,6 +1411,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
                 Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
                 Ok(ClientMsg::AppOutput { id, sound }) => apps::volume_output(&core, id, sound),
+                Ok(ClientMsg::Text { text }) if text.trim().chars().count() > protocol::THOUGHT_MAX => {
+                    core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
+                }
                 Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_typed(&speaker, text.trim()),
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
@@ -1410,7 +1445,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
                     core.wake.notify_waiters();
                 }
+                // Only a tag the thread has: tags come from the refiner (bounded there, `TAG_MAX`), so nothing else is journaled.
+                // Checked on the thread it was merged into, if any, where the change itself lands (`World::resolved`).
                 Ok(ClientMsg::Tag { thread_id, tag, keep }) => {
+                    let world = core.snapshot();
+                    let on = world.thread(&world.resolve(&thread_id)).is_some_and(|t| t.tags.iter().any(|t| t.name == tag));
+                    drop(world);
+                    if !on {
+                        core.send_to(&speaker, ServerMsg::Notice { message: "That tag isn't on this thread any more.".into() });
+                        continue;
+                    }
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
                     core.commit(vec![change]);
                 }
@@ -2320,6 +2364,97 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// What a window sends is bounded (protocol.rs): a typed thought, a title and a tag each say so calmly when too
+    /// long or not on the map, and a frame past the cap ends the connection instead of filling the core's memory.
+    #[tokio::test]
+    async fn a_windows_inputs_are_bounded() {
+        use tokio_tungstenite::tungstenite::Message;
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        core.commit(vec![
+            Change::ThreadAdded { thread: crate::world::fixtures::thread("T1", "Rent", 1) },
+            Change::TagSuggested { thread_id: "T1".into(), tag: "#money".into() },
+        ]);
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(super::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        let notice = |message: serde_json::Value| (message["type"] == "notice").then(|| message["message"].as_str().unwrap_or_default().to_string());
+        // The world, where placing stands, and that there's no key.
+        for _ in 0..3 {
+            received(&mut window).await;
+        }
+        let send = |json: serde_json::Value| Message::Text(json.to_string().into());
+
+        // A thought one character past the cap stays out, and says so; one at the cap lands.
+        let long = "rent ".repeat(crate::protocol::THOUGHT_MAX / 5);
+        window.send(send(serde_json::json!({"type": "text", "text": format!("{long}x")}))).await.unwrap();
+        let said = notice(received(&mut window).await).expect("a notice");
+        assert!(said.starts_with("Too long for one thought"), "{said}");
+        assert!(core.snapshot().thoughts.is_empty());
+        window.send(send(serde_json::json!({"type": "text", "text": format!("{}x", &long[..long.len() - 1])}))).await.unwrap();
+        assert_eq!(received(&mut window).await["change"]["type"], "thought_added");
+        assert_eq!(core.snapshot().thoughts[0].text.chars().count(), crate::protocol::THOUGHT_MAX);
+        // Its correction window; then the title.
+        received(&mut window).await;
+
+        // A title past the cap stays out; one at the cap is the thread's.
+        let title = "a".repeat(crate::protocol::TITLE_MAX);
+        window.send(send(serde_json::json!({"type": "rename", "thread_id": "T1", "title": format!("{title}a")}))).await.unwrap();
+        let said = loop {
+            if let Some(said) = notice(received(&mut window).await) { break said; }
+        };
+        assert!(said.starts_with("Titles stay short"), "{said}");
+        assert_eq!(core.snapshot().thread("T1").unwrap().title, "Rent");
+        window.send(send(serde_json::json!({"type": "rename", "thread_id": "T1", "title": title}))).await.unwrap();
+        while !notice(received(&mut window).await).is_some_and(|said| said.starts_with("Renamed to")) {}
+        assert_eq!(core.snapshot().thread("T1").unwrap().title.chars().count(), crate::protocol::TITLE_MAX);
+
+        // A tag the thread doesn't have is never journaled, however long; its own is kept.
+        let journaled = || std::fs::read_to_string(&path).unwrap();
+        let odd = format!("#{}", "z".repeat(crate::protocol::TAG_MAX));
+        window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": odd, "keep": true}))).await.unwrap();
+        let said = loop {
+            if let Some(said) = notice(received(&mut window).await) { break said; }
+        };
+        assert_eq!(said, "That tag isn't on this thread any more.");
+        assert!(!journaled().contains(&odd));
+        window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": "#money", "keep": true}))).await.unwrap();
+        while !core.snapshot().thread("T1").unwrap().tags.iter().any(|t| t.kept) {
+            received(&mut window).await;
+        }
+        // A click made before a merge still lands, on the thread T1 went into (when that thread has the tag too).
+        core.commit(vec![
+            Change::ThreadAdded { thread: crate::world::fixtures::thread("T2", "Bills", 2) },
+            Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
+            Change::ThreadMerged { from: "T1".into(), into: "T2".into() },
+        ]);
+        window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": "#money", "keep": true}))).await.unwrap();
+        while !core.snapshot().thread("T2").unwrap().tags.iter().any(|t| t.kept) {
+            let said = notice(received(&mut window).await);
+            assert!(said.is_none(), "{said:?}");
+        }
+
+        // A frame past the cap closes this window; the core holds none of it.
+        window.send(Message::Binary(vec![0u8; crate::protocol::FRAME_MAX + 1].into())).await.unwrap();
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match window.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(_)) => {}
+                }
+            }
+        })
+        .await;
+        assert!(closed.is_ok(), "an oversized frame ends the connection");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// One window over a real WebSocket, as the page connects: the world first, then what's meant for it and
     /// never another speaker's own; a typed thought lands; a mic that can't start says why, then that it stopped.
     #[tokio::test]
@@ -2381,6 +2516,16 @@ mod tests {
         assert_eq!(access(false, here, Some("localhost:4321"), Some("http://localhost:4321"), false), Access::Map);
         assert_eq!(access(false, here, Some("127.0.0.1:4321"), None, false), Access::Map);
         assert_eq!(access(false, here, Some("localhost:4321"), Some("https://example.com"), false), Access::None);
+        // Only the core's own port: another server on this machine is another site.
+        for other in ["http://localhost:3000", "http://127.0.0.1:5173", "http://[::1]:8080", "http://localhost"] {
+            assert_eq!(access(false, here, Some("localhost:4321"), Some(other), false), Access::None, "{other}");
+        }
+        // Vite's dev server proxies /ws keeping its own Host (vite.config.ts sets no changeOrigin): Origin and Host agree.
+        assert_eq!(access(false, here, Some("localhost:5173"), Some("http://localhost:5173"), false), Access::Map);
+        // precheck.sh's probe: another name for this machine, same port.
+        assert_eq!(access(false, here, Some("127.0.0.1:4321"), Some("http://localhost:4321"), false), Access::Map);
+        // No port: the scheme's own (80), on both sides.
+        assert_eq!(access(false, link("127.0.0.1:50000", "127.0.0.1:80"), Some("localhost"), Some("http://localhost"), false), Access::Map);
         assert_eq!(access(false, here, Some("example.com:4321"), None, false), Access::None, "DNS rebinding");
         assert_eq!(access(false, here, None, None, false), Access::None);
     }
@@ -2435,7 +2580,10 @@ mod tests {
         // The host's HTTP window and local development origins still work, without the room code.
         let here = link("127.0.0.1:50000", "127.0.0.1:4321");
         assert_eq!(access(true, here, Some("localhost:4321"), Some("http://localhost:4321"), false), Access::Map);
-        assert_eq!(access(false, here, Some("localhost:4321"), Some("https://localhost:5173"), false), Access::Map);
+        // Alone or in a room, a page on this machine passes only from the core's own port: not another local
+        // server's page (a judge running another repo on :3000), which could read the map and approve into Reminders.
+        assert_eq!(access(false, here, Some("localhost:4321"), Some("https://localhost:5173"), false), Access::None);
+        assert_eq!(access(true, here, Some("localhost:4321"), Some("http://localhost:3000"), false), Access::None);
     }
 
     #[test]
@@ -2823,7 +2971,8 @@ mod tests {
         let models = super::models(&core);
         let named = |step: &str| models.as_array().unwrap().iter().find(|m| m["step"] == step).map(|m| m["model"].as_str().unwrap().to_string());
         assert_eq!(named("places").as_deref(), Some(core.placer_model.name()));
-        let sources = [("listens", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("draws", include_str!("pictures.rs"))];
+        let sources = [("hears", include_str!("asr.rs")), ("tidies", include_str!("refiner.rs")), ("builds", include_str!("apps.rs")),
+            ("recaps", include_str!("recap.rs")), ("draws", include_str!("pictures.rs"))];
         for (step, source) in sources {
             let Some(model) = named(step) else {
                 assert!(step == "draws" && std::env::var("PICTURES").is_ok_and(|v| v.eq_ignore_ascii_case("off")), "{step} is named");

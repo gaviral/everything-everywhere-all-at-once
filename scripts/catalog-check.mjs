@@ -47,6 +47,43 @@ try {
   stop();
   assert.deepEqual(told, [[null, "T2"], [null, "T5"], [null, null]]);
 
+  // Typing "this" keeps what the keyboard selected: focus moving into the composer (it's in no card) leaves the card
+  // and point you were on as "this", ahead of the pointer; a click elsewhere, Esc or focus anywhere else drops them
+  // (spec-keyboard 3: Tab to a point, type "delete this" → your newest thought went instead).
+  {
+    const at = (selectors) => ({ closest: (s) => selectors[s] ?? null, matches: (s) => s === ":focus-visible" });
+    const card = { id: "thread-T2", dataset: {} };
+    const point = at({ "section.thread[id^='thread-'], [data-thread]": card, "li[id^='point-']": { id: "point-th-1" } });
+    const composer = at({ "form.composer": {} });
+    const search = at({});
+    const on = {};
+    const kb = { getSelection: () => none, activeElement: body, body, addEventListener: (t, f) => { on[t] = f; }, removeEventListener: () => {},
+      documentElement: { addEventListener: (t, f) => { on[t] = f; }, removeEventListener: () => {} } };
+    const heard = [];
+    const quit = watchAttention((...a) => heard.push(a), kb);
+    const focusOn = async (el) => { kb.activeElement = el; on.focusin({ target: el }); await new Promise((r) => setTimeout(r, 5)); };
+    await focusOn(point);
+    await focusOn(composer);
+    on.pointerover({ target: element(tile) });
+    assert.deepEqual(heard.at(-1), ["T2", "T5", "th-1"], "typing: the card and point you selected stay \"this\", ahead of the pointer");
+    on.pointerdown({ target: composer });
+    assert.deepEqual(heard.at(-1), ["T2", "T5", "th-1"], "a click in the composer keeps them");
+    on.keydown({ key: "Escape", target: composer });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(heard.at(-1), [null, "T5", null], "Esc drops them");
+    await focusOn(point);
+    await focusOn(composer);
+    on.pointerdown({ target: search });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(heard.at(-1), [null, "T5", null], "a click elsewhere drops them");
+    await focusOn(point);
+    await focusOn(search);
+    assert.deepEqual(heard.at(-1), [null, "T5", null], "focus anywhere but the composer drops them");
+    await focusOn(composer);
+    assert.deepEqual(heard.at(-1), [null, "T5", null], "and they don't come back");
+    quit();
+  }
+
   // Told again on every connection: a card pointed at while the connection was down (the send failed) still counts.
   const teller = attentionTeller();
   const sent = [];

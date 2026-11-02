@@ -170,6 +170,81 @@ try {
     Object.defineProperty(globalThis, "navigator", { value: {}, configurable: true });
     await assert.rejects(startMic(() => {}), /secure page \(https\)/);
   }
+  // Why the mic didn't start, in words that say where to fix it: never the browser's own words (they go to the
+  // console). A block by the Mac (Chrome: "Permission denied by system") is fixed in System Settings, not the browser.
+  {
+    const { micFailure, MicUnavailable } = await server.ssrLoadModule("/src/mic.ts");
+    const fail = (name, message, where = {}) => micFailure(new DOMException(message, name), { safari: false, os: "mac", ...where });
+    const mac = fail("NotAllowedError", "Permission denied by system");
+    assert.match(mac.words, /^Your Mac is blocking the microphone for this browser\..*System Settings › Privacy & Security › Microphone/);
+    assert.equal(mac.blocked, "mac");
+    assert.match(fail("NotAllowedError", "Permission denied by system", { os: "windows" }).words, /^Windows is blocking[^]*Settings › Privacy & security › Microphone/);
+    const site = fail("NotAllowedError", "Permission denied");
+    assert.match(site.words, /^The browser is blocking the microphone for this site\. Allow it from the icon beside the address/);
+    assert.equal(site.blocked, "site");
+    assert.equal(fail("PermissionDeniedError", "").blocked, "site", "an older Chrome's name");
+    const safari = fail("NotAllowedError", "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.", { safari: true });
+    assert.match(safari.words, /^Safari is blocking the microphone for this site\. Allow it in Safari › Settings for This Website/);
+    assert.equal(safari.blocked, "site");
+    // An iPhone or iPad has no Safari › Settings menu: its line names the page menu's Website Settings.
+    const { micPlace } = await server.ssrLoadModule("/src/mic.ts");
+    const iphoneUa = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+    assert.deepEqual(micPlace(iphoneUa, "iPhone", 5), { safari: true, os: "ios" });
+    const ipadUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+    assert.deepEqual(micPlace(ipadUa, "MacIntel", 5), { safari: true, os: "ios" }, "an iPad says it's a Mac");
+    assert.deepEqual(micPlace(ipadUa, "MacIntel", 0), { safari: true, os: "mac" });
+    const phone = fail("NotAllowedError", "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.", micPlace(iphoneUa, "iPhone", 5));
+    assert.match(phone.words, /^Safari is blocking the microphone for this site\. Allow it in Website Settings, from the page menu in the address bar/);
+    assert.doesNotMatch(phone.words, /Safari › Settings/);
+    assert.equal(phone.blocked, "site");
+    // A prompt closed without an answer isn't a block: asked again on the next tap.
+    const dismissed = fail("NotAllowedError", "Permission dismissed");
+    assert.match(dismissed.words, /^The microphone wasn't allowed\. Tap the mic and choose Allow/);
+    assert.equal(dismissed.blocked, "");
+    for (const [name, message] of [["NotFoundError", "Requested device not found"], ["OverconstrainedError", ""], ["DevicesNotFoundError", ""]]) {
+      assert.equal(fail(name, message).words, "No microphone found. Connect one, then tap the mic, or type below.", name);
+    }
+    for (const [name, message] of [["NotReadableError", "Could not start audio source"], ["AbortError", "Starting audio failed"], ["TrackStartError", ""]]) {
+      assert.equal(fail(name, message).words, "The microphone is busy in another app or didn't start. Close that app, then tap the mic, or type below.", name);
+    }
+    // Anything else: one plain line, the browser's words nowhere on screen.
+    const odd = micFailure(new TypeError("Failed to execute 'getUserMedia' on 'MediaDevices': raw words"), { safari: false, os: "mac" });
+    assert.equal(odd.words, "Couldn't start the mic. Tap it to try again, or type below.");
+    assert.equal(micFailure("weird", { safari: false, os: "other" }).words, odd.words);
+    for (const raw of ["Requested device not found", "Could not start audio source", "Permission denied", "raw words"]) {
+      for (const r of [fail("NotFoundError", raw), fail("NotReadableError", raw), fail("NotAllowedError", raw), odd]) assert.ok(!r.words.includes(raw), r.words);
+    }
+    // The page's own reasons (mic.ts) are already plain words: said as they are.
+    const https = micFailure(new MicUnavailable("Live audio needs a secure page (https). Open the link that starts with https."), { safari: false, os: "mac" });
+    assert.equal(https.words, "Live audio needs a secure page (https). Open the link that starts with https.");
+    // Every line ends a sentence (the old one ran "…not found You can type below.").
+    for (const r of [mac, site, safari, dismissed, odd, https]) assert.match(r.words, /[.]$/, r.words);
+    // The window shows these, never the error's message (App.tsx).
+    const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+    assert.match(app, /micFailure\(err, /);
+    assert.doesNotMatch(app, /err instanceof Error \? err\.message/);
+  }
+
+  // The site's mic permission, where the browser tells it: "denied" marks the mic blocked; a change is followed.
+  {
+    const { watchMicPermission } = await server.ssrLoadModule("/src/mic.ts");
+    const status = { state: "denied", onchange: null };
+    const seen = [];
+    const stop = watchMicPermission({ query: async ({ name }) => { assert.equal(name, "microphone"); return status; } }, (s) => seen.push(s));
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(seen, ["denied"]);
+    status.state = "granted"; status.onchange();
+    assert.deepEqual(seen, ["denied", "granted"]);
+    stop();
+    assert.equal(status.onchange, null, "stopped watching");
+    // A browser that doesn't answer for the mic (Firefox throws; old Safari has no permissions): nothing, no error.
+    const none = [];
+    watchMicPermission({ query: async () => { throw new TypeError("microphone"); } }, (s) => none.push(s))();
+    watchMicPermission(undefined, (s) => none.push(s))();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(none, []);
+  }
+
   console.log("mic-check: ok (worklet at 24, 44.1 and 48 kHz; Chrome, Safari and Firefox capture paths)");
 } finally {
   await server.close();
