@@ -1200,6 +1200,10 @@ function useDockRoom(ref: RefObject<HTMLElement | null>) {
   }), []);
 }
 
+/** How a dismissed suggestion or action leaves: a 150 ms fade, as a card's body folds (ThreadCard). A fade isn't motion,
+ *  so it stays under Reduce Motion, where the rows below snap up instead of gliding (MotionConfig "user"). */
+const EXIT = { opacity: 0, transition: { duration: 0.15 } };
+
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
   const grouped = new Map<string, T[]>();
   for (const item of items) if (item.status !== "dismissed") {
@@ -1314,8 +1318,10 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           <Point key={t.id} thought={t} heads={heads} on={on} />
         ))}
       </ul>
+      {/* A dismissed row fades out (EXIT) and the rows below glide up, rather than the row vanishing under the click. */}
+      <AnimatePresence initial={false}>
       {ideas.map((s) => (
-        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
           <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
           <span>{s.text}</span>
           {s.status === "new" && (
@@ -1328,10 +1334,13 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
           )}
         </motion.div>
       ))}
+      </AnimatePresence>
       <ProposalRows thread={thread.id} />
+      <AnimatePresence initial={false}>
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
+      </AnimatePresence>
       </motion.div>}
       </AnimatePresence>
       {branches.length > 0 && (
@@ -1479,7 +1488,7 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
     if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
   }, [action.status]);
   return (
-    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
       <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
         data-tip={calendarFile ? TIPS.file(action.status === "done", !!line.button) : action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
       <span>
