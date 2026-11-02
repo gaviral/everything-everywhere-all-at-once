@@ -115,7 +115,8 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
     return lines;
   };
 
-  const saidDecided = (thoughts: Thought[]) => new Set(thoughts.filter((t) => saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
+  // Marked when the core's rule marked it (decided.rs, as the card shows it) or this one finds it in the words.
+  const saidDecided = (thoughts: Thought[]) => new Set(thoughts.filter((t) => t.decided || saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
   const ids = new Set(world.threads.map((t) => t.id));
   const children = new Map<string | null, Thread[]>();
   for (const thread of world.threads) {

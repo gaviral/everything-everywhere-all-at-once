@@ -46,7 +46,7 @@ impl Fixture {
     /// Places thought `id` in `thread` with `point`, as the placer would, and moves the speaker there.
     fn place(&self, id: &str, thread: &str, point: &str) {
         self.core.commit(vec![
-            Change::ThoughtPlaced { thought_id: id.into(), thread_id: thread.into(), point: point.into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1 },
+            Change::ThoughtPlaced { thought_id: id.into(), thread_id: thread.into(), point: point.into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1, decided: false },
             Change::ThreadTouched { thread_id: thread.into(), last_point: point.into(), at_ms: now_ms() },
             Change::ActiveChanged { thread_id: thread.into(), speaker: "you".into() },
         ]);
@@ -117,6 +117,7 @@ fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         complete: true,
         at_ms,
         place_ms: Some(1_000),
+        decided: false,
     }
 }
 
@@ -247,7 +248,7 @@ async fn words_taken_back_take_the_thread_they_started_with_them() {
     f.say("Make the next thing I say its own topic").await;
     let id = f.core.snapshot().thoughts.last().unwrap().id.clone();
     f.core.commit(vec![
-        Change::ThoughtPlaced { thought_id: id.clone(), thread_id: "T5".into(), point: "Own topic".into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1 },
+        Change::ThoughtPlaced { thought_id: id.clone(), thread_id: "T5".into(), point: "Own topic".into(), unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, place_ms: 1, decided: false },
         Change::ActiveChanged { thread_id: "T5".into(), speaker: "you".into() },
     ]);
     let redo = f.say("I meant start a new thread").await;

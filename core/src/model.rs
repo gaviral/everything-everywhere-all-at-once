@@ -195,6 +195,16 @@ impl Service {
         (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
     }
 
+    /// How many more calls the cap lets go at `now` (no cap: as many as asked).
+    fn left(&self, now: u64) -> usize {
+        if self.limit == 0 {
+            return usize::MAX;
+        }
+        let mut calls = self.calls.lock().unwrap();
+        let _ = self.wait(&mut calls, now);
+        self.limit.saturating_sub(calls.len())
+    }
+
     /// True while the last hour's calls fill at most half the cap (always, with no cap): room for work nobody asked
     /// for yet, such as a recap draft, that must never take a call placing needs.
     fn spare(&self, now: u64) -> bool {
@@ -257,6 +267,12 @@ impl Core {
     /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
     pub fn calls_to_spare(&self) -> bool {
         self.service.spare(crate::now_ms())
+    }
+
+    /// How many more model calls this hour's cap lets go now: a placement races its extra calls only while there's
+    /// room for all of them (placer.rs), so the race never meets the cap and says "AI paused" while one call places.
+    pub fn calls_left(&self) -> usize {
+        self.service.left(crate::now_ms())
     }
 
     /// Counts one model call about to go out; past the cap, ends it unsent instead.
@@ -387,6 +403,9 @@ impl Core {
         let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
         self.spend()?;
         let (mut sent, mut started) = (body(model), std::time::Instant::now());
+        // A call dropped before its answer (the slower of a placement's racing calls, placer.rs) is still sent and
+        // billed: the trace says so, so what was spent can be counted from it.
+        let mut unanswered = Unanswered { trace: &self.trace, call: Some((sent.clone(), started, extra.clone())) };
         let mut step = self.step_began(&sent, &extra);
         let mut response = post(&sent).await;
         let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
@@ -396,6 +415,7 @@ impl Core {
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
             (sent, started) = (body(base), std::time::Instant::now());
+            unanswered.call = Some((sent.clone(), started, extra.clone()));
             step = self.step_began(&sent, &extra);
             response = post(&sent).await;
             // Two features finding out at once say it once.
@@ -410,9 +430,24 @@ impl Core {
             answer(response).await
         }
         .await;
+        unanswered.call = None;
         step.end(result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result
+    }
+}
+
+/// A model call in flight: dropped before its answer, it's traced as dropped (see `ask_model`).
+struct Unanswered<'a> {
+    trace: &'a crate::trace::Trace,
+    call: Option<(Value, std::time::Instant, Value)>,
+}
+
+impl Drop for Unanswered<'_> {
+    fn drop(&mut self) {
+        if let Some((sent, started, extra)) = self.call.take() {
+            self.trace.call(&sent, started, Err(&anyhow::anyhow!("dropped before its answer: another of the same call answered first")), extra);
+        }
     }
 }
 

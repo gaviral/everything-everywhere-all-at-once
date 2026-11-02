@@ -381,6 +381,7 @@ mod tests {
                     complete: true,
                     at_ms: 1_000,
                     place_ms: Some(0),
+                    decided: false,
                 })
                 .collect(),
             ..World::default()

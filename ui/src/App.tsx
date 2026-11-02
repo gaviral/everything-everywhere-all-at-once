@@ -241,7 +241,7 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.decided ? "Decided: " : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
       ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
       // A retry that landed late isn't followed (you've moved on): the dock says where it went.
@@ -1273,6 +1273,9 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
+      {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
+          which points are settled at a glance, and they're what Recap leads with. */}
+      {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}

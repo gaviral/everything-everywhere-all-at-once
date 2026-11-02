@@ -606,6 +606,7 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
         complete: true,
         at_ms: now,
         place_ms: None,
+        decided: false,
     };
     let thought_id = thought.id.clone();
     changes.push(Change::ThoughtAdded { thought });
@@ -619,6 +620,7 @@ fn land(core: &Arc<Core>, speaker: &str, world: &World, said: &str, point: &str,
         fixed: String::new(),
         complete: true,
         place_ms: 0,
+        decided: crate::decided::said(said),
     });
     changes.push(Change::ThreadTouched { thread_id: id.clone(), last_point: point, at_ms: now });
     // As placer.rs `decide`: only the speaker's own words, last by when they were said.

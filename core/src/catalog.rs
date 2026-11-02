@@ -516,7 +516,9 @@ pub fn answer(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
 /// The question's answer, said or clicked: yes takes the guess (or `with`, the person's own words), no keeps the
 /// words as heard (and puts back a fix made without asking).
 pub fn answered(core: &Core, thought_id: &str, accept: bool, with: String) {
-    core.commit(vec![Change::ThoughtCorrected { thought_id: thought_id.into(), accept, with }]);
+    // "We divided on Thursday" corrected to "decided" is a decision now; its undo takes the mark back.
+    let changes = crate::decided::remarked(&core.snapshot(), vec![Change::ThoughtCorrected { thought_id: thought_id.into(), accept, with }]);
+    core.commit(changes);
 }
 
 // --- Corrections ------------------------------------------------------------------------------------------------
