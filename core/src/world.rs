@@ -135,6 +135,10 @@ pub struct World {
     /// Merged thread id → the thread it became, so late changes still land.
     #[serde(default)]
     pub merged: std::collections::HashMap<String, String>,
+    /// How many threads a ThreadRemoved took off the map, so new ids keep counting up and never land on a
+    /// thread made after the removed one. Rebuilt by replay, as the journal keeps every removal.
+    #[serde(default, skip_serializing)]
+    pub removed: usize,
     #[serde(default)]
     pub apps: Vec<crate::apps::MiniApp>,
     #[serde(default)]
@@ -166,10 +170,6 @@ pub struct World {
     /// threads a move set apart are never merged by the refiner (`apart`); an undone move takes its record back.
     #[serde(default, skip_serializing)]
     pub moves: Vec<(String, String, String)>,
-    /// How many threads left the map without a merge (scratch that, Unfile, an undone move), so their ids stay
-    /// spent: a reused id would file a new topic into another thread, or hand it a late picture. Rebuilt on replay.
-    #[serde(default, skip_serializing)]
-    pub removed: usize,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -363,10 +363,9 @@ impl World {
             Change::ThreadRemoved { thread_id } => {
                 let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
-                if !held {
-                    let before = self.threads.len();
+                if !held && self.thread(thread_id).is_some() {
                     self.threads.retain(|t| &t.id != thread_id);
-                    self.removed += before - self.threads.len();
+                    self.removed += 1;
                     if self.active.as_ref() == Some(thread_id) {
                         self.active = None;
                     }
@@ -665,14 +664,15 @@ impl World {
         self.threads.iter_mut().find(|t| t.id == id)
     }
 
-    /// How many thread ids have been handed out, counting threads merged away or removed since.
-    pub fn ids_spent(&self) -> usize {
+    /// Every thread id ever made: on the map, merged away or removed. New ids count up from here.
+    pub fn threads_made(&self) -> usize {
         self.threads.len() + self.merged.len() + self.removed
     }
 
-    /// Never reuses an id, even after merges or removals take threads off the map.
+    /// Never reuses an id, even after merges or removals take threads off the map; skips any id
+    /// still in use, as a backstop.
     pub fn next_thread_id(&self) -> String {
-        let mut n = self.ids_spent() + 1;
+        let mut n = self.threads_made() + 1;
         loop {
             let id = format!("T{n}");
             if self.thread(&id).is_none() && !self.merged.contains_key(&id) {

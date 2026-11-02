@@ -51,6 +51,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - `./run.sh demo` plus `scripts/demo.mjs` replays a prepared talk at real speed, with real model calls; in a room, a second speaker too.
 - Both sample maps come with a picture for every thread, drawn once by the app's own picture pipeline and kept in `samples/images/` (128 px copies, about 300 KB in all), so the Palace is full without a key.
 - The sample maps are dated the week of Nov 3, 2026, and include a real “Did you mean” question: “BC Hydra” to “BC Hydro” and “CSB” to “CSP”.
+- A first run fails fast: `./run.sh demo` and `room` stop before building when there is no key and say how to add one; a busy port is caught before building (the key and port read as the core reads them, from the environment or `.env`; a room's LAN address probed too), with the same command on the next port; `scripts/demo.mjs` stops when the core has no key or the key was refused.
 
 ### Recent changes
 - The first "Later" on the unfinished-thought card brings it back once, at a pause at least 5 minutes later; a second "Later" hides it until that thread changes.
