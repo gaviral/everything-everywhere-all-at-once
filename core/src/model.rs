@@ -195,6 +195,16 @@ impl Service {
         (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
     }
 
+    /// True while the last hour's calls fill at most half the cap (always, with no cap): room for work nobody asked
+    /// for yet, such as a recap draft, that must never take a call placing needs.
+    fn spare(&self, now: u64) -> bool {
+        self.limit == 0 || {
+            let mut calls = self.calls.lock().unwrap();
+            self.wait(&mut calls, now);
+            calls.len() * 2 < self.limit
+        }
+    }
+
     /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
     /// step under one lock, so two features asking at once with one call left can't both take it.
     fn spend(&self, now: u64) -> Result<(), u64> {
@@ -243,6 +253,12 @@ impl Core {
         self.service.capped_for(crate::now_ms()).map(|wait| capped(self.service.limit, wait))
     }
 
+    /// True while this hour has calls to spare: under half the cap, which is about the busiest hour measured (see
+    /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
+    pub fn calls_to_spare(&self) -> bool {
+        self.service.spare(crate::now_ms())
+    }
+
     /// Counts one model call about to go out; past the cap, ends it unsent instead.
     pub fn spend(&self) -> anyhow::Result<()> {
         self.service.spend(crate::now_ms()).map_err(|wait| {
@@ -267,6 +283,11 @@ impl Core {
     /// call from here on and tells every window; a busy service is said once a spell. Both end the call with
     /// their verdict as the error. Any other failure is the caller's to report (`answer` does it for a model call).
     pub fn check(&self, status: StatusCode) -> anyhow::Result<()> {
+        self.check_as(status, true)
+    }
+
+    /// `check`, saying a busy service only when `say_busy`: work nobody waits on (a recap draft) is turned away quietly.
+    fn check_as(&self, status: StatusCode, say_busy: bool) -> anyhow::Result<()> {
         match verdict(status) {
             Verdict::Refused => {
                 if !self.service.refused.swap(true, Ordering::Relaxed) {
@@ -278,7 +299,7 @@ impl Core {
             Verdict::Busy => {
                 let (now, said) = (crate::now_ms(), self.service.busy_said_ms.load(Ordering::Relaxed));
                 // Two calls turned away at once say it once.
-                let fresh = now.saturating_sub(said) >= SPELL_MS
+                let fresh = say_busy && now.saturating_sub(said) >= SPELL_MS
                     && self.service.busy_said_ms.compare_exchange(said, now, Ordering::Relaxed, Ordering::Relaxed).is_ok();
                 if fresh {
                     tracing::warn!("the model service is busy ({status}): each caller backs off and tries again");
@@ -299,17 +320,52 @@ impl Core {
     /// `call_model`, with `extra` fields on its trace line: a call with no prompt cache key names its feature
     /// here, and says what it was for.
     pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
+        self.call(url, body, patience, extra, true).await
+    }
+
+    /// `call_model` for work nobody is waiting on (a recap draft): a busy service turns it away without a notice.
+    pub async fn call_model_quietly(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
+        self.call(url, body, patience, Value::Null, false).await
+    }
+
+    async fn call(&self, url: &str, body: &Value, patience: Duration, extra: Value, say_busy: bool) -> anyhow::Result<Value> {
         let key = self.key()?;
         self.spend()?;
+        let step = self.step_began(body, &extra);
         let started = std::time::Instant::now();
         let result = async {
             let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
-            self.check(response.status())?;
+            self.check_as(response.status(), say_busy)?;
             answer(response).await
         }
         .await;
+        step.end(result.is_ok());
         self.trace.call(body, started, result.as_ref(), extra);
         result
+    }
+
+    /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The
+    /// guard tells its end, sharing the id: `end` with the answer, or as failed when the call is dropped unanswered
+    /// (a search past its patience, an import stopped), so no window waits on it forever.
+    fn step_began(&self, sent: &Value, extra: &Value) -> StepGuard<'_> {
+        let id = STEP_IDS.fetch_add(1, Ordering::Relaxed);
+        let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(String::from));
+        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0 });
+        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false }
+    }
+
+    /// A step a rule did, with no model ("Where was I?", an app's tune): to `speaker`'s windows, or every window.
+    pub fn rule_step(&self, speaker: Option<&str>, step: &str) {
+        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0 };
+        match speaker {
+            Some(speaker) => self.send_to(speaker, message),
+            None => self.send(message),
+        }
+    }
+
+    /// Listening began (`done` false) or ended, with `model` hearing the words: to `speaker`'s windows only.
+    pub fn listen_step(&self, speaker: &str, id: u64, model: &str, done: bool) {
+        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0 });
     }
 
     /// Asks a feature's model at `url`: `body` builds the request for one model name, posted with the key and
@@ -331,13 +387,16 @@ impl Core {
         let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
         self.spend()?;
         let (mut sent, mut started) = (body(model), std::time::Instant::now());
+        let mut step = self.step_began(&sent, &extra);
         let mut response = post(&sent).await;
         let turned_away = response.as_ref().ok().map(|r| r.status()).filter(|status| cant_use(*status));
         if let (Some(status), Some(base)) = (turned_away, setting.base.as_deref().filter(|base| *base != model)) {
             tracing::info!("{model} answered {status}: asking {base} instead");
+            step.end(false);
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
             (sent, started) = (body(base), std::time::Instant::now());
+            step = self.step_began(&sent, &extra);
             response = post(&sent).await;
             // Two features finding out at once say it once.
             if response.as_ref().is_ok_and(|r| r.status().is_success()) && !setting.on_base.swap(true, Ordering::Relaxed) {
@@ -351,8 +410,41 @@ impl Core {
             answer(response).await
         }
         .await;
+        step.end(result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result
+    }
+}
+
+/// Ids for `ServerMsg::Step`, one per step, shared by every core in the process (tests run several).
+pub static STEP_IDS: AtomicU64 = AtomicU64::new(1);
+
+/// A model call the windows were told began (`Core::step_began`): tells its end exactly once, from `end`, or as
+/// failed when dropped first (the call's future canceled before an answer).
+struct StepGuard<'a> {
+    core: &'a Core,
+    id: u64,
+    step: String,
+    model: Option<String>,
+    started: std::time::Instant,
+    ended: bool,
+}
+
+impl StepGuard<'_> {
+    fn end(mut self, ok: bool) {
+        self.tell(ok);
+    }
+
+    fn tell(&mut self, ok: bool) {
+        if std::mem::replace(&mut self.ended, true) { return; }
+        let ms = self.started.elapsed().as_millis() as u64;
+        self.core.send(ServerMsg::Step { id: self.id, step: self.step.clone(), model: self.model.clone(), done: true, ok, ms });
+    }
+}
+
+impl Drop for StepGuard<'_> {
+    fn drop(&mut self) {
+        self.tell(false);
     }
 }
 
@@ -518,6 +610,21 @@ mod tests {
         assert_eq!(core.key().unwrap(), "good");
     }
 
+    /// A recap draft nobody asked for (recap.rs) is turned away by a busy service without a notice mid-talk; the
+    /// next call someone waits on still says it.
+    #[test]
+    fn a_quiet_call_is_turned_away_without_a_notice() {
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        assert_eq!(Verdict::of(&core.check_as(StatusCode::TOO_MANY_REQUESTS, false).unwrap_err()), Some(Verdict::Busy));
+        assert!(notices(&mut updates).is_empty(), "nobody waits on a draft");
+        let _ = core.check(StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(notices(&mut updates).len(), 1, "a quiet one doesn't use up the spell's notice");
+        let _ = core.check_as(StatusCode::UNAUTHORIZED, false);
+        assert_eq!(notices(&mut updates), vec![REFUSED.to_string()], "a refused key stops everything: said either way");
+    }
+
     #[test]
     fn the_busy_notice_promises_a_retry_only_for_thoughts() {
         // Placing tries a busy thought again on its own (placer.rs); a Recap, Explain or search asks once.
@@ -527,6 +634,18 @@ mod tests {
         let said = notices(&mut updates).join("\n");
         assert!(said.contains("Thoughts retry on their own") && said.contains("try anything else again"), "{said}");
         assert!(said.split_whitespace().count() <= 15, "short enough to read in the 5 s a notice shows (App.tsx): {said}");
+    }
+
+    #[test]
+    fn calls_are_spare_only_under_half_the_cap() {
+        let service = super::Service::with_limit(4);
+        assert!(service.spare(0));
+        service.spend(0).unwrap();
+        assert!(service.spare(1), "1 of 4");
+        service.spend(1).unwrap();
+        assert!(!service.spare(2), "2 of 4: the rest is placing's");
+        assert!(service.spare(super::HOUR_MS), "an hour on, the first has aged out");
+        assert!(super::Service::with_limit(0).spare(0), "no cap");
     }
 
     #[test]
@@ -656,6 +775,61 @@ mod tests {
         let said = notices(&mut updates);
         assert_eq!(said.last().map(String::as_str), Some(REFUSED), "{said:?}");
         assert!(!said.iter().any(|s| s.starts_with("Using")), "{said:?}");
+    }
+
+    /// The model line names, at each step, the model that was actually asked (model-line.ts): every call is told
+    /// as it starts and ends, with the step it's for and the model in the request sent, a turned-away try as failed
+    /// and the model asked instead as a new step. A step with no model, or another model's name, fails here.
+    #[tokio::test]
+    async fn every_model_call_tells_the_windows_its_step_and_the_model_asked() {
+        use serde_json::json;
+        let (url, _) = stand_in().await;
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        let steps = |updates: &mut broadcast::Receiver<Outgoing>| {
+            std::iter::from_fn(|| updates.try_recv().ok())
+                .filter_map(|o| match o.message {
+                    ServerMsg::Step { id, step, model, done, ok, .. } => Some((id, step, model, done, ok)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let reply = json!({"choices": [{"message": {"content": "hi"}}]});
+        for (body, extra, step) in [
+            (json!({"model": "muse-spark-1.3", "prompt_cache_key": "e2a2o-refiner"}), json!(null), "refiner"),
+            (json!({"model": "muse-spark-1.3", "prompt_cache_key": "e2a2o-recap"}), json!(null), "recap"),
+            (json!({"model": "muse-image-1.0"}), json!({"feature": "picture", "thread": "T1"}), "picture"),
+            (json!({"model": "muse-spark-1.3"}), json!({"feature": "app"}), "app"),
+        ] {
+            let mut sent = body.clone();
+            sent["status"] = json!(200);
+            sent["answer"] = reply.clone();
+            core.call_model_noting(&url, &sent, std::time::Duration::from_secs(5), extra).await.unwrap();
+            let told = steps(&mut updates);
+            let model = body["model"].as_str().map(String::from);
+            assert_eq!(told.len(), 2, "{step}: {told:?}");
+            assert_eq!(told[0].0, told[1].0, "start and end share an id");
+            assert_eq!((told[0].1.as_str(), &told[0].2, told[0].3), (step, &model, false), "{told:?}");
+            assert_eq!((told[1].1.as_str(), &told[1].2, told[1].3, told[1].4), (step, &model, true, true), "{told:?}");
+        }
+        // Placing on a key that can't use Contributor mode: the turned-away try ends failed, the base model starts.
+        let setting = Setting::new(None, CONTRIBUTOR);
+        let body = |model: &str| json!({"model": model, "prompt_cache_key": "e2a2o-placer", "status": if model == CONTRIBUTOR { 403 } else { 200 }, "answer": {}});
+        core.ask_model(&setting, &url, std::time::Duration::from_secs(5), body, json!(null)).await.unwrap();
+        let told: Vec<_> = steps(&mut updates).into_iter().map(|(_, step, model, done, ok)| (step, model.unwrap_or_default(), done, ok)).collect();
+        let placer = |model: &str, done, ok| ("placer".to_string(), model.to_string(), done, ok);
+        assert_eq!(told, [placer(CONTRIBUTOR, false, false), placer(CONTRIBUTOR, true, false), placer(BASE, false, false), placer(BASE, true, true)]);
+        // A call dropped before it answers (Search-first past its patience, an import stopped) still ends, failed.
+        let slow = json!({"model": "muse-spark-1.3", "status": 200, "answer": reply, "wait_ms": 2000});
+        let dropped = core.call_model_noting(&url, &slow, std::time::Duration::from_secs(5), json!({"feature": "app search"}));
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), dropped).await.is_err());
+        let told = steps(&mut updates);
+        assert_eq!(told.len(), 2, "{told:?}");
+        assert_eq!((told[0].0, told[1].0, told[1].1.as_str(), told[1].3, told[1].4), (told[0].0, told[0].0, "app search", true, false));
+        // A rule's step names no model.
+        core.rule_step(None, "tune");
+        assert_eq!(steps(&mut updates).into_iter().map(|(_, s, m, d, _)| (s, m, d)).collect::<Vec<_>>(), [("tune".to_string(), None, true)]);
     }
 
     /// A turned-away try is a model call too: the trace has a line for it and one for the try that answered,

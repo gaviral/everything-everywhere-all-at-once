@@ -23,10 +23,12 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 # composer-check needs a live core and real model calls, so it isn't one of them.
 if [ -d ui/node_modules ]; then
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs) continue ;; esac
     check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
+# links-check needs only node, so a fresh clone runs it too.
+check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
 [ -f LICENSE ] || warn "no LICENSE file yet (the owner's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"
@@ -39,6 +41,15 @@ check "model guards catch what they should (self-test)" "python3 scripts/model-g
 check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
 check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
+# Claims stay modest and non-medical (README, docs, UI copy, sample maps, demo talk, prompts): scripts/health-words.pl.
+check "health-wording guard catches what it should (self-test)" "perl scripts/health-words.pl --self-test"
+medical_wording() {
+  git ls-files -z -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src |
+    xargs -0 perl scripts/health-words.pl
+}
+claims=$(medical_wording)
+if [ -z "$claims" ]; then pass "no medical or diagnosis wording in README, docs, UI copy or samples"
+else fail "medical or diagnosis wording (modest, non-medical claims only):"; echo "$claims" | sed 's/^/        /'; fi
 check "core tests pass" "(cd core && cargo test --quiet >/dev/null 2>&1)"
 # A sample must come with a picture file for every thread, or the Palace is blank for anyone without a key.
 samples_have_pictures() {
@@ -95,5 +106,8 @@ for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print
 # So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them.
 for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at"; done
 grep -q 'timeout' core/src/asr.rs || warn "speech stream has no read timeout"
+# Commit messages go public with the repo; scripts/release.sh lists each one and blocks on it.
+n=$(git log --format=%B HEAD | grep -cE '/[U]sers/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
+[ "$n" = 0 ] || warn "commit messages name local paths: scripts/release.sh lists the commits"
 [ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
 exit $failed

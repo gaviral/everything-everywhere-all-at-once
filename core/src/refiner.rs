@@ -8,6 +8,7 @@ use crate::Core;
 use anyhow::Context;
 use serde::Deserialize;
 use serde_json::json;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,6 +100,10 @@ pub async fn run(core: Arc<Core>) {
     let (mut seen_thoughts, mut seen_threads, mut last_pass) =
         (start.thoughts.iter().filter(|t| t.placed).count(), start.threads.len(), crate::now_ms());
     let mut failures = 0;
+    // What the next pass shows in full: threads changed after `since` (the start of the last pass that came
+    // back), and those a capped pass left for later (`owed`). A failed pass moves neither, so its threads go again.
+    let mut since = last_pass;
+    let mut owed: HashSet<String> = HashSet::new();
     // A finished pass that came back while they were talking, with the map it was sent: it lands at the next pause.
     let mut held: Option<(Pass, Arc<World>)> = None;
     loop {
@@ -114,6 +119,8 @@ pub async fn run(core: Arc<Core>) {
             }
             land(&core, waiting, &sent, "held back until this pause");
         }
+        // The map's time: anything that changes after it is the next pass's.
+        let at = crate::now_ms();
         let world = core.snapshot();
         let placed = world.thoughts.iter().filter(|t| t.placed).count();
         let new_thoughts = placed.saturating_sub(seen_thoughts);
@@ -124,11 +131,15 @@ pub async fn run(core: Arc<Core>) {
         if !due || core.key().is_err() {
             continue;
         }
-        let since = last_pass;
         (seen_thoughts, seen_threads, last_pass) = (placed, world.threads.len(), crate::now_ms());
-        let result = pass(&core, &world, since).await;
+        let (body, later) = request_in(&world, &Window { since, now: at, owed: &owed }, &chrono_today());
+        if !later.is_empty() {
+            tracing::info!("refiner pass leaves {} changed threads for later passes", later.len());
+        }
+        let result = pass(&core, body).await;
         let took = crate::now_ms().saturating_sub(last_pass);
         failures = if result.is_ok() { 0 } else { failures + 1 };
+        settle(result.is_ok(), at, later, &mut since, &mut owed);
         match result {
             // Talking resumed while the model worked: move nothing under them; it lands at the next pause, a few
             // seconds on, rather than being thrown away and asked again (which took 15–20 s more in rehearsals).
@@ -221,8 +232,7 @@ fn rest_ms(failures: u32) -> u64 {
     10_000 << failures.min(5)
 }
 
-async fn pass(core: &Core, world: &World, since: u64) -> anyhow::Result<Pass> {
-    let body = request(world, since, &chrono_today());
+async fn pass(core: &Core, body: serde_json::Value) -> anyhow::Result<Pass> {
     let value = core.call_model(URL, &body, PATIENCE).await?;
     let content = value["choices"][0]["message"]["content"].as_str().context("no answer")?;
     serde_json::from_str(content).context("answer wasn't the expected JSON")
@@ -260,11 +270,26 @@ fn kept_apart(world: &World) -> Vec<(String, String)> {
     pairs
 }
 
-/// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on it.
+/// After a pass: one that came back moves the window to its map's time and owes what it left out; a failed one
+/// moves neither, so its threads go again.
+fn settle(ok: bool, at: u64, later: Vec<String>, since: &mut u64, owed: &mut HashSet<String>) {
+    if ok {
+        (*since, *owed) = (at, later.into_iter().collect());
+    }
+}
+
+/// `request_in` for one pass after `since`, with nothing owed (the live checks send what a pass sends).
+#[cfg(test)]
 fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
-    let map = describe(world, since, today);
+    request_in(world, &Window { since, now: crate::now_ms(), owed: &HashSet::new() }, today).0
+}
+
+/// What a pass sends: the rules, today's date ("YYYY-MM-DD (Weekday)"), the bounded map and what's already on
+/// it; and the changed threads left for a later pass.
+fn request_in(world: &World, window: &Window, today: &str) -> (serde_json::Value, Vec<String>) {
+    let (map, later) = describe_in(world, window, today);
     let existing = existing(world);
-    json!({
+    let body = json!({
         "model": std::env::var("REFINER_MODEL").unwrap_or_else(|_| "muse-spark-1.3".into()),
         "reasoning_effort": "low",
         "max_tokens": 6000,
@@ -285,60 +310,137 @@ fn request(world: &World, since: u64, today: &str) -> serde_json::Value {
             },
             "required": ["titles", "merges", "suggestions", "questions", "actions", "tags"]
         }}}
-    })
+    });
+    (body, later)
 }
 
-/// The map as the refiner sees it, bounded however long the talk gets: threads that changed since
-/// the last pass (and the active one) with their latest 8 thoughts; the rest as one line each, which
-/// is enough for titles and merges. The quiet lines come first, so the cached prefix lasts longer.
-/// Each thread shows its tags, and with more than one speaker (a room) each thought says who said it.
-/// Older points carry their local said date, including the last point in a quiet line.
-fn describe(world: &World, since: u64, today: &str) -> String {
-    let points = |t: &Thread| -> Vec<&Thought> {
-        world.thoughts.iter().filter(|p| p.placed && p.thread_id.as_deref() == Some(t.id.as_str())).collect()
-    };
-    let recent = |t: &Thread| {
-        world.active.as_deref() == Some(t.id.as_str()) || t.touched_ms > since || points(t).iter().any(|p| p.at_ms > since)
-    };
+/// At most this many threads go in with their latest points in one pass: the demo's whole talk (≈ 10 threads)
+/// fits in one, and between two passes (≥ 10 s apart) one person touches 1-3. Any more changed threads wait for
+/// the next pass, latest first.
+const BUSY_THREADS: usize = 12;
+/// …and at most about this many tokens of them: 12 threads × 8 points × ≈ 60 tokens (a spoken point of ≈ 45
+/// words). An imported message runs to 2,000 characters, so a few long ones fill it sooner. The latest changed
+/// thread always goes in, whatever its size.
+const BUSY_TOKENS: usize = 6_000;
+/// The quiet one-line threads, latest-touched first, up to about this many tokens: ≈ 375 lines at the measured
+/// ≈ 32 tokens a line, so a 300-thread imported history goes in whole; on a bigger map the threads untouched the
+/// longest are left out (they still keep their titles; a pass just can't merge into them).
+const QUIET_TOKENS: usize = 12_000;
+/// A rough token count for English text, enough to keep a prompt under a budget.
+const CHARS_PER_TOKEN: usize = 4;
+/// The longest date a point's line carries.
+const SAID: &str = " (said YYYY-MM-DD)";
+
+/// Which threads a pass shows with their latest points: those that changed after `since` (a time no later
+/// than `now`; a time ahead of the clock counts as long ago, as in `Thought::said_at`, so a wrong clock can't
+/// mark every thread changed), the active one, and those an earlier capped pass left for later (`owed`).
+pub(crate) struct Window<'a> {
+    pub since: u64,
+    pub now: u64,
+    pub owed: &'a HashSet<String>,
+}
+
+/// The map as the refiner sees it, bounded however big the map gets: the changed threads (see `Window`), up to
+/// `BUSY_THREADS` and `BUSY_TOKENS`, latest first, with their latest 8 thoughts; the rest as one line each, the
+/// latest-touched up to `QUIET_TOKENS`, which is enough for titles and merges. The quiet lines come first, in
+/// map order, so the cached prefix lasts longer. Each thread shows its tags, and with more than one speaker (a
+/// room) each thought says who said it. Older points carry their local said date, including the last point in
+/// a quiet line. Returns the text and the changed threads left for a later pass.
+fn describe_in(world: &World, window: &Window, today: &str) -> (String, Vec<String>) {
+    let now = window.now;
+    // Each thread's placed points in map order, gathered once: per thread, a scan of every thought took 9.8 s
+    // at 1,000 threads (2026-11-01).
+    let mut on: HashMap<&str, Vec<&Thought>> = HashMap::new();
+    for p in world.thoughts.iter().filter(|p| p.placed) {
+        if let Some(id) = p.thread_id.as_deref() {
+            on.entry(id).or_default().push(p);
+        }
+    }
+    let points = |t: &Thread| -> &[&Thought] { on.get(t.id.as_str()).map_or(&[], |v| v.as_slice()) };
+    let clamp = |ms: u64| if ms > now { 0 } else { ms };
+    let latest = |t: &Thread| points(t).iter().map(|p| clamp(p.at_ms)).fold(clamp(t.touched_ms), u64::max);
+    let active = |t: &Thread| world.active.as_deref() == Some(t.id.as_str());
+    // Owed ids as they are now: a thread owed a full pass and merged since passes the debt to the thread it joined.
+    let owed: HashSet<String> = window.owed.iter().map(|id| world.resolve(id)).collect();
+    let changed = |t: &Thread| active(t) || latest(t) > window.since || owed.contains(&t.id);
     let parent = |t: &Thread| t.parent_id.clone().unwrap_or_else(|| "none".into());
     let tags = |t: &Thread| {
         if t.tags.is_empty() { String::new() } else { format!(" tags: {}", t.tags.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(" ")) }
     };
     let named = world.thoughts.iter().map(|p| p.speaker.as_str()).collect::<HashSet<_>>().len() > 1;
+    // A local day costs a run of `date` (≈ 1 ms), so each is asked once per 15 minutes of UTC: every zone's
+    // midnight falls on a quarter hour, so one quarter hour is one local day.
+    let days: RefCell<HashMap<u64, Option<String>>> = RefCell::default();
     let dated = |p: &Thought| {
-        said_on(p).filter(|day| today.get(..10).is_some_and(|now| day.as_str() < now))
+        let day = days.borrow_mut().entry(p.at_ms / 900_000).or_insert_with(|| said_on(p)).clone();
+        day.filter(|day| today.get(..10).is_some_and(|now| day.as_str() < now))
             .map(|day| format!(" (said {day})")).unwrap_or_default()
     };
-    let line = |p: &Thought| {
+    let undated = |p: &Thought| {
         let who = if named { format!("{}: ", p.speaker) } else { String::new() };
         // A thought that trailed off is the unfinished card's to bring back, so the model is told which ones did.
-        format!("  - {who}{}{}{}", p.text, if p.complete { "" } else { " (trailed off)" }, dated(p))
+        format!("  - {who}{}{}", p.text, if p.complete { "" } else { " (trailed off)" })
     };
-    let quiet: Vec<String> = world
-        .threads
-        .iter()
-        .filter(|t| !recent(t))
-        .map(|t| {
-            let said = points(t).into_iter().rev().find(|p| p.point == t.last_point || p.text == t.last_point)
-                .map(dated).unwrap_or_default();
-            format!("{}: {} (parent: {}){} last: {}{said}", t.id, t.title, parent(t), tags(t), t.last_point)
-        })
-        .collect();
-    let busy: Vec<String> = world
-        .threads
-        .iter()
-        .filter(|t| recent(t))
-        .map(|t| {
-            let all = points(t);
-            let latest: Vec<String> = all[all.len().saturating_sub(8)..].iter().map(|p| line(p)).collect();
-            format!("{}: {} (parent: {}){}\n{}", t.id, t.title, parent(t), tags(t), latest.join("\n"))
-        })
-        .collect();
-    format!(
-        "Quiet threads (title, parent, last point):\n{}\nRecently active threads, with their latest points:\n{}",
+    let line = |p: &Thought| undated(p) + &dated(p);
+    let tokens = |text: &str| text.len().div_ceil(CHARS_PER_TOKEN);
+
+    // The changed threads, the active one first, then latest first; full until either cap, the rest owed.
+    let mut wanted: Vec<(usize, &Thread)> = world.threads.iter().enumerate().filter(|(_, t)| changed(t)).collect();
+    wanted.sort_by_key(|&(i, t)| (!active(t), std::cmp::Reverse(latest(t)), i));
+    let (mut busy, mut later, mut spent) = (Vec::new(), Vec::new(), 0);
+    for (_, t) in wanted {
+        if busy.len() == BUSY_THREADS {
+            later.push(t.id.clone());
+            continue;
+        }
+        let all = points(t);
+        let last = &all[all.len().saturating_sub(8)..];
+        let head = format!("{}: {} (parent: {}){}", t.id, t.title, parent(t), tags(t));
+        // Sized without dates, each counted at its longest, so a thread left for later costs no `date` run:
+        // with 1,000 big changed threads, sizing each with its dates ran up to 8,000 of them (≈ 1 ms each).
+        let most = (head.len() + last.iter().map(|p| 1 + undated(p).len() + SAID.len()).sum::<usize>()).div_ceil(CHARS_PER_TOKEN);
+        if !busy.is_empty() && spent + most > BUSY_TOKENS {
+            later.push(t.id.clone());
+            continue;
+        }
+        let text = format!("{head}\n{}", last.iter().map(|p| line(p)).collect::<Vec<_>>().join("\n"));
+        spent += tokens(&text);
+        busy.push(text);
+    }
+    let left: HashSet<&str> = later.iter().map(String::as_str).collect();
+    let full: HashSet<&str> = world.threads.iter().filter(|t| changed(t) && !left.contains(t.id.as_str())).map(|t| t.id.as_str()).collect();
+
+    // The rest as one line each, the latest-touched while they fit (each written only if it is reached), shown
+    // in map order.
+    let mut rest: Vec<(usize, &Thread)> = world.threads.iter().enumerate().filter(|(_, t)| !full.contains(t.id.as_str())).collect();
+    rest.sort_by_key(|&(i, t)| (std::cmp::Reverse(latest(t)), i));
+    let (mut quiet, mut spent) = (Vec::new(), 0);
+    for &(i, t) in &rest {
+        let said = points(t).iter().rev().find(|p| p.point == t.last_point || p.text == t.last_point)
+            .map(|p| dated(p)).unwrap_or_default();
+        let text = format!("{}: {} (parent: {}){} last: {}{said}", t.id, t.title, parent(t), tags(t), t.last_point);
+        spent += tokens(&text) + 1;
+        if spent > QUIET_TOKENS {
+            break;
+        }
+        quiet.push((i, text));
+    }
+    let left_out = rest.len() - quiet.len();
+    quiet.sort_by_key(|&(i, _)| i);
+    let quiet: Vec<String> = quiet.into_iter().map(|(_, text)| text).collect();
+    let older = if left_out > 0 { format!("\n({left_out} threads untouched longer are left out)") } else { String::new() };
+    let text = format!(
+        "Quiet threads (title, parent, last point):\n{}{older}\nRecently active threads, with their latest points:\n{}",
         quiet.join("\n"),
         busy.join("\n")
-    )
+    );
+    (text, later)
+}
+
+/// `describe_in` for one pass after `since`, with nothing owed.
+#[cfg(test)]
+fn describe(world: &World, since: u64, today: &str) -> String {
+    describe_in(world, &Window { since, now: crate::now_ms(), owed: &HashSet::new() }, today).0
 }
 
 fn changes(world: &World, pass: Pass) -> Vec<Change> {
@@ -694,7 +796,11 @@ fn chrono_today() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changes, changes_on, day, describe, drop_stale_titles, drop_taken_back, existing, land_racing, named_at, rest_ms, Pass};
+    use super::{
+        changes, changes_on, day, describe, describe_in, drop_stale_titles, drop_taken_back, existing, land_racing, named_at,
+        request_in, rest_ms, Pass, Window, BUSY_THREADS, BUSY_TOKENS, CHARS_PER_TOKEN, QUIET_TOKENS,
+    };
+    use std::collections::HashSet;
     use crate::tidy::Kind;
     use crate::world::{Action, Change, ItemStatus, Suggestion, Tag, Thought, Thread, ThreadStatus, World};
 
@@ -1164,6 +1270,170 @@ mod tests {
                 world.thoughts.reverse();
             }
         }
+    }
+
+    /// A long history: `n` threads of 8 spoken-length thoughts each (≈ 25 words, as the scale sweep had), thread
+    /// i touched at `start` + i s, so later threads are later.
+    fn big(n: usize, start: u64) -> World {
+        let mut world = World::default();
+        for i in 0..n {
+            let id = format!("T{i}");
+            let touched_ms = start + i as u64 * 1_000;
+            world.threads.push(Thread {
+                last_point: format!("the latest thing said on topic {i}, about a plan and what it costs"),
+                touched_ms,
+                ..thread(&id, None)
+            });
+            for k in 0..8 {
+                world.thoughts.push(Thought {
+                    id: format!("th-{i}-{k}"),
+                    speaker: "you".into(),
+                    text: format!("On topic {i} point {k}: we should look again at the plan for next week and what it costs, then decide who books it"),
+                    point: String::new(),
+                    thread_id: Some(id.clone()),
+                    placed: true,
+                    unclear: String::new(),
+                    guess: String::new(),
+                    heard: String::new(),
+                    fixed: String::new(),
+                    complete: true,
+                    at_ms: touched_ms - 8 + k,
+                    place_ms: None,
+                });
+            }
+        }
+        world
+    }
+
+    /// Thread ids shown with their points, in the order shown.
+    fn full(text: &str) -> Vec<String> {
+        let busy = text.split("Recently active threads, with their latest points:\n").nth(1).unwrap_or("");
+        let busy = busy.split("\nAlready on the map:").next().unwrap_or("");
+        busy.lines().filter(|l| !l.starts_with("  - ") && !l.is_empty()).map(|l| l.split(':').next().unwrap().to_string()).collect()
+    }
+
+    /// The sweep's bug, or a room laptop whose clock runs a day ahead: every timestamp past now. Before, every
+    /// one of 1,000 threads counted as just changed and went in whole (≈ 242k tokens by this count, 214.9k
+    /// measured; 9.8 s to build). Now none does, the one-line threads stop at their budget, and it builds fast.
+    #[test]
+    fn a_clock_ahead_marks_nothing_changed_and_a_pass_stays_bounded_at_1000_threads() {
+        let now = crate::now_ms();
+        let mut world = big(1_000, now + 86_400_000);
+        let owed = HashSet::new();
+        let window = Window { since: now - 10_000, now, owed: &owed };
+        let started = std::time::Instant::now();
+        let (body, later) = request_in(&world, &window, TODAY);
+        let took = started.elapsed();
+        let prompt = body["messages"][1]["content"].as_str().unwrap();
+        assert!(full(prompt).is_empty() && later.is_empty(), "{:?}", full(prompt));
+        let tokens = prompt.len() / CHARS_PER_TOKEN;
+        assert!(tokens <= QUIET_TOKENS + 200, "{tokens} tokens");
+        assert!(prompt.contains("threads untouched longer are left out"));
+        // A pause in a pass runs every 10 s; building it must not hold the core (this machine: a few ms).
+        assert!(took < std::time::Duration::from_millis(500), "{took:?}");
+        // What is said now on a thread stamped ahead still counts.
+        world.thoughts.push(Thought { id: "now".into(), at_ms: now - 1, ..world.thoughts[40].clone() });
+        let (text, _) = describe_in(&world, &window, TODAY);
+        assert_eq!(full(&text), ["T5"]);
+    }
+
+    /// A bulk change (every thread really changed): each pass sends the 12 latest in full and leaves the rest for
+    /// the next passes, latest first, until each went once; every pass stays under its budget.
+    #[test]
+    fn changed_threads_past_the_cap_wait_for_later_passes_latest_first() {
+        let now = crate::now_ms();
+        let world = big(1_000, now - 2_000_000);
+        let mut owed: HashSet<String> = HashSet::new();
+        let mut since = now - 3_000_000;
+        let mut sent: Vec<String> = Vec::new();
+        for pass in 0.. {
+            let (text, later) = describe_in(&world, &Window { since, now, owed: &owed }, TODAY);
+            let shown = full(&text);
+            if pass == 0 {
+                assert_eq!(shown[..3], ["T999", "T998", "T997"]);
+                assert_eq!(later.len(), 1_000 - BUSY_THREADS);
+            }
+            assert!(text.len() / CHARS_PER_TOKEN <= BUSY_TOKENS + QUIET_TOKENS + 200, "{}", text.len());
+            assert!(shown.len() <= BUSY_THREADS);
+            sent.extend(shown);
+            (since, owed) = (now, later.into_iter().collect());
+            if owed.is_empty() {
+                assert_eq!(pass, 1_000usize.div_ceil(BUSY_THREADS) - 1);
+                break;
+            }
+        }
+        let want: Vec<String> = (0..1_000).rev().map(|i| format!("T{i}")).collect();
+        assert_eq!(sent, want, "each thread once, latest first");
+    }
+
+    /// The active thread always goes in first, and a thread too big for the budget still goes in alone; a map the
+    /// demo's size goes in whole, as before.
+    #[test]
+    fn the_active_thread_goes_first_and_a_small_map_is_never_cut() {
+        let now = crate::now_ms();
+        let mut world = big(10, now - 60_000);
+        let (text, later) = describe_in(&world, &Window { since: 0, now, owed: &HashSet::new() }, TODAY);
+        assert_eq!(full(&text).len(), 10);
+        assert!(later.is_empty() && !text.contains("left out"));
+        world.active = Some("T0".into());
+        let (text, _) = describe_in(&world, &Window { since: now, now, owed: &HashSet::new() }, TODAY);
+        assert_eq!(full(&text), ["T0"]);
+        // T3 alone is past the token budget: the threads after it that fit go now, T3 at the next pass, alone.
+        for p in world.thoughts.iter_mut().filter(|p| p.thread_id.as_deref() == Some("T3")) {
+            p.text = "word ".repeat(600);
+        }
+        world.active = None;
+        let (text, later) = describe_in(&world, &Window { since: 0, now, owed: &HashSet::new() }, TODAY);
+        assert_eq!(full(&text), ["T9", "T8", "T7", "T6", "T5", "T4", "T2", "T1", "T0"]);
+        assert_eq!(later, ["T3"]);
+        let owed: HashSet<String> = later.into_iter().collect();
+        let (text, later) = describe_in(&world, &Window { since: now, now, owed: &owed }, TODAY);
+        assert_eq!(full(&text), ["T3"]);
+        assert!(later.is_empty());
+    }
+
+    /// A pass that came back moves the window and owes what it left; a failed one keeps both, so it goes again.
+    #[test]
+    fn only_a_pass_that_came_back_moves_the_window() {
+        let (mut since, mut owed) = (5, HashSet::from(["T1".to_string()]));
+        super::settle(false, 9, vec!["T2".into()], &mut since, &mut owed);
+        assert_eq!((since, owed.clone()), (5, HashSet::from(["T1".to_string()])));
+        super::settle(true, 9, vec!["T2".into()], &mut since, &mut owed);
+        assert_eq!((since, owed), (9, HashSet::from(["T2".to_string()])));
+    }
+
+    /// A thread owed a full pass and merged before that pass (a merge keeps the points' times): the thread it
+    /// joined goes in full instead, so the owed points still get their pass.
+    #[test]
+    fn an_owed_thread_merged_away_passes_its_turn_to_the_thread_it_joined() {
+        let now = crate::now_ms();
+        let mut world = big(10, now - 600_000);
+        let owed: HashSet<String> = ["T3".to_string()].into();
+        world.apply(&crate::world::Change::ThreadMerged { from: "T3".into(), into: "T1".into() });
+        let (text, later) = describe_in(&world, &Window { since: now, now, owed: &owed }, TODAY);
+        assert_eq!(full(&text), ["T1"]);
+        assert!(later.is_empty());
+    }
+
+    /// 1,000 big changed threads, each said on a different day: only the one that fits is dated. Sizing each
+    /// with its dates ran one `date` per point, 8,000 in all (≈ 8 s), before the model call and outside its timeout.
+    #[test]
+    fn threads_left_for_later_are_sized_without_dates() {
+        let now = crate::now_ms();
+        let mut world = big(1_000, now - 2_000_000);
+        for (i, p) in world.thoughts.iter_mut().enumerate() {
+            p.text = format!("{} {i}", "word ".repeat(400));
+            p.at_ms = 1_700_000_000_000 + i as u64 * 86_400_000;
+        }
+        for t in world.threads.iter_mut() {
+            t.last_point = "short".into();
+        }
+        let started = std::time::Instant::now();
+        let (text, later) = describe_in(&world, &Window { since: now - 3_000_000, now, owed: &HashSet::new() }, TODAY);
+        let took = started.elapsed();
+        assert_eq!(full(&text).len(), 1);
+        assert_eq!(later.len(), 999);
+        assert!(took < std::time::Duration::from_millis(1_000), "{took:?}");
     }
 
     /// A map of (id, title, what was said) rows.
