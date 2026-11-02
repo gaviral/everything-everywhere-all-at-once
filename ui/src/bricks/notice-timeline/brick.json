@@ -1,0 +1,8 @@
+{
+  "id": "notice-timeline",
+  "name": "Notice timeline",
+  "does": "Keeps every notice; a clock, or “what just happened?”, shows the ones you missed.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

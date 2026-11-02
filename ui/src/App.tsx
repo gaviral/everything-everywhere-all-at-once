@@ -948,12 +948,17 @@ export default function App() {
 
   const status = statusLine({ connected: core.connected, listening: !!stopMic, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
-  const friendlyNotice = core.notice && (
+  const noticeText = (text: string) => text && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
-    (site.hosted || !core.keyRefused) && aboutKey(core.notice) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
-    : core.notice.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
-    : core.notice
+    (site.hosted || !core.keyRefused) && aboutKey(text) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
+    : text.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
+    : text
   );
+  const friendlyNotice = noticeText(core.notice);
+  // What came up since the last render, in the lane's words, to the bricks (on("notice")).
+  useEffect(() => {
+    for (const notice of core.takeNotices()) brickHost.emit("notice", { ...notice, text: noticeText(notice.text) });
+  });
 
   return (
     <MotionConfig reducedMotion="user">
