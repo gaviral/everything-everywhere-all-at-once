@@ -40,7 +40,7 @@ Browser, one page per window (ui/src)
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
-  limits.ts      the core's caps on what the window sends (protocol.rs), checked first so a long paste keeps its draft (held by `scripts/limits-check.mjs`)
+  limits.ts      the core's caps on what the window sends (protocol.rs), checked first; a thought past the cap goes in parts, cut at paragraphs, else sentences, else words (held by `scripts/limits-check.mjs`)
   merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
   landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it

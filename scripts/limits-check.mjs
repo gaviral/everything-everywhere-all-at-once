@@ -1,7 +1,6 @@
 // No extra dependencies: run with `node scripts/limits-check.mjs`.
 // Bounded inputs in the window (ui/src/limits.ts): the same numbers as the core's (core/src/protocol.rs), counted
-// the way the core counts; a thought past the cap and a message past the frame cap get a calm notice instead of
-// being sent, and the window's senders and title box use them.
+// the way the core counts; long thoughts split at natural breaks and oversized frames are refused.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
@@ -26,6 +25,23 @@ try {
   assert.equal(limits.tooLongThought(at), null);
   assert.equal(limits.tooLongThought(`  ${"a".repeat(limits.THOUGHT_MAX)}  `), null, "trimmed first, as the core does");
   assert.equal(limits.tooLongThought(`${at}a`), limits.THOUGHT_TOO_LONG);
+  const split = limits.splitThought, max = limits.THOUGHT_MAX;
+  assert.deepEqual(split("  \n \t"), []);
+  assert.deepEqual(split(`  ${at}  `), [at], "exact Unicode cap");
+  assert.deepEqual(split(`${at}🙂`), [at, "🙂"], "never cuts a surrogate pair");
+  const para = "p".repeat(1000), sentence = "s".repeat(2000) + ".", tail = "w ".repeat(2000);
+  assert.equal(split(`${para}\r\n\r\n${sentence} ${tail}`)[0], para, "paragraph wins over later sentences and words");
+  assert.equal(split(`${sentence} ${tail}`.repeat(2))[0], sentence, "sentence wins over later words");
+  const words = "word ".repeat(1600);
+  assert.deepEqual(split(words), ["word ".repeat(1200).trim(), "word ".repeat(400).trim()]);
+  assert.deepEqual(split("x".repeat(max * 2 + 1)), ["x".repeat(max), "x".repeat(max), "x"], "unbroken text");
+  assert.equal(split(`${"x".repeat(max - 1)}. rest`)[0].length, max, "sentence ends exactly at cap");
+  assert.deepEqual(split(`${"p".repeat(10)}\n${"q".repeat(max - 11)}\n\nrest`), [`${"p".repeat(10)}\n${"q".repeat(max - 11)}`, "rest"], "a paragraph ending exactly at the cap stays whole");
+  for (const input of [words, `${para}\n\n${sentence} ${tail}`, "🙂".repeat(max * 3), "a" + " ".repeat(max * 2) + "b"]) {
+    const parts = split(input);
+    assert.ok(parts.every((part) => part.trim() && [...part].length <= max), "nonempty bounded parts");
+    assert.equal(parts.join("").replace(/\s/gu, ""), input.replace(/\s/gu, ""), "content and order preserved");
+  }
   // Bytes on the wire for a frame: 3-byte characters count three times.
   assert.equal(limits.tooBig("€".repeat(Math.floor(limits.FRAME_MAX / 3))), null);
   assert.equal(limits.tooBig("€".repeat(Math.floor(limits.FRAME_MAX / 3) + 1)), limits.TOO_BIG);
@@ -41,11 +57,11 @@ try {
   // Calm: no blame, no jargon, says what to do.
   for (const words of [limits.THOUGHT_TOO_LONG, limits.TOO_BIG]) assert.doesNotMatch(words, /error|invalid|frame|byte|exceed/i);
 
-  // The window uses them: every message passes `tooBig`, a typed thought `tooLongThought` (keeping the draft),
+  // The window uses them: every message passes `tooBig`, a typed thought is split before sending,
   // and the title box clips at the cap by character.
   const core = read("ui/src/core.ts");
   assert.match(core, /const send = useCallback\(\(data: string \| ArrayBuffer\) => \{\s*const big = tooBig\(data\);/);
-  assert.match(core, /sendText: \(text: string\) => \{\n(?:.*\n){0,3}.*tooLongThought\(text\)/);
+  assert.match(core, /const parts = splitThought\(text\);/);
   // (not a native maxLength: it counts UTF-16 units, so it would cut a title the core accepts)
   const moves = read("ui/src/Moves.tsx");
   assert.doesNotMatch(moves, /maxLength/);

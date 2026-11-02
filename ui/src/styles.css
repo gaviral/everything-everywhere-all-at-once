@@ -551,7 +551,7 @@ header {
   box-shadow: var(--shadow);
 }
 
-.composer input {
+.composer textarea {
   flex: 1;
   padding: 8px 0;
   border: 0;
@@ -559,6 +559,12 @@ header {
   background: transparent;
   color: var(--ink);
   font: inherit;
+  resize: none;
+  /* One line, as tall as the input it replaced (its line and padding), so the dock keeps its height and an empty
+     composer has nothing to scroll; longer words wrap and scroll in place, with the caret's line in view and no bar. */
+  height: calc(1lh + 16px);
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .mic {
@@ -742,7 +748,7 @@ header {
 .pill { overflow-wrap: anywhere; }
 .composer { transition: border-color .2s, box-shadow .2s; }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
-.composer input { min-width: 0; }
+.composer textarea { min-width: 0; }
 .mic { flex: none; transition: background .2s, transform .15s; }
 .mic:hover { background: color-mix(in srgb, var(--accent) 20%, var(--accent-soft)); }
 .mic.on:hover { background: var(--accent); }
@@ -854,7 +860,7 @@ header:has(.room-menu[open]) { z-index: 11; }
 .did-you-mean button { min-height: 30px; }
 .pullback-title { font-size: 15px; }
 .pullback-actions button { min-height: 40px; }
-.composer input::placeholder { color: var(--muted); opacity: 1; }
+.composer textarea::placeholder { color: var(--muted); opacity: 1; }
 
 /* The active thread is the map's anchor; session progress stays secondary. */
 .session-count { margin-left: 18px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
@@ -968,7 +974,7 @@ img.slot-picture[data-instant] { transition: none; }
   .session-count { flex: 0 1 auto; flex-basis: auto; min-width: 0; }
   .recap-button { padding-inline: 11px; }
   /* At 16 px a placeholder can outrun a 320 px composer: it ends in "…", not mid-word under the mic. */
-  .composer input { text-overflow: ellipsis; }
+  .composer textarea { text-overflow: ellipsis; }
   /* The tools row scrolls away with the page: pinned, its rows took 152 of a 664 px screen and left the map 54%. */
   .map-tools { position: static; }
   .thread { scroll-margin-top: calc(var(--header-height, 64px) + 12px); }
@@ -1033,3 +1039,6 @@ img.slot-picture[data-instant] { transition: none; }
   /* The unfinished card keeps its title and buttons; its quote of your last words gave the dock a line the map needs. */
   .pullback-quote { display: none; }
 }
+
+/* Below 380 px the idle status hides its words. Capture must always keep the existing Listening indicator visible. */
+.header-actions > .status.capturing > span[aria-hidden="true"] { display: inline; }

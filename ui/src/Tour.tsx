@@ -56,7 +56,7 @@ export function Tour({ populated, noKey, resting = false }: { populated: boolean
   const finish = () => {
     rememberTour();
     setStep(-1);
-    const target = current.slot === "tour-tools" ? ".apps-title" : current.slot === "tour-map" ? ".thread-toggle, .composer input" : ".composer input";
+    const target = current.slot === "tour-tools" ? ".apps-title" : current.slot === "tour-map" ? ".thread-toggle, .composer textarea" : ".composer textarea";
     requestAnimationFrame(() => document.querySelector<HTMLElement>(target)?.focus());
   };
   const next = () => {

@@ -6,7 +6,8 @@
 // longer has goes (also when another window stopped it and a newer one ended), an end said while away shows, and a
 // fresh window shows no old end. Live routing (ui/src/route.ts): the landing's tag
 // stays readable when the next thought's weighing follows at once, another speaker's active candidate is named, and a
-// card a point is dragged over keeps its drop outline. Exit 3 (skipped) when this machine has no Chrome or ui/dist.
+// card a point is dragged over keeps its drop outline. The mic: real taps on and off leave your thoughts on their way
+// in the dock, and "Listening" shows at 320 px while capture runs. Exit 3 (skipped) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
@@ -147,6 +148,32 @@ try {
   const outline = await evaluate(`(() => { const c = document.querySelector("#thread-T1"); c.classList.add("drop-over"); const s = getComputedStyle(c);
     const o = { style: s.outlineStyle, lit: c.classList.contains("route-candidate") }; c.classList.remove("drop-over"); return o; })()`);
   assert.deepEqual(outline, { style: "solid", lit: true }, "the drop outline shows on a card the placer weighs");
+
+  // ---- Real taps on the mic, on then off, at a phone's 320 px: your thoughts on their way stay in the dock (the mic
+  // never resets the waiting list), and while capture runs its "Listening" shows. A stand-in microphone (a tone
+  // through a real MediaStream) lets capture run as it does with a device.
+  const onItsWay = (id, text) => ({ ...thought(id, text, null), placed: false, place_ms: null });
+  joinReply = [{ type: "snapshot", world: { ...world, thoughts: [...world.thoughts, onItsWay("w1", "Call the bank about the card"), onItsWay("w2", "Ask Sam about Saturday")] } }];
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 320, height: 700, deviceScaleFactor: 1, mobile: true });
+  await cdp("Page.reload", {});
+  assert.ok(await until(`document.querySelectorAll(".pending .pill").length === 2`, 10000), "two thoughts on their way");
+  await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(); const tone = ctx.createOscillator();
+    const out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+  const waitingShown = `[...document.querySelectorAll(".pending .pill")].filter((p) => p.getBoundingClientRect().height > 0).length`;
+  const tapMic = async () => {
+    const at = await evaluate(`(() => { const r = document.querySelector("button.mic").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+  };
+  await tapMic();
+  assert.ok(await until(`!!document.querySelector(".status.capturing")`, 5000), "a tap starts capture");
+  assert.equal(await evaluate(waitingShown), 2, "starting the mic leaves the waiting list");
+  assert.ok(await evaluate(`(() => { const words = document.querySelector(".header-actions > .status > span[aria-hidden]");
+    return !!words && getComputedStyle(words).display !== "none" && words.textContent.includes("Listening"); })()`), "Listening shows at 320 px while capture runs");
+  assert.ok(core.heard.some((m) => m.type === "listen" && m.on === true), "the core is told to listen");
+  await tapMic();
+  assert.ok(await until(`!document.querySelector(".status.capturing")`, 3000), "a second tap stops capture");
+  await sleep(300);
+  assert.equal(await evaluate(waitingShown), 2, "stopping the mic leaves the waiting list");
 } catch (error) {
   failed = error;
 } finally {

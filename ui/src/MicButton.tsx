@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import { onReading } from "./apps-audio";
 import { keyWords, useSite } from "./site";
 import "./micbutton.css";
@@ -77,7 +77,7 @@ export function ringFill(level: number): number {
 }
 
 /** `capturing`: the browser is taking sound, so a tap stops it, even while the speech service is still starting. */
-export function MicButton({ state, capturing, disabled, onClick }: { state: MicState; capturing: boolean; disabled: boolean; onClick: () => void }) {
+export function MicButton({ state, capturing, disabled, onClick }: { state: MicState; capturing: boolean; disabled: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void }) {
   const button = useRef<HTMLButtonElement>(null);
   const on = state === "listening" || state === "hearing";
   useEffect(() => {

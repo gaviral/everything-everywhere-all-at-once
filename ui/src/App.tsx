@@ -1,4 +1,4 @@
-import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -77,8 +77,9 @@ export default function App() {
     return ideaCounts(world, start, Date.now());
   }, [world.thoughts, world.threads, world.merged, world.notes]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
+  const micStart = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; micStart.current?.abort(); }; }, []);
   useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -175,7 +176,7 @@ export default function App() {
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const composerRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   // Typed in the composer since the last thought went: ⌘Z there then restores the typing, not the last turn.
   const typedSinceSend = useRef(false);
   const dockRef = useRef<HTMLElement>(null);
@@ -411,6 +412,17 @@ export default function App() {
     return !!stop;
   };
 
+  // A permission prompt can outlive a disconnect or pagehide (including the back/forward cache). Cancel it;
+  // neither reconnect nor restoring a page may finish an old start. Only a new mic tap starts capture.
+  useEffect(() => {
+    if (!core.connected) micStart.current?.abort();
+  }, [core.connected]);
+  useEffect(() => {
+    const hide = () => { micStart.current?.abort(); if (releaseMic()) core.listen(false); };
+    window.addEventListener("pagehide", hide);
+    return () => window.removeEventListener("pagehide", hide);
+  }, []);
+
   // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
   // would need it to keep listening). The core has ended the stream already and drops anything heard after. Before
   // the stream's end below: both often arrive in one render, and then "Paused" is the answer, not "The mic stopped".
@@ -443,7 +455,7 @@ export default function App() {
   }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
-    if (liveStop.current && aboutKey(core.notice)) releaseMic();
+    if (liveStop.current && aboutKey(core.notice)) { releaseMic(); core.listen(false); }
   }, [core.notice, stopMic]);
 
   // The site's mic permission, where the browser says it: "denied" looks blocked; allowed later (from the address
@@ -459,12 +471,15 @@ export default function App() {
     }
   }), []);
 
-  const toggleMic = async () => {
+  // Capture starts only from a gesture in this tab. The mic button's click (keyboard activation too) passes its event,
+  // which must be the browser's own, never a script's; a caller without one (a brick's listen, the Keys brick's ⌘D)
+  // still meets mic.ts's check that a click or key press is under way in this tab.
+  const toggleMic = async (event?: { isTrusted: boolean }) => {
+    if ((event && !event.isTrusted) || micStart.current || (!core.connected && !liveStop.current)) return;
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
     setPaused(false);
-    if (stopMic) {
-      stopMic();
-      setStopMic(null);
+    if (liveStop.current) {
+      releaseMic();
       core.listen(false);
       return;
     }
@@ -473,6 +488,9 @@ export default function App() {
       core.showNotice(core.keyNotice);
       return;
     }
+    const attempt = new AbortController();
+    micStart.current = attempt;
+    const sameConnection = core.micConnection();
     setStartingMic(true);
     if (micNotice(core.notice)) core.clearNotice();
     try {
@@ -487,21 +505,21 @@ export default function App() {
         core.listen(false);
         core.showNotice("The mic stopped: the microphone went away. Tap it to listen again, or type below.");
       };
-      const stopAudio = await startMic(core.sendAudio, ended);
+      const stopAudio = await startMic(core.sendAudio, ended, attempt.signal);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
-      if (!mounted.current) { stop(); return; }
+      if (!mounted.current || attempt.signal.aborted || !sameConnection()) { stop(); return; }
       setMicBlocked("");
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
       voiceListenedAt.current = voiceRevisions.current.listened;
+      liveStop.current = stop;
       setStopMic(() => stop);
       if (!core.listen(true)) {
-        stop();
-        setStopMic(null);
+        releaseMic();
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || attempt.signal.aborted) return;
       core.listen(false);
       // The browser's own words go to the console; the window says where to fix it (mic.ts).
       console.warn("The mic didn't start:", err);
@@ -509,6 +527,7 @@ export default function App() {
       if (failed.blocked) setMicBlocked(failed.blocked);
       core.showNotice(failed.words);
     } finally {
+      if (micStart.current === attempt) micStart.current = null;
       if (mounted.current) setStartingMic(false);
     }
   };
@@ -519,6 +538,14 @@ export default function App() {
       setHelpOpen(false);
       if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
       if (core.sendText(draft.trim())) { setDraft(""); typedSinceSend.current = false; }
+    }
+  };
+
+  // A one-row textarea preserves pasted paragraphs; Enter still sends as it did in the input.
+  const submitOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
   };
 
@@ -904,7 +931,7 @@ export default function App() {
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
-  const status = statusLine({ connected: core.connected, listening: core.listening, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
+  const status = statusLine({ connected: core.connected, listening: !!stopMic, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
   const friendlyNotice = core.notice && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
@@ -963,10 +990,10 @@ export default function App() {
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
-        <div className="status">
+        <div className={stopMic ? "status capturing" : "status"}>
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
           {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
-          <span aria-hidden="true">{core.connected && core.resting && !core.listening ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
+          <span aria-hidden="true">{core.connected && core.resting && !stopMic ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
           {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
@@ -1116,10 +1143,13 @@ export default function App() {
           </div>
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
-            <input
+            <textarea
+              rows={1}
               id={COMPOSER_ID}
               ref={composerRef}
               value={draft}
+              onKeyDown={submitOnEnter}
+              enterKeyHint="send"
               onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
