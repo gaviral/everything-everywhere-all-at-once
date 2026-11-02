@@ -25,7 +25,8 @@ export const NOTICE_MS = 1000;
  *  path down; the thought's own flight (a spring of ≈ 0.4 s) is still moving then, so the path adds no wait. */
 export const LEVEL_MS = 200;
 
-/** How long the landing's tag stays: the time to notice it and read it. A newer thought's routing replaces it sooner. */
+/** How long the landing's tag stays: the time to notice it and read it. A newer thought's landing replaces it sooner;
+ *  a newer thought's weighing doesn't (a turn said in two parts weighs the second 0 ms after the first lands). */
 export function holdMs(text: string): number {
   return NOTICE_MS + READ_MS_PER_WORD * text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
@@ -45,9 +46,10 @@ export function raceLine(d: Decided): string {
   return d.why ? `${d.why[0].toUpperCase()}${d.why.slice(1)}. ${race}` : race;
 }
 
-/** The state after a route message, at `now`. A newer thought's routing takes over the map from the last landing. */
+/** The state after a route message, at `now`. A newer thought's weighing lights its candidates while the last landing's
+ *  tag stays until read; its landing takes over from it. */
 export function routed(state: RouteState, route: Weighing | Decided, now: number): RouteState {
-  if (route.stage === "weighing") return { weighing: route, landed: null };
+  if (route.stage === "weighing") return { weighing: route, landed: state.landed };
   const weighing = state.weighing?.thought_id === route.thought_id ? null : state.weighing;
   if (route.skipped || route.path.length === 0) return { weighing, landed: null };
   return { weighing, landed: { decided: route, until: now + holdMs(landTag(route)) } };
@@ -63,14 +65,15 @@ export function placingNow(state: RouteState, now: string | null): RouteState {
  *  `via` (the top thread of the branch it landed on); `deep` when `here` is a branch, so it settles after `via`. */
 export type Mark = { kind: "candidate" | "here" | "via"; tag: string | null; title: string | null; deep: boolean };
 
-export function markFor(state: RouteState, threadId: string, now: number): Mark | null {
+/** `own`: the window's own active thread (`active_by[me] ?? active`). */
+export function markFor(state: RouteState, threadId: string, now: number, own: string | null = null): Mark | null {
+  const landed = state.landed && now < state.landed.until ? state.landed : null;
+  const path = landed?.decided.path ?? [];
+  // The landing's tag stays until read, though the next thought already weighs this card (it's the active one now).
+  if (landed && path.at(-1) === threadId) return { kind: "here", tag: landTag(landed.decided), title: raceLine(landed.decided), deep: path.length > 1 };
   const c = state.weighing?.candidates.find((c) => c.thread_id === threadId);
-  // "active" needs no tag: the card's own chip says it.
-  if (c) return { kind: "candidate", tag: c.why === "active" ? null : c.why, title: null, deep: false };
-  const landed = state.landed;
-  if (!landed || now >= landed.until) return null;
-  const path = landed.decided.path;
-  if (path.at(-1) === threadId) return { kind: "here", tag: landTag(landed.decided), title: raceLine(landed.decided), deep: path.length > 1 };
+  // Your own active needs no tag: the card's chip says it. In a room another speaker's active has no chip here.
+  if (c) return { kind: "candidate", tag: c.why === "active" && threadId === own ? null : c.why, title: null, deep: false };
   if (path.length > 1 && path[0] === threadId) return { kind: "via", tag: null, title: null, deep: false };
   return null;
 }
@@ -116,9 +119,10 @@ export function resetRoute() {
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 const key = (m: Mark | null) => (m ? JSON.stringify(m) : "");
 
-/** A card's mark, as a string that changes only when the mark does (so only the cards it touches render again). */
-export function useRouteMark(threadId: string): Mark | null {
-  const read = () => key(markFor(state, threadId, Date.now()));
+/** A card's mark, as a string that changes only when the mark does (so only the cards it touches render again). `own`:
+ *  the window's own active thread. */
+export function useRouteMark(threadId: string, own: string | null): Mark | null {
+  const read = () => key(markFor(state, threadId, Date.now(), own));
   const text = useSyncExternalStore(subscribe, read, read);
   return text ? (JSON.parse(text) as Mark) : null;
 }

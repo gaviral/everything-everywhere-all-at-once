@@ -1335,6 +1335,8 @@ struct Join {
     /// The name this window joined a room with; none alone.
     #[serde(default)]
     name: String,
+    /// The message card's Stop, pressed while this window's last connection was down (ui/src/core.ts `stopSend`).
+    stop: Option<u64>,
 }
 
 async fn connect(
@@ -1349,6 +1351,11 @@ async fn connect(
     let Some(seat) = Seat::take(&core, &speaker, link) else {
         return (StatusCode::CONFLICT, "That name is taken in this room.").into_response();
     };
+    // Before this window counts as open (`session`), so a count that ends while it connects can't send first: with none
+    // of the speaker's windows open it ends unsent (messages.rs `finish`), and once this one is, the Stop already went.
+    if let Some(id) = join.stop {
+        messages::stop(&core, id);
+    }
     // Bounded (protocol.rs `FRAME_MAX`): axum's default is 64 MiB a message.
     let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
     upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, seat))
@@ -1382,11 +1389,13 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
 /// message counting down.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
-    let mut messages = vec![ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()];
+    // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
+    // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
+    // card back with its Stop; one whose count ended while the window was away gets how it ended.
+    let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).into_iter().collect();
+    messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
-    // A reload mid-count gets the card back, with its Stop: it still sends when the count ends.
-    messages.extend(crate::messages::counting_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
@@ -1406,6 +1415,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
     }
+    // Counted before its catch-up, so a count that ends now still has this window to stop it (messages.rs `finish`).
+    let _window = messages::window(&core, &speaker);
     let updates = core.updates.subscribe();
     for message in catch_up(&core, &speaker) {
         if write(&mut out, &message).await.is_err() { return; }
@@ -1650,7 +1661,7 @@ impl Core {
 
 #[cfg(test)]
 mod tests {
-    use super::{access, command, filler, local, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
+    use super::{access, command, filler, local, messages, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
     use super::{is_go_back, is_go_next, is_go_previous, is_new_thread, view, ACKS, ASKING, SOUNDS};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
@@ -2532,6 +2543,44 @@ mod tests {
         let status = received(&mut window).await;
         assert_eq!((status["listening"].as_bool(), status["note"].as_str()), (Some(false), Some("Not listening")));
         window.close(None).await.unwrap();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A message card's Stop pressed while the window was offline rides on its reconnection (ui/src/core.ts
+    /// `stopSend`), so the core applies it before that window counts as open (messages.rs `finish`): the first thing
+    /// the window hears is that its message stopped, and nothing went.
+    #[tokio::test]
+    async fn a_stop_pressed_offline_is_applied_before_the_window_is_back() {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        // A stand-in for Messages: it only counts what it was asked to send.
+        let sent = Arc::new(std::sync::Mutex::new(0));
+        let count = sent.clone();
+        let sender: messages::Sender = Arc::new(move |_, _| {
+            *count.lock().unwrap() += 1;
+            Box::pin(async { Ok(()) })
+        });
+        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true };
+        let core = Arc::new(Core { messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
+        core.add_thought("you", "Ask Mia to confirm what to bring");
+        for _ in 0..100 {
+            if messages::is_counting(&core, 1) { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(messages::is_counting(&core, 1), "the message counts down");
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(super::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?stop=1")).await.unwrap();
+        let first = received(&mut window).await;
+        assert_eq!((first["type"].as_str(), first["id"].as_u64(), first["state"].as_str()), (Some("send_card"), Some(1), Some("stopped")), "{first}");
+        assert_eq!(received(&mut window).await["type"], "snapshot");
+        assert!(!messages::is_counting(&core, 1));
+        assert_eq!(*sent.lock().unwrap(), 0, "nothing went");
         let _ = std::fs::remove_file(&path);
     }
 
