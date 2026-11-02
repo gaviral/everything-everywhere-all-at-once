@@ -198,6 +198,7 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["this-card.ts", `doc.addEventListener("keydown", key, true)`], why: "tracks which card “this” means" },
   { at: ["App.tsx", "event.key === \"Esc"], why: "Esc in search clears it (search's own feedback)" },
   { at: ["Moves.tsx", "onChange={(event) => setQuery(event.target.value)}"], why: "typing in the move list's filter: the list narrows as you type" },
+  { at: ["App.tsx", "onKeyDown={submitOnEnter}"], why: "Enter submits the composer through its existing send feedback" },
   { at: ["App.tsx", "typedSinceSend.current = true; setDraft"], why: "typing a thought: the words are the feedback" },
   { at: ["Apps.tsx", "onChange={(e) => setRequest(e.target.value)}"], why: "typing an app request: the words are the feedback" },
   { at: ["room.tsx", "setCode(e.target.value)"], why: "typing the room code" },

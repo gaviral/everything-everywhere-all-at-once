@@ -139,6 +139,13 @@ export function receiveStep(msg: { type: string }): boolean {
   return true;
 }
 
+/** This tab stopped capture; a late server step must not leave "mic on" in the composer. */
+export function stopListeningStep() {
+  if (!state.listening) return;
+  state = { ...state, listening: null };
+  notify();
+}
+
 /** On reconnecting: the core forgets the calls it was making, so the window does too. */
 export function resetSteps() {
   state = EMPTY_LINE;

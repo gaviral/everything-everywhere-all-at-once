@@ -17,7 +17,7 @@ try {
   const top = app.slice(app.indexOf('<div className="app"'), app.indexOf("<header"));
   assert.match(top, /<a className="skip-link" href=\{`#\$\{COMPOSER_ID\}`\}/, "the skip link comes before the header");
   assert.match(top, /composerRef\.current\?\.focus\(\)/, "the skip link focuses the composer");
-  assert.match(app, /<input\s+id=\{COMPOSER_ID\}\s+ref=\{composerRef\}/, "the composer's input carries the link's target");
+  assert.match(app, /<textarea\s+rows=\{1\}\s+id=\{COMPOSER_ID\}\s+ref=\{composerRef\}/, "the composer's input carries the link's target");
   assert.equal(keys.COMPOSER_ID, "type-a-thought");
   // Hidden until focused, then on screen above everything.
   const skip = styles.match(/\.skip-link\s*\{([^}]*)\}/)?.[1] ?? "";
