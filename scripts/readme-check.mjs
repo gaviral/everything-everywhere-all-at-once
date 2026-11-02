@@ -5,7 +5,7 @@
 // summary script reads a trace right.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { excerpt, parse, shorten, summary, table, KEEP } from "./trace-summary.mjs";
+import { excerpt, median, parse, shorten, summary, table, KEEP } from "./trace-summary.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const read = (path) => readFileSync(root + path, "utf8");
@@ -88,9 +88,11 @@ const lines = parse([
 ].map((l) => JSON.stringify(l)).join("\n") + "\nnot json\n");
 const s = summary(lines);
 assert.deepEqual(s.calls.map((r) => [r.feature, r.calls, r.failed, r.median_ms, r.slowest_ms]),
-  [["placer", 3, 1, 2000, 3000], ["composer", 1, 0, 4000, 4000], ["pictures", 1, 0, 20000, 20000]]);
+  [["placer", 3, 1, 2500, 3000], ["composer", 1, 0, 4000, 4000], ["pictures", 1, 0, 20000, 20000]]);
 assert.deepEqual([s.heard, s.placements, s.pictures], [1, 1, 1]);
-assert.match(table(s), /\| placer \| muse-spark-1\.2-contributor \| 3 \(1 failed\) \| 2\.0 s \| 3\.0 s \|/);
+assert.match(table(s), /\| placer \| muse-spark-1\.2-contributor \| 3 \(1 failed\) \| 2\.5 s \| 3\.0 s \|/);
+// A median, not the lower middle: an even count averages the two middle values.
+assert.deepEqual([median([]), median([5]), median([3000, 2000]), median([4, 1, 3, 2]), median([9, 1, 5])], [null, 5, 2500, 2.5, 5]);
 const ex = excerpt(lines);
 assert.deepEqual(ex.map((e) => e.feature), ["placer", "composer", "pictures"]);
 assert.equal(ex[0].sent.characters, 1800);

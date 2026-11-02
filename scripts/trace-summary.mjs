@@ -32,9 +32,12 @@ export function feature(line) {
   return UNKEYED.find(([start]) => first.startsWith(start))?.[1] ?? "other";
 }
 
-const median = (xs) => {
+/** The middle value; with an even count, halfway between the two middle ones. */
+export const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
-  return s.length ? s[Math.floor((s.length - 1) / 2)] : null;
+  if (!s.length) return null;
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
 /** One row per feature and model: calls, failed calls, median and slowest ms. In the order each first ran. */

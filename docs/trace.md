@@ -12,8 +12,8 @@ Every model call from one run of the demo talk, as the core traced it. Nothing h
 |---|---|---|---|---|
 | placer | muse-spark-1.2-contributor | 9 | 2.6 s | 3.4 s |
 | picture | muse-image-1.0 | 7 | 20.6 s | 22.9 s |
-| refiner | muse-spark-1.3 | 2 | 16.5 s | 16.7 s |
-| app prompt | muse-spark-1.3 | 2 | 3.9 s | 5.7 s |
+| refiner | muse-spark-1.3 | 2 | 16.6 s | 16.7 s |
+| app prompt | muse-spark-1.3 | 2 | 4.8 s | 5.7 s |
 | search-first | muse-spark-1.3 | 1 | 2.1 s | 2.1 s |
 | composer | muse-spark-1.3 | 1 | 4.7 s | 4.7 s |
 | recap | muse-spark-1.3 | 1 | 5.2 s | 5.2 s |
