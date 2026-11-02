@@ -621,6 +621,19 @@ header {
   cursor: pointer;
 }
 
+/* An "off" mark on this answer: quiet until pressed, a toggle so it can be taken back. */
+.explain-actions button.explain-off {
+  margin-right: auto;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.explain-actions button.explain-off[aria-pressed="true"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
 .explain-actions button.quiet {
   background: transparent;
   color: var(--muted);
