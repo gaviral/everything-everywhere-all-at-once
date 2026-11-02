@@ -54,6 +54,8 @@ pub enum Act {
     No,
     Redo,
     Undo,
+    Move,
+    Rename,
 }
 
 /// What a request needs before it can act; without it, it answers why not (never a silent thought).
@@ -93,6 +95,10 @@ pub enum UndoBy {
     Restore,
     /// Each of the parts, in turn (a correction: the redone request, then the words it took off).
     Each,
+    /// The moved thought goes back where it was (and the speaker, if it took them along).
+    Unmove,
+    /// The thread takes its title before the rename.
+    Retitle,
     /// No undo in the app, and what to do instead.
     Not(&'static str),
 }
@@ -130,6 +136,8 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::File, does: "add words to a thread named by its title", template: Some("add <words> to <thread title>"), phrases: &["Add milk to the shopping list", "Put the receipt in the bills thread"], needs: Needs::Thread, answers: "the words land there: “Added to …”", undo: UndoBy::Unfile, external: false, button: None },
     Def { act: Act::Unfold, does: "open a thread and every branch under it", template: Some("expand <thread title>"), phrases: &["Expand the garden", "Expand everything", "Expand this"], needs: Needs::Thread, answers: "the thread opens at the top: “Opened …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Show") },
     Def { act: Act::Fold, does: "fold a thread and every branch under it", template: Some("collapse <thread title>"), phrases: &["Collapse this", "Fold the garden"], needs: Needs::Thread, answers: "the thread folds: “Folded …”", undo: UndoBy::Refold, external: false, button: Some("Option-click Hide") },
+    Def { act: Act::Move, does: "move your last thought to another thread", template: Some("move that to <thread title>"), phrases: &["Move that to the garden thread", "Put that in the bills thread", "That goes in the garden thread", "Move that to a new thread"], needs: Needs::Thread, answers: "the thought moves there: “Moved to …”", undo: UndoBy::Unmove, external: false, button: Some("move") },
+    Def { act: Act::Rename, does: "rename a thread", template: Some("rename this to <words>"), phrases: &["Rename this to Pottery class", "Rename the garden thread to Backyard", "Call this thread Pottery class"], needs: Needs::Thread, answers: "the title changes: “Renamed to …”", undo: UndoBy::Retitle, external: false, button: Some("rename") },
     Def { act: Act::Palace, does: "switch to the Palace of pictures", template: Some("palace"), phrases: &["Palace", "Go to the palace"], needs: Needs::Nothing, answers: "the Palace shows", undo: UndoBy::ViewBack, external: false, button: Some("Palace") },
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
     Def { act: Act::Focus, does: "show only one thread", template: Some("focus"), phrases: &["Focus", "Let's focus", "Focus on this"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
@@ -173,6 +181,9 @@ pub fn classify(text: &str) -> Option<Act> {
         return Some(Act::NewThread);
     }
     if let Some(act) = crate::spoken::kind(text) {
+        return Some(act);
+    }
+    if let Some(act) = crate::moves::kind(text) {
         return Some(act);
     }
     let (first, said, then) = crate::turn(text);
@@ -224,6 +235,10 @@ pub enum Undo {
     /// The window puts back the view it showed before this one was asked.
     View,
     NewThread,
+    /// A thought the person moved goes back (moves.rs).
+    Unmove(crate::moves::Unmove),
+    /// A thread the person renamed takes its title before (moves.rs).
+    Retitle(crate::moves::Retitle),
     Each(Vec<Undo>),
 }
 
@@ -238,6 +253,8 @@ impl Undo {
             Undo::Refold => UndoBy::Refold,
             Undo::View => UndoBy::ViewBack,
             Undo::NewThread => UndoBy::CancelNewThread,
+            Undo::Unmove(_) => UndoBy::Unmove,
+            Undo::Retitle(_) => UndoBy::Retitle,
             Undo::Each(_) => UndoBy::Each,
         }
     }
@@ -328,7 +345,7 @@ pub fn newer(core: &Core, speaker: &str) {
     *core.catalog.turns.lock().unwrap().entry(speaker.into()).or_default() += 1;
 }
 
-fn turn(core: &Core, speaker: &str) -> u64 {
+pub(crate) fn turn(core: &Core, speaker: &str) -> u64 {
     core.catalog.turns.lock().unwrap().get(speaker).copied().unwrap_or_default()
 }
 
@@ -346,7 +363,7 @@ const POINTER_MS: u64 = 2_000;
 /// is a notice the person is looking at.
 pub fn did(core: &Core, speaker: &str, said: &str, done: Done) {
     let id = remember(core, speaker, said, Was::Request { act: done.act, undo: done.undo.clone() });
-    if done.undo.is_some() && matches!(done.act, Act::File | Act::NewThreadAbout | Act::Unfold | Act::Fold) {
+    if done.undo.is_some() && matches!(done.act, Act::File | Act::NewThreadAbout | Act::Unfold | Act::Fold | Act::Move | Act::Rename) {
         core.send_to(speaker, ServerMsg::Undoable { id });
     }
 }
@@ -372,8 +389,9 @@ fn back_to(undo: &Undo) -> Option<String> {
     match undo {
         Undo::Move { to } => Some(to.clone()),
         Undo::Unfile { to, .. } => to.clone(),
+        Undo::Unmove(u) => u.back.clone(),
         Undo::Each(parts) => parts.iter().filter_map(back_to).last(),
-        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread => None,
+        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread | Undo::Retitle(_) => None,
     }
 }
 
@@ -599,6 +617,14 @@ pub fn correct(core: &Arc<Core>, speaker: &str, text: &str, search: bool) -> boo
         }
         Correction::Redo { rest, strong } => (rest, strong),
     };
+    // "No, that goes in the pottery thread", "No, rename it Pottery class": a repair of the map that acts on the
+    // words said before, so they stay (moves.rs), and nothing before is undone.
+    if classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename)) {
+        if let Some(done) = core.request(speaker, rest, search) {
+            did(core, speaker, text, done);
+            return true;
+        }
+    }
     let Some(mut previous) = previous else { return false };
     let request = matches!(previous.was, Was::Request { .. });
     if !strong && !request {
@@ -636,6 +662,9 @@ const WORKING: &str = "Working out what you meant…";
 /// them), with Undo to put them back.
 fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
     match previous.was {
+        Was::Request { undo: Some(undo), .. } if stale(&core.snapshot(), &undo) => {
+            core.send_to(speaker, ServerMsg::Notice { message: STALE.into() });
+        }
         Was::Request { act, undo: Some(undo) } => {
             run_undo(core, speaker, &undo);
             let message = if act == Act::Undo { "Put back".to_string() } else { format!("Undone: {}", def(act).does) };
@@ -741,9 +770,11 @@ fn redo(core: &Arc<Core>, speaker: &str, said: &str, rest: &str, previous: Last,
             run_undo(core, speaker, undo);
         }
     }
+    // A move or a rename acts on the words said before (moves.rs): they stay on the map.
+    let repairs = classify(rest).is_some_and(|act| matches!(act, Act::Move | Act::Rename));
     let kept = match &previous.was {
-        Was::Kept { ids } => Some(ids),
-        Was::Request { .. } => None,
+        Was::Kept { ids } if !repairs => Some(ids),
+        _ => None,
     };
     if kept.is_some() {
         core.catalog.searches.lock().unwrap().insert(speaker.into(), Searching::Asked);
@@ -890,6 +921,8 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
         }
         Undo::Refold | Undo::View => core.send_to(speaker, ServerMsg::Revert),
         Undo::NewThread => core.new_threads.cancel(speaker),
+        Undo::Unmove(u) => crate::moves::unmove(core, speaker, u),
+        Undo::Retitle(r) => crate::moves::unrename(core, r),
         Undo::Each(all) => all.iter().for_each(|u| run_undo(core, speaker, u)),
     }
 }
@@ -898,14 +931,27 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
 pub fn undo_click(core: &Arc<Core>, speaker: &str, id: u64) {
     let current = core.catalog.last.lock().unwrap().get(speaker).filter(|l| l.id == id).cloned();
     match current {
-        Some(Last { was: Was::Request { act, undo: Some(undo) }, .. }) => {
+        Some(Last { was: Was::Request { act, undo: Some(undo) }, .. }) if !stale(&core.snapshot(), &undo) => {
             run_undo(core, speaker, &undo);
             let message = if act == Act::Undo { "Put back".to_string() } else { format!("Undone: {}", def(act).does) };
             core.send_to(speaker, ServerMsg::Notice { message });
             core.catalog.last.lock().unwrap().remove(speaker);
             core.send_to(speaker, ServerMsg::Correctable { for_ms: 0, back_to: None });
         }
-        _ => core.send_to(speaker, ServerMsg::Notice { message: "That can't be undone any more: something newer happened".into() }),
+        _ => core.send_to(speaker, ServerMsg::Notice { message: STALE.into() }),
+    }
+}
+
+const STALE: &str = "That can't be undone any more: something newer happened";
+
+/// Whether the map moved past what `undo` would take back: a moved thought moved again or merged back where it came
+/// from, a renamed thread renamed again or merged away (moves.rs). Any other undo still does what it says.
+fn stale(world: &World, undo: &Undo) -> bool {
+    match undo {
+        Undo::Unmove(u) => !crate::moves::can_unmove(world, u),
+        Undo::Retitle(r) => !crate::moves::can_unrename(world, r),
+        Undo::Each(parts) => !parts.is_empty() && parts.iter().all(|u| stale(world, u)),
+        _ => false,
     }
 }
 
