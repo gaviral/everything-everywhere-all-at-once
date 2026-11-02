@@ -211,11 +211,14 @@ fn is_approve(text: &str) -> bool {
 }
 
 /// The action an "add it to Reminders" adds: the newest one waiting on the thread "this" means (catalog.rs: what the
-/// speaker selected, else points at, else is on), else the newest.
+/// speaker selected, else points at, else is on), else the only one waiting anywhere.
 fn proposed<'a>(core: &Core, world: &'a World, speaker: &str) -> Option<&'a crate::world::Action> {
     let waiting = || world.actions.iter().rev().filter(|a| a.status == ItemStatus::New);
     let here = crate::catalog::this(core, world, speaker);
-    waiting().find(|a| Some(&a.thread_id) == here.as_ref()).or_else(|| waiting().next())
+    // Off its thread, only when it's the one waiting: with more, "it" could be someone else's on another card, and
+    // what's added goes into the host's apps.
+    let only = || Some(waiting().next()?).filter(|_| waiting().nth(1).is_none());
+    waiting().find(|a| Some(&a.thread_id) == here.as_ref()).or_else(only)
 }
 
 /// Adds the proposed reminder or event, and says so; false when there was none to add, or it isn't the host's.
@@ -227,6 +230,9 @@ fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
             let (core, id) = (core.clone(), action.id.clone());
             tokio::spawn(crate::apple::approve(core, id));
             (format!("Adding “{}”…", action.title), true)
+        }
+        None if world.actions.iter().any(|a| a.status == ItemStatus::New) => {
+            ("More than one is waiting: say it on the thread it's on, or press its Add.".into(), false)
         }
         None => ("Nothing is waiting to be added yet.".into(), false),
     };

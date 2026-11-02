@@ -292,7 +292,11 @@ fn add_it_to_reminders_adds_the_newest_waiting_on_your_thread() {
     world.active_by.insert("you".into(), "T1".into());
     let f = Fixture::new(World::default());
     assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("a"));
+    // Off every thread with one waiting: "it" is that one. With two waiting on other threads (in a room, maybe
+    // someone else's), "it" is neither: nothing is added on a guess.
     world.active_by.insert("you".into(), "T9".into());
+    assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), None);
+    world.actions.retain(|a| a.id != "a");
     assert_eq!(proposed(&f.core, &world, "you").map(|a| a.id.as_str()), Some("b"));
     world.actions.retain(|a| a.status != ItemStatus::New);
     assert!(proposed(&f.core, &world, "you").is_none());
