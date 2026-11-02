@@ -27,6 +27,8 @@ export interface Unmerge {
   proposals: string[];
   active: boolean;
   active_by: string[];
+  /** Its card's point once back, read when the undo was made; absent in a journal from before it. */
+  last_point?: string | null;
 }
 
 export type TidyChange =
@@ -57,13 +59,17 @@ export function applyTidy<W extends World>(world: W, change: Change): W | null {
       const thoughts = world.thoughts.map((t) => ({ ...t, thread_id: back(u.thoughts, t.id, t.thread_id) }));
       // As the core: its card shows its newest point now there (by Thought::said_at; a tie goes to the later one), so
       // one deleted since the merge isn't on it.
+      // Carried in the change when the undo was made (the core's `tidy::unmerging`), so no clock is read here.
       const now = Date.now();
       const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
-      const newest = thoughts.filter((t) => t.placed && t.thread_id === from).reduce<Thought | undefined>((n, t) => (!n || saidAt(t) >= saidAt(n) ? t : n), undefined);
-      const threads = world.threads.map((t) => ({ ...t, parent_id: back(u.branches, t.id, t.parent_id) }));
-      threads.splice(Math.min(u.at, threads.length), 0, newest ? { ...u.thread, last_point: newest.point } : u.thread);
+      const newest = u.last_point ?? thoughts.filter((t) => t.placed && t.thread_id === from).reduce<Thought | undefined>((n, t) => (!n || saidAt(t) >= saidAt(n) ? t : n), undefined)?.point;
       const merged = { ...world.merged };
       delete merged[from];
+      const threads = world.threads.map((t) => ({ ...t, parent_id: back(u.branches, t.id, t.parent_id) }));
+      // As the core: a parent merged away since means the thread it went into; one off the map, none.
+      const parent = u.thread.parent_id ? resolve({ ...world, merged }, u.thread.parent_id) : null;
+      const parent_id = parent && parent !== from && threads.some((t) => t.id === parent) ? parent : null;
+      threads.splice(Math.min(u.at, threads.length), 0, { ...u.thread, parent_id, ...(newest != null ? { last_point: newest } : {}) });
       return {
         ...world,
         threads,

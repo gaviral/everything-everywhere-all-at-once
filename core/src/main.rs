@@ -170,6 +170,21 @@ impl Core {
         self.move_to(speaker, thread_id);
     }
 
+    /// An Undo's "back where you were": `focus`, but a thread dropped since stays dropped. Undo takes back its own act;
+    /// the drop came after it and is the person's.
+    pub fn back_to(self: &Arc<Self>, speaker: &str, thread_id: &str) {
+        find::stop(self, speaker);
+        self.new_threads.cancel(speaker);
+        let world = self.snapshot();
+        let thread_id = world.resolve(thread_id);
+        if world.thread(&thread_id).is_none() {
+            return;
+        }
+        drop(world);
+        self.placing.moved(speaker);
+        self.commit(vec![Change::ActiveChanged { thread_id, speaker: speaker.into() }]);
+    }
+
     /// Makes a thread the speaker's active one; going back to a dropped thread reopens it. "Where was I?",
     /// "next one" and "last one" move with this alone: saying one already stopped any search said before it
     /// (`add_thought`), and one that waited its turn in the placer's queue must not stop a search said after it.

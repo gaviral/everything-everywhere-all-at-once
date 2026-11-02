@@ -551,7 +551,25 @@ export function apply(world: World, raw: Change): World {
       };
       // As the core: a point that carries these words on across a pause (chunks.tsx) takes the same swap.
       const carriers = corrected.thoughts.filter((x) => world.notes?.[x.id]?.continues === t.id);
-      return carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
+      let out = carriers.reduce((w, x) => repoint(w, x.id, correct), corrected);
+      // As the core: asked about words its own don't hold, they were said in a part it carries on; fixed there too.
+      const to = c.with || t.guess;
+      if (c.accept && t.unclear && to && swap(t.text, t.unclear, to) === t.text) {
+        const seen = [t.id];
+        for (let head = world.notes?.[t.id]?.continues; head && !seen.includes(head); head = world.notes?.[head]?.continues) {
+          seen.push(head);
+          const h = out.thoughts.find((x) => x.id === head);
+          if (!h) continue;
+          // Each part's point reads the ones before it, so each takes the swap; its words said only where they are.
+          if (swap(h.text, t.unclear, to) !== h.text) {
+            const answered = h.unclear.toLowerCase() === t.unclear.toLowerCase();
+            const fixed = { ...h, text: swap(h.text, t.unclear, to), ...(answered ? { unclear: "", guess: "" } : {}) };
+            out = { ...out, thoughts: out.thoughts.map((x) => (x.id === head ? fixed : x)) };
+          }
+          out = repoint(out, head, correct);
+        }
+      }
+      return out;
     }
     // A change this window doesn't know (a newer core, a tab open across a redeploy): the map as it was, not undefined.
     default:
