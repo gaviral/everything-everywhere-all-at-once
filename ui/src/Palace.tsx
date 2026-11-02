@@ -4,6 +4,7 @@ import { leftBy, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { usePicture } from "./pictures";
 import "./palace.css";
+import { Markdown } from "./md";
 
 type Room = { root: Thread; members: Thread[] };
 
@@ -164,7 +165,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
       </span>
       <span className="palace-title">{thread.title}</span>
       {/* Under the title, never over the picture; read as the tile's description, not its name. */}
-      {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true">{capitalized(thread.last_point)}</span>}
+      {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><Markdown text={capitalized(thread.last_point)} /></span>}
       {under && <span className="palace-parent">Branch of {under.title}</span>}
     </button>;
   };

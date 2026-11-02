@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { announcement, cardWords, elapsed, lingerMs, nextTick, STATE_CLASS, stopsOnKey, type Card } from "./send-card";
 import "./send-card.css";
+import { Markdown } from "./md";
 
 export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: (id: number) => void; onGone: (id: number) => void }) {
   const [now, setNow] = useState(() => Date.now());
@@ -52,7 +53,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
     <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card">
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="send-card-head" aria-hidden="true">{words.heading}</div>
-      <p className="send-card-text">{card.text}</p>
+      <p className="send-card-text"><Markdown text={card.text} /></p>
       <div className="send-card-foot">
         <span className="send-card-status" aria-hidden="true">{words.status}</span>
         {words.stop && (

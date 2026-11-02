@@ -1,0 +1,58 @@
+.bubble-flight {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bubble-flight-bubble {
+  position: absolute;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 16px));
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 60%, var(--card)), var(--card));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  pointer-events: none;
+}
+
+/* The contract tells the destination only once placed: a quiet lift for the placing time, then a 400 ms hand-off to
+   the real card, never a made-up destination; a thought not placed by the lift's end fades where it is.
+   No reduced-motion rules: with reduced motion the brick draws nothing (index.tsx). */
+.bubble-flight-full { animation: bubble-flight-depart 2.7s cubic-bezier(.4, 0, .2, 1) both; }
+.bubble-flight-compact {
+  max-width: min(120px, calc(100vw - 16px));
+  animation: bubble-flight-quick 600ms ease-out both;
+}
+.bubble-flight-flying {
+  animation: bubble-flight-fly 400ms cubic-bezier(.4, 0, .2, 1) both,
+    bubble-flight-settle 200ms ease-in-out 200ms both,
+    bubble-flight-fade-out 150ms linear 250ms both;
+}
+.bubble-flight-fading {
+  translate: var(--bubble-flight-from-x, 0px) var(--bubble-flight-from-y, 0px);
+  animation: bubble-flight-fade-out 150ms linear both;
+}
+
+@keyframes bubble-flight-depart { from { translate: 0 0; } to { translate: 0 -12px; } }
+@keyframes bubble-flight-fly {
+  from { translate: var(--bubble-flight-from-x, 0px) var(--bubble-flight-from-y, 0px); }
+  to { translate: var(--bubble-flight-to-x, 0px) var(--bubble-flight-to-y, 0px); }
+}
+@keyframes bubble-flight-settle { 0%, 100% { scale: 1; } 50% { scale: 0.96; } }
+@keyframes bubble-flight-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes bubble-flight-quick {
+  0% { translate: 0 0; opacity: 1; }
+  75% { opacity: 1; }
+  100% { translate: 0 -8px; opacity: 0; }
+}

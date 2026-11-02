@@ -1,4 +1,4 @@
-import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
@@ -58,6 +58,7 @@ import { BRICKS, useBricksOn } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import { Catalog } from "./Catalog";
 import { Guide } from "./Guide";
+import { Markdown } from "./md";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -80,8 +81,9 @@ export default function App() {
     return ideaCounts(world, start, Date.now());
   }, [world.thoughts, world.threads, world.merged, world.notes]);
   const [stopMic, setStopMic] = useState<(() => void) | null>(null);
+  const micStart = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; micStart.current?.abort(); }; }, []);
   useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -178,7 +180,7 @@ export default function App() {
   const [firstHint, setFirstHint] = useState(false);
   const startedEmpty = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const composerRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   // Typed in the composer since the last thought went: ⌘Z there then restores the typing, not the last turn.
   const typedSinceSend = useRef(false);
   const dockRef = useRef<HTMLElement>(null);
@@ -415,6 +417,17 @@ export default function App() {
     return !!stop;
   };
 
+  // A permission prompt can outlive a disconnect or pagehide (including the back/forward cache). Cancel it;
+  // neither reconnect nor restoring a page may finish an old start. Only a new mic tap starts capture.
+  useEffect(() => {
+    if (!core.connected) micStart.current?.abort();
+  }, [core.connected]);
+  useEffect(() => {
+    const hide = () => { micStart.current?.abort(); if (releaseMic()) core.listen(false); };
+    window.addEventListener("pagehide", hide);
+    return () => window.removeEventListener("pagehide", hide);
+  }, []);
+
   // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
   // would need it to keep listening). The core has ended the stream already and drops anything heard after. Before
   // the stream's end below: both often arrive in one render, and then "Paused" is the answer, not "The mic stopped".
@@ -447,7 +460,7 @@ export default function App() {
   }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
-    if (liveStop.current && aboutKey(core.notice)) releaseMic();
+    if (liveStop.current && aboutKey(core.notice)) { releaseMic(); core.listen(false); }
   }, [core.notice, stopMic]);
 
   // The site's mic permission, where the browser says it: "denied" looks blocked; allowed later (from the address
@@ -463,12 +476,15 @@ export default function App() {
     }
   }), []);
 
-  const toggleMic = async () => {
+  // Capture starts only from a gesture in this tab. The mic button's click (keyboard activation too) passes its event,
+  // which must be the browser's own, never a script's; a caller without one (a brick's listen, the Keys brick's ⌘D)
+  // still meets mic.ts's check that a click or key press is under way in this tab.
+  const toggleMic = async (event?: { isTrusted: boolean }) => {
+    if ((event && !event.isTrusted) || micStart.current || (!core.connected && !liveStop.current)) return;
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
     setPaused(false);
-    if (stopMic) {
-      stopMic();
-      setStopMic(null);
+    if (liveStop.current) {
+      releaseMic();
       core.listen(false);
       return;
     }
@@ -477,6 +493,9 @@ export default function App() {
       core.showNotice(core.keyNotice);
       return;
     }
+    const attempt = new AbortController();
+    micStart.current = attempt;
+    const sameConnection = core.micConnection();
     setStartingMic(true);
     if (micNotice(core.notice)) core.clearNotice();
     try {
@@ -491,21 +510,21 @@ export default function App() {
         core.listen(false);
         core.showNotice("The mic stopped: the microphone went away. Tap it to listen again, or type below.");
       };
-      const stopAudio = await startMic(core.sendAudio, ended);
+      const stopAudio = await startMic(core.sendAudio, ended, attempt.signal);
       const stop = () => { if (!stopped) { stopped = true; stopAudio(); } };
-      if (!mounted.current) { stop(); return; }
+      if (!mounted.current || attempt.signal.aborted || !sameConnection()) { stop(); return; }
       setMicBlocked("");
       voiceStartedAt.current = voiceRevisions.current.status;
       voiceErrorStartedAt.current = voiceRevisions.current.error;
       voiceListenedAt.current = voiceRevisions.current.listened;
+      liveStop.current = stop;
       setStopMic(() => stop);
       if (!core.listen(true)) {
-        stop();
-        setStopMic(null);
+        releaseMic();
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || attempt.signal.aborted) return;
       core.listen(false);
       // The browser's own words go to the console; the window says where to fix it (mic.ts).
       console.warn("The mic didn't start:", err);
@@ -513,6 +532,7 @@ export default function App() {
       if (failed.blocked) setMicBlocked(failed.blocked);
       core.showNotice(failed.words);
     } finally {
+      if (micStart.current === attempt) micStart.current = null;
       if (mounted.current) setStartingMic(false);
     }
   };
@@ -523,6 +543,14 @@ export default function App() {
       setHelpOpen(false);
       if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
       if (core.sendText(draft.trim())) { setDraft(""); typedSinceSend.current = false; }
+    }
+  };
+
+  // A one-row textarea preserves pasted paragraphs; Enter still sends as it did in the input.
+  const submitOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
   };
 
@@ -892,13 +920,21 @@ export default function App() {
   };
 
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
-  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does.
+  // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does, listen is the mic
+  // button's tap (the Keys brick's ⌘D). It starts the mic only inside a click or key press in this tab, as the tap does,
+  // and not while the button can't be pressed (starting, or offline with nothing to stop).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, {
     addThought: core.sendText,
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),
     position: core.position,
+    listen: (on) => {
+      const capturing = !!stopMic;
+      if (on === capturing || startingMic || (!core.connected && !capturing)) return;
+      if (!capturing && navigator.userActivation?.isActive === false) return;
+      void toggleMic();
+    },
   });
   const bricksOn = useBricksOn();
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -909,7 +945,7 @@ export default function App() {
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
-  const status = statusLine({ connected: core.connected, listening: core.listening, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
+  const status = statusLine({ connected: core.connected, listening: !!stopMic, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
   const friendlyNotice = core.notice && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
@@ -968,10 +1004,10 @@ export default function App() {
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
-        <div className="status" data-guide="status">
+        <div className={stopMic ? "status capturing" : "status"} data-guide="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
           {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
-          <span aria-hidden="true">{core.connected && core.resting && !core.listening ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
+          <span aria-hidden="true">{core.connected && core.resting && !stopMic ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
           {RECORDING && <TakeClock running={core.listening || !!core.partial || pending.length > 0} />}
         </div>
         </div>
@@ -1099,7 +1135,7 @@ export default function App() {
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
                   </div>
-                  {lastWords && <div className="pullback-quote">“{lastWords}”</div>}
+                  {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => goBack(pullBack)}>Finish it</button>
@@ -1120,7 +1156,7 @@ export default function App() {
           <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{liveLine(core.partial || core.handoff, startingMic)}<ThisEcho /></span></div>}
+          {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
           <div className="pending" data-guide="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
@@ -1128,10 +1164,13 @@ export default function App() {
           </div>
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit} data-guide="composer">
-            <input
+            <textarea
+              rows={1}
               id={COMPOSER_ID}
               ref={composerRef}
               value={draft}
+              onKeyDown={submitOnEnter}
+              enterKeyHint="send"
               onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
@@ -1572,7 +1611,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
           which points are settled at a glance, and they're what Recap leads with. */}
       {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
-      <span>{capitalized(thought.point)}</span>
+      <span><Markdown text={capitalized(thought.point)} /></span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
       <MovePoint thought={thought} />
@@ -1581,7 +1620,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
       {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
       <Fixes thought={thought} on={on} />
       {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && words}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
+      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && [...heads, thought].flatMap((part, i) => [i > 0 ? " … " : "", "“", <Markdown key={part.id} text={part.text.trim()} />, "”"])}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
     </motion.li>
   );
 });
@@ -1594,13 +1633,13 @@ function Fixes({ thought, on }: { thought: Thought; on: Handlers }) {
         // Fixed without asking: quiet until you look, and one tap puts the words back.
         <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
           <span><span aria-hidden="true">✦</span> fixed</span>
-          <span><span aria-hidden="true">✦</span> heard “{thought.heard}” · undo</span>
+          <span><span aria-hidden="true">✦</span> heard “<Markdown text={thought.heard} />” · undo</span>
         </button>
       )}
       {thought.unclear && thought.guess ? (
         <span className="did-you-mean">
           {/* title="": the point's own title (its words said) would show a second, system tip over this one. */}
-          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “{thought.guess}”?
+          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “<Markdown text={thought.guess} />”?
           <button onClick={() => on.correct(thought.id, true)}>Yes</button>
           <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
             No
@@ -1692,7 +1731,7 @@ function PendingThought({ thought, placing, noKey, refused, resting, reducedMoti
   const lanes = useLanes(thought.id);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span>
-    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} {thought.text}
+    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} <Markdown text={thought.text} />
   </motion.span>;
 }
 

@@ -198,6 +198,40 @@ try {
     await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
     if (!await until(`document.querySelector(".template")?.textContent.includes("last landed on")`, 4000)) fail("_template", "never heard the thought it added land");
   }
+  // Bubble flight: a panel; a thought of yours on its way leaves as a bubble (the playground has no composer, so the check
+  // lends one) that stays inside a phone's screen, never takes the pointer and goes once the thought is placed; with
+  // reduced motion there's none (the app stops every animation then, styles.css).
+  if (checked.includes("bubble-flight")) {
+    if (infos["./bricks/bubble-flight/brick.json"].kind !== "panel") fail("bubble-flight", "brick.json: a panel, as its spec says");
+    for (const [w, reduced] of [[1280, false], [390, false], [1280, true]]) {
+      const where = `bubble-flight (empty map, ${w} px${reduced ? ", reduced motion" : ""})`;
+      await width(w, w < 600 ? 844 : 860);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] });
+      await go(`${base}/bricks.html?brick=bubble-flight&sample=empty`);
+      await until(`document.querySelector(".playground")?.dataset.brickShown === "bubble-flight"`, 8000);
+      await settle();
+      await evaluate(`(() => {
+        const composer = Object.assign(document.createElement("div"), { className: "composer" });
+        composer.style.cssText = "position:fixed;left:8px;right:8px;bottom:16px;height:44px";
+        document.body.append(composer);
+        [...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click();
+      })()`);
+      if (reduced) {
+        await sleep(400);
+        if (await evaluate(`!!document.querySelector(".bubble-flight-bubble")`)) fail(where, "a bubble shows with reduced motion");
+        continue;
+      }
+      if (!await until(`!!document.querySelector(".bubble-flight-bubble")`, 1000)) { fail(where, "no bubble for a thought on its way"); continue; }
+      const bubble = await evaluate(`(() => { const b = document.querySelector(".bubble-flight-bubble"), r = b.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: innerWidth, pointer: getComputedStyle(b).pointerEvents }; })()`);
+      if (bubble.left < 0 || bubble.right > bubble.width) fail(where, "a bubble runs past the screen's edges");
+      if (bubble.pointer !== "none") fail(where, "a bubble takes the pointer");
+      if (!await until(`!document.querySelector(".bubble-flight-bubble")`, 4000)) fail(where, "a bubble stays after its thought is placed");
+      if (await evaluate(`document.querySelector(".playground").dataset.errors !== "0" || !!document.querySelector(".brick-broke")`)) fail(where, "a thought caused an error");
+    }
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+    await width(1280, 860);
+  }
   if (checked.includes("bubbles")) {
     await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
     await until(`!!document.querySelector(".bubbles-bubble")`, 8000);
@@ -210,6 +244,64 @@ try {
     if (before !== after) fail("bubbles", "a landing moved bubbles (each keeps its place)");
     await evaluate(`document.querySelector(".bubbles-face").click()`);
     if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread")`, 2000)) fail("bubbles", "a bubble doesn't open its thread");
+  }
+  // Read progress: an input, so it needs the app's cards (the playground draws none). Nothing on an empty map or one
+  // where every point is yours; a tap on another's point marks it, kept over a reload, with a dot on the one after it
+  // (on a dark phone, reduced motion); a point under the dock isn't read, however long it sits there.
+  if (checked.includes("read-progress")) {
+    if (infos["./bricks/read-progress/brick.json"].kind !== "input") fail("read-progress", "brick.json: an input, as its spec says");
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "read-progress": true }))`);
+    for (const [label, fixture] of [["empty", empty], ["only me", full]]) {
+      shown = fixture;
+      await width(390, 844);
+      await go(`${base}/`);
+      if (!await until(`!!document.querySelector('[data-brick="read-progress"]')`, 8000)) fail("read-progress", `${label}: never mounted`);
+      await settle();
+      const state = await evaluate(`({ marks: document.querySelectorAll(".read-progress-point, .read-progress-dot, .read-progress-mark").length,
+        content: document.querySelector('[data-brick="read-progress"]')?.textContent.trim(),
+        broke: !!document.querySelector(".brick-broke"), sideways: document.documentElement.scrollWidth - innerWidth })`);
+      if (state.marks || state.content) fail("read-progress", `${label}: should render nothing`);
+      if (state.broke || state.sideways > 1) fail("read-progress", `${label}: broke or overflows at phone width`);
+    }
+    const friend = (id, text, at) => ({ ...thought(id, text, "read-progress-check"), speaker: "friend", at_ms: at });
+    shown = world([thread("read-progress-check", "Read here")]);
+    shown.thoughts = [friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
+    const key = "e2a2o.brick.read-progress.read-progress-check";
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+    await go(`${base}/`);
+    const firstPoint = `document.getElementById("point-read-progress-0")`;
+    if (!await until(`${firstPoint}?.classList.contains("read-progress-point")`, 8000)) fail("read-progress", "doesn't attach to another participant's point");
+    else {
+      await evaluate(`${firstPoint}.click()`);
+      if (!await until(`${firstPoint}.classList.contains("read-progress-mark") && localStorage.getItem(${JSON.stringify(key)}) === "read-progress-0"`, 2000)) fail("read-progress", "a tap doesn't mark and save the thought");
+      await go(`${base}/`);
+      if (!await until(`${firstPoint}?.classList.contains("read-progress-mark")`, 8000)) fail("read-progress", "the saved mark doesn't survive a reload");
+      const state = await evaluate(`({ dot: !!document.querySelector("#point-read-progress-1 .read-progress-dot"),
+        broke: !!document.querySelector(".brick-broke"), sideways: document.documentElement.scrollWidth - innerWidth })`);
+      if (!state.dot || state.broke || state.sideways > 1) fail("read-progress", "unread dot missing, brick broke, or overflows on a dark phone with reduced motion");
+    }
+    // Under the dock: a long card, your points first, then another's two, scrolled to sit behind the dock.
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    shown = world([thread("read-progress-check", "Read here")]);
+    shown.thoughts = [...Array.from({ length: 9 }, (_, n) => ({ ...thought(`mine-${n}`, `My point ${n + 1}`, "read-progress-check"), at_ms: now - 9000 + n })),
+      friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
+    await width(390, 600);
+    await go(`${base}/`);
+    if (await until(`!!document.querySelector("#point-read-progress-1.read-progress-point") && !!document.querySelector(".dock")`, 8000)) {
+      await settle();
+      const under = await evaluate(`(() => { const dock = document.querySelector(".dock").getBoundingClientRect().top;
+        window.scrollBy({ top: -(dock - document.getElementById("point-read-progress-0").getBoundingClientRect().top + 4), behavior: "instant" });
+        return [0, 1].every((n) => document.getElementById("point-read-progress-" + n).getBoundingClientRect().top > dock - 1); })()`);
+      await sleep(2000);
+      if (!under) fail("read-progress", "the check couldn't put another's points behind the dock");
+      else if (await evaluate(`localStorage.getItem(${JSON.stringify(key)}) !== null`)) fail("read-progress", "a point behind the dock was taken as read");
+    } else fail("read-progress", "the long card's points never showed");
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)}); ${previousSwitches === null ? 'localStorage.removeItem("e2a2o.bricks")' : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`}`);
+    await cdp("Emulation.setEmulatedMedia", { features: [] });
+    await width(1280, 860);
+    shown = full;
   }
   // A press, a few moves and a release, as a hand drags: the canvas moves things on mouse events, not clicks.
   const drag = async (from, to, steps = 10) => {

@@ -37,7 +37,7 @@ try {
   stopAgain();
   end();
   assert.equal(lost, 1, "after our own stop, nothing is said");
-  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /const ended = \(\) => \{\s*if \(stopped \|\| !mounted\.current\) return;\s*stopped = true;\s*if \(liveStop\.current === stop\) liveStop\.current = null;\s*setStopMic\(null\);\s*core\.listen\(false\);\s*core\.showNotice\("The mic stopped: [^]*?startMic\(core\.sendAudio, ended\)/);
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /const ended = \(\) => \{\s*if \(stopped \|\| !mounted\.current\) return;\s*stopped = true;\s*if \(liveStop\.current === stop\) liveStop\.current = null;\s*setStopMic\(null\);\s*core\.listen\(false\);\s*core\.showNotice\("The mic stopped: [^]*?startMic\(core\.sendAudio, ended, attempt\.signal\)/);
 
   // Escape that hides a tip hides only the tip: heard before the document's listener (App.tsx folds the quiet threads
   // on Escape there), and stopped unless typed in a field (bug hunt 18).

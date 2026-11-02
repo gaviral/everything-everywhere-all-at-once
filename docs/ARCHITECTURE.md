@@ -36,6 +36,7 @@ Browser, one page per window (ui/src)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
+  md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
   whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
   keys.ts        keys the README, tour and ? list promise: ? opens the list, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
@@ -43,7 +44,7 @@ Browser, one page per window (ui/src)
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
-  limits.ts      the core's caps on what the window sends (protocol.rs), checked first so a long paste keeps its draft (held by `scripts/limits-check.mjs`)
+  limits.ts      the core's caps on what the window sends (protocol.rs), checked first; a thought past the cap goes in parts, cut at paragraphs, else sentences, else words (held by `scripts/limits-check.mjs`)
   merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
   landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
   rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
@@ -56,6 +57,7 @@ Browser, one page per window (ui/src)
   bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
     bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
+    keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant pointing (a big arrow at a part named by its `data-guide`, its caption, a soft spotlight) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)

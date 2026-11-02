@@ -4,6 +4,7 @@ import type { World } from "./core";
 import { resolveMerged as resolve } from "./merges";
 import { TIPS } from "./Tips";
 import "./away.css";
+import { Markdown } from "./md";
 
 export const AWAY_AFTER_MS = 30_000;
 
@@ -20,6 +21,7 @@ export type AwayItem = {
   itemId?: string;
   title: string;
   detail: string;
+  point?: string;
   kind: "thread" | "proposal";
   unfinished?: boolean;
   /** The row can say why its point went to that thread (whyhere.tsx): every thread row but a new top-level thread,
@@ -65,6 +67,7 @@ export function awayItems(before: World, after: World, me: string, observed: Map
     const why = oldThreads.has(id) || !!threads.get(id)!.parent_id;
     items.push({ key: `thread:${id}`, threadId: id, thoughtId: latest.id, why, title: threads.get(id)!.title,
       detail: `${changes}${unfinished?.[0] === id ? " · Left unfinished" : ""} · ${latest.point || latest.text}`,
+      point: latest.point || latest.text,
       kind: "thread", unfinished: unfinished?.[0] === id, sourceAt: latest.at_ms,
       at: thoughts.reduce((at, t) => Math.max(at, observed.get(t.id) ?? t.at_ms), 0) });
   }
@@ -73,6 +76,7 @@ export function awayItems(before: World, after: World, me: string, observed: Map
     const [id, thought] = unfinished;
     items.push({ key: `thread:${id}`, threadId: id, thoughtId: thought.id, why: true, title: threads.get(id)!.title,
       detail: `Left unfinished · ${thought.point || thought.text}`, kind: "thread", unfinished: true,
+      point: thought.point || thought.text,
       sourceAt: thought.at_ms, at: observed.get(`dropped:${id}`) ?? thought.at_ms });
   }
   const oldProposals = new Set([...before.suggestions, ...before.actions].map((p) => p.id));
@@ -194,7 +198,7 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
           onClick={(event) => { event.preventDefault(); onFollow(item); }}>
           <span className="away-text">
             <span className="away-title">{item.kind === "proposal" && <span className="away-mark" role="img" aria-label="AI proposal" data-tip={TIPS.awayProposal}>✦ </span>}{item.title}</span>
-            <span className="away-detail">{item.detail}</span>
+            <span className="away-detail">{item.point ? <>{item.detail.slice(0, -item.point.length)}<Markdown text={item.point} /></> : item.detail}</span>
           </span>
           <span className="away-go" aria-hidden="true">›</span>
         </a>
