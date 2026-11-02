@@ -723,7 +723,8 @@ try {
     if (id === "spine") {
       await until(`!!document.querySelector(".spine-frame.spine-ready")`, 4000);
       core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-2", "Seeds for the garden", "T2") } });
-      if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring')`, 3000)) fail("Spine", "a thought landing in the app doesn't pulse its point");
+      // A pulse, or under Reduce Motion (this machine's own, if a check before handed it back) a ring that stays a second.
+      if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring, [data-brick="spine"] .spine-point.spine-cut')`, 3000)) fail("Spine", "a thought landing in the app doesn't ring its point");
       core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Claude", at_ms: Date.now() } });
       if (!await until(`(document.querySelector('.react-flow__node[data-id="p:T4-0"]')?.style.transform ?? "").includes("2400px, 1600px")`, 3000)) fail("Spine", "a point someone else placed doesn't go there");
       // Once the canvas has settled (a glide is 0.3 s, the camera's at most 0.9 s): a press lands where it's aimed.
