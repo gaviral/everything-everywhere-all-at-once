@@ -391,3 +391,31 @@ async fn each_undoes_as_its_definition_says() {
 fn act_for(f: &Fixture, said: &str) -> Done {
     super::act(&f.core, "you", said).unwrap()
 }
+
+#[tokio::test]
+async fn a_thread_the_move_leaves_empty_goes_into_where_its_words_went_and_undo_puts_it_back_in_place() {
+    // The AI started "Wheel throwing" (T4) for a thought that belonged to Pottery class.
+    let mut world = slipped();
+    world.thoughts.retain(|t| t.id != "w");
+    world.threads.insert(1, thread("T4", "Wheel throwing", 4));
+    world.thoughts.push(thought("w", "T4", "Learn to throw on the wheel", now_ms() - 10_000));
+    world.active_by.insert("you".into(), "T4".into());
+    let f = Fixture::new(world);
+    let lines = f.say("Move that to pottery").await;
+    let world = f.core.snapshot();
+    assert!(world.thread("T4").is_none() && world.merged.get("T4").map(String::as_str) == Some("T2"), "{lines:?}");
+    assert_eq!(world.active_for("you").map(String::as_str), Some("T2"));
+    drop(world);
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    let world = f.core.snapshot();
+    assert_eq!(world.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T1", "T4", "T2", "T3"], "back where it stood");
+    assert_eq!((f.on("w").as_str(), world.active_for("you").map(String::as_str)), ("T4", Some("T4")));
+    // To a new thread from a thread it empties: the new one goes on undo, the old one comes back.
+    drop(world);
+    let lines = f.say("Move that to a new thread").await;
+    let new = f.on("w");
+    assert!(f.core.snapshot().thread("T4").is_none());
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    let world = f.core.snapshot();
+    assert!(world.thread(&new).is_none() && world.thread("T4").is_some() && f.on("w") == "T4");
+}

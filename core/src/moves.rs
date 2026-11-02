@@ -48,14 +48,16 @@ pub enum To {
 }
 
 /// How a move is taken back: these thoughts go from `to` back to `from` (only those still where the move put them),
-/// with the notes the move cleared; `started`, a thread the move made, leaves the map once empty; and the speaker, if
-/// the move took them along (`back`), goes back too.
+/// with the notes the move cleared; `from`, if the move left it empty and it went into `to` (`emptied`), comes back
+/// first; `started`, a thread the move made, leaves the map once empty; and the speaker, if the move took them along
+/// (`back`), goes back too.
 #[derive(Clone, Debug)]
 pub struct Unmove {
     pub thoughts: Vec<String>,
     pub from: String,
     pub to: String,
     pub notes: Vec<(String, Note)>,
+    pub emptied: bool,
     pub started: Option<String>,
     pub back: Option<String>,
 }
@@ -373,16 +375,30 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
             changes.push(Change::ThoughtNoted { thought_id: id.clone(), note: Note { continues: note.continues.clone(), ..Note::default() } });
         }
     }
-    changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now));
+    // The thread it leaves empty goes into where it went, as words taken back take the thread they alone started
+    // (catalog.rs `unkeep`): most often the AI started a thread for a thought that belonged to another, and that
+    // thread was the mistake. A merge, so anything late aimed at it lands where its words went, and an undo puts it
+    // back where it stood in the list.
+    let emptied = !world.thoughts.iter().any(|t| on(&world, t, &from) && !ids.contains(&t.id))
+        && !world.threads.iter().any(|t| t.parent_id.as_deref() == Some(from.as_str()));
+    changes.extend(last_points(&world, &ids, &from, &target, started.is_some(), now).into_iter().filter(|c| !emptied || !matches!(c, Change::ThreadTouched { thread_id, .. } if *thread_id == from)));
     let latest = world.thoughts.iter().filter(|t| t.speaker == speaker).max_by_key(|t| t.said_at(now)).is_some_and(|t| ids.contains(&t.id));
     let back = (latest && world.active_for(speaker) == Some(&from)).then(|| from.clone());
     if back.is_some() {
         changes.push(Change::ActiveChanged { thread_id: target.clone(), speaker: speaker.into() });
     }
+    if emptied {
+        changes.push(Change::ThreadMerged { from: from.clone(), into: target.clone() });
+    }
     drop(world);
     core.commit(changes);
     notice(core, speaker, if started.is_some() { format!("Moved to a new thread: {title}") } else { format!("Moved to {title}") });
-    Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, started, back })))
+    Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, back })))
+}
+
+/// Whether thought `t` is on thread `id`, following merges.
+fn on(world: &World, t: &Thought, id: &str) -> bool {
+    t.thread_id.as_deref().map(|x| world.resolve(x)).as_deref() == Some(id)
 }
 
 /// The newest placed thought on `thread` (by when it was said) among those `on` picks.
@@ -416,7 +432,14 @@ fn last_points(world: &World, ids: &[String], from: &str, to: &str, new: bool, n
 /// taken it elsewhere).
 pub(crate) fn can_unmove(world: &World, u: &Unmove) -> bool {
     let (on, back) = (world.resolve(&u.to), world.resolve(&u.from));
-    back != on && world.thread(&back).is_some() && still_there(world, u, &on).next().is_some()
+    let returns = comes_back(world, u).is_some() || (back != on && world.thread(&back).is_some());
+    returns && still_there(world, u, &on).next().is_some()
+}
+
+/// The thread the move emptied and merged away, if it's still merged where the thoughts are: its undo of that merge.
+fn comes_back(world: &World, u: &Unmove) -> Option<crate::tidy::Unmerge> {
+    let merged_here = world.merged.contains_key(&u.from) && world.resolve(&u.from) == world.resolve(&u.to);
+    u.emptied.then_some(()).filter(|_| merged_here).and_then(|_| world.unmerge.get(&u.from).cloned())
 }
 
 fn still_there<'a>(world: &'a World, u: &'a Unmove, on: &'a str) -> impl Iterator<Item = &'a Thought> + 'a {
@@ -426,10 +449,13 @@ fn still_there<'a>(world: &'a World, u: &'a Unmove, on: &'a str) -> impl Iterato
 /// Takes a move back (`can_unmove` first): the thoughts still where it put them go back, with their notes, a thread
 /// the move started leaves the map once empty, and the speaker it took along goes back if they're still there.
 pub(crate) fn unmove(core: &Arc<Core>, speaker: &str, u: &Unmove) {
-    let world = core.snapshot();
-    if !can_unmove(&world, u) {
+    if !can_unmove(&core.snapshot(), u) {
         return;
     }
+    if let Some(unmerge) = comes_back(&core.snapshot(), u) {
+        core.commit(vec![Change::ThreadUnmerged { unmerge }]);
+    }
+    let world = core.snapshot();
     let (on, back) = (world.resolve(&u.to), world.resolve(&u.from));
     let ids: Vec<String> = still_there(&world, u, &on).map(|t| t.id.clone()).collect();
     let mut changes: Vec<Change> = ids.iter()
