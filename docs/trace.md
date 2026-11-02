@@ -54,7 +54,7 @@ Muse Spark 1.3 reads the map at a pause: it proposes reminders and events with t
 
 ## Composer
 
-“Make an app that plays a silly tune if we get loud.” Muse Spark 1.3 first looks for an app that already does it (Search-first), then composes one from the registered blocks: a volume watcher and a sound. The kept app's watcher, not a model, decides when the tune plays (see [Rules](#rules)). The Argument resolver, a seeded app, runs its own prompt on new thoughts and stays quiet unless it notices something.
+“Make an app that plays a silly tune if we get loud.” Muse Spark 1.3 first looks for an app that already does it (Search-first), then composes one from the registered blocks: a volume watcher and a sound. The kept app's watcher, not a model, decides when the tune plays (see [Rules](#rules)). The Argument resolver, a seeded app, starts off; once switched on in Apps, it runs its own prompt on new thoughts and stays quiet unless it notices something.
 
 ```json
 {"feature":"search-first","model":"muse-spark-1.3","ms":2140,"sent":{"messages":2,"characters":758,"last":"Request: plays a silly tune if we get loud.\nExisting apps: [{\"id\":\"app-argument\",\"name\":\"Argument resolver\",\"publishers\":[{\"kind\":\"card\",\"text\":\"{text}\"}],\"purpose\":\"Gently notice a repeated point or a common reasoning fallacy.\",\"watcher\":{…"},"answer":"{\"match_id\":\"\",\"text\":\"No existing app plays a silly tune in response to loudness.\"}","usage":{"completion_tokens":320,"completion_tokens_details":{"reasoning_tokens":291},"prompt_tokens":232,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":552}}
