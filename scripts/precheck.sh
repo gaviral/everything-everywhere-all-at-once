@@ -23,12 +23,13 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 # composer-check needs a live core and real model calls, so it isn't one of them.
 if [ -d ui/node_modules ]; then
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
     check "$(basename "$c" .mjs) passes" "node $c > /dev/null 2>&1"
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
-# links-check needs only node, so a fresh clone runs it too.
+# links-check and dates-check need only node, so a fresh clone runs them too.
 check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
+check "dates-check passes" "node scripts/dates-check.mjs > /dev/null 2>&1"
 [ -f LICENSE ] || warn "no LICENSE file yet (the owner's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"
