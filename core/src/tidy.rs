@@ -1,4 +1,4 @@
-//! The refiner's renames and merges, made so the person stays in charge (decisions/refinersure.md):
+//! The refiner's renames and merges, made so the person stays in charge:
 //! - a rename it's sure of (`refiner::sure_title`) lands at once, and the window says so with Undo;
 //! - anything else is a proposal on the card: Rename or Merge applies it, × keeps things as they are;
 //! - a merge applied can be undone exactly: the thread comes back with what it held (`Unmerge`);
@@ -240,6 +240,7 @@ mod tests {
             complete: true,
             at_ms: 0,
             place_ms: None,
+            decided: false,
         }
     }
 

@@ -1,6 +1,7 @@
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { lazy, memo, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought } from "./core";
+import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
@@ -31,8 +32,10 @@ import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, This
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { staysUp, upFor } from "./notice-rules";
 import { headClickToggles, showsLiveLine } from "./ux-rules";
+import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MicButton, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
+import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
@@ -81,6 +84,11 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
+  const jumps = useRef(jumpTracker()).current;
+  const worldNow = useRef(world);
+  worldNow.current = world;
+  useEffect(() => { if (core.found) jumps.jumped(worldNow.current, core.found.thread_id); }, [core.found, jumps]);
   const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal, attending: core.attending, correctable: core.correctable });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
@@ -111,6 +119,13 @@ export default function App() {
     } else restoreMap.current = true;
     setView(next);
   };
+  // Export, or "export my map": the whole map as a Markdown file, made here from the map this window holds (export-md.ts).
+  const exportMap = (asked?: ViewAsk | null) => {
+    if (!world.threads.length && !world.thoughts.length) { core.showNotice("Nothing on the map yet to export.", asked); return; }
+    const file = mapMarkdown(world);
+    download(file);
+    core.showNotice(exportedNotice(file), asked);
+  };
   // "Scratch that" after a view or fold said aloud: what this window showed before it (revert.ts).
   const keepShown = useRevert(core.revertAsk, () => ({ view, focusMode, query, expanded, kept: [...keptOpen.current] }), (shown) => {
     showView(shown.view);
@@ -134,6 +149,7 @@ export default function App() {
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
+    if (asked === "export") { exportMap(core.viewAsk); return; }
     keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
@@ -225,7 +241,7 @@ export default function App() {
       if (added.length) {
         const thought = added[added.length - 1];
         const title = world.threads.find((thread) => thread.id === thought.thread_id)?.title;
-        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.point}${title ? ` — ${title}` : ""}`);
+        setAnnouncement(`${thought.speaker !== me && thought.speaker !== "you" ? `${thought.speaker}: ` : ""}${thought.decided ? "Decided: " : ""}${thought.point}${title ? ` — ${title}` : ""}`);
       }
       ({ landing, held: heldLanding.current } = landingToFollow(world, added, me, moved, retried.current, held));
       // A retry that landed late isn't followed (you've moved on): the dock says where it went.
@@ -234,6 +250,7 @@ export default function App() {
     seenThoughts.current = new Set(placed.map((thought) => thought.id));
     seenSnapshot.current = core.snapshotRevision;
     seenActive.current = world.active;
+    const answered = moved && jumps.moved(world.active!);
     // Where you are goes first: your thought landing on another thread means "…, where was I?" moved you on in the
     // same breath (your place can end where it started, so it doesn't count as moving).
     const elsewhere = !!world.active && (moved || (!!landing?.mine && landing.thread !== world.active));
@@ -241,6 +258,8 @@ export default function App() {
     // words move your view.
     const follow = elsewhere && landing?.thread !== world.active ? { thread: world.active! } : landing?.mine ? landing : null;
     if (!follow) return;
+    // Your place moved by a jump that shows its own point: the jump is the look.
+    if (answered && !("thought" in follow)) return;
     // Your landing the map won't show (another view, a search, Recap open): the dock says where it went.
     if (view !== "map" || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
     followTarget.current = follow;
@@ -255,6 +274,7 @@ export default function App() {
       followTarget.current = null;
       followLanding.current = null;
       if (!target) return;
+      if (!target.thought && !landed && jumps.since(scheduled, target.thread)) return;
       if (lookingElsewhere()) { if (landed) attention.held({ ...landed, mine: true }); return; }
       const card = document.getElementById(`thread-${target.thread}`);
       if (!card) return;
@@ -285,6 +305,7 @@ export default function App() {
       const delta = point ? (rect.top + rect.bottom) / 2 - (top + bottom) / 2 : rect.top >= bottom ? rect.top - top - 12 : rect.bottom - bottom + 12;
       scrollForMap(following, delta, !!reducedMotion);
     };
+    const scheduled = jumps.mark();
     window.clearTimeout(followTimer.current);
     cancelAnimationFrame(followFrame.current);
     followTimer.current = window.setTimeout(() => { followFrame.current = requestAnimationFrame(look); }, 120);
@@ -458,7 +479,7 @@ export default function App() {
       const visited = new Set<string>();
       while (thread && !visited.has(thread.id)) {
         visited.add(thread.id);
-        // Opened with its branches: it stays open after you leave (review of 88ace4d).
+        // Opened with its branches: it stays open after you leave (review).
         if (!(keptOpen.current.has(thread.id) && next[thread.id] === false)) {
           delete next[thread.id];
           keptOpen.current.delete(thread.id);
@@ -510,8 +531,13 @@ export default function App() {
     previousSearchIndex.current = next;
     return entries;
   }, [world.threads, thoughtsByThread]);
-  const search = query.trim().toLocaleLowerCase();
-  const matches = useMemo(() => new Set(search ? searchIndex.filter(({ fields }) => fields.some((text) => text.includes(search))).map(({ id }) => id) : []), [search, searchIndex]);
+  // The box shows each letter at once; the map follows a moment later and gives way to the next letter
+  // (useDeferredValue), so typing never waits on the cards. At 1,000 threads a letter used to freeze the page ≈ 1 s.
+  const deferredQuery = useDeferredValue(query);
+  const search = mapQuery(query, deferredQuery).trim().toLocaleLowerCase();
+  const matches = useMemo(() => searchMatches(searchIndex, search), [search, searchIndex]);
+  const held = useMemo(() => heldOpen(matches), [matches]);
+  const previousChildren = useRef<Map<string | null, Thread[]> | undefined>(undefined);
   const children = useMemo(() => {
     const visibleIds = new Set<string>();
     const addWithParents = (id: string) => {
@@ -534,7 +560,7 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
-    return grouped;
+    return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
   const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
@@ -687,7 +713,7 @@ export default function App() {
   // moves clear of it, once. Under 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its
   // words, the card after 2.5 s of quiet) the newest landing is younger than that when the card rises. Not once you've
   // moved the map yourself. Your own words in the dock (the live line, a thought on its way) don't move it: they land
-  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review of 1eb1226).
+  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review).
   const clearFrame = useRef(0);
   const cardsHeight = useRef(0);
   const keepClear = () => {
@@ -782,6 +808,7 @@ export default function App() {
           <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
+          <div>“Export my map” · saves it as a Markdown file, as Export does</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
@@ -793,6 +820,11 @@ export default function App() {
         </div></details>
         <button className="recap-button" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
         <ImportChats core={core} />
+        {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
+        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown">
+          <span className="import-long">Export</span>
+          <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
+        </button>}
         <div className="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={!core.connected ? "Connecting" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"} />
           <span aria-hidden="true">{!core.connected ? "Connecting…" : core.listening ? "Listening" : core.noKey ? (core.keyRefused ? "AI key refused" : "No AI key") : paused ? "Paused" : "Ready"}</span>
@@ -859,7 +891,7 @@ export default function App() {
           <NotesContext.Provider value={notes}>
           <TidyProvider world={world} decide={core.tidy}>
           <MovesProvider threads={world.threads} move={core.move} rename={core.rename}>
-          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider>
           </TidyProvider>
           </NotesContext.Provider>
@@ -871,6 +903,7 @@ export default function App() {
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+            jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();
@@ -924,6 +957,7 @@ export default function App() {
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
+            <ModelLine hearing={!!core.partial} hidden={!!draft} />
             <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
           </form>
         </div>
@@ -1074,7 +1108,8 @@ type MapProps = {
   active: string | null; on: Handlers; activePath: Set<string>; rooms: Map<string, string>;
   childrenByParent: Map<string | null, Thread[]>; thoughtsByThread: Map<string, Thought[]>;
   ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
-  matches: Set<string>; searching: boolean; expanded: Record<string, boolean>;
+  /** Found cards search holds open (search-rules.ts). */
+  held: Set<string>; expanded: Record<string, boolean>;
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   keptOpen: React.MutableRefObject<Set<string>>;
 };
@@ -1089,7 +1124,8 @@ const MapCards = memo(function MapCards(props: MapProps) {
   return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
 });
 
-function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, matches, searching, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
+// A card skips re-rendering while nothing it shows changed (sameCard), so a letter that leaves it as it was costs it nothing.
+const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, held, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
   const reducedMotion = useReducedMotion();
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   // Two parts said across a pause show as one point (chunks.tsx).
@@ -1099,7 +1135,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length + useWaitingProposals(thread.id);
   const branches = childrenByParent.get(thread.id) ?? [];
   const isActive = active === thread.id;
-  const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
+  const collapsed = held.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
   // Your own unfinished thread is flagged; someone else's tag just says whose it is.
   const me = useMe();
   const by = thread.status === "dropped" ? leftBy(thread, me) : "";
@@ -1108,7 +1144,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : ""].join(" ");
 
   const toggle = (event: React.MouseEvent) => {
-    if (searching && matches.has(thread.id)) return;
+    if (held.has(thread.id)) return;
     // Option-click opens or folds every branch under it too, as "expand …" does.
     const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
     const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
@@ -1163,7 +1199,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
             </div>
           )}
         </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={searching && matches.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
+        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={held.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
       </div>
       <AnimatePresence initial={false}>
       {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
@@ -1195,13 +1231,13 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
       {branches.length > 0 && (
         <div className="branches">
           {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={searching} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
+            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
           ))}
         </div>
       )}
     </motion.section>
   );
-}
+}, sameCard);
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
  *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
@@ -1245,6 +1281,9 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? (heads.length ? words : thought.text) : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
+      {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
+          which points are settled at a glance, and they're what Recap leads with. */}
+      {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
       <span>{capitalized(thought.point)}</span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>Words said</button>}

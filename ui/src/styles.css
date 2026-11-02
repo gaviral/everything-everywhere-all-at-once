@@ -280,6 +280,14 @@ header {
   font-weight: 600;
 }
 
+/* A decision said out loud: the speaker's weight and size, so it reads as part of the point, not a badge to click. */
+.decided {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .unclear {
   display: inline-grid;
   place-items: center;

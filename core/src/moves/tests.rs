@@ -112,6 +112,7 @@ fn thought(id: &str, thread: &str, text: &str, at_ms: u64) -> Thought {
         complete: true,
         at_ms,
         place_ms: Some(1_000),
+        decided: false,
     }
 }
 
@@ -336,6 +337,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -353,6 +355,7 @@ async fn a_thought_still_finding_its_place_moves_once_it_lands() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: "p".into(), thread_id: "T1".into(), point: "Glaze the bowls".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     for _ in 0..10 {
         tokio::task::yield_now().await;
@@ -369,6 +372,7 @@ async fn no_that_goes_in_another_thread_moves_the_words_and_keeps_them() {
     f.core.commit(vec![Change::ThoughtPlaced {
         thought_id: id.clone(), thread_id: "T1".into(), point: "Learn to center the clay".into(), unclear: String::new(), guess: String::new(),
         heard: String::new(), fixed: String::new(), complete: true, place_ms: 1,
+        decided: false,
     }]);
     let lines = f.say("No, that goes in the pottery thread").await;
     assert!(lines.contains(&format!("moved {id} to T2")), "{lines:?}");
@@ -448,4 +452,22 @@ async fn following_a_move_ends_a_new_thread_asked_for_before_it() {
     assert_eq!(f.on("w"), "T2");
     f.core.new_threads.said("you", "next");
     assert!(f.core.new_threads.starts("next"));
+}
+
+/// Undoing a move to a new thread removes that thread; a topic started in between must keep its own id, and the next
+/// new topic must get a fresh one rather than land on it.
+#[tokio::test]
+async fn a_removed_thread_does_not_hand_out_an_id_already_in_use() {
+    let f = Fixture::new(slipped());
+    let lines = f.say("Move that to a new thread").await;
+    let moved_to = f.on("w");
+    // Meanwhile the placer starts a new topic.
+    let made = f.core.snapshot().next_thread_id();
+    f.core.commit(vec![Change::ThreadAdded { thread: thread(&made, "Meanwhile", now_ms()) }]);
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    let w = f.core.snapshot();
+    assert!(w.thread(&moved_to).is_none(), "the undone move's thread is gone");
+    let next = w.next_thread_id();
+    assert!(w.thread(&next).is_none() && !w.merged.contains_key(&next), "next_thread_id {next} is already in use");
+    assert!(w.thread(&crate::spoken::fresh_id(&w)).is_none());
 }

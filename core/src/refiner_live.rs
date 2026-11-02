@@ -57,6 +57,7 @@ fn thought(n: usize, thread: &str, text: &str, point: &str) -> Thought {
         complete: true,
         at_ms: 1_000 * (n as u64 + 1),
         place_ms: Some(1_500),
+        decided: false,
     }
 }
 
@@ -703,7 +704,7 @@ fn from_journal(path: &str, upto: Option<usize>) -> World {
     world
 }
 
-/// The refiner's answers on real maps, to define "sure" from them (decisions/refinersure.md): MAPS holds
+/// The refiner's answers on real maps, to define "sure" from them: MAPS holds
 /// `name=path[@n,n…]` items (the numbers cut the map after that many placed thoughts), RUNS the passes per map
 /// (default 5), OUT the folder for each answer and the map it was given (never the repo: maps hold people's words).
 ///   MODEL_API_KEY=… MAPS=… OUT=… cargo test --release -- --ignored refiner_sure_live --nocapture
@@ -769,7 +770,7 @@ fn refiner_sure_rows() {
 }
 
 /// Every rename the refiner gave in the saved answers and journals, with what `sure_title` makes of it, to label
-/// and count (decisions/refinersure.md): OUT folders of `refiner_sure_live` (DIRS, comma-separated), the crafted
+/// and count: OUT folders of `refiner_sure_live` (DIRS, comma-separated), the crafted
 /// cases' saved answers (LABEL, default "final"), and the renames journals hold (JOURNALS, a file listing paths).
 #[test]
 #[ignore = "reads saved answers and journals"]
