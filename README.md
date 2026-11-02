@@ -204,7 +204,7 @@ Spoken commands are recognized by rule, with no model call, and only as a whole 
 - **Views:** “palace”, “map”, “focus on this”, “show all”, “expand everything”, “collapse this”, “what can I say?”.
 - **Filing:** “add milk to the shopping list”, “new thread about …”, “move that to the pottery thread”, “rename this to …”, “delete this”.
 - **Actions:** “add it to Reminders”, “keep it” or “discard it” for an app, “stop listening”.
-- **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” (also after “no”, “sorry” or “oops”) undoes it. Deleting, scratching or moving a point takes the waiting cards made from its words alone with it, with Undo. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
+- **Fixing:** “no, I meant …” redoes your last turn as the request you name; “scratch that” (also after “no”, “sorry” or “oops”) undoes it. Deleting, scratching or moving a point takes the waiting cards made from its words alone with it, with Undo; a card sharing any meaning word with what stays on the thread (its title or other points) is left where it is. Only when no rule reads a correction does one model call read it, and its answer runs only if the same rules accept it.
 
 Getting back, finding, views, filing and fixing in full, with variants and what each never does: [docs/COMMANDS.md](docs/COMMANDS.md). Recap, making an app and answering “Did you mean …?” are in their own sections below; “what can I say?” lists them all.
 

@@ -737,3 +737,19 @@ async fn the_cards_made_from_a_point_go_where_it_goes() {
     assert!(lines.contains(&"notice Removed “Learn to throw on the wheel” and the card made from it".to_string()), "{lines:?}");
     assert_eq!((card(&f, "r1"), card(&f, "r2")), (("T1".into(), ItemStatus::Dismissed), new("T1")));
 }
+
+/// Moved to a new thread, the words name it ("Learn to throw"), and the card that went along shares words with that
+/// title: Undo still takes it back with them, rather than setting it aside with the thread it leaves.
+#[tokio::test]
+async fn undoing_a_move_to_a_new_thread_brings_its_card_back() {
+    let mut world = slipped();
+    world.actions = vec![Action { id: "r1".into(), thread_id: "T1".into(), kind: "reminder".into(), title: "Book a wheel throwing lesson".into(), when: String::new(), status: ItemStatus::New, done_ms: None }];
+    let f = Fixture::new(world);
+    let card = |f: &Fixture| f.core.snapshot().actions.iter().find(|a| a.id == "r1").map(|a| (a.thread_id.clone(), a.status)).unwrap();
+    let lines = f.say("Move that to a new thread").await;
+    let (on, status) = card(&f);
+    assert!(on != "T1" && status == ItemStatus::New, "the card went along: {lines:?}");
+    f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
+    assert_eq!(card(&f), ("T1".to_string(), ItemStatus::New), "Undo takes the card back with its words");
+    assert!(f.core.snapshot().thread(&on).is_none(), "the thread the move started leaves the map");
+}

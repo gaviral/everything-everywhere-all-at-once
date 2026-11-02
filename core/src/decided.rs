@@ -85,7 +85,7 @@ pub fn said(text: &str) -> bool {
     let text = text.to_lowercase().replace(['’', '‘'], "'");
     let mut start = 0;
     for (i, c) in text.char_indices().chain([(text.len(), '.')]) {
-        if !matches!(c, '.' | '!' | '?' | ';' | '\n') {
+        if !ends(&text, i, c) {
             continue;
         }
         let sentence = &text[start..i];
@@ -172,7 +172,7 @@ pub fn words_on_map(world: &World, thought: &Thought) -> Option<String> {
 pub fn in_words(text: &str) -> Option<String> {
     let mut start = 0;
     for (i, c) in text.char_indices().chain([(text.len(), '.')]) {
-        if !matches!(c, '.' | '!' | '?' | ';' | '\n') {
+        if !ends(text, i, c) {
             continue;
         }
         let end = (i + c.len_utf8()).min(text.len());
@@ -186,8 +186,11 @@ pub fn in_words(text: &str) -> Option<String> {
         if lower.len() != sentence.len() {
             return capital(&sentence);
         }
-        // Clause by clause, as `decides` reads them: the first that is only a marker and lead-in words.
+        // Clause by clause, as `decides` reads them: the first that is only a marker and lead-in words, with only
+        // lead-in words before it. A clause that says something ("If it's under $80, I've decided: …") is part of
+        // the decision, so the whole sentence.
         let mut from = 0;
+        let mut plain = true;
         for (j, ch) in lower.char_indices().chain([(lower.len(), ',')]) {
             if !matches!(ch, ',' | '—' | '–' | ':') {
                 continue;
@@ -201,17 +204,41 @@ pub fn in_words(text: &str) -> Option<String> {
                         && clause[..i].iter().all(|w| LEADS.contains(w) || SELF.contains(w) || BETWEEN.contains(w))
                 }
             });
-            if leads {
+            if leads && plain {
                 let rest = sentence[next..].trim_start_matches(|c: char| !c.is_alphanumeric() && c != '$');
                 if rest.chars().any(char::is_alphanumeric) {
                     return capital(rest);
                 }
             }
+            plain &= clause.iter().all(|w| LEADS.contains(w) || SELF.contains(w) || BETWEEN.contains(w));
             from = next;
         }
         return capital(&sentence);
     }
     None
+}
+
+/// Words a period follows without ending the sentence: "Dr. Martens", "e.g. the red one".
+const SHORT: [&str; 13] = ["dr", "mr", "mrs", "ms", "mx", "prof", "st", "jr", "sr", "vs", "mt", "e.g", "i.e"];
+
+/// Whether `c`, at byte `i` of `text`, ends a sentence: not a decimal point ("$80.50") or an abbreviation's period
+/// ("Dr. Martens"). The end of the text always does.
+fn ends(text: &str, i: usize, c: char) -> bool {
+    if i >= text.len() {
+        return true;
+    }
+    match c {
+        '!' | '?' | ';' | '\n' => true,
+        '.' => {
+            let (before, after) = (&text[..i], &text[i + 1..]);
+            if before.ends_with(|d: char| d.is_ascii_digit()) && after.starts_with(|d: char| d.is_ascii_digit()) {
+                return false;
+            }
+            let word = before.rsplit(|w: char| !(w.is_alphanumeric() || w == '.')).next().unwrap_or("").to_lowercase();
+            !SHORT.contains(&word.as_str())
+        }
+        _ => false,
+    }
 }
 
 /// Trimmed, first letter capitalized, so a decision reads as a sentence on its own.
@@ -270,6 +297,15 @@ mod tests {
             ("so I've decided to take the job in Toronto. It pays more.", "So I've decided to take the job in Toronto."),
         ];
         for (said, want) in cases {
+            assert_eq!(in_words(said).as_deref(), Some(want), "{said}");
+        }
+        // A condition said before the marker is part of the decision; a price or a name's period doesn't end it.
+        let kept = [
+            ("If it's under $80, I've decided: I'm booking it tonight.", "If it's under $80, I've decided: I'm booking it tonight."),
+            ("Decided: if it's under $80.50, I'm booking it tonight.", "If it's under $80.50, I'm booking it tonight."),
+            ("Decided: I'll buy the Dr. Martens boots.", "I'll buy the Dr. Martens boots."),
+        ];
+        for (said, want) in kept {
             assert_eq!(in_words(said).as_deref(), Some(want), "{said}");
         }
         assert_eq!(in_words("I can't decide between the two classes."), None);
