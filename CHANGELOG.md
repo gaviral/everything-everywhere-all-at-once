@@ -55,6 +55,7 @@ Everything here was written during the Meta Global AI Developer Hackathon (Oct 2
 - A first run fails fast: `./run.sh demo` and `room` stop before building when there is no key and say how to add one; a busy port is caught before building (the key and port read as the core reads them, from the environment or `.env`; a room's LAN address probed too), with the same command on the next port; `scripts/demo.mjs` stops when the core has no key or the key was refused.
 
 ### Recent changes
+- GitHub card (Full preset only): “show me the open pull requests” or “what's happening with PR 42” shows a card with each pull request's number, title, state, checks and when it last changed, read through `gh` on the host's laptop; a click opens one on GitHub. It only reads (never comments, reviews, merges or closes), is off in Demo and on a hosted core, and says in one line when `gh` is missing, signed out or slow.
 - Presets: Demo (the default, the core alone) and Full (every connector; `PRESET=full`). In Full, “ask Mia to confirm what to bring” shows a ready-to-send card with a visible 5-second countdown; “stop”, Esc or Stop takes it down unsent. It sends only to a contact on `MESSAGES_TO`, only from the host's laptop, and only with `MESSAGES_SEND=on`; otherwise it's a dry run.
 - The first "Later" on the unfinished-thought card brings it back once, at a pause at least 5 minutes later; a second "Later" hides it until that thread changes.
 - Suggested tags wait until a thread has 3 thoughts before they appear; kept tags always show.

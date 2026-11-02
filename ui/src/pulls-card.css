@@ -1,0 +1,47 @@
+/* The GitHub card (PullsCard.tsx): a card in the notice lane, one row a pull request, each a link. Colors come from the
+   theme's tokens, so dark mode follows. Rows are 48 px (github.rs `ROWS` says why ten fit). */
+.pulls-card {
+  width: min(92vw, 480px);
+  padding: 10px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  animation: pulls-card-in 180ms ease-out;
+}
+.pulls-card-head { display: flex; align-items: baseline; gap: 8px; padding: 0 4px 0 10px; min-height: 28px; }
+.pulls-card-title { font-size: 13px; font-weight: 600; }
+.pulls-card-repo { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pulls-card-close {
+  margin-left: auto; width: 28px; height: 28px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+}
+.pulls-card-close:hover { background: var(--bg); color: var(--ink); }
+.pulls-card-close:focus-visible, .pulls-card-row:focus-visible, .pulls-card-all:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+.pulls-card-status { margin: 2px 10px 6px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.pulls-card.is-failed .pulls-card-status { color: var(--ink); }
+.pulls-card-list { list-style: none; margin: 2px 0 0; padding: 0; }
+.pulls-card-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  min-height: 48px; padding: 6px 10px; box-sizing: border-box;
+  border-radius: 8px; color: inherit; text-decoration: none;
+}
+a.pulls-card-row:hover { background: var(--bg); }
+.pulls-card-number { flex: none; min-width: 34px; padding-top: 1px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pulls-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+/* A long title wraps rather than being cut: every word of it can matter. */
+.pulls-card-name { font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.pulls-card-meta { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pulls-card-state.is-open { color: var(--room-green); }
+.pulls-card-state.is-merged { color: var(--ai); }
+.pulls-card-checks.is-passing { color: var(--room-green); }
+.pulls-card-checks.is-failing { color: var(--room-red); }
+.pulls-card-checks.is-running { color: var(--amber); }
+.pulls-card-all { display: block; margin: 2px 0 0; padding: 8px 10px; border-radius: 8px; color: var(--accent); font-size: 13px; text-decoration: none; }
+.pulls-card-all:hover { background: var(--bg); }
+@keyframes pulls-card-in { from { opacity: 0; transform: translateY(-6px); } }
+@media (max-width: 560px) {
+  .pulls-card { position: sticky; top: 64px; z-index: 6; width: auto; margin: 8px 16px; }
+}
+.pulls-card-checks.is-running > span[aria-hidden] { font-size: 8px; vertical-align: 2px; }

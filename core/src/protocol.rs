@@ -39,6 +39,9 @@ pub enum ServerMsg {
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
     /// `live`: the end of the count really sends (else a dry run).
     SendCard { id: u64, to: String, text: String, state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
+    /// The GitHub card (github.rs), to the asker's windows: `loading` as soon as it's asked, then `ready` with the pull
+    /// requests (at most `ROWS`, `more` when GitHub has others) or `failed` with `message` saying why in one line.
+    PullsCard { id: u64, title: String, repo: String, state: crate::github::CardState, pulls: Vec<crate::github::Pull>, more: bool, message: String },
     /// Draft words of the turn being spoken; replaces the previous draft.
     Partial { text: String },
     Status { listening: bool, note: String },

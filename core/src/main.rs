@@ -12,6 +12,7 @@ mod clock;
 mod decided;
 mod explain;
 mod find;
+mod github;
 mod import;
 mod messages;
 mod model;
@@ -95,6 +96,8 @@ pub struct Core {
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
     pub messages: messages::Runtime,
+    /// The GitHub card's reading of `gh`, in the Full preset (github.rs).
+    pub github: github::Runtime,
 }
 
 impl Core {
@@ -408,6 +411,9 @@ impl Core {
             return Some(Done::with(Act::NewThread, Some(Undo::NewThread)));
         }
         if let Some(done) = messages::act(self, speaker, text) {
+            return Some(done);
+        }
+        if let Some(done) = github::act(self, speaker, text) {
             return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
@@ -959,9 +965,14 @@ async fn main() -> anyhow::Result<()> {
         service: model::Service::from_env(),
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
+        github: github::Runtime::from_env(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
+    // GitHub reads gh only in Full, and never on a hosted core.
+    if core.messages.settings.preset == messages::Preset::Full && !core.github.settings.hosted {
+        tracing::info!("GitHub card: on, reading gh ({} named repo(s))", core.github.settings.repos.len());
+    }
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
@@ -1629,6 +1640,7 @@ impl Core {
             service: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
+            github: Default::default(),
         }
     }
 }
