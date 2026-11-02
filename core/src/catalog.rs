@@ -56,6 +56,7 @@ pub enum Act {
     Undo,
     Move,
     Rename,
+    Export,
 }
 
 /// What a request needs before it can act; without it, it answers why not (never a silent thought).
@@ -142,6 +143,7 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::Map, does: "switch to the map", template: Some("map"), phrases: &["Map", "Show the map"], needs: Needs::Nothing, answers: "the map shows", undo: UndoBy::ViewBack, external: false, button: Some("Map") },
     Def { act: Act::Focus, does: "show only one thread", template: Some("focus"), phrases: &["Focus", "Let's focus", "Focus on this"], needs: Needs::Nothing, answers: "the map shows one thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
     Def { act: Act::All, does: "show every thread again", template: Some("show all"), phrases: &["Show all", "Unfocus"], needs: Needs::Nothing, answers: "the map shows every thread", undo: UndoBy::ViewBack, external: false, button: Some("Focus") },
+    Def { act: Act::Export, does: "save the map as a Markdown file", template: Some("export my map"), phrases: &["Export my map", "Download the map as Markdown"], needs: Needs::Nothing, answers: "the file downloads: “Exported …”", undo: UndoBy::Not("the file is yours; delete it where you saved it"), external: false, button: Some("Export") },
     Def { act: Act::Recap, does: "recap what was decided today or this session", template: Some("recap"), phrases: &["Recap", "Recap this session", "What did I decide today?"], needs: Needs::Key, answers: "the Recap sheet", undo: UndoBy::Not("say “map” or press Esc"), external: false, button: Some("Recap") },
     Def { act: Act::Compose, does: "build a small app from a sentence", template: Some("make an app that <does what>"), phrases: &["Make an app that pings me about bills"], needs: Needs::Key, answers: "the app builds in the dock, then Keep app or Discard", undo: UndoBy::Not("“discard it”, or Discard"), external: false, button: Some("compose_app") },
     Def { act: Act::Forget, does: "set the unfinished card aside for good", template: None, phrases: &["Forget it", "Never mind"], needs: Needs::Card, answers: "the card goes: “Set aside: …”", undo: UndoBy::Not("its words stay on the map; “where was I?” goes back"), external: false, button: None },
@@ -210,6 +212,7 @@ pub fn of_view(view: View) -> Act {
         View::Forget => Act::Forget,
         View::Finish => Act::Finish,
         View::Pause => Act::Pause,
+        View::Export => Act::Export,
     }
 }
 
