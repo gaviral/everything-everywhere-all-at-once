@@ -125,16 +125,18 @@ pub(crate) fn capital(text: &str) -> String {
 /// "Stop listening" and its kin: the mic closes and nothing more is heard until it's tapped again. Starting again
 /// by voice would need the mic to keep listening for it, so that's a tap (or, later, an on-device wake word).
 pub fn is_stop_listening(text: &str) -> bool {
-    crate::is_command(
-        text,
-        &[
-            "stop listening", "pause listening", "stop the mic", "stop the microphone", "turn off the mic", "turn off the microphone",
-            "turn the mic off", "turn the microphone off", "mic off", "microphone off", "mute the mic", "mute the microphone",
-            "pause the mic", "pause the microphone", "stop recording", "stop transcribing", "pause transcription", "stop transcription",
-        ],
-        &["for now", "for a bit", "for a moment", "for a minute", "for a second", "now", "thanks", "thank you", "for now thanks", "for now thank you"],
-    )
+    crate::is_command(text, &STOP_ASKS, &STOP_TAILS)
 }
+
+/// What `is_stop_listening` reads as the whole turn, and the short words that may follow one (a test says each both
+/// ends the stream and pauses the window).
+pub(crate) const STOP_ASKS: [&str; 18] = [
+    "stop listening", "pause listening", "stop the mic", "stop the microphone", "turn off the mic", "turn off the microphone",
+    "turn the mic off", "turn the microphone off", "mic off", "microphone off", "mute the mic", "mute the microphone",
+    "pause the mic", "pause the microphone", "stop recording", "stop transcribing", "pause transcription", "stop transcription",
+];
+pub(crate) const STOP_TAILS: [&str; 10] =
+    ["for now", "for a bit", "for a moment", "for a minute", "for a second", "now", "thanks", "thank you", "for now thanks", "for now thank you"];
 
 /// The stop phrases that only ever mean this mic ("stop recording" or "mute the mic" may be about something else).
 fn is_plain_stop(text: &str) -> bool {
