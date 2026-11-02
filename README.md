@@ -15,7 +15,7 @@
 
 ## Meta models it runs on
 
-Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026), on Meta's Muse Voice Transcribe, Muse Spark and Muse Image.
+Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26 to Nov 4, 2026).
 
 | When you… | Meta model | Does | Measured | Proof: [a real run's trace](docs/trace.md) |
 |---|---|---|---|---|
@@ -27,7 +27,7 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 | let a thread settle | Muse Image 1.0 | draws its picture | 17.4 s each | [pictures](docs/trace.md#pictures) |
 | say “where was I?”, get loud | no model | rules: the jump back, the tune | 0.4 s after you stop | [rules](docs/trace.md#rules) |
 
-A line beside the mic names the model at work, and a race's winner, or says “by rule, no model”. n and dates: [Measured](#measured).
+n and dates: [Measured](#measured).
 
 <!-- end of the first screen -->
 
@@ -176,7 +176,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 ## Privacy
 
 - The core runs on your laptop. The browser talks only to it and loads nothing from elsewhere; the key never reaches the browser. The app has no accounts, analytics or telemetry; the hosted site adds a sign-in and runs one core per person on its server.
-- Only model calls leave the core, to `api.meta.ai`. While the mic is on, that's the audio, after a 0.5 s synthetic “ah” the core sends so a session's first line comes back fast. Each finished thought goes with every thread's title and last point, as two calls at once, one to Spark 1.3 and one to Spark 1.2 (`PLACER_RACE=1` sends one). Every call and exactly what it sends: [docs/FEATURES.md](docs/FEATURES.md#privacy-and-data).
+- In the Demo preset, only model calls leave the core, to `api.meta.ai`. While the mic is on, that's the audio, after a 0.5 s synthetic “ah” the core sends so a session's first line comes back fast. Each finished thought goes with every thread's title and last point, as two calls at once, one to Spark 1.3 and one to Spark 1.2 (`PLACER_RACE=1` sends one). Every call and exactly what it sends: [docs/FEATURES.md](docs/FEATURES.md#privacy-and-data).
 - Placing races `muse-spark-1.3` and `muse-spark-1.2` (`PLACER_MODELS`); Explain uses `muse-spark-1.2`. `PLACER_MODEL=muse-spark-1.2-contributor` turns on Contributor mode, for Explain and every placing call: a little faster, but Meta may keep what it reads to improve its products. A `PLACER_MODEL` you set is used as is, with no fallback: if the key can't use it (401 or 403), every model feature stops until a restart. A listed model the key can't use leaves the race until a restart, and the others place.
 - On disk: `data/<map>/journal.jsonl` and `data/<map>/images/`. `data/` and `.env` are git-ignored. Delete a map's folder to forget it.
 
