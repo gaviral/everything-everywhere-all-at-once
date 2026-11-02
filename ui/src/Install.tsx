@@ -153,7 +153,7 @@ export function InstallHint({ hint, onLeave }: { hint: NonNullable<ReturnType<ty
     then();
     if (hadFocus) requestAnimationFrame(onLeave);
   };
-  return <div ref={box} className="install-hint" role="status">
+  return <div ref={box} className="install-hint" role="status" data-dock-card>
     <span>{hint.text}</span>
     <span className="install-hint-actions">
       {hint.install && <button type="button" onClick={leave(hint.install)}>Install</button>}

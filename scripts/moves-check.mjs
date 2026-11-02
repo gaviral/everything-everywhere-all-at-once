@@ -90,7 +90,8 @@ try {
   // Delete: every point's Delete (in Move's span, so it shows when Move does) and the Delete key on a focused point
   // send the message the core reads, and "delete this" knows the point you're on (this-card.ts `pointOf`).
   assert.match(moves, /className="move-button delete-button" aria-label=\{`Delete “\$\{thought\.point\}”`\}/);
-  assert.match(moves, /event\.key !== "Delete" && event\.key !== "Backspace"[\s\S]*matches\("li\[id\^='point-'\]"\)[\s\S]*remove\(point\.id\.slice/);
+  assert.match(moves, /matches\("li\[id\^='point-'\]"\)[\s\S]*deletesPoint\(event\)[\s\S]*remove\(point\.id\.slice/);
+  assert.match(moves, /event\.key !== "Delete" && event\.key !== "Backspace"/);
   assert.match(core, /type: "delete", thought_id/);
   assert.match(protocol, /Delete \{ thought_id: String \}/);
   assert.match(app, /“Delete this”/);

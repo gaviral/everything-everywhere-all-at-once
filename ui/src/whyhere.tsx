@@ -27,6 +27,11 @@ export function whysAfter(whys: Record<string, WhyAnswer>, msg: { type: "snapsho
     const out = Object.entries(whys).filter(([, a]) => a.pending);
     return out.length === Object.keys(whys).length ? whys : Object.fromEntries(out);
   }
+  // A merge or its undo changes which thread a point is on: "started this thread" may no longer be true. Asked again.
+  if (msg.change.type === "thread_merged" || msg.change.type === "thread_unmerged") {
+    const out = Object.entries(whys).filter(([, a]) => a.pending);
+    return out.length === Object.keys(whys).length ? whys : Object.fromEntries(out);
+  }
   const id = msg.change.type === "thought_moved" ? msg.change.thought_id : undefined;
   if (!id || !(id in whys)) return whys;
   const { [id]: _, ...rest } = whys;

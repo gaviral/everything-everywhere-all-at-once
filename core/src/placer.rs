@@ -491,13 +491,32 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         tracing::info!("placed {thought_id} after it was taken back: dropped");
         return Ok(None);
     }
+    // The thread it lands on (or under) must still be on the map: a delete while the model thought can take it off,
+    // and a point on no card is lost from view. Then it goes in line again and is placed on the map as it is now.
+    let added: Vec<String> = changes.iter().filter_map(|c| match c {
+        Change::ThreadAdded { thread } => Some(thread.id.clone()),
+        _ => None,
+    }).collect();
+    let targets: Vec<String> = changes.iter().filter_map(|c| match c {
+        Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
+        Change::ThreadAdded { thread } => thread.parent_id.clone(),
+        _ => None,
+    }).collect();
+    let there = |w: &World| targets.iter().all(|id| added.contains(id) || w.thread(&w.resolve(id)).is_some());
     core.trace.write(|| traced(&world, &thought, answer, new_thread, &changes, rest.as_deref()));
     drop(world);
-    if new_thread {
-        core.new_threads.placed(thought_id, &changes, rest.as_deref());
-    }
-    if !core.commit_if(waiting, changes) {
+    // The ask for a new thread is spent only when the words land: placed again, they still start it.
+    let landed = if new_thread { changes.clone() } else { Vec::new() };
+    if !core.commit_if(|w| waiting(w) && there(w), changes) {
+        let now = core.snapshot();
+        if waiting(&now) && !there(&now) {
+            tracing::info!("placed {thought_id} on a thread taken off the map meanwhile: placing it again");
+            let _ = core.placer_queue.send(Job::Place(thought_id.to_string()));
+        }
         return Ok(None);
+    }
+    if new_thread {
+        core.new_threads.placed(thought_id, &landed, rest.as_deref());
     }
     Ok(rest)
 }
@@ -2138,6 +2157,68 @@ mod tests {
         (world.clone(), Thought { thread_id: world.active_for("you").cloned(), ..said })
     }
 
+    /// A delete takes the thread a placement chose off the map while the model thinks: the thought isn't put on a card
+    /// that's gone (lost from view); it goes in line again.
+    #[tokio::test]
+    async fn a_placement_never_lands_on_a_thread_deleted_while_the_model_thought() {
+        let service = |_: axum::Json<serde_json::Value>| async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let placement = json!({"action": "continue", "thread_id": "T1", "point": "Water the tomatoes", "complete": true});
+            axum::Json(body(json!("stop"), json!(placement.to_string())))
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+        let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let mut world = World::default();
+        world.threads.push(crate::world::fixtures::thread("T1", "Garden", 1));
+        world.thoughts.push(crate::world::fixtures::thought("a", "T1", "Plant the tomatoes", crate::now_ms() - 60_000));
+        let (placer_queue, mut queue) = tokio::sync::mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), ..Core::test(journal, world) });
+        let id = core.keep("you", "Water them at dusk");
+        let placing = { let core = core.clone(); let id = id.clone(); let url = url.clone(); tokio::spawn(async move { super::place(&core, &id, &url, super::patience).await.ok() }) };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        crate::moves::delete(&core, "you", "a");
+        placing.await.unwrap();
+        let world = core.snapshot();
+        let t = world.thoughts.iter().find(|t| t.id == id).unwrap();
+        assert!(!(t.placed && t.thread_id.as_deref().is_some_and(|on| world.thread(&world.resolve(on)).is_none())), "on a card that's gone: {:?}", t.thread_id);
+        assert!(matches!(queue.try_recv(), Ok(super::Job::Place(again)) if again == id), "it goes in line again");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// "New thread", then a delete takes the parent the model chose off the map while it thinks: placed again, the
+    /// words still start a new thread (the ask isn't spent on a placement that didn't land).
+    #[tokio::test]
+    async fn a_new_thread_ask_outlives_a_placement_put_back_in_line() {
+        let service = |_: axum::Json<serde_json::Value>| async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let placement = json!({"action": "new", "title": "Watering", "parent_id": "T1", "point": "Water the tomatoes", "complete": true});
+            axum::Json(body(json!("stop"), json!(placement.to_string())))
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+        let path = std::env::temp_dir().join(format!("e2a2o-placer-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let mut world = World::default();
+        world.threads.push(crate::world::fixtures::thread("T1", "Garden", 1));
+        world.thoughts.push(crate::world::fixtures::thought("a", "T1", "Plant the tomatoes", crate::now_ms() - 60_000));
+        let (placer_queue, mut queue) = tokio::sync::mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), ..Core::test(journal, world) });
+        core.new_threads.ask("you");
+        let id = core.keep("you", "Water them at dusk");
+        assert!(core.new_threads.starts(&id));
+        let placing = { let core = core.clone(); let id = id.clone(); let url = url.clone(); tokio::spawn(async move { super::place(&core, &id, &url, super::patience).await.ok() }) };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        crate::moves::delete(&core, "you", "a");
+        placing.await.unwrap();
+        assert!(matches!(queue.try_recv(), Ok(super::Job::Place(again)) if again == id), "it goes in line again");
+        assert!(core.new_threads.starts(&id), "placed again, it still starts a new thread");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// Words taken back while the model places them ("scratch that", catalog.rs) leave no thread, touch or move behind;
     /// put back, they go in line again and land.
     #[tokio::test]
@@ -2151,7 +2232,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let world = core.snapshot();
         assert!(world.threads.is_empty() && world.thoughts.is_empty() && world.active.is_none(), "{:?}", world.threads);
-        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new() });
+        crate::catalog::run_undo(&core, "you", &crate::catalog::Undo::Restore { thoughts: vec![thought], threads: Vec::new(), order: Vec::new(), dismissed: Vec::new() });
         until(Duration::from_secs(2), || core.snapshot().thoughts.iter().any(|t| t.id == id && t.placed)).await;
         assert_eq!(core.snapshot().threads.len(), 1);
         let _ = std::fs::remove_file(&path);

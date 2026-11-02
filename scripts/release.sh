@@ -63,6 +63,14 @@ else
 fi
 # precheck reads only today's files; a line removed since is still in history. Health wording in any added line blocks.
 health=$(git log -p --format='commit %h' "$ref" -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src | perl scripts/health-words.pl --history)
+# Commit messages and the check scripts go public too. The checks name the other words to look for them, so there
+# only a condition's own name blocks, outside a pattern's alternatives ("(x|y|z)", as the checks write it), and
+# bracketed here so this line doesn't name it.
+names=$( { git log --format='commit %h%n%B' "$ref" | sed '/^commit [0-9a-f]*$/!s/^/+/'
+  git log -p --format='commit %h' "$ref" -- 'scripts/*.pl' 'scripts/*.sh' 'scripts/*.mjs' 'scripts/*.py'; } |
+  perl -ne 'chomp; if (/^commit (\S+)$/) { $c = $1; next } print "$c: ", substr($_, 1, 140), "\n" if /^\+(?!\+\+ )/ && /(?<![(|])\b(a[d]hd|neurodiverge[n]t|mental heal[t]h)\b(?![|)])/i')
+[ -z "$names" ] || health="$health
+$names"
 hblocked=""
 for h in $(echo "$health" | awk -F: 'NF { print $1 }' | sort -u); do
   case " ${ACCEPT_COMMITS:-} " in *" $h "*) accepted="$accepted $h" ;; *) hblocked="$hblocked $h" ;; esac
@@ -103,6 +111,9 @@ if [ -n "${VIDEO_URL:-}" ]; then
   esac
   [ "$code" = 200 ] && pass "video opens logged out" || fail "video answers $code logged out (private, or a wrong link?)"
 else warn "video link not checked: set VIDEO_URL"; fi
+
+# 7b. Placeholders the owner still has to decide (the cover, the pitch) don't go public; precheck only warns.
+for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do fail "README still has a $marker placeholder for the owner to decide"; done
 
 # 8. Where the repo stands now.
 visibility=$(gh repo view "$repo" --json visibility -q .visibility 2>/dev/null || echo "unknown (gh not signed in?)")

@@ -312,7 +312,10 @@ impl Core {
         // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops. First,
         // so a short fix to the open question below never takes the stop into its words ("No, Muse. Stop listening.").
         if let Some((before, stop)) = spoken::stop_tail(text) {
-            self.add_turn(speaker, before, search);
+            // "Thanks, stop listening": only courtesy before it, nothing for the map.
+            if !courtesy(before) {
+                self.add_turn(speaker, before, search);
+            }
             return self.add_turn(speaker, stop, search);
         }
         // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
@@ -499,6 +502,15 @@ fn filler(text: &str, asked: bool) -> bool {
     let acks: &[&str] = if asked { &[] } else { &ACKS };
     let words = words(text);
     skipped(&words, SOUNDS.iter().chain(acks), |_, _| true) == words.len()
+}
+
+/// Courtesy and address said around a command ("thanks", "okay, please"): with filler, nothing for the map.
+const COURTESY: [&str; 9] = ["thanks", "thank you", "thanks so much", "thank you so much", "please", "hey", "hi", "muse", "cheers"];
+
+/// True when `text` is only courtesy, sounds and acknowledgements ("Okay, thanks"), said before a stop.
+fn courtesy(text: &str) -> bool {
+    let words = words(text);
+    skipped(&words, SOUNDS.iter().chain(&ACKS).chain(&COURTESY), |_, _| true) == words.len()
 }
 
 /// How many of the first `words` are these phrases, one after another, each where `fits` lets it end (that many
@@ -1391,7 +1403,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
-                Ok(ClientMsg::DecideApp { build_id, keep }) => apps::decide(&core, &build_id, keep),
+                Ok(ClientMsg::DecideApp { build_id, keep }) => {
+                    catalog::clicked(&core, &speaker);
+                    apps::decide(&core, &build_id, keep);
+                }
                 Ok(ClientMsg::ToggleApp { id, enabled }) => apps::toggle(&core, id, enabled),
                 Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
                 Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
@@ -1444,7 +1459,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.commit(vec![change]);
                 }
                 Ok(ClientMsg::Mark { kind, id, off }) => mark(&core, &speaker, kind, id, off),
-                Ok(ClientMsg::Correct { thought_id, accept }) => catalog::answered(&core, &thought_id, accept, String::new()),
+                Ok(ClientMsg::Correct { thought_id, accept }) => {
+                    catalog::clicked(&core, &speaker);
+                    catalog::answered(&core, &thought_id, accept, String::new());
+                }
                 Ok(ClientMsg::Unlink { thought_id }) => chunks::unlink(&core, &thought_id),
                 Ok(ClientMsg::Attention { selected, pointed, point }) => {
                     catalog::attend(&core, &speaker, selected, pointed);
@@ -1452,7 +1470,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Undo { id }) => catalog::undo_click(&core, &speaker, id),
                 Ok(ClientMsg::UndoLast) => catalog::undo_last(&core, &speaker),
-                Ok(ClientMsg::Tidy { id, apply }) => tidy::decide(&core, &speaker, &id, apply),
+                Ok(ClientMsg::Tidy { id, apply }) => {
+                    catalog::clicked(&core, &speaker);
+                    tidy::decide(&core, &speaker, &id, apply);
+                }
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),

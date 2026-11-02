@@ -136,15 +136,31 @@ pub fn is_stop_listening(text: &str) -> bool {
     )
 }
 
+/// The stop phrases that only ever mean this mic ("stop recording" or "mute the mic" may be about something else).
+fn is_plain_stop(text: &str) -> bool {
+    crate::is_command(
+        text,
+        &["stop listening", "pause listening", "mic off", "microphone off", "stop the mic", "turn off the mic", "turn the mic off"],
+        &["for now", "for a bit", "for a moment", "for a minute", "for a second", "now", "thanks", "thank you", "for now thanks", "for now thank you"],
+    )
+}
+
 /// A turn that ends in "stop listening" said after other words ("Call Mom about the flight. Stop listening."): the
 /// words before it, still a thought, and the stop. Only where a "where was I?" may end a turn (`command`): after a
 /// pause mark or a word that turns the talk, never asked of someone ("I loved it. Would you stop listening?"). The
 /// same words inside a sentence stay a thought ("I should stop listening to podcasts").
+///
+/// After a comma (or a turn word), only a phrase that can only mean the mic: "…when the guest leaves, stop
+/// recording" is about the podcast, and cut there it lost the thought and turned the mic off. After a sentence's end,
+/// any stop phrase.
 pub fn stop_tail(text: &str) -> Option<(&str, &str)> {
     if is_stop_listening(text) {
         return None;
     }
-    let at = crate::starts(text).into_iter().find(|&i| !crate::asks_someone(&text[i..]) && is_stop_listening(&text[i..]))?;
+    let sentence = |i: usize| text[..i].trim_end().ends_with(['.', '?', '!', '…']);
+    let at = crate::starts(text).into_iter().find(|&i| {
+        !crate::asks_someone(&text[i..]) && is_stop_listening(&text[i..]) && (sentence(i) || is_plain_stop(&text[i..]))
+    })?;
     Some((text[..at].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end(), &text[at..]))
 }
 

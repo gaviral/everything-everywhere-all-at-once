@@ -1,7 +1,7 @@
 // The refiner's renames and merges as the window shows them (core/src/tidy.rs): a rename it was sure of lands with a
 // note and Undo; anything else waits on its card as a proposal (Rename or Merge applies it, × keeps things as they
 // are); a merge applied can be undone from its note too.
-import type { ItemState, ItemStatus, Thread, World } from "./core";
+import type { ItemState, ItemStatus, Thought, Thread, World } from "./core";
 import { resolveMerged as resolve } from "./merges";
 
 export interface Proposal {
@@ -54,15 +54,21 @@ export function applyTidy<W extends World>(world: W, change: Change): W | null {
       if (world.threads.some((t) => t.id === from) || !world.merged[from]) return world;
       const into = resolve(world, u.into);
       const back = (ids: string[], id: string, on: string | null) => (on === into && ids.includes(id) ? from : on);
+      const thoughts = world.thoughts.map((t) => ({ ...t, thread_id: back(u.thoughts, t.id, t.thread_id) }));
+      // As the core: its card shows its newest point now there (by Thought::said_at; a tie goes to the later one), so
+      // one deleted since the merge isn't on it.
+      const now = Date.now();
+      const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
+      const newest = thoughts.filter((t) => t.placed && t.thread_id === from).reduce<Thought | undefined>((n, t) => (!n || saidAt(t) >= saidAt(n) ? t : n), undefined);
       const threads = world.threads.map((t) => ({ ...t, parent_id: back(u.branches, t.id, t.parent_id) }));
-      threads.splice(Math.min(u.at, threads.length), 0, u.thread);
+      threads.splice(Math.min(u.at, threads.length), 0, newest ? { ...u.thread, last_point: newest.point } : u.thread);
       const merged = { ...world.merged };
       delete merged[from];
       return {
         ...world,
         threads,
         merged,
-        thoughts: world.thoughts.map((t) => ({ ...t, thread_id: back(u.thoughts, t.id, t.thread_id) })),
+        thoughts,
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: back(u.suggestions, s.id, s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: back(u.actions, a.id, a.thread_id)! })),
         proposals: (world.proposals ?? []).map((p) => (u.proposals.includes(p.id) && p.thread_id === from && p.status === "done" ? { ...p, status: "new" } : p)),

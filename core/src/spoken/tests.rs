@@ -311,6 +311,8 @@ fn stop_listening_ends_a_turn_only_after_a_pause() {
     assert_eq!(stop_tail("Call mom tomorrow about the flight. Stop listening."), Some(("Call mom tomorrow about the flight.", "Stop listening.")));
     assert_eq!(stop_tail("The deposit is due Friday, okay stop listening"), Some(("The deposit is due Friday", "okay stop listening")));
     assert_eq!(stop_tail("Rent is due. Mic off, thanks."), Some(("Rent is due.", "Mic off, thanks.")));
+    assert_eq!(stop_tail("Rent is due, stop listening"), Some(("Rent is due", "stop listening")));
+    assert_eq!(stop_tail("Rent is due. Stop recording."), Some(("Rent is due.", "Stop recording.")));
     assert!(is_stop_listening("Stop listening, thank you."));
     for said in [
         "Stop listening",
@@ -318,6 +320,9 @@ fn stop_listening_ends_a_turn_only_after_a_pause() {
         "We loved the band. Would you stop listening to them?",
         "I loved it. Could you stop listening?",
         "Okay, so I want to stop listening to the news.",
+        // After a comma, a phrase that may be about something else stays the thought's.
+        "For the podcast, when the guest leaves, stop recording.",
+        "In the meeting, mute the mic.",
     ] {
         assert_eq!(stop_tail(said), None, "{said}");
     }

@@ -114,8 +114,9 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
     return lines;
   };
 
-  // Marked when the core's rule marked it (decided.rs, as the card shows it) or this one finds it in the words.
-  const saidDecided = (thoughts: Thought[]) => new Set(thoughts.filter((t) => t.decided || saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
+  // Marked as the card marks it (the core's decided.rs); the words are read only for a thought placed before the core
+  // marked any (no field), so the export never bolds what the card doesn't ("Once we chose the hotel…").
+  const saidDecided = (thoughts: Thought[]) => new Set(thoughts.filter((t) => t.decided ?? saysDecided(`${t.point} ${t.text}`)).map((t) => t.id));
   const ids = new Set(world.threads.map((t) => t.id));
   const children = new Map<string | null, Thread[]>();
   for (const thread of world.threads) {

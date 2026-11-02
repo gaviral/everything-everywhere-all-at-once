@@ -24,10 +24,8 @@ export function MovesProvider({ threads, move, rename, remove, children }: Moves
   useEffect(() => {
     if (!remove) return;
     const key = (event: KeyboardEvent) => {
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
-      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
       const point = event.target instanceof HTMLElement && event.target.matches("li[id^='point-']") ? event.target : null;
-      if (!point) return;
+      if (!point || !deletesPoint(event)) return;
       event.preventDefault();
       focusAfter(point);
       remove(point.id.slice("point-".length));
@@ -36,6 +34,13 @@ export function MovesProvider({ threads, move, rename, remove, children }: Moves
     return () => document.removeEventListener("keydown", key);
   }, [remove]);
   return <MovesContext.Provider value={value}>{children}</MovesContext.Provider>;
+}
+
+/** Whether a key on a focused point deletes it: Delete or Backspace, unmodified, and once per press. Held down, the
+ *  key repeats and focus has moved to the next point: each repeat deleted another, and Undo brought back one. */
+export function deletesPoint(event: Pick<KeyboardEvent, "key" | "repeat" | "metaKey" | "ctrlKey" | "altKey" | "defaultPrevented">): boolean {
+  if (event.key !== "Delete" && event.key !== "Backspace") return false;
+  return !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.defaultPrevented;
 }
 
 /** What a dragged point carries: its id, under a type only this map reads, so a drag from elsewhere moves nothing. */

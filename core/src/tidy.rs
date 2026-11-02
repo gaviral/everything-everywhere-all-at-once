@@ -112,6 +112,13 @@ pub fn unmerge(world: &mut World, u: &Unmerge) {
     for p in world.proposals.iter_mut().filter(|p| u.proposals.contains(&p.id) && p.thread_id == from && p.status == ItemStatus::Done) {
         p.status = ItemStatus::New;
     }
+    // Its card shows its newest point now there: one deleted since the merge isn't on it.
+    let now = crate::now_ms();
+    let newest = world.thoughts.iter().filter(|t| t.placed && t.thread_id.as_deref() == Some(from.as_str()))
+        .max_by_key(|t| t.said_at(now)).map(|t| t.point.clone());
+    if let (Some(point), Some(thread)) = (newest, world.threads.iter_mut().find(|t| t.id == from)) {
+        thread.last_point = point;
+    }
     if u.active && world.active.as_deref() == Some(into.as_str()) {
         world.active = Some(from.clone());
     }
@@ -198,7 +205,10 @@ pub fn undo(core: &Core, speaker: &str, kind: Kind, thread_id: &str) {
     let world = core.snapshot();
     let change = match kind {
         Kind::Rename => world.retitled.get(thread_id).filter(|_| world.thread(thread_id).is_some()).map(|was| Change::TitleChosen { thread_id: thread_id.into(), title: was.clone() }),
-        Kind::Merge => world.unmerge.get(thread_id).filter(|_| world.merged.contains_key(thread_id)).map(|u| Change::ThreadUnmerged { unmerge: u.clone() }),
+        // Nothing of it left on the map (its points deleted since): no empty card comes back, with words long gone.
+        Kind::Merge => world.unmerge.get(thread_id).filter(|_| world.merged.contains_key(thread_id))
+            .filter(|u| u.thoughts.iter().any(|id| world.thoughts.iter().any(|t| &t.id == id)) || u.branches.iter().any(|id| world.thread(id).is_some()))
+            .map(|u| Change::ThreadUnmerged { unmerge: u.clone() }),
     };
     match change {
         Some(change) => core.commit(vec![change]),
@@ -371,6 +381,31 @@ mod tests {
         let path = std::env::temp_dir().join(format!("e2a2o-tidy-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, _) = crate::Journal::open(&path).unwrap();
         (std::sync::Arc::new(crate::Core::test(journal, world)), path)
+    }
+
+    /// An AI merge whose points were deleted since: its Undo brings back no empty card with deleted words, and with
+    /// one point left, the card shows that point.
+    #[test]
+    fn undoing_a_merge_after_its_points_were_deleted_brings_back_no_deleted_words() {
+        let start = || {
+            let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], thoughts: vec![said("a", "T1"), said("b", "T2"), said("c", "T2")], ..World::default() };
+            world.threads[1].last_point = "c".into();
+            world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
+            world
+        };
+        let mut world = start();
+        world.apply(&Change::ThoughtSkipped { thought_id: "b".into() });
+        world.apply(&Change::ThoughtSkipped { thought_id: "c".into() });
+        let (live, path) = core(world);
+        super::undo(&live, "you", Kind::Merge, "T2");
+        assert!(live.snapshot().thread("T2").is_none(), "no empty card");
+        std::fs::remove_file(&path).unwrap();
+        let mut world = start();
+        world.apply(&Change::ThoughtSkipped { thought_id: "c".into() });
+        let (live, path) = core(world);
+        super::undo(&live, "you", Kind::Merge, "T2");
+        assert_eq!(live.snapshot().thread("T2").unwrap().last_point, "b", "the deleted point isn't on its card");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

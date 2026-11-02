@@ -38,11 +38,17 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path) -> Result<(),
     let missing = || "The sample map isn't installed here.".to_string();
     let text = std::fs::read_to_string(samples.join(format!("{SAMPLE}.jsonl"))).map_err(|_| missing())?;
     // Unreadable lines are skipped, as when a journal opens (world.rs `Journal::open`).
-    let changes: Vec<Change> = text.lines().filter(|l| !l.trim().is_empty()).filter_map(|l| serde_json::from_str(l).ok()).collect();
+    let empty = |world: &crate::world::World| world.threads.is_empty() && world.thoughts.is_empty();
+    // A map emptied after a merge or delete still holds those ids (T2 leads into T1): the sample's threads take
+    // fresh ones, so none of them resolves into another.
+    let made = core.snapshot().threads_made();
+    let changes: Vec<Change> = text.lines().filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter_map(|mut v| { rebase(&mut v, made); serde_json::from_value(v).ok() })
+        .collect();
     if changes.is_empty() {
         return Err(missing());
     }
-    let empty = |world: &crate::world::World| world.threads.is_empty() && world.thoughts.is_empty();
     if !empty(&core.snapshot()) {
         return Err(NOT_EMPTY.into());
     }
@@ -55,6 +61,20 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path) -> Result<(),
         core.commit(vec![Change::ActiveChanged { thread_id: active, speaker: speaker.into() }]);
     }
     Ok(())
+}
+
+/// Every thread id in a sample line ("T3"), `by` on ("T7" after 4 made).
+fn rebase(v: &mut serde_json::Value, by: usize) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let Some(n) = s.strip_prefix('T').and_then(|n| n.parse::<usize>().ok()) {
+                *s = format!("T{}", n + by);
+            }
+        }
+        serde_json::Value::Array(all) => all.iter_mut().for_each(|v| rebase(v, by)),
+        serde_json::Value::Object(all) => all.values_mut().for_each(|v| rebase(v, by)),
+        _ => {}
+    }
 }
 
 const NOT_EMPTY: &str = "The sample only fills an empty map, and this one has thoughts.";
@@ -115,6 +135,29 @@ mod tests {
         // A second click, or a map with thoughts: nothing added.
         assert_eq!(load(&core, "Ana", &samples(), &images), Err(NOT_EMPTY.into()));
         assert_eq!(core.snapshot().thoughts.len(), world.thoughts.len());
+    }
+
+    /// A map emptied after a merge (T2 leads into T1): the sample's threads stay its own, none folded into another.
+    #[test]
+    fn the_sample_on_a_map_emptied_after_a_merge_keeps_every_thread() {
+        let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+        let mut world = crate::world::World::default();
+        // T1 and T2 made, T2 merged into T1, then T1's points deleted: T1 left the map.
+        world.merged.insert("T2".into(), "T1".into());
+        world.removed = 1;
+        let core = Core::test(journal, world);
+        load(&core, "Ana", &samples(), &dir.join("images")).unwrap();
+        let world = core.snapshot();
+        assert_eq!(world.threads.len(), 8);
+        for th in &world.threads {
+            assert_eq!(world.resolve(&th.id), th.id, "a sample thread leads into another");
+        }
+        for t in &world.thoughts {
+            let on = t.thread_id.as_deref().unwrap();
+            assert!(world.thread(on).is_some() && world.resolve(on) == on, "{} sits on {on}, which leads to {}", t.id, world.resolve(on));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

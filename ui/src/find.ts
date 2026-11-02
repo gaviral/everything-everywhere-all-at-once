@@ -5,6 +5,12 @@ import { resolveMerged } from "./merges";
 import "./find.css";
 import { look, wordsIn } from "./Attention";
 
+/** Whether focus is in a field the person types in: a jump shows its point there without taking focus from it. */
+export function typingIn(element: Element | null): boolean {
+  if (!element) return false;
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || (element as HTMLElement).isContentEditable === true;
+}
+
 export type Found = { thread_id: string; thought_id: string | null; item_id?: string; revision: number };
 
 type Reveal = {
@@ -61,7 +67,8 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
         const hadTabindex = target.hasAttribute("tabindex");
         if (!hadTabindex) target.setAttribute("tabindex", "-1");
         target.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
-        target.focus({ preventScroll: true });
+        // Still typing (the composer, search): focus stays there, or the next Backspace deletes the found point.
+        if (!typingIn(document.activeElement)) target.focus({ preventScroll: true });
         if (!hadTabindex) target.addEventListener("blur", () => target?.removeAttribute("tabindex"), { once: true });
         // The one "look here" highlight (Attention.tsx), for as long as reading it takes; a thread's is on its head.
         const title = currentWorld.current.threads.find((thread) => thread.id === id)?.title ?? "";

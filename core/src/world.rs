@@ -421,7 +421,9 @@ impl World {
             }
             Change::ThoughtRepointed { thought_id, point } => self.repoint(thought_id, |_| point.clone()),
             Change::ThreadRemoved { thread_id } => {
-                let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
+                // Words still being placed don't hold it: they only name where they were said (placer.rs places
+                // them on the map as it is when they land).
+                let held = self.thoughts.iter().any(|t| t.placed && t.thread_id.as_ref() == Some(thread_id))
                     || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
                 if !held && self.thread(thread_id).is_some() {
                     self.threads.retain(|t| &t.id != thread_id);

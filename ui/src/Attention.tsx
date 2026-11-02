@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Landing, World } from "./core";
 import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, sameOr, thisBase, thisKind, type Unseen } from "./attention-core";
 import { POINTER_MS, resolveThis, type AttentionTeller } from "./this-card";
+import { landedNow } from "./landed";
 import "./attention.css";
 
 /** The visible band of the map: under the header and tools, above the dock. */
@@ -127,6 +128,8 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
   noteRef.current = note;
   const known = useRef<Set<string> | null>(null);
   const before = useRef<{ world: World; revision: number } | null>(null);
+  // Every thought ever placed: one an Undo brings back doesn't take the mark (landed.ts).
+  const ever = useRef(new Set<string>());
 
   useEffect(() => {
     if (!revision) return;
@@ -135,17 +138,18 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
     before.current = { world, revision };
     known.current = new Set(placed.map((t) => t.id));
     // A fresh page: your newest words by when you said them.
-    if (!last) { setLatest(newestSaid(placed, me, Date.now())); return; }
+    if (!last) { placed.forEach((t) => ever.current.add(t.id)); setLatest(newestSaid(placed, me, Date.now())); return; }
     const wasPlaced = new Set(last.world.thoughts.filter((t) => t.placed).map((t) => t.id));
     if (last.revision !== revision) {
       // A new snapshot (a reconnect): your words that landed meanwhile take the mark, as on a fresh page; else it stays
       // unless its thought is gone.
       const since = newestSaid(placed.filter((t) => !wasPlaced.has(t.id)), me, Date.now());
+      placed.forEach((t) => ever.current.add(t.id));
       setLatest((now) => since ?? (now && placed.some((t) => t.id === now) ? now : newestSaid(placed, me, Date.now())));
       setUnseen((marks) => sameOr(marks, carry(marks, world)));
       return;
     }
-    const mine = newestOwn(placed.filter((t) => !wasPlaced.has(t.id)), me);
+    const mine = newestOwn(landedNow(placed, wasPlaced, ever.current), me);
     if (mine) setLatest(mine);
     // Words taken back ("scratch that", catalog.rs) take their point off the map: the mark goes to your newest still on
     // it, as after a reconnect.
