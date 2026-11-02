@@ -3,7 +3,7 @@
 //! they always were (main.rs, spoken.rs, recap.rs, apps.rs, find.rs); `classify` names the act a turn asks for, and
 //! a test holds every phrase here to it, so the table and the rules can't drift apart.
 //!
-//! On top of it, the repairs a conversation needs (decisions/catalog.md):
+//! On top of it, the repairs a conversation needs:
 //! - "No, I meant …" redoes the speaker's last request, or turns their last thought into the request it was;
 //!   "scratch that" undoes it. Both reach back to the speaker's previous turn within `JUST_BEFORE_MS`.
 //! - "This" is what the speaker selected, else the card under their pointer, else their active thread (`this`).
@@ -355,7 +355,7 @@ const JUST_BEFORE_MS: u64 = crate::placer::JUST_BEFORE_MS;
 
 /// How long the card the pointer just left still counts as "this": a short command ("expand this one", 3 words) takes
 /// ≈ 1.2 s at a conversational 150 words a minute, and its words reach the core ≈ 0.4 s after you stop (measured for
-/// "what was I thinking?", decisions/commands2.md), so a hand that moved off as you started speaking left ≈ 1.6 s
+/// "what was I thinking?"), so a hand that moved off as you started speaking left ≈ 1.6 s
 /// before the turn arrives.
 const POINTER_MS: u64 = 2_000;
 

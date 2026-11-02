@@ -461,7 +461,7 @@ export default function App() {
       const visited = new Set<string>();
       while (thread && !visited.has(thread.id)) {
         visited.add(thread.id);
-        // Opened with its branches: it stays open after you leave (review of 88ace4d).
+        // Opened with its branches: it stays open after you leave (review).
         if (!(keptOpen.current.has(thread.id) && next[thread.id] === false)) {
           delete next[thread.id];
           keptOpen.current.delete(thread.id);
@@ -695,7 +695,7 @@ export default function App() {
   // moves clear of it, once. Under 10 s: in a talk paced like the demo's (a turn every 6 s, landing 2–4 s after its
   // words, the card after 2.5 s of quiet) the newest landing is younger than that when the card rises. Not once you've
   // moved the map yourself. Your own words in the dock (the live line, a thought on its way) don't move it: they land
-  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review of 1eb1226).
+  // next, and the follow shows them. A build's card covered a thought just landed above the dock (review).
   const clearFrame = useRef(0);
   const cardsHeight = useRef(0);
   const keepClear = () => {

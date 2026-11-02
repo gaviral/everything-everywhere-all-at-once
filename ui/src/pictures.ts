@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Synthet
  * Drawings are capped in the core (core/src/pictures.rs, TRIES). */
 
 /** Waits before each new fetch of a picture that failed with the core still connected. A core that went away
- *  (User's stopped at 09:09 the morning he saw a broken picture) is covered by fetching again when it is back; these
+ *  (a stopped core is how a broken picture was first seen) is covered by fetching again when it is back; these
  *  cover a passing failure the connection doesn't show (a busy core, a guest's Wi-Fi): about 40 s in all, then the
  *  tile stays until the core comes back or the page is reloaded. */
 export const RETRY_MS = [2_000, 8_000, 30_000] as const;

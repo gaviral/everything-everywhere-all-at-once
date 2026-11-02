@@ -1697,20 +1697,20 @@ mod tests {
 
         // The host's import: its progress goes to the host only, also to a window that reconnects.
         let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
-        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "User".into(), id: "im-1".into() });
-        publish(&f.core, "User", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "Ana".into(), id: "im-1".into() });
+        publish(&f.core, "Ana", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
         let progress = out.recv().await.unwrap();
-        assert_eq!(progress.to.as_deref(), Some("User"));
+        assert_eq!(progress.to.as_deref(), Some("Ana"));
         assert!(matches!(progress.message, ServerMsg::Import { ref status } if status.state == "reading"));
-        assert_eq!(f.core.imports.live_for("User").map(|s| s.state), Some("reading".into()));
+        assert_eq!(f.core.imports.live_for("Ana").map(|s| s.state), Some("reading".into()));
         assert!(f.core.imports.live_for("Sam").is_none());
 
         // Only the host can stop it.
         cancel(&f.core, "Sam");
         assert!(f.core.imports.running());
-        cancel(&f.core, "User");
+        cancel(&f.core, "Ana");
         let stopped = out.recv().await.unwrap();
-        assert_eq!(stopped.to.as_deref(), Some("User"));
+        assert_eq!(stopped.to.as_deref(), Some("Ana"));
         assert!(matches!(stopped.message, ServerMsg::Import { ref status } if status.state == "stopped" && status.note.contains("Nothing was added")));
     }
 
@@ -1844,7 +1844,7 @@ mod tests {
         let ideas = vec![idea("Move", "Lease ends Nov 30", 2_000), idea("Move", "Move in January", 1_000), idea("Move", "move in january", 3_000)];
         let group = Group { title: "Moving".into(), ideas: vec![0, 1, 2], question: "Lisbon or Porto?".into(), actions: vec![Task { kind: "event".into(), title: "Give notice".into(), when: "2026-11-15".into() }], ..Group::default() };
         // In a room the host's name, alone "you": whoever imported.
-        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0, "User");
+        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0, "Ana");
         let mut world = World::default();
         for change in &changes {
             world.apply(change);
@@ -1853,11 +1853,11 @@ mod tests {
         assert_eq!((thread.title.as_str(), thread.last_point.as_str(), thread.touched_ms), ("Moving", "Lease ends Nov 30", 2_000));
         let points: Vec<(&str, u64)> = world.thoughts.iter().map(|t| (t.point.as_str(), t.at_ms)).collect();
         assert_eq!(points, [("Move in January", 1_000), ("Lease ends Nov 30", 2_000)], "in time order; a repeat lands once");
-        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "User" && t.thread_id.as_deref() == Some("I3")));
+        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "Ana" && t.thread_id.as_deref() == Some("I3")));
         assert_eq!(world.suggestions[0].text, "Lisbon or Porto?");
         assert_eq!(world.actions[0].when, "2026-11-15");
         // Points added to a thread already on the map leave it as it is unless they're newer.
-        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0, "User");
+        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0, "Ana");
         assert!(older.iter().all(|c| matches!(c, Change::ThoughtAdded { .. })));
     }
 }

@@ -812,7 +812,7 @@ export function useCore(speaker?: string) {
     hideMapChange: useCallback(() => setMapChange(null), []),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
-    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review of judgeseye, Sol).
+    // sends the view, then "Did … instead" with its Undo, and both can reach one render (review).
     showNotice: (message: string, asked?: ViewAsk | null) => {
       if (asked && answers.current > asked.answers) return;
       setNotice(message);
