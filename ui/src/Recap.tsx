@@ -46,16 +46,22 @@ export function isDefaultRecap(text: string): boolean {
   return ["recap", "give me a recap"].includes(words.join(" "));
 }
 
+/** The sheet after one message from the core. */
+export function nextRecapView(old: View | null, state: RecapServerMsg): View | null {
+  // A finished request must not reopen a sheet the person already closed.
+  if (!old && !state.loading) return null;
+  // Nor replace a newer one: asked for Today, then Session while Today was being made, Today's answer arrives first
+  // and would show the wrong period, with no sign that Session is still coming.
+  if (old?.loading && !state.loading && state.period !== old.period) return old;
+  return { ...state, fallbackSince: old?.period === state.period ? old.fallbackSince : undefined, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
+}
+
 export function useRecap() {
   const [view, setView] = useState<View | null>(null);
   const receive = useCallback((msg: { type: string }) => {
     if (msg.type !== "recap_state") return false;
     const state = msg as RecapServerMsg;
-    setView((old) => {
-      // A finished request must not reopen a sheet the person already closed.
-      if (!old && !state.loading) return null;
-      return { ...state, fallbackSince: old?.period === state.period ? old.fallbackSince : undefined, recap: state.recap ?? (old?.period === state.period ? old.recap : null) };
-    });
+    setView((old) => nextRecapView(old, state));
     return true;
   }, []);
   const open = useCallback((period: RecapPeriod, recap: RecapData | null, connected: boolean, fallbackSince?: number) => {

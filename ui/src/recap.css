@@ -28,7 +28,9 @@
    that came and went that fast would read as a flicker. 400 ms is about where a pause starts to feel like waiting. */
 .recap-feedback .recap-loading { color: var(--ai); animation: recap-late 200ms ease-out 400ms both; }
 @keyframes recap-late { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .recap-feedback .recap-loading { animation-duration: 1ms; } }
+/* Reduced motion: no fade, but the same 400 ms wait. styles.css turns every animation off with !important there, so this
+   rule needs its own !important (and wins on specificity), or the line would flash on a recap that answers at once. */
+@media (prefers-reduced-motion: reduce) { .recap-feedback .recap-loading { animation: recap-late 1ms step-end 400ms both !important; } }
 .recap-feedback .recap-error { padding: 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); }
 .recap-summary { max-width: 660px; margin: 22px 0 0; font-size: 18px; line-height: 1.55; letter-spacing: -.015em; }
 .recap-limit { margin: 12px 0 0; color: var(--muted); font-size: 12px; }

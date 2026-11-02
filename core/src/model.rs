@@ -283,6 +283,11 @@ impl Core {
     /// call from here on and tells every window; a busy service is said once a spell. Both end the call with
     /// their verdict as the error. Any other failure is the caller's to report (`answer` does it for a model call).
     pub fn check(&self, status: StatusCode) -> anyhow::Result<()> {
+        self.check_as(status, true)
+    }
+
+    /// `check`, saying a busy service only when `say_busy`: work nobody waits on (a recap draft) is turned away quietly.
+    fn check_as(&self, status: StatusCode, say_busy: bool) -> anyhow::Result<()> {
         match verdict(status) {
             Verdict::Refused => {
                 if !self.service.refused.swap(true, Ordering::Relaxed) {
@@ -294,7 +299,7 @@ impl Core {
             Verdict::Busy => {
                 let (now, said) = (crate::now_ms(), self.service.busy_said_ms.load(Ordering::Relaxed));
                 // Two calls turned away at once say it once.
-                let fresh = now.saturating_sub(said) >= SPELL_MS
+                let fresh = say_busy && now.saturating_sub(said) >= SPELL_MS
                     && self.service.busy_said_ms.compare_exchange(said, now, Ordering::Relaxed, Ordering::Relaxed).is_ok();
                 if fresh {
                     tracing::warn!("the model service is busy ({status}): each caller backs off and tries again");
@@ -315,12 +320,21 @@ impl Core {
     /// `call_model`, with `extra` fields on its trace line: a call with no prompt cache key names its feature
     /// here, and says what it was for.
     pub async fn call_model_noting(&self, url: &str, body: &Value, patience: Duration, extra: Value) -> anyhow::Result<Value> {
+        self.call(url, body, patience, extra, true).await
+    }
+
+    /// `call_model` for work nobody is waiting on (a recap draft): a busy service turns it away without a notice.
+    pub async fn call_model_quietly(&self, url: &str, body: &Value, patience: Duration) -> anyhow::Result<Value> {
+        self.call(url, body, patience, Value::Null, false).await
+    }
+
+    async fn call(&self, url: &str, body: &Value, patience: Duration, extra: Value, say_busy: bool) -> anyhow::Result<Value> {
         let key = self.key()?;
         self.spend()?;
         let started = std::time::Instant::now();
         let result = async {
             let response = self.http.post(url).bearer_auth(key).timeout(patience).json(body).send().await?;
-            self.check(response.status())?;
+            self.check_as(response.status(), say_busy)?;
             answer(response).await
         }
         .await;
@@ -532,6 +546,21 @@ mod tests {
         assert!(said[0].contains("busy") && !said[0].contains("MODEL_API_KEY"), "{said:?}");
         assert!(!core.key_refused());
         assert_eq!(core.key().unwrap(), "good");
+    }
+
+    /// A recap draft nobody asked for (recap.rs) is turned away by a busy service without a notice mid-talk; the
+    /// next call someone waits on still says it.
+    #[test]
+    fn a_quiet_call_is_turned_away_without_a_notice() {
+        let fixture = Fixture::new(Some("good"));
+        let core = &fixture.core;
+        let mut updates = core.updates.subscribe();
+        assert_eq!(Verdict::of(&core.check_as(StatusCode::TOO_MANY_REQUESTS, false).unwrap_err()), Some(Verdict::Busy));
+        assert!(notices(&mut updates).is_empty(), "nobody waits on a draft");
+        let _ = core.check(StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(notices(&mut updates).len(), 1, "a quiet one doesn't use up the spell's notice");
+        let _ = core.check_as(StatusCode::UNAUTHORIZED, false);
+        assert_eq!(notices(&mut updates), vec![REFUSED.to_string()], "a refused key stops everything: said either way");
     }
 
     #[test]

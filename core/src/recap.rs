@@ -129,7 +129,7 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             return;
         }
         drop(world);
-        let answer = if source.threads.is_empty() { Ok(Answer::default()) } else { generate(&core, &source).await };
+        let answer = if source.threads.is_empty() { Ok(Answer::default()) } else { generate(&core, &source, false).await };
         match answer {
             Ok(answer) => {
                 let recap = finish(source, answer, source_key);
@@ -157,23 +157,44 @@ pub async fn keep(core: Arc<Core>) {
     let mut due = true;
     loop {
         while !due {
-            match updates.recv().await {
+            // A thought that never lands (its placement failed) stops holding drafts up once it ages out, and nothing
+            // else would say so: look again then.
+            let got = match retry_in(&core.snapshot(), crate::now_ms()) {
+                Some(wait) => match tokio::time::timeout(wait, updates.recv()).await { Ok(got) => got, Err(_) => { due = true; continue; } },
+                None => updates.recv().await,
+            };
+            match got {
                 Ok(out) => due = moves_the_recap(&out.message),
                 Err(RecvError::Lagged(_)) => due = true,
                 Err(RecvError::Closed) => return,
             }
         }
-        // Settled: nothing of the map changed for SETTLE.
-        loop {
-            match tokio::time::timeout(SETTLE, updates.recv()).await {
-                Err(_) => break,
-                Ok(Err(RecvError::Closed)) => return,
-                Ok(_) => {}
-            }
-        }
+        if !settle(&mut updates).await { return; }
         due = false;
         draft(&core).await;
     }
+}
+
+/// Waits until nothing of the map has changed for SETTLE. Only map changes restart the wait: live words (`Partial`,
+/// one per word heard) and notices go out all the time while anyone talks, and would otherwise put the draft off until
+/// a pause. False when the core is shutting down.
+async fn settle(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) -> bool {
+    use tokio::sync::broadcast::error::RecvError;
+    let mut until = tokio::time::Instant::now() + SETTLE;
+    loop {
+        match tokio::time::timeout_at(until, updates.recv()).await {
+            Err(_) => return true,
+            Ok(Err(RecvError::Closed)) => return false,
+            Ok(Err(RecvError::Lagged(_))) => until = tokio::time::Instant::now() + SETTLE,
+            Ok(Ok(out)) => if moves_the_recap(&out.message) { until = tokio::time::Instant::now() + SETTLE },
+        }
+    }
+}
+
+/// How long until the youngest thought still finding its thread stops counting as placing (`placing`), if any.
+fn retry_in(world: &World, now: u64) -> Option<Duration> {
+    world.thoughts.iter().filter(|t| !t.placed && now.saturating_sub(t.at_ms) < 60_000).map(|t| t.at_ms).max()
+        .map(|at| Duration::from_millis((at + 60_000).saturating_sub(now) + 1))
 }
 
 /// A change to the map; not a recap being saved (a draft's own, or one asked for).
@@ -189,12 +210,14 @@ async fn draft(core: &Arc<Core>) -> bool {
     // No key, a refused one, or the hour's calls needed elsewhere: a draft is never worth a notice or a call a person asked for.
     if core.key.is_none() || core.key_refused() || !core.calls_to_spare() { return false; }
     let _guard = core.recap.gate.lock().await;
+    // Again: while it waited on an asked-for recap, placing may have used the calls this one would take.
+    if core.key_refused() || !core.calls_to_spare() { return false; }
     let world = core.snapshot();
     let now = crate::now_ms();
     let Some(source) = stale(&world, now) else { return false };
     drop(world);
     let key = source.key();
-    match generate(core, &source).await {
+    match generate(core, &source, true).await {
         Ok(answer) => {
             core.commit(vec![Change::RecapSaved { recap: finish(source, answer, key) }]);
             tracing::info!("recap draft kept current");
@@ -343,9 +366,13 @@ struct Answer {
     questions: Vec<Item>,
 }
 
-async fn generate(core: &Core, source: &Source) -> anyhow::Result<Answer> {
+/// `quiet` for a draft nobody asked for: a busy service isn't said for it, since nobody waits on it (placing still says
+/// it when words wait). A refused key is said either way: every feature stops.
+async fn generate(core: &Core, source: &Source, quiet: bool) -> anyhow::Result<Answer> {
     // One call, no automatic retries. A failure leaves the last saved recap intact.
-    let value = core.call_model(URL, &model_body(source)?, Duration::from_secs(40)).await?;
+    let body = model_body(source)?;
+    let patience = Duration::from_secs(40);
+    let value = if quiet { core.call_model_quietly(URL, &body, patience).await? } else { core.call_model(URL, &body, patience).await? };
     read_answer(value)
 }
 
@@ -811,6 +838,72 @@ mod tests {
         drop(drafting);
         let (message, recap) = ready(&mut rx).await;
         assert!(message.is_empty() && recap.is_some(), "the draft's answer is the one shown");
+    }
+
+    /// Live words (one `Partial` per word heard) go out all the time while anyone talks: they mustn't put a draft
+    /// off until a pause, or "Recap" said mid-flow waits on a model call again. Map changes do restart the wait.
+    #[tokio::test(start_paused = true)]
+    async fn live_words_dont_hold_a_draft_off_but_map_changes_do() {
+        use crate::protocol::Outgoing;
+        let (tx, mut rx) = broadcast::channel::<Outgoing>(256);
+        let started = tokio::time::Instant::now();
+        let talker = tx.clone();
+        tokio::spawn(async move {
+            for i in 0..40 {
+                let _ = talker.send(Outgoing { to: Some("you".into()), message: ServerMsg::Partial { text: format!("word {i}") } });
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        });
+        assert!(settle(&mut rx).await);
+        assert!(started.elapsed() < Duration::from_millis(600), "settled while words kept coming: {:?}", started.elapsed());
+
+        let started = tokio::time::Instant::now();
+        let mover = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let change = Change::ThreadTouched { thread_id: "T1".into(), last_point: String::new(), at_ms: 0 };
+            let _ = mover.send(Outgoing { to: None, message: ServerMsg::Change { change } });
+        });
+        assert!(settle(&mut rx).await);
+        assert!(started.elapsed() >= Duration::from_millis(800), "a change 300 ms in restarts the wait: {:?}", started.elapsed());
+        drop(tx);
+        // The talker may still hold a sender; once every sender is gone the core is shutting down.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert!(!settle(&mut rx).await);
+    }
+
+    /// A draft that waited on an asked-for recap looks at the hour's calls again before it takes one: placing may
+    /// have used the spare ones meanwhile. Ends without a network call either way: the cap is full by then.
+    #[tokio::test]
+    async fn a_draft_that_waited_checks_the_calls_again() {
+        let path = std::env::temp_dir().join(format!("e2a2o-recap-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core { key: Some("test".into()), service: crate::model::Service::with_limit(4), ..Core::test(journal, world) });
+        *core.world.lock().unwrap() = sample(crate::now_ms()).into();
+        let asked = core.recap.gate.lock().await;
+        let waiting = tokio::spawn({ let core = core.clone(); async move { draft(&core).await } });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiting.is_finished(), "spare when it started: it waits on the gate");
+        for _ in 0..4 { core.spend().unwrap(); }
+        drop(asked);
+        assert!(!waiting.await.unwrap(), "no spare calls left after the wait: no draft");
+        assert!(core.snapshot().recaps.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A thought whose placement failed stops holding drafts up after a minute; the keeper looks again then.
+    #[test]
+    fn a_thought_that_never_lands_is_looked_at_again_when_it_ages_out() {
+        let now = crate::now_ms();
+        let mut world = sample(now);
+        assert_eq!(retry_in(&world, now), None, "everything placed: wait for a change");
+        world.thoughts.push(Thought { placed: false, ..thought(7, "T1", now - 50_000) });
+        assert!(stale(&world, now).is_none());
+        let wait = retry_in(&world, now).unwrap();
+        assert!(wait >= Duration::from_millis(10_000) && wait <= Duration::from_millis(10_001), "{wait:?}");
+        let later = now + wait.as_millis() as u64;
+        assert!(stale(&world, later).is_some(), "aged out: the draft is due");
+        assert_eq!(retry_in(&world, later), None);
     }
 
     #[test]
