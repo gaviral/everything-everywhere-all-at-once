@@ -12,7 +12,7 @@ const server = await createServer({ root: new URL("../ui", import.meta.url).path
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
   const { apply, actionFailed } = await server.ssrLoadModule("/src/core.ts");
-  const { actionLine } = await server.ssrLoadModule("/src/action-line.ts");
+  const { actionLine, failureNotice } = await server.ssrLoadModule("/src/action-line.ts");
   const action = { id: "ac-1", thread_id: "T1", kind: "reminder", title: "Send rent", when: "2026-11-06", status: "new", done_ms: null };
   let world = { threads: [], thoughts: [], active: null, active_by: {}, recaps: [], suggestions: [], actions: [action], merged: {}, apps: [], apps_seeded: true };
   const row = () => actionLine(world.actions[0], "Reminders");
@@ -37,6 +37,18 @@ try {
   assert.deepEqual(row(), { status: "Added to Reminders · 1.2 s" }, "added, with how long Apple's side took");
   assert.deepEqual(actionLine({ ...action, kind: "event", status: "done", done_ms: 800 }, "Calendar"), { status: "Added to Calendar · 0.8 s" });
   assert.deepEqual(actionLine({ ...action, status: "dismissed" }, "Reminders"), {}, "dismissed: nothing to say");
+  // Said where you'll see it: the row in view says why alone; out of view (the Palace has no action rows, or it's
+  // scrolled away), or under the spoken "Adding “…”…" notice, the notice says it too, naming the item.
+  assert.equal(failureNotice("Send rent", why, true, ""), null, "row in view: the row says it");
+  assert.equal(failureNotice("Send rent", why, true, "Back to Rent"), null, "row in view: another notice stays");
+  const away = failureNotice("Send rent", why, false, "");
+  assert.ok(away?.startsWith("Couldn't add “Send rent”: macOS blocked it.") && away.endsWith("then try again."), away);
+  assert.equal(failureNotice("Send rent", why, true, "Adding “Send rent”…"), away, "said aloud: the notice that said Adding takes it back");
+  // A keyboard Add keeps focus: on the row while it's added, then on "Try again" (App.tsx ActionRow). Source-level,
+  // since the checks here run without a browser; the e2e run is in the card.
+  const app = (await import("node:fs")).readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const rowFn = app.slice(app.indexOf("function ActionRow"), app.indexOf("function PendingThought"));
+  for (const part of ["ref={row} tabIndex={-1}", "ref={add}", "onClick={approve}", ':focus-visible', "add.current?.focus("]) assert.ok(rowFn.includes(part), `ActionRow keeps keyboard focus (${part})`);
   console.log("actions-check: ok");
 } finally {
   await server.close();

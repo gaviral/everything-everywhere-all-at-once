@@ -6,6 +6,7 @@ import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
 import { attentionTeller, watchAttention } from "./this-card";
+import { failureNotice } from "./action-line";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
@@ -501,6 +502,9 @@ export function useCore(speaker?: string) {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // The notice up now, for the socket handler, whose `notice` would be the one from when it connected.
+  const noticeShown = useRef("");
+  useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const [undoId, setUndoId] = useState<number | null>(null);
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
@@ -591,10 +595,18 @@ export function useCore(speaker?: string) {
             setWorld(currentWorld);
             break;
           }
-          case "action_failed":
+          case "action_failed": {
+            const action = currentWorld.actions.find((a) => a.id === msg.id);
             currentWorld = actionFailed(currentWorld, msg.id, msg.message);
             setWorld(currentWorld);
+            if (!action) break;
+            // Its row says why when it's on screen; else the notice does (action-line.ts `failureNotice`).
+            const row = document.getElementById(`item-${msg.id}`)?.getBoundingClientRect();
+            const inView = !!row && row.height > 0 && row.bottom > 0 && row.top < window.innerHeight;
+            const say = failureNotice(action.title, msg.message, inView, noticeShown.current);
+            if (say) { setNotice(say); setUndoId(null); answered(); }
             break;
+          }
           case "partial":
             window.clearTimeout(handoffTimer);
             if (msg.text) {
