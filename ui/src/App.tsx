@@ -222,9 +222,10 @@ export default function App() {
   const followFrame = useRef(0);
   // The landing the map last showed you, and when: the unfinished card keeps clear of it.
   const shownLanding = useRef<{ thought: string; at: number } | null>(null);
-  // The map holds still while something else has your eyes: a search, or a panel, menu or dialog over it.
+  // The map holds still while something else has your eyes: a search, typing in the Apps panel, or a menu or dialog
+  // over it. An Apps panel left open doesn't count: it stays open after Keep, and froze the map with no note.
   const lookingElsewhere = () => document.activeElement === searchRef.current || !!searchRef.current?.value.trim() ||
-    !!document.querySelector(".apps-panel.is-open, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
+    !!document.querySelector(".apps-panel input:focus, dialog[open], .room-menu[open], .shortcuts[open], .tour-tip, .explain");
   useEffect(() => () => { window.clearTimeout(followTimer.current); cancelAnimationFrame(followFrame.current); }, []);
   useEffect(() => {
     const placed = world.thoughts.filter((thought) => thought.placed);
@@ -890,8 +891,13 @@ export default function App() {
         </div>
       </header>
 
+      <div id="tour-tools" />
+      <Apps core={core} />
+      <div id="tour-map" />
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
+      {/* Under the Apps pill, so an answer never covers it; it stays under the header as the map scrolls. */}
+      <div className="notice-lane">
       <AnimatePresence>
         {core.notice && (
           <motion.div
@@ -919,12 +925,10 @@ export default function App() {
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
         </div>
       )}
+      </div>
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
-      <div id="tour-tools" />
-      <Apps core={core} />
-      <div id="tour-map" />
       {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View">
@@ -982,6 +986,7 @@ export default function App() {
               <motion.div
                 key={dropKey(pullBack)}
                 className="pullback" role="status" data-dock-card
+                style={roomStyle(rooms.get(pullBack.id))}
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8 }}

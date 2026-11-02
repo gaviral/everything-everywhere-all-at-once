@@ -63,7 +63,8 @@ try {
   // kept the open ? list under the no-key notice (headless Chrome, 720 × 450).
   assert.match(rule("header"), /position:\s*relative/, "the header scrolls away and keeps its z-index");
   assert.match(styles, /header:has\(\.shortcuts\[open\]\) \{ z-index: 11; \}/, "open, the ? list's header goes over the notice (10)");
-  assert.match(styles.match(/\.notice \{\s*position: fixed;[^}]*\}/)?.[0] ?? "", /z-index: 10;/, "the notice sits at 10");
+  assert.match(styles.match(/\.notice-lane \{[^}]*\}/)?.[0] ?? "", /z-index: 10;/, "the notice lane sits at 10");
+  assert.match(css, /\.notice-lane, \.notice, \.map-change \{ top: 8px; \}/, "with the header scrolled away, notices stick at the top");
   assert.match(rule(".thread, .palace-tile"), /scroll-margin-top:\s*12px/, "a card brought to the top has no bars to clear");
   const dock = rule(".dock");
   const cap = +(dock.match(/max-height:\s*(\d+)dvh/)?.[1] ?? 100);

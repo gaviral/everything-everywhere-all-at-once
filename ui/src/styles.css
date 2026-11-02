@@ -668,12 +668,24 @@ header {
   line-height: 1;
 }
 
-.notice {
-  position: fixed;
-  top: 60px;
-  left: 50%;
+/* Answers and map updates sit under the Apps pill, never on it, and stay under the header as the map scrolls: a lane of
+   no height (nothing moves when one comes or goes) that sticks where the header ends. */
+.notice-lane {
+  position: sticky;
+  top: calc(var(--header-height, 64px) + 6px);
   z-index: 10;
-  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  height: 0;
+}
+.notice-lane > * { flex: none; }
+/* An open Apps panel can run past the screen's foot, and a sticky lane can't rise above where it sits: fixed while
+   it's open, so its answers (a request too long to build) are seen. On a phone too, where the lane is otherwise contents. */
+.apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; display: flex; }
+
+.notice {
   padding: 8px 14px;
   border-radius: 10px;
   background: var(--ink);
@@ -805,8 +817,7 @@ header:has(.shortcuts[open]) { z-index: 11; }
 .picture-letter { display: grid; place-items: center; background: var(--room-soft, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); color: var(--room, var(--muted)); font: 20px/1 Georgia, serif; }
 .thread.collapsed .picture-letter { font-size: 16px; }
 .picture-mark { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--card); border-radius: 50%; background: var(--ai-soft); color: var(--ai); font-size: 11px; }
-.map-change { position: fixed; z-index: 10; top: 60px; left: 50%; translate: -50% 0; display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
-.notice ~ .map-change { top: 120px; }
+.map-change { display: flex; gap: 8px; align-items: center; max-width: min(90vw, 540px); padding: 9px 12px; border: 1px solid var(--ai); border-radius: 10px; background: var(--ai-soft); color: var(--ink); box-shadow: var(--shadow); font-size: 13px; }
 .map-change > span { color: var(--ai); }
 .map-change button { margin-left: auto; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 18px; cursor: pointer; }
 .branches .branches .branches { padding-left: 4px; }
@@ -877,7 +888,8 @@ header:has(.shortcuts[open]) { z-index: 11; }
 @media (max-width: 560px) {
   /* Notices participate in the page flow so they cannot obscure the tour. */
   /* Sticky below the header: they stay in view while scrolling, without covering the tour. */
-  .notice, .map-change, .notice ~ .map-change {
+  .notice-lane { display: contents; }
+  .notice, .map-change {
     position: sticky; top: 64px; z-index: 6; left: auto; translate: none;
     width: auto; max-width: none; margin: 8px 16px;
   }
@@ -930,6 +942,7 @@ img.slot-picture[data-instant] { transition: none; }
   .dock { max-height: 40dvh; padding: 6px 16px max(6px, env(safe-area-inset-bottom)); background: var(--bg); }
   .dock-inner { gap: 4px; }
   .composer { position: sticky; bottom: 0; flex: none; }
-  .notice, .map-change { top: 8px; }
+  /* No header to clear: the lane (the notices on a phone) sticks at the top. */
+  .notice-lane, .notice, .map-change { top: 8px; }
   .notice ~ .map-change { top: 60px; }
 }
