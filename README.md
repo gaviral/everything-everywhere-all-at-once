@@ -17,7 +17,7 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 | When you… | Meta model | Does | Proof in [a real run's trace](docs/trace.md) |
 |---|---|---|---|
 | talk | Muse Voice Transcribe 1.0 | hears you, live | [heard](docs/trace.md#heard) |
-| finish a thought | Muse Spark 1.3 + 1.2 | places it (both race); notices it trailed off | [placer](docs/trace.md#placer) (1.3 pending) |
+| finish a thought | Muse Spark 1.3 + 1.2 | places it (both race); notices it trailed off | [placer](docs/trace.md#placer) |
 | pause | Muse Spark 1.3 | tidies; proposes reminders and next steps | [refiner](docs/trace.md#refiner) |
 | say “make an app that…” | Muse Spark 1.3 | builds it from blocks | [composer](docs/trace.md#composer) |
 | ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | [recap](docs/trace.md#recap) |
