@@ -239,7 +239,8 @@ pub enum Undo {
     /// first (it left with them, or a later delete emptied it), so none comes back to a card that isn't there.
     /// `order`: the map's ids as they stood, so each comes back where it was (`places`). `dismissed`: the AI's
     /// waiting ideas and reminders set aside with a thread that left (`set_aside`), open again if still set aside.
-    Restore { thoughts: Vec<Thought>, threads: Vec<Thread>, order: Vec<String>, dismissed: Vec<String> },
+    /// `merged`: threads the take-back merged away, which come apart first so the words keep their own card.
+    Restore { thoughts: Vec<Thought>, threads: Vec<Thread>, order: Vec<String>, dismissed: Vec<String>, merged: Vec<String> },
     /// The window puts its folds back as they were before this open or fold (it keeps them).
     Refold,
     /// The window puts back the view it showed before this one was asked.
@@ -757,7 +758,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let mut emptied: Vec<String> = thoughts.iter().filter_map(|t| t.thread_id.as_ref()).map(|id| world.resolve(id)).collect();
     emptied.sort();
     emptied.dedup();
-    let (mut threads, mut kept, mut dismissed) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut threads, mut kept, mut dismissed, mut merged) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for id in emptied {
         let Some(thread) = world.thread(&id) else { continue };
         if !empty_without(&world, &id, &gone) {
@@ -769,7 +770,10 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
         dismissed.extend(set_aside_ids(&aside));
         changes.extend(aside);
         match before.as_ref().filter(|into| **into != id) {
-            Some(into) => changes.push(Change::ThreadMerged { from: id, into: into.clone() }),
+            Some(into) => {
+                merged.push(id.clone());
+                changes.push(Change::ThreadMerged { from: id, into: into.clone() });
+            }
             None => {
                 changes.push(Change::ThreadRemoved { thread_id: id });
                 threads.push(thread.clone());
@@ -780,7 +784,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads, order, dismissed })
+    Some(Undo::Restore { thoughts, threads, order, dismissed, merged })
 }
 
 /// Takes exactly these thoughts off the map, a delete by hand (moves.rs): `ThoughtSkipped`, so the journal keeps their
@@ -817,7 +821,7 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
     let order = order_of(&world);
     drop(world);
     core.commit(changes);
-    Some(Undo::Restore { thoughts, threads, order, dismissed })
+    Some(Undo::Restore { thoughts, threads, order, dismissed, merged: Vec::new() })
 }
 
 /// Every thread's and thought's id in map order, for an Undo to put back what it brings back where it was.
@@ -878,7 +882,8 @@ fn repoint(world: &World, threads: &[String], removed: &[Thought]) -> Vec<Change
         let thread = world.thread(id)?;
         removed.iter().any(|r| r.placed && !r.point.is_empty() && r.point == thread.last_point).then_some(())?;
         let point = newest(world, id, gone).map(|t| t.point.clone()).unwrap_or_default();
-        (point != thread.last_point).then(|| Change::ThreadTouched { thread_id: id.clone(), last_point: point, at_ms: thread.touched_ms })
+        // `LastPoint`, not `ThreadTouched`: a delete isn't talk, so an unfinished thread stays unfinished.
+        (point != thread.last_point).then(|| Change::LastPoint { thread_id: id.clone(), last_point: point })
     }).collect()
 }
 
@@ -1012,7 +1017,16 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 core.focus(speaker, &to);
             }
         }
-        Undo::Restore { thoughts, threads, order, dismissed } => {
+        Undo::Restore { thoughts, threads, order, dismissed, merged } => {
+            // A thread the take-back merged away comes apart first, with whoever was on it (tidy.rs `unmerge`), so the
+            // words come back on their own card, not on the one it merged into.
+            let world = core.snapshot();
+            let apart: Vec<Change> = merged.iter().filter(|id| world.merged.contains_key(*id))
+                .filter_map(|id| world.unmerge.get(id).cloned()).map(|unmerge| Change::ThreadUnmerged { unmerge }).collect();
+            drop(world);
+            if !apart.is_empty() {
+                core.commit(apart);
+            }
             // Each thread they were on: back on the map if it left it, else they come back where its id leads now.
             // Both stand where they stood.
             let world = core.snapshot();
@@ -1050,7 +1064,7 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
                 let thread = world.thread(id)?;
                 let latest = newest(&world, id, |_| false).filter(|t| restored(t))?;
                 (latest.point != thread.last_point)
-                    .then(|| Change::ThreadTouched { thread_id: id.clone(), last_point: latest.point.clone(), at_ms: thread.touched_ms })
+                    .then(|| Change::LastPoint { thread_id: id.clone(), last_point: latest.point.clone() })
             }).collect();
             drop(world);
             if !touched.is_empty() {

@@ -45,6 +45,17 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path) -> Result<(),
     let changes: Vec<Change> = text.lines().filter(|l| !l.trim().is_empty())
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter_map(|mut v| { rebase(&mut v, made); serde_json::from_value(v).ok() })
+        // The person who opens it owns it: a hosted visitor or a room guest isn't "you", and only their own words and
+        // drops give them the unfinished card and "where was I?".
+        .map(|change| match change {
+            Change::ThoughtAdded { mut thought } => {
+                thought.speaker = speaker.into();
+                Change::ThoughtAdded { thought }
+            }
+            Change::ThreadStatus { thread_id, status, .. } => Change::ThreadStatus { thread_id, status, speaker: speaker.into() },
+            Change::ActiveChanged { thread_id, .. } => Change::ActiveChanged { thread_id, speaker: speaker.into() },
+            change => change,
+        })
         .collect();
     if changes.is_empty() {
         return Err(missing());
@@ -56,10 +67,7 @@ fn load(core: &Core, speaker: &str, samples: &Path, images: &Path) -> Result<(),
     if !core.commit_if(empty, changes) {
         return Err(NOT_EMPTY.into());
     }
-    // In a room each person has their own active thread; the sample's is "you"'s alone.
-    if let Some(active) = core.snapshot().active.clone() {
-        core.commit(vec![Change::ActiveChanged { thread_id: active, speaker: speaker.into() }]);
-    }
+    // The sample's moves are the speaker's (above), so they land on its active thread with the rest of it.
     Ok(())
 }
 
@@ -158,6 +166,21 @@ mod tests {
             assert!(world.thread(on).is_some() && world.resolve(on) == on, "{} sits on {on}, which leads to {}", t.id, world.resolve(on));
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A hosted visitor is a guest by the name they typed, never "you" (main.rs `speaker_name`; tunnel.rs): the sample
+    /// they open is theirs, so its unfinished card rises for them and "where was I?" goes where it points.
+    #[test]
+    fn a_visitor_who_opens_the_sample_owns_its_unfinished_card() {
+        let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+        let core = Core::test(journal, world);
+        load(&core, "Dana", &samples(), &dir.join("images")).unwrap();
+        let world = core.snapshot();
+        let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "Dana").max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(card.is_some(), "the unfinished card is offered to Dana");
+        assert_eq!(crate::way_back(&world, "Dana", crate::now_ms()), card, "“where was I?” goes where the card points");
     }
 
     #[test]

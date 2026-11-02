@@ -30,6 +30,8 @@ mod whyhere;
 mod world;
 #[cfg(test)]
 mod perf;
+#[cfg(test)]
+mod journal_tests;
 
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -131,9 +133,10 @@ impl Core {
                     tracing::error!("journal write failed: {e:#}");
                 }
             }
-        }
-        for change in changes {
-            self.send(ServerMsg::Change { change });
+            // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
+            for change in changes {
+                self.send(ServerMsg::Change { change });
+            }
         }
         true
     }

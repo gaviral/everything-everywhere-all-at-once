@@ -174,6 +174,8 @@ type Change =
   | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
+  // A card's last point said again after its points changed (a delete, a move, an Undo): it neither reopens nor touches it.
+  | { type: "last_point"; thread_id: string; last_point: string }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
   | { type: "thread_renamed"; thread_id: string; title: string }
@@ -495,6 +497,8 @@ export function apply(world: World, raw: Change): World {
           t.id === c.thread_id ? { ...t, last_point: c.last_point, touched_ms: c.at_ms, status: "open", dropped_by: "" } : t,
         ),
       };
+    case "last_point":
+      return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, last_point: c.last_point } : t)) };
     case "thread_status": {
       const dropped_by = c.status === "dropped" ? c.speaker : "";
       return { ...world, threads: world.threads.map((t) => (t.id === c.thread_id ? { ...t, status: c.status, dropped_by } : t)) };
@@ -677,6 +681,8 @@ export function useCore(speaker?: string) {
             // The core sends a running import's status right after the snapshot; one it doesn't has ended
             // (it finished while this window was away, or the core restarted).
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
+            // A new connection, maybe to a restarted core whose Undo ids start again at 1: no Undo from before it.
+            setUndoId(null);
             currentWorld = { ...EMPTY, ...msg.world };
             setWorld(currentWorld);
             setSnapshotRevision((revision) => revision + 1);

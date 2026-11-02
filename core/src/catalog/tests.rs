@@ -223,10 +223,10 @@ async fn words_taken_back_take_the_thread_they_started_with_them() {
     let redo = f.say("I meant start a new thread").await;
     assert!(redo.contains(&format!("removed {id}")) && redo.contains(&"merged T5 into T2".to_string()), "{redo:?}");
     assert!(f.core.snapshot().thread("T5").is_none());
-    // Undo brings the words back, where the thread's id leads now.
+    // Undo brings the words back on their own thread, which comes apart from the bills again.
     let undone = f.click_undo(undoable(&redo));
     assert!(undone.iter().any(|l| l == "added Make the next thing I say its own topic"), "{undone:?}");
-    assert_eq!(f.core.snapshot().thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T2"));
+    assert_eq!(f.core.snapshot().thoughts.iter().find(|t| t.id == id).unwrap().thread_id.as_deref(), Some("T5"));
 }
 
 /// "Remind me to call the dentist" got its own thread, and the refiner proposed a reminder and an idea on it; "scratch

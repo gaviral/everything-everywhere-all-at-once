@@ -25,7 +25,7 @@
 {"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"It might be the new payment SDK we shipped Friday, the one that replaced Stripe's old embed","point":"Might be the new payment SDK from Friday","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793725860000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T3","last_point":"Might be the new payment SDK from Friday","at_ms":1793725860000}
 {"type":"thought_added","thought":{"id":"th-9","speaker":"you","text":"Actually wait it could also be the CSB headers Jordan changed last week for the security audit","point":"Could also be CSB header changes from security audit","thread_id":"T3","placed":true,"unclear":"CSB","guess":"CSP","heard":"","fixed":"","complete":true,"at_ms":1793725920000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Could also be CSP header changes from security audit","at_ms":1793725920000}
+{"type":"thread_touched","thread_id":"T3","last_point":"Could also be CSB header changes from security audit","at_ms":1793725920000}
 {"type":"tag_suggested","thread_id":"T3","tag":"bug"}
 {"type":"tag_suggested","thread_id":"T3","tag":"production"}
 {"type":"thread_picture","thread_id":"T3","path":"/images/T3-ce80357e05594f18b9dfb471c0db55a4-small.webp"}

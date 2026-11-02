@@ -232,6 +232,23 @@ try {
   await settle();
   assert.equal(core.notice, "Did “stop listening” instead.");
   assert.equal(core.undoId, 8);
+  // The core takes back only the turn an Undo was shown for (catalog.rs `undo_click`): any newer turn says so with its
+  // `correctable` (a thought kept says nothing else), so the button goes; a request's own Undo comes right after it.
+  say({ type: "notice", message: "Deleted “Buy stakes”" });
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  say({ type: "undoable", id: 9 });
+  await settle();
+  assert.equal(core.undoId, 9, "a request's own Undo shows");
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  await settle();
+  assert.equal(core.undoId, null, "a newer turn takes down the Undo it can no longer use");
+  // A new connection (maybe to a restarted core, whose Undo ids start again at 1) takes down an Undo from before it.
+  say({ type: "notice", message: "Moved “Buy stakes” to Garden" });
+  say({ type: "undoable", id: 1 });
+  await settle();
+  say({ type: "snapshot", world: { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false, recaps: [] } });
+  await settle();
+  assert.equal(core.undoId, null, "a snapshot takes down an Undo from before it");
   // ⌘Z (or Ctrl+Z) asks the core for "undo that": the last turn, whether or not the notice is still up.
   core.undoLast();
   assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
