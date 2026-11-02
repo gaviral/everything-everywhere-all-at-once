@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
+import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -222,7 +223,8 @@ type ServerMsg =
   | { type: "import"; status: ImportStatus }
   | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] }
   | SendCardMsg
-  | PullsCardMsg;
+  | PullsCardMsg
+  | NoteCardMsg;
 
 /** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
@@ -674,6 +676,8 @@ export function useCore(speaker?: string) {
   const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
   // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
   const [pulls, setPulls] = useState<Pulls>(NO_PULLS);
+  // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
+  const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
@@ -716,6 +720,9 @@ export function useCore(speaker?: string) {
         attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
+        // A new connection, maybe to a restarted core whose note ids start again at 1: the card from before it goes, and
+        // the core's catch-up sends the one still current (notes.rs `shown_card`).
+        setNoteCard(null);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -862,6 +869,10 @@ export function useCore(speaker?: string) {
           case "pulls_card":
             setPulls((shown) => pullsReceived(shown, msg));
             break;
+          case "note_card":
+            setNoteCard((shown) => noteReceived(shown, msg));
+            if (noteFirst(msg)) closeRecap();
+            break;
         }
       };
       ws.onclose = () => {
@@ -921,6 +932,9 @@ export function useCore(speaker?: string) {
   }, [send]);
   const pullsCardGone = useCallback((id: number) => setPulls((shown) => pullsGone(shown, id)), []);
   const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
+  // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
+  const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);
+  const noteCardGone = useCallback((id: number) => setNoteCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -956,6 +970,9 @@ export function useCore(speaker?: string) {
     sendCardGone,
     pullsCard: pulls.card,
     pullsCardGone,
+    noteCard,
+    openNote,
+    noteCardGone,
     snapshotRevision,
     mapChange,
     partial,

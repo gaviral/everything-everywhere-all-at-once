@@ -15,6 +15,7 @@ mod find;
 mod github;
 mod import;
 mod messages;
+mod notes;
 mod model;
 mod pictures;
 mod placer;
@@ -98,6 +99,8 @@ pub struct Core {
     pub messages: messages::Runtime,
     /// The GitHub card's reading of `gh`, in the Full preset (github.rs).
     pub github: github::Runtime,
+    /// Whether a note really writes into Notes, and the notes this run wrote (notes.rs).
+    pub notes: notes::Runtime,
 }
 
 impl Core {
@@ -429,6 +432,11 @@ impl Core {
             return Some(done);
         }
         if let Some(done) = github::act(self, speaker, text) {
+            return Some(done);
+        }
+        // Before filing and moves: in Full, "put this in Notes" is a note, unless a thread called Notes is on the map;
+        // "add milk to my notes" stays filing (notes.rs).
+        if let Some(done) = notes::act(self, speaker, text) {
             return Some(done);
         }
         if let Some(done) = spoken::act(self, speaker, text) {
@@ -981,12 +989,16 @@ async fn main() -> anyhow::Result<()> {
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
         github: github::Runtime::from_env(),
+        notes: notes::Runtime::from_env(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
     // GitHub reads gh only in Full, and never on a hosted core.
     if core.messages.settings.preset == messages::Preset::Full && !core.github.settings.hosted {
         tracing::info!("GitHub card: on, reading gh ({} named repo(s))", core.github.settings.repos.len());
+    }
+    if notes::on(&core) {
+        tracing::info!("Notes: {}", if core.notes.write { "writes" } else { "dry run" });
     }
     apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
     apple::recover(&core);
@@ -1397,8 +1409,8 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
     }
 }
 
-/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress and
-/// message counting down.
+/// What a window needs to be current: the world, an app still being built, and this speaker's import in progress,
+/// message counting down and note card.
 fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
@@ -1407,6 +1419,8 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
+    // A note card still saving, or just ended, comes back too: its end and Open in Notes reach a window that dropped.
+    messages.extend(crate::notes::shown_card(core, speaker));
     if core.key.is_none() {
         messages.push(ServerMsg::Notice { message: "MODEL_API_KEY is not set: listening and placement are off.".into() });
     } else if core.key_refused() {
@@ -1500,6 +1514,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 // The message card's Stop, or Esc: anyone who sees it may stop it; stopping never sends anything.
                 Ok(ClientMsg::StopSend { id }) => {
                     messages::stop(&core, id);
+                }
+                // The note card's Open in Notes: only a note this run wrote, only for the host (notes.rs).
+                Ok(ClientMsg::OpenNote { id }) => {
+                    let (core, speaker) = (core.clone(), speaker.clone());
+                    tokio::spawn(async move { notes::open(&core, &speaker, id).await });
                 }
                 Ok(ClientMsg::Visible) => {
                     core.looked.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1667,6 +1686,7 @@ impl Core {
             trace: Default::default(),
             messages: Default::default(),
             github: Default::default(),
+            notes: Default::default(),
         }
     }
 }

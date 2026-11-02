@@ -25,6 +25,7 @@ Browser, one page per window (ui/src)
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
   pulls-card.ts  the GitHub card's rows (state, checks, when), which links open, how long it stays (held by `scripts/pulls-card-check.mjs`); PullsCard.tsx draws it
   send-card.ts the message card's countdown, words, Esc and how long an ended card stays (held by `scripts/send-card-check.mjs`); SendCard.tsx draws it
+  note-card.ts the note card's words, marks, Open in Notes only once saved, and how long an ended card stays (held by `scripts/note-card-check.mjs`); NoteCard.tsx draws it
   feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
@@ -77,6 +78,7 @@ Core, one process (core/src: axum, tokio)
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
   messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
   github.rs      the GitHub card (Full only, not hosted, the host's only): "show me the open pull requests" reads gh pr list / view, read-only, and says in one line when gh is missing, signed out or slow
+  notes.rs       Full preset: "save this thread as a note" shows the note (points in order, decisions and unfinished marked, branches under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
   sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/
   tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
