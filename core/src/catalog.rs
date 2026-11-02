@@ -106,6 +106,8 @@ pub enum UndoBy {
     Unmove,
     /// The thread takes its title before the rename.
     Retitle,
+    /// The message counting down goes down unsent; once it has gone, nothing takes it back.
+    Unsend,
     /// No undo in the app, and what to do instead.
     Not(&'static str),
 }
@@ -158,7 +160,7 @@ pub const CATALOG: &[Def] = &[
     Def { act: Act::Finish, does: "go back to the unfinished thought", template: None, phrases: &["Finish it"], needs: Needs::Card, answers: "moves the map there: “Back to …”", undo: UndoBy::MoveBack, external: false, button: Some("Finish it") },
     Def { act: Act::Pause, does: "stop listening", template: Some("stop listening"), phrases: &["Stop listening", "Mic off"], needs: Needs::Nothing, answers: "the header says Paused", undo: UndoBy::Not("tap the mic"), external: false, button: Some("listen") },
     Def { act: Act::Approve, does: "add the proposed reminder or event to Reminders or Calendar", template: None, phrases: &["Add it to Reminders", "Add that to my calendar"], needs: Needs::Proposal, answers: "“Adding …”, then “Added to Reminders” once Apple confirms", undo: UndoBy::Not("delete it in Reminders or Calendar"), external: true, button: Some("approve") },
-    Def { act: Act::Message, does: "send a short message to someone on your Messages list, after a countdown you can stop", template: None, phrases: &["Ask Mia to confirm what to bring", "Text Sam that I'm running late"], needs: Needs::Contact, answers: "a card with the message, who it's to and a 5-second countdown, then “Sent to …” (a dry run says what it would have sent)", undo: UndoBy::Not("say “stop” or press Esc before the countdown ends; a sent message stays sent"), external: true, button: Some("stop_send") },
+    Def { act: Act::Message, does: "send a short message to someone on your Messages list, after a countdown you can stop", template: None, phrases: &["Ask Mia to confirm what to bring", "Text Sam that I'm running late"], needs: Needs::Contact, answers: "a card with the message, who it's to and a 5-second countdown, then “Sent to …” (a dry run says what it would have sent)", undo: UndoBy::Unsend, external: true, button: Some("stop_send") },
     Def { act: Act::KeepApp, does: "keep the app just built", template: None, phrases: &["Keep it", "Keep the app"], needs: Needs::Build, answers: "“Your app is on.”", undo: UndoBy::Not("switch it off in Apps"), external: false, button: Some("decide_app") },
     Def { act: Act::DiscardApp, does: "discard the app just built", template: None, phrases: &["Discard it"], needs: Needs::Build, answers: "the build card goes", undo: UndoBy::Not("ask for it again"), external: false, button: Some("decide_app") },
     Def { act: Act::Yes, does: "take the AI's guess on your latest thought", template: None, phrases: &["Yes", "Yeah", "That's right"], needs: Needs::Question, answers: "the words change: “Changed to …”", undo: UndoBy::Not("edit the words"), external: false, button: Some("correct") },
@@ -256,6 +258,8 @@ pub enum Undo {
     Unmove(crate::moves::Unmove),
     /// A thread the person renamed takes its title before (moves.rs).
     Retitle(crate::moves::Retitle),
+    /// Message `id` goes down unsent, while it still counts down (messages.rs).
+    Unsend { id: u64 },
     Each(Vec<Undo>),
 }
 
@@ -272,6 +276,7 @@ impl Undo {
             Undo::NewThread => UndoBy::CancelNewThread,
             Undo::Unmove(_) => UndoBy::Unmove,
             Undo::Retitle(_) => UndoBy::Retitle,
+            Undo::Unsend { .. } => UndoBy::Unsend,
             Undo::Each(_) => UndoBy::Each,
         }
     }
@@ -411,7 +416,7 @@ fn back_to(undo: &Undo) -> Option<String> {
         Undo::Unfile { to, .. } => to.clone(),
         Undo::Unmove(u) => u.back.clone(),
         Undo::Each(parts) => parts.iter().filter_map(back_to).last(),
-        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread | Undo::Retitle(_) => None,
+        Undo::Restore { .. } | Undo::Refold | Undo::View | Undo::NewThread | Undo::Retitle(_) | Undo::Unsend { .. } => None,
     }
 }
 
@@ -716,6 +721,10 @@ fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
     match previous.was {
         Was::Request { undo: Some(undo), .. } if stale(&core.snapshot(), &undo) => {
             core.send_to(speaker, ServerMsg::Notice { message: STALE.into() });
+        }
+        // A message no longer counting down was sent, stopped or a dry run's: nothing here takes it back.
+        Was::Request { undo: Some(Undo::Unsend { id }), .. } if !crate::messages::is_counting(core, id) => {
+            core.send_to(speaker, ServerMsg::Notice { message: "Can't undo that here: the message isn't counting down any more".into() });
         }
         Was::Request { act, undo: Some(undo) } => {
             run_undo(core, speaker, &undo);
@@ -1068,6 +1077,9 @@ pub fn run_undo(core: &Arc<Core>, speaker: &str, undo: &Undo) {
         Undo::NewThread => core.new_threads.cancel(speaker),
         Undo::Unmove(u) => crate::moves::unmove(core, speaker, u),
         Undo::Retitle(r) => crate::moves::unrename(core, r),
+        Undo::Unsend { id } => {
+            crate::messages::stop(core, *id);
+        }
         Undo::Each(all) => all.iter().for_each(|u| run_undo(core, speaker, u)),
     }
 }

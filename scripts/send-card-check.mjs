@@ -53,7 +53,11 @@ try {
   assert.equal(lingerMs(stopped), upFor("Stopped: not sent"), "up for its reading time, as any answer");
   const newer = received(card, { ...msg("counting", { in_ms: 5000 }), id: 2, to: "Sam" }, t0 + 100);
   assert.equal(received(newer, msg("dry_run"), t0 + 5000), newer, "an older card's end leaves the newer up");
-  assert.equal(received(null, msg("sent"), t0), null, "an end with no card up shows none");
+  // A window opened (or reloaded) after the count ended still learns how it went.
+  const late = received(null, msg("sent", { live: true, message: "Sent to Mia" }), t0);
+  assert.equal(late.state, "sent");
+  assert.equal(cardWords(late, t0).status, "Sent to Mia");
+  assert.equal(lingerMs(late), upFor("Sent to Mia"));
   const sent = received(card, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 5000);
   assert.equal(cardWords(sent, t0 + 5000).status, "Sent to Mia");
   const dry = received(card, msg("dry_run", { message: "Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to Mia." }), t0 + 5000);

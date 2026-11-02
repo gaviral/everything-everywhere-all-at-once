@@ -21,8 +21,6 @@ impl Fixture {
     }
 
     fn with(settings: Settings, adjust: impl FnOnce(Core) -> Core) -> Self {
-        let path = std::env::temp_dir().join(format!("e2a2o-messages-{}.jsonl", uuid::Uuid::new_v4()));
-        let (journal, _) = Journal::open(&path).unwrap();
         let sent: Sent = Arc::default();
         let log = sent.clone();
         // The stand-in for Messages: it only writes down what it was asked to send.
@@ -30,6 +28,12 @@ impl Fixture {
             log.lock().unwrap().push((handle, text));
             Box::pin(async { Ok(()) })
         });
+        Self::sending(settings, sender, sent, adjust)
+    }
+
+    fn sending(settings: Settings, sender: Sender, sent: Sent, adjust: impl FnOnce(Core) -> Core) -> Self {
+        let path = std::env::temp_dir().join(format!("e2a2o-messages-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
         let core = Arc::new(adjust(Core { messages: Runtime::with(settings, sender), ..Core::test(journal, World::default()) }));
         let out = core.updates.subscribe();
         Self { core, sent, out, path }
@@ -143,7 +147,8 @@ async fn nothing_is_sent_until_the_countdown_ends_then_it_sends_once() {
     let live = crate::apple::reachable();
     assert_eq!(f.told(), vec![format!("card Counting Mia: {TEXT} (5000 ms, live {live})")]);
     assert!(f.thoughts().is_empty(), "a request, not a thought");
-    wait(4_999).await;
+    // The card's count ends at 5 s; a stop still counts for LATE_STOP_MS after, so the window's end is never late.
+    wait(4_999 + LATE_STOP_MS).await;
     assert_eq!(f.sends(), 0, "1 ms before the end: nothing sent");
     assert!(f.told().is_empty());
     wait(1).await;
@@ -166,7 +171,8 @@ async fn the_cards_stop_or_esc_before_the_end_means_it_is_never_sent() {
     f.told();
     wait(4_900).await;
     assert!(stop(&f.core, 1), "still counting");
-    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live false)")]);
+    let live = crate::apple::reachable();
+    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {live})")], "a live card stays live once stopped");
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
     assert!(!stop(&f.core, 1), "already down");
@@ -182,7 +188,7 @@ async fn saying_stop_takes_it_down_and_the_stop_is_no_thought() {
         f.told();
         wait(3_000).await;
         f.core.add_thought("me", word);
-        assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live false)")], "{word}");
+        assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {})", crate::apple::reachable())], "{word}");
         wait(60_000).await;
         assert_eq!(f.sends(), 0, "{word}");
         assert!(f.thoughts().is_empty(), "{word}");
@@ -200,7 +206,7 @@ async fn stop_heard_while_still_being_said_stops_it_and_its_turn_is_only_that() 
     heard(&f.core, "other", "Stop");
     assert!(f.told().is_empty(), "someone else's draft, or other words, stop nothing");
     heard(&f.core, "me", "Stop");
-    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live false)")]);
+    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {})", crate::apple::reachable())]);
     // The turn ends a moment later as "Stop.": already done, so nothing more, and not a thought.
     wait(4_000).await;
     f.core.add_thought("me", "Stop.");
@@ -216,7 +222,7 @@ async fn a_dry_run_counts_down_and_says_what_it_would_have_sent_without_sending(
     f.core.add_thought("me", ASK);
     settle().await;
     assert_eq!(f.told(), vec![format!("card Counting Mia: {TEXT} (5000 ms, live false)")]);
-    wait(5_000).await;
+    wait(5_000 + LATE_STOP_MS).await;
     assert_eq!(f.told(), vec![format!("card DryRun Mia: {TEXT} (0 ms, live false)")]);
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
@@ -266,4 +272,128 @@ async fn one_at_a_time_a_second_ask_while_counting_is_refused() {
     wait(60_000).await;
     let expected = if crate::apple::reachable() { vec![("+15550100".to_string(), TEXT.to_string())] } else { vec![] };
     assert_eq!(*f.sent.lock().unwrap(), expected, "only the first, once");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stop_sent_as_the_card_says_its_last_second_is_never_late() {
+    // The window counts from when the card reached it, so its "Sends in 1" can run past the core's 5 s.
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.told();
+    wait(5_000 + LATE_STOP_MS - 1).await;
+    assert!(stop(&f.core, 1), "still stoppable just before the late end");
+    wait(60_000).await;
+    assert_eq!(f.sends(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_i_meant_takes_the_counting_message_down_before_the_new_one() {
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.told();
+    wait(1_000).await;
+    f.core.add_thought("me", "No, I meant text Sam Lee that I'm running late");
+    settle().await;
+    let live = crate::apple::reachable();
+    let told = f.told();
+    assert_eq!(told[0], format!("card Stopped Mia: {TEXT} (0 ms, live {live})"), "{told:?}");
+    assert!(told.contains(&format!("card Counting Sam Lee: Hi Sam Lee, I'm running late. (5000 ms, live {live})")), "{told:?}");
+    wait(60_000).await;
+    let expected = if live { vec![("sam@example.com".to_string(), "Hi Sam Lee, I'm running late.".to_string())] } else { vec![] };
+    assert_eq!(*f.sent.lock().unwrap(), expected, "only the corrected one");
+}
+
+#[tokio::test(start_paused = true)]
+async fn undo_after_the_count_says_it_is_too_late() {
+    let mut f = Fixture::new(full(false));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    wait(60_000).await;
+    f.told();
+    f.core.add_thought("me", "Undo that");
+    let told = f.told();
+    assert!(told.iter().any(|t| t.contains("isn't counting down any more")), "{told:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_reloaded_window_gets_the_counting_card_back_with_the_time_left() {
+    let mut f = Fixture::new(full(false));
+    f.core.add_thought("me", ASK);
+    settle().await;
+    f.told();
+    wait(2_000).await;
+    let back = counting_card(&f.core, "me").expect("still counting");
+    assert!(matches!(back, ServerMsg::SendCard { id: 1, state: SendState::Counting, in_ms: 3_000, .. }), "{}", serde_json::to_string(&back).unwrap());
+    assert!(counting_card(&f.core, "guest").is_none(), "only the asker's windows");
+    let caught = crate::catch_up(&f.core, "me");
+    assert!(caught.iter().any(|m| matches!(m, ServerMsg::SendCard { id: 1, .. })));
+    wait(3_000 + LATE_STOP_MS).await;
+    assert!(counting_card(&f.core, "me").is_none(), "ended");
+}
+
+#[test]
+fn the_words_sent_are_the_words_said() {
+    let s = full(false);
+    let text = |said: &str| read(said, &s).map(|a| a.text);
+    assert_eq!(text("Text Mia that it's for me"), Some("Hi Mia, it's for me.".into()));
+    assert_eq!(text("Text Mia that -5 is the answer"), Some("Hi Mia, -5 is the answer.".into()));
+    assert_eq!(text("Tell Mia that I'm leaving now."), Some("Hi Mia, I'm leaving now.".into()));
+    assert_eq!(text("Tell Mia that, $20 is fine!"), Some("Hi Mia, $20 is fine.".into()));
+    assert_eq!(text("Ask Mia to bring chips, please"), Some("Hi Mia, could you bring chips?".into()));
+    assert_eq!(text("Tell Mia that ..."), None, "no words to send");
+}
+
+#[tokio::test(start_paused = true)]
+async fn one_at_a_time_holds_while_messages_is_still_sending() {
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let calls = Arc::new(Mutex::new(0));
+    let (g, c) = (gate.clone(), calls.clone());
+    let sender: Sender = Arc::new(move |_, _| {
+        *c.lock().unwrap() += 1;
+        let g = g.clone();
+        Box::pin(async move {
+            g.notified().await;
+            Ok(())
+        })
+    });
+    if !crate::apple::reachable() {
+        return; // A dry run never waits on Messages.
+    }
+    let mut f = Fixture::sending(full(true), sender, Arc::default(), |core| core);
+    let core = f.core.clone();
+    core.add_thought("me", ASK);
+    settle().await;
+    wait(5_000 + LATE_STOP_MS).await;
+    assert_eq!(*calls.lock().unwrap(), 1, "Messages has it, and hasn't answered");
+    f.told();
+    core.add_thought("me", "Text Sam Lee that I'm running late");
+    assert_eq!(f.told(), vec!["notice One message at a time: say “stop”, or wait for it to send.".to_string()]);
+    gate.notify_one();
+    settle().await;
+    assert!(f.told().iter().any(|t| t.starts_with("card Sent Mia")));
+    core.add_thought("me", "Text Sam Lee that I'm running late");
+    assert!(f.told().iter().any(|t| t.starts_with("card Counting Sam Lee")), "free again once Messages answered");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_name_on_the_list_said_another_way_is_not_called_unknown() {
+    let mut f = Fixture::new(full(true));
+    f.core.add_thought("me", "Ask Mia what to bring to the picnic");
+    settle().await;
+    let told = f.told();
+    assert!(told.iter().any(|t| t.contains("say it as “ask Mia to …”")), "{told:?}");
+    assert!(told.iter().all(|t| !t.contains("no one by that name")), "{told:?}");
+    assert_eq!(f.sends(), 0);
+}
+
+#[test]
+fn only_the_error_number_reaches_the_log_and_a_dry_run_says_why() {
+    assert_eq!(error_number("execution error: Messages got an error: Can’t get participant \"+15550100\". (-1728)"), "-1728");
+    assert_eq!(error_number("Not authorized to send Apple events to Messages. (-1743)"), "-1743");
+    assert_eq!(error_number("participant \"+15550100\" went wrong"), "unknown");
+    assert!(dry_run("Mia", false).contains("With MESSAGES_SEND=on"));
+    let on = dry_run("Mia", true);
+    assert!(!on.contains("MESSAGES_SEND") && on.contains("only from a Mac"), "{on}");
 }

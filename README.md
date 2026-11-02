@@ -213,11 +213,11 @@ Getting back, finding, views, filing and fixing in full, with variants and what 
 
 A preset picks which connectors a run has. **Demo** (the default) is the core alone: the map, and Reminders and Calendar after you approve. **Full** adds every connector; today that's Messages. Set `PRESET=full` in `.env` to switch.
 
-In Full, a whole turn like “ask Mia to confirm what to bring” (or “text Sam that I'm running late”) puts a card up with who it's to, the message (“Hi Mia, could you confirm what to bring?”) and a countdown. The count is 5 seconds for a short message: enough for a slow reader to read about 8 words, decide, and say “stop”. A longer message gets longer. “Stop” (also “cancel”, “wait”, “no”, “don't send it”), Esc or the card's Stop takes it down unsent; a spoken “stop” counts as soon as it's heard, before your turn ends. Only when the count ends does it go, and only:
+In Full, a whole turn like “ask Mia to confirm what to bring” (or “text Sam that I'm running late”) puts a card up with who it's to, the message (“Hi Mia, could you confirm what to bring?”) and a countdown. The count is 5 seconds for a short message: enough for a slow reader to read about 8 words, decide, and say “stop”. A longer message gets longer. “Stop” (also “cancel”, “wait”, “no”, “don't send it”), Esc or the card's Stop takes it down unsent; a spoken “stop” counts as soon as it's heard, before your turn ends, and a stop still counts for a second after the card's count ends, so one made as it says “Sends in 1” is never late. “No, I meant text Sam …” takes the first one down before the new one counts. A reload brings the card back with its time left. Only when the count ends does it go, and only:
 
 - to someone on your list (`MESSAGES_TO=Mia=+15551234567, Sam=sam@example.com`); any other name stays a thought, and the app says why. The phone number or email never leaves the core.
 - from the host's laptop: in a room, a guest's words never send from the host's Messages.
-- one at a time.
+- one at a time, until Messages has answered for the one before.
 - for real only with `MESSAGES_SEND=on`, on a Mac, through Messages (macOS asks first). Without it, it's a dry run: the card counts down the same and then says what it would have sent.
 
 ### Did you mean, and confident auto-fix

@@ -12,10 +12,11 @@ export type SendCardMsg = { type: "send_card"; id: number; to: string; text: str
 /** The card shown: `until` is when the count ends on this window's clock, `total` how long the whole count was. */
 export type Card = { id: number; to: string; text: string; state: SendState; live: boolean; message: string; until: number; total: number };
 
-/** The card after the core's message at `now`: a new message's card replaces the one up; an end (stopped, sent…) only
- *  changes the card it's about, so a late word on an older one never takes down the newer. */
+/** The card after the core's message at `now`: a new message's card replaces the one up; an end (stopped, sent…)
+ *  changes the card it's about, or shows on its own when none is up (a window opened after the count ended still
+ *  learns how it went), so a late word on an older one never takes down the newer. */
 export function received(shown: Card | null, msg: SendCardMsg, now: number): Card | null {
-  if (msg.state !== "counting" && shown?.id !== msg.id) return shown;
+  if (msg.state !== "counting" && shown && shown.id !== msg.id) return shown;
   const total = msg.state === "counting" ? msg.in_ms : shown?.total ?? 0;
   return { id: msg.id, to: msg.to, text: msg.text, state: msg.state, live: msg.live, message: msg.message, until: now + msg.in_ms, total };
 }

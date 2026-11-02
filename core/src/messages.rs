@@ -96,6 +96,11 @@ const SLOW_WPM: u64 = 175;
 const DECIDE_MS: u64 = 1_350;
 /// Saying "stop" until the core hears it (see `COUNTDOWN_MS`).
 const STOP_MS: u64 = 900;
+/// How long after the count the card shows ends a stop still counts. The window starts its count when the card
+/// reaches it, so its end runs behind the core's by the card's trip, a busy frame before the window reads it, and the
+/// stop's trip back; a whole digit more covers those, so a stop while it still says "Sends in 1" is never late. The
+/// card says "Sending…" meanwhile.
+pub const LATE_STOP_MS: u64 = 1_000;
 
 /// How long the card counts down for `text`: as long as reading it, deciding and saying "stop" take, in whole
 /// seconds so the digits count down evenly, and never under `COUNTDOWN_MS`. A longer message gets longer.
@@ -120,8 +125,8 @@ const SCRIPT: [&str; 7] = [
     "end run",
 ];
 
-/// Messages on this Mac, through `osascript` (the handle first: it never starts with "-", so no text is read as an
-/// option).
+/// Messages on this Mac, through `osascript`. `--` ends its options, so a handle or text starting with "-" is an
+/// argument, never read as an option.
 fn messages_app() -> Sender {
     Arc::new(|handle, text| {
         Box::pin(async move {
@@ -129,7 +134,7 @@ fn messages_app() -> Sender {
             for line in SCRIPT {
                 command.arg("-e").arg(line);
             }
-            let output = command.arg(handle).arg(text).output().await.map_err(|e| e.to_string())?;
+            let output = command.arg("--").arg(handle).arg(text).output().await.map_err(|e| e.to_string())?;
             if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
         })
     })
@@ -162,6 +167,8 @@ pub struct Runtime {
 struct State {
     next: u64,
     counting: Option<Counting>,
+    /// A message Messages has but hasn't answered for yet: one at a time holds until it does.
+    sending: bool,
     /// A speaker whose "stop" was heard while they were still saying it: the turn it ends is that same stop.
     stopped_by_voice: Option<String>,
 }
@@ -172,6 +179,9 @@ struct Counting {
     to: String,
     handle: String,
     text: String,
+    live: bool,
+    /// When the card's count ends (a stop still counts for `LATE_STOP_MS` after).
+    shown_end: tokio::time::Instant,
 }
 
 impl Default for Runtime {
@@ -230,6 +240,8 @@ pub fn kind(text: &str) -> Option<Act> {
 /// turn isn't one, or names no one on the list.
 pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     let said = crate::spoken::plain(text);
+    // `said` is part of `text`: where it starts there, so the words sent are cut from the turn as said.
+    let at = said.as_ptr() as usize - text.as_ptr() as usize;
     let spans = crate::word_spans(said);
     let words: Vec<String> = spans.iter().map(|(w, _)| w.clone()).collect();
     let verb = words.first()?;
@@ -243,12 +255,30 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     if !asking && (verb == "ask" || !SAYING.contains(&link.as_str())) {
         return None;
     }
-    let rest = said[spans[1 + n].1..].trim_start_matches(|c: char| !c.is_alphanumeric()).trim();
-    if rest.is_empty() {
+    let rest = payload(&text[at + spans[1 + n].1..]);
+    if !rest.chars().any(char::is_alphanumeric) {
         return None;
     }
     let text = if asking { format!("Hi {to}, could you {rest}?") } else { format!("Hi {to}, {rest}.") };
     Some(Ask { to: to.to_string(), handle: handle.to_string(), text })
+}
+
+/// The words to send, as said: only the spaces and joining punctuation around them go ("…that, I'm late." → "I'm
+/// late"), and a closing "please", said to the app (the message already asks). "For me", "now", a minus sign stay.
+fn payload(rest: &str) -> &str {
+    let mut t = rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | ':' | ';')).trim_end();
+    loop {
+        let before = t.len();
+        t = t.trim_end_matches(|c: char| matches!(c, '.' | '!' | '?' | '…' | ',' | ';' | ':') || c.is_whitespace());
+        if let Some(head) = t.len().checked_sub(" please".len()).and_then(|i| Some((t.get(..i)?, t.get(i..)?))) {
+            if head.1.eq_ignore_ascii_case(" please") {
+                t = head.0;
+            }
+        }
+        if t.len() == before {
+            return t;
+        }
+    }
 }
 
 /// Acts on a whole turn that asks to message someone, in the Full preset; None leaves it to be talk (the Demo preset,
@@ -260,7 +290,13 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     }
     let Some(ask) = read(text, settings) else {
         if kind(text).is_some() {
-            core.send_to(speaker, ServerMsg::Notice { message: "Not sent: no one by that name is on your Messages list (MESSAGES_TO). Kept as a thought.".into() });
+            let words = crate::words(crate::spoken::plain(text));
+            let message = match settings.contact(&words[1..]) {
+                // On the list, but not said as a message this can write.
+                Some((name, _, _)) => format!("Not sent: say it as “ask {name} to …” or “tell {name} that …”. Kept as a thought."),
+                None => "Not sent: no one by that name is on your Messages list (MESSAGES_TO). Kept as a thought.".into(),
+            };
+            core.send_to(speaker, ServerMsg::Notice { message });
         }
         return None;
     };
@@ -269,27 +305,43 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         core.send_to(speaker, ServerMsg::Notice { message: "Only the host can send messages: they go from their Mac.".into() });
         return Some(Done::missed(Act::Message));
     }
+    let in_ms = countdown_ms(&ask.text);
+    let live = core.messages.live();
     let id = {
         let mut state = core.messages.state.lock().unwrap();
-        if state.counting.is_some() {
+        if state.counting.is_some() || state.sending {
             drop(state);
             core.send_to(speaker, ServerMsg::Notice { message: "One message at a time: say “stop”, or wait for it to send.".into() });
             return Some(Done::missed(Act::Message));
         }
         state.next += 1;
         let id = state.next;
-        state.counting = Some(Counting { id, speaker: speaker.into(), to: ask.to.clone(), handle: ask.handle, text: ask.text.clone() });
+        let shown_end = tokio::time::Instant::now() + Duration::from_millis(in_ms);
+        state.counting = Some(Counting { id, speaker: speaker.into(), to: ask.to.clone(), handle: ask.handle, text: ask.text.clone(), live, shown_end });
         id
     };
-    let in_ms = countdown_ms(&ask.text);
-    let live = core.messages.live();
     core.send_to(speaker, card(id, &ask.to, &ask.text, SendState::Counting, in_ms, live, ""));
     let core = core.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(in_ms)).await;
+        tokio::time::sleep(Duration::from_millis(in_ms + LATE_STOP_MS)).await;
         finish(&core, id).await;
     });
-    Some(Done::new(Act::Message))
+    // "No, I meant …" takes this one down before it redoes the request (catalog.rs `redo`).
+    Some(Done::with(Act::Message, Some(crate::catalog::Undo::Unsend { id })))
+}
+
+/// The speaker's message still counting down, for a window that just opened (a reload): its card, with the time the
+/// count has left.
+pub fn counting_card(core: &Core, speaker: &str) -> Option<ServerMsg> {
+    let state = core.messages.state.lock().unwrap();
+    let c = state.counting.as_ref().filter(|c| c.speaker == speaker)?;
+    let left = c.shown_end.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64;
+    Some(card(c.id, &c.to, &c.text, SendState::Counting, left, c.live, ""))
+}
+
+/// Whether message `id` is still counting down (an Undo of it can still take it back).
+pub fn is_counting(core: &Core, id: u64) -> bool {
+    core.messages.state.lock().unwrap().counting.as_ref().is_some_and(|c| c.id == id)
 }
 
 fn card(id: u64, to: &str, text: &str, state: SendState, in_ms: u64, live: bool, message: &str) -> ServerMsg {
@@ -300,23 +352,48 @@ fn card(id: u64, to: &str, text: &str, state: SendState, in_ms: u64, live: bool,
 async fn finish(core: &Arc<Core>, id: u64) {
     let Some(counting) = ({
         let mut state = core.messages.state.lock().unwrap();
-        if state.counting.as_ref().is_some_and(|c| c.id == id) { state.counting.take() } else { None }
+        let taken = if state.counting.as_ref().is_some_and(|c| c.id == id) { state.counting.take() } else { None };
+        // Live, Messages has it until it answers: one at a time holds till then.
+        state.sending = taken.is_some() && core.messages.live();
+        taken
     }) else {
         return;
     };
     let Counting { speaker, to, handle, text, .. } = counting;
     if !core.messages.live() {
-        let message = format!("Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to {to}.");
-        core.send_to(&speaker, card(id, &to, &text, SendState::DryRun, 0, false, &message));
+        core.send_to(&speaker, card(id, &to, &text, SendState::DryRun, 0, false, &dry_run(&to, core.messages.settings.live)));
         return;
     }
-    match (core.messages.sender)(handle, text.clone()).await {
+    let result = (core.messages.sender)(handle, text.clone()).await;
+    core.messages.state.lock().unwrap().sending = false;
+    match result {
         Ok(()) => core.send_to(&speaker, card(id, &to, &text, SendState::Sent, 0, true, &format!("Sent to {to}"))),
         Err(error) => {
-            tracing::warn!("Messages didn't send it: {error}");
+            // Only the error's number: Messages' own words can carry the handle, which never goes to the log.
+            tracing::warn!("Messages didn't send it (error {})", error_number(&error));
             core.send_to(&speaker, card(id, &to, &text, SendState::Failed, 0, true, &failure(&error)));
         }
     }
+}
+
+/// A dry run's end, saying what would have made it send: the setting, or, with it on, a Mac running the core for its
+/// own person (not Linux, not a hosted core).
+fn dry_run(to: &str, setting_on: bool) -> String {
+    if setting_on {
+        format!("Dry run: nothing sent. Messages sends only from a Mac running E2A2O for its own person; it would have gone to {to}.")
+    } else {
+        format!("Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to {to}.")
+    }
+}
+
+/// The AppleScript error number in `osascript`'s words ("… (-1743)"), or "unknown": nothing else of them is logged.
+fn error_number(error: &str) -> String {
+    error
+        .rsplit_once("(-")
+        .and_then(|(_, tail)| tail.split_once(')'))
+        .map(|(digits, _)| digits)
+        .filter(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
+        .map_or_else(|| "unknown".into(), |d| format!("-{d}"))
 }
 
 /// Why a message didn't go, in words a person can act on (as apple.rs says it for Reminders).
@@ -339,7 +416,7 @@ pub fn stop(core: &Core, id: u64) -> bool {
 }
 
 fn stopped(core: &Core, c: Counting) {
-    core.send_to(&c.speaker, card(c.id, &c.to, &c.text, SendState::Stopped, 0, false, "Stopped: not sent"));
+    core.send_to(&c.speaker, card(c.id, &c.to, &c.text, SendState::Stopped, 0, c.live, "Stopped: not sent"));
 }
 
 /// Words that stop a message while it counts down, said or typed as the whole turn. Read as said, then without a
