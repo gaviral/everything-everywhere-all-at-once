@@ -129,6 +129,9 @@ export function useCatalogOpen(): boolean {
   return useSyncExternalStore(watchCatalog, () => catalogOpen, () => false);
 }
 
+/** Nothing placed by hand, the same object each time. */
+const UNPLACED = Object.freeze({});
+
 /** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only. */
 export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>): MapSnapshot {
   const notes = world.notes ?? {};
@@ -142,6 +145,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     notes,
     points: pointCounts(world.thoughts, notes),
     rooms,
+    positions: world.positions ?? UNPLACED,
     me,
     connected,
   };

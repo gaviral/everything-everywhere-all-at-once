@@ -2,8 +2,8 @@
 // (one brick, as its builder does: done when this passes). The rules of docs/bricks.md, held:
 // 1. Every folder in ui/src/bricks is a brick: a brick.json the app accepts (bricks-core.ts `infoProblems`, the same
 //    rule), and an index.tsx whose default export is the brick.
-// 2. A brick imports from the app only ../contract; otherwise React, Motion and files in its own folder. No other
-//    brick, no package the app doesn't have.
+// 2. A brick imports from the app only ../contract; otherwise React, Motion, React Flow (a canvas: pan, zoom, drag)
+//    and files in its own folder. No other brick, no package the app doesn't have.
 // 3. Its CSS styles only its own classes: every selector names a class starting with its id, its keyframes too, and
 //    every class it styles is one its code uses (as css-check holds the app's).
 // 4. contract.ts runs no app code: what it takes from the app is types only.
@@ -14,6 +14,10 @@
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
 // Bubbles, beyond that: one bubble per thread, a landing ripples only its bubble (in the playground and from the core)
 //    and moves none, and a bubble opens its thread on the map, moving your place there.
+// Spine, beyond that: a head per topic and a card per tangent; a landing pulses its point once and moves nothing that
+//    was there; a drag places a point where it's dropped (asked as a position, a mark left on its line) and its pin puts
+//    it back; a thread opens on the map. In the app: a landing from the core pulses, a place someone else gave moves the
+//    point there, and a drag reaches the core as a position.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -58,7 +62,7 @@ try {
 }
 
 // 2. Imports. 3. CSS. Per checked brick.
-const PACKAGES = ["react", "react-dom", "react/jsx-runtime", "motion/react"];
+const PACKAGES = ["react", "react-dom", "react/jsx-runtime", "motion/react", "@xyflow/react", "@xyflow/react/dist/base.css"];
 const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:\w"'`\\])\/\/.*$/gm, "$1");
 
 /** What's wrong with one source file of the brick in `dir` (`file`, relative to it; `text`, comments out). */
@@ -70,7 +74,7 @@ function sourceProblems(dir, file, text) {
     // Relative: inside the brick's own folder, or the contract beside it.
     const to = spec.startsWith(".") ? resolve(dir, dirname(file), spec) : "";
     if (to && (to.startsWith(`${dir}/`) || to === join(bricksDir, "contract") || to === join(bricksDir, "contract.ts"))) continue;
-    out.push(`imports "${spec}": a brick takes from the app only ../contract; otherwise React, Motion and its own files`);
+    out.push(`imports "${spec}": a brick takes from the app only ../contract; otherwise React, Motion, React Flow and its own files`);
   }
   // The page has one header, the app's: the map measures every <header> to keep a landing clear of it (App.tsx
   // `mapTop`), and styles.css styles them all.
@@ -102,7 +106,8 @@ const wordsIn = (text) => new Set([...text.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'
   for (const planted of [`import { World } from "../../core";`, `import x from "../bubbles/index";`, `import lodash from "lodash";`, `const m = import("../../App");`, `return <header>Pin</header>;`]) {
     assert.ok(sourceProblems(dir, "index.tsx", planted).length, `the check misses: ${planted}`);
   }
-  for (const fine of [`import { useState } from "react";`, `import { useBrickEvent } from "../contract";`, `import "./pin.css";`, `import { motion } from "motion/react";`]) {
+  for (const fine of [`import { useState } from "react";`, `import { useBrickEvent } from "../contract";`, `import "./pin.css";`, `import { motion } from "motion/react";`,
+    `import { ReactFlow } from "@xyflow/react";`, `import "@xyflow/react/dist/base.css";`]) {
     assert.deepEqual(sourceProblems(dir, "index.tsx", fine), [], `the check refuses: ${fine}`);
   }
   assert.deepEqual(sourceProblems(dir, "parts/more.tsx", `import { a } from "../index";`), [], "a file in a subfolder may import the brick's own files");
@@ -264,6 +269,42 @@ try {
     await width(1280, 860);
     shown = full;
   }
+  // A press, a few moves and a release, as a hand drags: the canvas moves things on mouse events, not clicks.
+  const drag = async (from, to, steps = 10) => {
+    const at = (type, x, y) => cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+    await at("mousePressed", from.x, from.y);
+    for (let i = 1; i <= steps; i++) { await at("mouseMoved", from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps); await sleep(20); }
+    await at("mouseReleased", to.x, to.y);
+  };
+  const middle = (selector) => evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { x: r.left + Math.min(40, r.width / 2), y: r.top + Math.min(10, r.height / 2) }; })()`);
+  const nodesAt = `Object.fromEntries([...document.querySelectorAll(".react-flow__node")].map((n) => [n.dataset.id, n.style.transform]))`;
+  if (checked.includes("spine")) {
+    await go(`${base}/bricks.html?brick=spine&sample=student-week`);
+    if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine", "the canvas never showed");
+    await settle();
+    const n = await evaluate(`({ heads: document.querySelectorAll(".spine-head").length, cards: document.querySelectorAll(".spine-card").length })`);
+    // student-week: four topics (Hackathon plan, Rent is due, Group project meeting, Mom's birthday) and four tangents.
+    if (n.heads !== 4 || n.cards !== 4) fail("spine", `${n.heads} heads and ${n.cards} cards for 4 topics and 4 tangents`);
+    const before = await evaluate(nodesAt);
+    await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
+    if (!await until(`document.querySelectorAll(".spine-ring").length === 1`, 4000)) fail("spine", "no single pulse where the thought landed");
+    await sleep(500);
+    const after = await evaluate(nodesAt);
+    const moved = Object.keys(before).filter((key) => after[key] !== before[key]);
+    if (moved.length) fail("spine", `a landing moved ${moved.join(", ")} (each keeps its place)`);
+    const point = await middle(`.react-flow__node[data-id="p:th-2"] .spine-text`);
+    if (!point) fail("spine", "no point th-2 on the canvas");
+    else {
+      await drag(point, { x: point.x + 60, y: point.y + 260 });
+      if (!await until(`document.querySelector(".playground-log").textContent.includes("position th-2 → placed at")`, 3000)) fail("spine", "a drag doesn't ask to place the point");
+      if (!await until(`!!document.querySelector(".spine-notch") && !!document.querySelector('.react-flow__node[data-id="p:th-2"] .spine-pinned')`, 2000)) fail("spine", "a point placed by hand leaves no mark on its line, or isn't shown as placed");
+      await evaluate(`document.querySelector('.react-flow__node[data-id="p:th-2"] .spine-tool-pin').click()`);
+      if (!await until(`document.querySelector(".playground-log").textContent.includes("position th-2 → back to the layout") && !document.querySelector(".spine-notch")`, 3000)) fail("spine", "its pin doesn't put it back");
+    }
+    await evaluate(`document.querySelector('[aria-label="Open Hackathon plan on the map"]').click()`);
+    if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread Hackathon plan")`, 2000)) fail("spine", "a thread doesn't open on the map");
+  }
   if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
   // 6. The app with every brick at its default; then each view brick switched on in the Catalog.
@@ -315,6 +356,22 @@ try {
       if (!await until(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent === "Map" && !!document.getElementById(${JSON.stringify(`thread-${target}`)})`, 3000)) fail("Bubbles", "a bubble doesn't open the map at its thread");
       await sleep(200);
       if (!core.heard.some((m) => m.type === "focus" && m.thread_id === target)) fail("Bubbles", `opening ${target} didn't move your place there (no focus sent)`);
+    }
+    if (id === "spine") {
+      await until(`!!document.querySelector(".spine-frame.spine-ready")`, 4000);
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-2", "Seeds for the garden", "T2") } });
+      if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring')`, 3000)) fail("Spine", "a thought landing in the app doesn't pulse its point");
+      core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Claude", at_ms: Date.now() } });
+      if (!await until(`(document.querySelector('.react-flow__node[data-id="p:T4-0"]')?.style.transform ?? "").includes("2400px, 1600px")`, 3000)) fail("Spine", "a point someone else placed doesn't go there");
+      // Once the canvas has settled (a glide is 0.3 s, the camera's at most 0.9 s): a press lands where it's aimed.
+      await sleep(1000);
+      const tip = await middle(`.react-flow__node[data-id="p:T1-0"] .spine-text`);
+      if (!tip) fail("Spine", "no point T1-0 on the canvas");
+      else {
+        await drag(tip, { x: tip.x + 50, y: tip.y + 180 });
+        await sleep(200);
+        if (!core.heard.some((m) => m.type === "position" && m.id === "T1-0" && typeof m.x === "number" && typeof m.y === "number")) fail("Spine", "a drag doesn't reach the core as a position");
+      }
     }
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Map").click()`);
     if (!await until(`!!document.querySelector("main.map .thread")`, 3000)) fail(name, "Map doesn't bring the map back");
