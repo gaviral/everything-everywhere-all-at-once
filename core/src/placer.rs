@@ -2346,7 +2346,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// The ramble (spine A 0:30–0:56): each decision lands on the thread it decides and is marked, though the model
+    /// The ramble (the video, 0:30–0:56): each decision lands on the thread it decides and is marked, though the model
     /// branches it off as a topic of its own (as in the 2026-11-01 take), so its card and Recap lead with it; the loud
     /// line lands on the birthday, unmarked.
     #[tokio::test]

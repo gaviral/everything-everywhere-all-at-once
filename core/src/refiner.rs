@@ -2398,7 +2398,7 @@ mod tests {
     fn a_pass_goes_at_a_pause_after_two_thoughts_or_a_new_thread_or_a_look_and_rests_between() {
         // (new thoughts, a new thread, ms quiet, ms since the last pass, failed passes in a row, came back to the window)
         let due = super::due;
-        // Spine A's hands-up: four thoughts since the catch's pass, then quiet.
+        // The video's hands-up pause: four thoughts since the catch's pass, then quiet.
         assert!(due(2, false, 4_000, 10_000, 0, false) && due(4, true, 6_000, 40_000, 0, false));
         // One thought that started a thread is enough; one more on an old thread waits for a second, or a look.
         assert!(due(1, true, 4_000, 10_000, 0, false));
@@ -2415,7 +2415,7 @@ mod tests {
         assert!(!due(2, false, 4_000, 319_999, 9, false) && due(2, false, 4_000, 320_000, 9, false));
     }
 
-    /// Spine A's rent line on the days the video is made: a Friday reminder, never a past or wrong day.
+    /// The video's rent line on the days it is recorded: a Friday reminder, never a past or wrong day.
     #[test]
     fn the_demos_rent_line_proposes_a_friday_reminder_on_each_recording_day() {
         for today in ["2026-11-02 (Monday)", "2026-11-03 (Tuesday)", "2026-11-04 (Wednesday)"] {
