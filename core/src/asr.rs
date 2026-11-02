@@ -42,11 +42,12 @@ pub async fn run(core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec
 
     // However the stream ends, the writer stops too: it holds the audio channel, and this window can
     // only start listening again once that closes. The caller says listening stopped.
+    let mut primer = Primer::default();
     let ended = loop {
         match stream.next().await {
             // "Stop listening": nothing after it is heard, kept or sent on, even words the service still had.
             Some(Ok(Message::Text(t))) => {
-                if handle(&core, &speaker, t.as_str()) {
+                if handle(&core, &speaker, &mut primer, t.as_str()) {
                     break Ok(());
                 }
             }
@@ -147,12 +148,75 @@ fn handshake(key: &str) -> Value {
     })
 }
 
+/// What the service made of the primer, so none of it is ever shown or kept.
+#[derive(Default)]
+struct Primer {
+    /// The primer's turn, from its speechStart (in the primer's stretch of the stream).
+    turn: Option<u64>,
+    /// Its turn has not ended yet: the service may run the primer and the first line together into one turn.
+    open: bool,
+    /// The words it heard in the primer ("Uh"), to take off the front of that joined turn.
+    words: String,
+}
+
+impl Primer {
+    /// `text` without the primer's words at its front, compared without case or punctuation.
+    fn strip<'a>(&self, text: &'a str) -> &'a str {
+        let key = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+        let want = key(&self.words);
+        if want.is_empty() {
+            return text;
+        }
+        let mut seen = String::new();
+        for (i, c) in text.char_indices() {
+            if c.is_alphanumeric() {
+                seen.extend(c.to_lowercase());
+            }
+            if seen == want {
+                let rest = &text[i + c.len_utf8()..];
+                // "Uh, okay" → "okay"; but "Uhh" or "Uhuh" are someone's own word.
+                if rest.chars().next().is_none_or(|n| !n.is_alphanumeric()) {
+                    return rest.trim_start_matches(|n: char| !n.is_alphanumeric());
+                }
+                return text;
+            }
+            if !want.starts_with(seen.as_str()) {
+                return text;
+            }
+        }
+        text
+    }
+}
+
 /// One event from the service; true when it was a spoken "stop listening", which ends the stream.
-fn handle(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
-    let Ok(event) = serde_json::from_str::<Value>(text) else { return false };
-    // The primer's words ("Uh", or nothing) and its turn: never shown or kept.
-    if event["audioProcessedMs"].as_u64().is_some_and(|at| at <= PRIMER_MS) && event["type"] != "error" {
+fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> bool {
+    let Ok(mut event) = serde_json::from_str::<Value>(text) else { return false };
+    // The primer's words ("Uh", or nothing) and its turn: never shown or kept. Mostly that is everything up to
+    // PRIMER_MS; but its turn can end late (seen at 3.1–3.8 s) and then its end, or the first line joined to it
+    // ("Uh, okay rent…"), comes after, so its turn is followed by id and its words come off the front.
+    let at = event["audioProcessedMs"].as_u64();
+    let turn = event["turnId"].as_u64();
+    if event["type"] != "error" && at.is_some_and(|at| at <= PRIMER_MS) {
+        match event["type"].as_str() {
+            Some("speechStart") => (primer.turn, primer.open) = (turn, true),
+            Some("transcript") if primer.open => primer.words = event["transcript"].as_str().unwrap_or_default().to_string(),
+            Some("speechComplete") if turn.is_some() && turn == primer.turn => primer.open = false,
+            _ => {}
+        }
         return false;
+    }
+    let primer_turn = primer.turn.is_some() && turn == primer.turn;
+    if primer.open && (event["type"] == "transcript" || primer_turn) {
+        let rest = primer.strip(event["transcript"].as_str().unwrap_or_default()).to_string();
+        if event["type"] == "speechComplete" {
+            primer.open = false;
+        }
+        if rest.is_empty() && event["type"] == "transcript" {
+            return false;
+        }
+        if event.get("transcript").is_some() {
+            event["transcript"] = Value::String(rest);
+        }
     }
     // Turn boundaries with their audio position, to see how long endpointing takes (scripts/voice.mjs):
     // RUST_LOG=info,e2a2o_core::asr=debug. Drafts are left out, one per word.
@@ -201,7 +265,7 @@ fn sentence_case(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle, handshake, primer, relay, sentence_case, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, RATE};
+    use super::{handle, handshake, primer, relay, sentence_case, Primer, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, RATE};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Journal, World};
     use crate::Core;
@@ -216,8 +280,9 @@ mod tests {
         let core = Arc::new(Core::test(journal, World::default()));
         let mut updates = core.updates.subscribe();
         let turn = |words: &str| serde_json::json!({"type": "speechComplete", "transcript": words}).to_string();
-        assert!(!handle(&core, "you", &turn("i should stop listening to podcasts at night")));
-        assert!(handle(&core, "you", &turn("okay stop listening")));
+        let mut primer = Primer::default();
+        assert!(!handle(&core, "you", &mut primer, &turn("i should stop listening to podcasts at night")));
+        assert!(handle(&core, "you", &mut primer, &turn("okay stop listening")));
         let paused = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Pause }));
         assert!(paused);
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
@@ -284,20 +349,93 @@ mod tests {
             serde_json::json!({"type": "speechEnd", "audioProcessedMs": 3820, "turnId": 0}),
             serde_json::json!({"type": "speechComplete", "audioProcessedMs": 3820, "turnId": 0, "transcript": "Uh,"}),
         ];
+        let mut state = Primer::default();
         for event in &primer {
-            assert!(!handle(&core, "you", &event.to_string()));
+            assert!(!handle(&core, "you", &mut state, &event.to_string()));
         }
         assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::Partial { .. })));
         assert!(core.snapshot().thoughts.is_empty());
         let words = serde_json::json!({"type": "transcript", "transcript": "Okay, rent", "final": false, "audioProcessedMs": PRIMER_MS + 1_100});
-        handle(&core, "you", &words.to_string());
+        handle(&core, "you", &mut state, &words.to_string());
         let shown = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(&out.message, ServerMsg::Partial { text } if text == "Okay, rent"));
         assert!(shown, "the first line's words show as they come");
         let line = serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 4_900, "turnId": 1, "transcript": "Okay, rent is due Friday."});
-        handle(&core, "you", &line.to_string());
+        handle(&core, "you", &mut state, &line.to_string());
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["Okay, rent is due Friday."]);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// Feeds the service's events and returns the live words shown and the thoughts kept.
+    fn heard(events: &[serde_json::Value]) -> (Vec<String>, Vec<String>) {
+        let path = std::env::temp_dir().join(format!("e2a2o-asr-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, World::default()));
+        let mut updates = core.updates.subscribe();
+        let mut state = Primer::default();
+        for event in events {
+            handle(&core, "you", &mut state, &event.to_string());
+        }
+        let shown = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::Partial { text } if !text.is_empty() => Some(text),
+                _ => None,
+            })
+            .collect();
+        let kept = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
+        let _ = std::fs::remove_file(&path);
+        (shown, kept)
+    }
+
+    fn primer_start() -> [serde_json::Value; 2] {
+        [
+            serde_json::json!({"type": "speechStart", "audioProcessedMs": 0, "turnId": 0}),
+            serde_json::json!({"type": "transcript", "transcript": "Uh", "final": false, "audioProcessedMs": 960}),
+        ]
+    }
+
+    /// The primer's turn usually ends by 3.8 s; one that ends after PRIMER_MS (no one speaking yet) is still the
+    /// primer's: "Uh," never lands on the map on camera.
+    #[test]
+    fn a_primer_turn_that_ends_late_is_still_never_kept() {
+        let mut events = primer_start().to_vec();
+        events.push(serde_json::json!({"type": "speechEnd", "audioProcessedMs": PRIMER_MS + 400, "turnId": 0}));
+        events.push(serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 400, "turnId": 0, "transcript": "Uh,"}));
+        events.push(serde_json::json!({"type": "speechStart", "audioProcessedMs": PRIMER_MS + 900, "turnId": 1}));
+        events.push(serde_json::json!({"type": "transcript", "transcript": "Uh, I mean rent", "final": false, "audioProcessedMs": PRIMER_MS + 1_500}));
+        events.push(serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 3_000, "turnId": 1, "transcript": "Uh, I mean rent is due."}));
+        let (shown, kept) = heard(&events);
+        // After the primer's turn, a line of one's own that starts with "Uh" stays as said.
+        assert_eq!(shown, ["Uh, I mean rent"]);
+        assert_eq!(kept, ["Uh, I mean rent is due."]);
+    }
+
+    /// Someone speaking right at "Listening", while the primer's turn is still open: the service runs the two into
+    /// one turn; the line shows and lands without the primer's "Uh".
+    #[test]
+    fn a_first_line_joined_to_the_primer_loses_only_the_primers_words() {
+        let mut events = primer_start().to_vec();
+        for (words, at) in [("Uh, okay", 1_000), ("Uh, okay, rent", 1_400)] {
+            events.push(serde_json::json!({"type": "transcript", "transcript": words, "final": false, "audioProcessedMs": PRIMER_MS + at}));
+        }
+        events.push(serde_json::json!({"type": "speechEnd", "audioProcessedMs": PRIMER_MS + 3_000, "turnId": 0}));
+        events.push(serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 3_000, "turnId": 0, "transcript": "Uh, okay, rent is due Friday."}));
+        let (shown, kept) = heard(&events);
+        assert_eq!(shown, ["okay", "okay, rent"]);
+        assert_eq!(kept, ["Okay, rent is due Friday."]);
+    }
+
+    /// Only the primer's own word comes off: "Uhh" or "Uhuh" are someone's own, and an empty primer takes nothing.
+    #[test]
+    fn only_the_primers_own_words_come_off() {
+        let uh = Primer { turn: Some(0), open: true, words: "Uh".into() };
+        assert_eq!(uh.strip("Uh, okay"), "okay");
+        assert_eq!(uh.strip("uh okay"), "okay");
+        assert_eq!(uh.strip("Uh."), "");
+        assert_eq!(uh.strip("Uhh, okay"), "Uhh, okay");
+        assert_eq!(uh.strip("Uhuh"), "Uhuh");
+        assert_eq!(uh.strip("Okay"), "Okay");
+        assert_eq!(Primer::default().strip("Uh, okay"), "Uh, okay");
     }
 
     #[test]
