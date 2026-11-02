@@ -2447,12 +2447,20 @@ mod tests {
     ///
     /// `before`: [thread, words, seconds ago], the speaker's own turn before; `asked`: [speaker, thread, words,
     /// seconds ago], someone else's turn after it.
-    /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread) or "new<T1" (a new branch of T1).
+    /// `want`: thread ids, "new" (any new thread), "new<" (a new top-level thread), "new<T1" (a new branch of T1) or
+    /// "skip" (set aside as adding nothing).
     /// `split`: the turn must (true) or must not (false) be cut in two. `known`: a miss not fixed yet, and why.
     /// `unfinished`: [thread, words, seconds ago], an earlier turn of the speaker's that trailed off; `trailed`: the
     /// turn `before` trailed off. `joins`: the words must (true) or must not (false) be linked to a turn before
     /// (chunks.rs); `assumed`: an assumption must (true) or must not (false) be noted. Their cases are in
     /// scripts/chunk-cases.jsonl (`ROUTING_CASES=../scripts/chunk-cases.jsonl`).
+    /// `title`, `point`: the landed thread's title, or the point, holds one of these words (any case; a list of
+    /// lists, one from each); `point_not`:
+    /// the point holds none of them (a slip kept, an exclamation). `rounds`: at most this many rounds of calls (1:
+    /// no answer was cut off at its room and asked again). Each run prints how long it took to place, and the end
+    /// the median.
+    /// `talk`: instead of one thought, turns said in a row on one map (see `talk_run`): [{text, want?, speaker?,
+    /// at?, id?}].
     #[tokio::test]
     #[ignore]
     async fn routing_cases() {
@@ -2463,7 +2471,17 @@ mod tests {
         let runs: usize = std::env::var("ROUTING_RUNS").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
         let cases: Vec<serde_json::Value> =
             std::fs::read_to_string(&file).unwrap().lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect();
-        let mut failed = Vec::new();
+        // Whether `text` holds any of the case's words in `field`; None when the case doesn't name any.
+        // A list of lists needs one word from each ("not", and "maybe").
+        let holds = |case: &serde_json::Value, field: &str, text: &str| {
+            let text = text.to_lowercase();
+            let any = |words: &Vec<serde_json::Value>| words.iter().filter_map(|w| w.as_str()).any(|w| text.contains(&w.to_lowercase()));
+            case[field].as_array().map(|list| match list.iter().map(|g| g.as_array()).collect::<Option<Vec<_>>>() {
+                Some(groups) if !groups.is_empty() => groups.into_iter().all(any),
+                _ => any(list),
+            })
+        };
+        let (mut failed, mut times, mut fit, mut tried) = (Vec::new(), Vec::new(), 0, 0);
         for case in &cases {
             let name = case["name"].as_str().unwrap_or("?");
             let (world, said) = case_map(case);
@@ -2481,34 +2499,70 @@ mod tests {
                     placer_race: super::race_from_env(),
                     ..Core::test(journal, world.clone())
                 };
+                tried += 1;
+                if let Some(talk) = case["talk"].as_array() {
+                    good += usize::from(talk_run(&core, case, talk, run, &mut times).await);
+                    let _ = std::fs::remove_dir_all(&dir);
+                    continue;
+                }
                 // As `Core::keep` adds it, but with its own time, so what was said just before is as recent as it was.
                 let id = said.id.clone();
                 core.commit(vec![Change::ThoughtAdded { thought: said.clone() }]);
+                // Timed here, not by `place_ms`: the thought keeps the time the case was read, so a later run's
+                // `place_ms` would count the runs before it too.
+                let (went, left) = (std::time::Instant::now(), core.calls_left());
                 let rest = super::place(&core, &id, super::URL, super::patience).await;
+                let ms = went.elapsed().as_millis();
+                times.push(ms);
+                // One call a lane, more when an answer was cut off at its room and asked again (`room_for`).
+                let (calls, lanes) = (left.saturating_sub(core.calls_left()), core.placer_race.max(1));
                 let after = core.snapshot();
-                let landed = after.thoughts.iter().find(|t| t.id == id).and_then(|t| t.thread_id.clone()).unwrap_or_default();
+                let placed = after.thoughts.iter().find(|t| t.id == id).cloned().unwrap_or_else(|| said.clone());
+                let landed = placed.thread_id.clone().filter(|_| placed.placed).unwrap_or_default();
                 let made = after.thread(&landed).filter(|_| world.thread(&landed).is_none());
                 let got = match made {
                     Some(t) => format!("new<{}", t.parent_id.clone().unwrap_or_default()),
+                    // Set aside as adding nothing: off the map (`ThoughtSkipped`).
+                    None if !after.thoughts.iter().any(|t| t.id == id) => "skip".into(),
                     None => landed.clone(),
                 };
                 let split = matches!(rest, Ok(Some(_)));
                 let note = after.notes.get(&id).cloned().unwrap_or_default();
+                let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
+                let point = if placed.placed { placed.point.clone() } else { String::new() };
                 let fits = case["want"].as_array().is_some_and(|want| {
                     want.iter().filter_map(|w| w.as_str()).any(|w| w == got || (w == "new" && got.starts_with("new<")))
                 }) && case["split"].as_bool().is_none_or(|s| s == split)
                     && case["joins"].as_bool().is_none_or(|j| j == !note.continues.is_empty())
-                    && case["assumed"].as_bool().is_none_or(|a| a == !note.assumed.is_empty());
+                    && case["assumed"].as_bool().is_none_or(|a| a == !note.assumed.is_empty())
+                    && holds(case, "title", &title).is_none_or(|h| h)
+                    && holds(case, "point", &point).is_none_or(|h| h)
+                    && holds(case, "point_not", &point).is_none_or(|h| !h)
+                    && case["rounds"].as_u64().is_none_or(|r| calls as u64 <= r * lanes as u64);
                 good += usize::from(fits);
-                let title = after.thread(&landed).map(|t| t.title.clone()).unwrap_or_default();
+                // A slip fixed without asking (heard → fixed), or one asked about ("Did you mean …?": unclear → guess).
+                let slip = if !placed.fixed.is_empty() {
+                    format!(" fixed: {} → {}", placed.heard, placed.fixed)
+                } else if !placed.unclear.is_empty() {
+                    format!(" asks: {} → {}", placed.unclear, placed.guess)
+                } else {
+                    String::new()
+                };
                 let noted = [("joins", note.continues.as_str()), ("assumed", note.assumed.as_str()), ("why", note.why.as_str())]
                     .iter()
                     .filter(|(_, v)| !v.is_empty())
                     .map(|(k, v)| format!(" {k}: {v}"))
                     .collect::<String>();
-                println!("{} {name} #{run}: {got} \"{title}\"{}{noted}", if fits { "ok  " } else { "MISS" }, if split { " (split)" } else { "" });
+                println!(
+                    "{} {name} #{run}: {got} \"{title}\"{} {:.1} s{} point: \"{point}\"{slip}{noted}",
+                    if fits { "ok  " } else { "MISS" },
+                    if split { " (split)" } else { "" },
+                    ms as f64 / 1000.0,
+                    if calls > lanes { format!(" ({calls} calls: cut off and asked again)") } else { String::new() }
+                );
                 let _ = std::fs::remove_dir_all(&dir);
             }
+            fit += good;
             // A known miss is said, not failed: it waits for its fix (`known` says why and when).
             match case["known"].as_str() {
                 Some(why) if good * 2 <= runs => println!("known miss, {name}: {good}/{runs}: {why}"),
@@ -2517,7 +2571,83 @@ mod tests {
                 None => {}
             }
         }
+        times.sort_unstable();
+        let at = |q: f64| times.get(((times.len() as f64 - 1.0) * q).round() as usize).map_or(0.0, |&ms| ms as f64 / 1000.0);
+        println!(
+            "runs that fit: {fit}/{tried}; {} placements in: median {:.2} s, 90th percentile {:.2} s, slowest {:.2} s",
+            times.len(),
+            at(0.5),
+            at(0.9),
+            at(1.0)
+        );
         assert!(failed.is_empty(), "cases that mostly missed: {failed:?}");
+    }
+
+    /// One run of a `talk` case: its turns said in a row on one map, each placed as the app places it, the rest of a
+    /// turn cut in two right after it. A turn's move: "new" (it started a thread), "same" (it landed where its
+    /// speaker's words before it did), "back" (on another thread already on the map) or "skip"; a turn cut in two
+    /// joins its parts' moves with "+" ("same+new"). It fits when each turn with a `want` made one of its moves.
+    /// With TALK_OUT set, each run appends a line there with every turn's threads and the threads' titles, for a
+    /// script that scores a whole talk.
+    async fn talk_run(core: &Core, case: &serde_json::Value, talk: &[serde_json::Value], run: usize, times: &mut Vec<u128>) -> bool {
+        let name = case["name"].as_str().unwrap_or("?");
+        // As far apart as `at` says (seconds from the first turn; else 12 s apart), the last one now: the prompt
+        // quotes the turn before only when it came within `JUST_BEFORE_MS`.
+        let at = |i: usize| talk[i]["at"].as_f64().unwrap_or(12.0 * i as f64);
+        let base = crate::now_ms().saturating_sub((1000.0 * at(talk.len().saturating_sub(1))) as u64);
+        let (mut last, mut moves, mut turns, mut fits) = (std::collections::HashMap::<String, String>::new(), Vec::new(), Vec::new(), true);
+        for (i, turn) in talk.iter().enumerate() {
+            let id = turn["id"].as_str().map_or_else(|| format!("th-talk-{i}"), String::from);
+            let speaker = turn["speaker"].as_str().unwrap_or("you");
+            let said = Thought {
+                text: turn["text"].as_str().unwrap_or_default().into(),
+                at_ms: base + (1000.0 * at(i)) as u64,
+                thread_id: core.snapshot().active_for(speaker).cloned(),
+                ..thought(&id, speaker, None, true)
+            };
+            core.commit(vec![Change::ThoughtAdded { thought: said }]);
+            // The turn, then the rest each cut leaves, as the placer's queue takes them.
+            let (mut kinds, mut landings, mut next) = (Vec::new(), Vec::new(), Some(id.clone()));
+            while let Some(part) = next.take() {
+                let before = core.snapshot();
+                let went = std::time::Instant::now();
+                next = super::place(core, &part, super::URL, super::patience).await.ok().flatten();
+                times.push(went.elapsed().as_millis());
+                let after = core.snapshot();
+                let landed = after.thoughts.iter().find(|t| t.id == part && t.placed).and_then(|t| t.thread_id.clone());
+                kinds.push(match &landed {
+                    None => "skip",
+                    Some(on) if before.thread(on).is_none() => "new",
+                    Some(on) if last.get(speaker) == Some(on) => "same",
+                    Some(_) => "back",
+                });
+                if let Some(on) = &landed {
+                    last.insert(speaker.to_string(), on.clone());
+                    let (title, point) = (after.thread(on).map(|t| t.title.clone()).unwrap_or_default(), after.thoughts.iter().find(|t| t.id == part).map(|t| t.point.clone()).unwrap_or_default());
+                    println!("     {name} #{run} turn {i}: {} {on} \"{title}\" point: \"{point}\"", kinds.last().unwrap());
+                }
+                landings.push(landed);
+            }
+            let made = kinds.join("+");
+            if let Some(want) = turn["want"].as_array() {
+                fits &= want.iter().any(|w| w.as_str() == Some(made.as_str()));
+            }
+            turns.push(json!({"id": id, "speaker": speaker, "threads": landings}));
+            moves.push(made);
+        }
+        let map = core.snapshot();
+        let titles: Vec<&str> = map.threads.iter().map(|t| t.title.as_str()).collect();
+        println!("{} {name} #{run}: {}; {} threads: {}", if fits { "ok  " } else { "MISS" }, moves.join(" "), titles.len(), titles.join(" | "));
+        if let Ok(path) = std::env::var("TALK_OUT") {
+            let threads: Vec<_> = map.threads.iter().map(|t| json!({"id": t.id, "title": t.title, "parent": t.parent_id})).collect();
+            let line = json!({"case": name, "run": run, "model": std::env::var("PLACER_MODEL").ok(), "turns": turns, "threads": threads});
+            let written = std::fs::OpenOptions::new().create(true).append(true).open(&path).and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{line}")
+            });
+            written.unwrap_or_else(|e| panic!("TALK_OUT {path}: {e}"));
+        }
+        fits
     }
 
     /// A case's map and the thought said: threads given inline (`threads`: [id, title, last point, parent?],
@@ -2542,7 +2672,7 @@ mod tests {
             panic!("thought {id} isn't in {path}");
         }
         let mut world = World::default();
-        for t in case["threads"].as_array().unwrap() {
+        for t in case["threads"].as_array().into_iter().flatten() {
             let field = |i: usize| t[i].as_str().unwrap_or_default().to_string();
             world.apply(&Change::ThreadAdded {
                 thread: Thread { title: field(1), parent_id: Some(field(3)).filter(|p| !p.is_empty()), ..thread(&field(0)) },
@@ -2586,7 +2716,7 @@ mod tests {
             world.apply(&Change::ActiveChanged { thread_id: selected.into(), speaker: "you".into() });
         }
         let said = Thought {
-            text: case["text"].as_str().unwrap().into(),
+            text: case["text"].as_str().unwrap_or_default().into(),
             at_ms: now,
             ..thought(&format!("th-{}", uuid::Uuid::new_v4().simple()), "you", None, true)
         };
