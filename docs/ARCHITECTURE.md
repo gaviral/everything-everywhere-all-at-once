@@ -17,6 +17,7 @@ Browser, one page per window (ui/src)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
+  ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
