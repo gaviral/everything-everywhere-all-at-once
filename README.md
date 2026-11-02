@@ -63,6 +63,8 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 
 The first run downloads and compiles the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01). When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
 
+To keep it in your Dock: in Chrome, the install icon at the end of the address bar; in Safari, File › Add to Dock.
+
 If port 4321 is busy, `run.sh` says so before building; use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**

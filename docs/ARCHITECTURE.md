@@ -16,6 +16,7 @@ Browser, one page per window (ui/src)
   Attention.tsx  the one "look here" highlight, the "latest" bar, "New in X ↓", unseen dots, "this" (rules in attention-core.ts)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
+  Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, drawn by `scripts/icons.mjs`)
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
   ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
