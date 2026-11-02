@@ -36,7 +36,7 @@ import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor,
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, sameCard, searchMatches, steady } from "./search-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
@@ -595,6 +595,10 @@ export default function App() {
       group.push(thread);
       grouped.set(parent, group);
     }
+    // Found threads show best first (up to RANK_LIMIT): matches come ranked, so a thread joins visibleIds at its best
+    // found branch's place.
+    const place = search && matches.size <= RANK_LIMIT ? new Map([...visibleIds].map((id, i) => [id, i])) : undefined;
+    if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
