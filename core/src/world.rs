@@ -191,6 +191,10 @@ pub struct World {
     /// Ideas and tasks the person put back after the refiner changed them: theirs now, never changed by it again.
     #[serde(default, skip_serializing)]
     pub restored: std::collections::HashSet<String>,
+    /// The rest of each turn the placer cut in two → the part it was cut from (`ThoughtSplit`): which words were one
+    /// turn, never guessed from a shared time (two turns flushed together on a reconnect can share a millisecond).
+    #[serde(default, skip_serializing)]
+    pub split_from: std::collections::HashMap<String, String>,
 }
 
 /// Journal lines, so old journals must keep loading: give every field added later `#[serde(default)]`.
@@ -406,6 +410,7 @@ impl World {
                 if !self.thoughts.iter().any(|t| t.id == rest.id) {
                     self.thoughts.insert(i + 1, rest.clone());
                 }
+                self.split_from.insert(rest.id.clone(), thought_id.clone());
             }
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
             // as it was (chunks.rs); a note for a thought off the map shows nothing.
@@ -745,6 +750,27 @@ impl World {
     }
 
     /// Where a speaker is: their own active thread, else where the talk is now (they just joined).
+    /// Every part of the turn `id` belongs to, cut by the placer however many times, itself included.
+    pub fn turn_parts(&self, id: &str) -> Vec<String> {
+        let first = |id: &str| {
+            let mut at = id.to_string();
+            // Each rest names the part before it; the bound only guards a malformed journal.
+            for _ in 0..=self.split_from.len() {
+                match self.split_from.get(&at) {
+                    Some(up) => at = up.clone(),
+                    None => break,
+                }
+            }
+            at
+        };
+        let head = first(id);
+        let mut parts: Vec<String> = self.thoughts.iter().filter(|t| first(&t.id) == head).map(|t| t.id.clone()).collect();
+        if !parts.iter().any(|p| p == id) {
+            parts.push(id.to_string());
+        }
+        parts
+    }
+
     pub fn active_for(&self, speaker: &str) -> Option<&String> {
         self.active_by.get(speaker).or(self.active.as_ref())
     }

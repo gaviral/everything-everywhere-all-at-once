@@ -742,11 +742,9 @@ fn scratch(core: &Arc<Core>, speaker: &str, said: &str, previous: Last) {
 /// off the map with nowhere to go, so no empty card is left behind; a thread that keeps other words loses their point.
 fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     let world = core.snapshot();
-    // A turn the placer split goes with its rest, said at the same time.
-    let thoughts: Vec<Thought> = world.thoughts.iter()
-        .filter(|t| ids.contains(&t.id) || ids.iter().any(|id| world.thoughts.iter().any(|o| &o.id == id && o.speaker == t.speaker && o.at_ms == t.at_ms)))
-        .cloned()
-        .collect();
+    // A turn the placer split goes with its rest; another turn said in the same millisecond stays.
+    let parts: Vec<String> = ids.iter().flat_map(|id| world.turn_parts(id)).collect();
+    let thoughts: Vec<Thought> = world.thoughts.iter().filter(|t| parts.contains(&t.id)).cloned().collect();
     if thoughts.is_empty() {
         return None;
     }

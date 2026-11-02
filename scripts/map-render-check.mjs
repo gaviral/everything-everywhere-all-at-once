@@ -2,8 +2,9 @@
 // The window as a judge first sees it, drawn by the window's own components (App.tsx through React's server
 // renderer, the way the other checks draw the Palace and the Recap): the empty first screen, with and without a key,
 // and the sample map ("Try a sample map": samples/student-week.jsonl, the core's own change messages) fed through the
-// window's reducer one change at a time, as the core sends them (core/src/sample.rs `load`). No other check draws
-// the map's cards, points, action rows, tags or chips: their wiring was held by regexes over App.tsx's source.
+// window's reducer one change at a time, as the core sends them (core/src/sample.rs `load`). points-check.mjs draws
+// cards and points only to measure where points sit; no other check reads what the map's cards, points, action rows,
+// tags or chips say: their wiring was held by regexes over App.tsx's source.
 // What shows, not how it moves: effects (the socket, timers, scrolling) don't run here.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

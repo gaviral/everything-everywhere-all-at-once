@@ -2403,7 +2403,7 @@ mod tests {
         // One thought that started a thread is enough; one more on an old thread waits for a second, or a look.
         assert!(due(1, true, 4_000, 10_000, 0, false));
         assert!(!due(1, false, 60_000, 60_000, 0, false));
-        // Never mid-sentence: under 4 s of quiet nothing goes, however much is new.
+        // Never mid-sentence: under 4 s of quiet nothing goes, however much is new (unless you just came back, below).
         assert!(!due(9, true, 3_999, 60_000, 0, false));
         // Back at the window: at once.
         assert!(due(1, false, 0, 10_000, 0, true));

@@ -10,9 +10,11 @@ use crate::world::{Change, ItemState, ItemStatus, Journal, World};
 use crate::Core;
 use std::sync::Arc;
 
-/// A year, to date a sample ahead of the clock (every point counts as said at 0, `Thought::said_at`) or behind it.
-const AHEAD: i64 = 365 * 86_400_000;
-const BEHIND: i64 = -AHEAD;
+/// Where `sample` dates a sample: all of it a year ahead of the clock (every point counts as said at 0,
+/// `Thought::said_at`), or all of it a year behind.
+const AHEAD: i64 = 1;
+const BEHIND: i64 = -1;
+const YEAR: i64 = 365 * 86_400_000;
 
 /// A core on an empty map, journaling to a file of its own.
 fn fresh() -> (Arc<Core>, std::path::PathBuf) {
@@ -21,18 +23,26 @@ fn fresh() -> (Arc<Core>, std::path::PathBuf) {
     (Arc::new(Core::test(journal, world)), path)
 }
 
-/// A shipped sample's changes, its times moved by `shift` ms, so a test reads the same on any day.
-fn sample(name: &str, shift: i64) -> Vec<Change> {
+/// A shipped sample's changes, dated `AHEAD` of the clock or `BEHIND` it by the clock now, so a test reads the same
+/// on any day.
+fn sample(name: &str, way: i64) -> Vec<Change> {
     let text = std::fs::read_to_string(format!("{}/../samples/{name}.jsonl", env!("CARGO_MANIFEST_DIR"))).unwrap();
-    let at = |ms: &mut u64| *ms = (*ms as i64 + shift) as u64;
     let mut changes: Vec<Change> = text.lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect();
-    for c in &mut changes {
+    fn time(c: &mut Change) -> Option<&mut u64> {
         match c {
-            Change::ThoughtAdded { thought } => at(&mut thought.at_ms),
-            Change::ThreadAdded { thread } => at(&mut thread.touched_ms),
-            Change::ThreadTouched { at_ms, .. } => at(at_ms),
-            _ => {}
+            Change::ThoughtAdded { thought } => Some(&mut thought.at_ms),
+            Change::ThreadAdded { thread } => Some(&mut thread.touched_ms),
+            Change::ThreadTouched { at_ms, .. } => Some(at_ms),
+            _ => None,
         }
+    }
+    let all: Vec<i64> = changes.iter_mut().filter_map(time).map(|ms| *ms as i64).collect();
+    // One clock for the whole run: every core made from a sample has the same map.
+    static NOW: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    let now = *NOW.get_or_init(|| crate::now_ms() as i64);
+    let shift = if way == AHEAD { now + YEAR - all.iter().min().unwrap() } else { now - YEAR - all.iter().max().unwrap() };
+    for ms in changes.iter_mut().filter_map(time) {
+        *ms = (*ms as i64 + shift) as u64;
     }
     changes
 }
@@ -160,6 +170,34 @@ async fn scratch_that_then_undo_puts_words_back_on_their_own_card() {
     assert!(after == before, "Undo of “scratch that” left the map changed:\n{}", diff(&before, &after));
 }
 
+/// Two turns said in the same millisecond (a reconnect flushes queued turns together): "scratch that" takes back only
+/// the last one, and "undo that" puts the map back as it was. The test above can share a millisecond by chance.
+#[tokio::test]
+async fn scratch_that_takes_back_only_the_last_of_two_turns_said_in_one_millisecond() {
+    let (core, path) = fresh();
+    core.add_thought("you", "Buy milk on the way home");
+    core.add_thought("you", "Call Mom on Sunday about the trip");
+    let ids: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.id.clone()).collect();
+    // The same millisecond, as a reconnect's flush can give them (the map only: this test never replays the journal).
+    {
+        let mut world = core.world.lock().unwrap();
+        let world = Arc::make_mut(&mut world);
+        world.thoughts[1].at_ms = world.thoughts[0].at_ms;
+    }
+    let (milk, mom) = (ids[0].as_str(), ids[1].as_str());
+    place(&core, milk, "T1", Some("Groceries"), "Buy milk on the way home");
+    place(&core, mom, "T2", Some("Call Mom"), "Call Mom on Sunday");
+    let before = shape(&core.snapshot());
+    core.add_thought("you", "Scratch that");
+    let scratched = core.snapshot();
+    assert!(scratched.thoughts.iter().any(|t| t.id == milk) && !scratched.thoughts.iter().any(|t| t.id == mom));
+    assert!(scratched.thread("T1").is_some(), "the earlier turn's card stays");
+    core.add_thought("you", "Undo that");
+    let after = shape(&core.snapshot());
+    let _ = std::fs::remove_file(path);
+    assert!(after == before, "Undo of “scratch that” left the map changed:\n{}", diff(&before, &after));
+}
+
 /// Commits from several tasks at once (the placer, the refiner, pictures, each window) reach every window in the
 /// journal's order: a window that applies them in another order shows a map the core doesn't have until it reloads.
 #[test]
@@ -222,6 +260,7 @@ fn full(w: &World) -> serde_json::Value {
         "moves": w.moves,
         "refined": sorted(w.refined.iter().map(|(k, v)| (k.clone(), serde_json::to_string(v).unwrap())).collect()),
         "restored": sorted(w.restored.iter().cloned().collect()),
+        "split_from": sorted(w.split_from.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
     })
 }
 
@@ -232,16 +271,12 @@ async fn session(core: &Arc<Core>) -> Vec<Change> {
     let mut updates = core.updates.subscribe();
     let say = |text: &str| core.add_thought("you", text);
     core.commit(sample("student-week", BEHIND));
-    let undo = |act: &dyn Fn()| {
-        if let Some(id) = offered(core, act) {
-            catalog::undo_click(core, "you", id);
-        }
-    };
+    let undo = |act: &dyn Fn()| catalog::undo_click(core, "you", offered(core, act).expect("an Undo is offered"));
     let first = core.snapshot().thoughts[0].id.clone();
     let on_t2 = core.snapshot().thoughts.iter().rev().find(|t| t.thread_id.as_deref() == Some("T2")).unwrap().id.clone();
     undo(&|| moves::click_delete(core, "you", &on_t2));
     undo(&|| moves::click_move(core, "you", &first, Some("T3".into())));
-    moves::click_move(core, "you", &first, None);
+    undo(&|| moves::click_move(core, "you", &first, None));
     undo(&|| moves::click_rename(core, "you", "T4", "Kiln days"));
     core.commit(vec![Change::ThreadRetitled { thread_id: "T5".into(), title: "AI title".into(), was: core.snapshot().thread("T5").unwrap().title.clone() }]);
     crate::tidy::undo(core, "you", Kind::Rename, "T5");

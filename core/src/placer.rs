@@ -134,7 +134,7 @@ impl NewThreads {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Placement {
     /// Where the turn moves on to another thread, quoted; empty when it stays on one.
     #[serde(default)]
@@ -364,6 +364,11 @@ impl Placing {
         state.stay.extend(theirs);
     }
 
+    /// This thought, once placed, leaves its speaker where they are: they moved while it was being placed.
+    fn stay(&self, thought_id: &str) {
+        self.0.lock().unwrap().stay.insert(thought_id.into());
+    }
+
     fn stays(&self, thought_id: &str) -> bool {
         self.0.lock().unwrap().stay.contains(thought_id)
     }
@@ -484,43 +489,58 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // doesn't take them back to where they were.
     let now = now_ms();
     // Nor when they moved while this call ran (a click, "new thread about …", a filing): their place now isn't the
-    // one the model was asked from.
-    let moved_meanwhile = {
-        let current = core.snapshot();
-        let place = |w: &World| w.active_by.get(&thought.speaker).map(|id| current.resolve(id));
-        place(&world) != place(&current)
+    // one the model was asked from. Checked under the commit's lock, so a click just before it lands stands too.
+    let moved = |w: &World| {
+        let place = |of: &World| of.active_by.get(&thought.speaker).map(|id| w.resolve(id));
+        place(&world) != place(w)
     };
-    let moves = !moved_meanwhile && !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
-    let (changes, rest) = settle(&world, &thought, placement, place_ms, new_thread, moves);
+    let mut moved_meanwhile = false;
     // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
     let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
-    if !waiting(&core.snapshot()) {
-        tracing::info!("placed {thought_id} after it was taken back: dropped");
-        return Ok(None);
-    }
-    // The thread it lands on (or under) must still be on the map: a delete while the model thought can take it off,
-    // and a point on no card is lost from view. Then it goes in line again and is placed on the map as it is now.
-    let added: Vec<String> = changes.iter().filter_map(|c| match c {
-        Change::ThreadAdded { thread } => Some(thread.id.clone()),
-        _ => None,
-    }).collect();
-    let targets: Vec<String> = changes.iter().filter_map(|c| match c {
-        Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
-        Change::ThreadAdded { thread } => thread.parent_id.clone(),
-        _ => None,
-    }).collect();
-    let there = |w: &World| targets.iter().all(|id| added.contains(id) || w.thread(&w.resolve(id)).is_some());
-    core.trace.write(|| traced(&world, &thought, answer, new_thread, &changes, rest.as_deref()));
-    drop(world);
-    // The ask for a new thread is spent only when the words land: placed again, they still start it.
-    let landed = if new_thread { changes.clone() } else { Vec::new() };
-    if !core.commit_if(|w| waiting(w) && there(w), changes) {
+    let (rest, landed) = loop {
+        let moves = !moved_meanwhile && !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
+        let (changes, rest) = settle(&world, &thought, placement.clone(), place_ms, new_thread, moves);
+        if !waiting(&core.snapshot()) {
+            tracing::info!("placed {thought_id} after it was taken back: dropped");
+            return Ok(None);
+        }
+        // The thread it lands on (or under) must still be on the map: a delete while the model thought can take it
+        // off, and a point on no card is lost from view. Then it goes in line again and is placed on the map as it is now.
+        let added: Vec<String> = changes.iter().filter_map(|c| match c {
+            Change::ThreadAdded { thread } => Some(thread.id.clone()),
+            _ => None,
+        }).collect();
+        let targets: Vec<String> = changes.iter().filter_map(|c| match c {
+            Change::ThoughtPlaced { thread_id, .. } => Some(thread_id.clone()),
+            Change::ThreadAdded { thread } => thread.parent_id.clone(),
+            _ => None,
+        }).collect();
+        let there = |w: &World| targets.iter().all(|id| added.contains(id) || w.thread(&w.resolve(id)).is_some());
+        // The ask for a new thread is spent only when the words land: placed again, they still start it.
+        let landed = if new_thread { changes.clone() } else { Vec::new() };
+        let traced_line = || traced(&world, &thought, answer.clone(), new_thread, &changes, rest.as_deref());
+        if core.commit_if(|w| waiting(w) && there(w) && !(moves && moved(w)), changes.clone()) {
+            core.trace.write(traced_line);
+            break (rest, landed);
+        }
         let now = core.snapshot();
+        if moves && waiting(&now) && there(&now) {
+            // They moved while the model thought (only that refuses it with the words waiting and their thread there):
+            // settle again without moving them.
+            moved_meanwhile = true;
+            continue;
+        }
+        core.trace.write(traced_line);
         if waiting(&now) && !there(&now) {
             tracing::info!("placed {thought_id} on a thread taken off the map meanwhile: placing it again");
             let _ = core.placer_queue.send(Job::Place(thought_id.to_string()));
         }
         return Ok(None);
+    };
+    drop(world);
+    // A split turn's rest stays put too when it lands (`Placing::placed` passes this on).
+    if moved_meanwhile {
+        core.placing.stay(thought_id);
     }
     if new_thread {
         core.new_threads.placed(thought_id, &landed, rest.as_deref());
@@ -788,9 +808,11 @@ fn just_asked<'a>(world: &'a World, thought: &Thought) -> Option<&'a Thought> {
         .thoughts
         .iter()
         .take_while(|t| t.id != thought.id)
-        // Not its own first part (a turn cut in two shares its time): the rest moved on from it.
-        .filter(|t| t.at_ms < thought.at_ms || (t.at_ms == thought.at_ms && t.speaker != thought.speaker))
+        .filter(|t| t.at_ms <= thought.at_ms)
         .max_by_key(|t| t.at_ms)
+        // Not its own first part: the rest of a turn cut in two moved on from it. Another turn said in the same
+        // millisecond (two flushed together on a reconnect) still counts.
+        .filter(|t| world.split_from.get(&thought.id) != Some(&t.id))
         .filter(|t| t.text.trim_end().ends_with('?') && thought.text.split_whitespace().count() <= SKIP_MAX_WORDS)
 }
 
@@ -2410,6 +2432,28 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A two-topic turn still on its first try when you click a card: neither part moves you when it lands, its rest
+    /// (placed next, from a map that already has the click) included.
+    #[tokio::test]
+    async fn a_click_while_a_split_turn_is_placing_stands_through_its_rest() {
+        let (url, _) = scripted(split_script(), 300).await;
+        let (core, path) = placing_core(url);
+        let here = |core: &Core| core.snapshot().active_for("you").cloned();
+        core.add_thought("you", "the bike needs brakes");
+        until(Duration::from_secs(5), || landed(&core, "the bike needs brakes")).await;
+        let bike = here(&core).unwrap();
+        core.add_thought("you", "the kitchen needs paint");
+        until(Duration::from_secs(5), || landed(&core, "the kitchen needs paint")).await;
+        assert_ne!(here(&core), Some(bike.clone()));
+        core.add_thought("you", "I need to pay rent before Friday and also the demo is on Tuesday");
+        let turn = id_of(&core, "I need to pay rent before Friday and also the demo is on Tuesday");
+        until(Duration::from_secs(2), || matches!(core.placing.message(), ServerMsg::Placing { now: Some(ref id), .. } if *id == turn)).await;
+        core.focus("you", &bike);
+        until(Duration::from_secs(5), || landed(&core, "the demo is on Tuesday")).await;
+        assert_eq!(here(&core), Some(bike), "the click stands after the rest lands too");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// "New thread about …" said while your words before it are still on their first try: the thread it starts is
     /// where you stay when those words land.
     #[tokio::test]
@@ -2586,6 +2630,22 @@ mod tests {
         let rest = after.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap().clone();
         assert_eq!(rest.text, "the bike needs brakes.");
         let prompt = request(&after, &rest, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(!prompt.contains("Just asked"), "{prompt}");
+    }
+
+    /// A question and a short answer said as two turns in the same millisecond (a reconnect flushes queued turns
+    /// together): the answer is still told what was just asked. Only a split's own first part is passed over.
+    #[test]
+    fn an_answer_said_in_the_same_millisecond_as_its_question_still_answers_it() {
+        let asked = Thought { text: "Should I book the pottery class?".into(), at_ms: 5, ..thought("q", "you", Some("T1"), true) };
+        let yes = Thought { text: "Yes.".into(), at_ms: 5, ..thought("y", "you", None, false) };
+        let world = World { thoughts: vec![asked, yes.clone()], ..map() };
+        let prompt = request(&world, &yes, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt.contains("Just asked"), "{prompt}");
+        // The same two as one turn cut in two: the rest moved on from its first part.
+        let mut split = world.clone();
+        split.split_from.insert("y".into(), "q".into());
+        let prompt = request(&split, &yes, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(!prompt.contains("Just asked"), "{prompt}");
     }
 
