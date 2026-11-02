@@ -36,12 +36,13 @@ fn between(quieter: f64, louder: f64) -> f64 { ((quieter * louder).sqrt() * 1000
 const LOUD_SECONDS: u64 = 3;
 
 /// The composer's instructions with the volume scale, so "when we get loud" lands between normal speech and a
-/// raised voice, held long enough to tell them apart, instead of at a guess.
+/// raised voice, held long enough to tell them apart, instead of at a guess. "Too loud" got the shouting level in 1 of 10
+/// builds before it was told what counts as loud (beat 5 harness, 2026-11-01).
 fn compose_prompt() -> String {
     let level = |x: f64| format!("{x:.3}").trim_end_matches('0').trim_end_matches('.').to_string();
     let loud = level(between(NORMAL_VOICE, RAISED_VOICE));
     COMPOSE.replace("{volume}", &format!(
-        "level: the microphone's loudness 0.01–1, where normal speech reads about {}, a raised voice {} and a shout {}; use {loud} for loud voices, which a raised voice clears and normal speech doesn't, and {} for shouting; seconds it stays there, 1–30, at least {LOUD_SECONDS} for loud voices, since normal speech's louder words can hold {loud} for a second or two",
+        "level: the microphone's loudness 0.01–1, where normal speech reads about {}, a raised voice {} and a shout {}; use {loud} for loud voices, which a raised voice clears and normal speech doesn't, and {} for shouting (\"loud\", \"too loud\", \"noisy\" and raised voices are loud voices; only shouting, yelling or screaming is shouting); seconds it stays there, 1–30, at least {LOUD_SECONDS} for loud voices, since normal speech's louder words can hold {loud} for a second or two",
         level(NORMAL_VOICE), level(RAISED_VOICE), level(SHOUT), level(between(RAISED_VOICE, SHOUT))))
 }
 
@@ -238,32 +239,40 @@ pub fn compose(core: Arc<Core>, request: String) {
 }
 
 #[derive(Deserialize)]
-struct Match { match_id: String, text: String }
+/// The search answers with a sentence too (`text`), which helps it decide; only the id is used.
+struct Match { match_id: String }
 
 async fn compose_inner(core: &Core, build_id: &str, request: &str) -> anyhow::Result<()> {
     let world = core.snapshot();
-    let mut matched = world.apps.iter().find(|a| same_request(a, request)).map(|a| a.id.clone());
+    let matched = world.apps.iter().find(|a| same_request(a, request)).map(|a| a.id.clone());
     // Search-first is in it too, so asking for an app that checks before making one finds it.
     let catalog: Vec<Value> = world.apps.iter()
         .map(|a| json!({"id": a.id, "name": a.name, "purpose": a.purpose, "watcher": shown(&a.watcher), "publishers": a.publishers})).collect();
-    // Search-first's switch controls the semantic search pass. Exact names and requests always work.
-    if matched.is_none() && !catalog.is_empty() {
-        if let Some(search) = world.apps.iter().find(|a| a.enabled && matches!(a.watcher, Watcher::AppRequest {})) {
-            let prompt = search.prompt.as_ref().context("search prompt missing")?;
-            let result: Match = serde_json::from_value(model(core, &prompt.system,
-                &expand(&prompt.template, &[("request", request), ("catalog", &serde_json::to_string(&catalog)?)]),
-                "AppSearch", json!({"type":"object","properties":{"match_id":{"type":"string"},"text":{"type":"string"}},"required":["match_id","text"]})).await?)?;
-            if world.apps.iter().any(|a| a.id == result.match_id) { matched = Some(result.match_id); }
-            let _ = result.text;
-        }
-    }
     if let Some(matched) = matched {
         return Ok(offer(core, build_id, &matched));
     }
-    progress(core, build_id, "composing", "Choosing blocks for your app", None, None);
     let ask = format!("Local time is {}. Existing apps: {}\nRequest: {}", local_time(), serde_json::to_string(&catalog)?, request);
     let compose = compose_prompt();
-    let mut answer = model(core, &compose, &ask, "AppSpec", composition_schema()).await?;
+    // The composition is asked for while the search looks, since nearly every request needs one: on camera the
+    // search's 3.4 s came before the composition's 2.6 s (cut, wave 2). A match found throws the composition away.
+    let composing = model(core, &compose, &ask, "AppSpec", composition_schema());
+    tokio::pin!(composing);
+    let search = search(core, &world, request, &catalog);
+    tokio::pin!(search);
+    let mut early = None;
+    let found = loop {
+        tokio::select! {
+            // Biased, so the search is asked first, as before (the tests' canned answers come in that order).
+            biased;
+            found = &mut search => break found,
+            answer = &mut composing, if early.is_none() => early = Some(answer),
+        }
+    };
+    if let Some(matched) = found {
+        return Ok(offer(core, build_id, &matched));
+    }
+    progress(core, build_id, "composing", "Choosing blocks for your app", None, None);
+    let mut answer = match early { Some(answer) => answer, None => composing.await }?;
     let mut fixing = false;
     let mut app = loop {
         if let Some(matched) = answer["match_id"].as_str().filter(|s| !s.is_empty()) {
@@ -297,6 +306,31 @@ async fn compose_inner(core: &Core, build_id: &str, request: &str) -> anyhow::Re
     app.last_run_ms = 0;
     progress(core, build_id, "ready", "Ready to keep. It starts when you keep it.", Some(app), None);
     Ok(())
+}
+
+/// How long Search-first may look. Of 160 searches (beat 5 harness, 2026-11-01), 159 answered within 5.3 s and one
+/// took 16.2 s, the whole build's wait on camera; the composer checks the catalog itself, so past the slowest usual
+/// answer the build goes on without the search.
+const SEARCH_PATIENCE: Duration = Duration::from_secs(6);
+
+/// Search-first's pass: an existing app that does what was asked, if its switch is on and it finds one. Exact names
+/// and requests are matched before it, always. A search that fails or takes longer than `SEARCH_PATIENCE` finds
+/// nothing: the composer checks the catalog too, so the build goes on instead of failing or stalling on camera.
+async fn search(core: &Core, world: &World, request: &str, catalog: &[Value]) -> Option<String> {
+    if catalog.is_empty() { return None; }
+    let search = world.apps.iter().find(|a| a.enabled && matches!(a.watcher, Watcher::AppRequest {}))?;
+    let looked = async {
+        let prompt = search.prompt.as_ref().context("search prompt missing")?;
+        let answer = model(core, &prompt.system,
+            &expand(&prompt.template, &[("request", request), ("catalog", &serde_json::to_string(catalog)?)]),
+            "AppSearch", json!({"type":"object","properties":{"match_id":{"type":"string"},"text":{"type":"string"}},"required":["match_id","text"]})).await?;
+        anyhow::Ok(serde_json::from_value::<Match>(answer)?)
+    };
+    match tokio::time::timeout(SEARCH_PATIENCE, looked).await {
+        Ok(Ok(result)) => world.apps.iter().any(|a| a.id == result.match_id).then_some(result.match_id),
+        Ok(Err(e)) => { tracing::warn!("app search failed, composing anyway: {e:#}"); None }
+        Err(_) => { tracing::warn!("app search took over {} s, composing anyway", SEARCH_PATIENCE.as_secs()); None }
+    }
 }
 
 /// The app in a composition answer, if it checks out.
@@ -426,7 +460,7 @@ pub fn volume_output(core: &Core, id: String, sound: bool) {
     }
 }
 
-/// A spoken or typed "make an app that …" ("build an app that …", "make a new app to …"), returning what the app
+/// A spoken or typed "make an app that …" ("build an app which …", "make a new app to …", "make an app for when …"), returning what the app
 /// should do in the person's own words. As with every request, punctuation and the words that lead into it don't
 /// count ("Okay, make an app that …", "Can you make me an app to …"; main.rs `lead_in`), but it must open what was
 /// said: "I might make an app that …" and "Let's make an app that …" (talk about one) stay thoughts.
@@ -443,14 +477,22 @@ pub fn command(text: &str) -> Option<String> {
         }
     }
     let said: Vec<&str> = words.iter().map(|(w, _)| w.as_str()).collect();
-    let ask = match said.as_slice() {
-        ["make" | "create" | "build", "an", "app", "that" | "to", ..] => 4,
-        ["make" | "create" | "build", "me" | "us", "an", "app", "that" | "to", ..] => 5,
-        ["make" | "create" | "build", "a", "new", "app", "that" | "to", ..] => 5,
-        ["make" | "create" | "build", "me" | "us", "a", "new", "app", "that" | "to", ..] => 6,
+    // "Make (me or us) an app", "a new app", "an application"; "a app" too, as speech-to-text can write it.
+    let mut at = 1;
+    if !matches!(said.first(), Some(&("make" | "create" | "build"))) { return None; }
+    if matches!(said.get(at), Some(&("me" | "us"))) { at += 1; }
+    if !matches!(said.get(at), Some(&("an" | "a"))) { return None; }
+    at += if said.get(at + 1) == Some(&"new") { 2 } else { 1 };
+    if !matches!(said.get(at), Some(&("app" | "application"))) { return None; }
+    at += 1;
+    // What follows says what it does: "that", "to" and "which" lead into it, and "for", "when", "if" and the like
+    // are part of it ("for when we get loud", "if we get loud, play a tune"). Anything else ("an app store") isn't one.
+    let start = match said.get(at) {
+        Some(&("that" | "to" | "which")) => words[at].1,
+        Some(&word @ ("for" | "when" | "whenever" | "if" | "where" | "so")) => words[at].1 - word.len(),
         _ => return None,
     };
-    let rest = &text[words[ask - 1].1..];
+    let rest = &text[start..];
     Some(rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '.' | '…' | ':' | ';' | '-' | '—')).trim_end().into())
 }
 
