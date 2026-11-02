@@ -165,6 +165,12 @@ export const ACTIONS: Action[] = [
   { id: "join-room", how: "form", at: [["room.tsx", `<form className="join-card" onSubmit={join}>`]], pressed: PRESS, waits: "network",
     working: "the button says “Joining…” and waits", done: "the map opens", failed: "“Can't reach the room. …”, or what's wrong with the code or name",
     says: ["Joining…", "Can't reach the room."] },
+
+  // The Messages card (Full preset): a counting message comes down unsent.
+  { id: "stop-send", how: "click", at: [["SendCard.tsx", "onClick={() => onStop(card.id)}"]], pressed: PRESS, waits: "core",
+    done: "the count stops and the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
+  { id: "stop-send-key", how: "key", at: [["SendCard.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT, waits: "core",
+    done: "Esc while it counts: the card says “Stopped: not sent”", failed: NOT_CONNECTED, says: ["Stopped: not sent"] },
 ];
 
 /** Handlers that aren't actions of their own: each says why. */

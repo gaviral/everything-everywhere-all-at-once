@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { receiveStep, resetSteps } from "./model-line";
+import { received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -214,7 +215,8 @@ type ServerMsg =
   | { type: "explanation"; id: string; text: string; failed: boolean }
   | { type: "why_here"; thought_id: string; text: string; failed: boolean }
   | { type: "import"; status: ImportStatus }
-  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] };
+  | { type: "placing"; now: string | null; retries: { thought_id: string; in_ms: number }[] }
+  | SendCardMsg;
 
 /** Where unplaced thoughts stand (the core's `placing` message): the one being placed now, and each that failed a try
  *  with when it tries again, on this window's clock. Any other is waiting in line. */
@@ -642,6 +644,8 @@ export function useCore(speaker?: string) {
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+  // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
+  const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
 
@@ -799,6 +803,11 @@ export function useCore(speaker?: string) {
           case "import":
             setImportStatus(msg.status);
             break;
+          case "send_card": {
+            const at = Date.now();
+            setSendCard((shown) => cardReceived(shown, msg, at));
+            break;
+          }
         }
       };
       ws.onclose = () => {
@@ -844,6 +853,9 @@ export function useCore(speaker?: string) {
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.
+  const stopSend = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "stop_send", id })), [sendOrWarn]);
+  const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -874,6 +886,9 @@ export function useCore(speaker?: string) {
     removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
     appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    sendCard,
+    stopSend,
+    sendCardGone,
     snapshotRevision,
     mapChange,
     partial,
