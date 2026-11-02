@@ -54,8 +54,10 @@ pub enum ServerMsg {
     /// "placer", "refiner", "picture", "recap", "app", "listen", …) and the model doing it, or none when a rule did
     /// it ("Where was I?", an app's tune). A model call is told twice, as it starts and as it ends (`done`, with
     /// `ms` and `ok`), sharing `id`. Sent from where every call goes through (model.rs), so the name shown is the
-    /// name asked, never a label kept by hand.
-    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64 },
+    /// name asked, never a label kept by hand. `superseded`: a racing call (placer.rs) dropped unanswered because
+    /// another of the same call answered first, or the race was called off; not a failure, so the line only stops
+    /// showing it as running.
+    Step { id: u64, step: String, model: Option<String>, done: bool, ok: bool, ms: u64, superseded: bool },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's

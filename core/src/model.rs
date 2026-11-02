@@ -362,17 +362,20 @@ impl Core {
 
     /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The
     /// guard tells its end, sharing the id: `end` with the answer, or as failed when the call is dropped unanswered
-    /// (a search past its patience, an import stopped), so no window waits on it forever.
+    /// (a search past its patience, an import stopped), so no window waits on it forever. A racing call (placer.rs
+    /// marks each with its `lane`) dropped unanswered lost the race, so it ends superseded, not failed: else the
+    /// line would say "didn't answer" over every thought the winner placed.
     fn step_began(&self, sent: &Value, extra: &Value) -> StepGuard<'_> {
         let id = STEP_IDS.fetch_add(1, Ordering::Relaxed);
         let (step, model) = (crate::trace::feature(sent, extra), sent["model"].as_str().map(String::from));
-        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0 });
-        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false }
+        self.send(ServerMsg::Step { id, step: step.clone(), model: model.clone(), done: false, ok: false, ms: 0, superseded: false });
+        let racing = extra.get("lane").is_some();
+        StepGuard { core: self, id, step, model, started: std::time::Instant::now(), ended: false, racing }
     }
 
     /// A step a rule did, with no model ("Where was I?", an app's tune): to `speaker`'s windows, or every window.
     pub fn rule_step(&self, speaker: Option<&str>, step: &str) {
-        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0 };
+        let message = ServerMsg::Step { id: STEP_IDS.fetch_add(1, Ordering::Relaxed), step: step.into(), model: None, done: true, ok: true, ms: 0, superseded: false };
         match speaker {
             Some(speaker) => self.send_to(speaker, message),
             None => self.send(message),
@@ -381,7 +384,7 @@ impl Core {
 
     /// Listening began (`done` false) or ended, with `model` hearing the words: to `speaker`'s windows only.
     pub fn listen_step(&self, speaker: &str, id: u64, model: &str, done: bool) {
-        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0 });
+        self.send_to(speaker, ServerMsg::Step { id, step: "listen".into(), model: Some(model.into()), done, ok: true, ms: 0, superseded: false });
     }
 
     /// Asks a feature's model at `url`: `body` builds the request for one model name, posted with the key and
@@ -455,7 +458,7 @@ impl Drop for Unanswered<'_> {
 pub static STEP_IDS: AtomicU64 = AtomicU64::new(1);
 
 /// A model call the windows were told began (`Core::step_began`): tells its end exactly once, from `end`, or as
-/// failed when dropped first (the call's future canceled before an answer).
+/// failed when dropped first (the call's future canceled before an answer), or superseded when it was `racing`.
 struct StepGuard<'a> {
     core: &'a Core,
     id: u64,
@@ -463,23 +466,25 @@ struct StepGuard<'a> {
     model: Option<String>,
     started: std::time::Instant,
     ended: bool,
+    racing: bool,
 }
 
 impl StepGuard<'_> {
     fn end(mut self, ok: bool) {
-        self.tell(ok);
+        self.tell(ok, false);
     }
 
-    fn tell(&mut self, ok: bool) {
+    fn tell(&mut self, ok: bool, superseded: bool) {
         if std::mem::replace(&mut self.ended, true) { return; }
         let ms = self.started.elapsed().as_millis() as u64;
-        self.core.send(ServerMsg::Step { id: self.id, step: self.step.clone(), model: self.model.clone(), done: true, ok, ms });
+        let (id, step, model) = (self.id, self.step.clone(), self.model.clone());
+        self.core.send(ServerMsg::Step { id, step, model, done: true, ok, ms, superseded });
     }
 }
 
 impl Drop for StepGuard<'_> {
     fn drop(&mut self) {
-        self.tell(false);
+        self.tell(false, self.racing);
     }
 }
 
