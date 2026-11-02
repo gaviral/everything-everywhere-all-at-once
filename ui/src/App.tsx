@@ -326,7 +326,10 @@ export default function App() {
   useHeightVar(headerRef, "--header-height");
   useHeightVar(toolsRef, "--tools-height", world.threads.length > 0);
 
-  useEffect(() => { if (!core.notice) setNoticeFocused(false); }, [core.notice]);
+  // A focused button that leaves the notice (Undo, once used, by key or by a click in Chrome) never says blur, which
+  // kept every later notice up for good: on each change, look where focus is now.
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setNoticeFocused(!!core.notice && !!noticeRef.current?.contains(document.activeElement)); }, [core.notice, core.undoId]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
@@ -826,6 +829,7 @@ export default function App() {
       <AnimatePresence>
         {core.notice && (
           <motion.div
+            ref={noticeRef}
             className="notice"
             onFocus={() => setNoticeFocused(true)}
             onBlur={() => setNoticeFocused(false)}

@@ -132,6 +132,11 @@ try {
   assert.equal(core.answerRevision, before + 2);
   const app = readFileSync(new URL("src/App.tsx", ui), "utf8");
   assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.answerRevision,/);
+  // A focused Undo that leaves the notice says no blur: the notice's focus is looked up again on every change, so
+  // later notices still time out (bug hunt 19; wiring).
+  assert.match(app, /useEffect\(\(\) => \{ setNoticeFocused\(!!core\.notice && !!noticeRef\.current\?\.contains\(document\.activeElement\)\); \}, \[core\.notice, core\.undoId\]\);/);
+  assert.match(app, /<motion\.div\s+ref=\{noticeRef\}\s+className="notice"/);
+
   // "Stop listening" said: the core sends the pause, then the stream's end, often taken in one render. The pause
   // effect runs first and stops the mic through the shared ref, so the stream-end effect after it in that render
   // finds the mic off: the answer is "Paused", not a sticky "The mic stopped" (bug hunt 12; wiring, as no check
