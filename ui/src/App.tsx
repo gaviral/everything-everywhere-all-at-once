@@ -37,13 +37,14 @@ import { isUndoKey, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor,
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { headClickToggles, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchMatches, steady } from "./search-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { downloadIcs, keyWords, modelsLine, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
+import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
 import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -545,23 +546,27 @@ export default function App() {
     previousThoughtGroups.current = grouped;
     return grouped;
   }, [world.thoughts]);
-  // Keep fields separate so a query cannot match across two different pieces of text.
-  const previousSearchIndex = useRef(new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>());
+  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
+  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
+  // Everything the card shows is found: title, tags, thoughts, ideas and reminders (searchFields), each a separate
+  // field so a query cannot match across two pieces of text. An entry is rebuilt only when its card's items change:
+  // groups are new arrays after any item changes, so they're compared item by item (a letter costs only the scan).
+  type SearchEntry = { thread: Thread; thoughts: Thought[] | undefined; ideas: Suggestion[] | undefined; actions: Action[] | undefined; fields: string[] };
+  const previousSearchIndex = useRef(new Map<string, SearchEntry>());
   const searchIndex = useMemo(() => {
-    const next = new Map<string, { thread: Thread; thoughts: Thought[] | undefined; fields: string[] }>();
+    const next = new Map<string, SearchEntry>();
+    const same = <T,>(a: T[] | undefined, b: T[] | undefined) => a === b || (!!a && !!b && a.length === b.length && a.every((item, i) => item === b[i]));
     const entries = world.threads.map((thread) => {
-      const thoughts = thoughtsByThread.get(thread.id);
+      const thoughts = thoughtsByThread.get(thread.id), ideas = ideasByThread.get(thread.id), actions = actionsByThread.get(thread.id);
       const previous = previousSearchIndex.current.get(thread.id);
-      const entry = previous?.thread === thread && previous.thoughts === thoughts ? previous : {
-        thread, thoughts,
-        fields: [thread.title, ...(thread.tags ?? []).map((tag) => tag.name), ...(thoughts ?? []).flatMap((thought) => [thought.text, thought.point])].map((text) => text.toLocaleLowerCase()),
-      };
+      const entry = previous?.thread === thread && previous.thoughts === thoughts && same(previous.ideas, ideas) && same(previous.actions, actions)
+        ? previous : { thread, thoughts, ideas, actions, fields: searchFields(thread, thoughts, ideas, actions) };
       next.set(thread.id, entry);
       return { id: thread.id, fields: entry.fields };
     });
     previousSearchIndex.current = next;
     return entries;
-  }, [world.threads, thoughtsByThread]);
+  }, [world.threads, thoughtsByThread, ideasByThread, actionsByThread]);
   // The box shows each letter at once; the map follows a moment later and gives way to the next letter
   // (useDeferredValue), so typing never waits on the cards. At 1,000 threads a letter used to freeze the page ≈ 1 s.
   const deferredQuery = useDeferredValue(query);
@@ -597,8 +602,6 @@ export default function App() {
     if (place) for (const group of grouped.values()) group.sort((a, b) => place.get(a.id)! - place.get(b.id)!);
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
-  const ideasByThread = useMemo(() => groupItems(world.suggestions), [world.suggestions]);
-  const actionsByThread = useMemo(() => groupItems(world.actions), [world.actions]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct, unlink: core.unlink }), [core.setItem, core.approve, core.tag, core.correct, core.unlink]);
 
   // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
@@ -664,7 +667,15 @@ export default function App() {
         if (goesTo === "app") core.undoLast();
         return;
       }
-      if (event.metaKey || event.ctrlKey || event.altKey || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (opensHelp({ key: event.key, field, modified: event.metaKey || event.ctrlKey || event.altKey })) {
+        // The list opens where its ? button is, with focus on it: Esc or ? again closes it there.
+        away.dismiss();
+        event.preventDefault();
+        setHelpOpen((open) => !open);
+        document.querySelector<HTMLElement>(".shortcuts summary")?.focus();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey || field) return;
       if (event.key === "/") { away.dismiss(); event.preventDefault(); searchRef.current?.focus(); }
       if ((event.key === "j" || event.key === "k") && !event.repeat) {
         const buttons = Array.from(mapRef.current?.querySelectorAll<HTMLButtonElement>(".thread-toggle:not(:disabled)") ?? []);
@@ -838,6 +849,8 @@ export default function App() {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
+      {/* The page's first stop: Tab, then Enter, and you're typing (it took 46 Tabs past the header and the map). */}
+      <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
       <header ref={headerRef}>
         <div className="brand">
           E2A2O <small>threads</small>
@@ -863,7 +876,8 @@ export default function App() {
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
-          <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
+          <div>? · opens or closes this list · Tab, then Enter · from the page's top, straight to typing</div>
+          <div>Map: / search · j / k move between threads · Enter show or hide · on a point · Enter or Space shows or hides the words you said · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
           <div>{undoKeyLabel(MAC)} · undoes your last turn, as “Scratch that” does, after its notice has gone too</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
           <div>Esc clears search or closes the room menu when focused there</div>
@@ -1015,6 +1029,7 @@ export default function App() {
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit}>
             <input
+              id={COMPOSER_ID}
               ref={composerRef}
               value={draft}
               onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
@@ -1345,7 +1360,8 @@ const Point = memo(function Point({ thought, heads, on, layoutDependency }: { th
     flip();
   } : undefined;
   return (
-    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}>
+    <motion.li id={`point-${thought.id}`} layoutDependency={layoutDependency} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
+      onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget, taken: event.defaultPrevented })) { event.preventDefault(); flip(); } } : undefined}>
       {other && <span className="speaker">{thought.speaker}</span>}
       {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
       {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
