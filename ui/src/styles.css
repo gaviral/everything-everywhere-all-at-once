@@ -55,11 +55,17 @@
   box-sizing: border-box;
 }
 
+/* ✦ marks what the AI made or proposed. No font in the stack has it, so each browser picked its own: Chrome drew it
+   from Zapf Dingbats, Safari from a face where it is about half the size (9 px wide against 12 at 15 px), easy to
+   miss. This face is that one character from Zapf Dingbats wherever the system has it (macOS, iOS); elsewhere the
+   stack below decides, as before. */
+@font-face { font-family: "AI Mark"; src: local("Zapf Dingbats"), local("ZapfDingbatsITC"); unicode-range: U+2726; }
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  font: 15px/1.45 "AI Mark", -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

@@ -20,4 +20,13 @@ assert.equal(theme("light"), light, "theme-color for light is the light --bg");
 assert.equal(theme("dark"), dark, "theme-color for dark is the dark --bg");
 assert.equal((html.match(/name="theme-color"/g) ?? []).length, 2, "no theme-color without a media query (it would win in both themes)");
 
-console.log("Safari checks passed: theme-color follows the theme.");
+// 2. ✦, the mark on everything the AI made: no font in the stack has it, and Safari's fallback drew it at about half the
+//    size Chrome's (Zapf Dingbats) did. The stack starts with a face for that one character, from Zapf Dingbats.
+const face = styles.match(/@font-face\s*{([^}]*)}/)?.[1] ?? "";
+const family = face.match(/font-family:\s*"([^"]+)"/)?.[1];
+assert.ok(family && /unicode-range:\s*U\+2726\s*;/i.test(face), "a face that covers only ✦ (U+2726)");
+assert.match(face, /src:\s*local\("Zapf Dingbats"\)/, "drawn from Zapf Dingbats, as Chrome draws it");
+const body = styles.match(/\nbody\s*{([^}]*)}/)?.[1] ?? "";
+assert.match(body, new RegExp(`font:[^;]*\\s"${family}",`), "the body's stack starts with it");
+
+console.log("Safari checks passed: theme-color follows the theme; ✦ is drawn from one face.");
