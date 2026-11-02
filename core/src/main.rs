@@ -286,6 +286,11 @@ impl Core {
         if filler(text, asked) {
             return;
         }
+        // "…the flight. Stop listening.": the words before it are kept as their own turn, then the mic stops.
+        if let Some((before, stop)) = spoken::stop_tail(text) {
+            self.add_turn(speaker, before, search);
+            return self.add_turn(speaker, stop, search);
+        }
         find::stop(self, speaker);
         catalog::newer(self, speaker);
         if let Some(done) = self.request(speaker, text, search) {
@@ -513,7 +518,7 @@ fn lead(text: &str, asking: bool) -> &str {
 }
 
 /// True when words that ask lead into `text`: partway through a turn, that's a question to someone.
-fn asks_someone(text: &str) -> bool {
+pub(crate) fn asks_someone(text: &str) -> bool {
     lead(text, true).len() < lead(text, false).len()
 }
 
@@ -605,7 +610,7 @@ fn opening(text: &str) -> Option<(Command, &str)> {
 /// Where a command may begin partway through a turn, or the words after one: a word after a punctuation
 /// mark, or a word that turns the talk ("okay", "anyway"). So "fly there and go back" and "that song would
 /// take me back" stay thoughts.
-fn starts(text: &str) -> Vec<usize> {
+pub(crate) fn starts(text: &str) -> Vec<usize> {
     const TURN: [&str; 11] = ["okay", "ok", "alright", "anyway", "anyways", "so", "wait", "hmm", "um", "uh", "oh"];
     let mut out = Vec::new();
     let mut in_word = false;

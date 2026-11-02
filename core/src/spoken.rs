@@ -3,7 +3,8 @@
 //! aside ("forget it"), open or fold a thread with all its branches ("expand the garden"), stop listening, and the
 //! demo's buttons by voice (add the proposed reminder, keep the app just built, Later on the unfinished card).
 //! By rule, with no model call, and only as the whole turn, as every request is: the same
-//! words inside a longer sentence are a thought, and so is anything a rule here can't place for sure.
+//! words inside a longer sentence are a thought, and so is anything a rule here can't place for sure. One exception:
+//! "stop listening" also ends a turn after a pause ("…the flight. Stop listening."), as "where was I?" may.
 
 use crate::catalog::{Act, Done, Undo};
 use crate::find;
@@ -131,8 +132,25 @@ pub fn is_stop_listening(text: &str) -> bool {
             "turn the mic off", "turn the microphone off", "mic off", "microphone off", "mute the mic", "mute the microphone",
             "pause the mic", "pause the microphone", "stop recording", "stop transcribing", "pause transcription", "stop transcription",
         ],
-        &["for now", "for a bit", "for a moment", "for a minute", "for a second", "now"],
+        &["for now", "for a bit", "for a moment", "for a minute", "for a second", "now", "thanks", "thank you", "for now thanks", "for now thank you"],
     )
+}
+
+/// A turn that ends in "stop listening" said after other words ("Call Mom about the flight. Stop listening."): the
+/// words before it, still a thought, and the stop. Only where a "where was I?" may end a turn (`command`): after a
+/// pause mark or a word that turns the talk, never asked of someone ("I loved it. Would you stop listening?"). The
+/// same words inside a sentence stay a thought ("I should stop listening to podcasts").
+pub fn stop_tail(text: &str) -> Option<(&str, &str)> {
+    if is_stop_listening(text) {
+        return None;
+    }
+    let at = crate::starts(text).into_iter().find(|&i| !crate::asks_someone(&text[i..]) && is_stop_listening(&text[i..]))?;
+    Some((text[..at].trim_end().trim_end_matches([',', ';', ':', '—', '–']).trim_end(), &text[at..]))
+}
+
+/// True when a turn stops the mic: the whole turn, or its end (`stop_tail`).
+pub fn stops_listening(text: &str) -> bool {
+    is_stop_listening(text) || stop_tail(text).is_some()
 }
 
 /// "What was I thinking?" when you've lost your thought: as "where was I?". Only the whole turn: at the end of a

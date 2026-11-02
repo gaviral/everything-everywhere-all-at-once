@@ -104,7 +104,7 @@ fn handle(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);
-                return crate::spoken::is_stop_listening(&words);
+                return crate::spoken::stops_listening(&words);
             }
         }
         Some("error") => {
@@ -174,5 +174,23 @@ mod tests {
         for same in ["Muse Spark places it", "iPhone battery is low", "eBay listing", "3 things to do", "", "\"quoted\" words"] {
             assert_eq!(sentence_case(same), same);
         }
+    }
+
+    /// "Stop listening" after other words in one turn (the transcriber joins them when the pause is short): the words
+    /// before it are a thought, the mic pauses and the stream ends, so nothing after it is heard.
+    #[test]
+    fn stop_listening_at_the_end_of_a_turn_keeps_the_words_before_it_and_ends_the_stream() {
+        let path = std::env::temp_dir().join(format!("e2a2o-asr-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, World::default()));
+        let mut updates = core.updates.subscribe();
+        let turn = |words: &str| serde_json::json!({"type": "speechComplete", "transcript": words}).to_string();
+        assert!(handle(&core, "you", &turn("call mom tomorrow about the flight. Stop listening.")));
+        let paused = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Pause }));
+        assert!(paused, "the mic pauses");
+        let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
+        assert_eq!(texts, ["Call mom tomorrow about the flight."]);
+        assert!(handle(&core, "you", &turn("That's all for today, okay, stop listening, thanks.")));
+        let _ = std::fs::remove_file(&path);
     }
 }

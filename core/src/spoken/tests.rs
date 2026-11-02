@@ -313,3 +313,21 @@ fn stop_listening_is_only_the_whole_turn() {
         assert!(!is_stop_listening(said), "{said}");
     }
 }
+
+#[test]
+fn stop_listening_ends_a_turn_only_after_a_pause() {
+    assert_eq!(stop_tail("Call mom tomorrow about the flight. Stop listening."), Some(("Call mom tomorrow about the flight.", "Stop listening.")));
+    assert_eq!(stop_tail("The deposit is due Friday, okay stop listening"), Some(("The deposit is due Friday", "okay stop listening")));
+    assert_eq!(stop_tail("Rent is due. Mic off, thanks."), Some(("Rent is due.", "Mic off, thanks.")));
+    assert!(is_stop_listening("Stop listening, thank you."));
+    for said in [
+        "Stop listening",
+        "I should stop listening to podcasts at night",
+        "We loved the band. Would you stop listening to them?",
+        "I loved it. Could you stop listening?",
+        "Okay, so I want to stop listening to the news.",
+    ] {
+        assert_eq!(stop_tail(said), None, "{said}");
+    }
+    assert!(stops_listening("Rent is due. Stop listening.") && stops_listening("Stop listening") && !stops_listening("Stop listening to him"));
+}
