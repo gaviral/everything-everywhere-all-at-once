@@ -100,7 +100,7 @@ pub(crate) fn note(head: Option<&Thought>, assumed: &str, why: &str, moved: bool
 }
 
 /// The "why here" worth showing: none for a new topic (its own thread is the answer; the model's reason there was
-/// "new topic not rent birthday pottery"), and none that names a thread by id ("matches T9 landing", 1 of 31 on
+/// "new topic not rent birthday pottery"), and none that names a thread by id ("matches T9 landing", 4 of 30 on
 /// 2026-11-01): ids mean nothing to the person.
 pub(crate) fn why_here(why: &str, changes: &[Change]) -> String {
     let top = changes.iter().any(|c| matches!(c, Change::ThreadAdded { thread } if thread.parent_id.is_none()));
