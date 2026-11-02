@@ -85,7 +85,7 @@ pub fn contacts(list: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The shortest countdown: User's "auto sends it in 5 seconds unless I say something". It is what the demo's message
+/// The shortest countdown: it sends in 5 seconds unless you say something. It is what the demo's message
 /// needs, worked back from the person: "Hi Mia, could you confirm what to bring?" is 8 words, 2.7 s for a slow reader
 /// (`SLOW_WPM`), then 1.35 s to decide (`DECIDE_MS`) and 0.9 s for "stop" to reach the core (0.4 s to say it, the
 /// speech service's draft words ≈ 0.3 s behind the audio, asr.rs, ≈ 0.2 s there and back): 4.95 s.
