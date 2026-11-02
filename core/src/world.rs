@@ -202,13 +202,23 @@ pub enum Change {
     ThreadPicture { thread_id: String, path: String },
     /// "Did you mean …?" answered: yes swaps the unclear words for the guess, no keeps them; either way the question goes.
     /// No to a fix made without asking puts the words back as heard.
-    ThoughtCorrected { thought_id: String, accept: bool },
+    ThoughtCorrected {
+        thought_id: String,
+        accept: bool,
+        /// A yes in the person's own words ("No, Muse Spark"): these replace the unclear words instead of the guess.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        with: String,
+    },
     /// A turn that moved on to another topic partway: the thought keeps the words before (`text`),
     /// and `rest`, placed next, takes the others.
     ThoughtSplit { thought_id: String, text: String, rest: Thought },
     /// The placer found nothing to place ("yeah" when nothing was asked): the thought leaves the map
     /// and the world; this journal keeps its words.
     ThoughtSkipped { thought_id: String },
+    /// An empty thread taken back with the words that started it, with nowhere to merge it (catalog.rs: "new thread
+    /// about …" on an empty map, then Undo): it leaves the map, and nobody is on it any more. Only while it holds no
+    /// thought and no branch; this journal keeps it.
+    ThreadRemoved { thread_id: String },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
     ExplainAnswered {
@@ -293,6 +303,17 @@ impl World {
                 }
             }
             Change::ThoughtSkipped { thought_id } => self.thoughts.retain(|t| &t.id != thought_id),
+            Change::ThreadRemoved { thread_id } => {
+                let held = self.thoughts.iter().any(|t| t.thread_id.as_ref() == Some(thread_id))
+                    || self.threads.iter().any(|t| t.parent_id.as_ref() == Some(thread_id));
+                if !held {
+                    self.threads.retain(|t| &t.id != thread_id);
+                    if self.active.as_ref() == Some(thread_id) {
+                        self.active = None;
+                    }
+                    self.active_by.retain(|_, id| id != thread_id);
+                }
+            }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
             Change::MessagesRead { at_ms, keys } => {
                 self.read_ms.extend(at_ms);
@@ -344,7 +365,7 @@ impl World {
                 }
             }
             Change::ThreadMerged { from, into } => self.merge(from, into),
-            Change::ThoughtCorrected { thought_id, accept } => self.correct(thought_id, *accept),
+            Change::ThoughtCorrected { thought_id, accept, with } => self.correct(thought_id, *accept, with),
             Change::SuggestionAdded { suggestion } => {
                 if !self.suggestions.iter().any(|s| s.id == suggestion.id) {
                     self.suggestions.push(suggestion.clone());
@@ -419,12 +440,13 @@ impl World {
     }
 
     /// A "Did you mean …?" answered: see `Change::ThoughtCorrected`.
-    fn correct(&mut self, thought_id: &str, accept: bool) {
+    fn correct(&mut self, thought_id: &str, accept: bool, with: &str) {
         let Some(t) = self.thoughts.iter_mut().find(|t| t.id == thought_id) else { return };
         let (old_point, thread_id) = (t.point.clone(), t.thread_id.clone());
-        if accept && !t.unclear.is_empty() && !t.guess.is_empty() {
-            t.text = swap(&t.text, &t.unclear, &t.guess);
-            t.point = swap(&t.point, &t.unclear, &t.guess);
+        let to = if with.is_empty() { t.guess.clone() } else { with.to_string() };
+        if accept && !t.unclear.is_empty() && !to.is_empty() {
+            t.text = swap(&t.text, &t.unclear, &to);
+            t.point = swap(&t.point, &t.unclear, &to);
         }
         if !accept && !t.heard.is_empty() && !t.fixed.is_empty() {
             t.text = swap(&t.text, &t.fixed, &t.heard);
@@ -711,8 +733,8 @@ mod tests {
             place_ms: None,
         };
         let mut world = World { thoughts: vec![thought("a"), thought("b")], ..World::default() };
-        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true });
-        world.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: false });
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() });
+        world.apply(&Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() });
         assert_eq!(world.thoughts[0].text, "ask Muse Spark about it");
         assert_eq!(world.thoughts[0].point, "Ask Muse Spark");
         assert_eq!(world.thoughts[1].text, "ask muse bark about it");
@@ -743,7 +765,7 @@ mod tests {
         world.apply(&serde_json::from_str(lines[2]).unwrap());
         assert_eq!(world.thoughts[0].text, "Muse Spark is fast");
 
-        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false });
+        world.apply(&Change::ThoughtCorrected { thought_id: "a".into(), accept: false, with: String::new() });
         let undone = &world.thoughts[0];
         assert_eq!((undone.text.as_str(), undone.point.as_str()), ("Muse Bark is fast", "Muse Bark is fast"));
         assert!(undone.heard.is_empty() && undone.fixed.is_empty());
@@ -987,11 +1009,12 @@ mod tests {
                 },
             },
             Change::ItemStatus { id: "ac-1".into(), status: super::ItemStatus::Done, done_ms: Some(300) },
-            Change::ThoughtCorrected { thought_id: "a".into(), accept: true },
-            Change::ThoughtCorrected { thought_id: "b".into(), accept: false },
+            Change::ThoughtCorrected { thought_id: "a".into(), accept: true, with: String::new() },
+            Change::ThoughtCorrected { thought_id: "b".into(), accept: false, with: String::new() },
             Change::ThoughtAdded { thought: test_thought("c", "User", "T1") },
             Change::ThoughtSplit { thought_id: "c".into(), text: "ask muse bark".into(), rest: test_thought("d", "User", "T1") },
             Change::ThoughtSkipped { thought_id: "d".into() },
+            Change::ThreadRemoved { thread_id: "T9".into() },
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
             // Kept for judging answers; replaying them changes nothing on the map.
@@ -1056,6 +1079,7 @@ mod tests {
                 | Change::ThoughtCorrected { .. }
                 | Change::ThoughtSplit { .. }
                 | Change::ThoughtSkipped { .. }
+                | Change::ThreadRemoved { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
@@ -1069,7 +1093,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 28, "one of each kind of change");
+        assert_eq!(kinds.len(), 29, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

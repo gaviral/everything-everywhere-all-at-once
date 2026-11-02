@@ -20,6 +20,8 @@ import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
+import { UndoButton } from "./Undo";
+import { useRevert } from "./revert";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
 import { composerHint, MicButton, micState } from "./MicButton";
@@ -65,7 +67,7 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [view, setView] = useState<"map" | "palace">("map");
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
-  const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal });
+  const attention = useAttention({ world, revision: core.snapshotRevision, me, view, covered: !!core.recap.view, words: core.partial || core.handoff || "", reveal, attending: core.attending });
   const away = useAway(world, me, core.snapshotRevision > 0);
   const hasAway = away.items.length > 0;
   useEffect(() => { if (core.found) away.dismiss(); }, [core.found, away.dismiss]);
@@ -95,6 +97,14 @@ export default function App() {
     } else restoreMap.current = true;
     setView(next);
   };
+  // "Scratch that" after a view or fold said aloud: what this window showed before it (revert.ts).
+  const keepShown = useRevert(core.revertAsk, () => ({ view, focusMode, query, expanded, kept: [...keptOpen.current] }), (shown) => {
+    showView(shown.view);
+    setFocusMode(shown.focusMode);
+    setQuery(shown.query);
+    setExpanded(shown.expanded);
+    keptOpen.current = new Set(shown.kept);
+  });
   useLayoutEffect(() => {
     if (view !== "map" || !restoreMap.current) return;
     restoreMap.current = false;
@@ -110,6 +120,7 @@ export default function App() {
     // The unfinished card's buttons and the mic, said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
     if (asked === "help") { setHelpOpen(true); return; }
+    keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
     else setView("map");
@@ -511,6 +522,7 @@ export default function App() {
   useEffect(() => {
     const ask = core.unfoldAsk;
     if (!ask) return;
+    keepShown();
     let id = ask.thread_id;
     for (let hops = Object.keys(world.merged).length; id && hops > 0 && world.merged[id]; hops--) id = world.merged[id];
     if (id && !world.threads.some((thread) => thread.id === id)) return;
@@ -764,6 +776,7 @@ export default function App() {
           <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
+          <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
           <div>Map: / search · j / k move between threads · Enter show or hide · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
           <div>Palace: arrow keys move · Enter open a thread</div>
@@ -794,6 +807,7 @@ export default function App() {
             exit={{ opacity: 0 }}
           >
             <span>{friendlyNotice}</span>
+            <UndoButton id={core.undoId} onUndo={core.undo} />
             <button onClick={core.clearNotice} aria-label="Dismiss notice">×</button>
           </motion.div>
         )}
@@ -877,7 +891,7 @@ export default function App() {
           {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
           <AttentionNote onGo={attention.go} />
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
-          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}{world.active && <ThisEcho title={threadById.get(world.active)?.title ?? ""} />}</span></div>}
+          {(core.partial || core.handoff || (!pending.length && (core.listening || startingMic))) && <div className={core.partial || core.handoff ? "live words" : "live"}><span>{core.partial || core.handoff || (startingMic ? "Starting the microphone…" : "Listening…")}<ThisEcho /></span></div>}
           <div className="pending">
             {pending.map((t) => (
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} reducedMotion={!!reducedMotion} />

@@ -5,6 +5,7 @@ import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeri
 import { coreBack } from "./pictures";
 import { openSocket } from "./room";
 import type { Found } from "./find";
+import { attentionTeller, watchAttention } from "./this-card";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -129,9 +130,10 @@ type Change =
       complete: boolean;
       place_ms: number;
     }
-  | { type: "thought_corrected"; thought_id: string; accept: boolean }
+  | { type: "thought_corrected"; thought_id: string; accept: boolean; with?: string }
   | { type: "thought_split"; thought_id: string; text: string; rest: Thought }
   | { type: "thought_skipped"; thought_id: string }
+  | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
@@ -156,6 +158,8 @@ type ServerMsg =
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
+  | { type: "undoable"; id: number }
+  | { type: "revert" }
   | { type: "found"; thread_id: string; thought_id: string | null; message: string }
   | { type: "view"; view: ViewAsk["view"] }
   | { type: "unfold"; thread_id: string | null; open: boolean }
@@ -313,6 +317,16 @@ export function apply(world: World, raw: Change): World {
     }
     case "thought_skipped":
       return { ...world, thoughts: world.thoughts.filter((t) => t.id !== c.thought_id) };
+    case "thread_removed": {
+      // As the core: only an empty thread, and nobody stays on it.
+      if (world.thoughts.some((t) => t.thread_id === c.thread_id) || world.threads.some((t) => t.parent_id === c.thread_id)) return world;
+      return {
+        ...world,
+        threads: world.threads.filter((t) => t.id !== c.thread_id),
+        active: world.active === c.thread_id ? null : world.active,
+        active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
+      };
+    }
     case "thread_added":
       return world.threads.some((t) => t.id === c.thread.id)
         ? world
@@ -359,7 +373,9 @@ export function apply(world: World, raw: Change): World {
       if (!t) return world;
       const undo = !c.accept && !!t.heard && !!t.fixed;
       const correct = (text: string) => {
-        if (c.accept && t.unclear && t.guess) return swap(text, t.unclear, t.guess);
+        // A yes in your own words ("No, Muse Spark") puts those in instead of the guess.
+        const to = c.with || t.guess;
+        if (c.accept && t.unclear && to) return swap(text, t.unclear, to);
         if (!c.accept && t.heard && t.fixed) return swap(text, t.fixed, t.heard);
         return text;
       };
@@ -429,6 +445,12 @@ export function useCore(speaker?: string) {
   const [voiceStatusRevision, setVoiceStatusRevision] = useState(0);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState("");
+  // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
+  const [undoId, setUndoId] = useState<number | null>(null);
+  // Bumped by the core's "revert": put back the view and folds from before the last voice ask (revert.ts).
+  const [revertAsk, setRevertAsk] = useState(0);
+  // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
+  const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
   const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
@@ -464,6 +486,7 @@ export function useCore(speaker?: string) {
         retry = 500;
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         for (const message of outbox.current.splice(0)) ws.send(message);
+        attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
       };
@@ -494,7 +517,9 @@ export function useCore(speaker?: string) {
             } else if (change.type === "thread_merged") {
               const from = currentWorld.threads.find((thread) => thread.id === change.from);
               const into = currentWorld.threads.find((thread) => thread.id === change.into);
-              if (from && into) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
+              // An empty thread going (words you took back that had started it) isn't a merge to announce.
+              const held = currentWorld.thoughts.some((thought) => thought.thread_id === change.from);
+              if (from && into && held) setMapChange({ id: ++changeId, text: `AI merged “${from.title}” into “${into.title}”` });
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -532,6 +557,14 @@ export function useCore(speaker?: string) {
           case "notice":
             if (msg.message.includes("MODEL_API_KEY")) setKeyNotice(msg.message);
             setNotice((shown) => msg.message || (shown === LOOKING ? "" : shown));
+            // A newer answer: the Undo shown was for the one before.
+            if (msg.message) setUndoId(null);
+            break;
+          case "undoable":
+            setUndoId(msg.id);
+            break;
+          case "revert":
+            setRevertAsk((n) => n + 1);
             break;
           case "placing":
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
@@ -539,6 +572,7 @@ export function useCore(speaker?: string) {
           case "found":
             setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
             setNotice(msg.message);
+            setUndoId(null);
             break;
           case "view":
             setViewAsk((previous) => ({ view: msg.view, revision: (previous?.revision ?? 0) + 1 }));
@@ -590,6 +624,8 @@ export function useCore(speaker?: string) {
   }, [send]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
+  // "This" for spoken requests: the card you selected or point at (this-card.ts).
+  useEffect(() => watchAttention((selected, pointed) => attention.current.tell(selected, pointed, send)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
   const tag = useCallback((thread_id: string, tag: string, keep: boolean) => sendOrWarn(JSON.stringify({ type: "tag", thread_id, tag, keep })), [sendOrWarn]);
   const volume = useMemo(() => volumeReporter((level) => { if (send(JSON.stringify({ type: "app_volume", level }))) received(level); }), [send]);
@@ -630,6 +666,11 @@ export function useCore(speaker?: string) {
     queuedCount,
     placing,
     clearNotice: useCallback(() => setNotice(""), []),
+    undoId,
+    revertAsk,
+    // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
+    attending: attention.current,
+    undo: (id: number) => { setUndoId(null); send(JSON.stringify({ type: "undo", id })); },
     showNotice: (message: string) => setNotice(message),
     sendText: (text: string) => {
       if (isDefaultRecap(text)) { requestRecap(); return true; }

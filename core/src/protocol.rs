@@ -20,6 +20,12 @@ pub enum ServerMsg {
     /// A gentle note, e.g. "Back to Pay rent". An empty one takes down a search's "Looking through your threads…",
     /// which stays until its answer: something newer stopped the search.
     Notice { message: String },
+    /// The notice just sent answers a request that can be taken back: the window shows Undo beside it, which sends
+    /// this id back (catalog.rs).
+    Undoable { id: u64 },
+    /// Undo of a view or a fold asked by voice: the window puts back what it showed before that ask (its view, Focus,
+    /// and which threads were open), which only it knows (catalog.rs).
+    Revert,
     /// A private jump to an existing answer; not replayed when a journal opens.
     Found { thread_id: String, thought_id: Option<String>, message: String },
     /// A view asked for by voice ("palace", "show the map", "let's focus", "what can I say?"); only to the speaker's windows.
@@ -98,6 +104,16 @@ pub enum ClientMsg {
     Tag { thread_id: String, tag: String, keep: bool },
     /// Answer a "Did you mean …?": take the guess, or keep the words as heard.
     Correct { thought_id: String, accept: bool },
+    /// What "this" means here: the thread the person selected (keyboard focus they moved there, or words selected
+    /// in it) and the one under their pointer, sent when either changes (catalog.rs `this`).
+    Attention {
+        #[serde(default)]
+        selected: Option<String>,
+        #[serde(default)]
+        pointed: Option<String>,
+    },
+    /// The Undo button on a notice: take back the request it was shown for (catalog.rs).
+    Undo { id: u64 },
     /// The person came back to the window: a good moment to tidy the map.
     Visible,
     /// Start importing a file the core has read (POST /import returned its id), as this window's speaker.

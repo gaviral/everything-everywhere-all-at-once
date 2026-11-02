@@ -88,26 +88,62 @@ export function newestSaid(thoughts: { id: string; speaker: string; at_ms: numbe
 }
 
 // "This" as the core reads a spoken command (core/src/spoken.rs `unfold`, main.rs `lead_in` and the focus view): the
-// words that lead in, then "expand", "unfold" or "collapse" with only a pointing word after it, or "focus on this".
-// The whole turn must be the command: "collapse this weekend" names a thread titled "This weekend", and "open this",
-// "hide it" or "this is so exciting" aren't commands the core acts on, so none shows "this".
+// words that lead in, then "expand", "unfold" or "collapse" with only a pointing word after it, any open or fold verb
+// with everything under a pointing word ("open everything under it"), or "focus on this". The whole turn must be the
+// command: "collapse this weekend" names a thread titled "This weekend", and "open this", "hide it" or "this is so
+// exciting" aren't commands the core acts on, so none shows "this".
 const LEADS = ["um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "ahh", "eh", "hmm", "hm", "hmmm", "mm", "mmm", "oh", "so", "well",
   "and", "but", "anyway", "anyways", "wait", "actually", "basically", "hold on", "let me think", "let me see", "let s see",
   "yeah", "yep", "yup", "okay", "ok", "alright", "all right", "right", "sure", "mhm", "mm hmm", "uh huh", "cool", "got it",
   "now", "hey", "please", "can you", "could you", "would you", "will you"];
 const TAILS = ["please", "for me", "now"];
-const THIS = "(?:this|this one|this thread|this card|it|that|that one|that thread|here|it all)";
-const COMMAND = new RegExp(`^(?:(?:(?:can we|could we|let s|lets|let us) )?(?:expand|unfold|collapse) ${THIS}|focus on this(?: thread| one)?(?: mode)?)$`);
+// spoken.rs `unfold` word for word: its own leads, its verbs (longest first), its pointing words, its "everything"
+// words in its order (the first that fits counts) and the words that link them.
+const UNFOLD_LEADS = ["can we ", "could we ", "let s ", "lets ", "let us "];
+const VERBS = ["expand", "unfold", "open up", "show me", "open", "show", "collapse", "fold up", "fold", "close", "hide"];
+const STRONG = ["expand", "unfold", "collapse"];
+const POINTING = ["this", "this one", "this thread", "this card", "it", "that", "that one", "that thread", "here", "it all"];
+const EVERYTHING = ["everything", "all of the sub cards", "all the sub cards", "all the subcards", "all sub cards", "all the cards",
+  "all the branches", "all the threads", "all threads", "all cards", "all branches", "every card", "every thread", "the sub cards",
+  "the subcards", "the branches", "all of it", "all of", "all"];
+const UNDER = ["inside of", "inside", "under", "within", "in", "of", "on"];
+const FOCUS = /^focus on this(?: thread| one)?(?: mode)?$/;
 
-/** Whether the words being said are a command the core will act on "this" with: the thread you're on. */
-export function pointsAtThis(words: string): boolean {
+/** Whether spoken.rs `unfold` reads the whole turn as opening or folding "this" (`Target::This`): a strong verb and a
+ *  pointing word ("collapse that one"), or any verb with everything under one ("open everything under it"). A bare
+ *  verb acts on "this" too, but nothing in it points, so it shows nothing. */
+function unfoldsThis(said: string): boolean {
+  let l = said;
+  for (const lead of UNFOLD_LEADS) if (l.startsWith(lead)) l = l.slice(lead.length);
+  const verb = VERBS.find((v) => l === v || l.startsWith(`${v} `));
+  if (!verb) return false;
+  const rest = l.slice(verb.length).trim();
+  if (POINTING.includes(rest)) return STRONG.includes(verb);
+  // "Open all of it" is every thread: "all of it" fits before "all of".
+  const all = EVERYTHING.find((a) => rest === a || rest.startsWith(`${a} `));
+  if (!all) return false;
+  const after = rest.slice(all.length).trim();
+  const link = UNDER.find((p) => after.startsWith(`${p} `));
+  return POINTING.includes(link ? after.slice(link.length + 1) : all === "all of" ? after : "");
+}
+
+/** What the words being said point "this" at, when they're a whole command the core acts on "this" with: "card" to
+ *  open or fold (the card you selected or point at, else your active thread: this-card.ts `resolveThis`), "active"
+ *  for focus (always the thread you're on), else null. */
+export function thisKind(words: string): "card" | "active" | null {
   let said = words.toLowerCase().replace(/['’]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
   for (let again = true; again;) {
     again = false;
     for (const lead of LEADS) if (said.startsWith(`${lead} `)) { said = said.slice(lead.length + 1); again = true; }
     for (const tail of TAILS) if (said.endsWith(` ${tail}`)) { said = said.slice(0, -tail.length - 1); again = true; }
   }
-  return COMMAND.test(said);
+  if (FOCUS.test(said)) return "active";
+  return unfoldsThis(said) ? "card" : null;
+}
+
+/** Whether the words being said are a command the core will act on "this" with. */
+export function pointsAtThis(words: string): boolean {
+  return thisKind(words) !== null;
 }
 
 /** Which way to look for something off screen, given its top and bottom against the map's visible band. */

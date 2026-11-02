@@ -8,7 +8,7 @@ import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 const server = await createServer({ root: new URL("../ui", import.meta.url).pathname,
   server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom" });
 try {
-  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, direction } = await server.ssrLoadModule("/src/attention-core.ts");
+  const { readMs, LOOK_MS, READ_WPM, changes, carry, newestOwn, newestSaid, pointsAtThis, thisKind, direction } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Reading time: one look over, then the words at 238 a minute. Never a fixed clock.
   assert.equal(readMs(""), LOOK_MS);
@@ -61,6 +61,17 @@ try {
   for (const said of ["Okay, this is actually working! This is so exciting", "Rent is due Friday", "Show me the garden", "this weekend I'll fix it",
     "It's due Friday", "collapse this weekend", "Expand this thread about rent", "Hide it", "Let's open this card", "move this thread up", "Collapse", "Let's focus on this"])
     assert.ok(!pointsAtThis(said), said);
+  // Which card: opening or folding takes the card you selected or point at (this-card.ts `resolveThis`, as catalog.rs
+  // picks it); focus is always the thread you're on.
+  for (const said of ["Collapse this", "Um, so, can you unfold it please?", "Let's collapse this card"]) assert.equal(thisKind(said), "card", said);
+  for (const said of ["focus on this", "Focus on this thread"]) assert.equal(thisKind(said), "active", said);
+  // Everything under a pointing word is "this" too, with any open or fold verb (spoken.rs `unfold`, catalog); the first
+  // "everything" phrase that fits decides, so "open all of it" is every thread, and "on the map" names no card.
+  for (const said of ["Open everything under it", "Hide everything inside of it", "Open all of this", "Show me all the branches of that one",
+    "Can we expand everything in this thread"])
+    assert.equal(thisKind(said), "card", said);
+  for (const said of ["Open all of it", "Show me everything on the map", "Expand everything", "Open everything under the garden", "Open all this"])
+    assert.equal(thisKind(said), null, said);
 
   // Which way to look for a held-back landing.
   const band = { top: 100, bottom: 700 };

@@ -3,7 +3,8 @@
 // card a spoken "this" acts on. App.tsx feeds it the world and tells it what the map showed or held back.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Landing, World } from "./core";
-import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, pointsAtThis, readMs, type Unseen } from "./attention-core";
+import { carry, changes, direction, LOOK_MS, newestOwn, newestSaid, readMs, thisKind, type Unseen } from "./attention-core";
+import { POINTER_MS, resolveThis, type AttentionTeller } from "./this-card";
 import "./attention.css";
 
 /** The visible band of the map: under the header and tools, above the dock. */
@@ -98,19 +99,23 @@ type Value = {
   latest: string | null;
   unseen: Map<string, Unseen>;
   thisThread: string | null;
+  /** Its title, for the live line's "· this: …". */
+  thisTitle: string;
   note: Note | null;
   /** Placed thoughts already on the map before this render: a point not among them is arriving. */
   known: { current: Set<string> | null };
 };
 
-const Context = createContext<Value>({ latest: null, unseen: new Map(), thisThread: null, note: null, known: { current: null } });
+const Context = createContext<Value>({ latest: null, unseen: new Map(), thisThread: null, thisTitle: "", note: null, known: { current: null } });
 
 /** The attention state for the map, from the world as it changes. */
-export function useAttention({ world, revision, me, view, covered: sheet, words, reveal }: {
+export function useAttention({ world, revision, me, view, covered: sheet, words, reveal, attending }: {
   world: World; revision: number; me: string; view: string;
   /** A sheet is over the map (Recap): the checks run again when it goes. */
   covered: boolean;
   words: string;
+  /** Where your attention is, as told to the core (core.ts, this-card.ts): what a spoken "this" picks from. */
+  attending: Pick<AttentionTeller, "attending" | "watch">;
   reveal: (thread: string, thought: string | null) => void;
 }) {
   const [latest, setLatest] = useState<string | null>(null);
@@ -140,6 +145,9 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
     }
     const mine = newestOwn(placed.filter((t) => !wasPlaced.has(t.id)), me);
     if (mine) setLatest(mine);
+    // Words taken back ("scratch that", catalog.rs) take their point off the map: the mark goes to your newest still on
+    // it, as after a reconnect.
+    else setLatest((now) => (now && !placed.some((t) => t.id === now) ? newestSaid(placed, me, Date.now()) : now));
     // A change already in view when it happens is seen happening; only what changed out of sight is marked. A
     // proposal in a folded thread already says "N to review" there: one cue per change.
     const folded = (c: Unseen) => c.element.startsWith("item-") && !!document.getElementById(`thread-${c.thread}`)?.classList.contains("collapsed");
@@ -225,8 +233,28 @@ export function useAttention({ world, revision, me, view, covered: sheet, words,
   const titleOf = (thread: string) => world.threads.find((t) => t.id === thread)?.title ?? "";
   const titles = useRef(titleOf);
   titles.current = titleOf;
-  const thisThread = pointsAtThis(words) ? world.active : null;
-  const value = useMemo<Value>(() => ({ latest, unseen: new Map(unseen.map((m) => [m.thread, m])), thisThread, note, known }), [latest, unseen, thisThread, note]);
+  // "This" as the core will pick it when the command arrives: focus is always your active thread; opening or folding
+  // takes the card you selected, else the one under the pointer, else the one it left within POINTER_MS, else your
+  // active thread (this-card.ts `resolveThis`). While the words point at a card, a change in what's selected or pointed
+  // at, or the card the pointer left running out of time, moves the mark with it.
+  const pointing = thisKind(words);
+  const [, moved] = useState(0);
+  useEffect(() => {
+    if (pointing !== "card") return;
+    let timer = 0;
+    const expire = () => {
+      window.clearTimeout(timer);
+      const left = attending.attending().left;
+      const wait = left ? left.at + POINTER_MS - Date.now() : -1;
+      if (wait >= 0) timer = window.setTimeout(() => moved((n) => n + 1), wait + 1);
+    };
+    const stop = attending.watch(() => { moved((n) => n + 1); expire(); });
+    expire();
+    return () => { stop(); window.clearTimeout(timer); };
+  }, [pointing, attending]);
+  const thisThread = pointing === "active" ? world.active : pointing === "card" ? resolveThis(attending.attending(), world, world.active, Date.now()) : null;
+  const thisTitle = (thisThread && world.threads.find((t) => t.id === thisThread)?.title) || "";
+  const value = useMemo<Value>(() => ({ latest, unseen: new Map(unseen.map((m) => [m.thread, m])), thisThread, thisTitle, note, known }), [latest, unseen, thisThread, thisTitle, note]);
   return {
     value,
     /** The map showed your landing: highlight it; any note is done. */
@@ -266,8 +294,9 @@ export function ThisTag({ thread }: { thread: string }) {
 }
 
 /** After the live words: what "this" will act on, as the words point at it. */
-export function ThisEcho({ title }: { title: string }) {
-  return useContext(Context).thisThread ? <span className="this-echo"> · this: {title}</span> : null;
+export function ThisEcho() {
+  const { thisThread, thisTitle } = useContext(Context);
+  return thisThread ? <span className="this-echo"> · this: {thisTitle}</span> : null;
 }
 
 /** In the dock: where your held-back landing went. */
