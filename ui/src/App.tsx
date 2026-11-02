@@ -897,6 +897,7 @@ export default function App() {
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),
+    position: core.position,
   });
   const bricksOn = useBricksOn();
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));

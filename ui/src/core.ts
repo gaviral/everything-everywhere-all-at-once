@@ -18,7 +18,7 @@ import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
-import { applyPosition, keepPlaced, type Position, type PositionChange } from "./positions-core";
+import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -923,6 +923,7 @@ export function useCore(speaker?: string) {
     socket.current.send(data);
     return true;
   }, []);
+  const placeAt = useMemo(() => placeSender((data) => send(data)), [send]);
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
     setNotice("Not connected — try again when connected.");
@@ -1014,6 +1015,9 @@ export function useCore(speaker?: string) {
     // A brick's `select` (bricks/contract.ts): that thread is "this", as a card selected on the map would be, until your
     // attention moves again.
     select: useCallback((thread_id: string | null) => attention.current.tell(thread_id, null, send), [send]),
+    // A brick's `position` (bricks/contract.ts): a card or a point put somewhere on the canvas, for every window; a
+    // drag's steps go at most once a frame, its last one on the drop (positions-core.ts `placeSender`).
+    position: placeAt,
     // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
     undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
