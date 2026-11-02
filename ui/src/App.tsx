@@ -21,6 +21,7 @@ import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump } from "./find";
 import { UndoButton } from "./Undo";
+import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
 import { useRevert } from "./revert";
 import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
 import { intoColumns, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
@@ -607,16 +608,16 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [firstHint]);
 
-  const [mapChangeVisible, setMapChangeVisible] = useState(false);
   const [mapAnnouncement, setMapAnnouncement] = useState("");
+  const { mapChange, hideMapChange } = core;
   useEffect(() => {
-    if (!core.mapChange) return;
-    setMapChangeVisible(true);
+    if (!mapChange) return;
     setMapAnnouncement("");
-    const announcement = window.setTimeout(() => setMapAnnouncement(core.mapChange!.text), 700);
-    const timer = window.setTimeout(() => setMapChangeVisible(false), 10000);
+    const announcement = window.setTimeout(() => setMapAnnouncement(mapChange.text), 700);
+    // Hidden in the core's state, so a later rename doesn't join a note no longer up (tidy-core.ts `joinNotes`).
+    const timer = window.setTimeout(hideMapChange, 10000);
     return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
-  }, [core.mapChange]);
+  }, [mapChange, hideMapChange]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread (unfinished.ts).
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -797,8 +798,12 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {core.mapChange && mapChangeVisible && (
-        <div className="map-change"><span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span> {core.mapChange.text}<button onClick={() => setMapChangeVisible(false)} aria-label="Dismiss map update">×</button></div>
+      {core.mapChange && (
+        <div className="map-change">
+          {core.mapChange.ai && <span aria-hidden="true" data-tip={TIPS.mapChange}>✦</span>} {core.mapChange.text}
+          {core.mapChange.undo && <button className="undo" onClick={() => { core.untidy(core.mapChange!.undo!); core.hideMapChange(); }}>Undo</button>}
+          <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
+        </div>
       )}
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -829,7 +834,9 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
           </div>
         ) : (
+          <TidyProvider world={world} decide={core.tidy}>
           <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} matches={matches} searching={!!search} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </TidyProvider>
         )}
       </main>}
 
@@ -1060,7 +1067,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
   const thoughts = thoughtsByThread.get(thread.id) ?? [];
   const ideas = ideasByThread.get(thread.id) ?? [];
   const actions = actionsByThread.get(thread.id) ?? [];
-  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length;
+  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length + useWaitingProposals(thread.id);
   const branches = childrenByParent.get(thread.id) ?? [];
   const isActive = active === thread.id;
   const collapsed = searching && matches.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
@@ -1142,6 +1149,7 @@ function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, t
           )}
         </motion.div>
       ))}
+      <ProposalRows thread={thread.id} />
       {actions.map((a) => (
         <ActionRow key={a.id} action={a} on={on} />
       ))}
