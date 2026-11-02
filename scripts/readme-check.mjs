@@ -122,4 +122,18 @@ assert.ok(ex[0].sent.last.length <= KEEP + 1 && ex[0].answer.length <= KEEP + 1,
 assert.deepEqual(ex[2].answer, { images: 1 });
 assert.equal(shorten(lines[3]).error, "timed out");
 
+// Nothing acts unasked (core/src/apps.rs `starts_on`): only Search-first starts on, and only in demo mode, so the
+// docs a judge reads must not say the Argument resolver or the Volume watcher run before they're switched on. Change
+// the rule and this fails until the docs say the new one.
+const rule = read("core/src/apps.rs").match(/^pub fn starts_on\([^)]*\) -> bool \{(.*)\}$/m);
+assert.ok(rule, "core/src/apps.rs has no starts_on");
+assert.equal(rule[1].trim(), "demo && matches!(watcher, Watcher::AppRequest {})", "seed defaults changed: update the docs below, then this line");
+for (const [doc, text] of [["README.md", readme], ["docs/trace.md", trace]]) {
+  assert.ok(!/seed[^.]*on by default|on by default[^.]*seed/i.test(text), `${doc} says seed apps are on by default`);
+  for (const sentence of text.split(/(?<=\.)\s+/).filter((t) => /Argument resolver/.test(t) && /seed/i.test(t)))
+    assert.ok(/start(s)? off/.test(sentence) || !/runs|plays|fires/.test(sentence), `${doc} says a seed runs without saying it starts off: ${sentence.slice(0, 120)}`);
+}
+assert.match(readme, /start off until you switch them on in Apps: Argument resolver[^.]*Volume watcher/, "README doesn't say the Argument resolver and Volume watcher start off");
+assert.match(trace, /Argument resolver, a seeded app, starts off/, "docs/trace.md doesn't say the Argument resolver starts off");
+
 console.log(`readme-check: OK (first screen ${words.length} words, ${images.length} images, ${sources.length} source files listed)`);
