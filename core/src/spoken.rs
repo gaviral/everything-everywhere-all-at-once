@@ -428,7 +428,8 @@ fn descendants(world: &World, id: &str) -> Vec<String> {
 /// "throw", which mostly start errands ("Save money on groceries", "File taxes in April").
 const VERBS: [&str; 5] = ["add", "put", "jot down", "write down", "note down"];
 const INTO: [&str; 6] = ["to", "in", "into", "on", "onto", "under"];
-/// A thought these name is on the map already: moving one is moves.rs's job ("put that in the bills thread").
+/// A thought these name is on the map already: moving one is moves.rs's job ("put that in the bills thread"), as is
+/// one its `POINTING` names ("put my last thought in …").
 const POINTING: [&str; 14] =
     ["this", "that", "it", "these", "those", "them", "this one", "that one", "this thought", "that thought", "everything", "all that", "all of this", "all of that"];
 
@@ -442,7 +443,7 @@ fn filing(text: &str) -> Option<(&str, &str)> {
     let (body, lower) = (&t[verb.len() + 1..], &l[verb.len() + 1..]);
     let named = |what: &str| {
         let words = crate::words(what).join(" ");
-        !words.is_empty() && !POINTING.contains(&words.as_str())
+        !words.is_empty() && !POINTING.contains(&words.as_str()) && !crate::moves::POINTING.contains(&words.as_str())
     };
     if let Some(into) = INTO.iter().find(|p| lower.starts_with(&format!("{p} "))) {
         let rest = &body[into.len() + 1..];

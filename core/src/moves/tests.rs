@@ -419,3 +419,33 @@ async fn a_thread_the_move_leaves_empty_goes_into_where_its_words_went_and_undo_
     let world = f.core.snapshot();
     assert!(world.thread(&new).is_none() && world.thread("T4").is_some() && f.on("w") == "T4");
 }
+
+#[tokio::test]
+async fn put_my_last_thought_in_a_thread_moves_it_and_files_no_new_words() {
+    for said in ["Put my last thought in the pottery thread", "Put that last thought in pottery", "Put this point in the pottery thread"] {
+        let f = Fixture::new(slipped());
+        let before = f.core.snapshot().thoughts.len();
+        let lines = f.say(said).await;
+        assert!(lines.contains(&"moved w to T2".to_string()), "{said}: {lines:?}");
+        assert_eq!((f.on("w").as_str(), f.core.snapshot().thoughts.len()), ("T2", before), "{said}: {lines:?}");
+    }
+}
+
+#[tokio::test]
+async fn following_a_move_ends_a_new_thread_asked_for_before_it() {
+    let f = Fixture::new(slipped());
+    f.say("New thread").await;
+    let lines = f.say("Move that to pottery").await;
+    assert!(lines.contains(&"on T2".to_string()), "taken along: {lines:?}");
+    // The next thought follows Pottery: it starts no thread.
+    f.core.new_threads.said("you", "next");
+    assert!(!f.core.new_threads.starts("next"));
+    // Not taken along (on another thread), a "new thread" still stands.
+    let f = Fixture::new(slipped());
+    f.core.focus("you", "T3");
+    f.say("New thread").await;
+    f.say("Move that to pottery").await;
+    assert_eq!(f.on("w"), "T2");
+    f.core.new_threads.said("you", "next");
+    assert!(f.core.new_threads.starts("next"));
+}

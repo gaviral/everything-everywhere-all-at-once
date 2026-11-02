@@ -73,8 +73,9 @@ pub struct Retitle {
 // --- Reading the words --------------------------------------------------------------------------------------------
 
 const VERBS: [&str; 3] = ["move", "put", "file"];
-/// What "that" can be in "move that to …": the speaker's latest thought.
-const POINTING: [&str; 13] = [
+/// What "that" can be in "move that to …": the speaker's latest thought. Filing (spoken.rs) reads none of these as
+/// new words to add, since "put my last thought in …" is a move.
+pub(crate) const POINTING: [&str; 13] = [
     "that last thought", "my last thought", "the last thought", "the last one", "this thought", "that thought", "this point", "that point",
     "this one", "that one", "this", "that", "it",
 ];
@@ -386,6 +387,8 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     let back = (latest && world.active_for(speaker) == Some(&from)).then(|| from.clone());
     if back.is_some() {
         changes.push(Change::ActiveChanged { thread_id: target.clone(), speaker: speaker.into() });
+        // Taken along, the speaker is somewhere again: a "new thread" asked for before ends, as on any move (`focus`).
+        core.new_threads.cancel(speaker);
     }
     if emptied {
         changes.push(Change::ThreadMerged { from: from.clone(), into: target.clone() });
