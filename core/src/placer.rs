@@ -861,8 +861,14 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
     let head = if new_thread { None } else { crate::chunks::heads(world, thought, just_asked(world, thought)).joined(world, thought, &p.joins) };
     let was = world.active_for(speaker).cloned();
 
+    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said.
+    let decided = crate::decided::said(&fix(&thought.text));
     let target = match p.action.as_str() {
         _ if head.is_some() => head.as_ref().and_then(|h| h.thread_id.clone()),
+        // A decision goes on the thread it decides, not a branch of its own: the model branched "decided: if it's
+        // under $80, I'm booking it" off Mom's birthday as "Pottery Class Cost" (2026-11-01 take), so the birthday's
+        // card never showed what was decided about it.
+        "new" if decided && !new_thread && exists(&p.parent_id) => Some(p.parent_id.clone()),
         "new" => None,
         _ if new_thread => None,
         _ if exists(&p.thread_id) => Some(p.thread_id.clone()),
@@ -895,8 +901,6 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
         }
     };
 
-    // From the words as said (a sure fix in them), not the model's point: the mark echoes what they said.
-    let decided = crate::decided::said(&fix(&thought.text));
     let (unclear, guess, heard, fixed) =
         if sure { (String::new(), String::new(), unclear, guess) } else { (unclear, guess, String::new(), String::new()) };
     changes.push(Change::ThoughtPlaced {
@@ -1762,6 +1766,19 @@ mod tests {
                 .unwrap()
         };
         assert!(decided("Okay, decided: if it's under eighty dollars, I'm booking it tonight."));
+        // Branched off a thread, a decision lands on it instead; anything else still branches.
+        let landed = |text: &str, new_thread: bool| {
+            decide(&map(), &turn(text), reply(json!({"action": "new", "title": "Pottery Class Cost", "parent_id": "T2"})), 0, new_thread, true)
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::ThoughtPlaced { thread_id, .. } => Some(thread_id),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(landed("Okay, decided: if it's under eighty dollars, I'm booking it tonight.", false), "T2");
+        assert_eq!(landed("The class costs eighty dollars a person.", false), "T3", "not a decision: its own branch");
+        assert_eq!(landed("Decided: we book the class.", true), "T3", "asked for a new thread, it starts one");
         assert!(decided("Decided: I'll study with Priya on Wednesday night."));
         assert!(!decided("I can't decide whether to book the pottery class."));
         assert!(!decided("We'll decide later about the pottery class."));
