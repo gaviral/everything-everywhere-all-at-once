@@ -119,6 +119,9 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   const moves = useContext(MovesContext);
   const [editing, setEditing] = useState(false);
   const done = useRef(false);
+  // The title when the edit began: a rename that lands meanwhile (the AI's tidy-up, someone in the room) is kept
+  // when the field is left as it was, not reverted to the old words still in it.
+  const before = useRef(thread.title);
   // Enter or Esc ends the edit from the keyboard: focus goes back to the title, so Enter edits it again and j/k carry
   // on from its card. Leaving the field by click or Tab keeps focus where it went.
   const refocus = useRef(false);
@@ -135,7 +138,7 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
     if (done.current) return;
     done.current = true;
     setEditing(false);
-    const title = typed === null ? null : typedTitle(typed, thread.title);
+    const title = typed === null ? null : typedTitle(typed, before.current);
     if (title) moves.rename(thread.id, title);
   };
   if (editing) {
@@ -155,7 +158,7 @@ export function ThreadTitle({ thread, depth }: { thread: Thread; depth: number }
   return (
     <div {...heading}>
       <button ref={button} type="button" className="title-button" title="Rename"
-        onClick={() => { done.current = false; setEditing(true); }}>{thread.title}</button>
+        onClick={() => { done.current = false; before.current = thread.title; setEditing(true); }}>{thread.title}</button>
     </div>
   );
 }

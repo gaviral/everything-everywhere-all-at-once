@@ -49,6 +49,12 @@ try {
   // A typed title: trimmed and spaced; empty or unchanged sends nothing.
   assert.equal(typedTitle("  Kiln   days ", "Pottery class"), "Kiln days");
   assert.equal(typedTitle("   ", "Pottery class"), null);
+  // Left unchanged while the AI renamed the thread: nothing is sent, so its rename stands (bug hunt 14). The field is
+  // compared with the title it opened with, not the title now.
+  assert.equal(typedTitle("Pottery class", "Pottery class"), null);
+  const titleSource = readFileSync(new URL("../ui/src/Moves.tsx", import.meta.url), "utf8");
+  assert.match(titleSource, /typedTitle\(typed, before\.current\)/);
+  assert.match(titleSource, /before\.current = thread\.title; setEditing\(true\);/);
   assert.equal(typedTitle("Pottery class ", "Pottery class"), null);
 
   // The map wires them: every point has a Move, every card title renames, every card takes a dropped point, and the
