@@ -681,6 +681,9 @@ header {
   height: 0;
 }
 .notice-lane > * { flex: none; }
+/* An open Apps panel can run past the screen's foot, and a sticky lane can't rise above where it sits: fixed while
+   it's open, so its answers (a request too long to build) are seen. On a phone too, where the lane is otherwise contents. */
+.apps-panel.is-open ~ .notice-lane { position: fixed; inset-inline: 0; display: flex; }
 
 .notice {
   padding: 8px 14px;

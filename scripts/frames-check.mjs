@@ -35,6 +35,10 @@ assert.ok(at("<Apps core={core} />") < at('className="notice-lane"'), "the Apps 
 const lane = app.slice(at('className="notice-lane"'), at("<Explain explanations"));
 assert.ok(lane.includes('className="notice"') && lane.includes('className="map-change"'), "the notice and the map update are in the lane");
 assert.match(rules(styles, ".notice-lane"), /position:\s*sticky[\s\S]*top:\s*calc\(var\(--header-height[\s\S]*height:\s*0/, "the lane sticks under the header and takes no room");
+// Below a tall open Apps panel the sticky lane would sit past the screen's foot (sticky can't lift it), and "Describe
+// the app…" would expire unseen: while the panel is open the lane is fixed, on a phone as well (display beats contents).
+assert.match(rules(styles, ".apps-panel.is-open ~ .notice-lane"), /position:\s*fixed/, "the lane is fixed under an open Apps panel");
+assert.match(rules(styles, ".apps-panel.is-open ~ .notice-lane"), /display:\s*flex/, "and shown as a box on a phone, where the lane is contents");
 for (const selector of [".notice", ".map-change"])
   assert.doesNotMatch(rules(styles, selector), /position:\s*fixed/, `${selector} isn't fixed over the page`);
 
