@@ -250,7 +250,7 @@ mod tests {
         for (file, _) in SAMPLES {
             assert_eq!(pick(Some(file)).map(|(f, _)| f), Some(file));
         }
-        for name in ["founder-day", "../data/User/journal", "/etc/passwd", "", "team-sync.jsonl", "TEAM-SYNC"] {
+        for name in ["founder-day", "../data/someone/journal", "/etc/passwd", "", "team-sync.jsonl", "TEAM-SYNC"] {
             assert_eq!(pick(Some(name)), None, "{name}");
         }
     }
