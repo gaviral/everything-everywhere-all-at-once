@@ -5,6 +5,7 @@
 // Pure rules here (scripts/hosted-check.mjs holds them); room.tsx provides the context.
 import { createContext, useContext } from "react";
 import { dated } from "./action-line";
+import { together } from "./model-line";
 import { saveFile } from "./save-file";
 
 export type Model = { step: string; model: string };
@@ -74,8 +75,14 @@ export function modelName(id: string): string {
  *  steps together: "Tidies, builds, recaps: Muse Spark 1.3"), so the video's first and last frames name them alike.
  *  Empty without a key (none runs). */
 export function modelsLine(models: Model[]): string {
+  // A step several models do (a placement's racing calls, each lane its own model) is one entry: "Muse Spark 1.3 + 1.2".
+  const byStep = new Map<string, string[]>();
+  for (const m of models) byStep.set(m.step, [...(byStep.get(m.step) ?? []), m.model]);
   const groups = new Map<string, string[]>();
-  for (const m of models) groups.set(modelName(m.model), [...(groups.get(modelName(m.model)) ?? []), m.step]);
+  for (const [step, ids] of byStep) {
+    const name = together(ids).model;
+    groups.set(name, [...(groups.get(name) ?? []), step]);
+  }
   return [...groups].map(([name, steps]) => {
     const said = steps.join(", ");
     return `${said[0].toUpperCase()}${said.slice(1)}: ${name}`;

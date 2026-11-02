@@ -51,11 +51,13 @@ const named = {
   "Muse Spark 1.3": "muse-spark-1.3",
   "Muse Image 1.0": "muse-image-1.0",
 };
+// "Muse Spark 1.3 + 1.2" (two models racing, as the model line says it) names both.
+const spelled = first.replace(/(Muse (?:Voice Transcribe|Spark|Image)) ([\d.]+) \+ ([\d.]+)/g, "$1 $2 + $1 $3");
 for (const [name, id] of Object.entries(named)) {
-  assert.ok(first.includes(name), `the first screen doesn't name ${name}`);
+  assert.ok(spelled.includes(name), `the first screen doesn't name ${name}`);
   assert.ok(called.has(id), `the first screen names ${name}, but the core never calls "${id}"`);
 }
-for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)?(?: Contributor)?/g)) {
+for (const m of spelled.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)?(?: Contributor)?/g)) {
   const id = m[0].toLowerCase().replace(/ /g, "-");
   assert.ok([...called].some((c) => c.startsWith(id)), `the first screen names ${m[0]}, which the core never calls`);
 }
@@ -64,8 +66,9 @@ for (const m of first.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]+)
 // none at all). Removing a row, its link or its evidence fails here.
 const ROLES = [
   { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /"kind":"heard"/ },
-  // Contributor mode is opt-in; a trace taken with it on still proves Muse Spark 1.2 places.
-  { anchor: "placer", model: "Muse Spark 1.2", proof: /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/ },
+  // Placing races Spark 1.3 and 1.2 (core/src/placer.rs `MODELS`). Contributor mode is opt-in; a trace taken with it
+  // on still proves Muse Spark 1.2 places.
+  { anchor: "placer", model: "Muse Spark 1.3 + 1.2", proof: /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/ },
   { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
   { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"composer","model":"muse-spark-1\.3"/ },
   { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap","model":"muse-spark-1\.3"/ },

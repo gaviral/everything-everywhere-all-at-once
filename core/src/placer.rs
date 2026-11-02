@@ -76,6 +76,15 @@ const ROOM: u32 = 2000;
 /// placements, so ≈ 280 of 400).
 pub const RACE: usize = 2;
 
+/// The models the racing calls ask, unless PLACER_MODELS (or PLACER_MODEL, for every lane) says otherwise: lane i asks
+/// the (i mod 2)th, so the 2 calls ask 2 models. A slow spell mostly hits one model at a time: on the app's own placer
+/// requests, one round a minute for 37 minutes (2026-11-02, n = 38 rounds, tools/latency-probe.mjs), two Spark 1.2 calls
+/// racing took a median 3.6 s, 90th percentile 5.6 s, 5 s or more in 7 rounds; one Spark 1.3 and one Spark 1.2 call
+/// took 3.4 s, 4.6 s, and 5 s or more in 3. Each placed the routing and chunk cases alike (69 of 69 alone), at the
+/// same price a token, and neither is in Contributor mode, so placing stays private by default. Spark 1.3 goes first,
+/// so a placement at the hourly cap's edge (one call) asks it.
+pub const MODELS: &str = "muse-spark-1.3,muse-spark-1.2";
+
 /// `RACE`, or PLACER_RACE when it's a whole number from 1 to 4.
 pub fn race_from_env() -> usize {
     match std::env::var("PLACER_RACE").ok().map(|v| v.trim().parse::<usize>()) {
@@ -434,7 +443,8 @@ pub enum Route {
     /// branch has its parent first), `new` when that thread was made for it. `pick` is what the model answered, and
     /// `rule` the rule that put it elsewhere, if one did (`decide`). `lane` (from 0) of `lanes` gave the first good
     /// answer (another may have answered sooner with one that couldn't be read), `ms` after the first calls went (a round
-    /// cut off and asked again counts). Sent only once the changes are on the map.
+    /// cut off and asked again counts), and `model` is the model that lane asked (`MODELS`). Sent only once the changes
+    /// are on the map.
     Decided {
         thought_id: String,
         path: Vec<String>,
@@ -446,6 +456,7 @@ pub enum Route {
         lane: usize,
         lanes: usize,
         ms: u64,
+        model: String,
     },
 }
 
@@ -537,7 +548,8 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let went = std::time::Instant::now();
     let (lane, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
-        // call goes `placer_race` times at once and the first good answer wins (see `RACE`); the others are dropped.
+        // call goes `placer_race` times at once, each lane to its own model (`MODELS`), and the first good answer
+        // wins (see `RACE`); the others are dropped.
         // Only while the hourly cap has room for every lane: at the cap, one call goes, so the extra one can't be the
         // call refused there and show "AI paused" while the first places the thought.
         let lanes = core.placer_race.max(1);
@@ -547,7 +559,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         let mut calls: futures_util::stream::FuturesUnordered<_> = (0..lanes)
             .map(|lane| {
                 let call = core.ask_model(
-                    &core.placer_model,
+                    core.placer_lane(lane),
                     url,
                     limit(room),
                     |model| request(&world, &thought, model, room, new_thread),
@@ -582,7 +594,9 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // From when the thought arrived, so time waiting in the queue counts too.
     let place_ms = now_ms().saturating_sub(thought.at_ms);
     // The parent asked for too: a branch that shouldn't be one shows here, not only in a trace file.
-    tracing::info!("placed in {place_ms} ms: {} {} parent {:?}", placement.action, placement.thread_id, placement.parent_id);
+    // The model the winning lane asked: after a Contributor model gave way, the one without it (`Setting::name`).
+    let model = core.placer_lane(lane).name().to_string();
+    tracing::info!("placed in {place_ms} ms by {model} (lane {lane}): {} {} parent {:?}", placement.action, placement.thread_id, placement.parent_id);
 
     let answer = (placement.action.clone(), placement.thread_id.clone(), placement.title.clone(), placement.split.clone());
     let named = if placement.action == "new" { &placement.parent_id } else { &placement.thread_id };
@@ -659,6 +673,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         lane,
         lanes,
         ms: race_ms,
+        model,
     };
     let placing: Vec<Change> = changes.iter().filter(|c| matches!(c, Change::ThoughtPlaced { .. } | Change::ThreadAdded { .. })).cloned().collect();
     if new_thread {
@@ -1969,6 +1984,132 @@ mod tests {
         assert_eq!(told, [(Some("placer"), Some(true), false), (Some("placer"), Some(false), true)], "{ends:?}");
     }
 
+    /// How a placement raced on several models went (`mixed`).
+    struct Mixed {
+        result: anyhow::Result<Option<String>>,
+        /// Each model asked, in the order the stand-in heard them.
+        asked: Vec<String>,
+        placed: bool,
+        took: Duration,
+        /// The landing as the windows hear it (`Route::Decided`).
+        decided: serde_json::Value,
+        /// Each placing call's end as the model line hears it: its model, ok, dropped.
+        ends: Vec<(String, bool, bool)>,
+        notices: Vec<String>,
+        /// Each of the 2 lanes' model after the race (a Contributor model may have given way).
+        lanes: Vec<String>,
+    }
+
+    /// A placement raced on 2 lanes: `lanes` (empty: every lane asks `one`, as PLACER_MODEL does), against a stand-in
+    /// that answers each model after its delay with its status (`answers`; else at once, 200), a whole answer when 200.
+    async fn mixed(one: &str, lanes: crate::model::Lanes, answers: Vec<(&'static str, u64, u16)>) -> Mixed {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let seen = asked.clone();
+        let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let model = request["model"].as_str().unwrap_or_default().to_string();
+            seen.lock().unwrap().push(model.clone());
+            let (delay, status) = answers.iter().find(|(m, _, _)| *m == model).map_or((0, 200), |(_, d, s)| (*d, *s));
+            async move {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+                let answer = if status == 200 { body(json!("stop"), json!(WHOLE)) } else { json!({"error": {"message": "no"}}) };
+                (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(answer))
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await });
+        let path = std::env::temp_dir().join(format!("e2a2o-mixed-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let core = Core { key: Some("good".into()), placer_model: one.into(), placer_lanes: lanes, placer_race: 2, ..Core::test(journal, world) };
+        let mut updates = core.updates.subscribe();
+        core.keep("you", "Pay rent before Friday");
+        let id = core.snapshot().thoughts[0].id.clone();
+        let started = std::time::Instant::now();
+        let result = super::place(&core, &id, &url, super::patience).await;
+        let took = started.elapsed();
+        let placed = core.snapshot().thoughts[0].placed;
+        let messages: Vec<serde_json::Value> = std::iter::from_fn(|| updates.try_recv().ok()).map(|o| serde_json::to_value(o.message).unwrap()).collect();
+        let decided = messages.iter().find(|m| m["type"] == "route" && m["route"]["stage"] == "decided").map(|m| m["route"].clone()).unwrap_or_default();
+        let ends = messages.iter()
+            .filter(|m| m["type"] == "step" && m["done"] == true && m["step"] == "placer")
+            .map(|m| (m["model"].as_str().unwrap_or_default().to_string(), m["ok"] == true, m["dropped"] == true))
+            .collect();
+        let notices = messages.iter().filter(|m| m["type"] == "notice").map(|m| m["message"].as_str().unwrap_or_default().to_string()).collect();
+        let lanes = (0..2).map(|lane| core.placer_lane(lane).name().to_string()).collect();
+        let _ = std::fs::remove_file(&path);
+        let asked = asked.lock().unwrap().clone();
+        Mixed { result, asked, placed, took, decided, ends, notices, lanes }
+    }
+
+    const SPARK_13: &str = "muse-spark-1.3";
+    const SPARK_12: &str = "muse-spark-1.2";
+    fn default_lanes() -> crate::model::Lanes {
+        crate::model::Lanes::pick(None, None, super::MODELS)
+    }
+
+    /// Lane i asks the list's (i mod n)th model: by default one Spark 1.3 call and one Spark 1.2 call, not two of one.
+    #[tokio::test]
+    async fn each_lane_asks_its_own_model_in_turn() {
+        let names = |lanes: &crate::model::Lanes, n: usize| (0..n).map(|i| lanes.get(i).unwrap().name().to_string()).collect::<Vec<_>>();
+        assert_eq!(names(&default_lanes(), 5), [SPARK_13, SPARK_12, SPARK_13, SPARK_12, SPARK_13]);
+        let set = |list: &str| crate::model::Lanes::pick(None, Some(list.into()), super::MODELS);
+        assert_eq!(names(&set(" a, b ,c"), 4), ["a", "b", "c", "a"]);
+        assert_eq!(names(&set("only"), 2), ["only", "only"]);
+        assert_eq!(names(&set(" , "), 2), [SPARK_13, SPARK_12], "nothing named: the default");
+        // Through a real race: both models asked once, with the same request otherwise.
+        let mut race = mixed("unused", default_lanes(), vec![]).await;
+        assert!(race.result.unwrap().is_none() && race.placed);
+        race.asked.sort();
+        assert_eq!(race.asked, [SPARK_12, SPARK_13]);
+    }
+
+    /// PLACER_MODEL keeps its meaning: every lane asks that one model, as is, whatever PLACER_MODELS says; a model the
+    /// key can't use counts as the key refused, with no fallback.
+    #[tokio::test]
+    async fn placer_model_set_asks_that_one_model_in_every_lane_as_is() {
+        const CHOSEN: &str = "muse-spark-1.2-contributor";
+        let lanes = || crate::model::Lanes::pick(Some(CHOSEN.into()), Some("a,b".into()), super::MODELS);
+        assert!(lanes().get(0).is_none() && lanes().get(1).is_none());
+        let race = mixed(CHOSEN, lanes(), vec![]).await;
+        assert!(race.result.unwrap().is_none() && race.placed);
+        assert_eq!((race.asked, race.decided["model"].as_str()), (vec![CHOSEN.to_string(), CHOSEN.into()], Some(CHOSEN)));
+        let race = mixed(CHOSEN, lanes(), vec![(CHOSEN, 0, 403)]).await;
+        assert_eq!(crate::model::Verdict::of(&race.result.unwrap_err()), Some(crate::model::Verdict::Refused));
+        assert_eq!(race.asked, [CHOSEN, CHOSEN], "never the model without Contributor mode");
+        assert_eq!(race.lanes, [CHOSEN, CHOSEN]);
+    }
+
+    /// A slow spell on one model costs nothing while the other answers: the thought is placed by the fast lane, and
+    /// the windows name that lane's model (the landing's `model`, the model line's answered call); the slow one is
+    /// told dropped.
+    #[tokio::test]
+    async fn a_slow_lane_loses_to_a_fast_one_of_the_other_model() {
+        for (slow, fast, lane) in [(SPARK_12, SPARK_13, 0), (SPARK_13, SPARK_12, 1)] {
+            let race = mixed("unused", default_lanes(), vec![(slow, 5_000, 200), (fast, 30, 200)]).await;
+            assert!(race.result.unwrap().is_none() && race.placed);
+            assert!(race.took < Duration::from_secs(2), "waited on the slow {slow}: {:?}", race.took);
+            assert_eq!((race.decided["model"].as_str(), race.decided["lane"].as_u64(), race.decided["lanes"].as_u64()), (Some(fast), Some(lane), Some(2)));
+            assert_eq!(race.ends, [(fast.to_string(), true, false), (slow.to_string(), false, true)]);
+        }
+    }
+
+    /// Each lane keeps a default's rule for its own model: one in Contributor mode the key can't use gives way to the
+    /// same model without it, said once, while the other lane goes on asking its own.
+    #[tokio::test]
+    async fn each_lane_keeps_the_contributor_fallback_for_its_own_model() {
+        const C13: &str = "muse-spark-1.3-contributor";
+        const C12: &str = "muse-spark-1.2-contributor";
+        let lanes = crate::model::Lanes::pick(None, Some(format!("{C13},{C12}")), super::MODELS);
+        let race = mixed("unused", lanes, vec![(C13, 0, 403), (SPARK_13, 30, 200), (C12, 1_500, 200)]).await;
+        assert!(race.result.unwrap().is_none() && race.placed);
+        let mut asked = race.asked.clone();
+        asked.sort();
+        assert_eq!(asked, [C12, SPARK_13, C13], "the 1.2 lane is never switched");
+        assert_eq!(race.lanes, [SPARK_13, C12]);
+        assert_eq!(race.decided["model"].as_str(), Some(SPARK_13));
+        assert_eq!(race.notices, ["Using muse-spark-1.3 (this key can't use the contributor model)."]);
+    }
+
     /// The prompt cache keeps every thread but the one just spoken on: a placement on the first thread made (the one
     /// the talk keeps coming back to) used to rewrite the list's first line, so nothing after the system prompt was
     /// cached. Now it rewrites only the last line.
@@ -2233,8 +2374,8 @@ mod tests {
     }
 
     /// Routing cases against the real model: `cargo test --release -- --ignored routing_cases --nocapture`, with
-    /// MODEL_API_KEY set (about $0.0002 a call on the default model; a placement races `RACE` calls as the app
-    /// does, PLACER_RACE=1 for one). Each line of `ROUTING_CASES` (default
+    /// MODEL_API_KEY set (about $0.0002 a call on the default models; a placement races `RACE` calls on `MODELS` as
+    /// the app does, PLACER_RACE=1 for one, PLACER_MODEL for one model in every lane). Each line of `ROUTING_CASES` (default
     /// scripts/routing-cases.jsonl) is a map, the card selected, words said, and where they may land; each runs
     /// `ROUTING_RUNS` times (default 3) on a fresh copy, since one answer is a hint, not proof. A case fails when
     /// most of its runs land somewhere it doesn't allow. A line can instead take its map from a journal: every
@@ -2271,6 +2412,7 @@ mod tests {
                 let core = Core {
                     key: Some(key.clone()),
                     placer_model: crate::model::Setting::from_env("PLACER_MODEL", "muse-spark-1.2"),
+                    placer_lanes: crate::model::Lanes::from_env("PLACER_MODEL", "PLACER_MODELS", super::MODELS),
                     // As the app races (`RACE`, or PLACER_RACE), so a case checks the answer the app would keep:
                     // the first good one, which skews to the shorter reasonings.
                     placer_race: super::race_from_env(),

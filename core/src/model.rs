@@ -137,6 +137,52 @@ impl From<&str> for Setting {
     }
 }
 
+/// The models a placement's racing calls ask (placer.rs `MODELS`): lane i asks the list's (i mod its length)th model.
+/// Each listed model gets a default's rule (`Setting`): one in Contributor mode gives way to the same model without it,
+/// for that model's lanes only. Empty when the person set one model for placing (PLACER_MODEL): every lane asks
+/// that one, as is (`Core::placer_lane`).
+#[derive(Default)]
+pub struct Lanes {
+    /// Each model once, so a model listed twice is switched (and said) once.
+    models: Vec<Setting>,
+    /// Lane i asks `models[order[i % order.len()]]`.
+    order: Vec<usize>,
+}
+
+impl Lanes {
+    /// The lanes the environment sets: none when `one` (PLACER_MODEL) is set, else `list` (PLACER_MODELS), else
+    /// `default`, each a comma-separated list of model names.
+    pub fn from_env(one: &str, list: &str, default: &str) -> Self {
+        let set = |var: &str| std::env::var(var).ok().filter(|v| !v.trim().is_empty());
+        Self::pick(set(one), set(list), default)
+    }
+
+    /// `from_env` on the values themselves.
+    pub fn pick(one: Option<String>, list: Option<String>, default: &str) -> Self {
+        if one.is_some() {
+            return Self::default();
+        }
+        let list = list.filter(|l| l.split(',').any(|m| !m.trim().is_empty())).unwrap_or_else(|| default.into());
+        let mut lanes = Self::default();
+        for name in list.split(',').map(str::trim).filter(|m| !m.is_empty()) {
+            let at = match lanes.models.iter().position(|m| m.name == name) {
+                Some(at) => at,
+                None => {
+                    lanes.models.push(Setting::new(None, name));
+                    lanes.models.len() - 1
+                }
+            };
+            lanes.order.push(at);
+        }
+        lanes
+    }
+
+    /// Lane `lane`'s model, or None when every lane asks the person's own one.
+    pub fn get(&self, lane: usize) -> Option<&Setting> {
+        (!self.order.is_empty()).then(|| &self.models[self.order[lane % self.order.len()]])
+    }
+}
+
 /// What the model service has said about the key and its load, and the calls made this hour. It lives on the core,
 /// so it lasts until a restart.
 pub struct Service {
@@ -267,6 +313,11 @@ impl Core {
     /// `CALLS_PER_HOUR`). Background work that only saves a wait (a recap draft) runs only then.
     pub fn calls_to_spare(&self) -> bool {
         self.service.spare(crate::now_ms())
+    }
+
+    /// The model a placement's lane `lane` asks (from 0): its own (`Lanes`), or the person's PLACER_MODEL for every lane.
+    pub fn placer_lane(&self, lane: usize) -> &Setting {
+        self.placer_lanes.get(lane).unwrap_or(&self.placer_model)
     }
 
     /// How many more model calls this hour's cap lets go now: a placement races its extra calls only while there's

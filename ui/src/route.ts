@@ -4,6 +4,7 @@
 // a branch's top thread first, then the branch, with the reason it went there or the rule that put it there.
 // Pure rules here (scripts/route-check.mjs holds them); the store and hooks below; App.tsx draws them on the cards.
 import { useSyncExternalStore } from "react";
+import { modelName } from "./model-line";
 
 /** A thread the prompt names, and why: "active", "said just before", "left unfinished", "just asked". */
 export type Candidate = { thread_id: string; why: string };
@@ -11,6 +12,8 @@ export type Weighing = { stage: "weighing"; thought_id: string; candidates: Cand
 export type Decided = {
   stage: "decided"; thought_id: string; path: string[]; new: boolean; skipped: boolean;
   pick: { action: string; thread_id: string }; rule: string | null; why: string; lane: number; lanes: number; ms: number;
+  /** The model the winning lane asked (each lane may ask its own, core/src/placer.rs `MODELS`); absent from an older core. */
+  model?: string;
 };
 export type RouteMsg = { type: "route"; route: Weighing | Decided };
 
@@ -38,11 +41,12 @@ export function landTag(d: Decided): string {
   return d.rule ? `${where} · rule: ${d.rule}` : where;
 }
 
-/** The tag's tooltip and screen-reader words: the model's reason, then the race (how many calls went, how long the
- *  first good answer took). */
+/** The tag's tooltip and screen-reader words: the model's reason, then the race (how many calls went, which model gave
+ *  the first good answer, how long it took). */
 export function raceLine(d: Decided): string {
   const secs = `${(d.ms / 1000).toFixed(1)} s`;
-  const race = d.lanes > 1 ? `First good answer of ${d.lanes} calls, in ${secs}` : `Answered in ${secs}`;
+  const by = d.model ? ` (${modelName(d.model)})` : "";
+  const race = d.lanes > 1 ? `First good answer of ${d.lanes} calls${by}, in ${secs}` : `Answered${by} in ${secs}`;
   return d.why ? `${d.why[0].toUpperCase()}${d.why.slice(1)}. ${race}` : race;
 }
 

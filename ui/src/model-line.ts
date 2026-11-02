@@ -77,13 +77,29 @@ export function stepped(state: LineState, msg: StepMsg, now: number): LineState 
 
 export interface Line { model: string | null; id: string | null; text: string }
 
+/** Several models doing one step at once (a placement's racing calls, each lane its own model, core/src/placer.rs
+ *  `MODELS`), named once each in the order they started: "Muse Spark 1.3 + 1.2" when only the version differs. */
+export function together(ids: string[]): { model: string; id: string } {
+  const unique = [...new Set(ids)];
+  const names = [...new Set(unique.map(modelName))];
+  const words = names.map((name) => name.split(" "));
+  const stem = words[0].slice(0, -1).join(" ");
+  const sameStem = words.every((w) => w.length === words[0].length && w.slice(0, -1).join(" ") === stem);
+  const model = names.length > 1 && sameStem ? `${stem} ${words.map((w) => w.at(-1)).join(" + ")}` : names.join(" + ");
+  return { model, id: unique.join(", ") };
+}
+
 /** What the line says at `now`: a step you wait on, while it runs; else what just finished, for `HOLD_MS`; else
  *  what runs behind; else the model listening. Nothing when nothing runs, the mic is off and the last step is old. */
 export function lineFor(state: LineState, now: number, hearing: boolean): Line | null {
   const latest = (list: Running[]) => list.reduce<Running | null>((a, b) => (!a || b.at >= a.at ? b : a), null);
   const running = (r: Running | null): Line | null => r && { model: modelName(r.model), id: r.model, text: verb(r.step, false) };
   const front = latest(state.running.filter((r) => FOREGROUND.has(kind(r.step))));
-  if (front) return running(front);
+  if (front) {
+    // A race names every model it asks, not only the lane that started last; its answer names the one that won.
+    const racing = state.running.filter((r) => r.step === front.step).map((r) => r.model);
+    return { ...together(racing), text: verb(front.step, false) };
+  }
   const last = state.last;
   if (last && now - last.at < HOLD_MS) {
     if (!last.model) return { model: null, id: null, text: `${RULES[last.step] ?? last.step} · by rule, no model` };
