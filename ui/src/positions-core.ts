@@ -2,6 +2,7 @@
 // somewhere by a person's window or an AI participant, as absolute canvas coordinates of its top-left. One not in
 // `positions` is laid out automatically. Pure, so scripts/world-mirror-check.mjs holds it to the core.
 import type { World } from "./core";
+import { POSITION_MAX } from "./limits";
 
 /** Where it was put, by whom (a speaker: a person, or an AI participant's name) and when. */
 export interface Position {
@@ -37,4 +38,35 @@ export function keepPlaced<W extends World>(world: W): W {
   const here = new Set([...world.threads.map((t) => t.id), ...world.thoughts.map((t) => t.id)]);
   if (ids.every((id) => here.has(id))) return world;
   return { ...world, positions: Object.fromEntries(Object.entries(positions).filter(([id]) => here.has(id))) };
+}
+
+/** A place as the window sends it (protocol.rs `ClientMsg::Position`): both numbers, each kept within ±POSITION_MAX,
+ *  or both null (back to the layout). Nothing for a number that isn't one. */
+export function placeMessage(id: string, x: number | null, y: number | null): string | null {
+  if (x === null || y === null) return JSON.stringify({ type: "position", id, x: null, y: null });
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const kept = (v: number) => Math.max(-POSITION_MAX, Math.min(POSITION_MAX, v));
+  return JSON.stringify({ type: "position", id, x: kept(x), y: kept(y) });
+}
+
+/** Sends places at most once a frame for each item: a drag reports every pointer move, and only each frame's newest
+ *  step goes (a hidden window has no frames, so it sends at once). */
+export function placeSender(send: (data: string) => boolean, nextFrame: (run: () => void) => unknown = (run) => requestAnimationFrame(run)) {
+  const waiting = new Map<string, string>();
+  let set = false;
+  const flush = () => {
+    set = false;
+    const messages = [...waiting.values()];
+    waiting.clear();
+    for (const message of messages) send(message);
+  };
+  return (id: string, x: number | null, y: number | null) => {
+    const message = placeMessage(id, x, y);
+    if (!message) return;
+    waiting.set(id, message);
+    if (typeof document !== "undefined" && document.hidden) { flush(); return; }
+    if (set) return;
+    set = true;
+    nextFrame(flush);
+  };
 }
