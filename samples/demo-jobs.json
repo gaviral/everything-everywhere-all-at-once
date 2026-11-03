@@ -1,0 +1,15 @@
+[
+  {"at": 0, "message": {"type": "job", "id": "demo-birthday", "title": "Plan Mom's birthday on Saturday", "status": "running", "demo": true}},
+  {"at": 4, "message": {"type": "job", "id": "demo-pottery", "title": "Find the pottery class on Main Street", "status": "running", "demo": true, "parent": "demo-birthday"}},
+  {"at": 11, "message": {"type": "job", "id": "demo-pottery", "title": "Find the pottery class on Main Street", "status": "done", "demo": true, "parent": "demo-birthday", "result": "Saturdays at 10 AM · $45 a person · 2 seats left"}},
+  {"at": 16, "message": {"type": "job", "id": "demo-card", "title": "Draft a birthday card for Mom", "status": "running", "demo": true, "parent": "demo-birthday"}},
+  {"at": 23, "message": {"type": "job", "id": "demo-card", "title": "Draft a birthday card for Mom", "status": "waiting", "demo": true, "parent": "demo-birthday", "result": "Mention the pottery class in Mom's card, or keep it a surprise?"}},
+  {"at": 25, "message": {"type": "hold", "text": "Mention the pottery class in Mom's card, or keep it a surprise?"}},
+  {"at": 30, "message": {"type": "job", "id": "demo-rent", "title": "Check when rent is due", "status": "running", "demo": true}},
+  {"at": 36, "message": {"type": "job", "id": "demo-rent", "title": "Check when rent is due", "status": "done", "demo": true, "result": "Due on the 1st · reminder set for Friday"}},
+  {"at": 41, "message": {"type": "job", "id": "demo-study", "title": "Make this week's study plan", "status": "running", "demo": true}},
+  {"at": 47, "message": {"type": "job", "id": "demo-study", "title": "Make this week's study plan", "status": "done", "demo": true, "result": "Tue: notes, 25 min · Thu: 5 practice questions · Sun: recap"}},
+  {"at": 50, "message": {"type": "job", "id": "demo-booking", "title": "Book two pottery seats", "status": "running", "demo": true, "parent": "demo-birthday"}},
+  {"at": 55, "message": {"type": "job", "id": "demo-booking", "title": "Book two pottery seats", "status": "failed", "demo": true, "parent": "demo-birthday", "result": "The booking site needs your sign-in, so it's left for you"}},
+  {"at": 60, "message": {"type": "job", "id": "demo-birthday", "title": "Plan Mom's birthday on Saturday", "status": "waiting", "demo": true, "result": "Class found · card drafted · waiting on your answer"}}
+]

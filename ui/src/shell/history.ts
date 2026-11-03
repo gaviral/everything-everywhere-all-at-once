@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BrickOn } from "../bricks/contract";
 import type { World } from "../core";
+import { keyWords } from "../site";
 import type { TidyNote, TidyUndo } from "../tidy-core";
 
 export type Undo =
@@ -30,6 +31,7 @@ export type Entry = {
 
 /** The most kept: the newest. */
 const KEPT = 80;
+const MISSING_KEY = [keyWords(false, false, "notice"), keyWords(true, false, "notice")];
 
 /** "muse-spark-1.3-contributor" → "Muse Spark 1.3"; a name already spelled out stays. */
 export function modelWords(model: string): string {
@@ -45,13 +47,18 @@ export function seconds(ms: number | null | undefined): string {
 export function useHistory(on: BrickOn, world: World, mapChange: (TidyNote & { id: number }) | null, undoId: number | null) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const count = useRef(0);
+  const missingKeyEntry = useRef<number | null>(null);
+  const latestNotice = useRef<number | null>(null);
   const worldNow = useRef(world);
   worldNow.current = world;
-  const add = (entry: Omit<Entry, "n">, replaceLast?: (last: Entry) => boolean) => setEntries((was) => {
+  const add = (entry: Omit<Entry, "n">, replaceLast?: (last: Entry) => boolean) => {
     const next = { ...entry, n: ++count.current };
-    if (replaceLast && was[0] && replaceLast(was[0])) return [next, ...was.slice(1)];
-    return [next, ...was].slice(0, KEPT);
-  });
+    setEntries((was) => {
+      if (replaceLast && was[0] && replaceLast(was[0])) return [next, ...was.slice(1)];
+      return [next, ...was].slice(0, KEPT);
+    });
+    return next.n;
+  };
 
   // A thought landing: who placed it and how fast. Yours can be taken back; another person's is theirs to.
   useEffect(() => on("landed", (landed) => {
@@ -73,7 +80,15 @@ export function useHistory(on: BrickOn, world: World, mapChange: (TidyNote & { i
   // Notices as they came up, in the words the window showed. A map update comes with its Undo below instead.
   useEffect(() => on("notice", (notice) => {
     if (notice.kind === "map-change" || !notice.text.trim()) return;
-    add({ at: notice.time, kind: notice.kind === "error" ? "error" : "notice", ai: false, text: notice.text });
+    // Only History keeps this once per window, even across other activity or after its row ages out.
+    // Match the displayed words exactly: a refused key and the daily limit are different events.
+    const missingKey = MISSING_KEY.includes(notice.text);
+    if (missingKey && missingKeyEntry.current !== null) {
+      latestNotice.current = missingKeyEntry.current;
+      return;
+    }
+    latestNotice.current = add({ at: notice.time, kind: notice.kind === "error" ? "error" : "notice", ai: false, text: notice.text });
+    if (missingKey) missingKeyEntry.current = latestNotice.current;
   }), [on]);
 
   // An AI rename, merge or correction, with its Undo. A refiner's pass arrives one change at a time, each note joining
@@ -87,13 +102,15 @@ export function useHistory(on: BrickOn, world: World, mapChange: (TidyNote & { i
     add({ at: Date.now(), kind: "change", ai: mapChange.ai, text: mapChange.text, undo }, joined ? (last) => last.kind === "change" && !last.undone : undefined);
   }, [mapChange]);
 
-  // The core's Undo for the turn a notice answered comes right after that notice: it joins the newest notice.
+  // The core's Undo follows the notice it answers, including a missing-key repeat coalesced into an older row.
   useEffect(() => {
     if (undoId == null) return;
+    const n = latestNotice.current;
+    const coalesced = n === missingKeyEntry.current;
     setEntries((was) => {
-      const at = was.findIndex((e) => e.kind === "notice" || e.kind === "error");
-      if (at < 0 || was[at].undo) return was;
-      return was.map((e, i) => (i === at ? { ...e, undo: { kind: "turn", id: undoId } } : e));
+      const entry = was.find((e) => e.n === n);
+      if (!entry || (entry.undo && (!coalesced || entry.undo.kind !== "turn"))) return was;
+      return was.map((e) => (e.n === n ? { ...e, undo: { kind: "turn", id: undoId }, undone: undefined } : e));
     });
   }, [undoId]);
 
