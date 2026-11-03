@@ -264,6 +264,8 @@ function Point({ data }: { data: ItemData }) {
   const textH = lines.length * look.line;
   const label = `${item.who ? `${item.who.ai ? "The Friend" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
+    // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
+    if (event.key === "Enter" && data.selecting) return;
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); }
     else if ((event.key === "r" || event.key === "R") && !event.metaKey && !event.ctrlKey && !event.altKey) { event.preventDefault(); acts.reply(item); }
   };
