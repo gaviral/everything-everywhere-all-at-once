@@ -95,17 +95,30 @@ export function nextDelay(at, speed, start, now, sent) {
 
 /** One absolute timeline, one shared rolling budget, and at most one pending timer.
  * Recalculate after every wake: a late callback must never release a catch-up flood. */
-export function schedulePlayback(events, speed, send, { time = clock, log = console.log, onDone = () => {}, onError = () => {} } = {}) {
+export function schedulePlayback(events, speed, send, { time = clock, log = console.log, onDone = () => {}, onError = () => {}, shouldSend = () => true } = {}) {
   if (!Number.isFinite(speed) || speed <= 0) throw new Error("--speed must be finite and positive.");
-  const start = time.now(), sent = [];
-  let index = 0, timer = null, cancelled = false, reported = false;
-  const cancel = () => { cancelled = true; if (timer !== null) time.clearTimeout(timer); timer = null; };
+  const start = time.now(), sent = [], continuation = [];
+  let index = 0, timer = null, cancelled = false, reported = false, done = false;
+  const cancel = () => { cancelled = true; continuation.length = 0; if (timer !== null) time.clearTimeout(timer); timer = null; };
+  // Answers can arrive during playback or after its last timer. Wake the same budget immediately.
+  cancel.enqueue = (messages) => {
+    if (cancelled) return;
+    continuation.push(...messages);
+    if (timer !== null) time.clearTimeout(timer);
+    timer = time.setTimeout(step, 0);
+  };
   function step() {
     timer = null;
     if (cancelled) return;
     try {
-      if (index === events.length) { onDone(); return; }
-      const event = events[index], now = time.now();
+      while (index < events.length && !shouldSend(events[index].message)) index++;
+      const replying = continuation.length > 0;
+      if (!replying && index === events.length) {
+        if (!done) { done = true; onDone(); }
+        return;
+      }
+      // Continuations are due now, ahead of prepared events, with no extra delay.
+      const event = replying ? { at: 0, message: continuation[0] } : events[index], now = time.now();
       const delay = nextDelay(event.at, speed, start, now, sent);
       if (!reported && sent.length >= 4 && sent.at(-4) + paceWindow > Math.max(now, start + event.at * 1000 / speed)) {
         reported = true;
@@ -120,8 +133,9 @@ export function schedulePlayback(events, speed, send, { time = clock, log = cons
       sent.push(time.now());
       if (sent.length > 4) sent.shift();
       const m = event.message;
-      log(`${event.at.toFixed(1).padStart(5)} s  [simulated] ${m.type === "job" ? `${m.status} ${m.id}: ${m.title}${m.result ? ` — ${m.result}` : ""}` : `hold: ${m.text}`}`);
-      index++;
+      log(`${replying ? "reply" : `${event.at.toFixed(1).padStart(5)} s`}  [simulated] ${m.type === "job" ? `${m.status} ${m.id}: ${m.title}${m.result ? ` — ${m.result}` : ""}` : `hold: ${m.text}`}`);
+      if (replying) continuation.shift();
+      else index++;
       timer = time.setTimeout(step, 0);
     } catch (error) { cancel(); onError(error); }
   }
@@ -135,6 +149,9 @@ export function startFeed(events, options, { WebSocketImpl = globalThis.WebSocke
   const url = connectionURL(options);
   if (typeof WebSocketImpl !== "function") throw new Error("This script needs Node's built-in WebSocket support.");
   const ws = new WebSocketImpl(url);
+  const card = events.find(({ message: m }) => m.type === "job" && m.id === "demo-card" && m.status === "waiting")?.message;
+  const birthday = events.find(({ message: m }) => m.type === "job" && m.id === "demo-birthday")?.message;
+  let cardWaiting = false, answered = false;
   let cancelPlayback = () => {}, connectTimer = null, closeTimer = null, stopping = null, finished = false;
   let resolveClosed;
   const closed = new Promise((resolve) => { resolveClosed = resolve; });
@@ -166,8 +183,15 @@ export function startFeed(events, options, { WebSocketImpl = globalThis.WebSocke
     if (stopping !== null) return;
     time.clearTimeout(connectTimer); connectTimer = null;
     log(`Connected as agent (AI) on port ${options.port}. Playing simulated helper work at speed ${options.speed}.`);
-    cancelPlayback = schedulePlayback(events, options.speed, (message) => ws.send(JSON.stringify(message)), {
+    cancelPlayback = schedulePlayback(events, options.speed, (message) => {
+      ws.send(JSON.stringify(message));
+      if (message === card) cardWaiting = true;
+    }, {
       time, log,
+      shouldSend: (m) => !answered || !(
+        (m.type === "hold" && m.text === card.result) ||
+        (m.type === "job" && m.id === birthday.id && m.status === "waiting")
+      ),
       onDone: () => log("Simulated feed complete. Listening for answers; press Ctrl+C to close."),
       onError: (e) => shutdown(1, `Could not send simulated work: ${e.message}`),
     });
@@ -175,7 +199,22 @@ export function startFeed(events, options, { WebSocketImpl = globalThis.WebSocke
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data);
-      if (message?.type === "answer") log(`Answer from ${message.by}: ${message.text}`);
+      if (message?.type === "answer") {
+        log(`Answer from ${message.by}: ${message.text}`);
+        const choice = typeof message.text === "string" ? message.text.trim().toLowerCase() : "";
+        const result = choice === "keep it a surprise" || choice === "keep it a surprise, thanks"
+          ? "Keeps the class a surprise"
+          : choice === "mention the pottery class in mom's card" ? "Mentions the pottery class" : null;
+        if (cardWaiting && !answered && birthday && result && stopping === null && !finished) {
+          answered = true;
+          cardWaiting = false;
+          cancelPlayback.enqueue([
+            { ...card, status: "done", result },
+            { ...birthday, status: "done", result: "Class found · card ready" },
+            { type: "hold", text: "" },
+          ]);
+        }
+      }
       if (message?.type === "notice") error(`Notice: ${message.message}`);
     } catch { error("Received an unreadable message from the core."); }
   };

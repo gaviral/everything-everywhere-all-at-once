@@ -28,6 +28,11 @@ function controlledTime() {
     clearTimeout: (key) => timers.delete(key),
     get pending() { return timers.size; },
     get delay() { return [...timers.values()][0]?.ms; },
+    advance(ms) {
+      const end = now + ms;
+      while ([...timers.values()].some((timer) => timer.at <= end)) this.next();
+      now = end;
+    },
     next(late = 0) {
       const [key, timer] = [...timers].sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0] ?? [];
       assert.ok(timer, "expected a scheduled callback");
@@ -171,7 +176,7 @@ function unframe(buffer) {
   }
   return { frames, rest: buffer.subarray(at) };
 }
-async function fakeEndpoint({ refuse = false } = {}) {
+async function fakeEndpoint({ refuse = false, now = () => performance.now() } = {}) {
   const sockets = new Set(), urls = [], heard = [], times = [];
   const server = createServer((req, res) => res.writeHead(404).end());
   server.on("upgrade", (req, socket, head) => {
@@ -186,7 +191,7 @@ async function fakeEndpoint({ refuse = false } = {}) {
     function receive(data) {
       const decoded = unframe(Buffer.concat([pending, data])); pending = Buffer.from(decoded.rest);
       for (const { opcode, body } of decoded.frames) {
-        if (opcode === 1) { heard.push(JSON.parse(body)); times.push(performance.now()); }
+        if (opcode === 1) { heard.push(JSON.parse(body)); times.push(now()); }
         if (opcode === 8) socket.end(frame(body, 8));
         if (opcode === 9) socket.write(frame(body, 10));
       }
@@ -231,6 +236,35 @@ async function checkLifecycle() {
     if (!["stop", "stuck close"].includes(failure)) assert.ok(errors.length);
     feed.stop(); assert.equal(time.pending, 0);
   }
+  for (const failure of ["stop", "disconnect", "send"]) {
+    const time = controlledTime(), sent = [], errors = [];
+    let ws, failSend = false;
+    class Socket {
+      readyState = 0;
+      constructor() { ws = this; }
+      send(data) {
+        if (failSend) throw new Error("continuation write failure");
+        sent.push(JSON.parse(data));
+      }
+      close() { this.readyState = 3; this.onclose?.({ code: 1000 }); }
+    }
+    const feed = startFeed(fixture, { port: 4321, speed: 1000 }, { WebSocketImpl: Socket, time, log: () => {}, error: (s) => errors.push(s) });
+    ws.readyState = 1; ws.onopen();
+    while (!sent.some((m) => m.id === "demo-card" && m.status === "waiting")) time.next();
+    ws.onmessage({ data: JSON.stringify({ type: "answer", by: "Parent", text: "Keep it a surprise" }) });
+    const count = sent.length;
+    time.next(); // The continuation is now waiting for the shared relay budget.
+    assert.equal(sent.length, count);
+    assert.equal(time.pending, 1);
+    if (failure === "stop") feed.stop();
+    else if (failure === "disconnect") { ws.readyState = 3; ws.onclose({ code: 1006 }); }
+    else { failSend = true; time.next(); }
+    assert.equal(await feed.closed, failure === "stop" ? 0 : 1);
+    assert.equal(time.pending, 0, `${failure} cancels a pending continuation and timeline`);
+    time.advance(100000);
+    assert.equal(sent.length, count, "shutdown sends no remaining continuation or prepared work");
+    if (failure === "send") assert.match(errors[0], /continuation write failure/);
+  }
 }
 
 async function checkWireWithControlledTime() {
@@ -255,6 +289,90 @@ async function checkWireWithControlledTime() {
     await until(() => endpoint.connected() === 0, "clean close frame");
     console.log(`demo-jobs-check: ${sent} outbound jobs/holds verified; ${logs.find((s) => s.startsWith("Answer from"))}`);
   } finally { feed.stop(); await endpoint.close(); }
+
+  const card = fixture.find((e) => e.message.id === "demo-card" && e.message.status === "waiting").message;
+  const birthday = fixture[0].message;
+  const hold = fixture.find((e) => e.message.type === "hold").message;
+  for (const speed of [2, 1000]) {
+    for (const phase of ["waiting", "hold", "final"]) {
+      for (const [text, result] of [
+        ["KEEP IT A SURPRISE", "Keeps the class a surprise"],
+        ["mention the pottery class in mom's CARD", "Mentions the pottery class"],
+        ["keep it a surprise, thanks", "Keeps the class a surprise"],
+      ]) {
+        const time = controlledTime(), start = time.now(), logs = [], errors = [];
+        const endpoint = await fakeEndpoint({ now: time.now });
+        const feed = startFeed(fixture, { port: endpoint.port, speed }, { time, log: (s) => logs.push(s), error: (s) => errors.push(s) });
+        async function tick() {
+          time.next();
+          const sent = logs.filter((s) => /\[simulated\]/.test(s)).length;
+          await until(() => endpoint.heard.length === sent, "controlled continuation wire frames");
+        }
+        async function drain() {
+          for (let steps = 0; time.pending; steps++) { assert.ok(steps < 100); await tick(); }
+        }
+        async function answer(text) {
+          const count = logs.filter((s) => s.startsWith("Answer from")).length;
+          endpoint.send({ type: "answer", by: "Parent", text });
+          await until(() => logs.filter((s) => s.startsWith("Answer from")).length === count + 1, "answer logged");
+          assert.ok(logs.includes(`Answer from Parent: ${text}`));
+        }
+        try {
+          await until(() => logs.some((s) => /Connected as/.test(s)), "open continuation socket");
+          await tick();
+          await answer(text); // A recognized choice before the card is waiting is only logged.
+          assert.equal(endpoint.heard.length, 1);
+          while (!endpoint.heard.some((m) => m.id === card.id && m.status === "waiting")) await tick();
+          assert.deepEqual(endpoint.heard, fixture.slice(0, 5).map((e) => e.message), "early answer invents no choice");
+          await answer("Thanks for the options.");
+          await answer("Keep it a surprise next week");
+          await answer(null);
+          assert.equal(endpoint.heard.length, 5, "unrelated, unrecognized and non-text answers only log");
+          if (phase === "hold") while (!endpoint.heard.some((m) => m.type === "hold" && m.text === hold.text)) await tick();
+          if (phase === "final") await drain();
+          const before = endpoint.heard.length, answeredAt = time.now();
+          const expectedTimes = endpoint.times.slice(-4), continuationTimes = [];
+          let due = answeredAt;
+          for (let i = 0; i < 3; i++) {
+            due += nextDelay(0, speed, start, due, expectedTimes);
+            continuationTimes.push(due);
+            expectedTimes.push(due);
+            if (expectedTimes.length > 4) expectedTimes.shift();
+          }
+          await answer(text);
+          await answer(text === "KEEP IT A SURPRISE" ? "Mention the pottery class in Mom's card" : "Keep it a surprise");
+          assert.equal(time.pending, 1, "one shared scheduler handles the continuation");
+          await drain();
+          const continuation = [
+            { ...card, status: "done", result },
+            { ...birthday, status: "done", result: "Class found · card ready" },
+            { type: "hold", text: "" },
+          ];
+          const prepared = fixture.map((e) => e.message);
+          const remaining = prepared.slice(before).filter((m) => m !== hold && !(m.id === birthday.id && m.status === "waiting"));
+          assert.deepEqual(endpoint.heard, [...prepared.slice(0, before), ...continuation, ...remaining], `${speed}/${phase}/${text}: exact continuation and remaining work`);
+          assert.deepEqual(endpoint.times.slice(before, before + 3), continuationTimes, "continuation uses the first available budget slots");
+          assertPaced(endpoint.times); // Prepared jobs, holds, completion and withdrawal all share it.
+          assert.deepEqual(endpoint.heard.filter((m) => m.type === "hold").at(-1), { type: "hold", text: "" }, "question withdrawn without a later hold restoring it");
+          for (const id of [card.id, birthday.id]) {
+            assert.equal(endpoint.heard.filter((m) => m.id === id && m.status === "done").length, 1);
+            assert.equal(endpoint.heard.filter((m) => m.id === id).at(-1).status, "done", "later prepared events cannot reverse completion");
+          }
+          if (phase !== "final" && speed === 2) assert.ok(endpoint.times[before] < start + 60000 / speed, "answer continues before the timeline endpoint");
+          assert.equal(logs.filter((s) => /feed complete/.test(s)).length, 1);
+          assert.equal(time.pending, 0);
+          assert.equal(endpoint.connected(), 1, "socket stays open after continuation");
+          await answer(text);
+          time.advance(100000);
+          assert.equal(time.pending, 0);
+          assert.equal(endpoint.heard.length, before + 3 + remaining.length, "duplicate after completion sends nothing");
+          assert.deepEqual(errors, []);
+          feed.stop(); assert.equal(await feed.closed, 0); assert.equal(time.pending, 0);
+        } finally { feed.stop(); await endpoint.close(); }
+      }
+    }
+  }
+  console.log("demo answer continuation: ok");
 }
 
 function childFeed(port, extra = []) {
