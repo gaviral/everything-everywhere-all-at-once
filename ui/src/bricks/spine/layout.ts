@@ -12,7 +12,7 @@
 //  - A slot (dashed) is where your thought on its way is expected: under the tip of the thread you're on.
 //  - Whatever someone placed by hand stays exactly there; the rest flows around it, never under it. What's on the
 //    shelf is off the canvas; where a point was, its line keeps a small mark.
-import type { Note, Position, Thought, Thread } from "../contract";
+import type { Note, Position, Speaker, Thought, Thread } from "../contract";
 import { wrap, wrapEnd, type FontKey } from "./measure";
 
 export type Box = { x: number; y: number; w: number; h: number };
@@ -81,13 +81,14 @@ export interface Who {
   ai: boolean;
   me: boolean;
 }
-// contract: nothing in the map says which speaker is an AI yet; the Friend joins a room under that name (the guide's
-// `by`), so the name stands in until the contract carries it.
+// An AI participant: the map's `speakers` says so (it joined with `?ai`, as the Friend's bridge does); a speaker named
+// Friend is one too, for a bridge that joins without it.
 const AI_NAME = /^(✦\s*)?(the\s+)?friend$/i;
-export function whoIs(name: string, me: string): Who {
+export function whoIs(name: string, me: string, speakers?: ReadonlyMap<string, Speaker>): Who {
   const mine = name === me || name === "you";
-  const ai = !mine && AI_NAME.test(name.trim());
-  return { name: mine ? "you" : ai ? "Friend" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
+  const friend = !mine && AI_NAME.test(name.trim());
+  const ai = !mine && (friend || !!speakers?.get(name)?.ai);
+  return { name: mine ? "you" : friend ? "Friend" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
 }
 
 export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin";
@@ -174,7 +175,7 @@ export interface Item {
   marks?: Mark[];
   /** Said by someone else: their initial on the line instead of a dot (✦ for the Friend). */
   who?: Who;
-  /** ✓ Agreed, and by whom (contract: the core's `agreed_by`); without it a decision reads "✓ Decided". */
+  /** ✓ Agreed, and by whom (a thought's `agreed_by`); without it a decision reads "✓ Decided". */
   agreed?: Who[];
   /** Said and not finished: amber, quoted, "Left off". */
   left?: boolean;
@@ -266,6 +267,8 @@ export interface LayoutInput {
   open: string | null;
   /** Who's at this window (the map's `me`). */
   me?: string;
+  /** Everyone on the map (the map's `speakers`): which are AI participants (✦). */
+  speakers?: ReadonlyMap<string, Speaker>;
   /** The thread you're on: its tip takes the slots, and it never floats as an aside. */
   active?: string | null;
   /** Your thoughts on their way, oldest first: a slot each under the active thread's tip. */
@@ -366,6 +369,7 @@ const tuckHeight = (tucks: Tuck[]) =>
 export function layout(input: LayoutInput): Layout {
   const { threads, notes, rooms, positions, open } = input;
   const me = input.me ?? "you";
+  const who = (name: string) => whoIs(name, me, input.speakers);
   const active = input.active ?? null;
   const pendingSlots = input.slots ?? [];
   const opened = input.opened ?? new Set<string>();
@@ -463,7 +467,7 @@ export function layout(input: LayoutInput): Layout {
   // Sizes, before anything is placed.
   const headLines = (t: Thread) => wrap(t.title, "title", G.titleW, G.titleMax);
   const headHeight = (lines: number[]) => Math.max(G.tile, lines.length * G.titleLine + G.headMeta);
-  const entryOf = (by: string, text: string, w: number): Entry => ({ who: whoIs(by, me), text, lines: wrap(text, "small", w, G.marginMax) });
+  const entryOf = (by: string, text: string, w: number): Entry => ({ who: who(by), text, lines: wrap(text, "small", w, G.marginMax) });
   const shapes = new Map<string, Shape>();
   const shapeOf = (idea: Idea, look: Look): Shape => {
     const cached = shapes.get(`${idea.key}|${look.variant}`);
@@ -571,8 +575,8 @@ export function layout(input: LayoutInput): Layout {
   const speakersOf = (t: Thread): Who[] => {
     const seen = new Map<string, Who>();
     for (const idea of ideasIn(t.id)) for (const part of idea.parts) {
-      const who = whoIs(part.speaker || "you", me);
-      if (!seen.has(who.name)) seen.set(who.name, who);
+      const said = who(part.speaker || "you");
+      if (!seen.has(said.name)) seen.set(said.name, said);
     }
     return [...seen.values()].sort((a, b) => Number(b.me) - Number(a.me) || Number(a.ai) - Number(b.ai));
   };
@@ -582,10 +586,10 @@ export function layout(input: LayoutInput): Layout {
   });
   const pointItem = (idea: Idea, thread: string, box: Box, look: Look, up: string | undefined, depth: number): Item => {
     const shape = shapeOf(idea, look);
-    const speaker = whoIs(idea.parts[0].speaker || "you", me);
-    // contract: who agreed comes with the core's rooms (`agreed_by`); until then a decision is "✓ Decided".
-    const agreedBy = idea.parts.flatMap((p) => (p as Thought & { agreed_by?: string[] }).agreed_by ?? []);
-    const agreed = [...new Map(agreedBy.map((name) => whoIs(name, me)).map((w) => [w.name, w])).values()].sort((a, b) => Number(b.me) - Number(a.me));
+    const speaker = who(idea.parts[0].speaker || "you");
+    // Who agreed, once the core says (`agreed_by`); until then a decision is "✓ Decided".
+    const agreedBy = idea.parts.flatMap((p) => p.agreed_by ?? []);
+    const agreed = [...new Map(agreedBy.map((name) => who(name)).map((w) => [w.name, w])).values()].sort((a, b) => Number(b.me) - Number(a.me));
     return {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
       room: rooms.get(thread), depth, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
@@ -689,7 +693,7 @@ export function layout(input: LayoutInput): Layout {
       const size = asideSize(idea);
       const at = { x, y, w: size.w, h: size.h };
       const box = exact ? at : clear(s, at);
-      const speaker = whoIs(idea.parts[0].speaker || "you", me);
+      const speaker = who(idea.parts[0].speaker || "you");
       add(s, threadItem(t, box, "aside", { text: idea.text, shown: idea.text, lines: size.lines, thoughts: idea.parts.map((p) => p.id), at: idea.at, count: 1, since: idea.at,
         who: speaker.me ? undefined : speaker }));
       if (s === out) tips.set(t.id, `t:${t.id}`);

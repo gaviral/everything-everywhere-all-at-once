@@ -90,7 +90,8 @@ function Bubble({ flight, remove }: { flight: Flight; remove: (id: string) => vo
 
   const classes = ["bubble-flight-bubble", flight.compact ? "bubble-flight-compact" : "bubble-flight-full",
     phase === "fly" ? "bubble-flight-flying" : "", phase === "fade" ? "bubble-flight-fading" : ""].join(" ");
-  return <div ref={element} className={classes} data-thought-id={flight.id} data-thread-id={flight.threadId}
+  // `data-flight`: the name a view looks for to know a thought is still in the air (the Spine's slot waits for it).
+  return <div ref={element} className={classes} data-flight={flight.id} data-thought-id={flight.id} data-thread-id={flight.threadId}
     onAnimationEnd={(event) => {
       if (["bubble-flight-quick", "bubble-flight-fade-out"].includes(event.animationName)) remove(flight.id);
     }}>{flight.text}</div>;

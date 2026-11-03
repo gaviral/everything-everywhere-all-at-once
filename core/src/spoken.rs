@@ -28,6 +28,11 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         core.run_command(speaker, placer::Job::Back);
         return Some(Done::moved(Act::Back, before));
     }
+    // The notices are the window's own (what it showed, and when), so it opens them: no point on the map, nobody moves.
+    if is_what_happened(text) {
+        core.send_to(speaker, ServerMsg::View { view: View::Notices });
+        return Some(Done::new(Act::Notices));
+    }
     // The card's buttons go to the window: it knows which card it shows, and which it hid for now (Later) or for
     // good. "Where was I?" picks by the map alone, so "finish it" could open a card you snoozed instead of the one
     // in front of you.
@@ -81,6 +86,8 @@ pub fn kind(text: &str) -> Option<Act> {
         Some(Act::Pause)
     } else if is_lost_thought(text) {
         Some(Act::Back)
+    } else if is_what_happened(text) {
+        Some(Act::Notices)
     } else if is_finish(text) {
         Some(Act::Finish)
     } else if is_forget(text) {
@@ -199,6 +206,20 @@ fn is_lost_thought(text: &str) -> bool {
             "going back to what i was saying", "going back to what you were saying", "getting back to what i was saying", "back to what i was saying",
         ],
         &["again", "sorry", "before", "earlier"],
+    )
+}
+
+/// "What just happened?" when a notice went before you read it: the window shows the notices it showed, newest first
+/// (the Notice timeline). Only the whole turn: in a sentence ("I don't know what just happened at work") it's a
+/// thought. Not "what did I miss?", which in a call is asked of the others.
+pub(crate) fn is_what_happened(text: &str) -> bool {
+    crate::is_command(
+        text,
+        &[
+            "what just happened", "what happened just now", "what was that notice", "what were the notices", "show me what just happened",
+            "show what just happened", "show me the notices", "show the notices", "show my notices", "open the notices",
+        ],
+        &["there", "again", "here"],
     )
 }
 

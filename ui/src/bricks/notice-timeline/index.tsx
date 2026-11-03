@@ -4,12 +4,11 @@ import "./notice-timeline.css";
 
 // What just happened: every notice and map update this window shows while the brick is on (`on("notice")`), newest
 // first, behind a small clock above the dock. A notice is up only for its reading time, so one missed while looking
-// away gets a second look here. Typing or saying "what just happened?" opens the list too.
+// away gets a second look here. Typing or saying "what just happened?" opens the list too: the core reads it as a
+// command, never a point, and tells only your windows (`on("asked")`).
 
 /** How many it keeps: the newest. */
 const KEPT = 50;
-/** The ask, as a thought of yours on its way that says only this. */
-const ASK = /^what just happened\s*[?!.]*$/i;
 
 type Kept = BrickEvents["notice"] & { n: number };
 
@@ -24,7 +23,7 @@ function ago(time: number, now: number) {
   return `${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
-export default function NoticeTimeline({ map, on }: BrickProps) {
+export default function NoticeTimeline({ on }: BrickProps) {
   const [kept, setKept] = useState<Kept[]>([]);
   const count = useRef(0);
   useBrickEvent(on, "notice", (notice) => {
@@ -35,13 +34,7 @@ export default function NoticeTimeline({ map, on }: BrickProps) {
 
   // Opened from the clock, the list takes focus, so arrows scroll it; opened by the ask, focus stays where you type.
   const [open, setOpen] = useState<"clock" | "ask" | null>(null);
-  // Each ask opens it once: a later change to the map doesn't open it again after it's closed.
-  const asked = useRef(new Set<string>());
-  useEffect(() => {
-    const asks = map.thoughts.filter((thought) => !thought.placed && thought.speaker === map.me && ASK.test(thought.text.trim()));
-    if (asks.some((thought) => !asked.current.has(thought.id))) setOpen("ask");
-    asked.current = new Set(asks.map((thought) => thought.id));
-  }, [map.thoughts, map.me]);
+  useBrickEvent(on, "asked", ({ what }) => { if (what === "notices") setOpen("ask"); });
 
   const root = useRef<HTMLDivElement>(null);
   const clock = useRef<HTMLButtonElement>(null);
