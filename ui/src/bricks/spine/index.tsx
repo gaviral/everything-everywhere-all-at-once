@@ -482,6 +482,19 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     if (reduced) camera.flash(key);
     else setPulses((was) => ({ ...was, [key]: (was[key] ?? 0) + 1 }));
   };
+  /** Its flight still in the air (the bubble flight's, `data-flight`). */
+  const inAir = (thoughtId: string) => !!document.querySelector(`[data-flight="${CSS.escape(thoughtId)}"], [data-thought-id="${CSS.escape(thoughtId)}"]`);
+  /** The slot stays open until the flight is in, never longer than a flight; then the point rings. */
+  const arrive = (thoughtId: string, item: Item) => {
+    setArriving(thoughtId);
+    const began = Date.now();
+    const check = () => {
+      if (inAir(thoughtId) && Date.now() - began < ARRIVE_MAX_MS) { later(check, 40); return; }
+      setArriving((was) => (was === thoughtId ? null : was));
+      ring(item.key);
+    };
+    later(check, 40);
+  };
   useBrickEvent(on, "landed", (event: BrickEvents["landed"]) => {
     // The model that placed it, and how long placing took; a rule's landing names no model (none is ever guessed).
     const { thoughtId, threadId, mine, model, ms } = event;
@@ -493,18 +506,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
     const item = layout.items.find((i) => (i.kind === "point" || i.kind === "aside") && i.thoughts?.includes(thoughtId)) ?? layout.byKey.get(`t:${threadId}`);
     if (item) {
-      // Its flight still in the air (the bubble flight's): the slot stays open until it's in, never longer than a flight.
-      const inAir = () => !!document.querySelector(`[data-flight="${CSS.escape(thoughtId)}"], [data-thought-id="${CSS.escape(thoughtId)}"]`);
-      if (mine && !reduced && inAir()) {
-        setArriving(thoughtId);
-        const began = Date.now();
-        const check = () => {
-          if (inAir() && Date.now() - began < ARRIVE_MAX_MS) { later(check, 40); return; }
-          setArriving((was) => (was === thoughtId ? null : was));
-          ring(item.key);
-        };
-        later(check, 40);
-      } else ring(item.key);
+      if (mine && !reduced && inAir(thoughtId)) arrive(thoughtId, item);
+      else ring(item.key);
     }
     const quiet = Date.now() - touched.current > quietFor();
     if (mine && !following && quiet) setFollowing(true);
@@ -513,6 +516,15 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
   });
+  // Your first thought on an empty map: this view is only drawn once the map has a thread, so it mounts after that
+  // thought landed (its `landed` came before this view was here) with its bubble waiting in the air. It arrives as a
+  // later one does: the slot holds its place until the bubble is in.
+  useEffect(() => {
+    const flying = reduced ? [] : [...document.querySelectorAll("[data-flight]")].map((bubble) => bubble.getAttribute("data-flight"));
+    const waiting = flying.length ? map.thoughts.find((t) => t.speaker === map.me && t.placed && flying.includes(t.id)) : undefined;
+    const item = waiting && layout.items.find((i) => (i.kind === "point" || i.kind === "aside") && i.thoughts?.includes(waiting.id));
+    if (waiting && item) arrive(waiting.id, item);
+  }, []);
   // What the guide points at (`pointing`: the Friend's point, or a hint), or null when it stops. The Spine keeps the one
   // dim (78%) for the rest, so a pointed-at thread never dims twice; while the view follows your talk, the target comes
   // into view (a view a hand holds stays where it was left).

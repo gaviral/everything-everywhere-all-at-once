@@ -5,7 +5,9 @@
 // point's own: into the Spine's dashed slot (`data-slot="slot:<thought id>"`, the contract's name), onto the point on
 // the Map. A view that holds slots rings the landing itself once the bubble is in (`data-flight` says it's still in
 // the air); on the Map the brick rings it. After your first five, a bubble shows only once its thought is placed and
-// slides straight there. A thought still unplaced after 5 s fades where it is (the slot or the dock's pill has it).
+// slides straight there. A thought still unplaced after 5 s fades where it is (the slot or the dock's pill has it). A
+// thought placed before its landing is drawn (your first on an empty map: the view that draws cards mounts with the
+// map's first thread) is held where it is until the landing shows, then flies in as any other.
 // With Reduce Motion there's no flight, only the landing's ring, unless you switch "Show the flight" on in its hint,
 // which comes once, at a pause after your first landing. Every move here is drawn frame by frame from script, never a
 // CSS animation, so the app's no-motion rule (styles.css) leaves a flight you asked for alone.
@@ -29,6 +31,11 @@ type Aim = Point & { scale: number };
 // How long a bubble waits for its thought to be placed before it fades where it is: past the slowest of nine in ten
 // placings measured (≈ 4 s; the median ≈ 2.7 s).
 const WAIT_MS = 5000;
+/** How long a placed thought's bubble waits for its landing to be drawn before it fades where it is. The first thought
+ *  on an empty map has none until its view mounts with the thread: the card is in the page 0.3 s after the placing
+ *  (0.7 s with the processor throttled six times; first-landing-check), so 2 s leaves a slow machine room and still lets
+ *  go of a bubble whose view has nothing to land on (the Palace, a map seen as pictures). */
+const LAND_WAIT_MS = 2000;
 const LIFT_MS = 160;
 /** The drift goes at most this share of the way toward the thread you're on, getting there on this time scale: about
  *  43% by the median placing (2.8 s), so the flight that follows still has a way to go and a turn reads as one. */
@@ -240,6 +247,8 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
     let curve: Curve | null = null;
     let fly = { ms: FLY_MAX_MS, from: 1, to: 1, ring: null as Element | null, into: false };
     let driftS = 0;
+    /** The frame its thought was first seen placed, from which its landing has LAND_WAIT_MS to be drawn. */
+    let placedAt: number | null = null;
     const trail: { x: number; y: number; t: number }[] = [];
     let frame = 0;
 
@@ -277,10 +286,11 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
 
     // Out of the air (`data-flight` gone): the view's slot fills and rings.
     const land = () => { if (bubble.hasAttribute("data-flight")) { bubble.removeAttribute("data-flight"); setInAir(false); } };
+    // Flies to where the thought landed, if the view has drawn it yet; else it stays as it is and tries again next frame.
     const startFly = (now: number) => {
       const f = latest.current.flight;
       const landing = landingAim(f.id, f.threadId!, f.text);
-      if (!landing) { phase = "fade"; since = now; return; }
+      if (!landing) return false;
       const goal = inside(landing.aim, landing.aim.scale);
       const way = curve && phase === "drift" ? heading(curve, Math.max(driftS, 0.02)) : { x: 0, y: -1 };
       curve = phase === "wait" ? rising(at, goal) : turning(at, way, goal);
@@ -288,14 +298,18 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
       fly = { ms: clamp(180 + distance * 0.3, FLY_MIN_MS, FLY_MAX_MS), from: scale, to: landing.aim.scale, ring: landing.ring, into: landing.into };
       phase = "fly";
       since = now;
+      return true;
     };
 
     const step = (now: number) => {
       const { flight: f, active: a } = latest.current;
       // Time in the phase it's in: a phase that ends starts the next at once, in the same frame.
       const t = () => now - since;
+      if (f.threadId && placedAt === null) placedAt = now;
+      // Placed, but its landing isn't drawn (yet): it holds where it is, never longer than LAND_WAIT_MS.
+      const landless = placedAt !== null && now - placedAt > LAND_WAIT_MS;
       if (phase === "wait") {
-        if (f.threadId) { at = from.words; scale = 1; startFly(now); }
+        if (f.threadId) { at = from.words; scale = 1; if (!startFly(now) && landless) phase = "gone"; }
         else if (now - born > WAIT_MS) { phase = "gone"; }
       }
       if (phase === "lift") {
@@ -306,8 +320,9 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
         if (t() >= LIFT_MS) { phase = "drift"; since = now; at = lift; }
       }
       if (phase === "drift") {
-        if (f.threadId) startFly(now);
-        else if (now - born > WAIT_MS) { phase = "fade"; since = now; }
+        if (f.threadId) {
+          if (!startFly(now) && landless) { phase = "fade"; since = now; }
+        } else if (now - born > WAIT_MS) { phase = "fade"; since = now; }
         else {
           const toward = driftAim(f.id, a);
           if (toward) {
@@ -367,7 +382,7 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
     };
     frame = requestAnimationFrame(step);
     // A hidden tab runs no frames: the bubble goes all the same, past its longest life.
-    const timer = window.setTimeout(() => remove(flight.id), WAIT_MS + FLY_MAX_MS + SETTLE_MS + 1500);
+    const timer = window.setTimeout(() => remove(flight.id), WAIT_MS + LAND_WAIT_MS + FLY_MAX_MS + SETTLE_MS + 1500);
     return () => { cancelAnimationFrame(frame); window.clearTimeout(timer); };
   }, []);
 
