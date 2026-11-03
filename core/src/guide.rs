@@ -85,16 +85,33 @@ impl Runtime {
         (updates.len(), jobs.iter().cloned().collect())
     }
 
-    fn publish(&self, core: &Core, job: Job, speaker: &str, window: u64) {
+    /// Validate ownership and capacity under the same lock as replacement, replay and broadcast.
+    fn publish(&self, core: &Core, job: Job, speaker: &str, window: u64, pace: &mut Pace, refused: Option<String>) {
         let mut jobs = self.jobs.lock().unwrap();
         let row = jobs.iter().position(|message| matches!(message, ServerMsg::Job { job: old, .. } if old.id == job.id));
+        let refused = refused.or_else(|| jobs.iter().find_map(|message| match message {
+            ServerMsg::Job { job: old, by, .. }
+                if by != speaker && (old.id == job.id || Some(&old.id) == job.parent.as_ref()) =>
+                    Some(format!("That job belongs to {by}.")),
+            _ => None,
+        })).or_else(|| {
+            if row.is_some() {
+                None
+            } else if jobs.iter().filter(|message| matches!(message, ServerMsg::Job { by, .. } if by == speaker)).count() >= 20 {
+                Some("Each speaker can keep 20 jobs at most.".into())
+            } else if jobs.len() >= 60 {
+                Some("There is room for 60 jobs at most.".into())
+            } else {
+                None
+            }
+        });
+        if !allowed(core, speaker, pace, refused) {
+            return;
+        }
         let message = ServerMsg::Job { job, by: speaker.into(), at_ms: crate::now_ms(), from: window };
         if let Some(row) = row {
             jobs[row] = message.clone();
         } else {
-            if jobs.len() == 60 {
-                jobs.pop_front();
-            }
             jobs.push_back(message.clone());
         }
         // Keep the lock through broadcast so a join cannot queue an older job behind a newer replay.
@@ -225,9 +242,7 @@ pub fn job(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut job: Jo
         .or_else(|| job.result.as_deref().and_then(|result| too_long(result, 160, "A job's result")))
         .or_else(|| (!matches!(job.status.as_str(), "running" | "done" | "failed" | "waiting"))
             .then(|| "A job's status must be running, done, failed or waiting.".into()));
-    if allowed(core, speaker, pace, refused) {
-        core.guide.publish(core, job, speaker, window);
-    }
+    core.guide.publish(core, job, speaker, window, pace, refused);
 }
 
 /// A job that couldn't be decoded uses the same refusal route without spending the window's budget.
@@ -400,10 +415,192 @@ mod tests {
 
     /// Accepted updates from independent window budgets, for replay tests that fill the retained rows.
     fn publish(core: &Core, id: &str, revision: usize) {
-        super::job(core, "Helper", 0, &mut Pace::default(), super::Job {
+        publish_as(core, "Helper", id, revision);
+    }
+
+    fn job_row(id: &str, revision: usize) -> super::Job {
+        super::Job {
             id: id.into(), title: format!("Revision {revision}"), status: "running".into(),
             result: Some(revision.to_string()), parent: None, demo: false,
+        }
+    }
+
+    fn publish_as(core: &Core, speaker: &str, id: &str, revision: usize) {
+        super::job(core, speaker, 0, &mut Pace::default(), job_row(id, revision));
+    }
+
+    fn retained_jobs(core: &Core) -> Vec<serde_json::Value> {
+        crate::subscribe_catch_up(core, "you").1.into_iter()
+            .filter(|message| matches!(message, crate::protocol::ServerMsg::Job { .. }))
+            .map(|message| serde_json::to_value(message).unwrap()).collect()
+    }
+
+    /// A refusal is private and throttled, spends no pacing slots and changes neither live jobs nor replay.
+    fn refused_job(core: &Core, speaker: &str, job: super::Job, why: &str) {
+        let before = retained_jobs(core);
+        let (mut updates, _) = crate::subscribe_catch_up(core, "you");
+        let mut pace = Pace::default();
+        super::job(core, speaker, 99, &mut pace, job.clone());
+        let outgoing = updates.try_recv().unwrap();
+        assert_eq!(outgoing.to.as_deref(), Some(speaker));
+        assert!(matches!(outgoing.message, crate::protocol::ServerMsg::Notice { message } if message == format!("Not shown: {why}")));
+        super::job(core, speaker, 99, &mut pace, job);
+        assert!(updates.try_recv().is_err(), "no live job and only one notice");
+        assert!(pace.sent.is_empty(), "refusals leave the guide budget available");
+        assert_eq!(retained_jobs(core), before, "refusals preserve every replay field");
+    }
+
+    #[test]
+    fn jobs_require_ownership_of_both_id_and_retained_parent() {
+        let (core, path, _) = prepared();
+        publish_as(&core, "First", "parent", 0);
+        publish_as(&core, "Second", "owned", 0);
+        refused_job(&core, "Second", job_row("parent", 1), "That job belongs to First.");
+        for id in ["new", "owned"] {
+            let mut job = job_row(id, 1);
+            job.parent = Some("parent".into());
+            refused_job(&core, "Second", job, "That job belongs to First.");
+        }
+        let mut stolen = job_row("owned", 1);
+        stolen.parent = Some("parent".into());
+        refused_job(&core, "First", stolen, "That job belongs to Second.");
+
+        let (mut updates, _) = crate::subscribe_catch_up(&core, "you");
+        for (id, parent) in [("child", "parent"), ("child", "parent"), ("early", "later"), ("later", "parent")] {
+            let mut job = job_row(id, 2);
+            job.parent = Some(parent.into());
+            super::job(&core, "First", 42, &mut Pace::default(), job);
+            let outgoing = updates.try_recv().unwrap();
+            assert!(outgoing.to.is_none());
+            assert!(matches!(outgoing.message, crate::protocol::ServerMsg::Job { job, by, at_ms, from }
+                if job.id == id && job.parent.as_deref() == Some(parent) && by == "First" && at_ms > 0 && from == 42));
+        }
+        assert!(updates.try_recv().is_err());
+        let jobs = retained_jobs(&core);
+        assert_eq!(jobs.iter().map(|job| job["id"].as_str().unwrap()).collect::<Vec<_>>(), ["parent", "owned", "child", "early", "later"]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_speakers_quota_cannot_displace_another_speakers_waiting_job() {
+        let (core, path, _) = prepared();
+        let mut waiting = job_row("waiting", 0);
+        waiting.status = "waiting".into();
+        super::job(&core, "Quiet", 7, &mut Pace::default(), waiting);
+        let waiting = retained_jobs(&core)[0].clone();
+        for i in 0..19 { publish_as(&core, "Flood", &format!("job:{i}"), i); }
+        assert_eq!(retained_jobs(&core).len(), 20);
+        publish_as(&core, "Flood", "job:19", 19);
+        let before = retained_jobs(&core);
+        assert_eq!(before.len(), 21, "the twentieth owned id is accepted");
+        refused_job(&core, "Flood", job_row("job:20", 20), "Each speaker can keep 20 jobs at most.");
+        let (mut updates, _) = crate::subscribe_catch_up(&core, "you");
+        for i in 21..200 { publish_as(&core, "Flood", &format!("job:{i}"), i); }
+        while let Ok(outgoing) = updates.try_recv() {
+            assert_eq!(outgoing.to.as_deref(), Some("Flood"));
+            assert!(matches!(outgoing.message, crate::protocol::ServerMsg::Notice { .. }));
+        }
+        assert_eq!(retained_jobs(&core), before, "fresh ids cannot remove waiting work");
+        publish_as(&core, "Flood", "job:0", 200);
+        assert!(matches!(updates.try_recv().unwrap().message, crate::protocol::ServerMsg::Job { job, by, .. }
+            if job.id == "job:0" && job.result.as_deref() == Some("200") && by == "Flood"));
+        let jobs = retained_jobs(&core);
+        assert_eq!(jobs.len(), 21);
+        assert_eq!(jobs[0], waiting, "the other speaker's status and attribution remain intact");
+        assert_eq!(jobs[1]["id"], "job:0", "owned updates at quota keep their position");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn concurrent_job_claims_retain_one_owner_without_foreign_replacement() {
+        use crate::protocol::ServerMsg;
+        let (core, path, _) = prepared();
+        let (mut updates, _) = crate::subscribe_catch_up(&core, "you");
+        let barrier = std::sync::Barrier::new(16);
+        std::thread::scope(|scope| {
+            for n in 0..16 {
+                let core = &core;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for revision in 0..8 {
+                        super::job(core, &format!("Helper{n}"), n, &mut Pace::default(), job_row("shared", revision));
+                        std::thread::yield_now();
+                    }
+                });
+            }
         });
+        let jobs = retained_jobs(&core);
+        assert_eq!(jobs.len(), 1);
+        let owner = jobs[0]["by"].as_str().unwrap();
+        assert_eq!(jobs[0]["result"], "7");
+        let mut accepted = 0;
+        let mut refused = 0;
+        while let Ok(outgoing) = updates.try_recv() {
+            match outgoing.message {
+                ServerMsg::Job { job, by, from, .. } => {
+                    assert_eq!(by, owner, "every live replacement belongs to the first claimant");
+                    assert_eq!(by, format!("Helper{from}"), "server attribution follows the accepted sender");
+                    assert_eq!(job.result, Some(accepted.to_string()));
+                    accepted += 1;
+                }
+                ServerMsg::Notice { message } => {
+                    assert_ne!(outgoing.to.as_deref(), Some(owner));
+                    assert_eq!(message, format!("Not shown: That job belongs to {owner}."));
+                    refused += 1;
+                }
+                _ => panic!("only jobs and private refusals expected"),
+            }
+        }
+        assert_eq!(accepted, 8);
+        assert_eq!(refused, 15 * 8);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn concurrent_new_jobs_cannot_exceed_speaker_or_total_capacity() {
+        use crate::protocol::ServerMsg;
+        for total in [false, true] {
+            let (core, path, _) = prepared();
+            let count = if total { 59 } else { 19 };
+            for i in 0..count {
+                let speaker = if total { ["First", "Second", "Third"][i / 20] } else { "Helper" };
+                publish_as(&core, speaker, &format!("kept:{i}"), i);
+            }
+            let before = retained_jobs(&core);
+            let (mut updates, _) = crate::subscribe_catch_up(&core, "you");
+            let barrier = std::sync::Barrier::new(8);
+            std::thread::scope(|scope| {
+                for n in 0..8 {
+                    let core = &core;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        let speaker = if total { format!("Claim{n}") } else { "Helper".into() };
+                        barrier.wait();
+                        publish_as(core, &speaker, &format!("new:{n}"), n);
+                    });
+                }
+            });
+            let jobs = retained_jobs(&core);
+            assert_eq!(jobs.len(), count + 1, "exactly one concurrent insertion fits");
+            assert_eq!(&jobs[..count], before, "no retained work is displaced");
+            let mut accepted = 0;
+            let mut refused = 0;
+            while let Ok(outgoing) = updates.try_recv() {
+                match outgoing.message {
+                    ServerMsg::Job { .. } => accepted += 1,
+                    ServerMsg::Notice { message } => {
+                        let why = if total { "There is room for 60 jobs at most." } else { "Each speaker can keep 20 jobs at most." };
+                        assert_eq!(message, format!("Not shown: {why}"));
+                        assert!(outgoing.to.is_some());
+                        refused += 1;
+                    }
+                    _ => panic!("only jobs and private refusals expected"),
+                }
+            }
+            assert_eq!((accepted, refused), (1, 7));
+            let _ = std::fs::remove_file(&path);
+        }
     }
 
     #[test]
@@ -567,35 +764,36 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    #[tokio::test]
-    async fn job_replay_caps_distinct_rows_without_moving_updates() {
-        let (core, address, path, _) = served().await;
-        let [mut observer] = windows(address, [""]).await;
+    #[test]
+    fn job_replay_caps_distinct_rows_without_moving_updates() {
+        let (core, path, _) = prepared();
+        let (mut updates, _) = crate::subscribe_catch_up(&core, "you");
+        let speakers = ["First", "Second", "Third"];
         for i in 0..60 {
-            publish(&core, &format!("job:{i}"), i);
+            publish_as(&core, speakers[i / 20], &format!("job:{i}"), i);
         }
-        publish(&core, "job:0", 100);
-        let live = drain(&mut observer, 100).await;
+        publish_as(&core, "First", "job:0", 100);
+        let mut live = Vec::new();
+        while let Ok(outgoing) = updates.try_recv() {
+            live.push(serde_json::to_value(outgoing.message).unwrap());
+        }
         assert_eq!(live.len(), 61);
-        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
-        let jobs: Vec<_> = drain(&mut joined, 100).await.into_iter().filter(|m| m["type"] == "job").collect();
+        let jobs = retained_jobs(&core);
         assert_eq!(jobs.len(), 60);
         assert_eq!(jobs[0], live[60], "updating the oldest row keeps it first");
         assert_eq!(&jobs[1..], &live[1..60]);
-        publish(&core, "job:60", 60);
-        publish(&core, "job:2", 200);
-        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
-        let jobs: Vec<_> = drain(&mut joined, 100).await.into_iter().filter(|m| m["type"] == "job").collect();
+        refused_job(&core, "Fourth", job_row("job:60", 60), "There is room for 60 jobs at most.");
+        publish_as(&core, "First", "job:2", 200);
+        publish_as(&core, "First", "job:0", 300);
+        let jobs = retained_jobs(&core);
         assert_eq!(jobs.len(), 60);
         for (i, job) in jobs.iter().enumerate() {
-            assert_eq!(job["id"], format!("job:{}", i + 1), "a new 61st id evicts the oldest, even after an update");
+            assert_eq!(job["id"], format!("job:{i}"), "a refused 61st id leaves every row in its original position");
+            assert_eq!(job["by"], speakers[i / 20]);
         }
-        assert_eq!(jobs[1]["result"], "200");
-        publish(&core, "job:0", 300);
-        let jobs: Vec<_> = crate::catch_up(&core, "you").into_iter().filter_map(|m| match m {
-            crate::protocol::ServerMsg::Job { job, .. } => Some(job.id), _ => None,
-        }).collect();
-        assert_eq!(jobs, (2..=60).map(|i| format!("job:{i}")).chain(["job:0".into()]).collect::<Vec<_>>());
+        assert_eq!(jobs[0]["result"], "300");
+        assert_eq!(jobs[2]["result"], "200");
+        assert_eq!(&jobs[3..], &live[3..60], "updates at capacity leave other rows and their server stamps intact");
         let _ = std::fs::remove_file(&path);
     }
 
