@@ -64,6 +64,11 @@ html.shell2 .shell-tl { top: 16px; left: 16px; }
 html.shell2 .shell-tr { top: 16px; right: 16px; }
 html.shell2 .shell-bl { bottom: 36px; left: 16px; }
 html.shell2 .shell-br { right: 16px; bottom: var(--shelf-top, 36px); z-index: 41; flex-direction: column; align-items: flex-end; }
+/* Under about 1060 px the stage (600 px, centered) starts inside the way back's 215 px, and on a phone its mic sat on the
+   way back, which took the taps: the corner rides above the stage, whatever height it has. */
+@media (max-width: 1060px) {
+  html.shell2 .shell-bl { bottom: calc(var(--dock-height, 120px) + var(--shell-corner-gap)); }
+}
 html.shell2 .shell-identity { gap: 10px; }
 html.shell2 .shell-wordmark { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .14em; }
 html.shell2 .shell-mapname { color: var(--ink-2); }
@@ -304,6 +309,9 @@ html.shell2 .shell-sample { cursor: pointer; }
   html.shell2 .shell-button { width: 36px; padding: 0; justify-content: center; border-radius: 18px; }
   html.shell2 .shell-button .shell-label, html.shell2 .shell-button .keycap, html.shell2 .shell-find-field .keycap { display: none; }
   html.shell2 .shell-button .shell-icon { color: var(--ink-2); }
+  /* The way back keeps its words: an arrow alone, floating above the composer, doesn't say where it goes. */
+  html.shell2 .shell-bl .shell-button { width: auto; padding: 0 14px 0 10px; }
+  html.shell2 .shell-bl .shell-button .shell-label { display: inline; }
   html.shell2 .shell-find-field { width: 36px; padding: 0 0 0 9px; border-radius: 18px; }
   html.shell2 .shell-find-field input { opacity: 0; }
   html.shell2 .shell-find-open .shell-find-field { width: calc(100vw - 32px); }

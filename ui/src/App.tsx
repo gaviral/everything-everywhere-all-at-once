@@ -22,7 +22,7 @@ import { Recap } from "./Recap";
 import { hasToured, Tour } from "./Tour";
 import { leftBy, RoomControl, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
-import { useFindJump } from "./find";
+import { useFindJump, viewAfterJump } from "./find";
 import { landedNow } from "./landed";
 import { resolveMerged } from "./merges";
 import { UndoButton } from "./Undo";
@@ -105,7 +105,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
-  // "map", "palace", or the id of a view brick that's on (bricks-core.ts): its name joins the Map and Palace switch.
+  // "map", "palace", "cards" (the shell's: the Catalog's built-in view), or the id of a view brick that's on
+  // (bricks-core.ts): its name joins the Map and Palace switch.
   const home = !SHELL2 && !CARDS_FLAG && isOn("spine") ? "spine" : "map";
   const [view, setView] = useState<string>(home);
   const [destination, setDestination] = useState<ViewDestination | null>(null);
@@ -185,7 +186,7 @@ export default function App() {
     keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
-    else setView("map");
+    else setView((was) => viewAfterJump(was, "map"));
     if (asked === "all" || (asked === "focus" && world.active)) {
       setFocusMode(asked === "focus");
       setQuery("");
@@ -726,7 +727,7 @@ export default function App() {
     const id = ask.thread_id && resolveMerged(world, ask.thread_id);
     if (id && !world.threads.some((thread) => thread.id === id)) return;
     const ids = id ? [id, ...branchesUnder(world.threads, id)] : world.threads.map((thread) => thread.id);
-    setView("map");
+    setView((was) => viewAfterJump(was, "map"));
     setQuery("");
     setFocusMode(false);
     const kept = keptOpen.current;
@@ -802,6 +803,9 @@ export default function App() {
       }
       if (event.key === "Escape") {
         if (hasAway) { away.dismiss(); return; }
+        // One Esc, one thing: the shell's rail closes by its own key handler below (which may run before this one, with the
+        // rail already gone, or after it), and the next Esc folds the cards.
+        if (SHELL2 && (event.defaultPrevented || document.querySelector(".shell-rail"))) return;
         keptOpen.current.clear();
         setExpanded(Object.fromEntries(world.threads.filter((thread) => !activePath.has(thread.id)).map((thread) => [thread.id, true])));
       }
@@ -918,7 +922,7 @@ export default function App() {
   const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
 
   const goBack = (thread: Thread) => {
-    setView((was) => was === "map" ? "map" : home);
+    setView((was) => viewAfterJump(was, home));
     const latest = [...world.thoughts].reverse().find((thought) => thought.thread_id === thread.id && thought.placed);
     setDestination((was) => ({ threadId: thread.id, thoughtId: latest?.id ?? null, revision: (was?.revision ?? 0) + 1 }));
     setExpanded((state) => {
@@ -969,12 +973,15 @@ export default function App() {
     hint: showHint,
   }, destination);
   const bricksOn = useBricksOn();
+  const builtIns = useBuiltInsOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
   const viewBrick = viewBricks.find((brick) => brick.info.id === view);
-  // A view brick switched off while it's shown hands the window back to the map.
-  useEffect(() => { if (view !== "map" && view !== "palace" && !viewBrick) showView("map"); }, [view, viewBrick]);
+  // A view that's gone while it's shown hands the window back to the map: a view brick switched off, or the shell's Cards
+  // (the Catalog's built-in view; today's page has no such view, its map is the cards) switched off or never on.
+  const viewGone = view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick;
+  useEffect(() => { if (viewGone) showView("map"); }, [viewGone]);
 
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
@@ -993,7 +1000,6 @@ export default function App() {
     for (const notice of core.takeNotices()) brickHost.emit("notice", { ...notice, text: noticeText(notice.text) });
   });
   // The revamped shell's own state (?shell=2, shell/): the rail's tab, the built-ins' switches, History, the mode.
-  const builtIns = useBuiltInsOn();
   const listeningOn = !SHELL2 || builtIns.has("listening");
   const [railTab, setRailTab] = useState<RailTab | null>(null);
   const catalogOpen = useCatalogOpen();
@@ -1047,31 +1053,37 @@ export default function App() {
   useEffect(() => { if (SHELL2) document.documentElement.dataset.view = view; }, [view]);
   // The shell's keys, outside a field: T Talk, Y History, C Catalog, "," Settings, R Recap, L a held question's Later,
   // Esc closes the rail; ⌘D or Ctrl+D the mic, from anywhere (the Keys feature's own, when it's on).
+  // Listened for once, reading each render's values through `shellKey`. A listener taken off and put back by every render
+  // is skipped by a key press whose earlier listener re-rendered in between: the map's Esc above sets state, and for a
+  // real key press the browser runs that render before the next listener (a script's dispatched event runs them all
+  // first), so a real Esc never closed the rail.
+  const shellKey = useRef<(event: KeyboardEvent) => void>(() => {});
+  shellKey.current = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement;
+    const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "d") {
+      if (bricksOn.has("keys") || !listeningOn) return;
+      event.preventDefault();
+      if (!event.repeat) void toggleMic(event);
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
+    if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
+    const key = event.key.toLowerCase();
+    const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
+    if (tab && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
+    if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
+    if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
+    if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
+    if (key === "e" && !world.threads.length && !world.thoughts.length && site.sample && core.connected) { event.preventDefault(); loadSample(); }
+    if (key === "e" && builtIns.has("export") && (world.threads.length || world.thoughts.length)) { event.preventDefault(); exportMap(); }
+  };
   useEffect(() => {
     if (!SHELL2) return;
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "d") {
-        if (bricksOn.has("keys") || !listeningOn) return;
-        event.preventDefault();
-        if (!event.repeat) void toggleMic(event);
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
-      if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
-      const key = event.key.toLowerCase();
-      const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
-      if (tab && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
-      if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
-      if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
-      if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
-      if (key === "e" && !world.threads.length && !world.thoughts.length && site.sample && core.connected) { event.preventDefault(); loadSample(); }
-      if (key === "e" && builtIns.has("export") && (world.threads.length || world.thoughts.length)) { event.preventDefault(); exportMap(); }
-    };
+    const onKey = (event: KeyboardEvent) => shellKey.current(event);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   // Today's page; the new shell (?shell=2) follows it.
   if (!SHELL2) return (
@@ -1333,18 +1345,21 @@ export default function App() {
   const aiNames = new Set(world.ai ?? []);
   const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
     .map((thread) => ({ thread, points: thoughtsByThread.get(thread.id)?.length ?? 0 })) : [];
+  // A view's Show: takes you to it, and the rail gets out of its way (a sheet over it on a phone; on a laptop it covers
+  // the cards' right-hand column, where the buttons are).
+  const openView = (id: string) => { setRailTab(null); showView(id); };
   const rows: CatalogRow[] = [
     ...BRICKS.map(({ info }): CatalogRow => {
       const named = FEATURE_NAMES[info.id];
       return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
         on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
-      show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => showView(info.id) : undefined };
+      show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
     }),
     ...BUILT_INS.map((b): CatalogRow => {
       const named = FEATURE_NAMES[b.id];
       const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
       return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false,
-        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view) showView("map"); }, show: shows && builtIns.has(b.id) ? () => showView(shows) : undefined };
+        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view) showView("map"); }, show: shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
     }),
     ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
       toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected })),
