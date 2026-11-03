@@ -1,5 +1,6 @@
 import type { Thread, Thought } from "./core";
 import { readingTime } from "./notice-rules";
+import { useEffect, useMemo, useState, type SetStateAction } from "react";
 
 // The unfinished card in the dock (App.tsx): at a natural pause, the thread you left last, your last words there, and
 // Finish it, Later or Forget it. Checked by scripts/unfinished-check.mjs.
@@ -12,6 +13,50 @@ export const LATER_MS = 5 * 60 * 1000;
 /** Cards you've answered: set aside until their thread changes (`dismissed`), or put off by Later, and when. */
 export interface Hidden { dismissed: string[]; laterAt: Record<string, number> }
 export const NONE_HIDDEN: Hidden = { dismissed: [], laterAt: {} };
+
+/** Recognize a saved map by any surviving thought, so deleting its first words cannot undo Later. */
+export function useHidden(thoughts: Thought[], me: string): [Hidden, (change: SetStateAction<Hidden>) => void] {
+  const words = useMemo(() => thoughts.map((t) => `${t.id}:${t.at_ms}`), [thoughts]);
+  const key = useMemo(() => {
+    const prefix = `e2a2o.unfinished:${location.host}${location.pathname}:`;
+    const first = thoughts.reduce<Thought | null>((first, t) => !first || t.at_ms < first.at_ms ? t : first, null);
+    const initial = first ? `${prefix}${first.id}:${first.at_ms}:${me}` : null;
+    try {
+      for (const stored of Object.keys(localStorage)) {
+        if (!stored.startsWith(prefix) || !stored.endsWith(`:${me}`)) continue;
+        const saved = JSON.parse(localStorage.getItem(stored) ?? "null");
+        if (Array.isArray(saved?.words) && saved.words.some((word: unknown) => typeof word === "string" && words.includes(word))) return stored;
+      }
+    } catch { /* Storage unavailable: keep choices for this visit. */ }
+    return initial;
+  }, [thoughts, words, me]);
+  const read = (): Hidden => {
+    try {
+      const saved = JSON.parse(key ? localStorage.getItem(key) ?? "null" : "null");
+      if (Array.isArray(saved?.dismissed) && saved.dismissed.every((k: unknown) => typeof k === "string")
+        && saved.laterAt && typeof saved.laterAt === "object" && !Array.isArray(saved.laterAt)
+        && Object.values(saved.laterAt).every((at) => typeof at === "number" && Number.isFinite(at))) return saved;
+    } catch { /* No saved choices, or storage unavailable. */ }
+    return NONE_HIDDEN;
+  };
+  const [held, setHeld] = useState(() => ({ key, hidden: read() }));
+  const hidden = useMemo(() => held.key === key ? held.hidden : read(), [held, key]);
+  // Add identities to older saved choices, and remember new words before older ones can be deleted.
+  useEffect(() => {
+    if (!key) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? "null");
+      if (saved) localStorage.setItem(key, JSON.stringify({ ...saved, words: [...new Set([...(saved.words ?? []), ...words])] }));
+    } catch { /* Storage unavailable: keep choices for this visit. */ }
+  }, [key, words]);
+  return [hidden, (change) => {
+    setHeld((was) => {
+      const next = typeof change === "function" ? change(was.key === key ? was.hidden : hidden) : change;
+      try { if (key) localStorage.setItem(key, JSON.stringify({ ...next, words })); } catch { /* Keep the choice for this visit. */ }
+      return { key, hidden: next };
+    });
+  }];
+}
 
 /** A thread as you left it: new words there make it a new one to offer. */
 export const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;

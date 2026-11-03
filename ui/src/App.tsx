@@ -54,7 +54,7 @@ import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
-import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
+import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, putOff, useHidden } from "./unfinished";
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
@@ -865,7 +865,7 @@ export default function App() {
   // Pull-back: at a natural pause, offer the most recently dropped thread (unfinished.ts).
   const [lastActivity, setLastActivity] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  const [hidden, setHidden] = useState<Hidden>(NONE_HIDDEN);
+  const [hidden, setHidden] = useHidden(world.thoughts, me);
   useEffect(() => setLastActivity(Date.now()), [core.partial, world.thoughts.length]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 400);
@@ -1350,7 +1350,7 @@ export default function App() {
                   <div className="pullback-title">
                     You didn't finish <b>{pullBack.title}</b>
                   </div>
-                  {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
+                  {lastWords && <UnfinishedQuote key={pullBackKey} text={lastWords} />}
                 </div>
                 <div className="pullback-actions">
                   <button onClick={() => finishThread(pullBack)}>Finish it</button>
@@ -1536,7 +1536,7 @@ export default function App() {
             <ThreadPicture thread={pullBack} />
             <div className="pullback-text">
               <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
-              {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
+              {lastWords && <UnfinishedQuote key={pullBackKey} text={lastWords} />}
             </div>
             <div className="pullback-actions">
               <button onClick={() => finishThread(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
@@ -1999,6 +1999,27 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
     </motion.section>
   );
 }, sameCard);
+
+function UnfinishedQuote({ text }: { text: string }) {
+  const quote = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = quote.current;
+    if (!el || expanded) return;
+    const measure = () => setMore(el.scrollHeight > el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+  return <>
+    <div ref={quote} className="pullback-quote" data-expanded={expanded}>“<Markdown text={text} />”</div>
+    {more && <button type="button" className="pullback-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+      {expanded ? "Show less" : "Show more"}
+    </button>}
+  </>;
+}
 
 /** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
  *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
