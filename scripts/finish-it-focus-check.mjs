@@ -105,6 +105,8 @@ try {
     };
     const load = async (query = "?shell=2") => {
       shown = world;
+      // Each scene starts a fresh sample map; phone-walk-check covers persistence across reloads.
+      await evaluate(`if (location.protocol === "http:") Object.keys(localStorage).filter(key => key.startsWith("e2a2o.unfinished:")).forEach(key => localStorage.removeItem(key))`);
       await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/${query}` });
       await check(`!!document.querySelector('${composer}') && !document.querySelector('.tour-tip')`, "loaded with first-use hints dismissed");
       await evaluate('document.fonts.ready.then(() => true)');

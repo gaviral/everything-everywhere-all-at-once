@@ -31,7 +31,7 @@ let rules;
 try { rules = await server.ssrLoadModule("/src/guide-core.ts"); } finally { await server.close(); }
 const {
   NAMES, pointer, shape, RUNS, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, inLine, asked, wentAhead,
-  putOff, dropped, talkedOver, heldLater, heldDropped, instead, label, GUTTER, TIP_GAP, RING_PAD, NEAR, HELD_MAX, NATURAL_PAUSE_MS,
+  putOff, dropped, talkedOver, heldLater, heldDropped, instead, label, GUTTER, TIP_GAP, RING_PAD, NEAR, NATURAL_PAUSE_MS,
 } = rules;
 
 // The docs list every name the code knows and no other; each fixed name is on an element, each made one has its maker.
@@ -184,8 +184,17 @@ assert.deepEqual(s.held.map((h) => [h.n, h.kind, h.state]), [[11, "question", "w
 assert.equal(guided(s, hold("", null), 13).held.length, 0, "taken back");
 assert.equal(guided(s, hold("", null, "Sam"), 13).held.length, 2, "only by its sender");
 let many = NOTHING;
-for (let i = 0; i < HELD_MAX + 3; i++) many = guided(many, hold(`Question ${i}?`), 100 + i);
-assert.deepEqual([many.held.length, many.held[0].text], [HELD_MAX, "Question 3?"], "the oldest go past the cap");
+for (let i = 0; i < 40; i++) many = guided(many, hold(`Question ${i}?`), 100 + i);
+assert.deepEqual([many.held.length, many.held[0].text], [40, "Question 0?"], "every unanswered question stays, including the oldest");
+many = guided(many, { ...hold("A line while busy"), kind: "caption" }, 200, true);
+many = guided(many, { ...hold("Another line"), kind: "caption" }, 201);
+many = talkedOver(many, { rest: "Unread words" });
+assert.equal(many.held.length, 42, "busy and talked-over captions also keep every older question");
+for (let i = 0; i < 40; i++) {
+  const next = nextAsk(many);
+  assert.equal(next.text, `Question ${i}?`, "older questions can still be answered in order");
+  many = dropped(asked(many, next.n, 300 + i, 0));
+}
 // Your pause asks the first waiting, unless a caption is up: its caption with the buttons, its arrow; out of the stack.
 assert.equal(nextAsk(s).n, 11);
 assert.equal(nextAsk({ ...s, caption: { text: "x", by: "Friend", n: 1 } }), null, "not over a caption");
@@ -242,6 +251,11 @@ assert.deepEqual(instead("undo", at()), { via: null, line: "Undo shows on a noti
 assert.deepEqual(instead("nope", at()), { via: null, line: "Nothing called “nope” is on this screen." });
 assert.equal(label("point:a", map), "a thought in “Seedlings”");
 assert.equal(label("thread:T4", map), "“Rent”");
+
+if (process.argv.includes("--rules-only")) {
+  console.log("Guide rules passed, including retaining and answering all 40 queued questions.");
+  process.exit(0);
+}
 
 // ---- 2. The page.
 const why = ready();
@@ -448,7 +462,9 @@ try {
   await lands(far, "scrolled toward the caption, what's left above it");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(1200);
-  await lands(far, "after the cards reflow");
+  // A narrower layout can leave room only for the ring; hidden arrow coordinates are then stale.
+  if (await layer() === "near") assert.ok(await ringed(far), "after the cards reflow: the ring follows the visible part");
+  else await lands(far, "after the cards reflow");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(800);
 

@@ -708,7 +708,10 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
         if (column && left < column.right + 8) foot = Math.min(foot, column.top - 8);
         const status = drawnBox('[data-slot="status"]');
         if (status && status.top > height / 2) foot = Math.min(foot, status.top - 8);
-        el.style.bottom = `${Math.round(Math.max(GUTTER, height - foot))}px`;
+        const bottom = Math.round(Math.max(GUTTER, height - foot));
+        const ceiling = Math.max(GUTTER, (drawnBox("header")?.bottom ?? 0) + GUTTER);
+        el.style.bottom = `${bottom}px`;
+        el.style.maxHeight = `${Math.max(0, height - bottom - ceiling)}px`;
       }
       frame = requestAnimationFrame(tick);
     };
@@ -728,7 +731,7 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
     {narrow ? <>
       {open && <div className="guide-held-cards">{cards}</div>}
       <button type="button" className="guide-held-chip" aria-expanded={open} onClick={() => setOpen(!open)}>Held <b>{held.length}</b></button>
-    </> : cards}
+    </> : <div className="guide-held-cards">{cards}</div>}
   </section>, document.body);
 }
 

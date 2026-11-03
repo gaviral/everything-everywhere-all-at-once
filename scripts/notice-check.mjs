@@ -193,7 +193,7 @@ try {
 
   // Every answer the window makes for a view request passes the request, so each can stand down the same way.
   const viewAnswers = app.match(/core\.showNotice\([^;]*core\.viewAsk\)/g) ?? [];
-  assert.equal(viewAnswers.length, 9, "pause (2), finish (2), later, forget, nothing to set aside, Notification history off, Cards off");
+  assert.equal(viewAnswers.length, 10, "Talk/features, pause (2), finish (2), later, forget, nothing to set aside, Notification history off, Cards off");
   console.log("notice-check: ok");
 } finally {
   await server.close();

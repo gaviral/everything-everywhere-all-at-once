@@ -3,11 +3,14 @@
 // the map as it is now (read-only), the few actions it may take, and `on`, for what passes (a thought landing, your
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Anchor } from "../annotate-core";
 import type { Action, Note, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
+
+/** The app's existing speech-correction controls, attached to a thought by a view. */
+export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
 export type { Action, Anchor, MiniApp, Note, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 

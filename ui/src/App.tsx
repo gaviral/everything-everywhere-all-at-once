@@ -1,3 +1,4 @@
+import { SpeechFixesContext } from "./bricks/contract";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
 import { useCardNotice } from "./notice-queue";
@@ -737,6 +738,7 @@ export default function App() {
     return previousChildren.current = steady(previousChildren.current, grouped);
   }, [world.threads, world.active, threadById, search, matches, focusMode]);
   const on = useMemo(() => ({ setItem: core.setItem, approve: core.approve, tag: core.tag, correct: core.correct, unlink: core.unlink }), [core.setItem, core.approve, core.tag, core.correct, core.unlink]);
+  const speechFixes = useMemo(() => (thought: Thought) => <Fixes thought={thought} on={on} />, [on]);
 
   // "Expand the garden", "collapse this", "expand everything": the thread and every branch under it stay open (or
   // folded) until you change them; where you are on the map doesn't fold them again. An opened thread comes to the top.
@@ -1163,6 +1165,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
+    <SpeechFixesContext.Provider value={speechFixes}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1416,6 +1419,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>
@@ -1474,6 +1478,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
+    <SpeechFixesContext.Provider value={speechFixes}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1618,6 +1623,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>

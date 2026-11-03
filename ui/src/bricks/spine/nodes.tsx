@@ -2,9 +2,10 @@
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
 // line, the Friend's with ✦; what was agreed carries both marks.
-import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
+import { SpeechFixesContext, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
@@ -224,21 +225,58 @@ function Words({ item }: { item: Item }) {
   const shown = item.shown ?? item.text ?? "";
   const quotes = (item.quotes ?? []).filter((q) => q.start >= 0);
   const parts: ReactNode[] = [];
+  const fixes = useContext(SpeechFixesContext);
+  // Split only the text runs, so a margin note can still underline the same uncertain words.
+  const marked = (start: number, end: number) => {
+    const runs: ReactNode[] = [];
+    let at = start;
+    for (const f of item.fixes ?? []) {
+      const left = Math.max(at, f.start), right = Math.min(end, f.start + f.thought.unclear.length);
+      if (left >= right) continue;
+      runs.push(shown.slice(at, left));
+      runs.push(<SpeechCheck key={f.thought.id} thought={f.thought} controls={fixes?.(f.thought)}>{shown.slice(left, right)}</SpeechCheck>);
+      at = right;
+    }
+    runs.push(shown.slice(at, end));
+    return runs;
+  };
   let at = 0;
   for (const q of quotes) {
     if (q.start < at) continue;
-    parts.push(shown.slice(at, q.start));
-    parts.push(<span key={q.margin} className="spine-quote" data-margin={q.margin}>{shown.slice(q.start, q.end)}</span>);
+    parts.push(...marked(at, q.start));
+    parts.push(<span key={q.margin} className="spine-quote" data-margin={q.margin}>{marked(q.start, q.end)}</span>);
     at = q.end;
     if (q.folded) {
-      parts.push(shown.slice(at, q.fold));
+      parts.push(...marked(at, q.fold));
       parts.push(<span key={`${q.margin}-room`} className="spine-fold-room" data-fold={q.margin} aria-hidden="true">{" …?"}</span>);
       at = q.fold;
     }
   }
-  parts.push(shown.slice(at));
+  parts.push(...marked(at, shown.length));
   const fixed = item.marks?.find((m) => m.kind === "fixed");
   return <span className="spine-words">{parts.map((part, i) => <Fragment key={i}>{part}</Fragment>)}{fixed && <span className="spine-mark-ai" title={fixed.text} aria-hidden="true">{" ✦"}</span>}</span>;
+}
+
+/** The uncertain words open the same controls as Cards, on the top layer so they stay clear of the canvas. */
+function SpeechCheck({ thought, controls, children }: { thought: Thought; controls: ReactNode; children: ReactNode }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  return <>
+    <button ref={button} type="button" className="spine-uncertain nodrag nopan" popoverTarget={id}
+      aria-label={`Check possibly misheard words: ${thought.unclear}`} title="Might be misheard · check words"
+      onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}>{children}</button>
+    <span ref={panel} id={id} popover="auto" className="spine-fixes nodrag nopan" role="group" aria-label="Check words"
+      onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}
+      onToggle={() => {
+        const el = panel.current, anchor = button.current;
+        if (!el?.matches(":popover-open") || !anchor) return;
+        const r = anchor.getBoundingClientRect(), box = el.getBoundingClientRect();
+        el.style.left = `${Math.max(G.pad, Math.min(r.left, innerWidth - box.width - G.pad))}px`;
+        el.style.top = `${Math.max(G.pad, Math.min(r.bottom, innerHeight - box.height - G.pad))}px`;
+      }}>{controls}</span>
+  </>;
 }
 
 /** Under a point: ✓ Decided (or ✓ Agreed with who agreed), Left off. */
