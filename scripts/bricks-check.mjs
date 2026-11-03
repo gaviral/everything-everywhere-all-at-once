@@ -51,7 +51,7 @@
 //    clock clear of Tiny transcript's line on a phone.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { uiServer } from "./ui-server.mjs";
 import { openPage, ready, sleep, standInCore } from "./headless.mjs";
@@ -131,13 +131,19 @@ async function liveOutlineRules(server) {
   for (const [said, cleaned] of [
     ["Um, uh, erm, the the plan is ready.", "the plan is ready."],
     ["You know, we can try. I mean, we should.", "we can try. we should."],
-    ["We, you know, need it; I mean the budget.", "We need it; the budget."],
+    ["We, you know, need it; I mean the budget.", "We need it; I mean the budget."],
     ["It is, I mean, kind of slow.", "It is kind of slow."],
+    ["YOU KNOW, we can try.\nI MEAN, we should.", "we can try.\nwe should."],
+    ["We, I mean, need it, you know,.", "We need it."],
     ["Basically, it is like, a map; so yeah, let's go.", "it is a map; let's go."],
     ["the the the plan", "the plan"],
     ["um, so yeah.", ""],
   ]) assert.deepEqual(trimFillers(said), { text: cleaned, trimmed: true }, `live-outline: trim ${JSON.stringify(said)}`);
   for (const said of ["I like pizza", "kind of slow", "it's like a map", "Do you know the way?", "What I mean is this.",
+    "I mean it", "You know what I mean", "You know the way", "We agree I mean it; you know what I mean, and you know the way.",
+    "Ready. I mean it! You know what I mean? You know the way.",
+    "Ready; I mean it: you know the way — you know what I mean.",
+    "  I mean it.\n\tYou know what I mean\nYou know the way  ", "\n  YOU KNOW the way.\n\tI MEAN it.  ",
     "We basically need a map.", "Basically this works.", "We basically, need this.", "The album is ready; uh-oh.", "Spacing  stays."]) {
     assert.deepEqual(trimFillers(said), { text: said, trimmed: false }, `live-outline: keep ${JSON.stringify(said)}`);
   }
@@ -715,6 +721,35 @@ try {
       if (state.visible !== (w < 600 ? 5 : 11) || (w < 600 && state.first !== "Next point 1")) fail(where, `the last five under 600 px (all above), at ${w} px: ${JSON.stringify(state)}`);
       if (state.left < 0 || state.right > w || state.top < 0 || state.bottom > h || state.sideways > 1) fail(where, `the panel leaves the window at ${w} px: ${JSON.stringify(state)}`);
       if (!state.still) fail(where, `a point moves at Reduce Motion, at ${w} px`);
+    }
+    await cdp("Emulation.setEmulatedMedia", { features: [] });
+    await width(1280, 860);
+    // A short point keeps meaningful phrases while removing only the comma-marked fillers; Enter restores it exactly.
+    await go(`${base}/bricks.html?brick=live-outline&sample=founder-day`);
+    await until(`!!document.querySelector(".live-outline-empty")`, 8000);
+    const mixed = "You know, I mean it. You know what I mean; you know the way.";
+    const kept = "I mean it. You know what I mean; you know the way.";
+    if (!await say("T1", mixed, 1)) fail(where, "the mixed filler and meaningful phrases never landed");
+    else {
+      if (!await until(`(${texts})[0] === ${JSON.stringify(kept)}`, 1000)) fail(where, "the compact point loses meaningful phrases or keeps comma-marked fillers");
+      await evaluate(`document.querySelector(".live-outline-bullet").focus()`);
+      await enter();
+      if (!await until(`(${texts})[0] === ${JSON.stringify(mixed)}`, 1000)) fail(where, "Enter doesn't restore the exact mixed original");
+      await enter();
+      if (process.env.OUTLINE_SHOTS) {
+        mkdirSync(process.env.OUTLINE_SHOTS, { recursive: true });
+        for (const w of [1440, 390]) for (const scheme of ["light", "dark"]) {
+          await width(w, w === 1440 ? 900 : 844);
+          await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }, { name: "prefers-reduced-motion", value: "reduce" }] });
+          for (const [state, expected] of [["compact", kept], ["original", mixed]]) {
+            if (!await until(`(${texts})[0] === ${JSON.stringify(expected)}`, 1000)) fail(where, `${state} evidence has the wrong words at ${w} px in ${scheme}`);
+            await settle();
+            const { data } = await cdp("Page.captureScreenshot", { format: "png" });
+            writeFileSync(join(process.env.OUTLINE_SHOTS, `live-outline-${state}-${w}-${scheme}.png`), Buffer.from(data, "base64"));
+            await enter();
+          }
+        }
+      }
     }
     await cdp("Emulation.setEmulatedMedia", { features: [] });
     await width(1280, 860);
