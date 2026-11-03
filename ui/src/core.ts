@@ -229,7 +229,7 @@ type ServerMsg =
   | RecapServerMsg
   | AppsServerMsg
   | { type: "snapshot"; world: World }
-  | { type: "change"; change: Change }
+  | { type: "change"; change: Change; speak?: boolean }
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }

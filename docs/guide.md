@@ -11,6 +11,8 @@ A window sends these over the WebSocket (`core/src/guide.rs` checks and relays t
 
 Every other window gets `{"type":"guide","kind":"point"|"caption"|"hold","target":…,"text":…,"by":"<sender's name>","at_ms":…}` (and `"urgent":true` on an urgent question); the window that sent it doesn't. Nothing is journaled. One window may send 4 a second at most; past that, past a cap, or with a target that isn't a name, only the sender's windows hear why, in a notice.
 
+These messages reach every human client in the room, including named HTTPS guests. A caption may include `"speak":true`; an AI participant's `text` message may too. The live relay keeps this flag (on `guide` or `change`/`thought_added`), and each page speaks it with `speechSynthesis`. It never enters the journal or snapshots. Human `call.people[].speaking` or local ASR partials cancel page speech immediately. Browser speech requires a prior interaction with that page.
+
 ### Tour relay
 
 A window sends `{"type":"tour","steps":[{"target":"thread:T1","text":"Start here."},{"text":"Then look around."}]}`. A tour has 1–20 ordered steps. Each text is normalized to one line (control characters and runs of whitespace become spaces, with surrounding whitespace removed), then must contain 1–140 Unicode characters. Each supplied target must pass the same name check as a point: 1–100 ASCII letters, digits, `:`, `-`, `_` or `.`. An omitted or null target means a caption alone. The complete tour is validated before anything is relayed; an invalid later step refuses the whole tour.

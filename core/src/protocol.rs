@@ -182,10 +182,15 @@ pub enum View {
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
 /// own live words, mic and notices stay on their own laptop).
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Outgoing {
+    #[serde(skip)]
     pub to: Option<String>,
+    #[serde(flatten)]
     pub message: ServerMsg,
+    /// Live playback only: never part of the world or journal, so catch-up cannot speak old replies.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub speak: bool,
 }
 
 #[derive(Deserialize)]
@@ -199,7 +204,7 @@ pub enum ClientMsg {
     AppVolume { level: f64 },
     AppOutput { id: String, sound: bool },
     /// A typed thought.
-    Text { text: String },
+    Text { text: String, #[serde(default)] speak: bool },
     /// Start or stop listening to the microphone.
     Listen { on: bool },
     /// Go back to a thread, e.g. from the unfinished-thought card.
@@ -294,8 +299,8 @@ pub enum ClientMsg {
         #[serde(default)]
         caption: Option<String>,
     },
-    /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
-    Caption { text: String },
+    /// A line for every other window, optionally spoken by the page; never a thought on the map.
+    Caption { text: String, #[serde(default)] speak: bool },
     /// A question for the other windows to hold until the person pauses, then ask, with an arrow at `target` if given
     /// (guide.rs): never a thought on the map. `urgent` (the Interrupt level) jumps the line of held questions. No words
     /// take back this speaker's questions still held.

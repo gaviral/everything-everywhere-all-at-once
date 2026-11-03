@@ -185,10 +185,17 @@ pub fn point(core: &Core, speaker: &str, window: u64, pace: &mut Pace, target: O
 }
 
 /// `text` as a caption in the corner of the other windows, from `speaker`'s window `window`.
+#[cfg(test)]
 pub fn caption(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String) {
+    caption_speaking(core, speaker, window, pace, text, false);
+}
+
+pub fn caption_speaking(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, speak: bool) {
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
-    send(core, speaker, window, pace, Kind::Caption, None, text, false, refused);
+    if allowed(core, speaker, pace, refused) {
+        core.send_speaking(ServerMsg::Guide { kind: Kind::Caption, target: None, text, by: speaker.into(), at_ms: crate::now_ms(), urgent: false, from: window }, speak);
+    }
 }
 
 /// `text`, a question for the other windows to hold until the person pauses and then ask, with an arrow at `target`
@@ -411,6 +418,104 @@ mod tests {
 
     fn send(json: serde_json::Value) -> Message {
         Message::Text(json.to_string().into())
+    }
+
+    #[test]
+    fn speech_flags_are_live_only_and_silent_messages_keep_their_wire_shape() {
+        let (core, path, _) = prepared();
+        let mut updates = core.updates.subscribe();
+        super::caption_speaking(&core, "Claude", 42, &mut Pace::default(), "Speak this caption.".into(), true);
+        let outgoing = updates.try_recv().unwrap();
+        assert!(serde_json::to_string(&outgoing).unwrap().starts_with("{\"type\":\"guide\""), "the page's prefix dispatch remains valid");
+        let caption = serde_json::to_value(outgoing).unwrap();
+        assert_eq!(caption["speak"], true);
+        assert_eq!(caption["kind"], "caption");
+        assert!(caption.get("to").is_none() && caption.get("from").is_none());
+        super::caption(&core, "Claude", 42, &mut Pace::default(), "Silent caption.".into());
+        let silent = updates.try_recv().unwrap();
+        assert_eq!(serde_json::to_value(&silent).unwrap(), serde_json::to_value(&silent.message).unwrap());
+        core.take_turn("Claude", "This is a spoken thought.", true, true, true);
+        let mut thoughts = Vec::new();
+        while let Ok(update) = updates.try_recv() {
+            if matches!(update.message, crate::protocol::ServerMsg::Change { change: Change::ThoughtAdded { .. } }) {
+                thoughts.push(serde_json::to_value(update).unwrap());
+            }
+        }
+        assert_eq!(thoughts.len(), 1);
+        assert_eq!(thoughts[0]["speak"], true);
+        let journal = std::fs::read_to_string(&path).unwrap();
+        assert!(!journal.contains("\"speak\""));
+        assert!(!journal.contains("Speak this caption"));
+        assert!(crate::catch_up(&core, "avi2").iter().all(|m| serde_json::to_value(m).unwrap().get("speak").is_none()));
+        for kind in ["caption", "text"] {
+            assert!(serde_json::from_value::<crate::protocol::ClientMsg>(serde_json::json!({"type":kind,"text":"Old clients remain silent."})).is_ok());
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The bridge is local; avi2 reaches the same room over its HTTPS LAN address. Guide delivery is room-wide,
+    /// while a live speech flag is never written to the journal or replayed to a reconnecting page.
+    #[tokio::test]
+    async fn bridge_voice_reaches_named_room_guests_without_replaying_speech() {
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
+        let (core, path, queue) = prepared();
+        let core = Arc::new(Core { room: Some(crate::Room::from("bridgevoice")), ..Arc::try_unwrap(core).ok().unwrap() });
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(crate::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), crate::gate))
+            // A loopback test socket cannot itself have a LAN peer or TLS. Supply the Link that the HTTPS listener
+            // gives the gate in production, keeping admission, identity and forwarding on their real paths.
+            .layer(axum::middleware::from_fn(|mut request: axum::extract::Request, next: axum::middleware::Next| async move {
+                if request.uri().query().unwrap_or_default().contains("name=avi2") {
+                    request.extensions_mut().insert(axum::extract::ConnectInfo(crate::Link {
+                        from: "192.168.1.20:51000".parse().unwrap(), to: "192.168.1.179:4360".parse().unwrap(), tls: true,
+                    }));
+                }
+                next.run(request).await
+            }))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await });
+        let guest = || {
+            let mut request = format!("ws://{address}/ws?name=avi2&room=bridgevoice").into_client_request().unwrap();
+            request.headers_mut().insert("host", HeaderValue::from_static("192.168.1.179:4360"));
+            request.headers_mut().insert("origin", HeaderValue::from_static("https://192.168.1.179:4360"));
+            request
+        };
+        let (mut claude, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude&ai")).await.unwrap();
+        let (mut host, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=User")).await.unwrap();
+        let (mut avi2, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
+        for window in [&mut claude, &mut host, &mut avi2] { drain(window, 30).await; }
+        let before = std::fs::read_to_string(&path).unwrap();
+        for payload in [
+            serde_json::json!({"type":"caption", "text":"Here is the answer.", "speak":true}),
+            serde_json::json!({"type":"point", "target":"composer", "caption":"Type here."}),
+            serde_json::json!({"type":"hold", "text":"Shall we continue?", "target":"mic"}),
+        ] { claude.send(send(payload)).await.unwrap(); }
+        let shown = drain(&mut host, 30).await;
+        assert_eq!(drain(&mut avi2, 30).await, shown);
+        assert_eq!(shown.len(), 3);
+        assert_eq!(shown[0]["speak"], true);
+        assert_eq!(shown[1]["kind"], "point");
+        assert_eq!(shown[2]["kind"], "hold");
+        assert!(shown.iter().all(|m| m["by"] == "Claude" && m.get("to").is_none() && m.get("from").is_none()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        claude.send(send(serde_json::json!({"type":"text", "text":"I think the answer belongs here.", "speak":true}))).await.unwrap();
+        let live = drain(&mut avi2, 30).await;
+        let thought = live.iter().find(|m| m["change"]["type"] == "thought_added").unwrap();
+        assert_eq!(thought["speak"], true);
+        assert_eq!(thought["change"]["thought"]["speaker"], "Claude");
+        let journal = std::fs::read_to_string(&path).unwrap();
+        assert!(!journal.contains("\"speak\""), "playback is never journaled");
+        assert!(!core.hosts.lock().unwrap().contains("avi2"), "exercise a genuine guest identity");
+        let (mut rejoined, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
+        let replay = drain(&mut rejoined, 30).await;
+        assert!(replay.iter().any(|m| m["type"] == "snapshot"));
+        assert!(replay.iter().all(|m| m.get("speak").is_none() && m["type"] != "guide"));
+        drop(queue);
+        server.abort();
+        let _ = std::fs::remove_file(path);
     }
 
     /// Accepted updates from independent window budgets, for replay tests that fill the retained rows.
