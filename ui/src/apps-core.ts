@@ -125,6 +125,7 @@ export function useApps() {
   const latest = useRef<string | null>(null);
   const [soundPending, setSoundPending] = useState<PendingTune | null>(null);
   const [played, setPlayed] = useState<PlayedTune | null>(null);
+  const playedNumber = useRef(0);
   // A new connection: a request sent on the old one gets no answer.
   const reset = useCallback(() => { latest.current = null; panelRequest.current = null; setBuild(null); }, []);
   useEffect(() => {
@@ -149,7 +150,7 @@ export function useApps() {
     if (msg.type === "apps_sound") {
       const playful = !!msg.playful;
       const why = msg.why ?? "";
-      if (playTune(playful)) setPlayed((last) => ({ name: msg.name, why, id: (last?.id ?? 0) + 1 }));
+      if (playTune(playful)) setPlayed({ name: msg.name, why, id: ++playedNumber.current });
       else setSoundPending({ name: msg.name, playful, why });
       return true;
     }

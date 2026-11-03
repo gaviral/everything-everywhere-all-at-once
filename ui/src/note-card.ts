@@ -1,7 +1,7 @@
 // The note card (core/src/notes.rs), as the window shows it: the note's title and points as Notes gets them, what
 // happened to it (saving, saved, a dry run, refused), and Open in Notes once it's there. The core alone writes; the
 // window only asks it to open a note it wrote. Plain functions, so scripts/note-card-check.mjs checks them without a page.
-import { DECIDE_MS, REACH_MS, slowReadMs } from "./notice-rules";
+import { readingTime } from "./notice-rules";
 
 export type NoteState = "saving" | "saved" | "dry_run" | "failed";
 export type NotePoint = { text: string; who: string; decided: boolean; unfinished: boolean };
@@ -57,11 +57,12 @@ export function announcement(card: NoteCard): string {
   return `Note “${card.title}”, ${n} ${n === 1 ? "point" : "points"}. ${cardWords(card).status}`;
 }
 
-/** How long an ended card stays up: a slow reader finds the card and reads its title and status (the points are what
- *  they just said, there to glance at), decides, and reaches for Open in Notes (notice-rules.ts). While it saves it
+/** How long an ended card stays up: a slow reader finds the card and reads the whole card, decides, and reaches for Open in Notes (notice-rules.ts). While it saves it
  *  stays; the pointer on it or focus in it holds it (NoteCard.tsx), and × closes it sooner. */
 export function lingerMs(card: NoteCard): number {
   if (card.state === "saving") return 0;
   const { heading, status } = cardWords(card);
-  return slowReadMs(`${heading} ${card.title} ${status}`) + DECIDE_MS + REACH_MS;
+  return readingTime([heading, card.title, status, ...card.sections.flatMap((s) =>
+    [s.title, ...s.points.map((p) => `${pointWords(p)} ${p.decided ? "Decided" : ""} ${p.unfinished ? "unfinished" : ""}`)]),
+    ...(cardWords(card).open ? ["Open in Notes"] : [])].join(" "));
 }

@@ -1,3 +1,4 @@
+import { useCardNotice, type NoticeQueue } from "./notice-queue";
 import { useEffect, useRef, useState } from "react";
 import { hasToured } from "./Tour";
 import "./install.css";
@@ -127,7 +128,7 @@ export function useInstallHint(placedMine: readonly string[], quiet: boolean, lo
       setPhase("shown");
     }
     // Once seen, it goes as soon as the dock is needed again (a new thought, a card) and doesn't come back.
-    if (phase === "shown" && !quiet) setPhase("done");
+    // Once shown, keep it through speech until it can be read or dismissed.
   }, [phase, show, quiet]);
   if (phase !== "shown" || way === null) return null;
   const close = () => setPhase("done");
@@ -145,7 +146,7 @@ export function useInstallHint(placedMine: readonly string[], quiet: boolean, lo
 }
 
 /** The hint, one quiet line in the dock above the composer. */
-export function InstallHint({ hint, onLeave }: { hint: NonNullable<ReturnType<typeof useInstallHint>>; onLeave: () => void }) {
+export function InstallHint({ hint: incoming, onLeave, queue }: { queue: NoticeQueue; hint: NonNullable<ReturnType<typeof useInstallHint>>; onLeave: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   // A choice made from the keyboard: the hint goes, so focus goes back to the composer rather than the page.
   const leave = (then: () => void) => () => {
@@ -153,11 +154,14 @@ export function InstallHint({ hint, onLeave }: { hint: NonNullable<ReturnType<ty
     then();
     if (hadFocus) requestAnimationFrame(onLeave);
   };
-  return <div ref={box} className="install-hint" role="status" data-dock-card>
+  const notice = useCardNotice(queue, "install", incoming.way, `${incoming.text} Install Not now`, incoming.close, false, incoming);
+  const hint = notice.data ?? incoming;
+  if (!notice.visible) return null;
+  return <div {...notice.hold} ref={box} className="install-hint" role="status" data-dock-card>
     <span>{hint.text}</span>
     <span className="install-hint-actions">
-      {hint.install && <button type="button" onClick={leave(hint.install)}>Install</button>}
-      <button type="button" className="quiet" onClick={leave(hint.close)}>{hint.install ? "Not now" : "Got it"}</button>
+      {hint.install && <button type="button" onClick={leave(() => { hint.install?.(); queue.drop("card", `install:${hint.way}`); })}>Install</button>}
+      <button type="button" className="quiet" onClick={leave(notice.close)}>{hint.install ? "Not now" : "Got it"}</button>
     </span>
   </div>;
 }

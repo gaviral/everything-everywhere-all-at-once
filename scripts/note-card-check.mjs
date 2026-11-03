@@ -13,7 +13,7 @@ globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
   const { received, comesFirst, cardWords, pointCount, pointWords, announcement, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/note-card.ts");
-  const { slowReadMs, DECIDE_MS, REACH_MS, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { readingTime, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const sections = [
     { title: "", points: [
       { text: "Picnic at the lake", who: "", decided: false, unfinished: false },
@@ -34,7 +34,7 @@ try {
   // Saved: Open in Notes, and up long enough to read its title and status, decide, and reach the button.
   card = received(card, msg("saved", { message: "Saved to Notes" }));
   assert.deepEqual(cardWords(card), { heading: "Note in Notes", status: "Saved to Notes", open: true });
-  assert.equal(lingerMs(card), slowReadMs("Note in Notes Picnic at the lake Saved to Notes") + DECIDE_MS + REACH_MS);
+  assert.equal(lingerMs(card), readingTime("Note in Notes Picnic at the lake Saved to Notes Picnic at the lake Saturday at noon Decided Someone to bring the unfinished Weather Check the forecast Open in Notes"));
   assert.ok(lingerMs(card) >= SHORTEST_MS, "never shorter than any notice");
   assert.equal(announcement(card), "Note “Picnic at the lake”, 4 points. Saved to Notes");
 
@@ -55,9 +55,8 @@ try {
   assert.equal(comesFirst(msg("dry_run")), true);
   assert.equal(comesFirst(msg("saved")), false);
   assert.equal(comesFirst(msg("failed")), false);
-  assert.match(src("core.ts"), /case "note_card":\n\s*setNoteCard\(\(shown\) => noteReceived\(shown, msg\)\);\n\s*if \(noteFirst\(msg\)\) closeRecap\(\);/);
-  // A new connection drops the card from before it (a restarted core's ids start again at 1); catch-up sends the current one.
-  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{[^]*?setNoteCard\(null\);\n\s*\};/);
+  assert.match(src("core.ts"), /noticeQueue\.find\("note", String\(msg\.id\)\)/, "updates find their own queued note");
+  assert.match(src("core.ts"), /noticeQueue\.push\("note", String\(msg\.id\), note\)/, "each note has one queue entry");
 
   // Who said a point shows only in a room (the core sends it then).
   assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");

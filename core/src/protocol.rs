@@ -36,6 +36,8 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    /// The window owns which kinds of notices this person wants to see.
+    NoticeControl { show: bool },
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
     /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud

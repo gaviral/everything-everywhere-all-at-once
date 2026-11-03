@@ -6,12 +6,17 @@ import "./send-card.css";
 import { Markdown } from "./md";
 
 export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: (id: number) => void; onGone: (id: number) => void }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => { setHovered(false); setFocused(false); }, [card?.id]);
 
   // The digit changes on each whole second left, not on a fixed beat, so it never shows a second it has passed.
   useEffect(() => {
     if (!card) return;
     if (card.state !== "counting") {
+      if (hovered || focused) return;
       const timer = window.setTimeout(() => onGone(card.id), lingerMs(card));
       return () => window.clearTimeout(timer);
     }
@@ -24,7 +29,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
     };
     tick();
     return () => window.clearTimeout(timer);
-  }, [card, onGone]);
+  }, [card, onGone, hovered, focused]);
 
   // Before the map's own Esc (it folds threads), and wherever focus is: stopping a message comes first.
   useEffect(() => {
@@ -50,7 +55,9 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
   // Without motion, the bar steps with the digits instead (`--left`, the share of the count still to go).
   const bar = counting ? { animationDuration: `${card.total}ms`, animationDelay: `-${Math.round(done * card.total)}ms`, "--left": 1 - elapsed(card, now) } as React.CSSProperties : undefined;
   return (
-    <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card">
+    <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card"
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="send-card-head" aria-hidden="true">{words.heading}</div>
       <p className="send-card-text"><Markdown text={card.text} /></p>

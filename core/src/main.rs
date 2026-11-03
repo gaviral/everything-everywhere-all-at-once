@@ -377,6 +377,11 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool) {
         self.touch();
+        // These are window preferences, never thoughts or requests for the model.
+        if let Some(show) = notice_control(text) {
+            self.send_to(speaker, ServerMsg::NoticeControl { show });
+            return;
+        }
         // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
         if messages::said(self, speaker, text) {
             return;
@@ -880,6 +885,13 @@ fn is_new_thread(text: &str) -> bool {
         ],
         &[],
     )
+}
+
+/// Whole-turn notice commands share the typed and final speech path.
+fn notice_control(text: &str) -> Option<bool> {
+    if is_command(text, &["stop showing this"], &[]) { Some(false) }
+    else if is_command(text, &["show those again"], &[]) { Some(true) }
+    else { None }
 }
 
 /// A view asked for by voice, as its button sets it: "pictures" or "palace", "show the cards" or "show the map", "let's
@@ -3773,6 +3785,40 @@ mod tests {
             for now in [1, u64::MAX / 2] {
                 assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod notice_control_tests {
+    use super::*;
+    #[test]
+    fn notice_control_reaches_the_window_without_keeping_a_thought() {
+        let path = std::env::temp_dir().join(format!("e2a2o-notices-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let mut updates = core.updates.subscribe();
+        for typed in [false, true] {
+            for (words, show) in [("Stop showing this", false), ("Show those again", true)] {
+                if typed { core.add_typed("User", words); }
+                else { core.add_turn("User", words, true); }
+                let message = updates.try_recv().unwrap();
+                assert_eq!(message.to.as_deref(), Some("User"));
+                assert!(matches!(message.message, ServerMsg::NoticeControl { show: actual } if actual == show));
+                assert!(updates.try_recv().is_err());
+                assert!(core.snapshot().thoughts.is_empty());
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn notice_control_uses_the_same_path_for_speech_and_typing() {
+        for (words, show) in [("Stop showing this", false), ("Can you stop showing this, please?", false), ("Show those again.", true)] {
+            assert_eq!(notice_control(words), Some(show));
+        }
+        for words in ["I said stop showing this yesterday", "Show those again to Dana"] {
+            assert_eq!(notice_control(words), None);
         }
     }
 }
