@@ -21,6 +21,9 @@ merges: threads that are really the same topic, merging the later id into the ea
 suggestions: at most one per thread and only when genuinely useful: a next step, a connection to another thread, or a question to explore, under 14 words; \
 never one about a point marked (trailed off): the app brings unfinished thoughts back itself; \
 actions: concrete tasks or events the speaker decided on or needs to do, kind \"reminder\" or \"event\", a short title, and when as YYYY-MM-DD if a date is stated or clearly implied, else empty; \
+keep every distinct plan or commitment, even beside a limit or another task. Keep names, times of day, conditions and limits in the action's title; \
+the when field holds only its date. Preserve tentative wording and never turn a possibility into a promise. \
+Keep who does each task as said (an unnamed \"you\" stays \"you\"), including exceptions and fallback plans. \
 tags: short lowercase hashtags for the wider topic a thread belongs to, never a word already in its title (for example #money on \"Pay rent\", \
 #hackathon on \"README draft\"), only for threads with fewer than 3 (each thread lists the ones it has), never one it has, reusing tags across threads when topics overlap. \
 Dates like \"tomorrow\" or \"Friday\" are relative to the day a point was said. \

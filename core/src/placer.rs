@@ -48,13 +48,21 @@ A thought that mostly repeats a point on the map returns to that point's thread.
 Place by what the words are about, not by how they are said or a word they share with a title: \
 a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
 never with a thread about unfinished thoughts or habits. \
-\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked, or only talks about pasting or saying the next part \
-(\"here's the next one\"); never skip \"yes\", \"no\" or any other answer. \
-split: if it moves on to another topic partway (often at such words), the exact words where that starts \
-(the other fields describe only the words before), else an empty string; \
-never between two sentences about one thing, such as a deadline and what is due by then. \
+\"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked, or only introduces the next part \
+(\"here's the next one\"); never skip an answer, plan or commitment, even \"I'll paste it here\". \
+split: if it moves on to another topic partway, or has distinct plans, commitments or facts that need separate points, \
+the exact words where the next point starts (the other fields describe only the words before), else an empty string. \
+Separate points may belong to the same thread: a time limit and a promise to record later must both survive. \
+Actions with different conditions or times need separate points: split before the next action. \
+Keep each if/when attached to its own action; never transfer a condition to another action. \
+Keep an action with its own name, time, condition and reason; never split inside that action. \
 thread_id: the existing thread for continue or return. title: up to 5 words naming its subject, for a new thread, with a misheard word as its guess. \
-point: what the thought means in at most 12 words, in the speaker's own voice, naming its subject instead of \"it\" or \"this\" (\"The lease ends in May\", not \"It ends in May\"), \
+point: what the thought means, briefly but without losing any plan, commitment, name or time; use more words when needed. \
+Keep who will do what, when, conditions, limits and reasons, including tentative plans as tentative. \
+Keep relative times (\"right now\", \"for now\", \"much later\", \"a few messages ago\") as well as dates and clock times. \
+Keep exceptions, fallback plans and permission to keep doing something; do not replace them with \"if possible\". \
+Keep both a preference and its acceptable fallback explicitly. If shortening would lose either, keep more of the original words. \
+Use the speaker's own voice, naming its subject instead of \"it\" or \"this\" (\"The lease ends in May\", not \"It ends in May\"), \
 with negations and hedges (\"not\", \"maybe\") kept as said: not a clipped copy, no fillers or exclamations; \
 a question they ask stays a question, one they quote keeps who asked. \
 complete: false if the thought trails off unfinished (for example \"I need to pay rent before\"), else true. \
@@ -176,7 +184,7 @@ impl NewThreads {
 
 #[derive(Clone, Deserialize)]
 struct Placement {
-    /// Where the turn moves on to another thread, quoted; empty when it stays on one.
+    /// Where the turn starts another point, quoted; empty when one point keeps it all.
     #[serde(default)]
     split: String,
     action: String,
@@ -979,15 +987,16 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     let quote = |label: &str, t: &Thought| Some(format!("{label} (placed in {}): \"{}\"\n", world.resolve(t.thread_id.as_deref()?), t.text.trim()));
     let before = heads.before.and_then(|t| quote("Said just before", t)).unwrap_or_default();
     let left = heads.left.and_then(|t| quote("Left unfinished", t)).unwrap_or_default();
-    // The rest of a turn cut where it moved on (`settle`): placed alone, with its first part quoted just before it, a
+    // The rest of a turn cut into points (`settle`): placed alone, with its first part quoted just before it, a
     // rest about a summary card read as more of the watch-sync thread its first part went to (its routing case: 0 of 3
     // runs on Spark 1.3 Contributor, 1 of 3 on 1.2; with this line and the prompt's subject check, 2 of 3 on each).
+    // A separate commitment on the same subject can stay there; a split alone never requires a new thread.
     let moved_on = world
         .split_from
         .get(&thought.id)
         .and_then(|first| world.thoughts.iter().find(|t| &t.id == first))
         .and_then(|first| first.thread_id.as_deref().map(|on| world.resolve(on)))
-        .map(|on| format!("It is the rest of the turn just before, cut there because it moves on from {on} to another topic: return to another thread or start a new one.\n"))
+        .map(|on| format!("It is the rest of the turn just before, cut into separate points. Place by its own subject: it may continue {on}, return to another thread or start a new one.\n"))
         .unwrap_or_default();
     let names = names(world);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
@@ -3180,6 +3189,31 @@ mod tests {
             let (changes, rest) = settle(&map(), &said, p, 0, false, true);
             assert!(rest.is_none() && !changes.iter().any(|c| matches!(c, Change::ThoughtSplit { .. })), "{split}: {changes:?}");
         }
+    }
+
+    #[test]
+    fn a_limit_and_a_commitment_can_land_as_two_points_on_one_thread() {
+        let said = turn("[private text removed]");
+        let mut world = World { thoughts: vec![said.clone()], ..map() };
+        let first = reply(json!({"action": "continue", "thread_id": "T1",
+            "point": "My demo must be shorter than three minutes", "split": "I will record it after breakfast."}));
+        let (changes, rest) = settle(&world, &said, first, 0, false, true);
+        for change in changes { world.apply(&change); }
+        let rest = world.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap().clone();
+        assert_eq!(world.thoughts[0].text, "My demo must be shorter than three minutes.");
+        assert_eq!(rest.text, "I will record it after breakfast.");
+        let prompt = request(&world, &rest, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
+        assert!(prompt.contains("it may continue T1"), "{prompt}");
+        let next = reply(json!({"action": "continue", "thread_id": "T1",
+            "point": "I will record my demo after breakfast", "joins": "none"}));
+        let (changes, rest) = settle(&world, &rest, next, 0, false, true);
+        assert!(rest.is_none());
+        for change in changes { world.apply(&change); }
+        assert_eq!(world.thoughts.len(), 2);
+        assert!(world.thoughts.iter().all(|t| t.placed && t.thread_id.as_deref() == Some("T1")));
+        assert_eq!(world.thoughts[1].point, "I will record my demo after breakfast");
+        assert_eq!(world.thread("T1").unwrap().last_point, world.thoughts[1].point);
+        assert!(world.notes.values().all(|n| n.continues.is_empty()), "separate points stay separate");
     }
 
     /// Venue Wi-Fi drops mid-talk: a thought's third failed try is said once, later rounds are not, and its tries keep
