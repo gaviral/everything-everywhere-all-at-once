@@ -1161,11 +1161,28 @@ try {
       await press("Add a thought");
       if (!await until(`!!document.querySelector(".spine-cue")`, 3000)) fail("spine", "a landing out of view, while the view is held, shows no edge chip");
       else {
+        // Distinct threads crowd the same held edge; each arrival must leave the page answering.
+        const arrivalTitles = await evaluate(`[...document.querySelectorAll('.spine-head [aria-label^="Open "]')].map((b) => b.getAttribute("aria-label")).slice(1, 4)`);
+        if (arrivalTitles.length !== 3) fail("spine", "the crowded-edge fixture needs three more threads");
+        for (const title of arrivalTitles) {
+          await evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(title))} + ']').click()`);
+          assert.ok(await until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${title.slice(5, -11)}`)})`), "arrival thread becomes active");
+          await press("The Friend says one");
+          await sleep(1350);
+          const responsive = await Promise.race([evaluate(`document.querySelectorAll(".spine-cue").length`), sleep(3000).then(() => { throw new Error("Spine stopped answering after crowded arrivals"); })]);
+          if (responsive < 2) fail("spine", "multiple arrivals did not populate the held edge");
+        }
         // Longer than the old chips' 5 s: it stays until it's seen, and the view stays where the hand left it.
         await sleep(5600);
         if (await view() !== held) fail("spine", "the view moved while a hand held it");
         const stayed = await evaluate(`!!document.querySelector(".spine-cue")`);
         if (!stayed) fail("spine", "an edge chip left before it was seen");
+        const reachedLabel = await evaluate(`document.querySelector(".spine-cue").getAttribute("aria-label")`);
+        const reachedNode = await evaluate(`(() => {
+          const title = document.querySelector(".spine-cue-title").textContent;
+          const head = [...document.querySelectorAll(".spine-head")].find((n) => n.querySelector(".spine-title")?.textContent === title);
+          return [...document.querySelectorAll(".spine-point")].filter((n) => n.dataset.thread === head?.dataset.thread).at(-1)?.closest(".react-flow__node")?.dataset.id;
+        })()`);
         // Its click goes there: one glide of 400 ms or less (or, past a screen, a 200 ms cross-fade), and the chip goes.
         const took = !stayed ? 0 : await evaluate(`new Promise((resolve) => {
           const viewport = document.querySelector(".react-flow__viewport");
@@ -1179,12 +1196,67 @@ try {
           };
           requestAnimationFrame(tick);
         })`);
+        if (!reachedNode || !await evaluate(`(() => {
+          const n = [...document.querySelectorAll(".react-flow__node")].find((n) => n.dataset.id === ${JSON.stringify(reachedNode)});
+          const r = n?.getBoundingClientRect(), f = document.querySelector(".spine-frame").getBoundingClientRect();
+          return r && r.left + r.width / 2 > f.left && r.left + r.width / 2 < f.right && r.top + Math.min(r.height, 44) / 2 > f.top && r.top + Math.min(r.height, 44) / 2 < f.bottom;
+        })()`)) fail("spine", "the clicked arrival was not reached");
         if (took < 0) fail("spine", "an edge chip's click doesn't go there");
         else if (took > 450) fail("spine", `an edge chip's move took ${took} ms (a glide is 400 ms at most)`);
-        if (!await until(`!document.querySelector(".spine-cue")`, 1500)) fail("spine", "an edge chip stays once its landing is in view");
+        if (!await until(`![...document.querySelectorAll(".spine-cue")].some((b) => b.getAttribute("aria-label") === ${JSON.stringify(reachedLabel)})`, 1500)) fail("spine", "an edge chip stays once its landing is in view");
       }
       await key("f");
       if (!await until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "true"`, 1000)) fail("spine", "F doesn't follow your talk again");
+    }
+    // Four populated scenes, with actual phone device metrics rather than a scaled desktop viewport.
+    if (process.env.EDGE_CUES_SHOTS) {
+      mkdirSync(process.env.EDGE_CUES_SHOTS, { recursive: true });
+      for (const [w, h] of [[1440, 900], [390, 844]]) for (const theme of ["light", "dark"]) {
+        const scene = await openPage(`${base}/bricks.html?brick=spine&sample=student-week`, { width: w, height: h });
+        try {
+          await scene.page("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600 });
+          await scene.page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }, { name: "prefers-reduced-motion", value: "no-preference" }] });
+          if (!await scene.until(`!!document.querySelector(".spine-ready")`, 8000)) throw new Error("screenshot Spine never ready");
+          await sleep(500);
+          const from = await scene.evaluate(`(() => { const f = document.querySelector(".spine-frame").getBoundingClientRect();
+            for (let y = f.top + 80; y < f.bottom - 80; y += 16) for (let x = f.right - 20; x > f.left + 20; x -= 16)
+              if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y }; })()`);
+          assert.ok(from, "empty canvas for screenshot pan");
+          await scene.page("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+          for (let i = 0; i <= 12; i++) {
+            await scene.page("Input.dispatchMouseEvent", { type: i === 0 ? "mousePressed" : "mouseMoved", x: from.x - i * 100, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+            await sleep(20);
+          }
+          await scene.page("Input.dispatchMouseEvent", { type: "mouseReleased", x: from.x - 1200, y: from.y, button: "left", buttons: 0, clickCount: 1 });
+          assert.ok(await scene.until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "false"`), "screenshot camera held");
+          await sleep(300);
+          const heldScene = await scene.evaluate(`document.querySelector(".react-flow__viewport").style.transform`);
+          const labels = await scene.evaluate(`[...document.querySelectorAll('.spine-head [aria-label^="Open "]')].map((b) => b.getAttribute("aria-label"))`);
+          assert.ok(labels.length >= 4, "four arrival threads");
+          for (const label of labels) {
+            await scene.evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']').click()`);
+            assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${label.slice(5, -11)}`)})`), "screenshot arrival thread becomes active");
+            await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The Friend says one").click()`);
+            await sleep(1350);
+          }
+          const geometry = await scene.evaluate(`({ width: innerWidth, theme: matchMedia("(prefers-color-scheme: dark)").matches, overflow: document.documentElement.scrollWidth > innerWidth,
+            held: document.querySelector(".react-flow__viewport").style.transform,
+            boxes: [...document.querySelectorAll(".spine-cue")].map((b) => { const r = b.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }) })`);
+          assert.equal(geometry.width, w, "true viewport width");
+          assert.equal(geometry.theme, theme === "dark", "emulated theme");
+          assert.equal(geometry.held, heldScene, "populated camera stays held");
+          assert.ok(!geometry.overflow && geometry.boxes.length >= 2, `populated chips without sideways overflow: ${JSON.stringify(geometry)}`);
+          for (const b of geometry.boxes) assert.ok(b.left >= 0 && b.right <= w && b.top >= 0 && b.bottom <= h, "chip inside viewport");
+          for (const b of geometry.boxes) for (const c of geometry.boxes) if (b !== c) assert.ok(b.right <= c.left || c.right <= b.left || b.bottom <= c.top || c.bottom <= b.top, "chip hit areas do not overlap");
+          if (w < 600) {
+            assert.equal(geometry.boxes.length, 3, "phone keeps two chips and overflow access");
+            assert.ok(await scene.evaluate(`!!document.querySelector('.spine-cue[aria-label^="2 more new"]')`), "phone overflow counts hidden arrivals");
+          }
+          assert.equal(await scene.evaluate(`document.querySelector(".playground").dataset.errors`), "0", "no page errors");
+          const shot = await scene.page("Page.captureScreenshot", { format: "png" });
+          writeFileSync(join(process.env.EDGE_CUES_SHOTS, `spine-edge-cues-${w}-${theme}.png`), Buffer.from(shot.data, "base64"));
+        } finally { await scene.close(); }
+      }
     }
     // Reduce Motion: the camera cuts (one frame, then still) with a ring for a second where it went; a landing rings in
     // place of its pulse.
