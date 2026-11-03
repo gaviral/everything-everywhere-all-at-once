@@ -66,20 +66,20 @@ The contract grows by a line: a new field or action is added to `contract.ts`, a
 
 ## Slots
 
-The page's regions, each an element marked `data-slot="<name>"` while it's on screen (`SlotName` and `SLOTS` in `contract.ts`). A brick finds one by name (`document.querySelector('[data-slot="stage"]')`), to draw beside or in it, or keep clear of it. The layout may move a region, or bring one that isn't there yet; the names stay.
+The page's regions, each an element marked `data-slot="<name>"` while it's on screen (`SlotName` and `SLOTS` in `contract.ts`). A brick finds one by name (`document.querySelector('[data-slot="stage"]')`), to draw beside or in it, or keep clear of it. A region can be absent in a layout or view; the names stay. The shell in `ui/src/shell/` requires `?shell=2`, read once before rendering; without it, the legacy header and dock remain the default.
 
 | Slot | The region | Today |
 |---|---|---|
-| `top-left` | the wordmark and the map's name | the header's left (`.brand`) |
-| `top-right` | Find, Catalog, people | the header's buttons (`.header-actions`) |
-| `bottom-left` | the camera: following, zoom stops | not yet: the Notice timeline's clock and the corner caption place themselves there |
-| `bottom-right` | the shelf, and the held stack above it | not yet |
-| `stage` | bottom center, with room beside it: the composer, captions, one notice | not yet: today's dock spans the window's width, so a view's corners stay clear of it, at the right (the Spine's) |
-| `status` | the status line: the mic, its time, live words, what's waiting | the header's status (`.status`) |
-| `rail` | the panel at the right: Talk, History, Catalog, Settings | not yet |
-| `shelf` | what you keep at hand | the Spine's shelf, while the Spine is the view |
-| `held` | questions waiting for your pause | not yet |
-| `slot:<thought id>` | where a thought on its way will land | marked by the view that shows it (the Spine's dashed slot); a flight aims there |
+| `top-left` | the wordmark and the map's name | Legacy: the header's `.brand`. `?shell=2`: `TopLeft`'s fixed corner, with the map name and mode stamp; the wordmark hides on a populated phone view. |
+| `top-right` | Find, Catalog, people | Legacy: the header's `.header-actions`. `?shell=2`: `TopRight`'s fixed corner with Find on a populated map, Catalog, room controls and enabled import/export controls. |
+| `bottom-left` | the camera: following, zoom stops | Legacy: no marker; the Spine's camera sits above its shelf at the right (a shared row when narrow). `?shell=2`: App marks Back to the Canvas here in other views; the Spine puts its camera at the left on a wide canvas, in the shared shelf row when narrow, without this marker. |
+| `bottom-right` | the shelf, and the held stack above it | Legacy: no marker; the Spine positions its shelf at the right. `?shell=2`: App's `.shell-br` wrapper holds the held stack above the separately mounted Spine shelf, or at the bottom right without a shelf. |
+| `stage` | bottom center, with room beside it: the composer, captions, one notice | Legacy: no marker; the dock spans the window's width. `?shell=2`: App's `.shell-stage`, at most 600 px wide, holds cards, one notice or map update, the `#shell-caption` host and the composer; History suppresses the stage notice and map update. |
+| `status` | the status line: the mic, its time, live words, what's waiting | Legacy: the header's `.status`. `?shell=2`: `StatusLine`, a 24 px line at the bottom with mic state/time, Tiny transcript's live words and pending/queued/saved status; its right side opens History. |
+| `rail` | the panel at the right: Talk, History, Catalog, Settings | Legacy: absent. `?shell=2`: the shell's `Rail` while a tab is open, a right panel or phone sheet; outside a call its Talk tab uses `TalkTurns`. In a call the shell omits Talk and `TalkRail` separately marks its own open call rail or phone sheet with this name. |
+| `shelf` | what you keep at hand | Both layouts: the Spine's `Shelf`, while that view is mounted; at the right on a wide canvas, in the corner row when narrow. The shell's bottom-right wrapper does not own it. |
+| `held` | questions waiting for your pause | Legacy: Guide draws its floating stack at the bottom right (a phone chip), without this marker. `?shell=2`: `HeldStack` marks the stack or closed phone chip inside bottom-right, only while questions or held captions exist; Guide supplies its cards through `holdQuestion`. |
+| `slot:<thought id>` | where a thought on its way will land | Both layouts: marked by the view that shows it (the Spine's dashed slot or arriving point); a flight aims there. |
 
 A flight in the air marks its bubble `data-flight="<thought id>"` (Bubble flight), so a view can wait for it to arrive.
 
