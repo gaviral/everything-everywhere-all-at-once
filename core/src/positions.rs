@@ -115,7 +115,7 @@ pub fn set(core: &Arc<Core>, by: &str, id: &str, x: Option<f64>, y: Option<f64>)
     // The locks in a commit's order (world, journal, then these lines), so nothing comes between.
     let mut journal = core.journal.lock().unwrap();
     match core.positions.held.lock().unwrap().offer(id, step.clone(), Instant::now()) {
-        Line::Now(line) => write(&mut journal, &line),
+        Line::Now(line) => write(core, &mut journal, &line),
         Line::Until(due) => flush_at(core, id, due),
         Line::Replaced => {}
     }
@@ -138,14 +138,14 @@ fn flush_at(core: &Arc<Core>, id: &str, due: Instant) {
         let mut journal = core.journal.lock().unwrap();
         let step = core.positions.held.lock().unwrap().due(&id, Instant::now());
         if let Some(step) = step {
-            write(&mut journal, &step);
+            write(&core, &mut journal, &step);
         }
     });
 }
 
-fn write(journal: &mut Journal, step: &Change) {
+fn write(core: &Core, journal: &mut Journal, step: &Change) {
     if let Err(e) = journal.append(step) {
-        tracing::error!("journal write failed: {e:#}");
+        core.journal_save_failed(&e);
     }
 }
 
@@ -158,7 +158,7 @@ pub(crate) fn flush_all(core: &Core) {
     let ids: Vec<String> = held.waiting.keys().cloned().collect();
     for id in ids {
         if let Some(step) = held.due(&id, Instant::now()) {
-            write(&mut journal, &step);
+            write(core, &mut journal, &step);
         }
     }
 }

@@ -14,8 +14,12 @@ export function typingIn(element: Element | null): boolean {
 
 export type Found = { thread_id: string; thought_id: string | null; item_id?: string; revision: number };
 
+/** The view a jump to a thread (Find, a Palace tile, "where was I?", "expand …") ends on: where its card already shows,
+ *  the map or the shell's Cards; from any other view, `home`, where the page opens. */
+export const viewAfterJump = (was: string, home: string) => (was === "map" || was === "cards" ? was : home);
+
 type Reveal = {
-  /** "map", "palace" or a view brick's id (App.tsx). */
+  /** "map", "palace", "cards" (the shell's) or a view brick's id (App.tsx). */
   setView: Dispatch<SetStateAction<string>>;
   setQuery: Dispatch<SetStateAction<string>>;
   setFocusMode: Dispatch<SetStateAction<boolean>>;
@@ -39,7 +43,7 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
     const world = currentWorld.current;
     const id = resolveMerged(world, found.thread_id);
     if (!world.threads.some((thread) => thread.id === id)) return;
-    setView((was) => was === "map" ? "map" : home);
+    setView((was) => viewAfterJump(was, home));
     setDestination?.((was) => ({ threadId: id, thoughtId: found.thought_id, revision: (was?.revision ?? 0) + 1 }));
     setQuery("");
     setFocusMode(false);

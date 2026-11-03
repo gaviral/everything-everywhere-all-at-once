@@ -958,6 +958,12 @@ pub struct Journal {
 }
 
 impl Journal {
+    /// An existing test file whose appends fail regardless of the process's permission to change it.
+    #[cfg(test)]
+    pub(crate) fn read_only(path: &Path) -> anyhow::Result<Journal> {
+        Ok(Journal { file: File::open(path)? })
+    }
+
     pub fn open(path: &Path) -> anyhow::Result<(Journal, World)> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;

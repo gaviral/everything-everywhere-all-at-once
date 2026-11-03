@@ -49,7 +49,21 @@ pub fn window() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// One window's last second of guide messages and tours, for `PER_SECOND`.
+/// A live job update; identity and time are added by the server when relaying it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Job {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default)]
+    pub demo: bool,
+}
+
+/// One window's last second of guide messages, tours and jobs, for `PER_SECOND`.
 #[derive(Default)]
 pub struct Pace {
     sent: VecDeque<Instant>,
@@ -154,6 +168,32 @@ pub fn tour(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut steps:
     if allowed(core, speaker, pace, refused) {
         core.send(ServerMsg::Tour { steps, by: speaker.into(), at_ms: crate::now_ms(), from: window });
     }
+}
+
+/// Relay a live job update to every other window, without retaining it or starting model work.
+pub fn job(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut job: Job) {
+    job.title = one_line(&job.title);
+    job.result = job.result.as_deref().map(one_line);
+    let refused = bad_name(&job.id)
+        .or_else(|| job.parent.as_deref().and_then(bad_name))
+        .or_else(|| {
+            if job.title.is_empty() {
+                Some("A job needs a title.".into())
+            } else {
+                too_long(&job.title, 80, "A job's title")
+            }
+        })
+        .or_else(|| job.result.as_deref().and_then(|result| too_long(result, 160, "A job's result")))
+        .or_else(|| (!matches!(job.status.as_str(), "running" | "done" | "failed" | "waiting"))
+            .then(|| "A job's status must be running, done, failed or waiting.".into()));
+    if allowed(core, speaker, pace, refused) {
+        core.send(ServerMsg::Job { job, by: speaker.into(), at_ms: crate::now_ms(), from: window });
+    }
+}
+
+/// A job that couldn't be decoded uses the same refusal route without spending the window's budget.
+pub fn malformed_job(core: &Core, speaker: &str, pace: &mut Pace) {
+    allowed(core, speaker, pace, Some("A job needs string id, title and status; result and parent must be strings when given, and demo must be a boolean.".into()));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -296,6 +336,205 @@ mod tests {
 
     fn send(json: serde_json::Value) -> Message {
         Message::Text(json.to_string().into())
+    }
+
+    #[tokio::test]
+    async fn live_jobs_relay_to_other_windows() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
+        let started = crate::now_ms();
+        let jobs = [
+            serde_json::json!({"id": "work:1", "title": "Starting", "status": "running"}),
+            serde_json::json!({"id": "x".repeat(100), "title": "  Finished\nthis\t\u{7} ", "status": "done",
+                "result": "  Ready\n to\tread\u{7} ", "parent": "p".repeat(100), "demo": true}),
+            serde_json::json!({"id": "work:1", "title": "界".repeat(80), "status": "failed", "result": "界".repeat(160)}),
+            serde_json::json!({"id": "work:1", "title": "Waiting", "status": "waiting", "result": " \n\u{7} ", "parent": null, "demo": false}),
+        ];
+        for mut payload in jobs.clone() {
+            payload["type"] = "job".into();
+            // These fields belong to the server, even when a client supplies them.
+            payload["by"] = "Someone else".into();
+            payload["at_ms"] = 1.into();
+            payload["from"] = 1.into();
+            claude.send(send(payload)).await.unwrap();
+        }
+        let mut relayed = None;
+        for window in [&mut you, &mut other_tab, &mut ears] {
+            let got = drain(window, 100).await;
+            assert_eq!(got.len(), 4, "{got:?}");
+            let mut expected = jobs.clone();
+            expected[1]["title"] = "Finished this".into();
+            expected[1]["result"] = "Ready to read".into();
+            expected[3]["result"] = "".into();
+            expected[3].as_object_mut().unwrap().remove("parent");
+            for (message, mut payload) in got.iter().zip(expected) {
+                payload["type"] = "job".into();
+                payload["by"] = "Claude".into();
+                if payload.get("demo").is_none() { payload["demo"] = false.into(); }
+                let at = message["at_ms"].as_u64().unwrap();
+                assert!((started..=crate::now_ms()).contains(&at), "server-owned timestamp: {message}");
+                payload["at_ms"] = at.into();
+                assert_eq!(message, &payload, "flat fields, server-owned identity and no internal origin");
+            }
+            if let Some(previous) = &relayed {
+                assert_eq!(&got, previous, "every recipient gets the same updates");
+            }
+            relayed = Some(got);
+        }
+        assert!(drain(&mut claude, 100).await.is_empty(), "no echo to the originating window");
+
+        claude.send(send(serde_json::json!({"type": "job", "id": "<b>", "title": "Refused", "status": "done"}))).await.unwrap();
+        for window in [&mut claude, &mut ears] {
+            let got = drain(window, 100).await;
+            assert_eq!(got.len(), 1, "{got:?}");
+            assert_eq!(got[0]["type"], "notice");
+            assert!(got[0]["message"].as_str().unwrap().starts_with("Not shown: "));
+        }
+        for window in [&mut you, &mut other_tab] {
+            assert!(drain(window, 100).await.is_empty(), "only the sender's windows hear a refusal");
+        }
+
+        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+        let caught_up = drain(&mut reconnected, 100).await;
+        assert!(caught_up.iter().any(|message| message["type"] == "snapshot"));
+        assert!(caught_up.iter().all(|message| message["type"] != "job"), "jobs aren't retained for reconnect");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "never journaled");
+        assert!(Arc::ptr_eq(&world, &core.snapshot()), "the entire map is unchanged");
+        assert!(queue.try_recv().is_err(), "no model work");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn invalid_jobs_are_refused() {
+        use crate::protocol::{ClientMsg, ServerMsg};
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let mut updates = core.updates.subscribe();
+        let mut cases = Vec::new();
+        for field in ["id", "parent"] {
+            for name in ["", "bad name", "<b>", "job\n", "a\"b", &"x".repeat(101), "界"] {
+                cases.push((field, name.to_string(), bad_name(name).unwrap()));
+            }
+        }
+        cases.extend([
+            ("title", " \n\t\u{7} ".into(), "A job needs a title.".into()),
+            ("title", "界".repeat(81), "A job's title is 80 characters at most.".into()),
+            ("result", "界".repeat(161), "A job's result is 160 characters at most.".into()),
+        ]);
+        for status in ["", "Running", "DONE", " running", "done ", "cancelled", "unknown"] {
+            cases.push(("status", status.into(), "A job's status must be running, done, failed or waiting.".into()));
+        }
+        for (field, value, why) in cases {
+            let mut payload = serde_json::json!({"type": "job", "id": "work:1", "title": "Work", "status": "running"});
+            payload[field] = value.into();
+            let ClientMsg::Job { job } = serde_json::from_value(payload).unwrap() else { panic!("expected job") };
+            let mut pace = Pace::default();
+            super::job(&core, "Claude", 42, &mut pace, job.clone());
+            let outgoing = updates.try_recv().unwrap();
+            assert_eq!(outgoing.to.as_deref(), Some("Claude"));
+            assert!(matches!(outgoing.message, ServerMsg::Notice { message } if message == format!("Not shown: {why}")));
+            assert!(pace.sent.is_empty(), "invalid input doesn't consume the budget");
+            super::job(&core, "Claude", 42, &mut pace, job);
+            super::caption(&core, "Claude", 42, &mut pace, "".into());
+            assert!(updates.try_recv().is_err(), "invalid jobs and guides share refusal throttling");
+            assert!(pace.sent.is_empty());
+        }
+
+        let valid = serde_json::json!({"type": "job", "id": "work:1", "title": "Work", "status": "running"});
+        let mut malformed = Vec::new();
+        for field in ["id", "title", "status"] {
+            let mut payload = valid.clone();
+            payload.as_object_mut().unwrap().remove(field);
+            malformed.push(payload);
+        }
+        for field in ["id", "title", "status", "result", "parent", "demo"] {
+            for value in [serde_json::Value::Null, serde_json::json!(42), serde_json::json!(false), serde_json::json!([]), serde_json::json!({}), serde_json::json!("true")] {
+                if (value.is_null() && matches!(field, "result" | "parent"))
+                    || (value.is_boolean() && field == "demo")
+                    || (value.is_string() && field != "demo") {
+                    continue;
+                }
+                let mut payload = valid.clone();
+                payload[field] = value;
+                malformed.push(payload);
+            }
+        }
+        let [mut ears, mut you] = windows(address, ["Claude", ""]).await;
+        for payload in malformed {
+            assert!(serde_json::from_value::<ClientMsg>(payload.clone()).is_err(), "{payload}");
+            // A fresh origin gives each malformed payload its own refusal throttle and budget.
+            let (mut origin, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+            drain(&mut origin, 20).await;
+            // Its arrival (and the last origin's departure) reaches the other windows as a presence update first.
+            drain(&mut ears, 50).await;
+            drain(&mut you, 50).await;
+            origin.send(send(payload.clone())).await.unwrap();
+            origin.send(send(payload.clone())).await.unwrap();
+            origin.send(send(serde_json::json!({"type": "caption", "text": ""}))).await.unwrap();
+            for _ in 0..=PER_SECOND {
+                origin.send(send(valid.clone())).await.unwrap();
+            }
+            let notice = next(&mut origin, 500).await.unwrap();
+            assert_eq!(notice["type"], "notice", "{payload}");
+            assert!(notice["message"].as_str().unwrap().starts_with("Not shown: A job needs string"), "{payload}: {notice}");
+            assert!(drain(&mut origin, 50).await.is_empty(), "malformed jobs, captions and pacing share refusal throttling: {payload}");
+            assert_eq!(next(&mut ears, 500).await.unwrap(), notice, "the sender's other window hears the refusal");
+            for _ in 0..PER_SECOND {
+                let shown = next(&mut you, 500).await.unwrap();
+                assert_eq!(shown["type"], "job", "only valid jobs relay: {payload}");
+                assert_eq!(next(&mut ears, 500).await.unwrap(), shown);
+            }
+            assert!(drain(&mut you, 50).await.is_empty(), "no refusal reaches another speaker, and the fifth job is paced: {payload}");
+            assert!(drain(&mut ears, 50).await.is_empty(), "invalid jobs leave all four budget slots available: {payload}");
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn jobs_share_the_guide_budget() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut claude, mut ears, mut you] = windows(address, ["Claude", "Claude", ""]).await;
+        let job = serde_json::json!({"type": "job", "id": "work:1", "title": "Working", "status": "running"});
+        for payload in [
+            job.clone(),
+            serde_json::json!({"type": "point", "target": "composer"}),
+            serde_json::json!({"type": "tour", "steps": [{"text": "First"}]}),
+            job.clone(),
+            job.clone(),
+            serde_json::json!({"type": "caption", "text": "Too soon"}),
+            serde_json::json!({"type": "hold", "text": "Too soon?"}),
+            serde_json::json!({"type": "tour", "steps": []}),
+            serde_json::json!({"type": "point", "target": "mic"}),
+        ] {
+            claude.send(send(payload)).await.unwrap();
+        }
+        let shown = drain(&mut you, 100).await;
+        assert_eq!(shown.iter().map(|m| m["type"].as_str().unwrap()).collect::<Vec<_>>(), ["job", "guide", "tour", "job"]);
+        let notice = serde_json::json!({"type": "notice", "message": "Not shown: 4 a second at most."});
+        assert_eq!(drain(&mut claude, 100).await, [notice.clone()], "no echoes and only one refusal");
+        let mut expected = shown;
+        expected.push(notice);
+        assert_eq!(drain(&mut ears, 100).await, expected);
+
+        // Another window of the same speaker has its own budget and still relays to the first.
+        ears.send(send(job)).await.unwrap();
+        let shown = next(&mut you, 500).await.unwrap();
+        assert_eq!(shown["type"], "job");
+        assert_eq!(shown["by"], "Claude");
+        assert_eq!(next(&mut claude, 500).await.unwrap(), shown);
+        assert!(drain(&mut ears, 100).await.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
     }
 
     /// A point and a caption from one window (Claude's, over the bridge) reach every other window, the person's two

@@ -147,11 +147,17 @@ impl Core {
                 return false;
             }
             let mut journal = self.journal.lock().unwrap();
+            let mut failed = false;
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
                 positions::settle(self, &world);
                 if let Err(e) = journal.append(change) {
-                    tracing::error!("journal write failed: {e:#}");
+                    if failed {
+                        tracing::error!("journal write failed: {e:#}");
+                    } else {
+                        self.journal_save_failed(&e);
+                        failed = true;
+                    }
                 }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
@@ -166,8 +172,16 @@ impl Core {
     /// don't change.
     pub fn record(&self, change: Change) {
         if let Err(e) = self.journal.lock().unwrap().append(&change) {
-            tracing::error!("journal write failed: {e:#}");
+            self.journal_save_failed(&e);
         }
+    }
+
+    /// Safe while holding world, journal or position locks: only logs and broadcasts, without taking any of them.
+    fn journal_save_failed(&self, e: &anyhow::Error) {
+        tracing::error!("journal write failed: {e:#}");
+        self.send(ServerMsg::Notice {
+            message: "Couldn't save. Keep this window open; recent changes may be lost when you restart.".into(),
+        });
     }
 
     /// To every window.
@@ -1512,7 +1526,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         let notice = ServerMsg::Notice { message: format!("You joined as {speaker}: \"you\" is the host's name.") };
         if write(&mut out, &notice).await.is_err() { return; }
     }
-    // This window's number: a point or caption it sends goes to every window but this one (guide.rs).
+    // This window's number: guide messages, tours and jobs go to every window but this one (guide.rs).
     let window = guide::window();
     let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone(), window));
     if here {
@@ -1646,6 +1660,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Caption { text }) => guide::caption(&core, &speaker, window, &mut pace, text),
                 Ok(ClientMsg::Hold { text, target, urgent }) => guide::hold(&core, &speaker, window, &mut pace, text, target, urgent),
                 Ok(ClientMsg::Tour { steps }) => guide::tour(&core, &speaker, window, &mut pace, steps),
+                Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
                 Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
                     if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
@@ -1670,7 +1685,13 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Level { level }) => call::level(&core, &speaker, level),
                 Ok(_) => {}
-                Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
+                Err(e) => {
+                    if serde_json::from_str::<serde_json::Value>(text.as_str()).is_ok_and(|message| message["type"] == "job") {
+                        guide::malformed_job(&core, &speaker, &mut pace);
+                    } else {
+                        tracing::warn!("ignoring a message I can't read: {e}");
+                    }
+                }
             },
             Message::Binary(frame) => {
                 if let Some(tx) = &audio {
@@ -1689,7 +1710,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 }
 
 /// Sends a window every change and whatever is meant for its speaker, until the window is gone; never a guide or
-/// tour it sent itself (`window`, guide.rs). A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
+/// tour or job it sent itself (`window`, guide.rs). A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
 /// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
 async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
@@ -1706,8 +1727,8 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
         match update {
             // Someone else's live words, mic and notices.
             Ok(Outgoing { to: Some(to), .. }) if to != speaker => {}
-            // Its own guide or tour: only the other windows receive it (guide.rs).
-            Ok(Outgoing { message: ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. }, .. }) if from == window => {}
+            // Its own guide, tour or job: only the other windows receive it (guide.rs).
+            Ok(Outgoing { message: ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. }, .. }) if from == window => {}
             Ok(Outgoing { message, .. }) => {
                 if write(&mut out, &message).await.is_err() {
                     return;

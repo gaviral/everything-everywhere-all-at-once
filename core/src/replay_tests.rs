@@ -23,6 +23,205 @@ fn fresh() -> (Arc<Core>, std::path::PathBuf) {
     (Arc::new(Core::test(journal, world)), path)
 }
 
+const SAVE_FAILURE_NOTICE: &str = "Couldn't save. Keep this window open; recent changes may be lost when you restart.";
+
+struct SaveFailureFixture {
+    core: Arc<Core>,
+    path: std::path::PathBuf,
+}
+
+impl SaveFailureFixture {
+    fn new(failing: bool) -> Self {
+        let (core, path) = fresh();
+        core.commit(vec![Change::ThreadAdded { thread: crate::world::fixtures::thread("T1", "Rent", 1) }]);
+        if failing {
+            // File::open gives a read-only descriptor: even a privileged process cannot append to it.
+            *core.journal.lock().unwrap() = Journal::read_only(&path).unwrap();
+        }
+        Self { core, path }
+    }
+}
+
+impl Drop for SaveFailureFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// A Tokio timeout cannot detect a blocked synchronous mutex on its own runtime thread. Run each scenario on a
+/// separate thread, with a paused clock for scheduled position writes, and bound completion from outside it.
+fn journal_save_failure_without_deadlock(test: impl std::future::Future<Output = ()> + Send + 'static) {
+    let (done, finished) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread().enable_all().start_paused(true).build().unwrap().block_on(test);
+        done.send(()).unwrap();
+    });
+    finished.recv_timeout(std::time::Duration::from_secs(5)).expect("journal save path must finish without deadlock");
+    worker.join().unwrap();
+}
+
+fn save_failure_updates(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) -> Vec<serde_json::Value> {
+    let mut sent = Vec::new();
+    loop {
+        match updates.try_recv() {
+            Ok(out) => sent.push(serde_json::json!({ "to": out.to, "message": out.message })),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => return sent,
+            Err(e) => panic!("window missed an update: {e}"),
+        }
+    }
+}
+
+fn save_failure_notice() -> serde_json::Value {
+    serde_json::json!({ "to": null, "message": { "type": "notice", "message": SAVE_FAILURE_NOTICE } })
+}
+
+#[test]
+fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_return_values() {
+    journal_save_failure_without_deadlock(async {
+        for failing in [false, true] {
+            let f = SaveFailureFixture::new(failing);
+            let before = std::fs::read_to_string(&f.path).unwrap();
+            let mut first_window = f.core.updates.subscribe();
+            let mut second_window = f.core.updates.subscribe();
+            let changes = vec![
+                Change::ThreadAdded { thread: crate::world::fixtures::thread("T2", "Garden", 2) },
+                Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() },
+                Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() },
+            ];
+            let mut expected = (*f.core.snapshot()).clone();
+            for change in &changes {
+                expected.apply(change);
+            }
+            assert!(f.core.commit_if(|_| true, changes.clone()));
+            assert_eq!(full(&f.core.snapshot()), full(&expected), "failed writes still apply the whole batch");
+            let sent = save_failure_updates(&mut first_window);
+            assert_eq!(sent, save_failure_updates(&mut second_window), "both windows receive the same broadcast");
+            let notices: Vec<_> = sent.iter().filter(|out| out["message"]["type"] == "notice").cloned().collect();
+            assert_eq!(notices, if failing { vec![save_failure_notice()] } else { vec![] });
+            let told: Vec<_> = sent.into_iter().filter(|out| out["message"]["type"] == "change").collect();
+            let wanted: Vec<_> = changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect();
+            assert_eq!(told, wanted, "change order and broadcast routing stay the same");
+
+            assert!(!f.core.commit_if(|_| false, changes));
+            assert!(f.core.commit_if(|_| true, vec![]));
+            assert_eq!(full(&f.core.snapshot()), full(&expected));
+            assert!(save_failure_updates(&mut first_window).is_empty(), "rejected and empty batches don't try to save");
+            assert!(save_failure_updates(&mut second_window).is_empty());
+            if failing {
+                assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
+                // Deduplication is per batch, not per core: the next failed batch warns again.
+                f.core.commit(vec![Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() }]);
+                for updates in [&mut first_window, &mut second_window] {
+                    let sent = save_failure_updates(updates);
+                    assert_eq!(sent.iter().filter(|out| **out == save_failure_notice()).count(), 1);
+                }
+            } else {
+                assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&expected));
+                assert_eq!(std::fs::read_to_string(&f.path).unwrap().lines().count(), 4);
+            }
+        }
+    });
+}
+
+#[test]
+fn journal_save_failure_record_reports_each_failure_to_every_window() {
+    journal_save_failure_without_deadlock(async {
+        for failing in [false, true] {
+            let f = SaveFailureFixture::new(failing);
+            let before = std::fs::read_to_string(&f.path).unwrap();
+            let world = full(&f.core.snapshot());
+            let mut first_window = f.core.updates.subscribe();
+            let mut second_window = f.core.updates.subscribe();
+            for off in [true, false] {
+                let change = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off, speaker: "Sam".into(), at_ms: 3 };
+                f.core.record(change);
+                let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
+                assert_eq!(save_failure_updates(&mut first_window), wanted);
+                assert_eq!(save_failure_updates(&mut second_window), wanted);
+            }
+            assert_eq!(full(&f.core.snapshot()), world, "record still leaves the live world alone");
+            let kept = std::fs::read_to_string(&f.path).unwrap();
+            if failing {
+                assert_eq!(kept, before);
+            } else {
+                let marks: Vec<serde_json::Value> = kept.lines().skip(1).map(|line| serde_json::from_str(line).unwrap()).collect();
+                assert_eq!(marks.len(), 2);
+                assert_eq!((marks[0]["off"].as_bool(), marks[1]["off"].as_bool()), (Some(true), Some(false)));
+                assert_eq!(full(&Journal::open(&f.path).unwrap().1), world);
+            }
+        }
+    });
+}
+
+#[test]
+fn journal_save_failure_positions_report_immediate_and_held_writes_without_changing_live_steps() {
+    journal_save_failure_without_deadlock(async {
+        for failing in [false, true] {
+            let f = SaveFailureFixture::new(failing);
+            let before = std::fs::read_to_string(&f.path).unwrap();
+            let mut first_window = f.core.updates.subscribe();
+            let mut second_window = f.core.updates.subscribe();
+            for x in [1.0, 2.0, 3.0] {
+                assert_eq!(crate::positions::set(&f.core, "Sam", "T1", Some(x), Some(-x)), Ok(()));
+                let sent = save_failure_updates(&mut first_window);
+                assert_eq!(sent, save_failure_updates(&mut second_window));
+                let mut wanted = Vec::new();
+                if failing && x == 1.0 {
+                    wanted.push(save_failure_notice());
+                }
+                let at_ms = f.core.snapshot().positions["T1"].at_ms;
+                wanted.push(serde_json::json!({ "to": null, "message": { "type": "change", "change":
+                    { "type": "positioned", "id": "T1", "x": x, "y": -x, "by": "Sam", "at_ms": at_ms } } }));
+                assert_eq!(sent, wanted, "only the first step writes immediately; held steps still reach every window");
+            }
+            // Existing restart helper drives the delayed write through positions::write while all three locks
+            // are held. Only the latest held step is written, and it must not broadcast another Change.
+            crate::positions::flush_all(&f.core);
+            let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
+            assert_eq!(save_failure_updates(&mut first_window), wanted);
+            assert_eq!(save_failure_updates(&mut second_window), wanted);
+            crate::positions::flush_all(&f.core);
+            assert!(save_failure_updates(&mut first_window).is_empty(), "a failed flush is still consumed, without retry");
+            assert!(save_failure_updates(&mut second_window).is_empty());
+            assert_eq!(f.core.snapshot().positions["T1"].x, 3.0);
+            if failing {
+                assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
+            } else {
+                let kept: Vec<serde_json::Value> = std::fs::read_to_string(&f.path).unwrap().lines().skip(1).map(|line| serde_json::from_str(line).unwrap()).collect();
+                assert_eq!(kept.iter().map(|line| line["x"].as_f64().unwrap()).collect::<Vec<_>>(), [1.0, 3.0]);
+                assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&f.core.snapshot()));
+            }
+        }
+    });
+}
+
+#[test]
+fn journal_save_failure_scheduled_position_flush_broadcasts_when_due() {
+    journal_save_failure_without_deadlock(async {
+        for failing in [false, true] {
+            let f = SaveFailureFixture::new(failing);
+            let mut first_window = f.core.updates.subscribe();
+            let mut second_window = f.core.updates.subscribe();
+            crate::positions::set(&f.core, "you", "T1", Some(1.0), Some(1.0)).unwrap();
+            crate::positions::set(&f.core, "you", "T1", Some(2.0), Some(2.0)).unwrap();
+            assert_eq!(save_failure_updates(&mut first_window), save_failure_updates(&mut second_window));
+            // Register the scheduled task's timer before advancing the paused clock to its exact deadline.
+            tokio::task::yield_now().await;
+            tokio::time::advance(crate::positions::JOURNAL_EVERY).await;
+            tokio::task::yield_now().await;
+            let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
+            assert_eq!(save_failure_updates(&mut first_window), wanted);
+            assert_eq!(save_failure_updates(&mut second_window), wanted);
+            assert_eq!(f.core.snapshot().positions["T1"].x, 2.0);
+            let kept = std::fs::read_to_string(&f.path).unwrap();
+            assert_eq!(kept.lines().count(), if failing { 1 } else { 3 });
+            if !failing {
+                assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&f.core.snapshot()));
+            }
+        }
+    });
+}
+
 /// A shipped sample's changes, dated `AHEAD` of the clock or `BEHIND` it by the clock now, so a test reads the same
 /// on any day.
 fn sample(name: &str, way: i64) -> Vec<Change> {
