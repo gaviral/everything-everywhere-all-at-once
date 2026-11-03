@@ -270,7 +270,7 @@ function Meter({ call, friend, me }: { call: Call; friend: Person; me: string })
   };
   const who = named(friend);
   return <div className="talk-meter">
-    <div className="talk-meter-label" id="talk-meter-label">{who.charAt(0).toUpperCase() + who.slice(1)} may interrupt up to</div>
+    <div className="talk-meter-label" id="talk-meter-label">{who.charAt(0).toUpperCase() + who.slice(1)}'s interruption level</div>
     <div className="talk-levels" role="radiogroup" aria-labelledby="talk-meter-label">
       {LEVELS.map((level, i) => <button key={level.id} ref={(el) => { buttons.current[i] = el; }} type="button" role="radio" aria-checked={i === index}
         tabIndex={i === index ? 0 : -1} className={["talk-level-step", i < index && "talk-level-in", i === index && "talk-level-on", level.id === "stop" && "talk-level-stop"].filter(Boolean).join(" ")}
