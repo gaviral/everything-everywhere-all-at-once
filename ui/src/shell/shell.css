@@ -4,6 +4,16 @@
 
 html.shell2, html.shell2 body { background: var(--space); }
 html.shell2 body { font-size: 15px; letter-spacing: -.003em; }
+html.shell2 { --shell-corner-gap: 8px; --shell-edge: 16px; }
+/* Measured by the shell: above the camera, or above the stage when there is no camera. */
+html.shell2 .countdown {
+  left: var(--shell-countdown-left, var(--shell-edge)); bottom: var(--shell-countdown-bottom, calc(var(--dock-height, 120px) + var(--shell-corner-gap)));
+  max-width: calc(100vw - 2 * var(--shell-edge)); z-index: 43;
+}
+html.shell2 .countdown-editor {
+  bottom: calc(100% + var(--shell-countdown-editor-gap, var(--shell-corner-gap))); width: min(360px, calc(100vw - var(--shell-countdown-left, var(--shell-edge)) - var(--shell-edge)));
+  max-height: var(--shell-countdown-editor-room, calc(100dvh - var(--dock-height, 120px) - 100px));
+}
 /* The canvas is the map and the only thing that pans: the page itself holds still under it. */
 html.shell2[data-view="map"], html.shell2[data-view="map"] body { overflow: hidden; height: 100%; }
 /* Cards scrolls: clear of the corners at the top and the stage at the bottom. */
@@ -49,7 +59,7 @@ html.shell2 :is(.shell-button, .shell-btn, .shell-link, .shell-tab, .shell-rail-
 
 /* ── Corners ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-items: center; gap: 8px; }
+html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-items: center; gap: var(--shell-corner-gap); }
 html.shell2 .shell-tl { top: 16px; left: 16px; }
 html.shell2 .shell-tr { top: 16px; right: 16px; }
 html.shell2 .shell-bl { bottom: 36px; left: 16px; }

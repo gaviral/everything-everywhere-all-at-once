@@ -127,6 +127,14 @@ pub enum ServerMsg {
         #[serde(skip)]
         from: u64,
     },
+    /// An ordered tour, or no steps to clear the sender's tour; ephemeral, to every other window (guide.rs).
+    Tour {
+        steps: Vec<crate::guide::Step>,
+        by: String,
+        at_ms: u64,
+        #[serde(skip)]
+        from: u64,
+    },
     /// The call (call.rs): who is on the map now and since when, who has the floor (never their words), how far each
     /// person has read the turns, and how far the Friend may interrupt. To every window once two are here at once,
     /// whenever any of it changes, and first in a window's catch-up from then on; never journaled.
@@ -282,6 +290,8 @@ pub enum ClientMsg {
         #[serde(default)]
         urgent: bool,
     },
+    /// An ordered tour of 1–20 steps, or no steps to clear this speaker's tour (guide.rs).
+    Tour { steps: Vec<crate::guide::Step> },
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.
