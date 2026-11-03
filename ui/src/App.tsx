@@ -69,6 +69,7 @@ import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
 import { CatalogTab, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
 import { useHeld, dropHeld } from "./shell/held";
+import { usePhone } from "./shell/usePhone";
 import "./shell/shell.css";
 import { TalkRail } from "./talk/TalkRail";
 import { inCall as callOn, useCall } from "./talk/call-core";
@@ -85,6 +86,7 @@ export default function App() {
   const core = useCore(me);
   const site = useSite();
   const reducedMotion = useReducedMotion();
+  const phone = usePhone();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Threads opened with all their branches ("expand …", Option-click): they stay open as you move about the map,
   // where a card you opened with a plain click folds again once you've been there and left.
@@ -1356,7 +1358,6 @@ export default function App() {
   // The new shell (?shell=2, shell/): four corners, the stage, the status line, the rail.
   const empty = world.threads.length === 0;
   const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
-  const phone = typeof window !== "undefined" && window.innerWidth <= 560;
   // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
   const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
   const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
