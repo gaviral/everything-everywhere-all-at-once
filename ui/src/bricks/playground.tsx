@@ -223,7 +223,7 @@ function Playground() {
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>
       : <p className="playground-about playground-wrong">{found.problems[id] ? `“${id}” can't load: ${found.problems[id].join("; ")}.` : `No brick “${id}” here. Pick one above.`}</p>}
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
-      {brick?.info.kind === "card" ? <div className="playground-dock" data-slot="stage"><BrickMount key={id} brick={brick} host={host} /></div>
+      {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} /></div>
         : brick && <BrickMount key={id} brick={brick} host={host} />}
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>

@@ -160,7 +160,7 @@ export function landingNote(model: string | undefined, ms: number | null | undef
   return time ? `Put here in ${time}` : "";
 }
 
-/** The shell's slots (contract: `data-slot` names), measured: where the stage starts, how tall the status line is. */
+/** The page's slots (contract.ts `SlotName`), measured: where the stage starts, how tall the status line is. */
 function chromeOf(frameBox: DOMRect | undefined) {
   const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
   const status = document.querySelector('[data-slot="status"]')?.getBoundingClientRect();
@@ -269,7 +269,7 @@ function Canvas({ map, actions, on }: BrickProps) {
     const frameBox = frame.current?.getBoundingClientRect();
     const w = frameBox?.width ?? innerWidth, h = frameBox?.height ?? innerHeight;
     const chrome = chromeOf(frameBox);
-    // contract: `data-slot="rail"` (the shell's rail, right) isn't a contract name yet; the camera keeps clear of it once it is.
+    // The rail (`data-slot="rail"`, the panel at the right) once the page has one: the camera keeps clear of it.
     const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
     const y1 = chrome.stage ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
@@ -298,8 +298,8 @@ function Canvas({ map, actions, on }: BrickProps) {
   const slotKey = slots.join("|");
   const threads = useMemo(() => (notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads), [map.threads, notes.anchored]);
   const layout = useMemo(() => place({ threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, active: map.active, slots, landing, margins: notes.margins, opened, narrow }),
-  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.active, slotKey, landing, notes.margins, opened, narrow]);
+    me: map.me, speakers: map.speakers, active: map.active, slots, landing, margins: notes.margins, opened, narrow }),
+  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow]);
   const hereKey = map.active ? layout.tips.get(map.active) : undefined;
   const here = hereKey ? layout.byKey.get(hereKey) : undefined;
   const slotsHere = map.active ? layout.slots.get(map.active) ?? [] : [];
@@ -422,14 +422,12 @@ function Canvas({ map, actions, on }: BrickProps) {
     else setPulses((was) => ({ ...was, [key]: (was[key] ?? 0) + 1 }));
   };
   useBrickEvent(on, "landed", (event: BrickEvents["landed"]) => {
-    const { thoughtId, threadId, mine } = event;
-    // contract: `model` and `ms` on `landed` (the placer's model and its time); until the host sends them, the time is
-    // the thought's own `place_ms`, and no model is named.
-    const extra = event as BrickEvents["landed"] & { model?: string; ms?: number };
+    // The model that placed it, and how long placing took; a rule's landing names no model (none is ever guessed).
+    const { thoughtId, threadId, mine, model, ms } = event;
     const thought = map.thoughts.find((t) => t.id === thoughtId);
     // Yours: the model put your thought there, and you're the one waiting on it; another's landing gets its initial.
     if (mine) {
-      const text = landingNote(extra.model, extra.ms ?? thought?.place_ms);
+      const text = landingNote(model ?? undefined, ms ?? thought?.place_ms);
       setLanding(text ? { thought: thoughtId, text } : null);
     }
     const item = layout.items.find((i) => (i.kind === "point" || i.kind === "aside") && i.thoughts?.includes(thoughtId)) ?? layout.byKey.get(`t:${threadId}`);
@@ -454,19 +452,16 @@ function Canvas({ map, actions, on }: BrickProps) {
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
   });
-  // contract: `pointing` (the guide's): what the Friend points at, `{ thoughtId?, threadId? }`, or null when it stops.
-  // The Spine keeps the one dim (78%) for the rest, so a pointed-at thread never dims twice; while the view follows your
-  // talk, the target comes into view (a view a hand holds stays where it was left). Not in contract.ts yet.
-  const pointed = useRef<(value: unknown) => void>(() => {});
-  pointed.current = (value) => {
-    const target = value as { thoughtId?: string; threadId?: string } | null;
+  // What the guide points at (`pointing`: the Friend's point, or a hint), or null when it stops. The Spine keeps the one
+  // dim (78%) for the rest, so a pointed-at thread never dims twice; while the view follows your talk, the target comes
+  // into view (a view a hand holds stays where it was left).
+  useBrickEvent(on, "pointing", (target) => {
     const thought = target?.thoughtId ? map.thoughts.find((t) => t.id === target.thoughtId) : undefined;
     const thread = target?.threadId ?? thought?.thread_id ?? null;
     setPointing(thread ? { thread } : null);
     const item = thought ? layout.items.find((i) => i.thoughts?.includes(thought.id)) : thread ? layout.byKey.get(`t:${thread}`) : undefined;
     if (item && following && !camera.comfortable(item.box)) camera.aim(item.box, { ring: item.key });
-  };
-  useEffect(() => (on as unknown as (name: string, listener: (value: unknown) => void) => () => void)("pointing", (value) => pointed.current(value)), [on]);
+  });
 
   const seenCues = useCallback((keys: string[]) => setCues((was) => was.filter((cue) => !keys.includes(cue.key))), []);
   const goTo = (cue: Cue) => {

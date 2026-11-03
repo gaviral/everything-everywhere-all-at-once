@@ -620,8 +620,11 @@ try {
       else {
         const point = await nodeAt(`.react-flow__node[data-id="p:${id}"] .spine-point`);
         if (!slot || !point || point.x !== slot.x || Math.abs(point.y - slot.y) > 1) fail("spine", `the point didn't land in its slot (slot ${JSON.stringify(slot)}, point ${JSON.stringify(point)})`);
-        const note = await evaluate(`document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`);
-        if (note !== "Put here in 1.2 s") fail("spine", `the landing note says "${note}", not how long placing took ("Put here in 1.2 s"; the model once the contract sends it)`);
+        // The landing names its model once its route says (the playground's comes 40 ms after the change, as the core's does).
+        const landingNote = `document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`;
+        await until(`(${landingNote}) !== ""`, 2000);
+        const note = await evaluate(landingNote);
+        if (note !== "Muse Spark 1.3 put this here in 1.2 s") fail("spine", `the landing note says "${note}", not the model and how long placing took ("Muse Spark 1.3 put this here in 1.2 s")`);
       }
     }
     // A hand on the map holds the view; a landing then moves nothing, and out of view an edge chip says where.
@@ -765,9 +768,11 @@ try {
   await go(`${base}/`);
   await until(`document.querySelectorAll(".thread").length > 0`, 8000);
   await settle();
-  // The slots today's layout has: one each, and no name the contract doesn't know.
+  // The slots today's layout has: one each, and no name the contract doesn't know. No stage yet: today's dock spans the
+  // window, so a view's corners (the Spine's) would sit under it beside one.
   const slots = await evaluate(`[...document.querySelectorAll("[data-slot]")].map((el) => el.dataset.slot)`);
-  for (const name of ["top-left", "top-right", "stage", "status"]) if (slots.filter((s) => s === name).length !== 1) fail("the app's slots", `${slots.filter((s) => s === name).length} data-slot="${name}", not one`);
+  for (const name of ["top-left", "top-right", "status"]) if (slots.filter((s) => s === name).length !== 1) fail("the app's slots", `${slots.filter((s) => s === name).length} data-slot="${name}", not one`);
+  if (slots.includes("stage")) fail("the app's slots", "a stage on today's dock: the Spine's corners would go beside it, under the dock");
   const named = [...read(join(bricksDir, "contract.ts")).match(/export const SLOTS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   for (const name of slots) if (!named.includes(name) && !name.startsWith("slot:")) fail("the app's slots", `data-slot="${name}" isn't a contract name`);
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);

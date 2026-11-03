@@ -70,7 +70,7 @@ The page's regions, each an element marked `data-slot="<name>"` while it's on sc
 | `top-right` | Find, Catalog, people | the header's buttons (`.header-actions`) |
 | `bottom-left` | the camera: following, zoom stops | not yet: the Notice timeline's clock and the corner caption place themselves there |
 | `bottom-right` | the shelf, and the held stack above it | not yet |
-| `stage` | bottom center: the composer, captions, one notice | the dock's column (`.dock-inner`); the playground's dock, for a card |
+| `stage` | bottom center, with room beside it: the composer, captions, one notice | not yet: today's dock spans the window's width, so a view's corners stay clear of it, at the right (the Spine's) |
 | `status` | the status line: the mic, its time, live words, what's waiting | the header's status (`.status`) |
 | `rail` | the panel at the right: Talk, History, Catalog, Settings | not yet |
 | `shelf` | what you keep at hand | the Spine's shelf, while the Spine is the view |
