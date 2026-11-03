@@ -4,6 +4,7 @@
 import raw from "../../../samples/demo-jobs.json?raw";
 import { receiveGuide, type GuideMsg } from "../guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "../work-jobs";
+import type { Ask } from "./ask";
 
 /** What the feed sends, as the file has it (scripts/demo-jobs.mjs checks the file itself). */
 type Step = { at: number; message: { type: "job" } & Omit<JobMsg, "type" | "by" | "at_ms"> | { type: "hold"; text: string } };
@@ -31,15 +32,44 @@ function deliver({ message }: Step) {
   }
 }
 
-/** Plays the feed from the start, `speed` times faster than real time (the file's `at` is in seconds); returns the way to
- *  stop it, which takes what it showed away. */
-export function playFeed(speed = 1, steps: readonly Step[] = STEPS): () => void {
+/** Plays the feed from the start, `speed` times faster than real time (the file's `at` is in seconds). Answers continue
+ *  this local feed; stopping it cancels playback and takes what it showed away. */
+export function playFeed(speed = 1, steps: readonly Step[] = STEPS) {
   resetJobs();
-  const timers = steps.map((step) => window.setTimeout(() => deliver(step), (step.at * 1000) / speed));
-  return () => {
+  const jobs = steps.map((step) => step.message).filter((m) => m.type === "job");
+  const card = jobs.find((m) => m.id === "demo-card" && m.status === "waiting");
+  const birthday = jobs.find((m) => m.id === "demo-birthday");
+  let active = true, cardWaiting = false, answered = false;
+  const timers = steps.map((step) => window.setTimeout(() => {
+    if (!active) return;
+    const m = step.message;
+    if (answered && ((m.type === "hold" && m.text === card?.result) ||
+      (m.type === "job" && m.id === birthday?.id && m.status === "waiting"))) return;
+    if (m === card) cardWaiting = true;
+    deliver(step);
+  }, (step.at * 1000) / speed));
+  const answer = (ask: Ask, text: string): boolean => {
+    if (!active || !cardWaiting || answered || ask.by !== HELPER || ask.text !== card?.result) return false;
+    const choice = text.trim().toLowerCase();
+    const result = choice === "keep it a surprise" || choice === "keep it a surprise, thanks"
+      ? "Keeps the class a surprise"
+      : choice === "mention the pottery class in mom's card" ? "Mentions the pottery class" : null;
+    if (result && card && birthday) {
+      answered = true;
+      cardWaiting = false;
+      for (const message of [
+        { ...card, status: "done" as const, result },
+        { ...birthday, status: "done" as const, result: "Class found · card ready" },
+        { type: "hold" as const, text: "" },
+      ]) deliver({ at: 0, message });
+    }
+    return true;
+  };
+  const stop = () => {
+    active = false;
     for (const timer of timers) window.clearTimeout(timer);
-    const withdraw: GuideMsg = { type: "guide", kind: "hold", target: null, text: "", by: HELPER, at_ms: Date.now() };
-    receiveGuide(withdraw);
+    deliver({ at: 0, message: { type: "hold", text: "" } });
     resetJobs();
   };
+  return { answer, stop };
 }
