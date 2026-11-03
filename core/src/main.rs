@@ -66,6 +66,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    typed_receipts: Mutex<()>,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
     catalog: catalog::Runtime,
@@ -372,6 +373,24 @@ impl Core {
     /// without a trace: typing it was deliberate, and nothing on screen would say where it went.
     pub fn add_typed(self: &Arc<Self>, speaker: &str, text: &str) {
         self.take_turn(speaker, text, true, true, false);
+    }
+
+    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str) {
+        if uuid::Uuid::parse_str(id).is_err() { return; }
+        // Two reconnecting windows can retry the same entry at once.
+        let _receipt = self.typed_receipts.lock().unwrap();
+        let key = (speaker.to_string(), id.to_string());
+        if !self.snapshot().received_text.contains(&key) {
+            self.add_typed(speaker, text);
+            let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
+            let mut world = self.world.lock().unwrap();
+            if let Err(e) = self.journal.lock().unwrap().append(&change) {
+                self.journal_save_failed(&e);
+                return;
+            }
+            Arc::make_mut(&mut world).apply(&change);
+        }
+        self.send_to(speaker, ServerMsg::TextReceived { id: id.into() });
     }
 
     /// `add_turn`, saying why when `typed` filler is set aside.
@@ -1048,6 +1067,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        typed_receipts: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
@@ -1671,8 +1691,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Text { text, .. }) if text.trim().chars().count() > protocol::THOUGHT_MAX => {
                     core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
                 }
-                Ok(ClientMsg::Text { text, speak }) if !text.trim().is_empty() => {
-                    if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
+                Ok(ClientMsg::Text { text, speak, id }) if !text.trim().is_empty() => {
+                    if let Some(id) = id { core.receive_typed(&speaker, &id, text.trim()); }
+                    else if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
                     else { core.add_typed(&speaker, text.trim()); }
                 }
                 // A listener whose voice service ended has a closed channel; start a fresh one.
@@ -1904,6 +1925,7 @@ fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::ato
 impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
+            typed_receipts: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
             recap: Default::default(),
@@ -1999,6 +2021,37 @@ mod tests {
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn typed_receipt_survives_a_lost_socket_and_restart() {
+        use tokio_tungstenite::tungstenite::Message;
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let id = uuid::Uuid::new_v4().to_string();
+        let request = serde_json::json!({"type":"text", "id":id, "text":"Keep these words after a dropped connection"}).to_string();
+        let (mut first, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        first.send(Message::Text(request.clone().into())).await.unwrap();
+        // Stop reading immediately after the send: the receipt cannot reach this page.
+        drop(first);
+        for _ in 0..100 {
+            if core.snapshot().received_text.contains(&("you".into(), id.clone())) { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(core.snapshot().thoughts.len(), 1);
+        let (mut reopened, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        reopened.send(Message::Text(request.into())).await.unwrap();
+        loop { if received(&mut reopened).await["type"] == "text_received" { break; } }
+        assert_eq!(core.snapshot().thoughts.len(), 1, "retry must not add another thought");
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restarted = Arc::new(Core::test(journal, world));
+        restarted.receive_typed("you", &id, "Keep these words after a dropped connection");
+        assert_eq!(restarted.snapshot().thoughts.len(), 1, "receipt is replayed after restart");
+        server.abort();
+        std::fs::remove_file(path).unwrap();
     }
 
     /// "ok" said is filler, set aside without a word (it's how people talk); typed, it gets an answer instead of vanishing.

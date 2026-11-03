@@ -458,9 +458,15 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
     const item = point ?? layout.byKey.get(`t:${threadId}`);
     if (!item) return;
+    setFollowing(false);
+    camera.hold();
+    if (point && !originals.has(point.id)) {
+      setOriginals((was) => new Set([...was, point.id]));
+      return; // Aim after the original words have their measured space.
+    }
     reached.current = destination;
     camera.aim(item.box, { ring: item.key });
-  }, [ready, destination, layout, map.threads, open?.id, camera.aim]);
+  }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
   const touch = () => { touched.current = Date.now(); setHeldAt(touched.current); };
   const stopFollowing = () => { touch(); setFollowing(false); camera.hold(); };
@@ -715,7 +721,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   };
 
   // The zoom stops: one place at three distances. Words is reading size at what you follow (or the middle of the view);
-  // Titles and Pictures fit the whole map, Pictures a little further out.
+  // Titles keeps the name's usual three-line measure at 13 px; larger maps need panning.
+  // Pictures fits the whole map, a little further out.
   const farOut = useStore((s) => s.transform[2] < READ);
   const shownStop: Stop = farOut ? (stop === "words" ? "titles" : stop) : "words";
   const choose = (next: Stop) => {
@@ -727,7 +734,9 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       return;
     }
     stopFollowing();
-    camera.fit(all(), next === "titles" ? 0.6 : 0.42, minZoom);
+    // The usual title measure, resized from 18 px to 13 px, plus the label's 6 px padding.
+    const titleZoom = (G.titleW * 13 / 18 + 2 * 6) / G.colW;
+    camera.fit(all(), next === "titles" ? 0.6 : 0.42, next === "titles" ? Math.max(minZoom, titleZoom) : minZoom);
   };
   const seeAll = () => { stopFollowing(); camera.fit(all(), 1, minZoom); };
 

@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    TextReceived { id: String },
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
     /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
@@ -208,7 +209,7 @@ pub enum ClientMsg {
     AppVolume { level: f64 },
     AppOutput { id: String, sound: bool },
     /// A typed thought.
-    Text { text: String, #[serde(default)] speak: bool },
+    Text { text: String, #[serde(default)] speak: bool, #[serde(default)] id: Option<String> },
     /// Start or stop listening to the microphone.
     Listen { on: bool },
     /// Go back to a thread, e.g. from the unfinished-thought card.

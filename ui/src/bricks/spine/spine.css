@@ -48,7 +48,7 @@
 .spine-head.spine-left .spine-tile { outline: 2px dashed var(--amber); outline-offset: 2px; }
 /* Far out, the title keeps its size on screen (--spine-k is 1 / zoom), over the top of its own spine: no wider than a
    column, so neighbours' titles never meet. */
-.spine-label { position: absolute; top: 0; left: 0; display: -webkit-box; overflow: hidden; max-width: 380px; padding: calc(3px * var(--spine-k, 1)) calc(6px * var(--spine-k, 1));
+.spine-label { position: absolute; top: 0; left: 0; display: -webkit-box; overflow: hidden; width: 300px; max-width: 100%; box-sizing: border-box; padding: calc(3px * var(--spine-k, 1)) calc(6px * var(--spine-k, 1));
   -webkit-box-orient: vertical; border-radius: calc(7px * var(--spine-k, 1)); background: var(--bg);
   box-shadow: 0 0 0 calc(1px * var(--spine-k, 1)) color-mix(in srgb, var(--spine-room, var(--line)) 40%, transparent); color: var(--spine-room, var(--ink));
   font-size: calc(13px * var(--spine-k, 1)); font-weight: 600; line-height: calc(16px * var(--spine-k, 1)); overflow-wrap: anywhere; pointer-events: none; }
