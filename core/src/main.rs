@@ -35,6 +35,7 @@ mod tidy;
 mod tls;
 mod topics;
 mod tunnel;
+mod usage;
 mod whyhere;
 mod world;
 #[cfg(test)]
@@ -100,6 +101,8 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Allowances read from USAGE_FILE, outside the saved map (usage.rs).
+    usage: usage::Runtime,
     /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
     hosts: Mutex<std::collections::HashSet<String>>,
     /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
@@ -1061,6 +1064,7 @@ async fn main() -> anyhow::Result<()> {
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
         service: model::Service::from_env(),
+        usage: usage::Runtime::from_env().await,
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
         github: github::Runtime::from_env(),
@@ -1084,6 +1088,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(refiner::run(core.clone()));
     tokio::spawn(recap::keep(core.clone()));
     tokio::spawn(topics::run(core.clone()));
+    tokio::spawn(usage::run(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -1562,6 +1567,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
+    messages.push(usage::message(core));
     messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1912,6 +1918,7 @@ impl Core {
             wake: Default::default(),
             imports: Default::default(),
             service: Default::default(),
+            usage: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
             github: Default::default(),

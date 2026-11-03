@@ -79,6 +79,7 @@ Browser, one page per window (ui/src)
     bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your topic while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the input box (the status line once there is one), in place of the bottom bar's big line
+    usage/       Usage, an off-by-default top-right panel: brick.json, index.tsx and usage.css show remaining allowances and per-row as-of times from map.usage; held by scripts/usage-check.mjs
     _template/   the feature to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
@@ -113,6 +114,7 @@ Core, one process (core/src: axum, tokio)
   apps.rs        watchers, prompts, publishers; the app builder
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
+  usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
   import.rs      past AI chats into topics
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
   messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
@@ -136,6 +138,18 @@ App connects Features page requests to the Features tab, “what just happened?�
 `Guide.tsx` supplies the held cards and caption content. It asks one waiting item after a 2.5 s natural pause with no unfinished draft or open dialog, while the page is visible and no caption is up. Urgent questions come first. The held card can ask now, wait for later or drop an item; talking over a caption returns its unread words to the stack. This state belongs to the receiving window, outside the saved map.
 
 The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`: the last 60 thoughts with nonempty text, oldest first, with speaker and time. In a call (`talk/call-core.ts`'s `inCall`), App removes that tab and closes it if selected; `talk/TalkRail.tsx` independently hosts the full `Talk` UI. TalkRail opens by default on a wide screen with at least two people (a Remote, listed in the Share menu as a device, is never one), stays closed by default with one person and an AI participant, and uses a sheet on a phone. Its pill reopens it and shows unread turns. Both open rails use `data-slot="rail"`; the call rail and another shell tab can be mounted together.
+
+## Usage allowances
+
+Usage starts off and can be enabled on the Features page. The core reads the JSON file named by `USAGE_FILE` at startup and every 60 seconds, sends it over the existing WebSocket, and includes the latest data when a window joins. The file's shape is:
+
+```json
+{"updated":"2026-11-03T14:40:00Z","rows":[{"label":"Claude weekly","used_pct":67},{"label":"ChatGPT","left":"25 messages left"},{"label":"Meta API","spent_usd":12.3,"cap_usd":100},{"label":"Muse","left":"10 credits left"}]}
+```
+
+`updated` is an ISO timestamp. Each row has a label and either `used_pct`, free text in `left`, or `spent_usd` with `cap_usd`. The panel shows remaining percent or dollars (at least zero), or the supplied text, with the file's as-of time. Its additional **Meta API · core (1h)** row uses the core's existing rolling 60-minute model-call counter and `MODEL_CALLS_PER_HOUR` limit, with its own timestamp; a zero limit says “no cap” while still counting calls. This counts this core's budgeted calls, including retries, and resets when the core restarts.
+
+No `USAGE_FILE`, an unreadable or malformed file, or a disconnected core keeps the meter hidden without an error. No provider is queried by Usage, and neither allowances nor call counts enter the journal. `scripts/usage-check.mjs` starts isolated cores with no key and a temporary sample file, checks the built page's switch and rows, reload, hidden state, narrow/dark layouts and enlarged text. The Rust tests verify minute refreshes, replay, an untouched journal and expiry of hourly calls.
 
 ## Guide relay and runtime jobs
 
