@@ -14,7 +14,7 @@ import { CORE_BRICKS } from "./shell/flag";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
-const APP_FLAGS = ["room", "recording", "brick", "bricks", "sample", "shell", "demo", "cards"];
+const APP_FLAGS = ["room", "recording", "brick", "bricks", "sample", "shell", "demo", "cards", "remote", "speed"];
 /** Ids a view brick can't take: they're the app's own views. */
 const APP_VIEWS = ["map", "palace"];
 
