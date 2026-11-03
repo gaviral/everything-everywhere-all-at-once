@@ -11,6 +11,7 @@ mod call;
 mod catalog;
 mod chunks;
 mod clock;
+mod data_lock;
 mod decided;
 mod explain;
 mod find;
@@ -991,6 +992,8 @@ async fn main() -> anyhow::Result<()> {
     let room = room_code()?;
     let tunnel = tunnel::Tunnel::from_env(room.as_deref())?;
     let data = data_dir();
+    // Keep this handle through every serving path; dropping it releases the map's lock.
+    let _data_lock = data_lock::acquire(Path::new(&data))?;
     let (journal, world) = Journal::open(&Path::new(&data).join("journal.jsonl"))?;
     let pending: Vec<String> = world.thoughts.iter().filter(|t| !t.placed).map(|t| t.id.clone()).collect();
 

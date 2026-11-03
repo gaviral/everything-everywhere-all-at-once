@@ -86,6 +86,7 @@ Browser, one page per window (ui/src)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
+  data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
   guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
