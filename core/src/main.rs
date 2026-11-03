@@ -1456,7 +1456,7 @@ struct Join {
     name: String,
     /// The message card's Stop, pressed while this window's last connection was down (ui/src/core.ts `stopSend`).
     stop: Option<u64>,
-    /// Present (`?ai`, any value) when the window is an AI participant's, as the Friend's bridge joins: its name is
+    /// Present (`?ai`, any value) when the local window is an AI participant's, as the Friend's bridge joins: its name is
     /// listed as an AI's (`World::ai`), so every window marks its words ✦. Not for the host's "you" or a "Guest".
     ai: Option<String>,
     /// Present (`?remote`, any value) when the window is a person's Remote (ui/src/remote/): a phone's page for the AI
@@ -1471,6 +1471,9 @@ async fn connect(
     ConnectInfo(link): ConnectInfo<Link>,
     State(core): State<Arc<Core>>,
 ) -> Response {
+    if join.ai.is_some() && !link.here() {
+        return (StatusCode::FORBIDDEN, "AI helpers must join from this machine.").into_response();
+    }
     let speaker = speaker_name(&join.name, link.here());
     let renamed = speaker != speaker_name(&join.name, true);
     // The page asks /room for another name when this happens.
@@ -1492,7 +1495,7 @@ async fn connect(
 /// What another laptop is called when it asks for this machine's name, or for none.
 const GUEST: &str = "Guest";
 
-/// What a window's thoughts are labeled with: its name in the room, on one line and at most 24
+/// What a window's thoughts are labeled with: its name in the room, on one line and at most 40
 /// characters; alone, "you". "you" is this machine's own name (alone, and on everything from before
 /// rooms), so another laptop that asks for it, or for no name, is "Guest": else it would get the host's
 /// live words, mic and notices.
@@ -1507,8 +1510,19 @@ fn speaker_name(name: &str, here: bool) -> String {
 
 /// The room's spelling of a speaker identity, before assigning host or guest defaults.
 fn normalized_speaker_name(name: &str) -> String {
-    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(24).collect();
+    let name: String = name.chars().filter(|c| !invisible_name_format(*c)).collect();
+    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(40).collect();
     name.trim().into()
+}
+
+/// Unicode format characters have no visible spelling in a name (including joiners and bidi controls).
+fn invisible_name_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}' | '\u{0890}'..='\u{0891}' | '\u{08E2}' |
+        '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' |
+        '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}' | '\u{110BD}' | '\u{110CD}' |
+        '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}' | '\u{1D173}'..='\u{1D17A}' |
+        '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
 }
 
 /// Journals a window's "off" mark on an Explain or a Recap. Anything else, or an id no answer could have, is
@@ -1894,7 +1908,7 @@ impl Core {
 
 #[cfg(test)]
 mod tests {
-    use super::{access, command, filler, local, messages, normal_code, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat};
+    use super::{access, command, filler, local, messages, normal_code, normalized_speaker_name, placer::Job, public, same, speaker_name, turn, way_back, Access, Core, Link, Room, Seat, GUEST};
     use super::{is_go_back, is_go_next, is_go_previous, is_new_thread, view, ACKS, ASKING, SOUNDS};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
@@ -2772,6 +2786,126 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// The gate's effective address decides who can claim AI status, before any join side effects.
+    #[tokio::test]
+    async fn only_a_local_helper_can_join_as_ai() {
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue, Error};
+        for tunneled in [false, true] {
+            let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+            let (journal, world) = crate::Journal::open(&path).unwrap();
+            let room = Room {
+                tunnel: tunneled.then(|| crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com").unwrap()),
+                ..Room::from("k7m2x9qpab")
+            };
+            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false };
+            let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("the test must never send a message") }));
+            let core = Arc::new(Core { room: Some(room), messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
+            let routes = axum::Router::new()
+                .route("/ws", axum::routing::get(super::connect))
+                .route("/room", axum::routing::get(super::room_info))
+                .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+                .with_state(core.clone());
+            let local_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let local_address = local_listener.local_addr().unwrap();
+            // Tunnel mode deliberately has no local entry through its gate. Exercise the local admission
+            // handler directly there, while all visitor requests still pass through the unchanged gate.
+            let local_routes = if tunneled {
+                axum::Router::new()
+                    .route("/ws", axum::routing::get(super::connect))
+                    .route("/room", axum::routing::get(super::room_info))
+                    .layer(axum::Extension(Access::Map))
+                    .with_state(core.clone())
+            } else { routes.clone() };
+            let local_server = tokio::spawn(async move { axum::serve(local_listener, local_routes.into_make_service_with_connect_info::<Link>()).await });
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            // A loopback test socket stands in for a LAN guest. Inject its address before the real gate;
+            // the tunnel case uses the actual loopback transport and lets the gate replace it itself.
+            let routes = if tunneled { routes } else {
+                routes.layer(axum::Extension(axum::extract::ConnectInfo(link("192.168.1.9:51000", &address.to_string()))))
+            };
+            let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+            let request = |query: &str| {
+                let mut request = format!("ws://{address}/ws?room=k7m2x9qpab&{query}").into_client_request().unwrap();
+                if tunneled {
+                    let headers = request.headers_mut();
+                    headers.insert("host", HeaderValue::from_static("quiet-river-12.trycloudflare.com"));
+                    headers.insert("origin", HeaderValue::from_static("https://quiet-river-12.trycloudflare.com"));
+                    headers.insert("cf-connecting-ip", HeaderValue::from_static("203.0.113.7"));
+                }
+                request
+            };
+            // A Remote makes even a one-person call observable, including any unintended membership.
+            let (mut phone, _) = tokio_tungstenite::connect_async(format!("ws://{local_address}/ws?name=Phone&remote=1")).await.unwrap();
+            while received(&mut phone).await["type"] != "snapshot" {}
+            let before_call = serde_json::to_value(super::call::message(&core).unwrap()).unwrap();
+            core.hosts.lock().unwrap().insert("you".into());
+            assert!(messages::act(&core, "you", &format!("Ask Mia to confirm {}", "the plan ".repeat(100))).is_some());
+            assert!(messages::is_counting(&core, 1));
+            let before_journal = std::fs::read_to_string(&path).unwrap();
+            // A conflicting name proves refusal also precedes Seat::take's name-conflict response.
+            let held = Seat::take(&core, "Taken", link("192.168.1.10:51000", &address.to_string())).unwrap();
+            for query in ["name=Friend&ai=1&stop=1", "name=Taken&ai=&stop=1", "name=you&ai=1", "name=Guest&ai=1&remote=1"] {
+                let refused = tokio::time::timeout(std::time::Duration::from_secs(5), tokio_tungstenite::connect_async(request(query))).await.unwrap();
+                let Err(Error::Http(response)) = refused else { panic!("expected HTTP refusal: {refused:?}") };
+                assert_eq!(response.status().as_u16(), 403, "tunneled={tunneled}, {query}");
+                assert!(response.headers()["content-type"].to_str().unwrap().starts_with("text/plain"));
+                assert!(core.snapshot().ai.is_empty());
+                assert!(messages::is_counting(&core, 1), "a refused join must not press Stop");
+                assert_eq!(serde_json::to_value(super::call::message(&core).unwrap()).unwrap(), before_call);
+                let names = core.room.as_ref().unwrap().names.lock().unwrap();
+                assert_eq!(names.host.len(), 1, "only Phone has a host seat");
+                assert_eq!(names.guests.len(), 1, "only the deliberately held name has a guest seat");
+                assert!(!names.host.contains("friend") && !names.guests.contains_key("friend"));
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), before_journal, "no AiJoined or other changes");
+            }
+            drop(held);
+            messages::stop(&core, 1);
+            let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(5)).build().unwrap();
+            let availability: serde_json::Value = client.get(format!("http://{local_address}/room?name=Friend")).send().await.unwrap().json().await.unwrap();
+            assert_eq!(availability["taken"], false);
+            let (mut helper, _) = tokio_tungstenite::connect_async(format!("ws://{local_address}/ws?name=Friend%E2%80%8B&ai=1&remote=1")).await.unwrap();
+            // AiJoined follows catch-up, so read until the actual attribution is journaled and broadcast.
+            loop {
+                let message = received(&mut helper).await;
+                if message["type"] == "change" && message["change"]["type"] == "ai_joined" { break; }
+            }
+            assert_eq!(core.snapshot().ai, ["Friend"]);
+            assert!(std::fs::read_to_string(&path).unwrap().contains("\"type\":\"ai_joined\""));
+            let collision: serde_json::Value = client.get(format!("http://{address}/room?room=k7m2x9qpab&name=Friend%EF%BB%BF"))
+                .headers(if tunneled {
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    headers.insert("host", HeaderValue::from_static("quiet-river-12.trycloudflare.com"));
+                    headers.insert("cf-connecting-ip", HeaderValue::from_static("203.0.113.7"));
+                    headers
+                } else { reqwest::header::HeaderMap::new() })
+                .send().await.unwrap().json().await.unwrap();
+            assert_eq!(collision["taken"], true, "format marks cannot bypass name availability");
+            let (mut visitor, _) = tokio_tungstenite::connect_async(request("name=Visitor")).await.unwrap();
+            while received(&mut visitor).await["type"] != "snapshot" {}
+            let mut defaults = Vec::new();
+            for name in ["you", "Guest"] {
+                let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{local_address}/ws?name={name}&ai=1")).await.unwrap();
+                while received(&mut window).await["type"] != "snapshot" {}
+                defaults.push(window);
+            }
+            assert_eq!(core.snapshot().ai, ["Friend"], "you and Guest keep their AI exclusions");
+            let call = serde_json::to_value(super::call::message(&core).unwrap()).unwrap();
+            let people: Vec<_> = call["people"].as_array().unwrap().iter()
+                .map(|p| (p["name"].as_str().unwrap(), p["ai"].as_bool().unwrap(), p["remote"].as_bool().unwrap())).collect();
+            assert_eq!(people, [("Phone", false, true), ("Friend", true, false), ("Visitor", false, false), ("you", false, false), ("Guest", false, false)]);
+            for window in &mut defaults { window.close(None).await.unwrap(); }
+            visitor.close(None).await.unwrap();
+            helper.close(None).await.unwrap();
+            phone.close(None).await.unwrap();
+            server.abort();
+            local_server.abort();
+            let _ = server.await;
+            let _ = local_server.await;
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
     /// What a window sends is bounded (protocol.rs): a typed thought, a title and a tag each say so calmly when too
     /// long or not on the map, and a frame past the cap ends the connection instead of filling the core's memory.
     #[tokio::test]
@@ -3160,14 +3294,37 @@ mod tests {
     fn names_label_thoughts() {
         assert_eq!(speaker_name("  Sam \n Lee ", false), "Sam Lee");
         assert_eq!(speaker_name("", true), "you");
-        assert_eq!(speaker_name(&"x".repeat(40), false).len(), 24);
+        assert_eq!(speaker_name(&"x".repeat(40), false), "x".repeat(40));
+        assert_eq!(speaker_name(&"界".repeat(45), false), "界".repeat(40));
+        assert_eq!(speaker_name(&format!("{}\u{200B}界", "界".repeat(39)), false), "界".repeat(40));
+        assert_eq!(speaker_name(&format!("{} \u{200B} rest", "界".repeat(39)), false), "界".repeat(39));
+        assert_eq!(speaker_name(" \t\n\u{200B}\u{FEFF} ", true), "you");
+        assert_eq!(speaker_name(" \t\n", false), GUEST);
+        assert_eq!(speaker_name("\u{200B}\u{FEFF}\u{00AD}", false), GUEST);
+        assert_eq!(speaker_name("李明 مرحبا Зоя", false), "李明 مرحبا Зоя");
+        assert_eq!(normalized_speaker_name("Sam \u{200B} Lee"), "Sam Lee");
+    }
+
+    #[test]
+    fn invisible_name_marks_share_the_same_reservation() {
+        let (core, _queue, path) = test_core(Some("k7m2x9qp"));
+        let host = link("127.0.0.1:51000", "192.168.1.5:4321");
+        let guest = link("192.168.1.9:51000", "192.168.1.5:4321");
+        let _seat = Seat::take(&core, &speaker_name("Friend", true), host).unwrap();
+        for name in ["Friend\u{200B}", "\u{200E}Friend\u{200F}", "\u{202E}Friend\u{202C}", "\u{2066}Friend\u{2069}", "\u{FEFF}Friend", "Fri\u{00AD}end", "Fr\u{200C}i\u{200D}end", "FRI\u{2060}END"] {
+            let spelling = speaker_name(name, false);
+            assert_eq!(spelling.to_lowercase(), "friend", "{name:?}");
+            assert!(core.room.as_ref().unwrap().names.lock().unwrap().taken(&spelling, guest));
+            assert!(Seat::take(&core, &spelling, guest).is_none(), "{name:?}");
+        }
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn another_laptop_cant_take_this_machines_name() {
         // "you" is this machine's, and private messages go to every window with the same name.
         assert_eq!(speaker_name("you", true), "you");
-        for name in ["", "you", " YOU ", "You\n", "yo\u{0}u"] {
+        for name in ["", "you", " YOU ", "You\n", "yo\u{0}u", "y\u{200B}ou", "\u{2066}you\u{2069}", "yo\u{FEFF}u", "yo\u{00AD}u"] {
             assert_eq!(speaker_name(name, false), "Guest", "{name:?}");
         }
         assert_eq!(speaker_name("Youssef", false), "Youssef");
