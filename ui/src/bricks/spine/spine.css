@@ -225,10 +225,12 @@
 .spine-cue.spine-cue-bottom { translate: none; }
 .spine-cue-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--spine-room, var(--muted)); }
 .spine-cue-title { overflow: hidden; min-width: 0; text-overflow: ellipsis; }
-.spine-cue-new { color: var(--accent); font-size: 11px; font-weight: 600; }
+.spine-cue-count { flex: none; }
+.spine-cue-new { flex: none; color: var(--muted); font-size: 11px; font-weight: 600; }
 .spine-cue-way { flex: none; color: var(--muted); }
 .spine-cue-line { display: flex; flex: 1 1 auto; gap: 6px; min-width: 0; }
-.spine-frame .spine-cue.spine-cue-row { position: static; flex: 0 1 auto; gap: 6px; min-width: 0; max-width: 60%; height: 32px; padding: 0 9px; border-radius: 16px; font-size: 13px; translate: none; }
+.spine-frame .spine-cue.spine-cue-row { position: static; flex: 1; gap: 2px; min-width: 0; max-width: none; height: 32px; padding: 0 5px; border-radius: 16px; font-size: 13px; translate: none; }
+.spine-frame .spine-cue-row:has(.spine-cue-count) { flex: none; }
 
 /* The shelf: a pill with a count; open, its list above it. While something is carried, where to drop it. */
 .spine-shelf { position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
@@ -242,6 +244,8 @@
 .spine-shelf.spine-shelf-ready .spine-shelf-icon { color: var(--accent); }
 .spine-shelf-list { width: min(280px, calc(100vw - 32px)); max-height: 40vh; margin: 0; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 14px;
   background: var(--card); box-shadow: var(--shadow); font-size: 13px; list-style: none; }
+.spine-corner-row .spine-shelf { flex: none; }
+.spine-corner-row .spine-shelf-list { position: absolute; right: 0; bottom: calc(100% + 8px); }
 .spine-shelf.spine-shelf-open .spine-shelf-head { color: var(--ink); }
 .spine-shelf-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 8px; border-radius: 9px; cursor: grab; touch-action: none; }
 .spine-shelf-item:hover { background: var(--bg); }
