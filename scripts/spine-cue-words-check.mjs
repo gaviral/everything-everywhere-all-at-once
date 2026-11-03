@@ -34,13 +34,30 @@ try {
       const held = await scene.evaluate(`document.querySelector(".react-flow__viewport").style.transform`);
       const labels = await scene.evaluate(`[...document.querySelectorAll('.spine-head [aria-label^="Open "]')].map((b) => b.getAttribute("aria-label"))`);
       assert.equal(labels.length, 4, "four distinct arrival threads");
+      // A chip is for what landed out of view: a wide window sees some of these threads, so an arrival whose newest
+      // point is in the frame has none, and the others are the ones to expect, newest first.
+      const arrivals = [];
       for (const label of labels) {
+        const title = label.slice(5, -11);
         await scene.evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']').click()`);
-        assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${label.slice(5, -11)}`)})`), "arrival thread becomes active");
+        assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${title}`)})`), "arrival thread becomes active");
         await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The Friend says one").click()`);
-        assert.ok(await scene.until(`!!document.querySelector(".spine-cue")`), "real arrival creates a cue");
         await sleep(1350);
+        const outside = await scene.evaluate(`(() => {
+          const f = document.querySelector(".spine-frame").getBoundingClientRect();
+          const head = [...document.querySelectorAll(".spine-head")].find((n) => n.querySelector(".spine-title")?.textContent === ${JSON.stringify(title)});
+          const r = [...document.querySelectorAll(".spine-point")].filter((n) => n.dataset.thread === head?.dataset.thread).at(-1)?.closest(".react-flow__node")?.getBoundingClientRect();
+          return r ? !(r.left + r.width / 2 > f.left && r.left + r.width / 2 < f.right && r.top + Math.min(r.height, 44) / 2 > f.top && r.top + Math.min(r.height, 44) / 2 < f.bottom) : null;
+        })()`);
+        assert.notEqual(outside, null, "the arrival is on the canvas");
+        if (outside) {
+          assert.ok(await scene.until(`[...document.querySelectorAll(".spine-cue")].some((b) => b.getAttribute("aria-label").startsWith(${JSON.stringify(`New on ${title}, out of view`)}))`), "real arrival out of view creates a cue");
+          await sleep(400); // its entrance (0.3 s) is over before anything is measured
+        }
+        arrivals.push({ title, outside });
       }
+      const awaiting = arrivals.filter((a) => a.outside).map((a) => a.title).reverse();
+      assert.ok(awaiting.length >= (width < 600 ? 3 : 2), `arrivals out of view: ${awaiting.length}`);
       let closed;
       for (const open of [false, true]) {
         if (open) {
@@ -72,7 +89,7 @@ try {
         const inside = (a, b) => a.width > 0 && a.height > 0 && a.left >= b.left - 0.5 && a.right <= b.right + 0.5 && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
         const individuals = geometry.chips.filter((c) => c.title);
         assert.ok(individuals.length >= 2, "multiple individual arrivals remain readable");
-        assert.deepEqual(individuals.map((c) => c.title.text), labels.slice(-individuals.length).reverse().map((l) => l.slice(5, -11)), "newest arrivals first");
+        assert.deepEqual(individuals.map((c) => c.title.text), awaiting.slice(0, individuals.length), "newest arrivals first");
         for (const c of geometry.chips) {
           assert.ok(inside(c.box, { left: 0, top: 0, right: width, bottom: height }), "chip within viewport");
           assert.ok(inside(c.dot, c.box) && c.dot.width === 8, "thread dot visible");
@@ -96,7 +113,7 @@ try {
         }
         if (width < 600) {
           assert.equal(geometry.chips.length, 3, "two individual phone chips and one aggregate");
-          assert.equal(geometry.chips.find((c) => c.count)?.count.text, "+2", "phone overflow counts both hidden arrivals");
+          assert.equal(geometry.chips.find((c) => c.count)?.count.text, `+${awaiting.length - 2}`, "phone overflow counts every hidden arrival");
           if (open) {
             assert.ok(inside(geometry.list, { left: 0, top: 0, right: width, bottom: height }), "open Shelf list inside phone viewport");
             assert.deepEqual(geometry.chips.map((c) => c.box), closed.chips.map((c) => c.box), "opening Shelf preserves phone cue space");

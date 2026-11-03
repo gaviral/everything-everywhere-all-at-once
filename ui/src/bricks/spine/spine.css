@@ -196,7 +196,7 @@
 .spine-corner > * { pointer-events: auto; }
 .spine-corner.spine-corner-left { left: 16px; align-items: flex-start; }
 .spine-corner.spine-corner-right { right: 16px; align-items: flex-end; }
-.spine-corner.spine-corner-row { right: 16px; left: 16px; flex-direction: row; align-items: flex-end; gap: 6px; }
+.spine-corner.spine-corner-row { right: 16px; left: 16px; flex-flow: row wrap; align-items: flex-end; gap: 6px; }
 .spine-camera { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .spine-corner-right .spine-camera { align-items: flex-end; }
 .spine-camera-row { display: flex; gap: 8px; }
@@ -228,8 +228,10 @@
 .spine-cue-count { flex: none; }
 .spine-cue-new { flex: none; color: var(--muted); font-size: 11px; font-weight: 600; }
 .spine-cue-way { flex: none; color: var(--muted); }
-.spine-cue-line { display: flex; flex: 1 1 auto; gap: 6px; min-width: 0; }
-.spine-frame .spine-cue.spine-cue-row { position: static; flex: 1; gap: 2px; min-width: 0; max-width: none; height: 32px; padding: 0 5px; border-radius: 16px; font-size: 13px; translate: none; }
+/* A phone's row: the arrival chips take a line of their own above the camera's Follow and the Shelf, because beside them
+   a chip had no room left for its title. A chip is as wide as its words need and gives way (…) in the title alone. */
+.spine-cue-line { display: flex; flex: 1 0 100%; gap: 6px; min-width: 0; }
+.spine-frame .spine-cue.spine-cue-row { position: static; flex: 0 1 auto; gap: 4px; min-width: 0; max-width: none; height: 32px; padding: 0 8px; border-radius: 16px; font-size: 13px; translate: none; }
 .spine-frame .spine-cue-row:has(.spine-cue-count) { flex: none; }
 
 /* The shelf: a pill with a count; open, its list above it. While something is carried, where to drop it. */
@@ -244,7 +246,8 @@
 .spine-shelf.spine-shelf-ready .spine-shelf-icon { color: var(--accent); }
 .spine-shelf-list { width: min(280px, calc(100vw - 32px)); max-height: 40vh; margin: 0; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 14px;
   background: var(--card); box-shadow: var(--shadow); font-size: 13px; list-style: none; }
-.spine-corner-row .spine-shelf { flex: none; }
+/* On a phone the open list sits above the whole row (chips included), so opening it moves nothing. */
+.spine-corner-row .spine-shelf { position: static; flex: none; }
 .spine-corner-row .spine-shelf-list { position: absolute; right: 0; bottom: calc(100% + 8px); }
 .spine-shelf.spine-shelf-open .spine-shelf-head { color: var(--ink); }
 .spine-shelf-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 8px; border-radius: 9px; cursor: grab; touch-action: none; }
