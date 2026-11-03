@@ -67,11 +67,11 @@ html[class~="shell2"] .bubbles {
 .bubbles-left .bubbles-face { border: 2px dashed var(--amber); }
 
 /* Too small for a title: its first letter, as a thread's picture slot shows one. */
-.bubbles-letter { color: var(--room, var(--muted)); font-family: Georgia, serif; font-size: 40cqi; line-height: 1; }
-/* About a ninth of the bubble across: "Submission" fits whole in a two-point bubble; only a word longer than the bubble
-   breaks, with a hyphen. */
-.bubbles-title { display: none; overflow: hidden; font-size: clamp(11px, 11cqi, 16px); font-weight: 600; line-height: 1.2; overflow-wrap: break-word; hyphens: auto; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.bubbles-count { display: none; color: var(--muted); font-size: clamp(11px, 9cqi, 13px); }
+/* Keep the topic tint in initials, but anchor small identifiers to the theme's readable ink. */
+.bubbles-letter { color: color-mix(in srgb, var(--ink) 80%, var(--room, var(--ink))); font-family: Georgia, serif; font-size: 40cqi; line-height: 1; }
+/* Titles scale with the bubble, with a readable minimum; only a word longer than the bubble breaks, with a hyphen. */
+.bubbles-title { display: none; overflow: hidden; color: var(--ink); font-size: clamp(12px, 11cqi, 16px); font-weight: 700; line-height: 1.2; overflow-wrap: break-word; hyphens: auto; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.bubbles-count { display: none; color: var(--ink); font-size: clamp(11px, 9cqi, 13px); }
 @container (min-width: 84px) {
   .bubbles-letter { display: none; }
   .bubbles-title { display: -webkit-box; }

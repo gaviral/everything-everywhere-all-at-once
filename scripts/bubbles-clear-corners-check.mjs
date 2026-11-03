@@ -17,7 +17,7 @@ const threads = titles.map((title, i) => ({
 }));
 const world = {
   threads,
-  thoughts: threads.flatMap((t, i) => Array.from({ length: i % 3 + 2 }, (_, n) => ({
+  thoughts: threads.flatMap((t, i) => Array.from({ length: (i % 3) * 3 + 2 }, (_, n) => ({
     id: `p${i}-${n}`, speaker: "you", text: `${t.title}: point ${n + 1}`, point: `Point ${n + 1}`,
     thread_id: t.id, placed: true, unclear: "", guess: "", heard: "", fixed: "", complete: true,
     at_ms: now, place_ms: 2000, decided: false,
@@ -65,6 +65,12 @@ try {
       await page("Emulation.setEmulatedMedia", { features: [
         { name: "prefers-color-scheme", value: scheme }, { name: "prefers-reduced-motion", value: "no-preference" },
       ] });
+      const tapAt = async (at) => {
+        await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+        for (const type of ["mousePressed", "mouseReleased"]) {
+          await page("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 });
+        }
+      };
       const tap = async (selector, what) => {
         const where = () => evaluate(`(() => {
           const el = document.querySelector(${JSON.stringify(selector)});
@@ -79,28 +85,69 @@ try {
         let at = await where();
         for (let waited = 0; typeof at !== "object" && waited < 4000; waited += 100) { await sleep(100); at = await where(); }
         assert.equal(typeof at, "object", `${label}: ${what} takes a pointer tap (${at})`);
-        await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
-        for (const type of ["mousePressed", "mouseReleased"]) {
-          await page("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 });
-        }
+        await tapAt(at);
       };
       const healthy = async () => {
         assert.deepEqual(await evaluate("__errors"), [], `${label}: browser errors`);
         assert.equal(await evaluate("!!document.querySelector('.brick-broke, .crash')"), false, `${label}: broken UI`);
         assert.ok(await evaluate("Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= innerWidth + 1"), `${label}: no horizontal overflow`);
       };
+      const settleBubbles = async () => {
+        await evaluate("document.fonts.ready.then(() => true)");
+        // Leave the gentle infinite float running, but finish every entrance before measuring or shooting.
+        await evaluate(`Promise.all(document.querySelector(".bubbles").getAnimations({ subtree: true })
+          .filter(a => a.effect.getTiming().iterations !== Infinity).map(a => a.finished)).then(() => true)`);
+        await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      };
+      const readableBubbles = async (where) => {
+        const labels = await evaluate(`(() => {
+          const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+          const luminance = color => {
+            ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1);
+            const rgb = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(c => {
+              const s = c / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;
+            });
+            return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+          };
+          return [...document.querySelectorAll(".bubbles-title, .bubbles-count, .bubbles-letter")]
+            .filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getClientRects().length)
+            .map(el => {
+              const style = getComputedStyle(el), face = getComputedStyle(el.closest(".bubbles-face"));
+              const ink = luminance(style.color);
+              // The radial fill runs between these two opaque colors; check the text against both ends.
+              const contrast = [face.getPropertyValue("--card"), face.getPropertyValue("--room-soft") || face.getPropertyValue("--bg")]
+                .map(color => { const bg = luminance(color); return (Math.max(ink, bg) + .05) / (Math.min(ink, bg) + .05); });
+              let opacity = 1;
+              for (let node = el; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+              return { text: el.textContent, kind: el.className, contrast: Math.min(...contrast), opacity };
+            });
+        })()`);
+        assert.ok(labels.length >= threads.length, `${label}: ${where} has a visible identifier per bubble`);
+        assert.ok(labels.some(el => el.kind === (width === 1440 ? "bubbles-title" : "bubbles-letter")), `${label}: ${where} exercises ${width === 1440 ? "titles" : "initials"}`);
+        if (width === 1440) assert.ok(labels.some(el => el.kind === "bubbles-count"), `${label}: ${where} exercises thought counts`);
+        for (const el of labels) {
+          assert.ok(el.opacity >= .99, `${label}: ${where} ${el.text} has finished arriving and is not faded`);
+          assert.ok(el.contrast >= 4.5, `${label}: ${where} ${el.text} contrast is ${el.contrast.toFixed(2)}:1 (needs 4.5:1)`);
+        }
+      };
 
       await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/?shell=2&bubbles` });
       assert.ok(await until('document.readyState === "complete" && !!document.querySelector(".app.shell .spine-frame.spine-ready")', 10000), `${label}: populated shell opens on Canvas`);
+      // Dismiss first-use hints with a real tap on bare canvas before they can cover the phone's composer.
+      const bare = await evaluate(`(() => {
+        for (let y = 100; y < innerHeight - 200; y += 40) for (let x = 20; x < innerWidth; x += 40) {
+          if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+        }
+        return null;
+      })()`);
+      assert.ok(bare, `${label}: bare canvas is reachable`);
+      await tapAt(bare);
+      assert.ok(await until('!document.querySelector(".keys-panel")'), `${label}: first-use key hint is dismissed`);
       await tap('.shell-tr [data-guide="catalog"]', "Catalog");
       assert.ok(await until('!!document.querySelector(\'[data-slot="rail"] [data-row="bubbles"] .shell-link\')'), `${label}: enabled Bubbles has Catalog Show`);
       await tap('[data-row="bubbles"] .shell-link', "Bubbles Show");
       assert.ok(await until('document.documentElement.dataset.view === "bubbles" && !!document.querySelector(".bubbles-intro h1") && !document.querySelector(\'[data-slot="rail"]\')'), `${label}: Show opens Bubbles and closes Catalog`);
-      await evaluate("document.fonts.ready.then(() => true)");
-      // Wait for finite entrance animations, leaving the gentle infinite float running.
-      await evaluate(`Promise.all(document.querySelector(".bubbles").getAnimations({ subtree: true })
-        .filter(a => a.effect.getTiming().iterations !== Infinity).map(a => a.finished)).then(() => true)`);
-      await sleep(200);
+      await settleBubbles();
       await evaluate("window.scrollTo(0, 0)");
       await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
 
@@ -136,7 +183,9 @@ try {
         assert.ok(layout.introLines > 1, `${label}: introduction wraps`);
       }
       await healthy();
+      await readableBubbles("shell");
       if (shots) {
+        assert.ok(await evaluate('document.documentElement.dataset.view === "bubbles" && !!document.querySelector(".app.shell .bubbles-face") && !document.querySelector(".spine-frame")'), `${label}: screenshot shows Catalog-opened Bubbles in the real shell`);
         const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
         writeFileSync(join(shots, `bubbles-open-${width}-${scheme}.png`), Buffer.from(data, "base64"));
       }
@@ -157,6 +206,12 @@ try {
       assert.ok(core.heard.some(m => m.type === "focus" && m.thread_id === lowest), `${label}: bubble opens its thread at the core`);
       assert.equal(shown.active, lowest, `${label}: chosen thread becomes active`);
       await healthy();
+      await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/bricks.html?brick=bubbles&sample=student-week` });
+      assert.ok(await until('!!document.querySelector(".playground .bubbles-face")', 10000), `${label}: standalone playground opens`);
+      await settleBubbles();
+      await readableBubbles("playground");
+      assert.equal(await evaluate('getComputedStyle(document.querySelector(".bubbles")).paddingTop'), "0px", `${label}: standalone keeps its original top spacing`);
+      await healthy();
       runs++;
       await browser.close();
       browser = null;
@@ -166,4 +221,4 @@ try {
   if (browser) await browser.close();
   core.close();
 }
-console.log(`bubbles-clear-corners-check: ok (${runs} runs: Catalog Show, corner clearance, wrapping, theme input and bubble thread return; laptop and phone, light and dark)`);
+console.log(`bubbles-clear-corners-check: ok (${runs} runs: Catalog Show, corner clearance, wrapping, readable titles/counts/initials in shell and playground, theme input and bubble thread return; laptop and phone, light and dark)`);
