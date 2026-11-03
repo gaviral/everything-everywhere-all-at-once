@@ -83,7 +83,7 @@ try {
   assert.equal(await evaluate(`!!document.querySelector('.map-change, .note-card')`), false, 'read cards never reappear');
   console.log('PASS reading time, hover, speech, and FIFO without flicker');
 
-  // Typed suppression persists; the server event below is the voice command's actual wire message.
+  // Command-delivery check only: this fixture does not run speech recognition.
   await type('stop showing this');
   await check(`!document.querySelector('.notice')`, 'typed stop dismisses current kind');
   core.send({ type: 'notice', message: 'Another seed update.' });
@@ -96,14 +96,14 @@ try {
   core.send(note(3, 'Pack seeds.'));
   await check(`!!document.querySelector('.note-card')`, 'other kinds remain enabled');
   core.send({ type: 'notice_control', show: false });
-  await check(`!document.querySelector('.note-card')`, 'spoken stop dismisses note');
+  await check(`!document.querySelector('.note-card')`, 'delivered stop dismisses note');
   await visit();
   core.send(note(4, 'These stay quiet.'));
   await sleep(300);
-  assert.equal(await evaluate(`!!document.querySelector('.note-card')`), false, 'spoken suppression survives reload');
+  assert.equal(await evaluate(`!!document.querySelector('.note-card')`), false, 'delivered suppression survives reload');
   core.send({ type: 'notice_control', show: true });
   core.send(note(5, 'Visible again.'));
-  await check(`document.querySelector('.note-card-title')?.textContent === 'Garden 5'`, 'spoken restore enables notes');
+  await check(`document.querySelector('.note-card-title')?.textContent === 'Garden 5'`, 'delivered restore enables notes');
   await type('stop showing this');
   await type('show those again');
   core.send(note(6, 'Typed restore works.'));
@@ -112,7 +112,7 @@ try {
   core.send({ type: 'notice', message: 'Notices are back too.' });
   await check(`document.querySelector('.notice')?.textContent.includes('Notices are back too.')`, 'restore enables all muted kinds');
   assert.equal(core.heard.some(m => m.type === 'text' && /stop showing this|show those again/.test(m.text)), false, 'preferences never become thoughts');
-  console.log('PASS typed and spoken suppression, restoration, and reload persistence');
+  console.log('PASS typed and delivered suppression, restoration, and reload persistence');
   await evaluate(`document.querySelector('[aria-label="Dismiss notice"]').click()`);
   core.send({ type: 'notice', message: 'Same words, next turn.' });
   core.send({ type: 'notice', message: 'Same words, next turn.' });
@@ -121,5 +121,23 @@ try {
   assert.ok(await evaluate(`!!document.querySelector('.notice')`), 'second identical answer gets its own reading time');
   await check(`!document.querySelector('.notice')`, 'second identical answer expires too', upFor('Same words, next turn.') + 2000);
   console.log('PASS identical answers each get one reading turn');
+  core.send(note(7, 'Read before sending.'));
+  await check(`!!document.querySelector('.note-card')`, 'note precedes countdown');
+  core.send({ type: 'send_card', id: 99, to: 'Test', text: 'Queued message', state: 'counting', in_ms: 15000, live: false, message: '' });
+  await sleep(200);
+  assert.equal(await evaluate(`!!document.querySelector('.send-card')`), false, 'countdown cannot bypass the queue');
+  await type('stop showing this');
+  await check(`!!document.querySelector('.send-card') && !document.querySelector('.note-card')`, 'mute applies to the visible note, then countdown advances');
+  await type('stop showing this');
+  await check(`!document.querySelector('.send-card')`, 'visible countdown kind can be silenced');
+  await type('show those again');
+  core.send({ type: 'apps_build', build: { id: 'orphan', request: 'Make a card', stage: 'composing', steps: ['Working'], draft: null, match_id: null, message: '', instead: '' } });
+  await check(`!!document.querySelector('.dock-build')`, 'pending build displayed');
+  core.drop();
+  await check(`!document.querySelector('.dock-build')`, 'source removal retires the pending build');
+  await check(`!document.querySelector('button.mic')?.disabled`, 'connection returned');
+  core.send(note(7, 'New note with a reused id after restart.'));
+  await check(`document.querySelector('.note-card')?.textContent.includes('New note with a reused id')`, 'reused note id displays after reconnect');
+  console.log('PASS countdown queue, correct mute target, removed source, and restarted note ids');
   assert.deepEqual(await evaluate('errors'), [], 'no page errors');
 } finally { await browser?.close(); core.close(); }

@@ -763,12 +763,11 @@ export function useCore(speaker?: string) {
   const sendSource = useRef<SendCardShown | null>(null);
   const setSendCard = (change: SendCardShown | null | ((shown: SendCardShown | null) => SendCardShown | null)) => {
     sendSource.current = typeof change === "function" ? change(sendSource.current) : change;
-    if (sendSource.current && sendSource.current.state !== "counting") noticeQueue.push("send", String(sendSource.current.id), sendSource.current);
+    if (sendSource.current) noticeQueue.push("send", String(sendSource.current.id), sendSource.current);
     else if (!sendSource.current) noticeQueue.drop("send");
     redrawSend((n) => n + 1);
   };
-  // Stop stays reachable while a message counts down; its receipt then joins the reading queue.
-  const sendCard = sendSource.current?.state === "counting" ? sendSource.current : currentNotice?.kind === "send" ? currentNotice.value : null;
+  const sendCard = currentNotice?.kind === "send" ? currentNotice.value : null;
   const [, redrawSend] = useState(0);
   // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
   const pullsSource = useRef<Pulls>(NO_PULLS);
@@ -806,6 +805,7 @@ export function useCore(speaker?: string) {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        noticeQueue.reset("note");
         resetApps();
         resetSteps();
         resetRoute();
@@ -821,7 +821,7 @@ export function useCore(speaker?: string) {
         attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
-        // Unread note cards retain their place; catch-up updates the same queue entry.
+        // The new connection may belong to a restarted core whose note ids start again at 1.
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;

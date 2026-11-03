@@ -47,6 +47,11 @@ export function noticeQueue() {
       items = items.filter((e) => !gone.includes(e));
       if (gone.length) publish();
     },
+    reset(kind: Kind) {
+      for (const id of read) if (id.startsWith(`${kind}:`)) read.delete(id);
+      items = items.filter((e) => e.kind !== kind);
+      publish();
+    },
     control(show: boolean) {
       if (show) { hidden = []; save(); return; }
       const current = items[0];
@@ -96,6 +101,8 @@ export function useCardNotice<T>(queue: NoticeQueue, kind: string, id: string | 
   useEffect(() => {
     if (key !== null) queue.push("card", key, { text, waiting, done, data }, kind);
   }, [queue, key, kind, text, waiting]);
+  // Source removal and unmount retire the card. A StrictMode effect replay may register it again.
+  useEffect(() => () => { if (key !== null) queue.drop("card", key, false); }, [queue, key]);
   useEffect(() => { hover(false); focus(false); }, [shown?.key]);
   const close = () => { if (shown) { queue.drop("card", shown.key); shown.value.done(); } };
   useEffect(() => {
