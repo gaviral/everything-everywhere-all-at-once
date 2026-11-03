@@ -145,6 +145,10 @@ impl Core {
     /// Commits `changes` only while `still` holds, checked under the same lock as the commit, so nothing comes
     /// between: a placement whose words were taken back while the model thought (catalog.rs) changes nothing.
     pub fn commit_if(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>) -> bool {
+        self.commit_speaking(still, changes, false)
+    }
+
+    fn commit_speaking(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>, speak: bool) -> bool {
         {
             let mut world = self.world.lock().unwrap();
             if !still(&world) {
@@ -160,7 +164,7 @@ impl Core {
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
             for change in changes {
-                self.send(ServerMsg::Change { change });
+                self.send_speaking(ServerMsg::Change { change }, speak);
             }
         }
         true
@@ -192,12 +196,16 @@ impl Core {
 
     /// To every window.
     pub fn send(&self, message: ServerMsg) {
-        let _ = self.updates.send(Outgoing { to: None, message });
+        self.send_speaking(message, false);
+    }
+
+    pub fn send_speaking(&self, message: ServerMsg, speak: bool) {
+        let _ = self.updates.send(Outgoing { to: None, message, speak });
     }
 
     /// Only to one speaker's windows.
     pub fn send_to(&self, speaker: &str, message: ServerMsg) {
-        let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message });
+        let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message, speak: false });
     }
 
     /// Takes the speaker to a thread as a new move (a click, a search's answer): a search still looking stops,
@@ -353,17 +361,17 @@ impl Core {
     /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
     /// held, which were said before what stopped it (see `find::stop`).
     fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
-        self.take_turn(speaker, text, search, false);
+        self.take_turn(speaker, text, search, false, false);
     }
 
     /// Typed words: as said ones, except that a line of only filler ("ok", "cool") is answered instead of vanishing
     /// without a trace: typing it was deliberate, and nothing on screen would say where it went.
     pub fn add_typed(self: &Arc<Self>, speaker: &str, text: &str) {
-        self.take_turn(speaker, text, true, true);
+        self.take_turn(speaker, text, true, true, false);
     }
 
     /// `add_turn`, saying why when `typed` filler is set aside.
-    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool) {
+    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool) {
         self.touch();
         // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
         if messages::said(self, speaker, text) {
@@ -407,7 +415,7 @@ impl Core {
             self.run_command(speaker, job);
         }
         if !filler(said, asked) {
-            let id = self.keep(speaker, said);
+            let id = self.keep_speaking(speaker, said, speak);
             catalog::kept(self, speaker, said, vec![id]);
         }
         if let Some(job) = then {
@@ -498,6 +506,10 @@ impl Core {
 
     /// Words to place: a thought in the speaker's active thread, queued for the placer.
     pub fn keep(&self, speaker: &str, text: &str) -> String {
+        self.keep_speaking(speaker, text, false)
+    }
+
+    fn keep_speaking(&self, speaker: &str, text: &str, speak: bool) -> String {
         let thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
@@ -517,7 +529,7 @@ impl Core {
         let id = thought.id.clone();
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
-        self.commit(vec![Change::ThoughtAdded { thought }]);
+        self.commit_speaking(|_| true, vec![Change::ThoughtAdded { thought }], speak);
         let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
         id
     }
@@ -1634,10 +1646,13 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::RemoveApp { id }) => core.commit(vec![Change::AppRemoved { id }]),
                 Ok(ClientMsg::AppVolume { level }) => apps::volume(&core, &volume_source, level),
                 Ok(ClientMsg::AppOutput { id, sound }) => apps::volume_output(&core, id, sound),
-                Ok(ClientMsg::Text { text }) if text.trim().chars().count() > protocol::THOUGHT_MAX => {
+                Ok(ClientMsg::Text { text, .. }) if text.trim().chars().count() > protocol::THOUGHT_MAX => {
                     core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
                 }
-                Ok(ClientMsg::Text { text }) if !text.trim().is_empty() => core.add_typed(&speaker, text.trim()),
+                Ok(ClientMsg::Text { text, speak }) if !text.trim().is_empty() => {
+                    if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
+                    else { core.add_typed(&speaker, text.trim()); }
+                }
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
                     audio = Some(start_listening(&core, &speaker, &listens));
@@ -1725,7 +1740,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
                 Ok(ClientMsg::Point { target, caption }) => guide::point(&core, &speaker, window, &mut pace, target, caption),
-                Ok(ClientMsg::Caption { text }) => guide::caption(&core, &speaker, window, &mut pace, text),
+                Ok(ClientMsg::Caption { text, speak }) => guide::caption_speaking(&core, &speaker, window, &mut pace, text, speak),
                 Ok(ClientMsg::Hold { text, target, urgent }) => guide::hold(&core, &speaker, window, &mut pace, text, target, urgent),
                 Ok(ClientMsg::Tour { steps }) => guide::tour(&core, &speaker, window, &mut pace, steps),
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
@@ -1795,18 +1810,19 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
             }
         };
         match update {
-            Ok(Outgoing { to, message }) => {
+            Ok(update) => {
+                let Outgoing { to, message, .. } = &update;
                 let superseded = replayed > 0;
                 replayed = replayed.saturating_sub(1);
                 // Consume all pre-replay messages, forwarding non-jobs with the usual privacy rules.
                 if to.as_deref().is_some_and(|to| to != speaker) { continue; }
-                match &message {
+                match message {
                     ServerMsg::Job { .. } if superseded => continue,
                     // Its own guide, tour or job: only the other windows receive it (guide.rs).
                     ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. } if *from == window => continue,
                     _ => {}
                 }
-                if write(&mut out, &message).await.is_err() {
+                if write(&mut out, &update).await.is_err() {
                     return;
                 }
             }
@@ -1829,7 +1845,7 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
 const KEEP_ALIVE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// One message to a window, as JSON; an error means the window is gone.
-async fn write(out: &mut SplitSink<WebSocket, Message>, message: &ServerMsg) -> Result<(), axum::Error> {
+async fn write(out: &mut SplitSink<WebSocket, Message>, message: &impl serde::Serialize) -> Result<(), axum::Error> {
     out.send(Message::Text(serde_json::to_string(message).unwrap().into())).await
 }
 

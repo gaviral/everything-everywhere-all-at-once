@@ -990,7 +990,7 @@ mod tests {
         let talker = tx.clone();
         tokio::spawn(async move {
             for i in 0..40 {
-                let _ = talker.send(Outgoing { to: Some("you".into()), message: ServerMsg::Partial { text: format!("word {i}") } });
+                let _ = talker.send(Outgoing { to: Some("you".into()), message: ServerMsg::Partial { text: format!("word {i}") }, speak: false });
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         });
@@ -1002,7 +1002,7 @@ mod tests {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(300)).await;
             let change = Change::ThreadTouched { thread_id: "T1".into(), last_point: String::new(), at_ms: 0 };
-            let _ = mover.send(Outgoing { to: None, message: ServerMsg::Change { change } });
+            let _ = mover.send(Outgoing { to: None, message: ServerMsg::Change { change }, speak: false });
         });
         assert!(settle(&mut rx).await);
         assert!(started.elapsed() >= Duration::from_millis(800), "a change 300 ms in restarts the wait: {:?}", started.elapsed());

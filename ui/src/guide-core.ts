@@ -17,7 +17,7 @@ export { NATURAL_PAUSE_MS };
 
 /** The core's relay of a point, a caption or a held question (protocol.rs `ServerMsg::Guide`). */
 /** `urgent`: a held question that may jump the line (the Interrupt level). */
-export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; target: string | null; text: string; by: string; at_ms: number; urgent?: boolean };
+export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; target: string | null; text: string; by: string; at_ms: number; urgent?: boolean; speak?: boolean };
 
 /** The fixed names, in the order docs/guide.md lists them: what each is, as a sentence names it. Threads, points and a
  *  view brick's switch are named with their id: `thread:<id>`, `point:<id>`, `view:<id>`. */

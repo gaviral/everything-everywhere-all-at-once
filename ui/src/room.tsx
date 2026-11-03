@@ -10,6 +10,7 @@ import { useOnScreen } from "./onscreen";
 import { REMOTE, REMOTE_NAME, remoteLink } from "./remote/flag";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 import { TIPS } from "./Tips";
+import { hearPageSpeech, stopPageSpeech } from "./page-speech";
 import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, remotesHere, shownCode, stateWord, useCall } from "./talk/call-core";
 
 type Seat = { me: string; code: string };
@@ -145,9 +146,9 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   const ws = new WebSocket(query ? `${url}?${query}` : url);
   socketNow = ws;
   ws.addEventListener("open", () => { callOpened(); recheck(); });
-  ws.addEventListener("close", () => { if (socketNow === ws) socketNow = null; callClosed(); recheck(); });
+  ws.addEventListener("close", () => { if (socketNow === ws) { socketNow = null; stopPageSpeech(); } callClosed(); recheck(); });
   // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
-  ws.addEventListener("message", (event) => callHeard(event.data));
+  ws.addEventListener("message", (event) => { callHeard(event.data); hearPageSpeech(event.data); });
   return ws;
 }
 
