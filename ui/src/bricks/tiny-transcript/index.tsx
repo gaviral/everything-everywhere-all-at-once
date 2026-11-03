@@ -102,6 +102,8 @@ export default function TinyTranscript({ map }: BrickProps) {
   // to try the slider; the hint goes only when dismissed.
   const [held, setHeld] = useState("");
   const hint = useRef<HTMLDivElement>(null);
+  const statusWords = useRef<HTMLDivElement>(null);
+  const [hintPosition, setHintPosition] = useState<{ left: number; top: number; tail: number } | null>(null);
 
   // Only ever yours: the core sends a speaker's live words to that speaker's windows alone.
   const text = map.partial.trim();
@@ -132,6 +134,26 @@ export default function TinyTranscript({ map }: BrickProps) {
   const shown = text || ending || (showHint ? held : "");
   const place = usePlace(!!shown);
 
+  // The status clips its children. Its hint lives on the page instead, following the actual words' rectangle as the
+  // mic's clock and History change width. Measure the hint too: its label and slider must fit a narrow viewport.
+  useLayoutEffect(() => {
+    if (!showHint || place.at !== "status") { setHintPosition(null); return; }
+    let frame = 0;
+    const look = () => {
+      const words = statusWords.current?.getBoundingClientRect();
+      const tip = hint.current?.getBoundingClientRect();
+      if (words && tip) {
+        const left = Math.max(GAP, Math.min(words.left, innerWidth - tip.width - GAP));
+        const top = Math.max(GAP, Math.min(words.top - GAP - tip.height, innerHeight - tip.height - GAP));
+        const tail = Math.max(GAP, Math.min(words.left + 22 - left, tip.width - GAP));
+        setHintPosition((before) => before?.left === left && before.top === top && before.tail === tail ? before : { left, top, tail });
+      }
+      frame = requestAnimationFrame(look);
+    };
+    look();
+    return () => cancelAnimationFrame(frame);
+  }, [showHint, place]);
+
   useEffect(() => {
     if (!showHint) return;
     const dismiss = () => { setHinted(true); saveSetting(HINTED, "true"); };
@@ -147,8 +169,11 @@ export default function TinyTranscript({ map }: BrickProps) {
 
   if (!shown) return null;
 
-  const tip = place.at === "float" ? "tiny-transcript-hint tiny-transcript-hint-center" : "tiny-transcript-hint";
-  const hintAt: CSSProperties | undefined = place.at === "box" ? { left: place.field.left - place.box.left - 14, bottom: `calc(100% + ${GAP}px)` } : undefined;
+  const tip = place.at === "status" ? "tiny-transcript-hint tiny-transcript-hint-in-status"
+    : place.at === "float" ? "tiny-transcript-hint tiny-transcript-hint-center" : "tiny-transcript-hint";
+  const hintAt: CSSProperties | undefined = place.at === "status"
+    ? { left: hintPosition?.left, top: hintPosition?.top, visibility: hintPosition ? "visible" : "hidden", "--tiny-transcript-tail": `${hintPosition?.tail ?? 22}px` } as CSSProperties
+    : place.at === "box" ? { left: place.field.left - place.box.left - 14, bottom: `calc(100% + ${GAP}px)` } : undefined;
   const hintShown = showHint && <div className={tip} style={hintAt} ref={hint} data-hint="tiny-transcript">
     <p className="tiny-transcript-help">Your words as you speak, kept small; slide to resize</p>
     <label className="tiny-transcript-size-row">
@@ -165,7 +190,10 @@ export default function TinyTranscript({ map }: BrickProps) {
   </div>;
 
   if (place.at === "status") {
-    return createPortal(<div className="tiny-transcript tiny-transcript-in-status">{hintShown}<Words text={shown} live={!!text} size={size} /></div>, place.slot);
+    return <>
+      {createPortal(<div className="tiny-transcript tiny-transcript-in-status" ref={statusWords}><Words text={shown} live={!!text} size={size} /></div>, place.slot)}
+      {showHint && createPortal(hintShown, document.body)}
+    </>;
   }
   if (place.at === "box") {
     const { box, field } = place;
