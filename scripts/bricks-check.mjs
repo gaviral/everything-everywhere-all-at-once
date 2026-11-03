@@ -762,7 +762,7 @@ try {
             clock: clock ? clock.getBoundingClientRect().top : null, card: card ? card.getBoundingClientRect().top : null }; })()`);
         if (place.left < 0 || place.right > w || place.top < place.header || place.bottom > place.dock) fail(at, `the panel leaves the free part of the window: ${JSON.stringify(place)}`);
         if (place.clock === null) fail(at, "no clock to stand above");
-        else if (place.bottom > Math.min(place.clock, place.card ?? place.clock)) fail(at, `the panel doesn't stand above the clock and the card: ${JSON.stringify(place)}`);
+        else if (place.bottom > Math.min(place.clock, place.card ?? place.clock) - 6) fail(at, `the panel doesn't stand clear (6 px) above the clock and the card: ${JSON.stringify(place)}`);
         // A 568 px high phone keeps 63 px between the map's tools and the corner's row: there the panel keeps its 96 px
         // floor and may cover the tools' last line, which is the one place it may; everywhere else, none.
         for (const control of all) if (h > 600 && meets(place, control.box)) fail(at, `the panel covers "${control.name}" (${control.part})`);
