@@ -3,13 +3,13 @@
 // process environment win, takes PORT from either, and probes every address the core binds for the mode, so a
 // missing key or a busy port stops the run before the build, never after it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { join, relative } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check, coreAddresses, corePort, free, lanIp, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
+import { bundledCore, check, coreAddresses, corePort, free, lanIp, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
 
@@ -72,7 +72,7 @@ assert.deepEqual(coreAddresses({ ROOM_CODE: "  " }, "192.168.1.5").addresses, ["
 const made = [];
 process.on("exit", () => { for (const dir of made) rmSync(dir, { recursive: true, force: true }); });
 const repo = (dotenv) => {
-  const dir = mkdtempSync(join(tmpdir(), "e2a2o-start-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "e2a2o-start-")));
   made.push(dir);
   mkdirSync(join(dir, "core"));
   writeFileSync(join(dir, "core", ".env"), "");
@@ -179,5 +179,172 @@ assert.ok(sh.includes("run.sh"));
 for (const line of execFileSync("git", ["check-attr", "eol", "--", ...sh], { cwd: root, encoding: "utf8" }).trim().split("\n"))
   assert.match(line, /: eol: lf$/, `${line}: a Windows checkout would give it CRLF line endings`);
 assert.match(readFileSync(join(root, "README.md"), "utf8"), /\*\*Windows:\*\* .*WSL2/);
+
+// Run the real shell entry point in isolated trees, with only Node, basic file commands and harmless stubs.
+// No inherited credentials, developer tools or runtime data; even the sample is a tiny invented fixture.
+const executable = (path, text) => { writeFileSync(path, text); chmodSync(path, 0o755); };
+const fixture = () => {
+  const dir = repo("PORT=0\nMODEL_API_KEY=file-key\n");
+  for (const sub of ["scripts", "ui", "bin", "samples/images/student-week"]) mkdirSync(join(dir, sub), { recursive: true });
+  for (const file of ["run.sh", "scripts/start.mjs"]) copyFileSync(join(root, file), join(dir, file));
+  chmodSync(join(dir, "run.sh"), 0o755);
+  symlinkSync(process.execPath, join(dir, "bin/node"));
+  for (const cmd of ["dirname", "mkdir", "cp"]) {
+    const path = execFileSync("/bin/sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" }).trim();
+    symlinkSync(path, join(dir, "bin", cmd));
+  }
+  executable(join(dir, "bin/npm"), `#!/bin/sh
+echo "npm $*" >> "$FIXTURE_LOG"
+case "$1" in
+  install) mkdir -p node_modules ;;
+  run) mkdir -p dist; echo fixture-ui > dist/index.html ;;
+esac
+exit "\${UI_EXIT:-0}"
+`);
+  executable(join(dir, "fixture-core"), `#!/usr/bin/env node
+import { appendFileSync, readFileSync } from 'node:fs';
+appendFileSync(process.env.FIXTURE_LOG, 'core\\n');
+console.log(JSON.stringify({ cwd: process.cwd(), data: process.env.E2A2O_DATA,
+  port: process.env.PORT, key: process.env.MODEL_API_KEY, marker: process.env.FIXTURE_MARKER,
+  room: process.env.ROOM_CODE, https: process.env.ROOM_HTTPS, publicUrl: process.env.PUBLIC_URL,
+  openssl: process.env.OPENSSL_DIR, ui: readFileSync('../ui/dist/index.html', 'utf8'),
+  sample: process.env.E2A2O_DATA === '../data/sample' ? readFileSync('../data/sample/journal.jsonl', 'utf8') : null }));
+process.exit(Number(process.env.CORE_EXIT ?? 0));
+`);
+  writeFileSync(join(dir, "samples/student-week.jsonl"), "fixture sample\n");
+  writeFileSync(join(dir, "samples/images/student-week/picture.txt"), "fixture picture\n");
+  const env = { PATH: join(dir, "bin"), PORT: "0", MODEL_API_KEY: "fixture-env-key",
+    FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: "../fixture-data",
+    OPENSSL_DIR: "/fixture/ssl" };
+  const run = (args = [], extra = {}) => spawnSync(join(dir, "run.sh"), args,
+    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: 15000 });
+  const events = () => { try { return readFileSync(env.FIXTURE_LOG, "utf8"); } catch { return ""; } };
+  const binary = join(dir, `e2a2o-core-${process.platform}-${process.arch}`);
+  return { dir, env, run, events, binary };
+};
+const addBundle = (f) => { copyFileSync(join(f.dir, "fixture-core"), f.binary); chmodSync(f.binary, 0o755); };
+const launched = (f, result, status = 0) => {
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, status, result.stderr);
+  const payload = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  assert.equal(payload.cwd, join(f.dir, "core"));
+  assert.equal(payload.ui, "fixture-ui\n");
+  assert.equal(payload.key, "fixture-env-key");
+  assert.equal(payload.marker, "kept value");
+  assert.equal(payload.openssl, "/fixture/ssl");
+  assert.equal(payload.port, "0");
+  return payload;
+};
+
+const bundle = fixture();
+assert.equal(bundledCore(bundle.dir), null);
+addBundle(bundle);
+assert.equal(bundledCore(relative(process.cwd(), bundle.dir)), bundle.binary, "selection is absolute even for a relative root");
+assert.equal(bundledCore(bundle.dir, process.platform, "other-arch"), null);
+// A directory with execute bits is not an executable regular file.
+const directory = fixture();
+mkdirSync(directory.binary);
+assert.equal(bundledCore(directory.dir), null);
+// Selector works without Cargo.toml and with unreadable-as-dotenv .env paths; no check() or build side effects.
+rmSync(join(directory.dir, ".env"));
+mkdirSync(join(directory.dir, ".env"));
+let selected = spawnSync(process.execPath, [join(directory.dir, "scripts/start.mjs"), "--bundled-core"], { env: directory.env, encoding: "utf8" });
+assert.equal(selected.status, 0, selected.stderr);
+assert.equal(selected.stdout, "");
+assert.equal(directory.events(), "");
+selected = spawnSync(process.execPath, [join(bundle.dir, "scripts/start.mjs"), "--bundled-core"], { env: bundle.env, encoding: "utf8" });
+assert.equal(selected.status, 0, selected.stderr);
+assert.equal(selected.stdout, bundle.binary + "\n");
+assert.equal(selected.stderr, "");
+assert.equal(bundle.events(), "");
+const preflight = spawnSync(process.execPath,
+  [join(bundle.dir, "scripts/start.mjs"), "--selected-core", bundle.binary, "sample"],
+  { env: bundle.env, encoding: "utf8", timeout: 15000 });
+assert.equal(preflight.status, 0, preflight.stderr);
+assert.equal(preflight.stdout, "0\n", "preflight stdout stays a machine-readable port");
+assert.equal(preflight.stderr, "");
+assert.equal(bundle.events(), "");
+
+// There are no Rust, Xcode or Linux build tools in PATH, nor a Cargo manifest to read.
+assert.equal(launched(bundle, bundle.run()).data, "../fixture-data");
+assert.equal(bundle.events(), "npm install --no-audit --no-fund --no-update-notifier\nnpm run build\ncore\n");
+const sampled = launched(bundle, bundle.run(["sample"]));
+assert.equal(sampled.data, "../data/sample");
+assert.equal(sampled.sample, "fixture sample\n");
+assert.equal(readFileSync(join(bundle.dir, "data/sample/images/picture.txt"), "utf8"), "fixture picture\n");
+const room = launched(bundle, bundle.run(["room"], { ROOM_CODE: "fixture-room", PUBLIC_URL: "https://fixture.invalid" }));
+assert.equal(room.data, "../data/room");
+assert.equal(room.room, "fixture-room");
+assert.equal(room.https, "1");
+assert.equal(room.publicUrl, "https://fixture.invalid");
+
+// Key, mode, port and UI checks still stop a bundled launch before it reaches the core.
+const blocked = fixture();
+addBundle(blocked);
+r = blocked.run(["demo"], { MODEL_API_KEY: "" });
+assert.equal(r.status, 1);
+assert.match(r.stderr, /needs a Meta Model API key/);
+assert.equal(blocked.events(), "");
+r = blocked.run(["--unknown"]);
+assert.equal(r.status, 2);
+assert.match(r.stderr, /Unknown option/);
+r = blocked.run(["sample", "unknown"]);
+assert.equal(r.status, 2);
+assert.match(r.stderr, /Unknown sample/);
+const occupied = await hold("127.0.0.1");
+try {
+  r = blocked.run(["sample"], { PORT: String(occupied.address().port) });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Port .* is in use/);
+} finally { await close(occupied); }
+assert.equal(blocked.events(), "");
+r = blocked.run([], { UI_EXIT: "9" });
+assert.equal(r.status, 1);
+assert.match(r.stderr, /The UI build failed/);
+assert.doesNotMatch(blocked.events(), /core/);
+
+// A started core's failure is final; no source launch or toolchain probe follows it.
+const failing = fixture();
+addBundle(failing);
+executable(join(failing.dir, "bin/cargo"), '#!/bin/sh\necho unexpected-cargo >> "$FIXTURE_LOG"\nexit 0\n');
+for (const cmd of ["rustc", "rustup", "cc", "pkg-config", "xcode-select"]) {
+  executable(join(failing.dir, "bin", cmd), '#!/bin/sh\necho unexpected-probe >> "$FIXTURE_LOG"\nexit 1\n');
+}
+launched(failing, failing.run([], { CORE_EXIT: "23" }), 23);
+assert.doesNotMatch(failing.events(), /unexpected/);
+
+for (const kind of ["missing", "non-executable", "other-architecture", "directory"]) {
+  const f = fixture();
+  if (kind === "non-executable") { addBundle(f); chmodSync(f.binary, 0o644); }
+  if (kind === "other-architecture") {
+    const other = join(f.dir, `e2a2o-core-${process.platform}-other-arch`);
+    copyFileSync(join(f.dir, "fixture-core"), other);
+    chmodSync(other, 0o755);
+  }
+  if (kind === "directory") mkdirSync(f.binary);
+  assert.equal(bundledCore(f.dir), null, kind);
+  r = f.run(["sample"]);
+  assert.equal(r.status, 1, kind);
+  assert.match(r.stderr, /Rust is needed: https:\/\/rustup.rs/);
+  assert.equal(f.events(), "");
+  // Supply a fake source toolchain; its cargo invocation must keep the same cwd, env and exit status.
+  writeFileSync(join(f.dir, "core/Cargo.toml"), 'rust-version = "1.89"\n');
+  for (const cmd of ["rustc", "rustup", "cc", "pkg-config", "xcode-select"]) {
+    executable(join(f.dir, "bin", cmd), `#!/bin/sh\necho "probe ${cmd} $*" >> "$FIXTURE_LOG"\necho 'rustc 1.100.0'\n`);
+  }
+  executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\nexec ../fixture-core\n');
+  const payload = launched(f, f.run(["sample"], { CORE_EXIT: "17" }), 17);
+  assert.equal(payload.data, "../data/sample");
+  assert.match(f.events(), /probe rustc --version/);
+  assert.match(f.events(), /cargo run --release\ncore\n$/);
+}
+// Help needs neither Node nor Rust and never starts a build.
+const help = fixture();
+rmSync(join(help.dir, "bin/node"));
+r = help.run(["--help"]);
+assert.equal(r.status, 0);
+assert.equal(r.stderr, "");
+assert.match(r.stdout, /^Usage:/);
+assert.equal(help.events(), "");
 
 console.log("start-check: all passed");

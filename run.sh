@@ -22,7 +22,10 @@ esac
 command -v node >/dev/null 2>&1 || { echo "Node.js 22.12 or newer is needed: https://nodejs.org" >&2; exit 1; }
 node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 12) ? 0 : 1)' ||
   { echo "Node.js 22.12 or newer is needed; this is $(node -v)." >&2; exit 1; }
-command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
+core="$(node scripts/start.mjs --bundled-core)" || exit 1
+if [ -z "$core" ]; then
+  command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
+fi
 if [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>&1; then
   MODEL_API_KEY="$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${KEYCHAIN_ACCOUNT:-e2a2o}" -w 2>/dev/null || true)"
   export MODEL_API_KEY
@@ -38,7 +41,7 @@ if [ "$1" = room ]; then
 fi
 # Before the build, as the core will see it (environment, then .env): demo and room stop without a key, and a busy
 # port (on every address this mode opens) is reported with the same command on the next port. Prints the port.
-port="$(node scripts/start.mjs "$@")" || exit 1
+port="$(node scripts/start.mjs --selected-core "$core" "$@")" || exit 1
 # `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
 # or a founder's day); it starts fresh from samples/ each time. Its pictures were drawn once, by the app's
 # own picture pipeline, and the sample's journal names them: they go where the core serves /images from
@@ -65,4 +68,8 @@ case "${1:-}" in
   # Any other name is a map of its own; say so, or a mistyped `sample` just looks like an empty sample.
   *) [ -d "data/$1" ] || echo "New empty map \"$1\" (kept in data/$1). For the ready-made sample map: ./run.sh sample" ;;
 esac
-cd core && exec cargo run --release
+cd core
+if [ -n "$core" ]; then
+  exec "$core"
+fi
+exec cargo run --release

@@ -3,15 +3,15 @@
 <!-- pitch: draft, owner to approve -->
 **Think out loud. Keep your place.** You start a sentence, a better thought cuts in, and the first is gone. E2A2O files each thought you say on its thread of a live map, about 3 to 4 seconds after you stop. Jump to something new mid-sentence, and at the next pause it quotes your half-sentence back. Say “where was I?” and you're there.
 
-![19 seconds of one recorded take, at normal speed. A synthesized voice says “Mom's birthday is Saturday…”, which becomes a new thread, Mom's Birthday Saturday. “Okay, decided: if it's under eighty dollars, I'm booking it tonight” lands on that thread marked ✓ Decided. “My stats midterm is Thursday” starts a thread of its own, and “Decided: I'll study with Priya on Wednesday night” lands on it, marked ✓ Decided. Dark labels name the model at each step: Muse Voice Transcribe 1.0 hears you, Muse Spark 1.2 placed it in 2.5 to 3.3 s.](docs/screens/hero.gif)
-
-*One take at normal speed, default models; zoom, labels and captions added in editing; synthesized voice.*
-
-## Try it in 60 seconds
+## Try it
 
 <!-- hosted: draft, confirm a real sign-in and the mic on the site before this ships -->
 - **In a browser, nothing to install:** https://e2a2o.aviralgarg.com → Create an account (any email) → Try a sample map, or talk.
-- **On a Mac, no key, no mic:** `git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app && ./run.sh sample` (first build ≈ 4 min; [Run it](#run-it)).
+- **Run it yourself:** `./run.sh sample` (no key or mic; [setup](#run-it), source build ≈ 4 min).
+
+![19 seconds of one recorded take, at normal speed. A synthesized voice says “Mom's birthday is Saturday…”, which becomes a new thread, Mom's Birthday Saturday. “Okay, decided: if it's under eighty dollars, I'm booking it tonight” lands on that thread marked ✓ Decided. “My stats midterm is Thursday” starts a thread of its own, and “Decided: I'll study with Priya on Wednesday night” lands on it, marked ✓ Decided. Dark labels name the model at each step: Muse Voice Transcribe 1.0 hears you, Muse Spark 1.2 placed it in 2.5 to 3.3 s.](docs/screens/hero.gif)
+
+*One take at normal speed, default models; zoom, labels and captions added in editing; synthesized voice.*
 
 ## Meta models it runs on
 
@@ -102,9 +102,13 @@ Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](doc
 
 ## Run it
 
-Tested on macOS. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs)) and Node.js 22.12 or newer; on a Mac with no developer tools, run `xcode-select --install` first. For the mic, use Chrome or Safari.
+Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
-**Linux:** the build also needs a C compiler, pkg-config and OpenSSL's headers; `run.sh` checks them and prints the command for whatever is missing. Not tested on Linux.
+If you supply an executable regular file named exactly `e2a2o-core-PLATFORM-ARCH` beside `run.sh`, it uses that core without Rust or native build tools. Replace `PLATFORM` and `ARCH` with Node's `process.platform` and `process.arch` (see `node -p 'process.platform + "-" + process.arch'`); for example, `e2a2o-core-darwin-arm64` on an Apple-silicon Mac. An unpacked release could supply the same file; this does not mean a release is available. Node and the UI build are still required.
+
+Without a matching executable, it builds from source. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs)); on a Mac with no developer tools, run `xcode-select --install` first.
+
+**Linux:** the source build also needs a C compiler, pkg-config and OpenSSL's headers; `run.sh` checks them and prints the command for whatever is missing. Not tested on Linux.
 
 **Windows:** use the hosted version above; otherwise WSL2 (Ubuntu): clone inside WSL, follow the Linux line, and open the printed link in Chrome on Windows. Not tested on Windows.
 
@@ -113,7 +117,7 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ./run.sh sample
 ```
 
-The first run builds the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. When the terminal says `E2A2O core on`, open the URL on that line. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample`.
+The first source build takes about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. When the terminal says `E2A2O core on`, open the URL on that line. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample`.
 
 **No key: a sample map.** A student's week: 8 threads, 30 thoughts, a picture for every thread (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one thread left off. Try its left-off card, `j`/`k` and Enter, `/` to search, the Palace, and the “Did you mean BC Hydro?” question, which is written into the sample. Without a key the header says “No AI key”. `./run.sh sample founder` opens a founder's day.
 
