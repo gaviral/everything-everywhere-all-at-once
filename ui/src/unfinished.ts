@@ -1,7 +1,9 @@
 import type { Thread, Thought } from "./core";
+import { readMs } from "./attention-core";
+import { DECIDE_MS, REACH_MS } from "./notice-rules";
 
 // The unfinished card in the dock (App.tsx): at a natural pause, the thread you left last, your last words there, and
-// Finish it or Later. Checked by scripts/unfinished-check.mjs.
+// Finish it, Later or Forget it. Checked by scripts/unfinished-check.mjs.
 
 /** A natural pause: this long without new words, live or kept, before the card rises (legible.ts NATURAL_PAUSE_MS). */
 export const PAUSE_MS = 2500;
@@ -24,9 +26,13 @@ export function leftOff(threads: Thread[], me: string, hidden: Hidden, now: numb
     .sort((a, b) => b.touched_ms - a.touched_ms)[0];
 }
 
-/** The card shows only after PAUSE_MS without new words, never while you're still talking. */
+/** Offer a new card only after PAUSE_MS without new words. An already shown card keeps its reading time. */
 export const cardAt = (offered: Thread | undefined, now: number, lastWordsAt: number) =>
   offered && now - lastWordsAt > PAUSE_MS ? offered : null;
+
+/** Read the whole card at 200 words/minute, with time to notice it, decide and reach a button. */
+export const lingerMs = (title: string, quote: string) =>
+  readMs(`You didn't finish ${title} ${quote} Finish it Later Forget it`, 200) + DECIDE_MS + REACH_MS;
 
 /** Later: hidden for LATER_MS, then offered once more; a second Later sets it aside until that thread changes. */
 export function putOff(hidden: Hidden, thread: Thread, now: number): Hidden {

@@ -6,7 +6,13 @@ import { uiServer } from "./ui-server.mjs";
 
 const server = await uiServer();
 try {
-  const { leftOff, cardAt, putOff, lastWords, NONE_HIDDEN, PAUSE_MS, LATER_MS } = await server.ssrLoadModule("/src/unfinished.ts");
+  const { leftOff, cardAt, putOff, lastWords, lingerMs, NONE_HIDDEN, PAUSE_MS, LATER_MS } = await server.ssrLoadModule("/src/unfinished.ts");
+  const { LOOK_MS } = await server.ssrLoadModule("/src/attention-core.ts");
+  const { DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  assert.equal(lingerMs("Picnic", "Bring chairs"), 11 * 60_000 / 200 + LOOK_MS + DECIDE_MS + REACH_MS,
+    "read the heading, title, quote and all actions, plus time to notice and act");
+  assert.equal(lingerMs("Picnic", "Bring chairs " + "word ".repeat(200)) - lingerMs("Picnic", "Bring chairs"), 60_000,
+    "200 more words get another minute to read");
   const thread = (id, title, extra = {}) => ({ id, title, parent_id: null, status: "open", last_point: "", touched_ms: 1,
     tags: [], picture: null, dropped_by: "", ...extra });
   const thought = (id, thread_id, at_ms, text, extra = {}) => ({ id, speaker: "you", text, point: text, thread_id,

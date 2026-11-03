@@ -51,7 +51,7 @@ import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
-import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
+import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, NONE_HIDDEN, putOff, type Hidden } from "./unfinished";
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
@@ -861,8 +861,26 @@ export default function App() {
     if (covered.length) setHidden((was) => dismiss(was, covered));
   }, [away.items, world.threads, me]);
   const dropped = leftOff(world.threads, me, hidden, now);
-  const pullBack = cardAt(dropped, now, lastActivity);
+  // Once offered, keep this card through new speech (even on its thread) until it has had time to be read.
+  const [offered, setOffered] = useState<Thread | null>(null);
+  const pullBack = offered && leftOff([offered], me, hidden, now) ? offered : null;
+  useEffect(() => {
+    if (!pullBack && !hasAway) setOffered(cardAt(dropped, now, lastActivity));
+  }, [pullBack, dropped, now, lastActivity, hasAway]);
+  const [pullBackHovered, setPullBackHovered] = useState(false);
+  const [pullBackFocused, setPullBackFocused] = useState(false);
+  const pullBackKey = pullBack ? dropKey(pullBack) : null;
+  useEffect(() => { setPullBackHovered(false); setPullBackFocused(false); }, [pullBackKey]);
+  const pullBackHold = {
+    onMouseEnter: () => setPullBackHovered(true),
+    onMouseLeave: () => setPullBackHovered(false),
+    onFocus: () => setPullBackFocused(true),
+    onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPullBackFocused(false);
+    },
+  };
   const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
+  const forget = (thread: Thread) => setHidden((was) => dismiss(was, [dropKey(thread)]));
   // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
   // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
   const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).map((t) => t.id), [world.thoughts, me]);
@@ -879,13 +897,13 @@ export default function App() {
     const mine = world.threads.filter((t) => t.status === "dropped" && t.dropped_by === me).sort((a, b) => b.touched_ms - a.touched_ms);
     const yours = mine.find((t) => !hidden.dismissed.includes(dropKey(t)));
     if (asked === "finish") {
-      const card = dropped ?? mine[0];
+      const card = pullBack ?? dropped ?? mine[0];
       if (!card) { core.showNotice("Nothing unfinished to finish.", core.viewAsk); return; }
       finishThread(card);
       core.showNotice(`Back to ${card.title}`, core.viewAsk);
       return;
     }
-    const card = asked === "later" ? dropped : dropped ?? yours;
+    const card = pullBack ?? (asked === "later" ? dropped : dropped ?? yours);
     if (!card) { core.showNotice("Nothing unfinished to set aside.", core.viewAsk); return; }
     if (asked === "later") {
       later(card);
@@ -928,6 +946,11 @@ export default function App() {
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
   const lastWords = pullBack ? lastWordsOn(world.thoughts.filter((t) => (t.at_ms > now ? 0 : t.at_ms) <= pullBack.touched_ms), pullBack, me, now) : "";
+  useEffect(() => {
+    if (!pullBack || hasAway || pullBackHovered || pullBackFocused) return;
+    const timer = window.setTimeout(() => forget(pullBack), unfinishedLingerMs(pullBack.title, lastWords));
+    return () => window.clearTimeout(timer);
+  }, [pullBack, lastWords, hasAway, pullBackHovered, pullBackFocused]);
 
   const goBack = (thread: Thread, focus: "thread" | "composer" = "thread") => {
     setView((was) => viewAfterJump(was, home));
@@ -1283,6 +1306,7 @@ export default function App() {
               <motion.div
                 key={dropKey(pullBack)}
                 className="pullback" role="status" data-dock-card data-guide="unfinished"
+                {...pullBackHold}
                 style={roomStyle(rooms.get(pullBack.id))}
                 initial={{ opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1302,6 +1326,7 @@ export default function App() {
                   <button className="quiet" onClick={() => later(pullBack)}>
                     Later
                   </button>
+                  <button className="quiet" onClick={() => forget(pullBack)}>Forget it</button>
                 </div>
               </motion.div>
             )}
@@ -1472,7 +1497,7 @@ export default function App() {
             away.dismiss();
           }} />
           </NotesContext.Provider>
-          {!hasAway && pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))}>
+          {!hasAway && pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))} {...pullBackHold}>
             <ThreadPicture thread={pullBack} />
             <div className="pullback-text">
               <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
@@ -1482,6 +1507,7 @@ export default function App() {
               <button onClick={() => finishThread(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
               {/* Feedback catalog: goBack(pullBack)'s navigation, with composer focus for the next words. */}
               <button className="quiet" onClick={() => later(pullBack)} aria-keyshortcuts="L">Later</button>
+              <button className="quiet" onClick={() => forget(pullBack)}>Forget it</button>
             </div>
           </div>}
           <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
