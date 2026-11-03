@@ -189,7 +189,7 @@ export default function App() {
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
     else if (asked === "cards") {
-      // "Cards" is the list of topic cards: the Map view on today's page, the Cards feature in the shell (when it is on).
+      // "Cards" is the list of topic cards: the Map view on the classic page, the Cards feature in the shell (when it is on).
       if (!SHELL2) showView("map");
       else if (builtIns.has("cards")) showView("cards");
       else core.showNotice("Cards is off: switch it on in Features.", core.viewAsk);
@@ -1003,7 +1003,7 @@ export default function App() {
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
   const viewBrick = viewBricks.find((brick) => brick.info.id === view);
   // A view that's gone while it's shown hands the window back to the map: a view brick switched off, or the shell's Cards
-  // (the Catalog's built-in view; today's page has no such view, its map is the cards) switched off or never on.
+  // (the Features page's built-in view; the classic page has no such view, its map is the cards) switched off or never on.
   const viewGone = view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick;
   useEffect(() => { if (viewGone) showView("map"); }, [viewGone]);
 

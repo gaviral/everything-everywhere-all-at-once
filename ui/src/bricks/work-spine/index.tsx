@@ -1,7 +1,7 @@
 // The Work spine: what the AI helpers are doing, as jobs on a spine of their own beside your thoughts: running (with a live
 // clock), done (how long, and what it found), failed (why), waiting (the question it holds for you). Beside the Canvas on
 // a laptop in the new shell: a lane at the page's right that the Canvas gives room to, never under it. Anywhere narrower
-// (a phone, a small window), on today's page, or while a call's Talk rail holds the page's right: a card in the dock above
+// (a phone, a small window), on the classic page, or while a call's Talk rail holds the page's right: a card in the dock above
 // the composer, one line until it's tapped, then the list opening as a sheet above the dock, so the composer is never
 // covered. The jobs are `map.jobs` (work-jobs.ts keeps them); nothing here asks the core for anything.
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
