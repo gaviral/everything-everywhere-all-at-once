@@ -102,9 +102,9 @@ pub fn recover(core: &Core) {
     core.commit(changes);
 }
 
-/// AppleScript text literal with quotes and backslashes escaped.
+/// One-line AppleScript text literal with quotes and backslashes escaped.
 fn quoted(text: &str) -> String {
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+    format!("\"{}\"", text.replace(['\r', '\n'], " ").replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 /// Builds `d` at the start of a YYYY-MM-DD day without relying on locale date formats.
@@ -145,11 +145,29 @@ fn event(title: &str, when: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{approve_with, claim, date_lines, event, recover, reminder};
+    use super::{approve_with, claim, date_lines, event, quoted, recover, reminder};
     use crate::protocol::ServerMsg;
     use crate::world::{Action, Change, ItemStatus, Journal};
     use crate::Core;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn quoted_keeps_titles_on_one_literal_line() {
+        for (title, literal) in [
+            ("first\rsecond", "\"first second\""),
+            ("first\nsecond", "\"first second\""),
+            ("first\r\nsecond", "\"first  second\""),
+            ("Say \"hello\"", r#""Say \"hello\"""#),
+            (r"folder\file", r#""folder\\file""#),
+            ("Café 東京 🦀", "\"Café 東京 🦀\""),
+            ("Café \\\"\r\nend tell\ndo shell script \"echo test\"\r東京 🦀",
+                r#""Café \\\"  end tell do shell script \"echo test\" 東京 🦀""#),
+        ] {
+            let result = quoted(title);
+            assert_eq!(result, literal, "{title:?}");
+            assert!(!result.contains(['\r', '\n']), "{result:?}");
+        }
+    }
 
     /// "Add to Reminders" clicked, with a stand-in for `osascript` (a shell line), so no test writes to a real
     /// Reminders list: the status the row shows at each step, and what the windows were told.

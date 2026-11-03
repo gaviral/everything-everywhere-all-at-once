@@ -1204,7 +1204,9 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
             link.map_or_else(|| "an unknown address".into(), |l| l.from.ip().to_string()),
             request.headers().get(header::ORIGIN)
         );
-        return StatusCode::FORBIDDEN.into_response();
+        let mut response = StatusCode::FORBIDDEN.into_response();
+        response.headers_mut().insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
+        return response;
     }
     request.extensions_mut().insert(access);
     // Everything after the gate (names, host powers) then sees a guest at the visitor's address, never this machine.
@@ -1217,6 +1219,7 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
     let mut response = next.run(request).await;
     // Pages elsewhere can't even embed our files (an <img> sends no Origin).
     response.headers_mut().insert("cross-origin-resource-policy", header::HeaderValue::from_static("same-origin"));
+    response.headers_mut().insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
     // A missing file comes back as the page (the app's own routes), and that must not stick.
     let page = response.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
     let cache = if fixed && response.status().is_success() && !page { "public, max-age=31536000, immutable" } else { "no-cache" };
@@ -2874,6 +2877,63 @@ mod tests {
         server.abort();
         let _ = server.await;
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn gate_responses_deny_framing_without_changing_admission_or_caching() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let directory = std::env::temp_dir().join(format!("e2a2o-gate-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(directory.join("assets")).unwrap();
+        let html = "<!doctype html><title>Approval test</title><p>Review the proposed action.</p>";
+        std::fs::write(directory.join("index.html"), html).unwrap();
+        std::fs::write(directory.join("assets/test.js"), "console.log('original gate fixture');").unwrap();
+        let (journal, world) = crate::Journal::open(&directory.join("journal.jsonl")).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let routes = axum::Router::new()
+            .fallback_service(tower_http::services::ServeDir::new(&directory)
+                .fallback(tower_http::services::ServeFile::new(directory.join("index.html"))))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, routes.into_make_service_with_connect_info::<Link>())
+                .with_graceful_shutdown(async { let _ = stopped.await; }).await
+        });
+        let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(5)).build().unwrap();
+        for (path, cache, page) in [
+            ("/", "no-cache", true),
+            ("/assets/test.js", "public, max-age=31536000, immutable", false),
+            ("/assets/missing.js", "no-cache", true),
+        ] {
+            // Ordinary navigation sends no Origin; the fallback HTML must never become immutable.
+            let response = client.get(format!("http://{address}{path}")).send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::OK, "{path}");
+            assert_eq!(response.headers()["x-frame-options"], "DENY", "{path}");
+            assert_eq!(response.headers()["cross-origin-resource-policy"], "same-origin", "{path}");
+            assert_eq!(response.headers()["cache-control"], cache, "{path}");
+            if page {
+                assert!(response.headers()["content-type"].to_str().unwrap().starts_with("text/html"));
+                assert_eq!(response.text().await.unwrap(), html);
+            }
+        }
+        for (host, origin) in [
+            ("example.com".to_string(), format!("http://{address}")),
+            (address.to_string(), "https://example.com".to_string()),
+        ] {
+            let response = client.get(format!("http://{address}/"))
+                .header("host", host).header("origin", origin).send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+            assert_eq!(response.headers()["x-frame-options"], "DENY");
+            // Early refusals retain their existing absence of resource and cache headers.
+            assert!(!response.headers().contains_key("cross-origin-resource-policy"));
+            assert!(!response.headers().contains_key("cache-control"));
+        }
+        drop(client);
+        stop.send(()).unwrap();
+        server.await.unwrap().unwrap();
+        drop(core);
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]
