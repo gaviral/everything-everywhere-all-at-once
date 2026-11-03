@@ -196,10 +196,14 @@ const fixture = () => {
   executable(join(dir, "bin/npm"), `#!/bin/sh
 echo "npm $*" >> "$FIXTURE_LOG"
 case "$1" in
-  install) mkdir -p node_modules ;;
-  run) mkdir -p dist; echo fixture-ui > dist/index.html ;;
+  install)
+    [ "\${INSTALL_EXIT:-0}" = 0 ] || exit "$INSTALL_EXIT"
+    mkdir -p node_modules ;;
+  run)
+    [ "\${BUILD_EXIT:-0}" = 0 ] || exit "$BUILD_EXIT"
+    mkdir -p dist; echo fixture-ui > dist/index.html ;;
 esac
-exit "\${UI_EXIT:-0}"
+exit 0
 `);
   executable(join(dir, "fixture-core"), `#!/usr/bin/env node
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -298,9 +302,15 @@ try {
   assert.match(r.stderr, /Port .* is in use/);
 } finally { await close(occupied); }
 assert.equal(blocked.events(), "");
-r = blocked.run([], { UI_EXIT: "9" });
+r = blocked.run([], { INSTALL_EXIT: "9" });
+assert.equal(r.status, 1);
+assert.match(r.stderr, /The UI dependency install failed/);
+assert.equal(blocked.events(), "npm install --no-audit --no-fund --no-update-notifier\n");
+// Installation now succeeds; only npm run build fails, so both failure stages are exercised.
+r = blocked.run([], { BUILD_EXIT: "9" });
 assert.equal(r.status, 1);
 assert.match(r.stderr, /The UI build failed/);
+assert.equal(blocked.events(), "npm install --no-audit --no-fund --no-update-notifier\nnpm install --no-audit --no-fund --no-update-notifier\nnpm run build\n");
 assert.doesNotMatch(blocked.events(), /core/);
 
 // A started core's failure is final; no source launch or toolchain probe follows it.

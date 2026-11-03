@@ -55,7 +55,12 @@ fi
 if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
-[ -d ui/node_modules ] || (cd ui && npm install --no-audit --no-fund --no-update-notifier)
+if [ ! -d ui/node_modules ]; then
+  if ! (cd ui && npm install --no-audit --no-fund --no-update-notifier); then
+    echo "The UI dependency install failed (see above). Fix the npm error, then run this again." >&2
+    exit 1
+  fi
+fi
 if ! out="$(cd ui && npm run build 2>&1)"; then
   echo "$out" >&2
   echo "The UI build failed (see above)." >&2
