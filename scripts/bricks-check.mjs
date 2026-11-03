@@ -1591,8 +1591,8 @@ try {
     const expectedGroups = ["School and projects", "Money", "Family"];
     if (JSON.stringify(groups.map((g) => g.name)) !== JSON.stringify(expectedGroups)) fail("spine", `topic headers: ${JSON.stringify(groups)}`);
     for (const [i, name] of expectedGroups.entries()) {
-      const count = i === 0 ? "2 threads" : "1 thread";
-      if (groups[i]?.label !== `Theme ${name}, ${count}. Press Enter to rename it`) fail("spine", `${name}'s header doesn't name its thread count`);
+      const count = i === 0 ? "2 topics" : "1 topic";
+      if (groups[i]?.label !== `Theme ${name}, ${count}. Press Enter to rename it`) fail("spine", `${name}'s header doesn't name its topic count`);
     }
     // Canvas coordinates, independent of zoom: every head belongs to exactly its own header's span.
     const inTopic = (id, name) => `(() => {
@@ -1639,7 +1639,7 @@ try {
       if (!await until(`document.querySelector(".playground-log").textContent.includes('moveToTopic Rent is due → “School and projects”') && document.querySelector(".playground-log").textContent.includes("position T2 → back to the layout")`, 2000)) fail("spine", "dropping T2 didn't move it under the topic and return it to the layout");
       await settle();
       if (!await evaluate(inTopic("T2", "School and projects"))) fail("spine", "T2 isn't inside School and projects after the drop");
-      if (!await until(`!document.querySelector('.react-flow__node[data-id="g:Bills"]') && document.querySelector('.react-flow__node[data-id="g:School and projects"] .spine-group-name')?.getAttribute("aria-label") === "Theme School and projects, 3 threads. Press Enter to rename it"`, 2000)) fail("spine", "the drop didn't remove Bills and count three threads under School and projects");
+      if (!await until(`!document.querySelector('.react-flow__node[data-id="g:Bills"]') && document.querySelector('.react-flow__node[data-id="g:School and projects"] .spine-group-name')?.getAttribute("aria-label") === "Theme School and projects, 3 topics. Press Enter to rename it"`, 2000)) fail("spine", "the drop didn't remove Bills and count three topics under School and projects");
     }
     await topicErrors();
     await evaluate(`(() => { const select = document.querySelector('.react-flow__node[data-id="t:T5"] .spine-tool-select'); if (select) { select.value = "School and projects"; select.dispatchEvent(new Event("change", { bubbles: true })); } })()`);
