@@ -8,13 +8,14 @@ import { readdirSync, readFileSync } from "node:fs";
 
 const ui = new URL("../ui/", import.meta.url);
 const files = (dir, test) => readdirSync(new URL(dir, ui)).filter(test).map((f) => readFileSync(new URL(dir + f, ui), "utf8"));
-const code = [...files("src/", (f) => /\.tsx?$/.test(f)), ...files("public/", (f) => f.endsWith(".js")), readFileSync(new URL("index.html", ui), "utf8")]
+// The app's own folders beside src/: the new shell (src/shell/, behind ?shell=2) has its code and stylesheet there.
+const code = [...files("src/", (f) => /\.tsx?$/.test(f)), ...files("src/shell/", (f) => /\.tsx?$/.test(f)), ...files("public/", (f) => f.endsWith(".js")), readFileSync(new URL("index.html", ui), "utf8")]
   .join("\n").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:\w"'`\\])\/\/.*$/gm, "$1");
 const quoted = [...code.matchAll(/"([^"\\\n]*(?:\\.[^"\\\n]*)*)"|'([^'\\\n]*(?:\\.[^'\\\n]*)*)'/g)].map((m) => m[1] ?? m[2]);
 const templates = [...code.matchAll(/`([^`\\]*(?:\\.[^`\\]*)*)`/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, " "));
 const used = new Set([...quoted, ...templates].map((s) => s.trim().split(/\s+/))
   .filter((words) => words.every((w) => /^[a-z][\w-]*$/.test(w))).flat());
-const css = files("src/", (f) => f.endsWith(".css")).join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
+const css = [...files("src/", (f) => f.endsWith(".css")), ...files("src/shell/", (f) => f.endsWith(".css"))].join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
 const classes = new Set([...css.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]).filter((c) => !/^\d/.test(c)));
 const unused = [...classes].filter((c) => !used.has(c)).sort();
 assert.deepEqual(unused, [], "styled classes no code uses: drop their rules");

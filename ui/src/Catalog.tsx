@@ -59,7 +59,7 @@ function CatalogSheet() {
     <div className="catalog-top">
       <div>
         <h2 id="catalog-title">Catalog</h2>
-        <p>Parts of the app you can switch on or off · {count} of {BRICKS.length} on</p>
+        <p>Features you can switch on or off · {count} of {BRICKS.length} on</p>
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
@@ -68,7 +68,7 @@ function CatalogSheet() {
       <summary>Not for the demo · {more.length}</summary>
       <Groups bricks={more} on={on} at={at?.id ?? null} />
     </details>}
-    <p className="catalog-foot">Each is a brick: a folder of its own in the app's code, listed here as soon as it's added. Switches are kept in this browser.</p>
+    <p className="catalog-foot">Each feature is a small add-on, listed here as soon as it's available. Your choices are kept in this browser.</p>
   </dialog>;
 }
 

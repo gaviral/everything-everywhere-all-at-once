@@ -17,14 +17,14 @@ try {
   // The pill: "Finding a thread" only while its own call runs.
   const said = thought("b", null, 0);
   const idle = { now: null, retryAt: {} };
-  assert.equal(pendingLabel(said, { now: "b", retryAt: {} }, 3_000, false, false), "Finding a thread");
-  assert.equal(pendingLabel(said, { now: "b", retryAt: {} }, 9_000, false, false), "Finding a thread · 9s");
+  assert.equal(pendingLabel(said, { now: "b", retryAt: {} }, 3_000, false, false), "Finding a place");
+  assert.equal(pendingLabel(said, { now: "b", retryAt: {} }, 9_000, false, false), "Finding a place · 9s");
   assert.equal(pendingLabel(said, { now: "a", retryAt: {} }, 9_000, false, false), "Waiting · 9s");
   // A busy service holds the whole line: no call runs, a's retry waits, and b waits behind it.
   const busy = { now: null, retryAt: { a: 40_000 } };
   assert.equal(pendingLabel(said, busy, 9_000, false, false), "Waiting · 9s");
-  assert.equal(pendingLabel(thought("a", null, 0), busy, 9_000, false, false), "Couldn't place yet · retrying in 31s");
-  assert.equal(pendingLabel(thought("a", null, 0), busy, 39_500, false, false), "Couldn't place yet · retrying");
+  assert.equal(pendingLabel(thought("a", null, 0), busy, 9_000, false, false), "Still working on it · retrying in 31s");
+  assert.equal(pendingLabel(thought("a", null, 0), busy, 39_500, false, false), "Still working on it · retrying");
   assert.equal(pendingLabel(said, idle, 1_000, false, false), "Waiting");
   assert.equal(pendingLabel(said, idle, 1_000, true, false), "Needs the AI key");
   assert.equal(pendingLabel(said, idle, 1_000, false, true), "Waiting for a working key");

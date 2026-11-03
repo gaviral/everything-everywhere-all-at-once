@@ -255,13 +255,13 @@ export function pendingLabel(thought: Thought, placing: Placing, now: number, no
   if (noKey) return "Needs the AI key";
   const since = Math.max(0, Math.floor((now - thought.at_ms) / 1000));
   const after = since > 5 ? ` · ${since}s` : "";
-  if (placing.now === thought.id) return `Finding a thread${after}`;
+  if (placing.now === thought.id) return `Finding a place${after}`;
   const retryAt = placing.retryAt[thought.id];
   if (retryAt !== undefined) {
     const left = Math.ceil((retryAt - now) / 1000);
-    return left >= 2 ? `Couldn't place yet · retrying in ${left}s` : "Couldn't place yet · retrying";
+    return left >= 2 ? `Still working on it · retrying in ${left}s` : "Still working on it · retrying";
   }
-  // Behind another being placed, or the whole line waiting out a busy service: "Finding a thread" only while a call
+  // Behind another being placed, or the whole line waiting out a busy service: "Finding a place" only while a call
   // for this one is running.
   return `Waiting${after}`;
 }
