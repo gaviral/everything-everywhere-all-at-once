@@ -184,15 +184,15 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
       const target = event.target;
       if (target instanceof Element && target.closest("input, textarea, select, [contenteditable]")) return;
       if (event.key.toLowerCase() === "l") top.later?.();
-      else if (event.key === "Enter" && !event.shiftKey && (!target || target === document.body || target === document.documentElement ||
-        (target instanceof Element && target.closest(".shell-held-chip")))) top.answer?.();
+      else if (event.key === "Enter" && !event.shiftKey && !(phone && !open) &&
+        (!target || target === document.body || target === document.documentElement)) top.answer?.();
       else return; // A focused card button keeps its native Enter click, which answers just once.
       event.preventDefault();
       event.stopPropagation();
     };
     document.addEventListener("keydown", key, true);
     return () => document.removeEventListener("keydown", key, true);
-  }, [top]);
+  }, [top, phone, open]);
   if (!held.length) return null;
   const more = held.length - 1;
   if (phone && !open) return <div className="shell-held-chip-row" data-slot="held">
