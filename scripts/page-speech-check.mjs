@@ -150,6 +150,22 @@ try {
   const delay = await evaluate("shortDelay");
   assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "missing end is cancelled within the text-based limit");
   assert.equal(await evaluate('frameIs("123,-456")'), true, "missing end restores real mic samples");
+
+  // Voices arriving near the loading deadline still earn the reply's full speaking time.
+  await evaluate(`(async () => {
+    const installed = voices;
+    voices = []; send(caption);
+    await new Promise(resolve => setTimeout(resolve, shortDelay * 3 / 4));
+    check(speech.pageSpeaking(), "reply is still waiting near the loading deadline");
+    const count = spoken.length;
+    voices = installed; speechSynthesis.dispatchEvent(new Event("voiceschanged"));
+    check(spoken.length === count + 1, "late voices start the waiting reply");
+    window.playbackStarted = performance.now();
+    await new Promise(resolve => setTimeout(resolve, shortDelay * 0.9));
+    check(speech.pageSpeaking() && frameIs("0,0"), "late voice keeps its speaking time and mic pause past the old deadline");
+  })()`);
+  assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "late voice still has a bounded speaking time");
+  assert.equal(await evaluate('performance.now() - playbackStarted >= shortDelay && frameIs("123,-456")'), true, "full speaking time elapses before capture resumes");
   await evaluate('voices = []; window.beforeTimeout = spoken.length; send(caption)');
   assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "missing voice list releases the mic within the text-based limit");
   await evaluate('voices = [{ name: "Late voice", lang: "en-US" }]; speechSynthesis.dispatchEvent(new Event("voiceschanged")); check(spoken.length === beforeTimeout, "voice loading timeout cannot play later")');
@@ -179,7 +195,7 @@ try {
       writer.disconnect(); writer.port.close();
     }
   })()`);
-  console.log(`page speech checks passed in headless Chrome on :${port} (async voices, late frames, real worklet at 24/44.1/48 kHz, end, error, timeout, replacement, Space, Esc, caption click)`);
+  console.log(`page speech checks passed in headless Chrome on :${port} (async and late voices, full speaking time, late frames, real worklet at 24/44.1/48 kHz, end, error, timeout, replacement, Space, Esc, caption click)`);
 } finally {
   await browser?.close();
   await server.close();

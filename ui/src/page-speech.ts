@@ -77,6 +77,9 @@ export function hearPageSpeech(data: unknown) {
     next.voice = voice;
     next.lang = voice.lang;
     if (!loggedVoice) { console.info("Page voice:", voice.name); loggedVoice = true; }
+    // Loading voices must not use up the reply's speaking time.
+    window.clearTimeout(timer);
+    timer = window.setTimeout(stopPageSpeech, slowReadMs(text) + NATURAL_PAUSE_MS);
     try { synth.speak(next); } catch { stopPageSpeech(); }
   };
   const key = (event: KeyboardEvent) => {
@@ -91,7 +94,7 @@ export function hearPageSpeech(data: unknown) {
   window.addEventListener("click", click, true);
   // A slow reading of these words plus a natural pause allows for voice startup and punctuation.
   // Cancel too: a voice that never reports its end must not keep speaking over the resumed mic.
-  const timer = window.setTimeout(stopPageSpeech, slowReadMs(text) + NATURAL_PAUSE_MS);
+  let timer = window.setTimeout(stopPageSpeech, slowReadMs(text) + NATURAL_PAUSE_MS);
   cleanup = () => {
     synth.removeEventListener("voiceschanged", speak);
     window.clearTimeout(timer);
