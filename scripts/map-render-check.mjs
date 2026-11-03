@@ -220,7 +220,7 @@ try {
   // A thought on its way: its pill in the dock says it's being placed, and for how long.
   const onItsWay = said("p1", null, "Sentences. I never finish my sentences.", "", 7);
   const waiting = draw({ world: { ...catchWorld, thoughts: [...catchWorld.thoughts, onItsWay] }, placing: { now: "p1", retryAt: {} } });
-  assert.match(waiting, /<span class="pill"><span class="pending-label">Finding a thread · 7s<\/span> Sentences\. I never finish my sentences\.<\/span>/);
+  assert.match(waiting, /<span class="pill"><span class="pending-label">Finding a place · 7s<\/span> Sentences\. I never finish my sentences\.<\/span>/);
   // Landed on the thread it finishes: picked up (no flag), and the two parts read as one point, with "✦ joined".
   const finished = { ...catchWorld, active: "T1", active_by: { you: "T1" },
     threads: [card("T1", "Finishing sentences", { last_point: "Never finishes sentences" }), card("T2", "Rent")],

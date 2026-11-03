@@ -11,7 +11,7 @@ export const AWAY_AFTER_MS = 30_000;
 // The card's rule, in its own words (C219: "how did it appear there … what about all the other things"): only
 // threads where your own words landed while this window was hidden or in the background for 30 s or more, with the
 // AI's new proposals on those threads; threads you didn't talk in, and other people's, stay out by design.
-export const AWAY_WHAT = "Threads your new thoughts landed in · newest first";
+export const AWAY_WHAT = "Topics your thoughts were added to · newest first";
 export const AWAY_WHEN = `Shown after ${AWAY_AFTER_MS / 1000} s or more away · a row takes you there`;
 
 export type AwayItem = {
