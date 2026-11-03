@@ -6,9 +6,9 @@ import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
 const unavailable = ready();
 if (unavailable) { console.error(`spine-reply-enter-check: ${unavailable}`); process.exit(3); }
+// SHOTS=dir saves the four screenshots; without it the check runs the same and saves nothing (precheck runs it so).
 const shots = process.env.SHOTS;
-assert.ok(shots, "SHOTS must name the screenshot output directory");
-mkdirSync(shots, { recursive: true });
+if (shots) mkdirSync(shots, { recursive: true });
 const core = await standInCore(() => []);
 try {
   for (const [width, height] of [[1440, 900], [390, 844]]) for (const theme of ["light", "dark"]) {
@@ -115,8 +115,10 @@ try {
       assert.deepEqual(await camera(), before, "typing camera shortcuts leaves camera unchanged");
       assert.deepEqual(await annotations(), [], "typing sends no annotation");
       await noOverflow();
-      const shot = await page("Page.captureScreenshot", { format: "png" });
-      writeFileSync(join(shots, `spine-reply-enter-${width}-${theme}.png`), Buffer.from(shot.data, "base64"));
+      if (shots) {
+        const shot = await page("Page.captureScreenshot", { format: "png" });
+        writeFileSync(join(shots, `spine-reply-enter-${width}-${theme}.png`), Buffer.from(shot.data, "base64"));
+      }
       await enter();
       check(await until(`!document.querySelector('.spine-reply') && [...document.querySelectorAll('.spine-quote')].some(q => q.textContent === 'precheck')`), "Enter submits and marks the exact quote");
       await sleep(200);
