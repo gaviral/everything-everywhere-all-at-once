@@ -189,12 +189,12 @@
 
 /* Edge chips: something new out of view, where the line from the middle toward it meets the edge. */
 .spine-cues { position: absolute; inset: 0; pointer-events: none; }
-.spine-frame .spine-cue { position: absolute; display: inline-flex; align-items: center; gap: 8px; height: 34px; max-width: 300px; padding: 0 10px 0 12px;
+.spine-frame .spine-cue { position: absolute; display: inline-flex; align-items: center; gap: 8px; height: 34px; max-width: 240px; box-sizing: border-box; min-width: 0; overflow: hidden; padding: 0 10px 0 12px;
   border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent); border-radius: 17px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit;
   font-size: 13px; white-space: nowrap; pointer-events: auto; cursor: pointer; animation: spine-in .3s ease-out; }
-.spine-cue.spine-cue-right, .spine-cue.spine-cue-left { translate: 0 -50%; }
-.spine-cue.spine-cue-top { translate: -50% 0; }
-.spine-cue.spine-cue-bottom { translate: -50% -100%; }
+.spine-cue.spine-cue-right, .spine-cue.spine-cue-left { translate: none; }
+.spine-cue.spine-cue-top { translate: none; }
+.spine-cue.spine-cue-bottom { translate: none; }
 .spine-cue-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--spine-room, var(--muted)); }
 .spine-cue-title { overflow: hidden; min-width: 0; text-overflow: ellipsis; }
 .spine-cue-new { color: var(--accent); font-size: 11px; font-weight: 600; }
