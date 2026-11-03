@@ -157,7 +157,14 @@ export async function openPage(url, { width = 1440, height = 900 } = {}) {
     await new Promise((resolve, reject) => { browser.onopen = resolve; browser.onerror = reject; });
     let id = 0;
     const waiting = new Map();
-    browser.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } };
+    // What the page announces (`Page.screencastFrame`, …), for a check that wants it: `on(method, handler)`.
+    const listening = new Map();
+    let attached = null;
+    browser.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
+      else if (m.method && m.sessionId && m.sessionId === attached) listening.get(m.method)?.(m.params);
+    };
     const cdp = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
       const n = ++id;
       waiting.set(n, (m) => (m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result)));
@@ -165,6 +172,7 @@ export async function openPage(url, { width = 1440, height = 900 } = {}) {
     });
     const { targetId } = await cdp("Target.createTarget", { url: "about:blank" });
     const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
+    attached = sessionId;
     const page = (method, params) => cdp(method, params, sessionId);
     const evaluate = async (expression) => {
       const r = await page("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -182,7 +190,7 @@ export async function openPage(url, { width = 1440, height = 900 } = {}) {
     await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
     await page("Page.navigate", { url });
-    return { page, evaluate, until, close: async () => { browser.close(); await close(); } };
+    return { page, evaluate, until, on: (method, handler) => listening.set(method, handler), close: async () => { browser.close(); await close(); } };
   } catch (error) {
     await close();
     throw error;
