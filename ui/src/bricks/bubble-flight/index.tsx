@@ -275,6 +275,8 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
       }
     };
 
+    // Out of the air (`data-flight` gone): the view's slot fills and rings.
+    const land = () => { if (bubble.hasAttribute("data-flight")) { bubble.removeAttribute("data-flight"); setInAir(false); } };
     const startFly = (now: number) => {
       const f = latest.current.flight;
       const landing = landingAim(f.id, f.threadId!, f.text);
@@ -336,16 +338,19 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
         if (dot.current) dot.current.style.opacity = String(1 - clamp((k - 0.55) / 0.35, 0, 1));
         scale = mix(fly.from, fly.into ? fly.to * 0.7 : fly.to, flyEase(k));
         opacity = f.short ? Math.min(1, t() / 80) : 1;
-        if (k >= 1) { phase = "settle"; since = now; }
+        if (k >= 1) {
+          // In: the view shows the point's own words under it now (the Spine's slot holds them back while a flight is in
+          // the air), and rings the landing, so the bubble's words fade into the point's, not into an empty slot.
+          phase = "settle";
+          since = now;
+          land();
+          if (fly.ring) ringAt(latest.current.layer, fly.ring, false);
+        }
       }
       if (phase === "settle") {
         const k = clamp(t() / SETTLE_MS, 0, 1);
         opacity = fly.into ? 1 - k : k < 0.45 ? 1 : 1 - (k - 0.45) / 0.55;
-        if (k >= 1) {
-          phase = "gone";
-          since = now;
-          if (fly.ring) ringAt(latest.current.layer, fly.ring, false);
-        }
+        if (k >= 1) { phase = "gone"; since = now; }
       }
       if (phase === "fade") {
         const k = clamp(t() / FADE_MS, 0, 1);
@@ -354,8 +359,7 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
       }
       if (phase === "gone") {
         opacity = 0;
-        // Out of the air: the view's slot may ring now.
-        if (bubble.hasAttribute("data-flight")) { bubble.removeAttribute("data-flight"); setInAir(false); }
+        land();
         if (!trail.length) { remove(f.id); return; }
       }
       draw(now);

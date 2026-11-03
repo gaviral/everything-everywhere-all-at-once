@@ -45,10 +45,10 @@
 .bubble-flight-words { position: relative; overflow: hidden; text-overflow: ellipsis; }
 
 /* The comet tail: the way it came, fading toward where it began, thicker near the bubble. */
-.bubble-flight-tail { fill: none; stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; }
-.bubble-flight-tail-head { stroke-width: 3px; }
+.bubble-flight-tail { fill: none; stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; }
+.bubble-flight-tail-head { stroke-width: 3.5px; }
 .bubble-flight-shade-tail { stop-color: var(--accent); stop-opacity: 0; }
-.bubble-flight-shade-head { stop-color: var(--accent); stop-opacity: .55; }
+.bubble-flight-shade-head { stop-color: var(--accent); stop-opacity: .75; }
 /* The way ahead, while it drifts: dots to the slot it's heading for. */
 .bubble-flight-ahead { fill: none; stroke: var(--accent); stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 0 7; opacity: .5; }
 
