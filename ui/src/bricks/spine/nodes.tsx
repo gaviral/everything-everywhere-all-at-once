@@ -2,7 +2,7 @@
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
 // line, the Friend's with ✦; what was agreed carries both marks.
-import { createContext, Fragment, memo, useContext, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
 
@@ -358,13 +358,39 @@ function Slot({ data }: { data: ItemData }) {
   </div>;
 }
 
-/** A lone aside: one thought on its own, floating as a bubble of its words. */
-function Aside({ data }: { data: ItemData }) {
+/** Most of a bubble's box that may lie past the canvas's edge and still count as whole: its shadow and a pixel of rounding. */
+const WHOLE = 0.98;
+
+/** Whether `ref`'s box lies whole inside the canvas (`.spine-frame`, which ends where the page's lane or rail begins); false
+ *  while any edge slices it, or it is wholly out of view. The browser reports it as the canvas pans, zooms and resizes, so
+ *  nothing here runs a frame at a time. Where there's no observer (a render without a page), whole. */
+function useWhole(ref: RefObject<HTMLElement | null>): boolean {
+  const [whole, setWhole] = useState(typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const el = ref.current, frame = el?.closest(".spine-frame");
+    if (!el || !frame || typeof IntersectionObserver === "undefined") return;
+    const watch = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last) setWhole(last.intersectionRatio >= WHOLE);
+    }, { root: frame, threshold: [WHOLE] });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [ref]);
+  return whole;
+}
+
+/** A lone aside: one thought on its own, floating as a bubble of its words. It shows whole or not at all: a closed shape the
+ *  screen's edge cuts through ("…ot sent yet") reads as a fault, where a topic's open column running off the edge reads as
+ *  "more this way". It comes back, whole, as the canvas is moved to it. One you hold (dragged, on its way to the shelf) or
+ *  have picked stays, as it is where your hand has it. */
+function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
   const zoomedOut = useStore((s) => far(s.transform[2]));
-  return <div className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
-    data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+  const bubble = useRef<HTMLDivElement>(null);
+  const whole = useWhole(bubble) || dragging || picked;
+  return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
+    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
@@ -397,14 +423,14 @@ function Notch({ data }: { data: ItemData }) {
 /** The clock for "12 min ago", from the view (a minute's tick), so a card's recap stays true without a new map. */
 export const NowContext = createContext(Date.now());
 
-export const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
+export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<ItemNode>) {
   const now = useContext(NowContext);
   switch (data.item.kind) {
     case "head": return <Head data={data} now={now} />;
     case "card": return <Card data={data} now={now} />;
     case "point": return <Point data={data} />;
     case "slot": return <Slot data={data} />;
-    case "aside": return <Aside data={data} />;
+    case "aside": return <Aside data={data} dragging={dragging} />;
     case "margin": return <Margin data={data} />;
     case "group": return <Group data={data} />;
     default: return <Notch data={data} />;
