@@ -100,6 +100,8 @@ for (const [width, height] of [[1440, 900], [390, 844]]) for (const scheme of ["
   try {
     browser = await openPage("about:blank", { width, height });
     const { page, evaluate, until } = browser;
+    // Without Page.enable, Chrome accepts the script below and never runs it.
+    await page("Page.enable");
     await page("Page.addScriptToEvaluateOnNewDocument", { source: `
       window.__statusWordsErrors = [];
       addEventListener("error", e => window.__statusWordsErrors.push(e.message || "resource failed: " + (e.target.src || e.target.href)), true);
@@ -169,7 +171,15 @@ for (const [width, height] of [[1440, 900], [390, 844]]) for (const scheme of ["
     await sleep(1700);
     await check({ hint: true });
     if (scheme === "dark") await key("Escape");
-    else await click('[data-guide="composer"] textarea');
+    else {
+      // Any click outside the hint dismisses it. On a phone the hint covers the composer, so tap bare canvas instead.
+      const bare = await evaluate(`(() => { const f = document.querySelector(".spine-frame").getBoundingClientRect();
+        for (let y = f.top + 24; y < f.bottom - 24; y += 16) for (let x = f.left + 24; x < f.right - 24; x += 16)
+          if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y }; })()`);
+      assert.ok(bare, `${where}: bare canvas to tap`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page("Input.dispatchMouseEvent", { type, ...bare, button: "left", clickCount: 1 });
+      await settle();
+    }
     assert.ok(await until('!document.querySelector(".tiny-transcript")', 500), `${where}: dismiss releases held text`);
     assert.equal(await evaluate('localStorage.getItem("e2a2o.brick.tiny-transcript.hinted")'), "true");
     await load();
@@ -210,7 +220,8 @@ for (const [width, height] of [[1440, 900], [390, 844]]) for (const scheme of ["
 
     // Without the bottom slot, the existing composer placement and its typing behavior remain in use.
     await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "tiny-transcript": true }))`);
-    await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/` });
+    // ?cards: the cards page, where today's page may open on the Canvas instead (canvas-default).
+    await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/?cards` });
     assert.ok(await until('!!document.querySelector(".composer textarea") && !!document.querySelector(".map .thread") && document.querySelector("button.mic")?.disabled === false', 10000), `${where}: classic composer loads`);
     await startMic();
     await say(long);
