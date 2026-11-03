@@ -109,13 +109,16 @@ const TAILS = ["please", "for me", "now"];
 const UNFOLD_LEADS = ["can we ", "could we ", "let s ", "lets ", "let us "];
 const VERBS = ["expand", "unfold", "open up", "show me", "open", "show", "collapse", "fold up", "fold", "close", "hide"];
 const STRONG = ["expand", "unfold", "collapse"];
-const POINTING = ["this", "this one", "this thread", "this card", "it", "that", "that one", "that thread", "here", "it all"];
+// names-ok: the spoken words, old and new, as the core reads them
+const POINTING = ["this", "this one", "this thread", "this topic", "this card", "it", "that", "that one", "that thread", "that topic", "here", "it all"];
+// names-ok: the spoken words, old and new, as the core reads them
 const EVERYTHING = ["everything", "all of the sub cards", "all the sub cards", "all the subcards", "all sub cards", "all the cards",
-  "all the branches", "all the threads", "all threads", "all cards", "all branches", "every card", "every thread", "the sub cards",
-  "the subcards", "the branches", "all of it", "all of", "all"];
+  "all the branches", "all the tangents", "all the threads", "all the topics", "all threads", "all topics", "all cards", "all branches",
+  "all tangents", "every card", "every thread", "every topic", "every tangent", "the sub cards", "the subcards", "the branches",
+  "the tangents", "all of it", "all of", "all"];
 const UNDER = ["inside of", "inside", "under", "within", "in", "of", "on"];
-// main.rs `FOCUS_ON`, after "focus on" or "let's focus on", with the core's one tail ("mode").
-export const FOCUS_ON = ["this", "this one", "this thread", "this card", "that", "that one", "that thread", "that card"];
+// main.rs `FOCUS_ON`, after "focus on" or "let's focus on", with the core's one tail ("mode"). names-ok: the spoken words, old and new
+export const FOCUS_ON = ["this", "this one", "this thread", "this topic", "this card", "that", "that one", "that thread", "that topic", "that card"];
 // catalog.rs `STRONG`, `AFTER_NO` and `NO`: the leads of "No, I meant …". "I mean" and "I said" count only after a no.
 export const CORRECTION = ["i meant to say", "i meant", "what i meant was", "i was asking you to", "i was asking for", "i asked you to",
   "i asked for", "i wanted you to", "i wanted", "that s not what i meant", "that s not what i asked for", "that s not what i asked",

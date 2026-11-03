@@ -1121,10 +1121,10 @@ fn decide(world: &World, thought: &Thought, p: Placement, place_ms: u64, new_thr
 pub(crate) mod rules {
     // Short enough to sit on a card's edge on a phone (ui/src/route.css).
     pub const JOINS: &str = "finishes the words before";
-    pub const DECISION: &str = "decisions go on their thread";
-    pub const ASKED: &str = "you asked for a new thread";
-    pub const ONE_LEVEL: &str = "one level of branches";
-    pub const NO_SUCH: &str = "unknown thread: stays put";
+    pub const DECISION: &str = "decisions go on their topic";
+    pub const ASKED: &str = "you asked for a new topic";
+    pub const ONE_LEVEL: &str = "one level of tangents";
+    pub const NO_SUCH: &str = "unknown topic: stays put";
     pub const NOT_FILLER: &str = "too long to be filler";
     pub const SAYS_DECIDED: &str = "says a decision: kept";
     pub const FILLER_UNCLEAR: &str = "unclear what was filler";

@@ -1,7 +1,7 @@
 {
   "id": "spine",
-  "name": "Spine",
-  "does": "Your talk as a canvas: each thread a spine under its theme, tangents beside their point.",
+  "name": "Canvas",
+  "does": "Your talk as a canvas: each topic a column under its theme, tangents beside their point.",
   "kind": "view",
   "defaultOn": false,
   "demoSafe": true

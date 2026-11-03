@@ -43,7 +43,7 @@ const modelName = (id: string) => id.split("-").map((word) => word.charAt(0).toU
 
 // "Added 34 points to 6 new threads, with 3 open questions and 8 tasks", leaving out what's zero.
 function summary(job: ImportStatus) {
-  const places = [job.threads && plural(job.threads, "new thread"), job.extended && `${plural(job.extended, "thread")} you already had`].filter(Boolean);
+  const places = [job.threads && plural(job.threads, "new topic"), job.extended && `${plural(job.extended, "topic")} you already had`].filter(Boolean);
   const extras = [job.questions && plural(job.questions, "open question"), job.actions && plural(job.actions, "task")].filter(Boolean);
   return `Added ${plural(job.points, "point")}${places.length ? ` to ${places.join(" and ")}` : ""}${extras.length ? `, with ${extras.join(" and ")}` : ""}.`;
 }
@@ -186,8 +186,8 @@ export function ImportChats({ core }: { core: ImportCore }) {
         <div role="status">
           <p className="import-line">
             {job.state === "reading" && `Reading your chats: ${job.parts_done} of ${plural(job.parts, "part")} read`}
-            {job.state === "grouping" && `Sorting ${plural(job.ideas, "idea")} into threads…`}
-            {job.state === "adding" && `Adding to your map: ${plural(job.threads, "thread")} so far`}
+            {job.state === "grouping" && `Sorting ${plural(job.ideas, "idea")} into topics…`}
+            {job.state === "adding" && `Adding to your map: ${plural(job.threads, "topic")} so far`}
           </p>
           {job.state === "reading" && job.ideas > 0 && (
             <p className="import-note">
@@ -243,9 +243,9 @@ export function ImportChats({ core }: { core: ImportCore }) {
           Your {plural(preview.messages, "message")} (about {plural(preview.words, "word")}), with the first lines of each AI reply for context, go to
           Meta's {modelName(preview.extract_model)} to pick out your ideas.
         </li>
-        <li>The ideas it finds, not your messages, go to {modelName(preview.merge_model)} to sort them into threads, open questions and tasks.</li>
+        <li>The ideas it finds, not your messages, go to {modelName(preview.merge_model)} to sort them into topics, open questions and tasks.</li>
         <li>
-          Costs about {preview.cost < 0.01 ? "a cent" : `$${preview.cost.toFixed(2)}`}, plus about $0.01 for each thread picture drawn afterwards.
+          Costs about {preview.cost < 0.01 ? "a cent" : `$${preview.cost.toFixed(2)}`}, plus about $0.01 for each topic picture drawn afterwards.
         </li>
         <li>The file itself isn't kept. The points are saved with your map, on this computer.</li>
       </ul>
@@ -261,7 +261,7 @@ export function ImportChats({ core }: { core: ImportCore }) {
   ) : (
     <>
       <h2 id="import-title">Import your chats</h2>
-      <p className="import-lead">Turn your ChatGPT or Claude conversations into threads, questions and tasks on this map. Only your own messages become points.</p>
+      <p className="import-lead">Turn your ChatGPT or Claude conversations into topics, questions and tasks on this map. Only your own messages become points.</p>
       {step === "error" && (
         <p className="import-warn" role="alert">
           {error}

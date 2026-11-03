@@ -19,7 +19,7 @@ try {
   const rows = awayItems(base, after, "Ana", stamps);
   assert.equal(AWAY_AFTER_MS, 30_000);
   assert.deepEqual(rows.map((r) => r.key), ["thread:fresh", "proposal:idea", "thread:unfinished", "thread:old", "proposal:task"]);
-  assert.match(rows.find((r) => r.threadId === "fresh" && r.kind === "thread").detail, /^New thread/);
+  assert.match(rows.find((r) => r.threadId === "fresh" && r.kind === "thread").detail, /^New topic/);
   assert.match(rows.find((r) => r.key === "thread:old").detail, /^1 new point/);
   assert.match(rows.find((r) => r.key === "thread:unfinished").detail, /^Left unfinished/);
   assert.equal(rows[rows.findIndex((r) => r.key === "thread:old") + 1].itemId, "task", "a proposal follows its thread");

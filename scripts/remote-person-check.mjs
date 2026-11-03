@@ -233,7 +233,7 @@ try {
   await phone.shotBoth("phone-join");
   await phone.click(".join-card > button");
   await phone.check('!!document.querySelector(".remote")', "joined: the Remote");
-  await phone.check('document.querySelector(".remote-status")?.textContent === "In the room as Sam\'s phone"', "connected, under its name");
+  await phone.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Sam\'s phone"', "connected, under its name");
   const mine = joins.findLast((j) => j.name === "Sam's phone");
   assert.deepEqual([mine.room, mine.remote], [code, "1"], `its socket comes in by name and room and says it is a Remote: ${JSON.stringify(mine)}`);
 

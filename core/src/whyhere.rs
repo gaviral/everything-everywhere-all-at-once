@@ -26,7 +26,7 @@ const PATIENCE: Duration = Duration::from_secs(15);
 /// What a hand move says: the person's own choice is the reason.
 pub const MOVED: &str = "you moved it here";
 /// What the first thought of a thread says: it is why the thread exists.
-pub const STARTED: &str = "started this thread";
+pub const STARTED: &str = "started this topic";
 
 /// Thoughts whose reason is being asked now, with who waits for it: a second ask while one is out spends nothing,
 /// and its speaker gets the same answer (or failure) as the first.
@@ -93,7 +93,7 @@ pub async fn run(core: Arc<Core>, speaker: String, thought_id: String) {
         return;
     }
     let Some((notes, thread)) = prompt(&world, &thought_id) else {
-        core.send_to(&speaker, reply("It isn't on a thread yet.".into(), true));
+        core.send_to(&speaker, reply("It isn't on a topic yet.".into(), true));
         return;
     };
     drop(world);

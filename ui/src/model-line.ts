@@ -28,16 +28,16 @@ const STEPS: Record<string, string> = {
   picture: "drawing a picture",
   recap: "reading your day",
   "recap draft": "keeping your recap ready",
-  topics: "sorting threads into themes",
+  topics: "sorting topics into themes",
   app: "building your app",
   "app search": "looking for an app you have",
   "app run": "running your app",
-  find: "searching your threads",
+  find: "searching your topics",
   explain: "explaining",
   "safety net": "checking that",
   import: "reading your chats",
 };
-const RULES: Record<string, string> = { back: "back to your thread", tune: "played the tune" };
+const RULES: Record<string, string> = { back: "back to your topic", tune: "played the tune" };
 
 /** Steps you asked for and wait on, "Where was I?" included; the rest (pictures, tidying, an app a watcher woke, a
  *  Recap draft nobody asked for) run behind, so they never cover a placing time. */

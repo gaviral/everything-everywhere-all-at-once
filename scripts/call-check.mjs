@@ -54,8 +54,8 @@ const said = (id, speaker, text, at, extra = {}) => ({ id, speaker, text, point:
     { name: "Maya", ai: false, joined_ms: 3, here: true, left_ms: null, mic: false, speaking: true, read: null },
     { name: "Lee", ai: false, joined_ms: 4, here: false, left_ms: Date.UTC(2026, 10, 2, 19, 52), mic: false, speaking: false, read: null }] };
   assert.deepEqual(C.ordered(call, "Maya").map((p) => p.name), ["Maya", "Sam", "Lee", "Friend"], "you first, then people, then AI participants");
-  assert.equal(C.heardBy(call, "Sam"), "Maya and the Friend hear you");
-  assert.equal(C.heardBy({ ...call, people: call.people.slice(0, 2) }, "Sam"), "the Friend hears you");
+  assert.equal(C.heardBy(call, "Sam"), "Maya and the AI helper hear you");
+  assert.equal(C.heardBy({ ...call, people: call.people.slice(0, 2) }, "Sam"), "the AI helper hears you");
   assert.deepEqual(call.people.map((p) => C.stateWord(p)).slice(0, 3), ["mic on", "here", "speaking"]);
   assert.match(C.stateWord(call.people[3]), /^left \d/);
   assert.ok(C.inCall(call) && C.inCall({ ...call, people: call.people.slice(0, 2) }) && !C.inCall({ ...call, people: call.people.slice(0, 1) }), "two here make a call, an AI participant too");
@@ -193,12 +193,12 @@ try {
   for (const [page, who] of [[sam, "Sam"], [maya, "Maya"]]) {
     assert.ok(await page.until(`!!document.querySelector(".talk-rail .talk-people")`, 4000), `${who}'s Talk opens with two people here`);
   }
-  assert.match(await text(sam, ".talk-person"), /You.*mic on.*Maya.*here.*Friend.*here/, "the people row: you first, the Friend last");
+  assert.match(await text(sam, ".talk-person"), /You.*mic on.*Maya.*here.*AI helper.*here/, "the people row: you first, the Friend last");
   assert.match(await text(sam, ".talk-start"), /Call started .* · 6 earlier turns/, "earlier turns fold away");
   assert.match(await text(sam, ".talk-code"), /Join code.*K7M2 X9QP/);
   assert.equal(await sam.evaluate(`!!document.querySelector(".talk-leave")`), true, "Leave");
   assert.match(await text(sam, ".talk-on"), /on “everyone brings a dessert”.*on “everyone brings a dessert”/, "the Friend's note and its reply, each on its words");
-  assert.match(await text(sam, ".talk-turn .talk-level"), /Note/, "the Friend's note names its level");
+  assert.match(await text(sam, ".talk-turn .talk-level"), /Comment/, "the AI helper's note names its level");
 
   step("Speaking now…");
   setPerson("Maya", { speaking: true, mic: true });
@@ -275,9 +275,9 @@ try {
   }
 
   step("the Friend's level");
-  await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Hand").click()`);
+  await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Ask").click()`);
   assert.deepEqual(core.heard.filter((m) => m.type === "level").at(-1), { type: "level", level: "hand" });
-  assert.ok(await maya.until(`document.querySelector('.talk-level-step[aria-checked="true"]')?.textContent === "Hand" && document.querySelector(".talk-meter-says").textContent.includes("Set by Sam")`, 3000), "Maya's meter shows Sam's level");
+  assert.ok(await maya.until(`document.querySelector('.talk-level-step[aria-checked="true"]')?.textContent === "Ask" && document.querySelector(".talk-meter-says").textContent.includes("Set by Sam")`, 3000), "Maya's meter shows Sam's level");
   await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Speak").click()`);
 
   step("the Friend's caption: Speaking now…, then its words as a turn");

@@ -81,7 +81,7 @@ export function MovePoint({ thought }: { thought: Thought }) {
           onClick={(event) => { focusAfter(event.currentTarget.closest("li")); remove(thought.id); }}>Delete</button>
       )}
       <button ref={button} type="button" className="move-button" draggable aria-expanded={open} aria-haspopup="true"
-        aria-label={`Move “${thought.point}” to another thread`}
+        aria-label={`Move “${thought.point}” to another topic`}
         onClick={() => setOpen((was) => !was)}
         onDragStart={(event) => {
           event.dataTransfer.setData(DRAG_TYPE, thought.id);
@@ -117,20 +117,20 @@ function MoveMenu({ current, threads, pick, close }: { current: string | null; t
     event.preventDefault();
   };
   return (
-    <div ref={menu} className="move-menu" role="dialog" aria-label="Move to another thread"
+    <div ref={menu} className="move-menu" role="dialog" aria-label="Move to another topic"
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Escape") { event.preventDefault(); close(true); }
         if (event.key === "ArrowDown") walk(event, 1);
         if (event.key === "ArrowUp") walk(event, -1);
       }}>
-      <input autoFocus value={query} placeholder="Move to…" aria-label="Move to a thread: type to narrow the list"
+      <input autoFocus value={query} placeholder="Move to…" aria-label="Move to a topic: type to narrow the list"
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); pick(targets[0]?.id ?? null); } }} />
       {/* Buttons, not a list: inside a point, a list's items would take the point's own bullet and spacing. */}
       <div className="move-list">
         {targets.map((t) => <button key={t.id} type="button" onClick={() => pick(t.id)}>{t.title}</button>)}
-        <button type="button" className="new" onClick={() => pick(null)}>New thread</button>
+        <button type="button" className="new" onClick={() => pick(null)}>New topic</button>
       </div>
     </div>
   );

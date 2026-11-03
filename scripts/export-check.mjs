@@ -33,8 +33,8 @@ try {
   };
   const out = md(world).text;
   const headings = out.split("\n").filter((l) => l.startsWith("#"));
-  assert.deepEqual(headings, ["# Thread map", "## Garden", "### Beans", "#### Stakes", "## Bills", "## Lost parent", "## Not placed yet"]);
-  assert.match(out, /^Exported Nov 3, 2026, 10:12 PM · 5 threads · 6 thoughts$/m);
+  assert.deepEqual(headings, ["# Topic map", "## Garden", "### Beans", "#### Stakes", "## Bills", "## Lost parent", "## Not placed yet"]);
+  assert.match(out, /^Exported Nov 3, 2026, 10:12 PM · 5 topics · 6 thoughts$/m);
 
   // Thoughts in the order said; the first bullet on a thread carries its date, later ones only the time unless the day changed.
   const garden = out.split("## Garden\n\n")[1].split("\n\n")[0].split("\n");
@@ -44,7 +44,7 @@ try {
   assert.ok(!out.includes("I think"), "the words behind a point stay on its card");
   assert.match(out, /#### Stakes\n\n- Nothing said here yet/);
   assert.match(out, /## Not placed yet\n\n- Nov 1, 12:00 PM · Call the landlord/);
-  assert.equal(md(world).name, "thread-map-2026-11-03-2212.md");
+  assert.equal(md(world).name, "topic-map-2026-11-03-2212.md");
 
   // A point dated ahead of the clock (a sample dated for a demo) counts as earliest, as on the map; time 0 shows none.
   const ahead = md({ threads: [thread("T1", "Trip")], thoughts: [thought("x", "T1", "later one", at(1, 9, 0)), thought("y", "T1", "dated ahead", NOW + 3 * 3600_000), thought("z", "T1", "no time", 0)] }).text;
@@ -101,7 +101,7 @@ try {
   assert.match(tasks, /- \[x\] Reminder: Pay rent · Friday\n- \[ \] Event: Call bank \(proposed by AI\)\n- Idea: Autopay\n/);
   assert.ok(!tasks.includes("Gone") && !tasks.includes("Not kept"));
 
-  assert.equal(exportedNotice(md(world)), "Exported 5 threads and 6 thoughts as thread-map-2026-11-03-2212.md");
+  assert.equal(exportedNotice(md(world)), "Exported 5 topics and 6 thoughts as topic-map-2026-11-03-2212.md");
 
   // Nothing leaves the machine: the file is made from the map in the window, and only handed to the browser to save.
   const source = readFileSync(new URL("../ui/src/export-md.ts", import.meta.url), "utf8");

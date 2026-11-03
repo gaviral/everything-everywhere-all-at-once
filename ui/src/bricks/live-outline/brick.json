@@ -1,7 +1,7 @@
 {
   "id": "live-outline",
   "name": "Live outline",
-  "does": "Your talk takes shape as you speak, with side trips stepping into their thread’s color.",
+  "does": "Your talk takes shape as you speak, with side trips stepping into their topic’s color.",
   "kind": "panel",
   "defaultOn": false,
   "demoSafe": false,

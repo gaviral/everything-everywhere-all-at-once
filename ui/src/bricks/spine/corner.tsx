@@ -5,7 +5,7 @@ export type Stop = "words" | "titles" | "pictures";
 export const STOPS: { stop: Stop; label: string; key: string; does: string }[] = [
   { stop: "words", label: "Words", key: "1", does: "every word, at reading size" },
   { stop: "titles", label: "Titles", key: "2", does: "every topic's title, the whole map" },
-  { stop: "pictures", label: "Pictures", key: "3", does: "every thread as its picture" },
+  { stop: "pictures", label: "Pictures", key: "3", does: "every topic as its picture" },
 ];
 
 const cls = (...names: (string | false | undefined | null)[]) => names.filter(Boolean).join(" ");

@@ -52,7 +52,7 @@ try {
   assert.deepEqual(two, { text: "AI renamed “Topic T1” to “Rent” and “Topic T2” to “Budget”", ai: true,
     undo: [{ kind: "rename", thread_id: "T1" }, { kind: "rename", thread_id: "T2" }], renamed: [["Topic T1", "Rent"], ["Topic T2", "Budget"]] });
   const three = joinNotes(two, note("T4", "Topic T4", "Groceries"));
-  assert.equal(three.text, "AI renamed 3 threads: “Rent”, “Budget” and “Groceries”");
+  assert.equal(three.text, "AI renamed 3 topics: “Rent”, “Budget” and “Groceries”");
   assert.equal(three.undo.length, 3);
   assert.equal(joinNotes(null, note("T1", "Topic T1", "Rent")).undo.length, 1, "nothing up: the note alone");
   const mergeNote = tidyNote(world, { type: "thread_merged", from: "T2", into: "T1" });

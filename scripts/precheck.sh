@@ -24,7 +24,7 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 if [ -d ui/node_modules ]; then
   check_logs=$(mktemp -d) || { fail "UI checks could not create log directory"; exit "$failed"; }
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) continue ;; esac
     printf '%s\0' "$c"
   done | xargs -0 -n 1 -P "${PRECHECK_JOBS:-4}" sh -c '
     check_logs=$1
@@ -34,7 +34,7 @@ if [ -d ui/node_modules ]; then
     printf "%s\n" "$?" > "$check_logs/$name.status"
   ' sh "$check_logs"
   for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
+    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) continue ;; esac
     # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
     name=$(basename "$c" .mjs)
     rc=$(cat "$check_logs/$name.status" 2>/dev/null)
@@ -46,6 +46,9 @@ else warn "UI checks skipped: run ./run.sh once to install"; fi
 # links-check and dates-check need only node, so a fresh clone runs them too.
 check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
 check "dates-check passes" "node scripts/dates-check.mjs > /dev/null 2>&1"
+# The names a person reads (docs/names.md): a retired word in a UI string, a brick.json, a public doc or a core notice fails.
+# Without the UI installed it still reads the docs, brick.json and the core.
+if names=$(node scripts/names-check.mjs 2>&1); then pass "names-check passes"; else fail "names-check passes"; echo "$names" | head -12 | sed 's/^/        /'; fi
 [ -f LICENSE ] || warn "no LICENSE file yet (the owner's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"

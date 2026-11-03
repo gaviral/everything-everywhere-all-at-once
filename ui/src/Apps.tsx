@@ -170,7 +170,7 @@ export function Apps({ core }: { core: Core }) {
         </article>)}
       </div>
       {/* The app's own parts, under the apps people make: the Catalog switches them (Catalog.tsx, docs/bricks.md). */}
-      <div className="apps-catalog"><p>More views and tools you can switch on</p><button type="button" aria-haspopup="dialog" onClick={openCatalog} data-guide="catalog">Catalog</button></div>
+      <div className="apps-catalog"><p>More views and tools you can switch on</p><button type="button" aria-haspopup="dialog" onClick={openCatalog} data-guide="catalog">Features</button></div>
     </div>}
   </aside>;
 }

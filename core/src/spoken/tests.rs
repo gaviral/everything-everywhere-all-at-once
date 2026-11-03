@@ -35,6 +35,7 @@ fn add_to_x_cuts_at_the_last_to_and_names_new_words() {
     assert_eq!(filing("Okay, add milk to the shopping list, please."), Some(("milk", "the shopping list")));
     assert_eq!(filing("Add a note about the trip to Japan to the travel list"), Some(("a note about the trip to Japan", "the travel list")));
     assert_eq!(filing("Put the receipt in the bills thread"), Some(("the receipt", "the bills thread")));
+    assert_eq!(filing("Put the receipt in the bills topic"), Some(("the receipt", "the bills topic")));
     assert_eq!(filing("Add to the shopping list: oat milk"), Some(("oat milk", "the shopping list")));
     assert_eq!(filing("Jot down call the landlord on my to-do list"), Some(("call the landlord", "my to-do list")));
     // A thought already on the map is the catalog's to move (plan step 15); a verb that starts errands isn't one.
@@ -55,6 +56,10 @@ fn a_place_is_a_thread_by_its_title_or_a_new_one_only_when_said_as_a_kind_of_pla
     assert_eq!(at("the grocery list"), Destination::Thread("T1".into()));
     assert_eq!(at("groceries"), Destination::Thread("T1".into()));
     assert_eq!(at("the Japan thread"), Destination::Thread("T3".into()));
+    // "Topic" names a kind of place as "thread" does, and so does "tangent" (a thread under a thread).
+    assert_eq!(at("the Japan topic"), Destination::Thread("T3".into()));
+    assert_eq!(at("the Japan tangent"), Destination::Thread("T3".into()));
+    assert_eq!(at("the packing topic"), Destination::New("Packing topic".into()));
     assert_eq!(at("my reading list"), Destination::Thread("T4".into()));
     // "The list" alone: the latest thread with "list" in its title.
     assert_eq!(at("the list"), Destination::Thread("T4".into()));
@@ -141,7 +146,7 @@ fn new_thread_about_lands_at_once_with_no_model_call() {
     let notices: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
         .filter_map(|out| if let ServerMsg::Notice { message } = out.message { Some(message) } else { None })
         .collect();
-    assert_eq!(notices, ["New thread: “Garden shed”"]);
+    assert_eq!(notices, ["New topic: “Garden shed”"]);
     assert_eq!(title_for("Why the build is slow and what to do about it."), "Why the build is slow");
     assert_eq!(title_for("Um, the lease"), "Lease");
     assert_eq!(title_for("um"), "Um");
@@ -191,6 +196,11 @@ fn new_thread_about_keeps_every_word_after_it() {
     assert_eq!(new_thread_about("Different topic, but I need to call Mom"), Some("But I need to call Mom".into()));
     assert_eq!(title_for("But I need to call Mom"), "I need to call Mom");
     assert_eq!(new_thread_about("Change of topic: the lease"), Some("The lease".into()));
+    // "Topic" works wherever "thread" does.
+    assert_eq!(new_thread_about("New topic about the garden shed"), Some("The garden shed".into()));
+    assert_eq!(new_thread_about("Okay, create a new topic about Dana's party"), Some("Dana's party".into()));
+    assert_eq!(new_thread_about("Open a new topic about the lease."), Some("The lease.".into()));
+    assert_eq!(new_thread_about("Make a new topic. I want to learn piano."), Some("I want to learn piano.".into()));
     // Words that would lead into a request are the thought's own here.
     assert_eq!(new_thread_about("New thread about can you review the contract?"), Some("Can you review the contract?".into()));
     assert_eq!(new_thread_about("New thread. Okay so the tomatoes need stakes."), Some("Okay so the tomatoes need stakes.".into()));
@@ -202,6 +212,9 @@ fn new_thread_about_keeps_every_word_after_it() {
         "I want a new thread about this",
         "New thread about",
         "New threads are cheap, I bought six spools",
+        "Create a new topic for the kitchen",
+        "A new topic about the budget came up on Slack",
+        "Make a new topic",
     ] {
         assert_eq!(new_thread_about(none), None, "{none}");
     }
@@ -220,6 +233,18 @@ fn expand_names_a_thread_this_one_or_all_and_show_needs_a_title() {
     assert_eq!(unfold("Show the garden"), named("the garden", true, false, true));
     assert_eq!(unfold("Collapse the garden"), named("the garden", false, false, false));
     assert_eq!(unfold("Expand this"), Some(Unfold { target: Target::This, open: true, sure: true, title_only: false }));
+    // "This topic" and "that topic" point as "this thread" does; "every topic" and "all the tangents" are "every thread" and
+    // "all the branches".
+    assert_eq!(unfold("Expand this topic"), Some(Unfold { target: Target::This, open: true, sure: true, title_only: false }));
+    assert_eq!(unfold("Collapse that topic"), Some(Unfold { target: Target::This, open: false, sure: true, title_only: false }));
+    assert_eq!(unfold("Collapse that thread"), Some(Unfold { target: Target::This, open: false, sure: true, title_only: false }));
+    assert_eq!(unfold("Fold all the topics"), Some(Unfold { target: Target::All, open: false, sure: true, title_only: false }));
+    assert_eq!(unfold("Expand every topic"), Some(Unfold { target: Target::All, open: true, sure: true, title_only: false }));
+    assert_eq!(unfold("Expand all tangents"), Some(Unfold { target: Target::All, open: true, sure: true, title_only: false }));
+    assert_eq!(unfold("Show me everything under the garden topic"), named("the garden topic", true, true, false));
+    assert_eq!(unfold("Expand all the tangents inside the garden"), named("the garden", true, true, false));
+    assert_eq!(unfold("Open the tangents under Rent"), named("Rent", true, true, false));
+    assert_eq!(unfold("Open everything under that topic"), Some(Unfold { target: Target::This, open: true, sure: true, title_only: false }));
     assert_eq!(unfold("Collapse it"), Some(Unfold { target: Target::This, open: false, sure: true, title_only: false }));
     assert_eq!(unfold("Expand everything"), Some(Unfold { target: Target::All, open: true, sure: true, title_only: false }));
     assert_eq!(unfold("Fold all the cards"), Some(Unfold { target: Target::All, open: false, sure: true, title_only: false }));
@@ -249,10 +274,15 @@ fn expand_opens_the_thread_with_its_branches_and_a_miss_said_plainly_is_answered
         }
         (acted, out)
     };
-    assert_eq!(said("Expand all the sub cards inside app feedback"), (true, vec!["open T1".into(), "Opened App feedback and ideas and its 2 branches".into()]));
-    assert_eq!(said("Show me the mic feedback"), (true, vec!["open T2".into(), "Opened Mic feedback and its branch".into()]));
+    assert_eq!(said("Expand all the sub cards inside app feedback"), (true, vec!["open T1".into(), "Opened App feedback and ideas and its 2 tangents".into()]));
+    assert_eq!(said("Show me the mic feedback"), (true, vec!["open T2".into(), "Opened Mic feedback and its tangent".into()]));
     assert_eq!(said("Collapse rent"), (true, vec!["fold T4".into(), "Folded Rent".into()]));
-    assert_eq!(said("Expand everything"), (true, vec!["open all".into(), "Every thread is open".into()]));
+    assert_eq!(said("Expand everything"), (true, vec!["open all".into(), "Every topic is open".into()]));
+    assert_eq!(said("Collapse all the topics"), (true, vec!["fold all".into(), "Every topic is folded".into()]));
+    // The kind of place can be said as a topic, and a tangent counts as a branch did.
+    assert_eq!(said("Expand all the tangents inside app feedback"), (true, vec!["open T1".into(), "Opened App feedback and ideas and its 2 tangents".into()]));
+    assert_eq!(said("Collapse the mic feedback topic"), (true, vec!["fold T2".into(), "Folded Mic feedback".into()]));
+    assert_eq!(said("Expand this topic"), (true, vec!["Say which topic: “expand” and its title".into()]));
     assert_eq!(said("Expand everything in the garden"), (true, vec!["I couldn't find “the garden”. Try words from its title.".into()]));
     assert_eq!(said("Expand the business into Europe"), (false, vec![]));
     assert_eq!(said("Show Dana the photos"), (false, vec![]));
