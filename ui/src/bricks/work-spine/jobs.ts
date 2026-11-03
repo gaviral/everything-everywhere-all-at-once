@@ -37,11 +37,25 @@ export function below(node: Node): Job[] {
   return node.kids.flatMap((kid) => [kid.job, ...below(kid)]);
 }
 
+/** The waiting jobs that ask something themselves. A job that waits only because a side job under it does has a summary
+ *  for its words ("Class found · card drafted · waiting on your answer"), not a question, and isn't one more thing that
+ *  needs you: it's the side job that asks. */
+export function questions(jobs: readonly Job[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  const walk = (node: Node) => {
+    if (node.job.status === "waiting" && !below(node).some((under) => under.status === "waiting")) out.add(node.job.id);
+    node.kids.forEach(walk);
+  };
+  forest(jobs).forEach(walk);
+  return out;
+}
+
 export interface Tally { running: number; waiting: number; failed: number; done: number }
 
-export function tally(jobs: readonly Job[]): Tally {
+/** How many jobs are in each state; with `asks` (`questions`), a waiting job that isn't one of them isn't counted. */
+export function tally(jobs: readonly Job[], asks?: ReadonlySet<string>): Tally {
   const out: Tally = { running: 0, waiting: 0, failed: 0, done: 0 };
-  for (const job of jobs) out[job.status]++;
+  for (const job of jobs) if (job.status !== "waiting" || !asks || asks.has(job.id)) out[job.status]++;
   return out;
 }
 

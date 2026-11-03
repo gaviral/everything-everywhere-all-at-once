@@ -3,7 +3,7 @@
 // (a phone, a narrow window) both show this and differ only in what's around it.
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Job } from "../contract";
-import { below, forest, justNow, parts, stateOf, tally, type Node } from "./jobs";
+import { below, forest, justNow, parts, questions, stateOf, tally, type Node } from "./jobs";
 
 /** What the page says when a job's state words aren't enough. */
 const DEMO_WORDS = "Demo mode · simulated";
@@ -15,10 +15,11 @@ const SETTLE_MS = 600;
 const COUNT_CLASS = { running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
 const STATE_CLASS = { running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
 
-/** "2 running · 1 waiting": what isn't over, or went wrong; the quiet words when nothing is. */
+/** "2 running · 1 waiting": what isn't over, or went wrong (waiting counts the questions that need you); the quiet words
+ *  when nothing is. */
 export function Counts({ jobs }: { jobs: readonly Job[] }) {
   if (!jobs.length) return <>No jobs yet</>;
-  const shown = parts(tally(jobs));
+  const shown = parts(tally(jobs, questions(jobs)));
   if (!shown.length) return <>All done</>;
   return <>{shown.map((part, i) => <span key={part.key}>{i > 0 && " · "}<span className={COUNT_CLASS[part.key]}>{part.text}</span></span>)}</>;
 }
@@ -67,6 +68,8 @@ interface Shared {
   fresh: ReadonlyMap<string, "new" | "landed">;
   /** The job "Just now" marks. */
   latest: string | null;
+  /** The waiting jobs that ask (jobs.ts `questions`): only they wear the question's bar. */
+  asks: ReadonlySet<string>;
   /** More than one sender: each bubble says who. */
   many: boolean;
   ai: (name: string) => boolean;
@@ -92,8 +95,9 @@ function Bubble({ node, shared }: { node: Node; shared: Shared }) {
     const hangs = at.bottom - (room.bottom - 14), canRise = at.top - (room.top + 14);
     if (hangs > 0) box.scrollTop += Math.min(hangs, Math.max(canRise, 0));
   }, [open]);
-  const more = parts(tally(folded));
+  const more = parts(tally(folded, shared.asks));
   const inside = !open && shared.latest !== null && folded.some((hidden) => hidden.id === shared.latest);
+  const side = folded.length === 1 ? "job" : "jobs";
   return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-fresh={shared.fresh.get(job.id)}>
     <article className="work-spine-bubble">
       {shared.many && <p className="work-spine-by">{shared.ai(job.by) && <span className="ai-mark" aria-hidden="true">✦ </span>}{job.by}</p>}
@@ -104,12 +108,12 @@ function Bubble({ node, shared }: { node: Node; shared: Shared }) {
         {state.clock && <>{" "}<span className="work-spine-clock">{state.clock}</span></>}
         {shared.latest === job.id && <>{" "}<span className="work-spine-now">Just now</span></>}
       </p>
-      {job.result && <p className={job.status === "waiting" ? "work-spine-question" : "work-spine-result"}>{job.result}</p>}
+      {job.result && <p className={shared.asks.has(job.id) ? "work-spine-question" : "work-spine-result"}>{job.result}</p>}
     </article>
     {kids.length > 0 && <>
       <button type="button" className="work-spine-fold" aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => { shared.release(); shared.toggle(job.id); }}>
-        <span className="work-spine-fold-count">{open ? "−" : "+"}{folded.length} side {folded.length === 1 ? "job" : "jobs"}<span className="sr-only"> of {job.title}</span></span>
-        {more.map((part) => <Fragment key={part.key}>{" "}<span className={COUNT_CLASS[part.key]}>{part.text}</span></Fragment>)}
+        <span className="work-spine-fold-count">{open ? "Hide side " + side : "+" + folded.length + " side " + side}<span className="sr-only"> of {job.title}</span></span>
+        {!open && more.map((part) => <Fragment key={part.key}>{" "}<span className={COUNT_CLASS[part.key]}>{part.text}</span></Fragment>)}
         {inside && <>{" "}<span className="work-spine-now">Just now</span></>}
       </button>
       {open && <ol id={listId} className="work-spine-kids">{kids.map((kid) => <Bubble key={kid.job.id} node={kid} shared={shared} />)}</ol>}
@@ -123,6 +127,7 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
   fresh: ReadonlyMap<string, "new" | "landed">; ai: (name: string) => boolean }) {
   const tree = useMemo(() => forest(jobs), [jobs]);
   const many = useMemo(() => new Set(jobs.map((job) => job.by)).size > 1, [jobs]);
+  const asks = useMemo(() => questions(jobs), [jobs]);
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
   const [away, setAway] = useState(false);
@@ -149,7 +154,7 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
     stuck.current = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     setAway(!stuck.current);
   };
-  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), many, ai, release: () => { stuck.current = false; } };
+  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => { stuck.current = false; } };
   return <div className="work-spine-listbox">
     <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}>
       {empty ? <p className="work-spine-empty">When an AI helper starts work, it shows up here.</p>

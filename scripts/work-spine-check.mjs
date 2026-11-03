@@ -235,7 +235,7 @@ try {
     await check(`document.querySelector(${JSON.stringify(fold$("side:parent"))}).getAttribute("aria-expanded") === "true"`, "Enter opens the fold");
     await check(`${list(`${job$("side:parent")} > .work-spine-kids > [data-job-id]`)}.join() === "side:a,side:b,side:c"`, "its side jobs, oldest first");
     assert.equal(await evaluate(part("side:b", "question")), "Quiet floor or the café?", `${where}: a side job shows its state and words as any job does`);
-    assert.equal((await fold("side:parent")).count, "−3 side jobs", `${where}: open, it says −3 side jobs`);
+    assert.deepEqual({ ...(await fold("side:parent")), now: undefined }, { count: "Hide side jobs", more: [], now: undefined }, `${where}: open, it says Hide side jobs, with nothing else beside it: the side jobs show for themselves`);
     assert.equal(await evaluate(`(() => { const box = document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}); const r = document.querySelector(${JSON.stringify(job$("side:c"))}).getBoundingClientRect(), b = box.getBoundingClientRect(); return r.top >= b.top - 1 && r.bottom <= b.bottom + 1; })()`), true, `${where}: what the fold opened is in view`);
     await shot("fold", "light");
     await key(" ", "Space", 32);
@@ -255,6 +255,22 @@ try {
     core.send(job("sim", "done", { title: "A simulated job", demo: true, at_ms: Date.now() }));
     await check('document.querySelector(".work-spine-demo")?.textContent === "Demo mode · simulated"', "a simulated job brings the label back");
     await sound("states");
+
+    // ── A waiting parent's words are a summary, plain; the question's bar is only on the job that asks. Waiting counts the questions. ──
+    const waitingNow = async () => Number((await evaluate('(document.querySelector(".work-spine-counts .work-spine-waiting, .work-spine-bar .work-spine-waiting")?.textContent ?? "0 waiting")')).split(" ")[0]);
+    const before = await waitingNow();
+    core.send(job("wp:parent", "waiting", { title: "Plan the trip", result: "Route found · hotel held · waiting on your answer", demo: false, at_ms: Date.now() }));
+    core.send(job("wp:kid", "waiting", { title: "Pick a seat", parent: "wp:parent", result: "Window or aisle?", demo: false, at_ms: Date.now() }));
+    await check(`${part("wp:parent", "result")} === "Route found · hotel held · waiting on your answer"`, "a waiting parent's words are its summary");
+    assert.equal(await evaluate(`!document.querySelector(${JSON.stringify(`${job$("wp:parent")} > .work-spine-bubble .work-spine-question`)})`), true, `${where}: and wear no question bar`);
+    assert.equal(await evaluate(part("wp:parent", "word")), "Waiting for you", `${where}: it still waits`);
+    await evaluate(`document.querySelector(${JSON.stringify(fold$("wp:parent"))}).click()`);
+    await check(`${part("wp:kid", "question")} === "Window or aisle?"`, "the side job that asks wears the question's bar");
+    assert.equal(await waitingNow(), before + 1, `${where}: one question waiting, counted once, not twice for the summary above it`);
+    core.send(job("wq:parent", "waiting", { title: "Book the table", result: "Which night: Friday or Saturday?", demo: false, at_ms: Date.now() }));
+    core.send(job("wq:kid", "done", { title: "Check the menu", parent: "wq:parent", result: "Open both nights.", demo: false, at_ms: Date.now() }));
+    await check(`${part("wq:parent", "question")} === "Which night: Friday or Saturday?"`, "a parent that asks itself (its side jobs aren't waiting) wears the bar");
+    assert.equal(await waitingNow(), before + 2, `${where}: and is counted`);
 
     // ── A call (desktop): with an AI beside you, Talk is a pill under the corner buttons and the lane starts below it; with two
     //    people Talk's own rail holds the page's right, so the Work spine is the card in the dock until it's closed. ──
