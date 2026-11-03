@@ -1,11 +1,9 @@
 # E2A2O
 
-<!-- pitch: draft, owner to approve -->
 **Think out loud. Keep your place.** You start a sentence, a better thought cuts in, and the first is gone. E2A2O files each thought you say on its thread of a live map, about 3 to 4 seconds after you stop. Jump to something new mid-sentence, and at the next pause it quotes your half-sentence back. Say “where was I?” and you're there.
 
 ## Try it
 
-<!-- hosted: draft, confirm a real sign-in and the mic on the site before this ships -->
 - **In a browser, nothing to install:** https://e2a2o.aviralgarg.com → Create an account (any email) → Try a sample map, or talk.
 - **Run it yourself:** `./run.sh sample` (no key or mic; [setup](#run-it), source build ≈ 4 min).
 
@@ -27,7 +25,7 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 | let a thread settle | Muse Image 1.0 | draws its picture | 17.4 s each | [pictures](docs/trace.md#pictures) |
 | say “where was I?”, get loud | no model | rules: the jump back, the tune | 0.4 s after you stop | [rules](docs/trace.md#rules) |
 
-n and dates: [Measured](#measured).
+Sample counts and dates are in [Measured](#measured).
 
 <!-- end of the first screen -->
 
@@ -102,9 +100,11 @@ Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](doc
 
 ## Run it
 
+**Hosted sample:** follow the browser path above, sign in, and choose **Try a sample map**. After the sample loads, edit the map's URL to open the demonstrated shell: replace any existing `shell` parameter with `shell=2`; otherwise, append `?shell=2` (or `&shell=2` if there are already query parameters). Keep the other parameters and press Enter. Set this after sign-in and sample loading; do not rely on sign-in preserving query parameters. A fresh hosted sign-in and microphone check remain unverified.
+
 Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
-If you supply an executable regular file named exactly `e2a2o-core-PLATFORM-ARCH` beside `run.sh`, it uses that core without Rust or native build tools. Replace `PLATFORM` and `ARCH` with Node's `process.platform` and `process.arch` (see `node -p 'process.platform + "-" + process.arch'`); for example, `e2a2o-core-darwin-arm64` on an Apple-silicon Mac. An unpacked release could supply the same file; this does not mean a release is available. Node and the UI build are still required.
+If you supply an executable regular file named exactly `e2a2o-core-PLATFORM-ARCH` beside `run.sh`, it uses that core without Rust or native build tools. Replace `PLATFORM` and `ARCH` with Node's `process.platform` and `process.arch` (see `node -p 'process.platform + "-" + process.arch'`); for example, `e2a2o-core-darwin-arm64` on an Apple-silicon Mac. These instructions do not promise a published binary release. Node and the UI build are still required.
 
 Without a matching executable, it builds from source. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs)); on a Mac with no developer tools, run `xcode-select --install` first.
 
@@ -120,6 +120,8 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 The first source build takes about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. When the terminal says `E2A2O core on`, open the URL on that line. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample`.
 
 **No key: a sample map.** A student's week: 8 threads, 30 thoughts, a picture for every thread (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one thread left off. Try its left-off card, `j`/`k` and Enter, `/` to search, the Palace, and the “Did you mean BC Hydro?” question, which is written into the sample. Without a key the header says “No AI key”. `./run.sh sample founder` opens a founder's day.
+
+After the local sample loads, edit its URL for the demonstrated shell: replace any existing `shell` parameter with `shell=2`; otherwise, append `?shell=2` (or `&shell=2` if there are already query parameters). Keep the other parameters and press Enter; the flag takes effect when the page loads. The usual URL is `http://localhost:4321/?shell=2`.
 
 **With a key: watch the story build itself.**
 
@@ -141,7 +143,7 @@ node scripts/demo.mjs scripts/story-talk.jsonl      # in a second terminal: the 
 
 ## Measured
 
-<!-- numbers: draft, retake on the freeze tag and replace the take rows with that take set -->
+These measurements are from the dated runs below; a retake on the final frozen version is pending.
 Every voice below was synthesized, not a person's, and spoke through the real speech path into Chrome. “One take” is the take the GIF comes from: 2026-11-01, the default (private) models.
 
 | What | Result | n, date and source |
@@ -168,7 +170,7 @@ Measure your own: `node scripts/voice.mjs scripts/story-talk.jsonl` prints each 
 
 People who think by talking: a student with a midterm, rent and a birthday in one week; a founder between meetings; anyone whose best idea shows up in the middle of another one. The sample maps are a student's week and a founder's day, and an empty map also offers three short ones: a team meeting, a bug left for a call, a walk through a house.
 
-<!-- trials: draft, add the Nov 2 friend trials here as "N friends, unscripted": n, one result, one limit -->
+Evidence for the planned Nov 2 friend trials is pending; the measurements above describe synthesized speech, not human use.
 
 **Isn't it a notes app?** It's closer to a map that draws itself while you talk: you never stop to file, a turn that changes topic is split, and the map brings you back to the sentence you dropped.
 

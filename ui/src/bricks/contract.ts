@@ -68,7 +68,8 @@ export interface Job {
   /** What it is, one line (80 characters at most). */
   readonly title: string;
   readonly status: JobStatus;
-  /** One line (160 characters at most): what a done job found, why a failed one stopped, the question a waiting one asks. */
+  /** One line (160 characters at most): what a done job found, why a failed one stopped, the question a waiting one asks (a
+   *  waiting job whose side job is the one waiting has a summary here instead: the side job asks). */
   readonly result?: string;
   /** The job this is a side job of; a parent that isn't here (yet) leaves it standing alone. */
   readonly parent?: string;

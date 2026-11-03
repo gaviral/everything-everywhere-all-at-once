@@ -326,13 +326,15 @@ export const CAPTION_LINES = 2;
  *  Markdown on its own. One page when it fits. */
 export function pages(text: string, width: number, measure: (words: string) => number, first = 0, lines = CAPTION_LINES): string[] {
   const space = measure(" ");
-  // How many lines `words` takes, the first `indent` narrower, as the browser breaks them (a word too long for a line
-  // has a line of its own).
+  // How many lines `words` takes, with the name occupying only the first line (even if it leaves no room for words).
+  // A word too long for a full line has a line of its own.
   const linesOf = (words: string[], indent: number) => {
-    let count = 1, x = indent;
+    let count = 1, x = indent, hasWord = false;
     for (const word of words) {
       const w = measure(plain(word));
-      if (x > indent && x + space + w > width) { count++; x = w; } else x += (x > indent ? space : 0) + w;
+      const gap = hasWord ? space : 0;
+      if ((hasWord || x > 0) && x + gap + w > width) { count++; x = w; } else x += gap + w;
+      hasWord = true;
     }
     return count;
   };
