@@ -55,6 +55,7 @@ Browser, one page per window (ui/src)
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
   bricks-core.ts the bricks (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
   BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
+  work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to bricks as `map.jobs` (the Work spine's)
   Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
   talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
     call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back

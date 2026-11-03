@@ -1,9 +1,9 @@
 // The Work spine: what the AI helpers are doing, as jobs on a spine of their own beside your thoughts: running (with a live
 // clock), done (how long, and what it found), failed (why), waiting (the question it holds for you). Beside the Canvas on
 // a laptop in the new shell: a lane at the page's right that the Canvas gives room to, never under it. Anywhere narrower
-// (a phone, a small window) or on today's page: a card in the dock above the composer, one line until it's tapped, then
-// the list opening upward, so the composer is never covered. The jobs are `map.jobs` (work-jobs.ts keeps them); nothing
-// here asks the core for anything.
+// (a phone, a small window), on today's page, or while a call's Talk rail holds the page's right: a card in the dock above
+// the composer, one line until it's tapped, then the list opening as a sheet above the dock, so the composer is never
+// covered. The jobs are `map.jobs` (work-jobs.ts keeps them); nothing here asks the core for anything.
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { BrickProps, Job } from "../contract";
@@ -14,19 +14,28 @@ import "./work-spine.css";
 /** The lane needs a window this wide in the new shell: the Canvas keeps at least 600 px beside it. */
 const LANE_MIN = 1000;
 
-/** Whether the lane has room: the new shell's page, wide enough. */
+/** A rail that stays open at the page's right (the call's Talk): it holds the side the lane would need. The shell's own
+ *  rail (the Catalog, History) comes and goes over the lane, as it does over the Canvas, and is not this. */
+const OTHER_RAIL = '[data-slot="rail"]:not(.shell-rail)';
+
+/** Whether the lane has room: the new shell's page, wide enough, and nothing else holding the page's right side. */
 function useLane(): boolean {
   const shell = document.documentElement.classList.contains("shell2");
   const [wide, setWide] = useState(() => shell && matchMedia(`(min-width: ${LANE_MIN}px)`).matches);
+  const [taken, setTaken] = useState(() => shell && !!document.querySelector(OTHER_RAIL));
   useEffect(() => {
     if (!shell) return;
     const media = matchMedia(`(min-width: ${LANE_MIN}px)`);
     const update = () => setWide(media.matches);
     update();
     media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
+    const look = () => setTaken(!!document.querySelector(OTHER_RAIL));
+    look();
+    const watch = new MutationObserver(look);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => { media.removeEventListener("change", update); watch.disconnect(); };
   }, [shell]);
-  return shell && wide;
+  return shell && wide && !taken;
 }
 
 /** The time, ticking once a second while a job runs (its clock) and every few seconds while "Just now" can still be
@@ -71,30 +80,40 @@ interface Shared {
 }
 
 /** The lane: the page's right side, from the window's top to its foot. It tells the page how wide it is (`--room-right`,
- *  shell.css), so the Canvas ends where it begins, and how far up its list must stop: above whatever stands at the
- *  window's foot where the lane is (the stage in a narrow window, a held card), else just above the status line. It's
- *  drawn at the body, outside the dock's own box, so it stays where the window puts it. */
+ *  shell.css), so the Canvas ends where it begins, and where its words may start and stop: below the corner buttons and
+ *  the call's Talk pill, above whatever stands at the window's foot where the lane is (the stage in a narrow window, a
+ *  held card), else just above the status line. It's drawn at the body, outside the dock's own box, so it stays where
+ *  the window puts it. */
 function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
   const pane = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const element = pane.current;
     if (!element) return;
     const root = document.documentElement.style;
-    const feet = ["stage", "bottom-right"].map((name) => document.querySelector(`[data-slot="${name}"]`)).filter((el): el is Element => !!el);
-    const measure = () => {
-      const box = element.getBoundingClientRect();
-      root.setProperty("--room-right", `${Math.round(box.width)}px`);
-      let foot = 36;
-      for (const el of feet) {
-        const at = el.getBoundingClientRect();
-        if (at.width && at.height && at.right > box.left && at.left < box.right) foot = Math.max(foot, innerHeight - at.top + 12);
+    const watched = new Set<Element>();
+    const watch = new ResizeObserver(() => measure());
+    const set = (style: CSSStyleDeclaration, name: string, px: number) => { if (style.getPropertyValue(name) !== `${px}px`) style.setProperty(name, `${px}px`); };
+    function measure() {
+      const box = element!.getBoundingClientRect();
+      set(root, "--room-right", Math.round(box.width));
+      const over = (el: Element) => { const at = el.getBoundingClientRect(); return at.width > 0 && at.height > 0 && at.right > box.left && at.left < box.right ? at : null; };
+      let top = 68, foot = 36;
+      for (const el of document.querySelectorAll('[data-slot="top-right"], .talk-pill')) { const at = over(el); if (at) top = Math.max(top, at.bottom + 12); }
+      for (const el of document.querySelectorAll('[data-slot="stage"], [data-slot="bottom-right"]')) { const at = over(el); if (at) foot = Math.max(foot, innerHeight - at.top + 12); }
+      set(element!.style, "--work-spine-top", Math.round(top));
+      set(element!.style, "--work-spine-foot", Math.round(foot));
+      // What's measured may come or go (the Talk pill, a held card): look at whatever's there now.
+      for (const el of document.querySelectorAll('[data-slot="top-right"], [data-slot="stage"], [data-slot="bottom-right"], .talk-pill')) {
+        if (!watched.has(el)) { watched.add(el); watch.observe(el); }
       }
-      element.style.setProperty("--work-spine-foot", `${Math.round(foot)}px`);
-    };
+    }
+    watch.observe(element);
     measure();
-    const watch = new ResizeObserver(measure);
-    for (const el of [element, ...feet]) watch.observe(el);
-    return () => { watch.disconnect(); root.removeProperty("--room-right"); };
+    // A corner that appears or goes (a card, the pill) changes what the lane must clear.
+    const look = new MutationObserver(measure);
+    look.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", measure);
+    return () => { watch.disconnect(); look.disconnect(); window.removeEventListener("resize", measure); root.removeProperty("--room-right"); };
   }, []);
   return createPortal(<aside ref={pane} className="work-spine-lane" aria-label="Work spine" data-guide="work-spine">
     <Announce jobs={jobs} />

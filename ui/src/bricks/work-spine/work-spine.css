@@ -3,11 +3,12 @@
    says ✕ and its reason, in ink, with a dashed edge. Type is the shell's scale (13, 15, 18) in weights 400, 500, 600. */
 
 /* ── The lane: the page's right side from the window's top to its foot, as wide as the Canvas gives up (`--room-right`
-   is set to its width, so the Canvas ends where it begins). Its list stops `--work-spine-foot` above the window's foot:
-   clear of the stage in a narrow window, and of a held card. ── */
+   is set to its width, so the Canvas ends where it begins). Its words start `--work-spine-top` from the window's top (clear of the
+   corner buttons and the call's Talk pill) and its list stops `--work-spine-foot` above the window's foot (clear of the stage
+   in a narrow window, and of a held card). ── */
 .work-spine-lane {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px;
-  width: clamp(320px, 26vw, 392px); padding: 68px 16px var(--work-spine-foot, 44px);
+  width: clamp(320px, 26vw, 392px); padding: var(--work-spine-top, 68px) 16px var(--work-spine-foot, 44px);
   border-left: 1px solid var(--line); color: var(--ink); font-size: 13px; line-height: 1.45; animation: work-spine-lane-in .24s ease-out;
   background-color: var(--bg);
   background-image: radial-gradient(color-mix(in srgb, var(--ink) 10%, transparent) 1.2px, transparent 1.5px); background-size: 28px 28px;
@@ -16,7 +17,7 @@
 .work-spine-head-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .work-spine-top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
 .work-spine-title { margin: 0; color: var(--ink); font-size: 18px; font-weight: 600; line-height: 1.25; }
-.work-spine-counts { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.work-spine-counts { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
 .work-spine-running { color: var(--accent); }
 .work-spine-waiting { color: var(--amber); }
 .work-spine-failed { color: var(--ink-2, var(--ink)); }
@@ -44,19 +45,19 @@
 .work-spine-list { padding-left: 24px; }
 
 /* A job: its node on the line, then its bubble. The line runs from each node to the next. */
-.work-spine-job { position: relative; min-width: 0; padding-bottom: 12px; }
+.work-spine-job { position: relative; min-width: 0; padding-bottom: 10px; }
 .work-spine-job::before {
-  content: ""; position: absolute; z-index: 1; top: 16px; left: -24px; box-sizing: border-box; width: 11px; height: 11px; border-radius: 50%;
+  content: ""; position: absolute; z-index: 1; top: 15px; left: -24px; box-sizing: border-box; width: 11px; height: 11px; border-radius: 50%;
   background: var(--muted); box-shadow: 0 0 0 4px var(--bg);
 }
-.work-spine-job::after { content: ""; position: absolute; top: 22px; bottom: -22px; left: -19.5px; width: 2px; background: color-mix(in srgb, var(--muted) 38%, transparent); }
+.work-spine-job::after { content: ""; position: absolute; top: 21px; bottom: -21px; left: -19.5px; width: 2px; background: color-mix(in srgb, var(--muted) 38%, transparent); }
 .work-spine-list > .work-spine-job:last-child::after { display: none; }
 .work-spine-job[data-status="running"]::before { background: var(--accent); animation: work-spine-ring 2.4s ease-in-out infinite; }
 .work-spine-job[data-status="waiting"]::before { background: var(--amber); }
 .work-spine-job[data-status="failed"]::before { border: 2px solid var(--ink-2, var(--ink)); background: var(--bg); }
 
 .work-spine-bubble {
-  padding: 12px 14px 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow-wrap: anywhere;
+  padding: 11px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow-wrap: anywhere;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent);
 }
 .work-spine-bubble:has(.work-spine-now) { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); }
@@ -64,11 +65,11 @@
 .work-spine-job[data-status="failed"] > .work-spine-bubble { border-style: dashed; border-color: var(--line-2, var(--line)); }
 .work-spine-by { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
 .work-spine-job-title { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
-.work-spine-state { display: flex; align-items: baseline; gap: 6px; margin: 4px 0 0; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.work-spine-state { display: flex; align-items: baseline; gap: 6px; margin: 3px 0 0; color: var(--muted); font-size: 15px; font-weight: 500; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .work-spine-state-running { color: var(--accent); }
 .work-spine-state-waiting { color: var(--amber); }
 .work-spine-state-done, .work-spine-state-failed { color: var(--ink-2, var(--ink)); }
-.work-spine-mark { display: inline-grid; flex: none; place-items: center; width: 14px; }
+.work-spine-mark { display: inline-grid; flex: none; place-items: center; width: 16px; }
 .work-spine-pulse { display: block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: work-spine-pulse 2.4s ease-in-out infinite; }
 .work-spine-now { margin-left: auto; padding-left: 8px; color: var(--accent); white-space: nowrap; }
 .work-spine-result { margin: 8px 0 0; color: var(--ink-2, var(--ink)); font-size: 15px; line-height: 1.4; text-wrap: pretty; }
@@ -84,13 +85,13 @@
 .work-spine-fold:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .work-spine-fold > :not(.work-spine-fold-count, .work-spine-now)::before { content: "·"; margin-right: 8px; color: var(--muted); }
 .work-spine-kids { margin: 2px 0 0 6px; padding-left: 18px; border-left: 1.5px solid color-mix(in srgb, var(--muted) 38%, transparent); }
-.work-spine-kids > .work-spine-job { padding-bottom: 8px; }
+.work-spine-kids > .work-spine-job { padding-bottom: 6px; }
 .work-spine-kids > .work-spine-job::after { display: none; }
 .work-spine-kids > .work-spine-job::before { top: 20px; left: -18px; width: 12px; height: 1.5px; border: 0; border-radius: 0; background: color-mix(in srgb, var(--muted) 38%, transparent); box-shadow: none; animation: none; }
 .work-spine-kids > .work-spine-job[data-status="running"]::before { background: var(--accent); }
 .work-spine-kids > .work-spine-job[data-status="waiting"]::before { background: var(--amber); }
 .work-spine-kids .work-spine-bubble { padding: 10px 12px 11px; border-radius: 12px; }
-.work-spine-kids .work-spine-job-title, .work-spine-kids .work-spine-result { font-size: 13px; }
+.work-spine-kids .work-spine-job-title, .work-spine-kids .work-spine-result, .work-spine-kids .work-spine-state { font-size: 13px; }
 
 /* What just came, or just changed: it settles in; a landed result glows once. */
 .work-spine-job[data-fresh="new"] > .work-spine-bubble { animation: work-spine-in .3s ease-out; }

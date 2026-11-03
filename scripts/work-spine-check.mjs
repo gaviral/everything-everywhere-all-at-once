@@ -256,6 +256,24 @@ try {
     await check('document.querySelector(".work-spine-demo")?.textContent === "Demo mode · simulated"', "a simulated job brings the label back");
     await sound("states");
 
+    // ── A call (desktop): with an AI beside you, Talk is a pill under the corner buttons and the lane starts below it; with two
+    //    people Talk's own rail holds the page's right, so the Work spine is the card in the dock until it's closed. ──
+    if (!phone) {
+      const person = (name, ai) => ({ name, ai, joined_ms: Date.now(), here: true, left_ms: null, mic: false, speaking: false, read: null });
+      const call = (...people) => core.send({ type: "call", started_ms: Date.now(), people, level: "hand", level_by: "" });
+      call(person("you", false), person("agent", true));
+      await check('!!document.querySelector(".talk-pill") && !!document.querySelector(".work-spine-lane")', "you and an AI: Talk is a pill, the lane stays");
+      await settle();
+      const pill = await evaluate(rect(".talk-pill")), badge = await evaluate(rect(".work-spine-badge")), label = await evaluate(rect(".work-spine-demo"));
+      assert.ok(badge.top >= pill.bottom && label.top >= pill.bottom, `the lane's words start below the Talk pill: ${JSON.stringify({ pill, badge, label })}`);
+      call(person("you", false), person("Maya", false));
+      await check('!!document.querySelector(".talk-rail") && !document.querySelector(".work-spine-lane") && !!document.querySelector(".work-spine-card")', "two people: Talk's rail holds the page's right, so the Work spine is the card");
+      assert.equal(await evaluate('document.documentElement.style.getPropertyValue("--room-right")'), "", `${where}: and the page's room is given back`);
+      call(person("you", false));
+      await check('!document.querySelector(".talk-rail") && !!document.querySelector(".work-spine-lane")', "the call over, the lane is back");
+      await sound("call");
+    }
+
     // ── A new connection: its snapshot starts the jobs over, and the replay fills them in the core's order. ──
     replay = [job("again:1", "done", { title: "After the reconnect", at_ms: Date.now() - 90_000 }), job("again:2", "running", { title: "Still going", at_ms: Date.now() - 20_000 })];
     core.drop();
