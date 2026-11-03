@@ -231,6 +231,8 @@ Choose Import chats (top right), then a ChatGPT or Claude `conversations.json` e
 
 In a call, the Talk tab (behind `?shell=2` for now) shows who's here and what each is doing: speaking, mic on, here or left. What was said appears as messages; whoever has the floor shows "Speaking now…", never their live words. A read line moves as you read, with marks for where each other person has read. Catch up takes you to what you missed; a late joiner might see "Joined 7:36 · 9 turns before you". Replies on picked words become margin notes. With the Friend here, its interruption level is Glance · Hand · Note · Speak · Stop (Speak by default). The Room menu has the join code, Copy link and Leave; Talk has the code to copy and Leave, on a phone too.
 
+On a phone, `?remote` (add `&remote` to the invite link) opens the Remote instead of the map: the Work spine full height, and at its foot the question an AI helper holds for you, with a box to answer it and a tap for each half of one that reads "A, or B?". Send relays your words to the helper that asked (the core delivers an `answer` to every window of that name). It joins the room as any phone does, by a name; with no room it plays the page's own demo feed under "Demo mode · simulated" (`&speed=4` plays it four times faster) and what it sends goes nowhere. A phone in the room is a second person to the laptop: under its own name it opens the call's Talk tab there.
+
 ### Places on the canvas
 
 Any window, a person's or an AI participant's, can put a thread's card or a thought's point anywhere on the canvas, and every window gets it; no place calls a model. Over the WebSocket:

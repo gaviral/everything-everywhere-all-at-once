@@ -6,6 +6,9 @@ import type { Held } from "../guide-core";
 
 /** One question waiting for an answer. */
 export interface Ask {
+  /** Which asking this is: who, when and what, so an answer stays given across a reconnect (the core replays a job with the
+   *  stamp it had) and the same words asked again later are asked again (a new stamp). */
+  id: string;
   /** Who asks, by the name an answer goes to (`answer`'s `to`). */
   by: string;
   text: string;
@@ -15,26 +18,23 @@ export interface Ask {
   held: number[];
 }
 
-/** Who asked what: a job that waits on a question and a hold that asks it are the same question. */
-export const keyOf = (ask: Pick<Ask, "by" | "text">) => `${ask.by}|${ask.text}`;
-
 /** The questions waiting for you, the oldest first: each waiting job that asks (a job's words are a question only where it
  *  is the one waiting: work-spine/jobs.ts `questions`), then those a helper only held, in the order held. A job still
  *  waiting is a question even if its hold never reached this window (one sent before it joined isn't replayed, the jobs
- *  are), and one in `answered` (keys, `keyOf`) is not shown again. */
+ *  are); a job and a hold that say the same words are one question; one whose `id` is in `answered` is not shown again. */
 export function asksOf(jobs: readonly Job[], held: readonly Held[], answered: ReadonlySet<string> = new Set()): Ask[] {
   const asking = questions(jobs);
   const out = new Map<string, Ask>();
   const waiting = jobs.filter((job) => asking.has(job.id) && job.result).sort((a, b) => a.at_ms - b.at_ms);
-  for (const job of waiting) out.set(keyOf({ by: job.by, text: job.result! }), { by: job.by, text: job.result!, demo: job.demo, held: [] });
+  for (const job of waiting) out.set(`${job.by}|${job.result}`, { id: `${job.by}|${job.at_ms}|${job.result}`, by: job.by, text: job.result!, demo: job.demo, held: [] });
   for (const hold of held) {
     if (hold.kind !== "question") continue;
-    const key = keyOf(hold);
-    const ask = out.get(key) ?? { by: hold.by, text: hold.text, demo: false, held: [] };
+    const key = `${hold.by}|${hold.text}`;
+    const ask = out.get(key) ?? { id: `${key}|n${hold.n}`, by: hold.by, text: hold.text, demo: false, held: [] };
     ask.held.push(hold.n);
     out.set(key, ask);
   }
-  return [...out].filter(([key]) => !answered.has(key)).map(([, ask]) => ask);
+  return [...out.values()].filter((ask) => !answered.has(ask.id));
 }
 
 /** A question that begins like one asks for a yes, a no or a choice among things it names, not for what follows. */

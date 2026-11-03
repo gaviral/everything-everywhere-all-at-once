@@ -2,7 +2,7 @@
 // core) as if an AI helper called "agent" were sending it, so a phone opened on its own still has work to show and a
 // question to answer. Every job in it says it's simulated, and so does the page.
 import raw from "../../../samples/demo-jobs.json?raw";
-import { receiveGuide } from "../guide-core";
+import { receiveGuide, type GuideMsg } from "../guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "../work-jobs";
 
 /** What the feed sends, as the file has it (scripts/demo-jobs.mjs checks the file itself). */
@@ -26,7 +26,8 @@ function deliver({ message }: Step) {
     const job: JobMsg = { ...message, by: HELPER, at_ms };
     receiveJob(job);
   } else {
-    receiveGuide({ type: "guide", kind: "hold", target: null, text: message.text, by: HELPER, at_ms });
+    const hold: GuideMsg = { type: "guide", kind: "hold", target: null, text: message.text, by: HELPER, at_ms };
+    receiveGuide(hold);
   }
 }
 
@@ -37,7 +38,8 @@ export function playFeed(speed = 1, steps: readonly Step[] = STEPS): () => void 
   const timers = steps.map((step) => window.setTimeout(() => deliver(step), (step.at * 1000) / speed));
   return () => {
     for (const timer of timers) window.clearTimeout(timer);
-    receiveGuide({ type: "guide", kind: "hold", target: null, text: "", by: HELPER, at_ms: Date.now() });
+    const withdraw: GuideMsg = { type: "guide", kind: "hold", target: null, text: "", by: HELPER, at_ms: Date.now() };
+    receiveGuide(withdraw);
     resetJobs();
   };
 }

@@ -5,7 +5,8 @@
 // core's jobs (a waiting job is a question even when its hold never reached this window), each answer sent once to the
 // right helper, quick answers for "A, or B?", a refused send when the connection is down, the same page after a reconnect;
 // at 390 and 1440, light and dark. SHOTS=dir saves <scene>-<width>-<scheme>.png.
-// The same path against a real core, with scripts/demo-jobs.mjs printing "Answer from …", is in docs/decisions/remote.md.
+// The same path on a real core (no key needed): run it in a room, `node scripts/demo-jobs.mjs --port P --room CODE`, open
+// `/?remote&room=CODE`, join by a name and answer: the script prints "Answer from <name>: <words>".
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 {
   const server = await uiServer();
   try {
-    const { asksOf, options, keyOf } = await server.ssrLoadModule("/src/remote/ask.ts");
+    const { asksOf, options } = await server.ssrLoadModule("/src/remote/ask.ts");
     const job = (id, status, extra = {}) => ({ id, title: id, status, demo: false, by: "agent", at_ms: 1000, ...extra });
     const hold = (n, by, text, kind = "question") => ({ n, by, text, kind, target: null, state: "waiting", urgent: false });
     // What a question offers: "A, or B?" as two short instructions; nothing it can't stand behind.
@@ -39,7 +40,10 @@ if (shots) mkdirSync(shots, { recursive: true });
     assert.deepEqual(asksOf(jobs, []).map((ask) => ask.text), ["Early question?", "Later question?"], "questions only, oldest first");
     assert.deepEqual(asksOf(jobs, [hold(7, "agent", "Early question?"), hold(8, "agent", "Held only?"), hold(9, "agent", "A line.", "line")]).map((ask) => [ask.text, ask.held]),
       [["Early question?", [7]], ["Later question?", []], ["Held only?", [8]]], "a hold that says what a job says is one question, and one that only a hold says follows; a caption is no question");
-    assert.deepEqual(asksOf(jobs, [], new Set([keyOf({ by: "agent", text: "Early question?" })])).map((ask) => ask.text), ["Later question?"], "an answered question isn't asked again");
+    const early = asksOf(jobs, [])[0];
+    assert.deepEqual(asksOf(jobs, [], new Set([early.id])).map((ask) => ask.text), ["Later question?"], "an answered question isn't asked again, though a reconnect replays it as it was");
+    assert.deepEqual(asksOf(jobs.map((j) => (j.id === "kid" ? { ...j, at_ms: 9999 } : j)), [], new Set([early.id])).map((ask) => ask.text), ["Later question?", "Early question?"], "the same words asked again, with a new stamp, are asked");
+    assert.ok(asksOf([], [hold(8, "agent", "Held only?")])[0].id.endsWith("|n8"), "a hold's asking is its message");
     assert.deepEqual(asksOf([job("a", "waiting", { result: "Same words?", by: "Claude" }), job("b", "waiting", { result: "Same words?", by: "GPT" })], []).map((ask) => ask.by), ["Claude", "GPT"], "two helpers asking the same words are two questions");
     assert.equal(asksOf([job("d", "waiting", { result: "A demo question?", demo: true })], [])[0].demo, true, "a simulated job's question says so");
   } finally { await server.close(); }
@@ -47,8 +51,10 @@ if (shots) mkdirSync(shots, { recursive: true });
 
 const empty = { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: [] };
 const job = (id, status, extra = {}) => ({ type: "job", id, title: id, status, demo: false, by: "agent", at_ms: Date.now(), ...extra });
+/** How fast the page's own feed plays: 30 times to check, 3 for shots (its durations then read like a take's). */
+const SPEED = shots ? 3 : 30;
 const quiet = (e) => !/ResizeObserver loop (limit exceeded|completed with undelivered notifications)/.test(e);
-const timeout = setTimeout(() => { console.error("remote-check: timed out"); process.exit(1); }, 170_000);
+const timeout = setTimeout(() => { console.error("remote-check: timed out"); process.exit(1); }, 240_000);
 const opened = [];
 const closeAll = async () => { for (const closer of opened.splice(0)) await closer().catch(() => {}); };
 
@@ -120,13 +126,13 @@ try {
   // ── With no room: the page's own feed, from the start (30 times faster here), simulated, and answers that stay in the page. ──
   {
     const s = await scene({ width: 390 });
-    await s.go("?remote&speed=30");
+    await s.go(`?remote&speed=${SPEED}`);
     await s.check('!!document.querySelector(".remote")', "the page is up");
     assert.equal(await s.text(".remote-name"), "Remote");
     assert.equal(await s.evaluate("document.title"), "E2A2O Remote");
     assert.equal(await s.evaluate('document.documentElement.classList.contains("shell2")'), true, "it takes the shell's look");
-    await s.check('document.querySelectorAll(".work-spine-list > [data-job-id]").length === 3', "the feed's three top-level jobs");
-    await s.check('!!document.querySelector(".remote-ask")', "its question is held for you");
+    await s.check('document.querySelectorAll(".work-spine-list > [data-job-id]").length === 3', "the feed's three top-level jobs", 40_000);
+    await s.check('!!document.querySelector(".remote-ask")', "its question is held for you", 40_000);
     assert.equal(s.core.connected(), 0, "alone, the page opens no connection: the feed is its own");
     assert.equal(await s.text(".remote-ask-state"), "Waiting for you");
     assert.equal(await s.text(".remote-ask-text"), "Mention the pottery class in Mom's card, or keep it a surprise?");
@@ -137,8 +143,9 @@ try {
     assert.equal(await s.evaluate('document.querySelector(".remote-send").disabled'), true, "Send waits for words");
     assert.equal(await s.evaluate('document.querySelector(".remote-more") === null'), true);
     // The Work spine is the page: the feed's own jobs, the waiting parent's summary plain.
-    await s.check('document.querySelector(\'[data-job-id="demo-study"] .work-spine-word\')?.textContent === "Done"', "the feed's jobs end");
-    assert.equal(await s.evaluate(`!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-question') && !!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result')`), true, "the waiting parent says its summary in plain words");
+    await s.check('document.querySelector(\'[data-job-id="demo-study"] .work-spine-word\')?.textContent.startsWith("Done")', "the feed's jobs end", 40_000);
+    await s.check(`!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-question') && !!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result')`, "the waiting parent says its summary in plain words", 40_000);
+    if (shots) await sleep(2800); // the last landing's glow is over
     await laidOut(s);
     await s.shot("ask", "light");
     await s.scheme("dark");
@@ -167,10 +174,12 @@ try {
   // The one-tap answer, with no room too, and a window as wide as a laptop's: a column down the middle.
   {
     const s = await scene({ width: 1440 });
-    await s.go("?remote&speed=30");
-    await s.check('!!document.querySelector(".remote-ask")', "its question is held for you");
+    await s.go(`?remote&speed=${SPEED}`);
+    await s.check('!!document.querySelector(".remote-ask")', "its question is held for you", 40_000);
+    await s.check(`!!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result')`, "the feed has played to its end", 40_000);
     const main = await s.rect(".remote");
     assert.ok(main.width <= 480 && Math.abs((main.left + main.right) / 2 - 720) < 1, `a laptop's window gets a column, centered: ${JSON.stringify(main)}`);
+    if (shots) await sleep(2800);
     await laidOut(s);
     await s.shot("ask", "light");
     await s.scheme("dark");
@@ -179,6 +188,9 @@ try {
     await s.click(".remote-quick-button:last-child");
     await s.check('!!document.querySelector(".remote-sent")', "one tap sent it");
     assert.equal(await s.text(".remote-sent"), "Sent to agent: “Keep it a surprise” (simulated)");
+    await s.shot("sent", "light");
+    await s.scheme("dark");
+    await s.shot("sent", "dark");
     await s.sound("demo wide");
     await closeAll();
   }
@@ -199,6 +211,10 @@ try {
     await s.check('!!document.querySelector(".join input")', "a phone in a room is asked its name");
     assert.equal(await s.evaluate('document.querySelectorAll(".join input").length'), 1, "only its name: the link carried the code");
     assert.equal(await s.evaluate('!document.querySelector(".remote")'), true);
+    await s.shot("join", "light");
+    await s.scheme("dark");
+    await s.shot("join", "dark");
+    await s.scheme("light");
     await s.type(".join input", "User");
     await s.click(".join-card > button");
     await s.check('!!document.querySelector(".remote")', "joined: the Remote");
@@ -225,7 +241,8 @@ try {
     assert.equal(await s.evaluate('!!document.querySelector(\'[data-job-id="trip"]\')'), true, "the work stays in the Work spine until the helper moves on");
 
     // Another helper asks, "A, or B?": one tap, to that helper.
-    s.core.send(job("color", "waiting", { by: "Claude", title: "Pick a color", result: "Blue, or green?" }));
+    const color = job("color", "waiting", { by: "Claude", title: "Pick a color", result: "Blue, or green?" });
+    s.core.send(color);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Blue, or green?"', "the next helper's question");
     assert.equal(await s.text(".remote-ask-by"), "Claude", "a human-looking name carries no AI mark unless the call says so");
     assert.deepEqual(await s.evaluate('[...document.querySelectorAll(".remote-quick-button")].map((b) => b.textContent)'), ["Blue", "Green"]);
@@ -261,7 +278,8 @@ try {
     assert.equal(await s.text(".remote-problem"), "Not sent: the connection is down. Try again in a moment.");
     assert.equal(await s.evaluate('document.querySelector(".remote-field").value'), "report.txt", "the words are kept");
     assert.equal(answers().length, 3, "nothing went");
-    replay = [...replay, job("color", "waiting", { by: "Claude", title: "Pick a color", result: "Blue, or green?", at_ms: Date.now() - 10_000 }), job("name", "waiting", { title: "Name", result: "Name the file?", at_ms: Date.now() - 5_000 })];
+    // The core replays each job as it was stamped.
+    replay = [...replay, color, job("name", "waiting", { title: "Name", result: "Name the file?", at_ms: Date.now() - 5_000 })];
     away = false;
     await s.check('document.querySelector(".remote-status")?.textContent === "In the room as User"', "back in the room", 30_000);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Name the file?"', "the replay brings back what still waits, and not what was answered", 12_000);

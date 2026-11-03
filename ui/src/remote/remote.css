@@ -30,6 +30,7 @@
 }
 .remote-quiet { margin: 0; padding: 6px 0; color: var(--muted); font-size: 15px; }
 .remote-sent { margin: 0; color: var(--ink-2, var(--ink)); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.remote-sent::before { content: "✓"; margin-right: 6px; }
 .remote-ask { display: flex; flex-direction: column; gap: 10px; }
 .remote-ask-head { display: flex; justify-content: space-between; gap: 12px; margin: 0; font-size: 13px; }
 .remote-ask-state { color: var(--amber); font-weight: 600; }
