@@ -1,9 +1,11 @@
 # E2A2O
 
+<!-- pitch: draft, owner to approve -->
 **Think out loud. Keep your place.** You start a sentence, a better thought cuts in, and the first is gone. E2A2O files each thought you say on its thread of a live map, about 3 to 4 seconds after you stop. Jump to something new mid-sentence, and at the next pause it quotes your half-sentence back. Say “where was I?” and you're there.
 
 ## Try it
 
+<!-- hosted: draft, confirm a real sign-in and the mic on the site before this ships -->
 - **In a browser, nothing to install:** https://e2a2o.aviralgarg.com → Create an account (any email) → Try a sample map, or talk.
 - **Run it yourself:** `./run.sh sample` (no key or mic; [setup](#run-it), source build ≈ 4 min).
 
@@ -143,7 +145,7 @@ node scripts/demo.mjs scripts/story-talk.jsonl      # in a second terminal: the 
 
 ## Measured
 
-These measurements are from the dated runs below; a retake on the final frozen version is pending.
+<!-- numbers: draft, retake on the freeze tag and replace the take rows with that take set -->
 Every voice below was synthesized, not a person's, and spoke through the real speech path into Chrome. “One take” is the take the GIF comes from: 2026-11-01, the default (private) models.
 
 | What | Result | n, date and source |
@@ -170,7 +172,7 @@ Measure your own: `node scripts/voice.mjs scripts/story-talk.jsonl` prints each 
 
 People who think by talking: a student with a midterm, rent and a birthday in one week; a founder between meetings; anyone whose best idea shows up in the middle of another one. The sample maps are a student's week and a founder's day, and an empty map also offers three short ones: a team meeting, a bug left for a call, a walk through a house.
 
-Evidence for the planned Nov 2 friend trials is pending; the measurements above describe synthesized speech, not human use.
+<!-- trials: draft, add the Nov 2 friend trials here as "N friends, unscripted": n, one result, one limit -->
 
 **Isn't it a notes app?** It's closer to a map that draws itself while you talk: you never stop to file, a turn that changes topic is split, and the map brings you back to the sentence you dropped.
 
