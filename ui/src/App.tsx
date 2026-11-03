@@ -383,9 +383,8 @@ export default function App() {
 
   // Keep the end of the map reachable even when pending thoughts or the card grow, and never shorten the page under
   // you when they go.
-  // In the new shell the stage floats above the status line: what floats over the stage (Tiny transcript's words, until
-  // they move into the status line) keeps clear of all of it.
-  useHeightVar(dockRef, "--dock-height", true, SHELL2 ? 36 : 0);
+  // Measure the whole bottom bar, including its input row and any cards above it.
+  useHeightVar(dockRef, "--dock-height", true);
   useShellCountdownPlacement(SHELL2);
   const dockRoom = useDockRoom(dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
@@ -1461,8 +1460,9 @@ export default function App() {
       </div>}
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-      {/* The stage, bottom up: the composer, captions (the guide's), one notice, a card. */}
-      <section ref={dockRef} className="shell-stage" data-slot="stage" aria-label="Your thoughts">
+      <footer ref={dockRef} className="dock shell-dock">
+      {/* Cards, notices and captions stay above the bottom bar's input row. */}
+      <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
         <div className="shell-cards">
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
@@ -1513,6 +1513,14 @@ export default function App() {
           <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
         </div>}
         <div className="shell-captions" id="shell-caption" />
+      </section>
+
+      <StatusLine openHistory={() => toggleTab("history")} state={{
+        mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
+        first: !world.thoughts.length, waiting: pending.length,
+        stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
+        queued: core.queuedCount, connected: core.connected,
+      }}>
         <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
           {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} shortcut={modAria("D")} />}
           {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
@@ -1521,17 +1529,12 @@ export default function App() {
             placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
           {listeningOn && <Keycap>{mod("D")}</Keycap>}
         </form>
-      </section>
+      </StatusLine>
+      </footer>
 
       <div className="shell-corner shell-br" data-slot="bottom-right">
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
-      <StatusLine openHistory={() => toggleTab("history")} state={{
-        mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
-        first: !world.thoughts.length, waiting: pending.length,
-        stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
-        queued: core.queuedCount, connected: core.connected,
-      }} />
 
       {railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}

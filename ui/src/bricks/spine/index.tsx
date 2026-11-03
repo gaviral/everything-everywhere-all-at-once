@@ -170,7 +170,9 @@ const COVERS = '[data-slot="top-left"], [data-slot="top-right"], [data-slot="bot
 function chromeOf(frameBox: DOMRect | undefined) {
   const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
   const status = document.querySelector('[data-slot="status"]')?.getBoundingClientRect();
-  return { stage: stage && stage.height ? stage : null, status: status?.height ?? 0, frame: frameBox };
+  // An empty stage still belongs to the shell: its input now lives in the bottom bar. Keep the camera and shelf in
+  // their separate corners, rather than crowding both into the classic page's right corner and taking chips' slots.
+  return { stage: stage && stage.width ? stage : null, status: status?.height ?? 0, frame: frameBox };
 }
 
 function Canvas({ map, actions, on, destination }: BrickProps) {
@@ -285,7 +287,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const chrome = chromeOf(frameBox);
     // The rail (`data-slot="rail"`, the panel at the right) once the page has one: the camera keeps clear of it.
     const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
-    const y1 = chrome.stage ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
+    const y1 = chrome.stage?.height ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
     return { x0: 0, y0: 0, x1: Math.max(160, x1), y1: Math.max(120, y1) };
   }, [dock]);
