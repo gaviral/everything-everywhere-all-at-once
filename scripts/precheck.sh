@@ -4,7 +4,6 @@
 #   ./run.sh demo & sh scripts/precheck.sh   # with the app running, also probes it live on :4321 (or $PORT)
 #   ./run.sh room & sh scripts/precheck.sh   # the same for a room, from this laptop's network address
 #   PUBLIC_URL=https://….trycloudflare.com PORT=4410 sh scripts/precheck.sh   # a trial's core (scripts/trial.sh prints it)
-# PRECHECK_PAGES=0 skips browser phases; their source/rule checks still run.
 # FAIL lines stop a release (non-zero exit); WARN lines are known open decisions.
 cd "$(dirname "$0")/.." || exit 1
 failed=0
@@ -14,36 +13,51 @@ warn() { echo "WARN  $1"; }
 check() { if eval "$2"; then pass "$1"; else fail "$1"; fi; }
 tracked() { git ls-files -z | xargs -0 grep -IlE "$1" -- 2>/dev/null | grep -v '^scripts/precheck.sh$'; }
 
+# Browser checks import headless.mjs (some dynamically); Node-only checks, including the README, stay in the gate.
+# PRECHECK_PAGES=0 defers those browser checks; =only runs just them against an already-built UI.
+# composer-check needs a live core and real model calls; links, dates and names have their own checks below.
+ui_check() {
+  case "$1" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) return 1 ;; esac
+  case "${PRECHECK_PAGES:-all}" in
+    0) ! grep -qE "['\"][^'\"]*headless\\.mjs['\"]" "$1" ;;
+    only) grep -qE "['\"][^'\"]*headless\\.mjs['\"]" "$1" ;;
+    *) return 0 ;;
+  esac
+}
+ui_checks() {
+  if [ -d ui/node_modules ]; then
+    check_logs=${PRECHECK_LOGS:-$(mktemp -d)}
+    [ -n "$check_logs" ] && mkdir -p "$check_logs" || { fail "UI checks could not create log directory"; exit "$failed"; }
+    for c in scripts/*-check.mjs; do
+      ui_check "$c" || continue
+      printf '%s\0' "$c"
+    done | xargs -0 -n 1 -P "${PRECHECK_JOBS:-4}" sh -c '
+      check_logs=$1
+      c=$2
+      name=$(basename "$c" .mjs)
+      node "$c" > "$check_logs/$name.log" 2>&1
+      printf "%s\n" "$?" > "$check_logs/$name.status"
+    ' sh "$check_logs"
+    for c in scripts/*-check.mjs; do
+      ui_check "$c" || continue
+      # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
+      name=$(basename "$c" .mjs)
+      rc=$(cat "$check_logs/$name.status" 2>/dev/null)
+      if [ "$rc" = 3 ]; then warn "$name: $(tail -n 1 "$check_logs/$name.log")"; continue; fi
+      if [ "$rc" = 0 ]; then pass "$name passes"
+      else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
+    done
+  else warn "UI checks skipped: run ./run.sh once to install"; fi
+}
+if [ "${PRECHECK_PAGES:-}" = only ]; then ui_checks; exit "$failed"; fi
+
 check ".gitignore covers .env and data/" "grep -qx '.env' .gitignore && grep -qx 'data/' .gitignore"
 check "no .env, journal or data files tracked" "! git ls-files | grep -qE '(^|/)\.env$|journal|^data/'"
 check "no key-like strings tracked" "[ -z \"\$(tracked '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}')\" ]"
 check "no key-like strings anywhere in git history" "! git log --all -p 2>/dev/null | grep -qE '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}'"
 check "run.sh parses" "sh -n run.sh"
 if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"; else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
-# Every demo beat has an offline check (scripts/*-check.mjs); a broken beat fails here, so it can't merge.
-# composer-check needs a live core and real model calls, so it isn't one of them.
-if [ -d ui/node_modules ]; then
-  check_logs=$(mktemp -d) || { fail "UI checks could not create log directory"; exit "$failed"; }
-  for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) continue ;; esac
-    printf '%s\0' "$c"
-  done | xargs -0 -n 1 -P "${PRECHECK_JOBS:-4}" sh -c '
-    check_logs=$1
-    c=$2
-    name=$(basename "$c" .mjs)
-    node "$c" > "$check_logs/$name.log" 2>&1
-    printf "%s\n" "$?" > "$check_logs/$name.status"
-  ' sh "$check_logs"
-  for c in scripts/*-check.mjs; do
-    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) continue ;; esac
-    # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
-    name=$(basename "$c" .mjs)
-    rc=$(cat "$check_logs/$name.status" 2>/dev/null)
-    if [ "$rc" = 3 ]; then warn "$name: $(tail -n 1 "$check_logs/$name.log")"; continue; fi
-    if [ "$rc" = 0 ]; then pass "$name passes"
-    else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
-  done
-else warn "UI checks skipped: run ./run.sh once to install"; fi
+ui_checks
 # links-check and dates-check need only node, so a fresh clone runs them too.
 check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"
 check "dates-check passes" "node scripts/dates-check.mjs > /dev/null 2>&1"
