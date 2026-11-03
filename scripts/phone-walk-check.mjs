@@ -116,11 +116,25 @@ try {
     await check('!document.querySelector(".pullback")', "Later hides the card");
     const kept = await evaluate(`Object.entries(localStorage).find(([k]) => k.startsWith('e2a2o.unfinished:'))`);
     assert.ok(JSON.parse(kept[1]).laterAt[`T2:${now}`]);
+    await evaluate(`(() => { const key = ${JSON.stringify(kept[0])}, saved = JSON.parse(localStorage.getItem(key));
+      delete saved.words; localStorage.setItem(key, JSON.stringify(saved)); })()`); // Upgrade a choice saved by the previous UI.
     await reload();
     await sleep(3000); // The real pause that would offer a card after reload.
     assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, "Later survives reload");
     assert.equal(await evaluate(`localStorage.getItem(${JSON.stringify(kept[0])})`), kept[1], "reload does not restart the postponement");
     await shot("later-reloaded");
+    // Removing the map's earliest words must keep the same choice and its original deadline, live and after reload.
+    world = { ...base, thoughts: base.thoughts.filter(t => t.id !== "a1") };
+    core.send({ type: "change", change: { type: "thought_skipped", thought_id: "a1" } });
+    await check('!document.querySelector(\'[data-thought="a1"]\')', "earliest thought deleted from the live map");
+    await sleep(3000);
+    assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, "deleting earliest words keeps Later in the live page");
+    await reload();
+    await sleep(3000);
+    assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, "Later survives deletion and reload");
+    assert.equal(await evaluate(`localStorage.getItem(${JSON.stringify(kept[0])})`), kept[1], "deletion does not restart the deadline or create another saved map");
+    assert.equal(await evaluate(`Object.keys(localStorage).filter(k => k.startsWith('e2a2o.unfinished:')).length`), 1);
+    await shot("later-after-deletion");
     const ownThread = base.threads[1];
     for (const [label, next] of [
       ["another thread", { ...base, threads: base.threads.map(t => t.id === "T2" ? { ...t, status: "open" } : t.id === "T3" ? { ...t, status: "dropped", dropped_by: "you" } : t) }],

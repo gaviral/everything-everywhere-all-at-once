@@ -1,7 +1,7 @@
 import type { Thread, Thought } from "./core";
 import { readMs } from "./attention-core";
 import { DECIDE_MS, REACH_MS } from "./notice-rules";
-import { useMemo, useState, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type SetStateAction } from "react";
 
 // The unfinished card in the dock (App.tsx): at a natural pause, the thread you left last, your last words there, and
 // Finish it, Later or Forget it. Checked by scripts/unfinished-check.mjs.
@@ -15,10 +15,22 @@ export const LATER_MS = 5 * 60 * 1000;
 export interface Hidden { dismissed: string[]; laterAt: Record<string, number> }
 export const NONE_HIDDEN: Hidden = { dismissed: [], laterAt: {} };
 
-/** Like the shelf, this browser's choices belong to this map (its first words), and this speaker. */
+/** Recognize a saved map by any surviving thought, so deleting its first words cannot undo Later. */
 export function useHidden(thoughts: Thought[], me: string): [Hidden, (change: SetStateAction<Hidden>) => void] {
-  const first = thoughts.reduce<Thought | null>((first, t) => !first || t.at_ms < first.at_ms ? t : first, null);
-  const key = first ? `e2a2o.unfinished:${location.host}${location.pathname}:${first.id}:${first.at_ms}:${me}` : null;
+  const words = useMemo(() => thoughts.map((t) => `${t.id}:${t.at_ms}`), [thoughts]);
+  const key = useMemo(() => {
+    const prefix = `e2a2o.unfinished:${location.host}${location.pathname}:`;
+    const first = thoughts.reduce<Thought | null>((first, t) => !first || t.at_ms < first.at_ms ? t : first, null);
+    const initial = first ? `${prefix}${first.id}:${first.at_ms}:${me}` : null;
+    try {
+      for (const stored of Object.keys(localStorage)) {
+        if (!stored.startsWith(prefix) || !stored.endsWith(`:${me}`)) continue;
+        const saved = JSON.parse(localStorage.getItem(stored) ?? "null");
+        if (Array.isArray(saved?.words) && saved.words.some((word: unknown) => typeof word === "string" && words.includes(word))) return stored;
+      }
+    } catch { /* Storage unavailable: keep choices for this visit. */ }
+    return initial;
+  }, [thoughts, words, me]);
   const read = (): Hidden => {
     try {
       const saved = JSON.parse(key ? localStorage.getItem(key) ?? "null" : "null");
@@ -30,10 +42,18 @@ export function useHidden(thoughts: Thought[], me: string): [Hidden, (change: Se
   };
   const [held, setHeld] = useState(() => ({ key, hidden: read() }));
   const hidden = useMemo(() => held.key === key ? held.hidden : read(), [held, key]);
+  // Add identities to older saved choices, and remember new words before older ones can be deleted.
+  useEffect(() => {
+    if (!key) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? "null");
+      if (saved) localStorage.setItem(key, JSON.stringify({ ...saved, words: [...new Set([...(saved.words ?? []), ...words])] }));
+    } catch { /* Storage unavailable: keep choices for this visit. */ }
+  }, [key, words]);
   return [hidden, (change) => {
     setHeld((was) => {
       const next = typeof change === "function" ? change(was.key === key ? was.hidden : hidden) : change;
-      try { if (key) localStorage.setItem(key, JSON.stringify(next)); } catch { /* Keep the choice for this visit. */ }
+      try { if (key) localStorage.setItem(key, JSON.stringify({ ...next, words })); } catch { /* Keep the choice for this visit. */ }
       return { key, hidden: next };
     });
   }];
