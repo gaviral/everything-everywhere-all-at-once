@@ -1,5 +1,6 @@
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
+import { useCardNotice } from "./notice-queue";
 import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
@@ -226,6 +227,7 @@ export default function App() {
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [railTab, setRailTab] = useState<RailTab | null>(null);
   const [noticeFocused, setNoticeFocused] = useState(false);
   // The pointer on the notice: on its way to Undo or ×, so the notice waits for it.
   const [noticeHeld, setNoticeHeld] = useState(false);
@@ -441,12 +443,12 @@ export default function App() {
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
-    if (!core.notice || noticeFocused || noticeHeld || core.notice === LOOKING || staysUp(core.notice)) return;
+    if ((SHELL2 && railTab === "history") || !core.notice || noticeFocused || noticeHeld || core.notice === LOOKING || staysUp(core.notice)) return;
     // With Undo, long enough to act on it, not just read it (notice-rules.ts `undoUpFor`).
     const shown = friendlyNotice || core.notice;
     const timer = window.setTimeout(core.clearNotice, core.undoId ? undoUpFor(shown) : upFor(shown));
     return () => window.clearTimeout(timer);
-  }, [core.notice, core.answerRevision, core.clearNotice, core.undoId, noticeFocused, noticeHeld]);
+  }, [core.notice, core.noticeKey, core.clearNotice, core.undoId, noticeFocused, noticeHeld, railTab]);
 
   // The running mic's stop, as effects of one render see it: the first to stop the mic clears it at once, so the
   // next effect in the same render finds the mic off (`stopMic` there is still the render's value).
@@ -835,26 +837,30 @@ export default function App() {
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
     const count = world.thoughts.filter((thought) => thought.placed).length;
-    if (startedEmpty.current && previousPlaced.current === 0 && count === 1 && world.threads.length === 1) setFirstHint(true);
-    if (count > 1 || world.threads.length > 1 || core.partial) setFirstHint(false);
+    if (!SHELL2 && startedEmpty.current && previousPlaced.current === 0 && count === 1 && world.threads.length === 1) setFirstHint(true);
     previousPlaced.current = count;
   }, [world.thoughts, world.threads.length, core.partial]);
-  useEffect(() => {
-    if (!firstHint) return;
-    const timer = window.setTimeout(() => setFirstHint(false), 10000);
-    return () => window.clearTimeout(timer);
-  }, [firstHint]);
+  const firstNotice = useCardNotice(core.noticeQueue, "first-thought", !SHELL2 && firstHint ? "first" : null,
+    "Got it. Keep going, or start a new topic.", () => setFirstHint(false));
 
   const [mapAnnouncement, setMapAnnouncement] = useState("");
   const { mapChange, hideMapChange } = core;
+  const [mapHeld, setMapHeld] = useState(false);
+  const [mapFocused, setMapFocused] = useState(false);
+  useEffect(() => { setMapHeld(false); setMapFocused(false); }, [mapChange?.id]);
+  const mapHold = {
+    onMouseEnter: () => setMapHeld(true), onMouseLeave: () => setMapHeld(false),
+    onFocus: () => setMapFocused(true),
+    onBlur: (e: React.FocusEvent<HTMLDivElement>) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setMapFocused(false); },
+  };
   useEffect(() => {
     if (!mapChange) return;
     setMapAnnouncement("");
     const announcement = window.setTimeout(() => setMapAnnouncement(mapChange.text), 700);
-    // Hidden in the core's state, so a later rename doesn't join a note no longer up (tidy-core.ts `joinNotes`).
-    const timer = window.setTimeout(hideMapChange, 10000);
+    // Reading time starts only when this queued update reaches the screen.
+    const timer = mapHeld || mapFocused || (SHELL2 && railTab === "history") ? undefined : window.setTimeout(hideMapChange, upFor(`${mapChange.text} ${mapChange.undo || mapChange.restore ? "Undo" : ""}`));
     return () => { window.clearTimeout(announcement); window.clearTimeout(timer); };
-  }, [mapChange, hideMapChange]);
+  }, [mapChange, hideMapChange, mapHeld, mapFocused, railTab]);
 
   // Pull-back: at a natural pause, offer the most recently dropped thread (unfinished.ts).
   const [lastActivity, setLastActivity] = useState(() => Date.now());
@@ -873,11 +879,14 @@ export default function App() {
   }, [away.items, world.threads, me]);
   const dropped = leftOff(world.threads, me, hidden, now);
   // Once offered, keep this card through new speech (even on its thread) until it has had time to be read.
-  const [offered, setOffered] = useState<Thread | null>(null);
-  const pullBack = offered && leftOff([offered], me, hidden, now) ? offered : null;
+  const pullBack = core.unfinishedNotice && leftOff([core.unfinishedNotice], me, hidden, now) ? core.unfinishedNotice : null;
   useEffect(() => {
-    if (!pullBack && !hasAway) setOffered(cardAt(dropped, now, lastActivity));
-  }, [pullBack, dropped, now, lastActivity, hasAway]);
+    const next = cardAt(dropped, now, lastActivity);
+    if (next && !hasAway) core.noticeQueue.push("unfinished", dropKey(next), next);
+  }, [dropped, now, lastActivity, hasAway, core.noticeQueue]);
+  useEffect(() => {
+    if (core.unfinishedNotice && !pullBack) core.noticeQueue.drop("unfinished", dropKey(core.unfinishedNotice));
+  }, [core.unfinishedNotice, pullBack, core.noticeQueue]);
   const [pullBackHovered, setPullBackHovered] = useState(false);
   const [pullBackFocused, setPullBackFocused] = useState(false);
   const pullBackKey = pullBack ? dropKey(pullBack) : null;
@@ -890,8 +899,8 @@ export default function App() {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPullBackFocused(false);
     },
   };
-  const later = (thread: Thread) => setHidden((was) => putOff(was, thread, Date.now()));
-  const forget = (thread: Thread) => setHidden((was) => dismiss(was, [dropKey(thread)]));
+  const later = (thread: Thread) => { core.noticeQueue.drop("unfinished", dropKey(thread), false); setHidden((was) => putOff(was, thread, Date.now())); };
+  const forget = (thread: Thread) => { core.noticeQueue.drop("unfinished", dropKey(thread)); setHidden((was) => dismiss(was, [dropKey(thread)])); };
   // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
   // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
   const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).map((t) => t.id), [world.thoughts, me]);
@@ -958,7 +967,7 @@ export default function App() {
   // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
   const lastWords = pullBack ? lastWordsOn(world.thoughts.filter((t) => (t.at_ms > now ? 0 : t.at_ms) <= pullBack.touched_ms), pullBack, me, now) : "";
   useEffect(() => {
-    if (!pullBack || hasAway || pullBackHovered || pullBackFocused) return;
+    if (!pullBack || pullBackHovered || pullBackFocused) return;
     const timer = window.setTimeout(() => forget(pullBack), unfinishedLingerMs(pullBack.title, lastWords));
     return () => window.clearTimeout(timer);
   }, [pullBack, lastWords, hasAway, pullBackHovered, pullBackFocused]);
@@ -1059,7 +1068,6 @@ export default function App() {
   });
   // The shell's own state (shell/): the rail's tab, the built-ins' switches, History, the mode.
   const listeningOn = !SHELL2 || builtIns.has("listening");
-  const [railTab, setRailTab] = useState<RailTab | null>(null);
   const catalogOpen = useCatalogOpen();
   const catalogAt = useCatalogAt();
   const heldQuestions = useHeld();
@@ -1182,6 +1190,7 @@ export default function App() {
           <div>“Add [words] to [topic]” · files them there at once; “…to the packing list” starts that list</div>
           <div>“Move that to [topic]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title · “Delete this” · the point you're on, else your last; or a point's Delete</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
+          <div>“Stop showing this” · hide this kind of notice. “Show those again” · bring them back.</div>
           <div>“Expand [topic]” · opens it and every tangent · “Collapse this” · “Expand everything”</div>
           <div>“Pictures” or “Cards” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Stay here” · everyone's new thoughts stay whole in this topic · “Let go” or × on Staying here · release it</div>
@@ -1231,7 +1240,7 @@ export default function App() {
             className="notice"
             data-guide="notice"
             onFocus={() => setNoticeFocused(true)}
-            onBlur={() => setNoticeFocused(false)}
+            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setNoticeFocused(false); }}
             onMouseEnter={() => setNoticeHeld(true)}
             onMouseLeave={() => setNoticeHeld(false)}
             initial={{ opacity: 0, y: -6 }}
@@ -1252,7 +1261,7 @@ export default function App() {
       </>}
 
       {core.mapChange && (
-        <div className="map-change">
+        <div className="map-change" {...mapHold}>
           {core.mapChange.ai && <span aria-hidden="true" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦</span>} {core.mapChange.text}
           {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button onClick={core.hideMapChange} aria-label="Dismiss map update">×</button>
@@ -1317,7 +1326,7 @@ export default function App() {
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "Since you left. Your thoughts are ready to explore above the input box." : ""}</div>
           {!talk && <>
           <NotesContext.Provider value={notes}>
-          <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+          <Away queue={core.noticeQueue} items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
@@ -1325,7 +1334,7 @@ export default function App() {
           }} />
           </NotesContext.Provider>
           <AnimatePresence>
-            {!hasAway && pullBack && (
+            {pullBack && (
               <motion.div
                 key={dropKey(pullBack)}
                 className="pullback" role="status" data-dock-card data-guide="unfinished"
@@ -1359,10 +1368,10 @@ export default function App() {
           <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
-          {firstHint && !core.partial && <div className="first-hint">Got it. Keep going, or start a new topic.</div>}
+          {firstNotice.visible && <div {...firstNotice.hold} className="first-hint">Got it. Keep going, or start a new topic.</div>}
           <AttentionNote onGo={attention.go} />
           <BrickSlot kind="card" host={brickHost} />
-          {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
+          {install && <InstallHint queue={core.noticeQueue} hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           </>}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, wordsElsewhere, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
@@ -1516,14 +1525,14 @@ export default function App() {
       <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
         <div className="shell-cards" hidden={talk}>
           <NotesContext.Provider value={notes}>
-          <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+          <Away queue={core.noticeQueue} items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
             core.focus(item.threadId);
             reveal(item.threadId, item.thoughtId ?? null, item.itemId);
             away.dismiss();
           }} />
           </NotesContext.Provider>
-          {!hasAway && pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))} {...pullBackHold}>
+          {pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))} {...pullBackHold}>
             <ThreadPicture thread={pullBack} />
             <div className="pullback-text">
               <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
@@ -1540,7 +1549,7 @@ export default function App() {
           <DockTune core={core} />
           <AttentionNote onGo={attention.go} />
           <BrickSlot kind="card" host={brickHost} />
-          {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
+          {install && <InstallHint queue={core.noticeQueue} hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
           <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
           <PullsCard card={core.pullsCard} onGone={core.pullsCardGone} />
           <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
@@ -1549,7 +1558,7 @@ export default function App() {
         <AnimatePresence>
           {core.notice && (talk || railTab !== "history") && !aboutKey(core.notice) && (
             <motion.div ref={noticeRef} className="notice" data-guide="notice" role="status"
-              onFocus={() => setNoticeFocused(true)} onBlur={() => setNoticeFocused(false)}
+              onFocus={() => setNoticeFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setNoticeFocused(false); }}
               onMouseEnter={() => setNoticeHeld(true)} onMouseLeave={() => setNoticeHeld(false)}
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <span>{friendlyNotice}</span>
@@ -1558,7 +1567,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        {core.mapChange && !core.notice && (talk || railTab !== "history") && <div className="map-change" role="status">
+        {core.mapChange && !core.notice && (talk || railTab !== "history") && <div className="map-change" role="status" {...mapHold}>
           <span>{core.mapChange.ai && <span aria-hidden="true" className="ai-mark" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦ </span>}{core.mapChange.text}</span>
           {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} aria-keyshortcuts={modAria("Z")}
             onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}

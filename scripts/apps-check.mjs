@@ -32,6 +32,7 @@ const notes = () => started.filter((note) => pitch(note) > 100);
 const server = await uiServer();
 try {
   const { DockBuild, DockTune, Apps } = await server.ssrLoadModule("/src/Apps.tsx");
+  const { noticeQueue } = await server.ssrLoadModule("/src/notice-queue.ts");
   const { useApps, panelBuildFor } = await server.ssrLoadModule("/src/apps-core.ts");
   const { unlockTune } = await server.ssrLoadModule("/src/apps-audio.ts");
   const render = (component, props) => ReactDOMServer.renderToStaticMarkup(React.createElement(component, props));
@@ -46,9 +47,17 @@ try {
     enabled: false, request, cooldown_secs: 60, created_ms: 0, last_run_ms: 0 };
   const build = (stage, count, extra = {}) => ({ id: "build-1", request, stage, steps: steps.slice(0, count), draft: null,
     match_id: null, message: "", instead: "", ...extra });
-  const core = (current, inPanel = false, soundPending = null, played = null) => ({ connected: true, snapshotRevision: 1, world: { apps: [] },
-    apps: { build: current, inPanel, soundPending, played, askedInPanel() {}, clearSound() {}, setPlayed() {} },
-    decideApp() {}, composeApp: () => true, showNotice() {}, toggleApp() {}, removeApp() {}, appOutput() {} });
+  const core = (current, inPanel = false, soundPending = null, played = null) => {
+    const queue = noticeQueue();
+    // A static render starts with this card already at the head; the page's effect normally registers it.
+    if (current && !inPanel) queue.push("card", `build:${current.id}`, { data: {
+      build: current, app: current.draft, confirmation: current.draft ? `${current.draft.name} · ${current.message}` : current.message,
+    }, text: current.message, waiting: false, done() {} }, "build");
+    if (played) queue.push("card", `tune:${played.id}`, { data: played, text: played.name, waiting: false, done() {} }, "tune");
+    return { connected: true, snapshotRevision: 1, world: { apps: [] }, noticeQueue: queue,
+      apps: { build: current, inPanel, soundPending, played, askedInPanel() {}, clearSound() {}, setPlayed() {} },
+      decideApp() {}, composeApp: () => true, showNotice() {}, toggleApp() {}, removeApp() {}, appOutput() {} };
+  };
   // The dock's card as it shows on screen (without the screen reader's status line, which repeats some of it).
   const dockHtml = (current, inPanel = false) => render(DockBuild, { core: core(current, inPanel), onLeave() {} })
     .replace(/<div class="sr-only" role="status">.*?<\/div>/, "");

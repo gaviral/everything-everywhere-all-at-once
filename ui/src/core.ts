@@ -1,9 +1,10 @@
+import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
-import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
+import { comesFirst as noteFirst, received as noteReceived, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "./work-jobs";
@@ -20,7 +21,7 @@ import { applyMove, type MoveChange } from "./moves-core";
 import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
-import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
+import { applyTidy, settle, tidyNote, type Proposal, type TidyChange, type TidyUndo } from "./tidy-core";
 import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
 import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
 import { applyTopic, isTopicChange, sendTopicsWith, type TopicChange } from "./topics-core";
@@ -248,6 +249,7 @@ type ServerMsg =
   | { type: "error"; message: string }
   | { type: "action_failed"; id: string; message: string }
   | { type: "notice"; message: string }
+  | { type: "notice_control"; show: boolean }
   | { type: "undoable"; id: number }
   | { type: "correctable"; for_ms: number; back_to: string | null }
   | { type: "revert" }
@@ -690,7 +692,8 @@ export function useCore(speaker?: string) {
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
-  const [mapChange, setMapChange] = useState<(TidyNote & { id: number }) | null>(null);
+  const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
+  const mapChange = currentNotice?.kind === "map" ? currentNotice.value : null;
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
@@ -708,7 +711,18 @@ export function useCore(speaker?: string) {
   // comes before its stream's "listening" is the old stream's, late.
   const [listenedRevision, setListenedRevision] = useState(0);
   const [connected, setConnected] = useState(false);
-  const [notice, setNotice] = useState("");
+  const notice = currentNotice?.kind === "notice" ? currentNotice.value.text : "";
+  const noticeNumber = useRef(0);
+  const setNotice = (change: string | ((shown: string) => string)) => {
+    const current = noticeQueue.snapshot();
+    const shown = current?.kind === "notice" ? current.value.text : "";
+    const text = typeof change === "function" ? change(shown) : change;
+    if (typeof change === "function" && text === shown) return;
+    if (!text) { noticeQueue.drop("notice", "search", false); return; }
+    if (text !== LOOKING) noticeQueue.drop("notice", "search", false);
+    const group = aboutKey(text) ? "key" : /microphone|\bmic\b|Live audio/i.test(text) ? "microphone" : "notice";
+    noticeQueue.push("notice", text === LOOKING ? "search" : String(++noticeNumber.current), { text, undo: null }, group);
+  };
   // Every notice and map update as it comes up, for the bricks' on("notice") (App.tsx `takeNotices` after each render):
   // kept where each is said, since one render can carry several, the same words twice too. Clearing one says nothing.
   const notices = useRef<{ text: string; kind: "notice" | "error" | "map-change"; time: number }[]>([]);
@@ -721,7 +735,8 @@ export function useCore(speaker?: string) {
   const noticeShown = useRef("");
   useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
-  const [undoId, setUndoId] = useState<number | null>(null);
+  const undoId = currentNotice?.kind === "notice" ? currentNotice.value.undo : null;
+  const setUndoId = (id: number | null) => noticeQueue.updateUndo(id);
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
   // answer the window makes for a view request stands down when the core has answered since (showNotice).
   const answers = useRef(0);
@@ -746,11 +761,24 @@ export function useCore(speaker?: string) {
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
-  const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
+  const sendSource = useRef<SendCardShown | null>(null);
+  const setSendCard = (change: SendCardShown | null | ((shown: SendCardShown | null) => SendCardShown | null)) => {
+    sendSource.current = typeof change === "function" ? change(sendSource.current) : change;
+    if (sendSource.current) noticeQueue.push("send", String(sendSource.current.id), sendSource.current);
+    else if (!sendSource.current) noticeQueue.drop("send");
+    redrawSend((n) => n + 1);
+  };
+  const sendCard = currentNotice?.kind === "send" ? currentNotice.value : null;
+  const [, redrawSend] = useState(0);
   // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
-  const [pulls, setPulls] = useState<Pulls>(NO_PULLS);
+  const pullsSource = useRef<Pulls>(NO_PULLS);
+  const setPulls = (change: Pulls | ((shown: Pulls) => Pulls)) => {
+    pullsSource.current = typeof change === "function" ? change(pullsSource.current) : change;
+    if (pullsSource.current.card) noticeQueue.push("pulls", String(pullsSource.current.card.id), pullsSource.current.card);
+    else noticeQueue.drop("pulls");
+  };
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
-  const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
+  const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
   const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
@@ -778,6 +806,7 @@ export function useCore(speaker?: string) {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        noticeQueue.reset("note");
         resetApps();
         resetSteps();
         resetRoute();
@@ -793,9 +822,7 @@ export function useCore(speaker?: string) {
         attention.current.resend((message) => ws.send(message));
         coreBack();
         setQueuedCount(0);
-        // A new connection, maybe to a restarted core whose note ids start again at 1: the card from before it goes, and
-        // the core's catch-up sends the one still current (notes.rs `shown_card`).
-        setNoteCard(null);
+        // The new connection may belong to a restarted core whose note ids start again at 1.
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -843,7 +870,7 @@ export function useCore(speaker?: string) {
             if (note) {
               const id = ++changeId;
               notices.current.push({ text: note.text, kind: "map-change", time: Date.now() });
-              setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
+              noticeQueue.push("map", String(id), { ...note, id });
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -888,6 +915,9 @@ export function useCore(speaker?: string) {
             setVoiceStatusRevision((revision) => revision + 1);
             if (msg.listening) setListenedRevision((revision) => revision + 1);
             break;
+          case "notice_control":
+            noticeQueue.control(msg.show);
+            break;
           case "error":
             if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
               setVoiceError(msg.message);
@@ -900,7 +930,7 @@ export function useCore(speaker?: string) {
             // limit: the window keeps saying back tomorrow until the next snapshot.
             if (aboutKey(msg.message)) setKeyNotice((held) => (isResting(held) && !isResting(msg.message) ? held : msg.message));
             if (msg.message) sayNotice(msg.message, msg.type);
-            else setNotice((shown) => (shown === LOOKING ? "" : shown));
+            else noticeQueue.drop("notice", "search", false);
             // A newer answer: the Undo shown was for the one before.
             if (msg.message) { setUndoId(null); answered(); }
             break;
@@ -953,10 +983,12 @@ export function useCore(speaker?: string) {
             break;
           }
           case "pulls_card":
-            setPulls((shown) => pullsReceived(shown, msg));
+            setPulls(pullsReceived(NO_PULLS, msg));
             break;
           case "note_card":
-            setNoteCard((shown) => noteReceived(shown, msg));
+            const queued = noticeQueue.find("note", String(msg.id));
+            const note = noteReceived(queued?.kind === "note" ? queued.value : null, msg);
+            if (note) noticeQueue.push("note", String(msg.id), note);
             if (noteFirst(msg)) closeRecap();
             break;
         }
@@ -969,7 +1001,7 @@ export function useCore(speaker?: string) {
         setPartial("");
         setHandoff("");
         // No answer comes on a closed connection.
-        setNotice((shown) => (shown === LOOKING ? "" : shown));
+        noticeQueue.drop("notice", "search", false);
         setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
@@ -1023,11 +1055,11 @@ export function useCore(speaker?: string) {
     answered();
     return false;
   }, [send]);
-  const pullsCardGone = useCallback((id: number) => setPulls((shown) => pullsGone(shown, id)), []);
-  const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
+  const pullsCardGone = useCallback((id: number) => { noticeQueue.drop("pulls", String(id)); pullsSource.current = pullsGone(pullsSource.current, id); }, [noticeQueue]);
+  const sendCardGone = useCallback((id: number) => { noticeQueue.drop("send", String(id)); }, [noticeQueue]);
   // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
   const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);
-  const noteCardGone = useCallback((id: number) => setNoteCard((shown) => (shown?.id === id ? null : shown)), []);
+  const noteCardGone = useCallback((id: number) => { noticeQueue.drop("note", String(id)); }, [noticeQueue]);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -1062,7 +1094,9 @@ export function useCore(speaker?: string) {
     sendCard,
     stopSend,
     sendCardGone,
-    pullsCard: pulls.card,
+    pullsCard: currentNotice?.kind === "pulls" ? currentNotice.value : null,
+    noticeQueue,
+    unfinishedNotice: currentNotice?.kind === "unfinished" ? currentNotice.value : null,
     pullsCardGone,
     noteCard,
     openNote,
@@ -1078,6 +1112,7 @@ export function useCore(speaker?: string) {
     listenedRevision,
     connected,
     notice,
+    noticeKey: currentNotice?.kind === "notice" ? currentNotice.key : null,
     takeNotices,
     answerRevision,
     noKey,
@@ -1089,7 +1124,7 @@ export function useCore(speaker?: string) {
     unfoldAsk,
     queuedCount,
     placing,
-    clearNotice: useCallback(() => setNotice(""), []),
+    clearNotice: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "notice") noticeQueue.drop("notice", e.key); }, [noticeQueue]),
     undoId,
     revertAsk,
     correctable,
@@ -1118,7 +1153,7 @@ export function useCore(speaker?: string) {
     untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
     // The Undo on a note about ideas or tasks the AI withdrew or corrected: each as it was, newest first.
     restore: (ids: string[]) => [...ids].reverse().forEach((id) => sendOrWarn(JSON.stringify({ type: "restore", id }))),
-    hideMapChange: useCallback(() => setMapChange(null), []),
+    hideMapChange: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "map") noticeQueue.drop("map", e.key); }, [noticeQueue]),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
     // sends the view, then "Did … instead" with its Undo, and both can reach one render (review).
@@ -1135,6 +1170,8 @@ export function useCore(speaker?: string) {
         sayNotice(preset ? "Talk is on. Say or type “all features” to go back." : "Your features are back.");
         setUndoId(null); answered(); return true;
       }
+      const control = noticeCommand(text);
+      if (control !== null) { noticeQueue.control(control); return true; }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
       const online = socket.current?.readyState === WebSocket.OPEN;
