@@ -89,13 +89,22 @@ export const ACTIONS: Action[] = [
   // Someone else's pointing (Guide.tsx): a click anywhere takes it down too (a document click, which the catalog's net
   // doesn't list), except one on the way the arrow shows (a folded card's Show, Map), which moves it on to the part.
   { id: "dismiss-guide", how: "key", at: [["Guide.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT,
-    done: "Esc: the arrow, its ring and the words it brought go (a question asked: Drop it); ↵ and L answer a question asked; a click elsewhere takes a point down" },
+    done: "Esc: the arrow, its ring and the words it brought go (a question asked: Drop it); ↵ and L answer a question asked (one with answers: ↵ opens a box for your own words, 1, 2 and the arrows move to an answer, which ↵ then sends); a click elsewhere takes a point down" },
   // The Friend's question asked at your pause (Guide.tsx), and the held stack's cards: each answered in this window at once.
   { id: "guide-go-ahead", how: "click", at: [["Guide.tsx", "onClick={() => goAhead(said.n)}"]], pressed: PRESS, done: "its buttons go; the question stays its reading time with its arrow, then goes" },
   { id: "guide-later", how: "click", at: [["Guide.tsx", "onClick={() => later(said.n)}"], ["Guide.tsx", "onClick={() => laterHeld(item.n)}"]], pressed: PRESS,
     done: "the question goes back to the held stack, marked “Later”: it waits for you, not your next pause", says: ["Later"] },
   { id: "guide-drop", how: "click", at: [["Guide.tsx", "onClick={() => dropIt(said.n)}"], ["Guide.tsx", "onClick={() => dropGuideHeld(item.n)}"]], pressed: PRESS,
     done: "the question (or line) is gone, its arrow too", says: ["Drop it"] },
+  // A question that reads "A, or B?" (Guide.tsx `Answers`): each answer a button that sends it to whoever asked; or your own words.
+  { id: "guide-choice", how: "click", at: [["Guide.tsx", "onClick={() => send(choice)}"]], pressed: PRESS, waits: "core",
+    done: "the answer goes to whoever asked, once; its buttons go and a line says what went and to whom: “You sent … to …”", failed: "the question stays, with “Not sent: the connection is down. Try again in a moment.”",
+    says: ["Not sent: the connection is down. Try again in a moment."] },
+  { id: "guide-answer-open", how: "click", at: [["Guide.tsx", "onClick={() => openAnswer(said.n)}"]], pressed: INSTANT,
+    done: "a box for your own words opens in its place, with Send, and you're in it; Esc closes it, a second Esc drops the question" },
+  { id: "guide-answer-type", how: "form", at: [["Guide.tsx", "<form className=\"guide-answer\" onSubmit={submit}>"], ["Guide.tsx", "onChange={(event) => { setWords(event.target.value); setProblem(\"\"); }}"],
+    ["Guide.tsx", "onKeyDown={(event) => { if (event.key === \"Escape\")"]], pressed: INSTANT, waits: "core",
+    done: "Enter or Send sends the words as typed (spaces tidied) to whoever asked, once, and a line says what went; Send waits for words", failed: "the question stays, with “Not sent: the connection is down. Try again in a moment.”" },
   { id: "guide-answer", how: "click", at: [["Guide.tsx", "onClick={() => askNow(item.n)}"]], pressed: PRESS,
     done: "the held card leaves the stack and is asked (said) at once: its caption at the stage, its arrow if it has one", says: ["Answer", "Continue"] },
   { id: "guide-held-more", how: "click", at: [["Guide.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS, done: "the rest of the held stack opens under the next in line, or folds back to it", says: ["more held", "Just the next"] },

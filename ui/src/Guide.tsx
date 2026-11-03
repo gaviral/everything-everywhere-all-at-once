@@ -14,18 +14,22 @@
 //  - A held question waits in the held stack (data-slot="held" once the page has one; till then bottom right, a chip on
 //    a phone) while you talk or type, and is asked at your next pause: its caption with Go ahead ↵ · Later L · Drop it
 //    esc and an arrow at what it's about. Talking over it before you could read it puts it back; after, answers it.
+//    A question that reads "A, or B?" is a choice, and Go ahead doesn't fit one: it offers A and B (1, 2 or the arrows
+//    move to one, Enter or a click sends it to the asker), Answer ↵ for words of your own, Later L and Drop it esc.
 //  - The caption and the arrow draw in the top layer (manual popovers), over an open sheet too.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useReducedMotion } from "motion/react";
 import type { BrickOn } from "./bricks/contract";
 import type { World } from "./core";
 import { Markdown } from "./md";
 import {
-  aimAt, AROUND, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
-  inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, pointer, RING_PAD, shape, stepBack,
+  aimAt, answerAsk, AROUND, askAtPause, askMs, askNow, busy, captionMs, captionRead, closeAnswer, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
+  inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, openAnswer, overMs, pages, pauseIn, plain, pointer, RING_PAD, shape, stepBack,
   useGuide, useWindowOn, watchGuide, type Box, type Held, type Plan, type Said, type Shown, type Where,
 } from "./guide-core";
+import { ANSWER_MAX, options } from "./remote/ask";
+import { sendToCore } from "./room";
 import { SHELL2 } from "./shell/flag";
 import { holdQuestion, dropHeld as dropShellHeld } from "./shell/held";
 import "./guide.css";
@@ -63,7 +67,11 @@ export function Guide(props: Props) {
   const [captionSaid, setCaptionSaid] = useState("");
   const [heldSaid, setHeldSaid] = useState("");
   useEffect(() => {
-    if (caption) setCaptionSaid(caption.ask ? `${caption.by} asks: ${plain(caption.text)} Go ahead, Later, or Drop it.` : `${caption.by}: ${plain(caption.text)}`);
+    if (!caption) return;
+    const answers = caption.ask ? options(plain(caption.text)) : [];
+    setCaptionSaid(!caption.ask ? `${caption.by}: ${plain(caption.text)}`
+      : answers.length ? `${caption.by} asks: ${plain(caption.text)} Answer ${answers.join(" or ")}, answer in your own words, Later, or Drop it.`
+        : `${caption.by} asks: ${plain(caption.text)} Go ahead, Later, or Drop it.`);
   }, [caption?.n, !!caption?.ask]);
   const newest = held.reduce<Held | null>((a, b) => (!a || b.n > a.n ? b : a), null);
   useEffect(() => { if (newest?.state === "waiting") setHeldSaid(`${newest.by} holds this for your pause: ${plain(newest.text)}`); }, [newest?.n]);
@@ -117,12 +125,21 @@ function usePauses(on: BrickOn | null) {
 
 const inField = (target: EventTarget | null) => target instanceof Element && !!target.closest("input, textarea, select, [contenteditable]");
 const onPage = (target: EventTarget | null) => !target || target === document.body || target === document.documentElement;
+/** On the caption itself: one of its buttons, or its box for your own words. */
+const inCaption = (target: EventTarget | null) => target instanceof Element && !!target.closest(".guide-caption");
+/** The box for words of your own, on a question that offers answers. */
+const inAnswerBox = (target: EventTarget | null) => target instanceof Element && !!target.closest(".guide-answer-field");
+/** The buttons that are the answers of the question asked now, in order. */
+const answerButtons = () => [...document.querySelectorAll<HTMLButtonElement>(".guide-caption[data-asking] .guide-choice")];
 /** The composer with nothing typed: its Enter has nothing to send, so it can answer the question asked. */
 const emptyComposer = (target: EventTarget | null) => target instanceof HTMLTextAreaElement && !!target.closest('[data-guide="composer"]') && !target.value.trim();
 
 /** The keys on the caption's buttons: while a question is asked, ↵ Go ahead (from the page or an empty composer), L
  *  Later (outside a field) and Esc Drop it; else Esc takes the point down, and a question's arrow with its caption.
- *  Esc typed in a field keeps its own meaning there too (as a tip's, Tips.tsx). */
+ *  Esc typed in a field keeps its own meaning there too (as a tip's, Tips.tsx).
+ *  A question that offers answers ("A, or B?"): ↵ opens the box for your own words instead (never sends: an answer goes
+ *  on a press of the answer, which the person has seen), 1 and 2 (from the page, or a button of the caption) and the
+ *  arrows (also from an empty composer) move to an answer, and Esc in the box closes it before it drops the question. */
 function useKeys() {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -130,6 +147,7 @@ function useKeys() {
       const { caption, point } = current();
       const asked = caption?.ask ? caption : null;
       if (event.key === "Escape") {
+        if (asked && inAnswerBox(event.target)) return;
         if (asked) dropIt(asked.n);
         else if (point?.of) captionRead(point.of);
         else if (point) dismissPoint();
@@ -138,7 +156,21 @@ function useKeys() {
         return;
       }
       if (!asked || event.repeat) return;
-      if (event.key === "Enter" && !event.shiftKey && (onPage(event.target) || emptyComposer(event.target))) goAhead(asked.n);
+      const answers = answerButtons();
+      const enter = event.key === "Enter" && !event.shiftKey && (onPage(event.target) || emptyComposer(event.target));
+      const among = (onPage(event.target) || inCaption(event.target)) && !inField(event.target);
+      if (answers.length && !event.shiftKey && (event.key.startsWith("Arrow") || /^[1-9]$/.test(event.key)) && (among || (event.key.startsWith("Arrow") && emptyComposer(event.target)))) {
+        const at = answers.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key.startsWith("Arrow") ? (event.key === "ArrowRight" || event.key === "ArrowDown" ? at + 1 : at < 0 ? answers.length - 1 : at - 1) : Number(event.key) - 1;
+        const button = answers[next];
+        if (!button) return;
+        button.focus();
+      } else if (enter) {
+        // With answers it opens the box for your own words (or takes you back into it); only an offer has a Go ahead.
+        if (asked.typing) document.querySelector<HTMLInputElement>(".guide-answer-field")?.focus();
+        else if (answers.length) openAnswer(asked.n);
+        else goAhead(asked.n);
+      }
       else if (event.key.toLowerCase() === "l" && !event.shiftKey && !inField(event.target)) later(asked.n);
       else return;
       event.preventDefault();
@@ -448,6 +480,8 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
   const by = said?.by ?? point?.by ?? "";
   const text = said?.text ?? point?.text ?? "";
   const asking = !!said?.ask;
+  // A question that reads "A, or B?" offers A and B as its answers (the Remote's own reading of it); any other, Go ahead.
+  const choices = useMemo(() => (said?.ask ? options(plain(said.text)) : []), [said?.ask, said?.text]);
   const [list, setList] = useState<string[]>([text]);
   const [page, setPage] = useState(0);
   const [leaving, setLeaving] = useState<"" | "read" | "back">("");
@@ -568,25 +602,81 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     });
   }, [on, said?.n]);
 
+  // The pointer on it, or a key's focus in it (an answer chosen, a box being typed in), keeps it up. Focus is read from where
+  // it is, each frame, not from its events: a part that goes with focus in it (the box closed by Esc) fires none.
+  const held = useRef({ pointer: false, focus: false });
+  const holding = (by: "pointer" | "focus", on: boolean) => { held.current[by] = on; clock.hold(held.current.pointer || held.current.focus); };
+  useEffect(() => {
+    let frame = 0;
+    const watch = () => {
+      const inside = !!card.current?.contains(document.activeElement);
+      if (inside !== held.current.focus) holding("focus", inside);
+      frame = requestAnimationFrame(watch);
+    };
+    frame = requestAnimationFrame(watch);
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const shownText = said ? (list[page] ?? text) : text;
   const caption = <div ref={card} className="guide-caption" popover="manual" role="group" aria-label={`${by} says`} data-n={said?.n ?? ""}
     data-ai={ai || undefined} data-asking={asking || undefined} data-settled={settled || undefined} data-leaving={leaving || undefined}
     onAnimationEnd={(event) => { if (event.target === card.current) setSettled(true); }}
-    onPointerEnter={() => clock.hold(true)}
-    onPointerLeave={() => clock.hold(false)}>
+    onPointerEnter={() => holding("pointer", true)}
+    onPointerLeave={() => holding("pointer", false)}>
     <span className="guide-line" aria-hidden="true">
       <span ref={name} className="guide-by" data-tip={ai ? AI_TIP : undefined}>{ai ? "✦ " : ""}{by}{said?.ask?.urgent && <span className="guide-urgent"> · Interrupt</span>}</span>{" "}
       <span ref={words} key={page} className="guide-text"><Markdown text={shownText} /></span>
     </span>
     {where && <span className="guide-where" aria-hidden="true">{where}</span>}
-    {said?.ask && <span className="guide-asks">
-      <button type="button" className="guide-btn guide-primary" onClick={() => goAhead(said.n)}>Go ahead <kbd>↵</kbd></button>
-      <button type="button" className="guide-btn" onClick={() => later(said.n)}>Later <kbd>L</kbd></button>
-      <button type="button" className="guide-btn" onClick={() => dropIt(said.n)}>Drop it <kbd>esc</kbd></button>
-      {micOn && <span className="guide-over">or talk over me<span className="guide-over-more"> to stop</span></span>}
-    </span>}
+    {said?.ask && (choices.length
+      ? <Answers said={said} choices={choices} micOn={micOn} />
+      : <span className="guide-asks">
+        <button type="button" className="guide-btn guide-primary" onClick={() => goAhead(said.n)}>Go ahead <kbd>↵</kbd></button>
+        <button type="button" className="guide-btn" onClick={() => later(said.n)}>Later <kbd>L</kbd></button>
+        <button type="button" className="guide-btn" onClick={() => dropIt(said.n)}>Drop it <kbd>esc</kbd></button>
+        {micOn && <span className="guide-over">or talk over me<span className="guide-over-more"> to stop</span></span>}
+      </span>)}
   </div>;
   return createPortal(slot ? <div ref={reservation} className="guide-caption-slot">{caption}</div> : caption, slot ?? document.body);
+}
+
+/** Sends an answer to whoever asked: the core routes it to their windows (`answer`, core/src/guide.rs). */
+const sendAnswer = (to: string, text: string) => sendToCore({ type: "answer", to, text });
+
+/** What a question that reads "A, or B?" offers, in place of Go ahead (which fits an AI helper's own offer, not a choice):
+ *  A and B as buttons that send the answer to whoever asked (1 and 2 move to them), Answer ↵ for words of your own, Later
+ *  and Drop it. A press sends once: the caption then says what went. A refused send (the connection is down) keeps the
+ *  question and says so. */
+function Answers({ said, choices, micOn }: { said: Said; choices: string[]; micOn: boolean }) {
+  const [words, setWords] = useState("");
+  const [problem, setProblem] = useState("");
+  const field = useRef<HTMLInputElement>(null);
+  const typing = !!said.typing;
+  const by = said.ask!.by;
+  useEffect(() => { if (typing) field.current?.focus(); }, [typing]);
+  const send = (answer: string) => setProblem(answerAsk(said.n, answer, sendAnswer) === "failed" ? "Not sent: the connection is down. Try again in a moment." : "");
+  const submit = (event: FormEvent) => { event.preventDefault(); send(words); };
+  return <>
+    <span className="guide-asks guide-choices" role="group" aria-label={`Answers to ${by}`}>
+      {choices.map((choice, i) => <button key={choice} type="button" className="guide-btn guide-choice" onClick={() => send(choice)} aria-keyshortcuts={String(i + 1)}>
+        <span className="guide-choice-words">{choice}</span><kbd>{i + 1}</kbd>
+      </button>)}
+    </span>
+    <span className="guide-asks">
+      {typing
+        ? <form className="guide-answer" onSubmit={submit}>
+          <input ref={field} className="guide-answer-field" value={words} maxLength={ANSWER_MAX} placeholder="Your answer" aria-label={`Your answer to ${by}`}
+            enterKeyHint="send" autoComplete="off" autoCorrect="on"
+            onChange={(event) => { setWords(event.target.value); setProblem(""); }}
+            onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeAnswer(said.n); } }} />
+          <button type="submit" className="guide-btn guide-primary" disabled={!words.trim()}>Send <kbd>↵</kbd></button>
+        </form>
+        : <button type="button" className="guide-btn" onClick={() => openAnswer(said.n)} aria-keyshortcuts="Enter">Answer <kbd>↵</kbd></button>}
+      <button type="button" className="guide-btn" onClick={() => later(said.n)} aria-keyshortcuts="L">Later <kbd>L</kbd></button>
+      <button type="button" className="guide-btn" onClick={() => dropIt(said.n)} aria-keyshortcuts="Escape">Drop it <kbd>esc</kbd></button>
+      {micOn && <span className="guide-over">or talk over me<span className="guide-over-more"> to stop</span></span>}
+    </span>
+    {problem && <span className="guide-problem" role="alert">{problem}</span>}
+  </>;
 }
 
 /** Below this width the held stack folds to a chip (a phone): cards would cover the map you're talking about. */
