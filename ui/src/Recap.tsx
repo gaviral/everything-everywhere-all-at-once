@@ -123,7 +123,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
   const recap = noKey ? null : view.recap;
   const recapId = recap ? `${recap.period}-${recap.generated_ms}` : "";
   const resolve = (id: string) => resolveMerged(world, id);
-  const title = (id: string) => world.threads.find((t) => t.id === resolve(id))?.title ?? "Open thread";
+  const title = (id: string) => world.threads.find((t) => t.id === resolve(id))?.title ?? "Open topic";
   const follow = (id: string) => { onClose(); onFocus(resolve(id)); };
   const link = (id: string, text: ReactNode, className = "recap-thread") => (
     <a className={className} href={`#thread-${resolve(id)}`} onClick={(event) => { event.preventDefault(); follow(id); }}>{text}</a>
@@ -170,7 +170,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
           : newer ? <p>New thoughts have arrived. Update when you're ready.</p> : null}
       </div>
       {recap && <p className="recap-summary">{recap.summary}</p>}
-      {recap?.limited && <p className="recap-limit">A long stretch: showing up to 24 recent threads, 16 recent points per thread, and 64 actions. Long points are shortened.</p>}
+      {recap?.limited && <p className="recap-limit">A long stretch: showing up to 24 recent topics, 16 recent points per topic, and 64 actions. Long points are shortened.</p>}
     </div>
     {recap && <div className="recap-content" aria-busy={view.loading}>
       {/* The answer to "what did I decide?" comes first, and says so when there is none. */}
@@ -183,7 +183,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
         <h2 id="recap-work-title">What you worked on <span>Newest first</span></h2>
         {recap.worked_on.length ? <ol>{recap.worked_on.map((item) => <li key={item.thread_id}>
           {link(item.thread_id, `${title(item.thread_id)} ↗`)}<p><Markdown text={item.text} /></p>
-        </li>)}</ol> : <p className="recap-empty">No threads touched in this period.</p>}
+        </li>)}</ol> : <p className="recap-empty">No topics touched in this period.</p>}
       </section>
       {recap.unfinished.length > 0 && <section className="recap-unfinished" aria-labelledby="recap-unfinished-title">
         <h2 id="recap-unfinished-title">Room to return</h2>
@@ -191,11 +191,11 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
           const thread = world.threads.find((t) => t.id === resolve(item.thread_id));
           const last = world.thoughts.filter((t) => t.placed && t.thread_id === thread?.id).at(-1);
           const resumed = thread?.status === "open" && last?.complete !== false;
-          return <li key={item.thread_id}><span>{link(item.thread_id, title(item.thread_id))}<small>{resumed ? "Picked back up since this recap" : "Left off here"}</small></span>{link(item.thread_id, resumed ? "Open thread →" : "Pick up →", "recap-finish")}</li>;
+          return <li key={item.thread_id}><span>{link(item.thread_id, title(item.thread_id))}<small>{resumed ? "Picked back up since this recap" : "Left off here"}</small></span>{link(item.thread_id, resumed ? "Open topic →" : "Pick up →", "recap-finish")}</li>;
         })}</ul>
       </section>}
       {actions.length > 0 && <section className="recap-action-section" aria-labelledby="recap-actions-title">
-        <h2 id="recap-actions-title">Actions <span>On these threads</span></h2>
+        <h2 id="recap-actions-title">Actions <span>On these topics</span></h2>
         <div className="recap-columns">
           {pending.length > 0 && <div><h3><span className="recap-pending-dot" aria-hidden="true" />Pending approval <span>{pending.length}</span></h3>{actionRows(pending)}</div>}
           {added.length > 0 && <div><h3><span className="recap-added-mark" aria-hidden="true">✓</span> Added <span>{added.length}</span></h3>{actionRows(added)}</div>}

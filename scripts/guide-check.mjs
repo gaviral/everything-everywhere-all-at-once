@@ -229,15 +229,15 @@ const at = (over = {}) => ({ map, view: "map", query: "", focus: false, shown: (
 assert.deepEqual(instead("thread:T3", at()), { via: "thread:T2", line: "“Seedlings” is folded inside “Garden”: Show opens it." });
 assert.deepEqual(instead("thread:T3", at({ query: "rent" })), { via: "search", line: "“Seedlings” is hidden by your search: clear it to see it." });
 assert.deepEqual(instead("thread:T3", at({ focus: true })), { via: "focus", line: "“Seedlings” is hidden by Focus: turn Focus off to see it." });
-assert.deepEqual(instead("thread:T1", at({ view: "palace", shown: () => false })), { via: "view:map", line: "“Rent” is on the Map: switch to the Map here." });
+assert.deepEqual(instead("thread:T1", at({ view: "palace", shown: () => false })), { via: "view:map", line: "“Rent” is in Cards: switch to Cards here." });
 assert.deepEqual(instead("thread:T4", at()), { via: "thread:T1", line: "It's part of “Rent” now." });
-assert.deepEqual(instead("thread:T9", at()), { via: null, line: "That thread isn't on this map." });
+assert.deepEqual(instead("thread:T9", at()), { via: null, line: "That topic isn't on this map." });
 assert.deepEqual(instead("point:a", at()), { via: "thread:T2", line: "It's in “Seedlings”, folded inside “Garden”: Show opens it." });
 assert.deepEqual(instead("point:a", at({ shown: (n) => n === "thread:T3", folded: () => true })), { via: "thread:T3", line: "It's in “Seedlings”: Show opens it." });
 assert.deepEqual(instead("point:a", at({ view: "palace", shown: (n) => n === "thread:T3", folded: () => false })), { via: "thread:T3", line: "It's in “Seedlings”: open it here." });
 assert.deepEqual(instead("point:p", at()), { via: "pending", line: "It's still finding its place." });
-assert.deepEqual(instead("catalog", at()), { via: "apps", line: "The Catalog button is in Apps: open Apps." });
-assert.deepEqual(instead("search", at({ view: "palace" })), { via: "view:map", line: "Search is on the Map: switch to it here." });
+assert.deepEqual(instead("catalog", at()), { via: "apps", line: "The Features button is in Apps: open Apps." });
+assert.deepEqual(instead("search", at({ view: "palace" })), { via: "view:map", line: "Search is in Cards: switch to it here." });
 assert.deepEqual(instead("undo", at()), { via: null, line: "Undo shows on a notice you can take back, and none is up now." });
 assert.deepEqual(instead("nope", at()), { via: null, line: "Nothing called “nope” is on this screen." });
 assert.equal(label("point:a", map), "a thought in “Seedlings”");
@@ -471,7 +471,7 @@ try {
   await lands("point:seed", "the thought, once its card opens");
   assert.equal(await words(), "✦ Claude This is the seedling idea.");
 
-  step("the Palace");
+  step("Pictures");
   // In the Palace: a thread is its picture; search is on the Map, said so, and the Map button leads there.
   await key("Escape", 27);
   await click('[data-guide="view:palace"]');
@@ -484,24 +484,24 @@ try {
   guide("point", "search", "Search finds the words you used.");
   await sleep(700);
   await lands("view:map", "the way to search");
-  assert.equal(await words(), "✦ Claude Search finds the words you used. Search is on the Map: switch to it here.");
+  assert.equal(await words(), "✦ Claude Search finds the words you used. Search is in Cards: switch to it here.");
   await shot("5-point-other-view");
   await click('[data-guide="view:map"]');
   assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.indexOf("switch") < 0`, 2000), "the Map button leads the arrow on");
   await sleep(600);
   await lands("search", "search, once on the Map");
 
-  step("the Catalog in Apps");
+  step("the Features button in Apps");
   // The Catalog button is in Apps: the arrow on Apps, and opening Apps leads it on to the button.
   await key("Escape", 27);
   await evaluate(`scrollTo({ top: 0, behavior: "instant" })`);
   if (await evaluate(`document.querySelector(".apps-title").getAttribute("aria-expanded") === "true"`)) await click(".apps-title");
   assert.ok(await until(`!document.querySelector('[data-guide="catalog"]')`, 1000), "Apps closed");
-  guide("point", "catalog", "More views live in the Catalog.");
+  guide("point", "catalog", "More views live in Features.");
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on Apps, seen");
   await sleep(600);
   await lands("apps", "the Apps panel the Catalog is in");
-  assert.equal(await words(), "✦ Claude More views live in the Catalog. The Catalog button is in Apps: open Apps.");
+  assert.equal(await words(), "✦ Claude More views live in Features. The Features button is in Apps: open Apps.");
   await click(".apps-title");
   assert.ok(await until(`!!document.querySelector('[data-guide="catalog"]') && document.querySelector(".guide-caption")?.innerText.indexOf("open Apps") < 0`, 2000), "opening Apps leads the arrow on");
   await sleep(800);

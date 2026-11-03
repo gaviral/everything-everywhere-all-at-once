@@ -328,13 +328,13 @@ impl Core {
 
     /// "Next one" or "last one" on the only thread: no move, but an answer.
     fn only_one(&self, speaker: &str, title: &str) {
-        self.send_to(speaker, ServerMsg::Notice { message: format!("{title} is the only thread so far") });
+        self.send_to(speaker, ServerMsg::Notice { message: format!("{title} is the only topic so far") });
     }
 
     /// "New thread": nothing to place, and the speaker's next thought starts one (placer.rs `NewThreads`).
     fn new_thread(&self, speaker: &str) {
         self.new_threads.ask(speaker);
-        self.send_to(speaker, ServerMsg::Notice { message: "New thread: your next thought starts it".into() });
+        self.send_to(speaker, ServerMsg::Notice { message: "New topic: your next thought starts it".into() });
     }
 
     /// Whether the speaker's window runs on this machine. Alone, only this machine's pages get in.
@@ -441,7 +441,7 @@ impl Core {
             // No thread to focus on: the window would do nothing, so say why, as "collapse this" does.
             if view == View::Focus && to.is_none() && before.is_none() {
                 let empty = self.snapshot().threads.is_empty();
-                let message = if empty { "Nothing on the map yet: say a thought first" } else { "Point at a thread, then say “focus on this”" };
+                let message = if empty { "Nothing on the map yet: say a thought first" } else { "Point at a topic, then say “focus on this”" };
                 self.send_to(speaker, ServerMsg::Notice { message: message.into() });
                 return Some(Done::missed(Act::Focus));
             }
@@ -836,23 +836,25 @@ fn is_go_previous(text: &str) -> bool {
     )
 }
 
-/// "New thread" style requests. Only the whole turn: "create a new one for the kitchen" is a thought, and
-/// so is a bare "new", which is far more often an answer.
+/// "New thread" style requests, "new topic" too (a thread is a Topic on screen). Only the whole turn: "create a new one
+/// for the kitchen" is a thought, and so is a bare "new", which is far more often an answer.
 fn is_new_thread(text: &str) -> bool {
     is_command(
         text,
         &[
             "new thread", "new topic", "a new thread", "a new topic", "start a new one", "start a new thread", "start a new topic",
-            "create a new one", "create a new thread", "make a new one", "make a new thread", "open a new thread", "let s start a new one",
-            "let s start a new thread", "let s start a new topic", "change of topic", "different topic",
+            "create a new one", "create a new thread", "create a new topic", "make a new one", "make a new thread", "make a new topic",
+            "open a new thread", "open a new topic", "let s start a new one", "let s start a new thread", "let s start a new topic",
+            "change of topic", "different topic",
         ],
         &[],
     )
 }
 
-/// A view asked for by voice, as its button sets it: "palace", "show the map", "let's focus", "show all"; or the
-/// "?" list of what you can say ("What can I say?", "help"). Only the whole turn, so "let's go to the palace of
-/// Versailles", "I can't focus today" and "help me move the couch on Saturday" are thoughts.
+/// A view asked for by voice, as its button sets it: "pictures" or "palace", "show the cards" or "show the map", "let's
+/// focus", "show all"; or the "?" list of what you can say ("What can I say?", "help"). Only the whole turn, so "let's
+/// go to the palace of Versailles", "these cards are old", "I can't focus today" and "help me move the couch on
+/// Saturday" are thoughts.
 fn view(text: &str) -> Option<View> {
     // As Dragon's "What can I say?" and Voice Control's "Show commands". Not "what can I do?", which people ask
     // themselves.
@@ -860,9 +862,21 @@ fn view(text: &str) -> Option<View> {
         "help", "help me", "what can i say", "what can you do", "what are the commands", "what are my commands", "show commands",
         "show the commands", "show me the commands", "show me what i can say",
     ];
+    // "Pictures" and "Cards" are the views' names on screen. "Palace" and "map" were their names and still work, so the
+    // old lists stay beside the new ones. Each is only ever the whole turn (`is_command`), so "the pictures were great"
+    // and "these cards are old" are thoughts.
+    let pictures = [
+        "pictures", "the pictures", "go to pictures", "go to the pictures", "go back to the pictures", "back to the pictures",
+        "show pictures", "show the pictures", "show me the pictures", "open the pictures", "switch to the pictures",
+        "take me to the pictures", "take me back to the pictures", "let s go to the pictures", "let s see the pictures",
+    ];
     let palace = [
         "palace", "the palace", "go to the palace", "go back to the palace", "back to the palace", "show the palace", "show me the palace",
         "open the palace", "switch to the palace", "take me to the palace", "let s go to the palace", "let s see the palace",
+    ];
+    let cards = [
+        "cards", "the cards", "go to the cards", "go back to the cards", "back to the cards", "show the cards", "show me the cards",
+        "open the cards", "switch to the cards", "take me back to the cards", "let s go back to the cards", "let s see the cards",
     ];
     let map = [
         "map", "the map", "go to the map", "go back to the map", "back to the map", "show the map", "show me the map", "open the map",
@@ -880,13 +894,15 @@ fn view(text: &str) -> Option<View> {
         ["show all", "show everything", "show me everything", "unfocus", "stop focusing", "turn off focus", "exit focus", "leave focus"];
     if is_command(text, &help, &["here", "now"]) {
         Some(View::Help)
-    } else if is_command(text, &palace, &["view"]) {
+    } else if is_command(text, &pictures, &["view"]) || is_command(text, &palace, &["view"]) {
         Some(View::Palace)
+    } else if is_command(text, &cards, &["view"]) {
+        Some(View::Cards)
     } else if is_command(text, &map, &["view"]) {
         Some(View::Map)
     } else if is_command(text, &focus, &["mode"]) {
         Some(View::Focus)
-    } else if is_command(text, &all, &["mode", "threads", "the threads"]) {
+    } else if is_command(text, &all, &["mode", "topics", "the topics", "threads", "the threads"]) {
         Some(View::All)
     } else if is_command(text, &export, &["as markdown", "to markdown", "as a markdown file", "as a file"]) {
         Some(View::Export)
@@ -897,7 +913,8 @@ fn view(text: &str) -> Option<View> {
 
 /// What "focus on …" points at as "this" (catalog.rs `this`: selected, else pointed, else the card the pointer just
 /// left, else the thread you're on). ui/src/attention-core.ts mirrors it for the "this" mark (attention-check reads it).
-const FOCUS_ON: [&str; 8] = ["this", "this one", "this thread", "this card", "that", "that one", "that thread", "that card"];
+const FOCUS_ON: [&str; 10] =
+    ["this", "this one", "this thread", "this topic", "this card", "that", "that one", "that thread", "that topic", "that card"];
 
 /// "Focus on this" and its kin, with "let's" too: a whole-turn focus on the card "this" means. "Focus on the budget"
 /// stays a thought: only a pointing word focuses.
@@ -1088,12 +1105,12 @@ async fn main() -> anyhow::Result<()> {
     }
     // Alone, only this machine can reach the core; a room opens it to the local network, behind the code.
     if room.is_some() && std::env::var("ROOM_HTTPS").as_deref() == Ok("1") {
-        let ip = lan_ip().ok_or_else(|| anyhow::anyhow!("HTTPS room needs a LAN IPv4 address; check the network connection"))?;
+        let ip = lan_ip().ok_or_else(|| anyhow::anyhow!("An HTTPS shared map needs a LAN IPv4 address; check the network connection"))?;
         // Separate addresses let both listeners use PORT: the host keeps its secure-context HTTP URL.
         let local = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.map_err(unopened)?;
         let secure = tls::Listener::bind(SocketAddr::new(ip, port), Path::new(&data)).await?;
         tracing::info!("E2A2O core on http://localhost:{port}");
-        tracing::info!("Room open. On the other laptop, open https://{ip}:{port}/?room={}", room.as_deref().unwrap());
+        tracing::info!("Shared map open. On the other laptop, open https://{ip}:{port}/?room={}", room.as_deref().unwrap());
         tracing::info!("Guest: accept this laptop's self-signed certificate, then allow microphone access. Certificate is kept in {data}/tls/identity.json");
         tokio::try_join!(
             axum::serve(local, app.clone().into_make_service_with_connect_info::<Link>()).into_future(),
@@ -1106,7 +1123,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("E2A2O core on http://localhost:{port}");
     if let Some(code) = &room {
         let host = lan_ip().map_or_else(|| "<this laptop's address>".into(), |ip| ip.to_string());
-        tracing::info!("Room open. On the other laptop, open http://{host}:{port}/?room={code}");
+        tracing::info!("Shared map open. On the other laptop, open http://{host}:{port}/?room={code}");
     }
     axum::serve(listener, app.into_make_service_with_connect_info::<Link>()).await?;
     Ok(())
@@ -1458,7 +1475,7 @@ async fn connect(
     let renamed = speaker != speaker_name(&join.name, true);
     // The page asks /room for another name when this happens.
     let Some(seat) = Seat::take(&core, &speaker, link) else {
-        return (StatusCode::CONFLICT, "That name is taken in this room.").into_response();
+        return (StatusCode::CONFLICT, "That name is taken on this shared map.").into_response();
     };
     // Before this window counts as open (`session`), so a count that ends while it connects can't send first: with none
     // of the speaker's windows open it ends unsent (messages.rs `finish`), and once this one is, the Stop already went.
@@ -1548,7 +1565,7 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
 async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, remote: bool, _seat: Seat) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
-        tracing::info!("{speaker} joined the room");
+        tracing::info!("{speaker} joined the shared map");
     }
     // Counted before its catch-up, so a count that ends now still has this window to stop it (messages.rs `finish`).
     let _window = messages::window(&core, &speaker);
@@ -1653,7 +1670,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     let on = world.thread(&world.resolve(&thread_id)).is_some_and(|t| t.tags.iter().any(|t| t.name == tag));
                     drop(world);
                     if !on {
-                        core.send_to(&speaker, ServerMsg::Notice { message: "That tag isn't on this thread any more.".into() });
+                        core.send_to(&speaker, ServerMsg::Notice { message: "That tag isn't on this topic any more.".into() });
                         continue;
                     }
                     let change = if keep { Change::TagKept { thread_id, tag } } else { Change::TagRemoved { thread_id, tag } };
@@ -1743,7 +1760,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     forwarding.abort();
     apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
-        tracing::info!("{speaker} left the room");
+        tracing::info!("{speaker} left the shared map");
     }
 }
 
@@ -2117,6 +2134,8 @@ mod tests {
         // "Go back" alone is still "where was I?"; "next one" takes "thread" as "last one" does.
         assert!(is_go_back("Go back.") && !is_go_back("Go back one."));
         assert!(is_go_next("go to the next thread") && is_go_next("Go to the next one, please."));
+        assert!(is_go_next("go to the next topic") && is_go_next("Next topic.") && !is_go_next("go to the next topic of the meeting"));
+        assert!(is_go_previous("Previous topic") && is_go_previous("Go to the last topic, please.") && !is_go_previous("the last topic"));
         assert!(!is_go_next("go to the next one of the meetings"));
         // As "next one", at the end of a turn after a pause, or at its start; but a "last one" or a bare "previous"
         // opening a turn lists things, so it stays a thought.
@@ -2143,12 +2162,15 @@ mod tests {
         for text in [
             "Create a new one.", "new thread", "New topic!", "Okay, start a new thread.", "start a new one", "Make a new thread, please",
             "Let's start a new thread.", "So, change of topic.",
+            // "Topic" works wherever "thread" does.
+            "Create a new topic.", "Make a new topic, please", "Open a new topic", "Okay, start a new topic.", "Let's start a new topic.",
         ] {
             assert!(is_new_thread(text), "{text}");
         }
         for text in [
             "create a new one for the kitchen", "Let's start a new thread about the trip", "new", "New one.",
             "the new thread is about rent", "I want to start a new job", "Make an app that plays a tune at five",
+            "Create a new topic for the kitchen", "Let's start a new topic about the trip", "the new topic is about rent",
         ] {
             assert!(!is_new_thread(text), "{text}");
         }
@@ -2158,6 +2180,11 @@ mod tests {
     fn a_view_by_voice_is_only_the_whole_turn() {
         for (text, asked) in [
             ("Palace", View::Palace),
+            // The names on screen, beside the old ones (see `pictures_and_cards_are_asked_for_as_palace_and_map_are`).
+            ("Pictures", View::Palace),
+            ("Cards", View::Cards),
+            ("show all the topics", View::All),
+            ("Let's focus on this topic.", View::Focus),
             ("go to the palace", View::Palace),
             ("Let's go to the palace!", View::Palace),
             ("Show the palace view.", View::Palace),
@@ -2195,6 +2222,7 @@ mod tests {
         }
         for text in [
             "Let's go to the palace of Versailles", "The palace was beautiful", "map out the week", "I can't focus today",
+            "The pictures were great", "These cards are old", "show all the topics to Dana", "Focus on this topic for me",
             "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
             "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
@@ -2202,6 +2230,63 @@ mod tests {
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
             // Export takes only the map, whole: these are talk.
             "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
+        ] {
+            assert_eq!(view(text), None, "{text}");
+        }
+    }
+
+    /// "Pictures" and "Cards" are the views' names on screen; "palace" and "map" were their names and still work. All
+    /// read only as the whole turn, as the old words do: talk about pictures or cards is a thought.
+    #[test]
+    fn pictures_and_cards_are_asked_for_as_palace_and_map_are() {
+        for (text, asked) in [
+            ("Pictures", View::Palace),
+            ("Pictures.", View::Palace),
+            ("the pictures", View::Palace),
+            ("go to pictures", View::Palace),
+            ("Go to the pictures", View::Palace),
+            ("Let's go to the pictures!", View::Palace),
+            ("go back to the pictures", View::Palace),
+            ("Okay, back to the pictures", View::Palace),
+            ("show pictures", View::Palace),
+            ("Show the pictures", View::Palace),
+            ("Show the pictures view.", View::Palace),
+            ("show me the pictures, please", View::Palace),
+            ("Open the pictures", View::Palace),
+            ("Switch to the pictures", View::Palace),
+            ("Take me to the pictures", View::Palace),
+            ("Take me back to the pictures", View::Palace),
+            ("Let's see the pictures", View::Palace),
+            ("Cool, pictures.", View::Palace),
+            ("Can you show me the pictures?", View::Palace),
+            ("I see. Go to the pictures.", View::Palace),
+            ("Cards", View::Cards),
+            ("Cards.", View::Cards),
+            ("the cards", View::Cards),
+            ("Go to the cards", View::Cards),
+            ("go back to the cards", View::Cards),
+            ("Okay, back to the cards", View::Cards),
+            ("Show the cards", View::Cards),
+            ("Okay, show the cards view", View::Cards),
+            ("show me the cards, please", View::Cards),
+            ("Open the cards", View::Cards),
+            ("Switch to the cards", View::Cards),
+            ("Take me back to the cards", View::Cards),
+            ("Let's go back to the cards", View::Cards),
+            ("I mean, the cards", View::Cards),
+            // The old names work as they did.
+            ("Palace.", View::Palace),
+            ("Show me the palace", View::Palace),
+            ("Map.", View::Map),
+            ("Show me the map", View::Map),
+        ] {
+            assert_eq!(view(text), Some(asked), "{text}");
+        }
+        for text in [
+            "The pictures were great", "I sent the pictures to Dana", "show me the pictures from the trip", "Show the pictures to Dana",
+            "pictures of the garden", "Let's go to the pictures of Versailles", "I see the pictures", "You know the pictures?", "Like the pictures",
+            "These cards are old", "pay the cards off", "business cards", "The cards are on the table", "Show the cards to Dana",
+            "cards against humanity", "Switch to the cards from the other deck", "I see the cards", "You know the cards?", "Like the cards",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -2226,8 +2311,8 @@ mod tests {
             (World::default(), "you", "Last one", empty.into()),
             // On the only thread, with the last line finished: where they are, shown as Take me there shows it.
             (one.clone(), "you", "Where was I?", "Garden a You're on Garden: “Plant the tomatoes”".into()),
-            (one.clone(), "you", "Next one", "Garden is the only thread so far".into()),
-            (one.clone(), "you", "Last one", "Garden is the only thread so far".into()),
+            (one.clone(), "you", "Next one", "Garden is the only topic so far".into()),
+            (one.clone(), "you", "Last one", "Garden is the only topic so far".into()),
             (one.clone(), "Sam", "Where was I?", "Nothing to go back to yet: say a thought first".into()),
             // A guest with no thread of their own yet starts at the first.
             (one.clone(), "Sam", "Next one", "On to Garden".into()),
@@ -2282,8 +2367,8 @@ mod tests {
             ServerMsg::Notice { message } if message.starts_with("Back to ") => "back".into(),
             ServerMsg::Notice { message } if message.starts_with("On to ") => "next".into(),
             ServerMsg::Notice { message } if message.starts_with("Previous: ") => "previous".into(),
-            ServerMsg::Notice { message } if message.starts_with("New thread: “") => "new thread with".into(),
-            ServerMsg::Notice { message } if message.starts_with("New thread: ") => "new thread".into(),
+            ServerMsg::Notice { message } if message.starts_with("New topic: “") => "new thread with".into(),
+            ServerMsg::Notice { message } if message.starts_with("New topic: ") => "new thread".into(),
             ServerMsg::Notice { message } if message.starts_with("Added to ") => "added".into(),
             ServerMsg::Notice { message } if message.starts_with("I couldn't find") => "not found".into(),
             ServerMsg::Notice { message } if message.starts_with("Nothing is waiting to be added") => "approve".into(),
@@ -2337,6 +2422,8 @@ mod tests {
             ("Create a new one", "new thread"),
             ("Palace", "palace"),
             ("Map", "map"),
+            ("Pictures", "palace"),
+            ("Cards", "cards"),
             ("Focus", "focus"),
             ("Show all", "all"),
             ("Where did I talk about the electric bill?", "found"),
@@ -2351,6 +2438,8 @@ mod tests {
             ("Go back one", "previous"),
             ("New topic", "new thread"),
             ("Go to the palace", "palace"),
+            ("Go to the pictures", "palace"),
+            ("Show the cards", "cards"),
             ("Let's focus", "focus"),
             ("Take me back to the electric bill", "found"),
             ("Find where I said the electric bill", "found"),
@@ -2379,6 +2468,10 @@ mod tests {
             "Can you recap the book for me?",
             "Let's make an app that helps students find housing",
             "Let's go to the palace of Versailles",
+            "The pictures were great",
+            "I sent the pictures to Dana",
+            "These cards are old",
+            "Pay the cards off",
             "Create a new one for the kitchen",
             "Help me move the couch on Saturday",
             "What can I say to Dana?",
@@ -2393,6 +2486,10 @@ mod tests {
             "I mean the map",
             "You know the palace?",
             "Like the map",
+            "I see the pictures",
+            "I mean the cards",
+            "You know the pictures?",
+            "Like the cards",
         ] {
             assert_eq!(did(world(), said).await, (vec![], vec![said.to_string()]), "{said}");
         }
@@ -2456,6 +2553,14 @@ mod tests {
             ("Pause listening", "pause"),
             ("Turn off the mic", "pause"),
             ("Add that to my calendar", "approve"),
+            // The noun a thread has on screen is Topic, and a branch is a Tangent: the older words keep working above.
+            ("Put the receipt in the bills topic", "added"),
+            ("Start a new topic about why the build is slow", "new thread with"),
+            ("New topic. I want to learn piano.", "new thread with"),
+            ("Expand the garden topic", "unfold"),
+            ("Expand this topic", "unfold"),
+            ("Collapse that topic", "fold"),
+            ("Expand all the tangents inside the bills", "unfold"),
             // docs/COMMANDS.md: saying you lost your place is "where was I?".
             ("Going back to what I was saying", "back"),
             ("Going back to what you were saying", "back"),
@@ -2496,6 +2601,8 @@ mod tests {
             "Save money on groceries",
             "I need to add milk to the shopping list",
             "A new thread about the budget came up on Slack",
+            "A new topic about the budget came up on Slack",
+            "Create a new topic for the kitchen",
             "New topic on the agenda is hiring",
             "I bought a boat. What was I thinking?",
             "I lost my place in line at the DMV",
@@ -2723,7 +2830,7 @@ mod tests {
         let said = loop {
             if let Some(said) = notice(received(&mut window).await) { break said; }
         };
-        assert_eq!(said, "That tag isn't on this thread any more.");
+        assert_eq!(said, "That tag isn't on this topic any more.");
         assert!(!journaled().contains(&odd));
         window.send(send(serde_json::json!({"type": "tag", "thread_id": "T1", "tag": "#money", "keep": true}))).await.unwrap();
         while !core.snapshot().thread("T1").unwrap().tags.iter().any(|t| t.kept) {
@@ -3287,7 +3394,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(told, [(Some("Ana".into()), "New thread: your next thought starts it".into())]);
+        assert_eq!(told, [(Some("Ana".into()), "New topic: your next thought starts it".into())]);
         // Sam's thought is Sam's; Ana's next one starts the thread, and only that one.
         core.add_thought("Sam", "The DJ wants a deposit");
         core.add_thought("Ana", "The kitchen needs paint");
@@ -3381,7 +3488,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(told, ["Looking through your threads…", "Back to Garden", "Here: Docs — The README needs a quick start"]);
+        assert_eq!(told, ["Looking through your topics…", "Back to Garden", "Here: Docs — The README needs a quick start"]);
         let _ = std::fs::remove_file(&path);
     }
 

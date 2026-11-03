@@ -414,7 +414,7 @@ function ShowTheFlight({ show, setShow, close }: { show: boolean; setShow: (on: 
     return () => { document.removeEventListener("click", outside, true); document.removeEventListener("keydown", key, true); };
   }, [close]);
   return <div ref={hint} className={at ? "bubble-flight-hint" : "bubble-flight-hint bubble-flight-hint-center"} data-hint="bubble-flight"
-    style={at ? { left: at.left, bottom: at.bottom } : undefined} role="dialog" aria-label="Bubble flight">
+    style={at ? { left: at.left, bottom: at.bottom } : undefined} role="dialog" aria-label="Fly-in">
     <p className="bubble-flight-help">Reduce motion is on, so your thoughts land with a ring instead of flying there.</p>
     <button type="button" className="bubble-flight-switch" role="switch" aria-checked={show} data-guide="bubble-flight:show" onClick={() => setShow(!show)}>
       <span className="bubble-flight-track" aria-hidden="true"><span className="bubble-flight-knob" /></span>

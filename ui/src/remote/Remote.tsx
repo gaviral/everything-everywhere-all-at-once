@@ -37,7 +37,7 @@ function Live() {
   const call = useCall();
   const ai = useCallback((name: string) => !!call?.people.find((person) => person.name === name)?.ai, [call]);
   const send = useCallback((ask: Ask, text: string) => sendToCore({ type: "answer", to: ask.by, text }), []);
-  return <Page status={core.connected ? `In the room as ${me}` : "Connecting…"} ai={ai} send={send} />;
+  return <Page status={core.connected ? `On the shared map as ${me}` : "Connecting…"} ai={ai} send={send} />;
 }
 
 /** With no room: the page's own feed, from the start, and answers that stay here. */

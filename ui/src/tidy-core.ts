@@ -145,7 +145,7 @@ function renamedText(renamed: [string, string][]): string {
   const pair = ([was, title]: [string, string]) => `“${was}” to “${title}”`;
   if (renamed.length <= 2) return `AI renamed ${renamed.map(pair).join(" and ")}`;
   const titles = renamed.map(([, title]) => `“${title}”`);
-  return `AI renamed ${renamed.length} threads: ${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
+  return `AI renamed ${renamed.length} topics: ${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
 }
 
 export function tidyNote(world: World, change: Change): TidyNote | null {

@@ -241,7 +241,7 @@ fn known(world: &World) -> Known {
 }
 
 /// In a room, the chats go out with this laptop's key and land as one person's points, so they're the host's.
-const ONLY_HERE: &str = "In a room, only the laptop running E2A2O can import chats.";
+const ONLY_HERE: &str = "On a shared map, only the laptop running E2A2O can import chats.";
 
 /// Starts the file read under this id, as the speaker of the window that asked; one import at a time.
 pub fn start(core: Arc<Core>, id: String, speaker: String, here: bool) {
@@ -356,9 +356,9 @@ async fn run(core: Arc<Core>, job: Prepared, speaker: String) {
         Ok(groups) if groups.iter().any(|g| !g.ideas.is_empty()) => groups,
         // The ideas are already paid for: keep them, one thread per topic.
         result => {
-            let why = result.err().map(|e| short(&e)).unwrap_or_else(|| "no threads came back".into());
+            let why = result.err().map(|e| short(&e)).unwrap_or_else(|| "no topics came back".into());
             tracing::warn!("import: grouping failed: {why}");
-            notes.push(format!("Couldn't group the ideas into threads ({why}), so each topic became its own thread."));
+            notes.push(format!("Couldn't group the ideas into topics ({why}), so each subject became its own topic."));
             by_topic(&topics, &ideas, &today(offset))
         }
     };
@@ -379,7 +379,7 @@ fn finish(core: &Core, speaker: &str, status: &Status) {
     publish(core, speaker, status);
     let count = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
     let message = match status.state.as_str() {
-        "done" if status.threads > 0 => format!("Imported {} from {}.", count(status.threads, "thread"), status.file),
+        "done" if status.threads > 0 => format!("Imported {} from {}.", count(status.threads, "topic"), status.file),
         "done" => format!("Imported {} from {}.", count(status.points, "point"), status.file),
         _ => format!("Import didn't finish: {}", status.note),
     };

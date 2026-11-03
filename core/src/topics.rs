@@ -75,7 +75,7 @@ Return JSON: topics, each listed thread's id with the name of its topic.")
 /// group of threads is a theme (the names in code stay `topic`).
 pub const NO_NAME: &str = "A theme needs a name.";
 pub const NO_TOPIC: &str = "That theme isn't on the map any more.";
-pub const GONE: &str = "That thread isn't on the map any more.";
+pub const GONE: &str = "That topic isn't on the map any more.";
 
 /// One top thread put under a topic by a pass (`Change::TopicsAssigned`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

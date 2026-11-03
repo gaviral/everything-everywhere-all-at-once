@@ -188,7 +188,12 @@ export default function App() {
     keepShown();
     if (!world.threads.length) return;
     if (asked === "palace" || asked === "map") showView(asked);
-    else setView((was) => viewAfterJump(was, "map"));
+    else if (asked === "cards") {
+      // "Cards" is the list of topic cards: the Map view on today's page, the Cards feature in the shell (when it is on).
+      if (!SHELL2) showView("map");
+      else if (builtIns.has("cards")) showView("cards");
+      else core.showNotice("Cards is off: switch it on in Features.", core.viewAsk);
+    } else setView((was) => viewAfterJump(was, "map"));
     if (asked === "all" || (asked === "focus" && world.active)) {
       setFocusMode(asked === "focus");
       setQuery("");
@@ -1033,7 +1038,7 @@ export default function App() {
   useEffect(() => {
     if (core.viewAsk?.view !== "notices") return;
     if (SHELL2) { setRailTab("history"); return; }
-    if (!brickHost.emit("asked", { what: "notices" })) core.showNotice("The Notice timeline is off: switch it on in Apps › Catalog, and it keeps notices from then on.", core.viewAsk);
+    if (!brickHost.emit("asked", { what: "notices" })) core.showNotice("Notification history is off: switch it on in Features, and it keeps notices from then on.", core.viewAsk);
   }, [core.viewAsk]);
 
   // The Catalog asked for (a feature's openCatalog, at its row): the rail opens at its tab. Leaving the tab lets it go,
@@ -1123,29 +1128,29 @@ export default function App() {
         <div className="header-actions" data-slot="top-right">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         {/* What you can say comes first: asking for this list by voice is how most people open it. */}
-        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands" data-guide="help">?</summary><div ref={helpList} className="keyboard-hint">
+        <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Help: voice and keyboard commands" data-guide="help">?</summary><div ref={helpList} className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
-          <div>“What just happened?” · the notices you may have missed, newest first, in the Notice timeline</div>
+          <div>“What just happened?” · the notices you may have missed, newest first, in Notification history</div>
           <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
-          <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
+          <div>“Next one” or “Last one” · the topic after or before yours in creation order, wrapping around</div>
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
-          <div>“New thread” · your next thought starts one · “New thread about [topic]” · starts it with those words</div>
-          <div>“Add [words] to [thread]” · files them there at once; “…to the packing list” starts that list</div>
-          <div>“Move that to [thread]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title · “Delete this” · the point you're on, else your last; or a point's Delete</div>
+          <div>“New topic” · your next thought starts one · “New topic about [words]” · starts it with those words</div>
+          <div>“Add [words] to [topic]” · files them there at once; “…to the packing list” starts that list</div>
+          <div>“Move that to [topic]” · your last thought goes there, or drag a point's Move onto a card · “Rename this to [title]” · or click a title · “Delete this” · the point you're on, else your last; or a point's Delete</div>
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
-          <div>“Expand [thread]” · opens it and every branch · “Collapse this” · “Expand everything”</div>
-          <div>“Palace” or “Map” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
+          <div>“Expand [topic]” · opens it and every tangent · “Collapse this” · “Expand everything”</div>
+          <div>“Pictures” or “Cards” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>“Export my map” · saves it as a Markdown file, as Export does</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
           <div>“No, I meant [request]” · redoes your last turn as that · “Scratch that” · undoes it · “Yes” or “No” · answers “Did you mean …?” · “this” · the card you selected or point at</div>
           <strong>Keyboard</strong>
           <div>? · opens or closes this list · Tab, then Enter · from the page's top, straight to typing</div>
-          <div>Map: / search · j / k move between threads · Enter show or hide · on a point · Enter or Space shows or hides the words you said · Option-click Show or Hide for every branch · Esc fold quiet threads</div>
+          <div>Cards: / search · j / k move between topics · Enter show or hide · on a point · Enter or Space shows or hides the words you said · Option-click Show or Hide for every tangent · Esc fold quiet topics</div>
           <div>{undoKeyLabel(MAC)} · undoes your last turn, as “Scratch that” does, after its notice has gone too</div>
-          <div>Palace: arrow keys move · Enter open a thread</div>
-          <div>Esc clears search or closes the room menu when focused there</div>
+          <div>Pictures: arrow keys move · Enter open a topic</div>
+          <div>Esc clears search or closes the Share menu when focused there</div>
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
           <Symbols />
         </div></details>
@@ -1215,8 +1220,8 @@ export default function App() {
       {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View" data-guide="views">
-            <button aria-pressed={view === "map"} onClick={() => showView("map")} data-guide="view:map">Map</button>
-            <button aria-pressed={view === "palace"} onClick={() => showView("palace")} data-guide="view:palace">Palace</button>
+            <button aria-pressed={view === "map"} onClick={() => showView("map")} data-guide="view:map">Cards</button>
+            <button aria-pressed={view === "palace"} onClick={() => showView("palace")} data-guide="view:palace">Pictures</button>
             {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)} data-guide={`view:${brick.info.id}`}>{brick.info.name}</button>)}
           </div>
           {view === "map" && <><label className="search" data-guide="search"><span className="sr-only">Search topics</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search topics" type="search" /></label>
@@ -1229,7 +1234,7 @@ export default function App() {
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "topic" : "topics"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map" data-guide="map">
+        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1262,7 +1267,7 @@ export default function App() {
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
-          <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
+          <div className="sr-only" role="status" aria-live="polite">{hasAway ? "Since you left. Your thoughts are ready to explore above the input box." : ""}</div>
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
@@ -1399,7 +1404,7 @@ export default function App() {
   };
   const keys: [string, string][] = [
     ["/", "Find a topic or words"], [mod("D"), "Start or stop listening"], [RAIL_KEYS.talk, "Talk: what's said, as turns"],
-    [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Catalog: the features, on or off"], [RAIL_KEYS.settings, "Settings"],
+    [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Features: turn features on or off"], [RAIL_KEYS.settings, "Settings"],
     ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
   ];
   const tabs: RailTab[] = callOn(call) ? ["history", "catalog", "settings"] : ["talk", "history", "catalog", "settings"];

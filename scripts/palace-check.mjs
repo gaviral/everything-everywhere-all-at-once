@@ -26,9 +26,9 @@ try {
     tiles: [...room.matchAll(/data-thread="([^"]+)"/g)].map(([, id]) => id),
   }));
   assert.deepEqual(rooms, [
-    { room: "Room: Hackathon demo", span: 2, tiles: ["T1", "T4"] },
-    { room: "Room: Mom's birthday", span: 2, tiles: ["T2", "T3"] },
-    { room: "Threads on their own", span: 3, tiles: ["T5", "T6", "T7"] },
+    { room: "Hackathon demo", span: 2, tiles: ["T1", "T4"] },
+    { room: "Mom's birthday", span: 2, tiles: ["T2", "T3"] },
+    { room: "Topics on their own", span: 3, tiles: ["T5", "T6", "T7"] },
   ]);
   assert.ok(html.includes("On their own"), "threads on their own are set apart by their own heading");
 

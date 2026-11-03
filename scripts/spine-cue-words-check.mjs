@@ -41,7 +41,7 @@ try {
         const title = label.slice(5, -11);
         await scene.evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']').click()`);
         assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${title}`)})`), "arrival thread becomes active");
-        await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The Friend says one").click()`);
+        await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The AI helper says one").click()`);
         await sleep(1350);
         const outside = await scene.evaluate(`(() => {
           const f = document.querySelector(".spine-frame").getBoundingClientRect();

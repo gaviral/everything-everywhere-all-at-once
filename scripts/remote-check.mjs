@@ -326,7 +326,7 @@ try {
     await s.type(".join input", "Maya");
     await s.click(".join-card > button");
     await s.check('!!document.querySelector(".remote")', "joined: the Remote");
-    await s.check('document.querySelector(".remote-status")?.textContent === "In the room as Maya"', "connected, under its name");
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "connected, under its name");
     assert.ok(joins.length >= 1 && joins.at(-1).name === "Maya" && joins.at(-1).room === "abcd2345", `its socket came in by name and room: ${JSON.stringify(joins)}`);
     // The replay: a waiting job is a question though no hold reached this window; the summary above it is not one.
     await s.check('!!document.querySelector(".remote-ask")', "the question waiting in the replay is held for you");
@@ -389,7 +389,7 @@ try {
     // The core replays each job as it was stamped.
     replay = [...replay, color, job("name", "waiting", { title: "Name", result: "Name the file?", at_ms: Date.now() - 5_000 })];
     away = false;
-    await s.check('document.querySelector(".remote-status")?.textContent === "In the room as Maya"', "back in the room", 30_000);
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "back on the shared map", 30_000);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Name the file?"', "the replay brings back what still waits, and not what was answered", 12_000);
     assert.equal(await s.evaluate('document.querySelector(".remote-field").value'), "report.txt", "the words typed while it was down are still there");
     await s.enter();

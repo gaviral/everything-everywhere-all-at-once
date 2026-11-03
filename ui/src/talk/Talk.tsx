@@ -9,7 +9,7 @@ import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
 import { TIPS } from "../Tips";
-import { clock, initialOf, LEVELS, named, ordered, stateWord, useCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
+import { clock, initialOf, LEVELS, named, ordered, shown, stateWord, useCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
 import { newerMark, readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
 import "./talk.css";
 
@@ -137,7 +137,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
         const to = noteOf ?? wholeOf;
         if (to) { event.preventDefault(); setReplying(to); }
       }}>
-      {head && <TurnHead name={turn.speaker} me={me} ai={ai(turn.speaker)} at={turn.at} level={turn.note && ai(turn.speaker) ? "Note" : undefined}
+      {head && <TurnHead name={turn.speaker} me={me} ai={ai(turn.speaker)} at={turn.at} level={turn.note && ai(turn.speaker) ? "Comment" : undefined}
         onShow={() => actions.hint("Here on the map", `point:${turn.note?.thoughtId ?? turn.parts[0].thoughtId}`)}
         reply={noteOf && replying?.key !== turn.key ? () => setReplying(noteOf) : undefined} />}
       {turn.note && <div className="talk-on">on “{turn.note.quote}”</div>}
@@ -180,7 +180,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
       <div className="talk-list">
         {/* Over the list's top, so coming and going it moves no turn; it goes once the first you missed is in view. */}
         {showCatchUp && <button type="button" className="talk-catch-up" onClick={goToMissed}>
-          {late && before > 0 ? `Joined ${clock(meNow!.joined_ms)} · ${before} ${before === 1 ? "turn" : "turns"} before you` : `${unread.length} ${unread.length === 1 ? "turn" : "turns"} while you were away`}
+          {late && before > 0 ? `Joined ${clock(meNow!.joined_ms)} · ${before} ${before === 1 ? "turn" : "turns"} before you` : `${unread.length} ${unread.length === 1 ? "turn" : "turns"} since you left`}
           <span className="talk-catch-up-go">Catch up</span></button>}
         <div ref={scroller} className="talk-scroll">
         <ol className="talk-turns">
@@ -202,7 +202,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
 const at = (row: Row) => (row.kind === "turn" ? row.turn.at : row.said.at);
 const speakerOf = (row: Row) => (row.kind === "turn" ? row.turn.speaker : row.said.by);
 const short = (quote: string) => (quote.length > 32 ? `${quote.slice(0, 30).trimEnd()}…` : quote);
-const shownName = (name: string, me: string) => (name === me ? "You" : name);
+const shownName = (name: string, me: string) => (name === me ? "You" : shown(name));
 
 /** A turn's name line: who, when (a click shows it on the map), the Friend's level; a note's Reply at its end. */
 function TurnHead({ name, me, ai, at, level, onShow, reply }: { name: string; me: string; ai: boolean; at: number; level?: string; onShow?: () => void; reply?: () => void }) {
@@ -270,7 +270,7 @@ function Meter({ call, friend, me }: { call: Call; friend: Person; me: string })
   };
   const who = named(friend);
   return <div className="talk-meter">
-    <div className="talk-meter-label" id="talk-meter-label">{who.charAt(0).toUpperCase() + who.slice(1)} may interrupt up to</div>
+    <div className="talk-meter-label" id="talk-meter-label">{who.charAt(0).toUpperCase() + who.slice(1)}'s interruption level</div>
     <div className="talk-levels" role="radiogroup" aria-labelledby="talk-meter-label">
       {LEVELS.map((level, i) => <button key={level.id} ref={(el) => { buttons.current[i] = el; }} type="button" role="radio" aria-checked={i === index}
         tabIndex={i === index ? 0 : -1} className={["talk-level-step", i < index && "talk-level-in", i === index && "talk-level-on", level.id === "stop" && "talk-level-stop"].filter(Boolean).join(" ")}

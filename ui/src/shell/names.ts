@@ -14,13 +14,13 @@ export const NAMES = {
   find: "Find",
   findPlaceholder: "Find a topic or words",
   findNone: "Nothing found. Try different words.",
-  catalog: "Catalog",
+  catalog: "Features",
   recap: "Recap",
   export: "Export",
   close: "Close",
   backToMap: "Back to the Canvas",
   show: "Show",
-  tabs: { talk: "Talk", history: "History", catalog: "Catalog", settings: "Settings" },
+  tabs: { talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
   composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
   history: {
@@ -48,7 +48,7 @@ export const NAMES = {
   },
   settings: {
     say: "What you can say",
-    keys: "Keys",
+    keys: "Keyboard shortcuts",
   },
 } as const;
 
@@ -66,16 +66,16 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   import: { name: "Import chats", aka: "Import", does: "Brings an exported chat in as thoughts on your map.", lives: "Top right" },
   export: { name: "Export", aka: "Markdown export", does: "Saves the whole map as a Markdown file.", lives: "Top right" },
   // Features in their own folders.
-  countdown: { name: "Countdown", aka: "Deadline timer", does: "Keeps upcoming deadlines in view and lets you add or change them.", lives: "Above the camera" },
-  spine: { name: "Canvas", aka: "Infinite canvas", does: "Your talk as a canvas: each topic a column, tangents beside their words.", lives: "The map" },
-  "bubble-flight": { name: "Bubble flight", aka: "Motion trail", does: "Carries your words from the input box to the topic where they land.", lives: "The Canvas" },
-  "tiny-transcript": { name: "Tiny transcript", aka: "Live captions", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
-  "notice-timeline": { name: "Notice history", aka: "Activity log", does: "Every notice kept, each with what takes it back.", lives: "History" },
-  "read-progress": { name: "Read progress", aka: "Read marker", does: "Keeps your place in other people's thoughts.", lives: "Talk" },
-  bubbles: { name: "Bubbles", aka: "Bubble chart", does: "Each topic floats as a bubble, sized by its points.", lives: "A view" },
-  keys: { name: "Keys", aka: "Keyboard navigation", does: "Arrows or h j k l move between topics and points.", lives: "Everywhere" },
-  level: { name: "Level meter", aka: "VU meter", does: "Every loudness reading, to set a volume feature's level.", lives: "Bottom left" },
-  "brick-chip": { name: "Feature chip", aka: "Provenance badge", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },
+  countdown: { name: "Deadlines", aka: "Countdown", does: "Keeps upcoming deadlines in view and lets you add or change them.", lives: "Above the camera" },
+  spine: { name: "Canvas", aka: "One big board", does: "Your talk as a canvas: each topic a column, tangents beside their words.", lives: "The map" },
+  "bubble-flight": { name: "Fly-in", aka: "Words fly to their place", does: "Carries your words from the input box to the topic where they land.", lives: "The Canvas" },
+  "tiny-transcript": { name: "Tiny transcript", aka: "Small live words, compact transcript", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
+  "notice-timeline": { name: "Notification history", aka: "Recent notices", does: "Every notice kept, each with what takes it back.", lives: "History" },
+  "read-progress": { name: "Read marker", aka: "Where you stopped", does: "Keeps your place in other people's thoughts.", lives: "Talk" },
+  bubbles: { name: "Bubbles", aka: "Floating circles", does: "Each topic floats as a bubble, sized by its points.", lives: "A view" },
+  keys: { name: "Keyboard shortcuts", aka: "Keyboard controls", does: "Arrows or h j k l move between topics and points.", lives: "Everywhere" },
+  level: { name: "Level meter", aka: "Loudness meter", does: "Every loudness reading, to set a volume feature's level.", lives: "Bottom left" },
+  "brick-chip": { name: "Source attribution", aka: "Source tag, added by", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },
   "work-spine": { name: "Work spine", aka: "Agent activity", does: "What your AI helpers are doing: running, done, failed, or waiting on you.", lives: "Beside the Canvas" },
 };
 
