@@ -195,7 +195,7 @@ function Playground() {
   });
   // What the brick hears, listed as it passes.
   useEffect(() => {
-    const names: (keyof BrickEvents)[] = ["landed", "words", "notice", "pointing", "asked"];
+    const names: (keyof BrickEvents)[] = ["landed", "words", "notice", "pointing", "asked", "speaking"];
     const stops = names.map((name) => host.on(name, (value) => setHeard((was) => [{ n: ++heardCount.current, name, value: JSON.stringify(value) }, ...was].slice(0, 8))));
     return () => stops.forEach((stop) => stop());
   }, [host.on]);
@@ -233,6 +233,10 @@ function Playground() {
         setPointed(!pointed && !!thread);
       }}>{pointed ? "Stop pointing" : "Point at a thread"}</button>
       <button type="button" onClick={() => host.emit("asked", { what: "notices" })}>Ask what just happened</button>
+      <button type="button" onClick={() => {
+        host.emit("speaking", { speaker: "Maya", on: true, mine: false });
+        window.setTimeout(() => host.emit("speaking", { speaker: "Maya", on: false, mine: false }), 1500);
+      }}>Someone speaks</button>
       <label className="playground-check"><input type="checkbox" checked={!connected} onChange={(event) => setConnected(!event.target.checked)} /> Core away</label>
     </div>
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>

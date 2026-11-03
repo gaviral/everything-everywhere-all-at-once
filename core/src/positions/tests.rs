@@ -318,11 +318,15 @@ async fn a_person_and_an_ai_participant_place_things_over_their_sockets_and_each
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await });
     type Window = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+    // The call's own messages (who's here: call.rs) aren't this test's.
     async fn next(window: &mut Window) -> Value {
         loop {
             let frame = tokio::time::timeout(std::time::Duration::from_secs(5), window.next()).await.expect("a message within 5 s");
             if let Message::Text(text) = frame.unwrap().unwrap() {
-                return serde_json::from_str(text.as_str()).unwrap();
+                let message: Value = serde_json::from_str(text.as_str()).unwrap();
+                if message["type"] != "call" {
+                    return message;
+                }
             }
         }
     }

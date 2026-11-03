@@ -7,6 +7,7 @@ mod annotate;
 mod apple;
 mod apps;
 mod asr;
+mod call;
 mod catalog;
 mod chunks;
 mod clock;
@@ -109,6 +110,8 @@ pub struct Core {
     pub notes: notes::Runtime,
     /// Places on the canvas whose journal line waits, so a drag's steps make a few lines (positions.rs).
     positions: positions::Runtime,
+    /// Who is in the call now, who has the floor, how far each has read, how far the Friend may interrupt (call.rs).
+    pub call: call::Runtime,
 }
 
 impl Core {
@@ -1010,6 +1013,7 @@ async fn main() -> anyhow::Result<()> {
         github: github::Runtime::from_env(),
         notes: notes::Runtime::from_env(),
         positions: positions::Runtime::default(),
+        call: call::Runtime::default(),
     });
     // Names only: a contact's handle never goes to the log.
     tracing::info!("preset: {:?}; Messages {} to {} contact(s)", core.messages.settings.preset, if core.messages.settings.live { "sends" } else { "dry run" }, core.messages.settings.contacts.len());
@@ -1270,8 +1274,35 @@ async fn room_info(
     // Apple's apps or saves as a calendar file, whether a sample map can fill an empty one, and the models it asks
     // (only with a key: without one, none runs).
     let models = if core.key.is_some() { models(&core) } else { serde_json::json!([]) };
+    // The join code and the link to share, only for a page already in: the host's own window has neither in its
+    // address, and a guest typed the code anyway (ui/src/talk/: Join code, a click copies the link).
+    let host = request.headers().get(header::HOST).and_then(|h| h.to_str().ok());
+    let (code, invite) = match &core.room {
+        Some(room) if member => (Some(room.code.clone()), Some(invite(room, link, host))),
+        _ => (None, None),
+    };
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
-        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models }))
+        "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models,
+        "code": code, "invite": invite }))
+}
+
+/// The address another person opens to join, with the code: the tunnel's, or the one a guest reached this laptop at,
+/// or for the host's own window (on localhost, which no one else can open) this laptop's network address on the same
+/// port, over HTTPS when guests come that way (ROOM_HTTPS).
+fn invite(room: &Room, link: Link, host: Option<&str>) -> String {
+    let code = &room.code;
+    if let Some(tunnel) = &room.tunnel {
+        return format!("{}/?room={code}", tunnel.origin());
+    }
+    let scheme = |tls: bool| if tls { "https" } else { "http" };
+    match host.filter(|h| !link.here() && !h.is_empty()) {
+        Some(host) => format!("{}://{host}/?room={code}", scheme(link.tls)),
+        None => {
+            let secure = std::env::var("ROOM_HTTPS").as_deref() == Ok("1");
+            let ip = lan_ip().map_or_else(|| "<this laptop's address>".into(), |ip| ip.to_string());
+            format!("{}://{ip}:{}/?room={code}", scheme(secure), link.to.port())
+        }
+    }
 }
 
 /// An open room: the code another laptop needs (see `gate`), and who holds each name in it.
@@ -1441,6 +1472,9 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
     // card back with its Stop; one whose count ended while the window was away gets how it ended.
     let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).into_iter().collect();
+    // The call comes before the world too: a window that hears the world with no call before it knows the call it
+    // showed is over (ui/src/talk/call-core.ts), say after a restart.
+    messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1468,6 +1502,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     }
     // Counted before its catch-up, so a count that ends now still has this window to stop it (messages.rs `finish`).
     let _window = messages::window(&core, &speaker);
+    // In the call until it closes: told to the other windows now, and to this one in its catch-up (call.rs).
+    let _here = call::join(&core, &speaker, ai);
     let updates = core.updates.subscribe();
     for message in catch_up(&core, &speaker) {
         if write(&mut out, &message).await.is_err() { return; }
@@ -1625,6 +1661,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
                 }
+                // How far this person has read, and how far the Friend may interrupt: the call's, never journaled (call.rs).
+                // A read mark for a thought that left the map (deleted while the window looked) changes nothing.
+                Ok(ClientMsg::Read { thought_id }) => {
+                    let _ = call::read(&core, &speaker, &thought_id);
+                }
+                Ok(ClientMsg::Level { level }) => call::level(&core, &speaker, level),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
             },
@@ -1756,6 +1798,7 @@ impl Core {
             github: Default::default(),
             notes: Default::default(),
             positions: Default::default(),
+            call: Default::default(),
         }
     }
 }
@@ -2718,6 +2761,66 @@ mod tests {
 
     fn link(from: &str, to: &str) -> Link {
         Link { from: from.parse().unwrap(), to: to.parse().unwrap(), tls: false }
+    }
+
+    #[test]
+    fn the_link_to_share_is_the_address_a_guest_can_open() {
+        let room = Room::from("k7m2x9qp");
+        let guest = link("192.168.1.9:51000", "192.168.1.5:4321");
+        let host = Some("192.168.1.5:4321");
+        assert_eq!(super::invite(&room, guest, host), "http://192.168.1.5:4321/?room=k7m2x9qp");
+        assert!(super::invite(&room, Link { tls: true, ..guest }, host).starts_with("https://"));
+
+        let here = link("127.0.0.1:50000", "127.0.0.1:4321");
+        let invite = super::invite(&room, here, Some("localhost:4321"));
+        assert!(invite.starts_with("http://"), "{invite}");
+        assert!(invite.ends_with(":4321/?room=k7m2x9qp"), "{invite}");
+        assert!(!invite.contains("localhost") && !invite.contains("127.0.0.1"), "{invite}");
+
+        let tunnel = crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com/").unwrap();
+        let origin = tunnel.origin().to_string();
+        let room = Room { tunnel: Some(tunnel), ..room };
+        let invite = super::invite(&room, here, Some("localhost:4321"));
+        assert!(invite.starts_with(&origin), "{invite}");
+        assert!(invite.ends_with("/?room=k7m2x9qp"), "{invite}");
+    }
+
+    #[tokio::test]
+    async fn only_a_member_hears_the_join_code() {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let core = Arc::new(Core { room: Some(Room::from("k7m2x9qp")), ..Core::test(journal, world) });
+        let routes = axum::Router::new()
+            .route("/room", axum::routing::get(super::room_info))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(5)).build().unwrap();
+        let response = client.get(format!("http://{address}/room")).header("host", address.to_string()).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let member: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(member["member"], true);
+        assert_eq!(member["code"], "k7m2x9qp");
+        assert!(member["invite"].as_str().unwrap().ends_with("/?room=k7m2x9qp"));
+
+        // A loopback socket is always this machine: exercise the guest decision and handler directly.
+        let guest = link("192.168.1.9:51000", "192.168.1.5:4321");
+        let host = "192.168.1.5:4321";
+        let access = access(true, guest, Some(host), None, false);
+        assert_eq!(access, Access::Page);
+        let mut request = axum::http::Request::builder().uri("/room").header("host", host).body(axum::body::Body::empty()).unwrap();
+        request.extensions_mut().insert(access);
+        let join = axum::extract::Query::<super::Join>::try_from_uri(request.uri()).unwrap();
+        let axum::Json(non_member) = super::room_info(axum::extract::State(core), axum::extract::ConnectInfo(guest), join, request).await;
+        assert_eq!(non_member["member"], false);
+        assert_eq!(non_member.get("code"), Some(&serde_json::Value::Null));
+        assert_eq!(non_member.get("invite"), Some(&serde_json::Value::Null));
+
+        server.abort();
+        let _ = server.await;
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

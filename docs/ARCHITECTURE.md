@@ -56,17 +56,23 @@ Browser, one page per window (ui/src)
   bricks-core.ts the bricks (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
   BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
   Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
+  talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
+    call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back
+    turns.ts     thoughts as turns (a split turn together, margin notes with their words), unread turns and where each person has read
+    Talk.tsx     people, messages, "Speaking now…", read marks, Catch up, replies on picked words and the Friend's interruption level; talk.css draws them
+    TalkRail.tsx a stand-in until the shell's rail hosts Talk: a rail or phone sheet, a pill with unread turns, the join code to copy and Leave
   bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
     bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
+    bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your thread while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
-    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px above the dock, in place of the dock's big line
+    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant pointing (a big arrow at a part named by its `data-guide`, its caption, a soft spotlight) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
-  main.rs        Core state, the gate, one session per window, voice commands, "where was I?"
+  main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
   guide.rs       a window's `point` and `caption`, checked and passed to every other window as it comes: never journaled, no model
@@ -87,6 +93,7 @@ Core, one process (core/src: axum, tokio)
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   annotate.rs    margin notes, a person's or an AI participant's: the first on words starts their tangent under the point's thread, tied to them; a later one answers in it; journaled, to every window; no model call
   topics.rs      themes (on screen; `topic` in code): the AI sorts top threads under at most 6 short names, reusing the names there (a thread keeps its theme once given); a pass at most once a minute while a thread waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
+  call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the Friend's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour

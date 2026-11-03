@@ -1,7 +1,7 @@
 {
   "id": "bubble-flight",
   "name": "Bubble flight",
-  "does": "Carries your words from the composer toward the thread where they land.",
+  "does": "Your thought flies from the box as a glass bubble into the spot where it lands.",
   "kind": "panel",
   "defaultOn": false,
   "demoSafe": true

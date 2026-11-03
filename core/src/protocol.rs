@@ -121,6 +121,10 @@ pub enum ServerMsg {
         #[serde(skip)]
         from: u64,
     },
+    /// The call (call.rs): who is on the map now and since when, who has the floor (never their words), how far each
+    /// person has read the turns, and how far the Friend may interrupt. To every window once two are here at once,
+    /// whenever any of it changes, and first in a window's catch-up from then on; never journaled.
+    Call { started_ms: u64, people: Vec<crate::call::Person>, level: crate::call::Level, level_by: String },
 }
 
 /// What a window shows, as its buttons set it: the map or the Palace; the map with only the speaker's
@@ -270,4 +274,8 @@ pub enum ClientMsg {
     TopicRename { from: String, to: String },
     /// A thread moved under a topic, dragged there (topics.rs `set`): its top thread's, with its branches.
     TopicSet { thread_id: String, topic: String },
+    /// How far this person has read the call's turns: the newest one their window has shown them (call.rs).
+    Read { thought_id: String },
+    /// How far the Friend may interrupt, as the meter at the foot of Talk sets it, for everyone in the call (call.rs).
+    Level { level: crate::call::Level },
 }

@@ -174,6 +174,10 @@ export interface BrickEvents {
   /** Something you asked for by voice or typing that a brick answers, said only to your windows: `notices` is "what
    *  just happened?" (the Notice timeline opens its list). It never lands on the map. */
   asked: { what: "notices" };
+  /** In a call, someone took the floor (`on`: their mic hears words and the turn isn't over) or gave it back: anyone's,
+   *  yours too (`mine`), the core's word from their live words (core/src/call.rs). Never the words themselves: those
+   *  come with the turn's thought, as it ends. Alone, never. */
+  speaking: { speaker: string; on: boolean; mine: boolean };
 }
 
 /** Listens for one kind of event; returns the way to stop. */
