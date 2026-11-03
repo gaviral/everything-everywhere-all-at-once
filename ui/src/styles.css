@@ -51,7 +51,7 @@
   }
 }
 
-/* The revamped shell (?shell=2, shell/flag.ts): Paper's warm paper in light, space in dark (the takes'), one set of
+/* The shell, the default (shell/flag.ts): Paper's warm paper in light, space in dark (the takes'), one set of
    roles in both. Its own names first, then the app's own mapped onto them, so the map, the features and the sheets
    take the shell's look without knowing it. Blue is you (heard, here, now); amber needs you; purple ✦ is the AI's;
    red is the Stop level only. Thread hues are identity: green, teal, lime, rose, stone, none near the roles. */

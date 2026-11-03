@@ -6,7 +6,7 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 
 ```
 Browser, one page per window (ui/src)
-  App.tsx        map and shared state/actions; legacy header/bottom bar by default, shell integration with `?shell=2` (below)
+  App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
@@ -57,8 +57,8 @@ Browser, one page per window (ui/src)
   BrickSlot.tsx  where features mount (a view beside Cards and Pictures, a card in the bottom bar, a panel or an input over the page), each lazily and behind its own boundary
   work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to features as `map.jobs` (the Work spine's)
   Catalog.tsx    the Features page (Features in the top bar): every feature with its line and switch
-  shell/         the optional `?shell=2` layout; without the flag the legacy header and bottom bar remain the default
-    flag.ts      SHELL2, CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core features are built in
+  shell/         the default layout; `?shell=1` opens the classic header and bottom bar instead
+    flag.ts      SHELL2 (true unless `?shell=1` or `?cards`), CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core features are built in
     Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Features page wording
     parts.tsx    Icon, Keycap, Stamp and Mode; mod and modAria for platform-specific key labels
     names.ts     NAMES, FEATURE_NAMES, KIND_NAMES and FeatureName: shell labels, stamps and feature descriptions
@@ -67,7 +67,7 @@ Browser, one page per window (ui/src)
     history.ts   useHistory, Entry and Undo: this window's newest 80 landings, notices and map updates with Undo; canUndo checks availability, modelWords and seconds format details
     countdown.ts useShellCountdownPlacement measures camera, stage and controls to place Deadlines and size its editor through CSS properties
     shell.css    layout and styles scoped to html.shell2: fixed corners, centered stage, bottom status line, right rail and phone sheet
-  talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
+  talk/          the call's Talk tab, in the shell and not on the classic page; held by `scripts/call-check.mjs`
   remote/        the Remote (`?remote`): a phone's page with the Work spine full height and the question a helper holds for you, to answer; on a shared map the core's jobs and holds, with none its own demo feed (`demo.ts`, from `samples/demo-jobs.json`); `ask.ts` is what waits and what a question offers; `flag.ts` reads `?remote` (which may carry the name the phone joins under) and builds the link the Share menu hands out; on a shared map it says it is a Remote on its socket (room.tsx), so the call lists it as a device and not another person; held by `scripts/remote-check.mjs` and `scripts/remote-person-check.mjs`
     call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back
     turns.ts     thoughts as turns (a split turn together, comments with their words), unread turns and where each person has read
@@ -126,9 +126,9 @@ Core, one process (core/src: axum, tokio)
 
 Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept beside the code (`*_tests.rs`, `*/tests.rs`). `node scripts/readme-check.mjs` fails when a source file is missing from this list.
 
-## The optional shell
+## The shell
 
-`shell/flag.ts` enables this layout only for `?shell=2`; it is not the default. `App.tsx` keeps the same core, map, mic, input box actions and feature host for both returns. Its shell return assembles the corners, map view, stage, held stack, status line and tabbed rail using the exports above. It opens on the Canvas, shows `Welcome` after an empty snapshot, and uses the Features page's Show actions for enabled alternate views. App owns the stage's cards, notice/map update, `#shell-caption` host and input box. It measures the shelf and held stack so the bottom-right stack and rail clear them, and invokes the Deadlines placement hook. The existing `data-slot` markers and their layout-dependent presence are listed in [Features](bricks.md#slots).
+`shell/flag.ts` makes this layout the default page. `?shell=1` opens the classic page instead (the header and bottom bar, kept for one more release), and so does `?cards`, the classic page opened on Cards; `?shell=2`, the shell's old address, still opens the shell, even beside `?cards`. The features playground (`bricks.html`) is not the app's page and keeps the classic look. `App.tsx` keeps the same core, map, mic, input box actions and feature host for both returns. Its shell return assembles the corners, map view, stage, held stack, status line and tabbed rail using the exports above. It opens on the Canvas, shows `Welcome` after an empty snapshot, and uses the Features page's Show actions for enabled alternate views. App owns the stage's cards, notice/map update, `#shell-caption` host and input box. It measures the shelf and held stack so the bottom-right stack and rail clear them, and invokes the Deadlines placement hook. The existing `data-slot` markers and their layout-dependent presence are listed in [Features](bricks.md#slots).
 
 App connects Features page requests to the Features tab, “what just happened?” to History, and Help to Settings. `useHistory` records activity in this window from opening, with Show and available Undo actions; it is not a saved map log. The shell makes Canvas, Fly-in, Tiny transcript and Notification history built in through `CORE_BRICKS`; it uses History in place of mounting the Notification history panel. Other features and the built-in feature switches feed the Features tab's rows.
 
@@ -144,7 +144,7 @@ The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`:
 |---|---|
 | `point { target?, caption? }` | Relays `guide` with `kind: "point"`. A target is an existing `data-guide` name to look up in the receiving page; the core validates its syntax, not whether it is on screen. Caption: at most 140 characters. Null or omitted target takes the sender's point down and discards its caption. |
 | `caption { text }` | Relays `guide` with `kind: "caption"`, no target; requires nonempty text, at most 400 characters. Guide draws it above the input box, or holds it while the person is busy. |
-| `hold { text, target?, urgent? }` | Relays `guide` with `kind: "hold"`; at most 140 characters, optional target for when asked. `urgent` moves it ahead of other waiting questions at the next pause. Empty text takes back that sender's held items and question being asked. Each receiving window owns the pause/held state; Guide projects its cards into `shell/held.ts` under `?shell=2`. |
+| `hold { text, target?, urgent? }` | Relays `guide` with `kind: "hold"`; at most 140 characters, optional target for when asked. `urgent` moves it ahead of other waiting questions at the next pause. Empty text takes back that sender's held items and question being asked. Each receiving window owns the pause/held state; Guide projects its cards into `shell/held.ts` in the shell. |
 | `tour { steps }` | Validates the whole ordered list before relaying `tour`: at most 20 steps, each with nonempty text of at most 140 characters and an optional target. Empty steps clear the sender's tour. This is relay only; the current guide receiver handles `guide` messages, without tour playback. |
 | `job { id, title, status, result?, parent?, demo? }` | Relays a flat `job` update and retains the latest accepted state per id in core memory. Title: nonempty, at most 80 characters; result: at most 160. Status: running, done, failed or waiting; demo defaults false. Id and optional parent use the same syntax as target names. |
 | `answer { to, text }` | Normalizes `to` as a shared-map speaker name (whitespace collapsed, controls removed, at most 24 characters), requires a nonempty recipient and text of at most 280 characters, then sends `answer { by, text, at_ms }` only to that recipient's windows, including the origin when answering oneself. It does not use screen-target syntax or broadcast the answer to the shared map. |

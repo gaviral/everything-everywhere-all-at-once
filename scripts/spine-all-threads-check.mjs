@@ -2,8 +2,8 @@
 // picture and name beside the topic it hangs from, its curve tying it to the point it came from. They used to drop out
 // there (4 of the student week sample's 8 threads were left). The map is that sample as its journal replays it, with its
 // pictures, plus three threads it lacks: a tangent of a tangent, one with a long name and no picture (its first letter
-// shows), and a tangent off a topic that had none. Held, at laptop and phone sizes, light and dark (the revamped shell,
-// and once the plain page):
+// shows), and a tangent off a topic that had none. Held, at laptop and phone sizes, light and dark (the shell, and once
+// the classic page, ?shell=1):
 //  - Pictures, and See all while Pictures is the stop: every thread has its picture or letter, on screen; each tangent's
 //    curve starts on its parent (a topic's point or picture, a tangent's picture or name) and ends at its picture; from
 //    the zoom where a name fits beside its card, the name too, whole at 13 px; on a laptop, no name or picture under a
@@ -107,7 +107,7 @@ const core = await standInCore(() => [{ type: "snapshot", world }]);
 const KEYS = { 1: 49, 2: 50, 3: 51, 0: 48 };
 let failed = null;
 try {
-  const runs = [["?shell=2", 1440, 900, "light"], ["?shell=2", 1440, 900, "dark"], ["?shell=2", 390, 844, "light"], ["?shell=2", 390, 844, "dark"], ["", 1440, 900, "light"]];
+  const runs = [["?shell=2", 1440, 900, "light"], ["?shell=2", 1440, 900, "dark"], ["?shell=2", 390, 844, "light"], ["?shell=2", 390, 844, "dark"], ["?shell=1", 1440, 900, "light"]];
   for (const [query, width, height, scheme] of runs) {
     const label = `${query || "/"} ${width}x${height} ${scheme}`;
     step(`${label}: opening`);
@@ -171,7 +171,7 @@ try {
         const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
         const png = Buffer.from(data, "base64");
         assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [width, height], `${label}: the screenshot's size`);
-        writeFileSync(join(shots, `${name}-${query ? "shell" : "plain"}-${width}x${height}-${scheme}.png`), png);
+        writeFileSync(join(shots, `${name}-${query === "?shell=1" ? "plain" : "shell"}-${width}x${height}-${scheme}.png`), png);
       };
 
       /** Pictures (or See all while Pictures is the stop): every thread there, and where it should be. */

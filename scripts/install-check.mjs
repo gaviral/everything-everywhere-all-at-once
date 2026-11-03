@@ -11,9 +11,9 @@ const manifest = JSON.parse(read("ui/public/manifest.webmanifest"));
 const html = read("ui/index.html");
 const styles = read("ui/src/styles.css");
 
-// The page's background in each theme, as styles.css sets it.
-const light = /:root \{[^}]*--bg: (#[0-9a-f]{6})/.exec(styles)[1];
-const dark = /prefers-color-scheme: dark\)[^]*?--bg: (#[0-9a-f]{6})/.exec(styles)[1];
+// The page's background in each theme, as styles.css sets it: the shell's paper (--space), the page that opens.
+const light = /\nhtml\.shell2 \{[^}]*?--space: (#[0-9a-f]{6})/.exec(styles)[1];
+const dark = /prefers-color-scheme: dark\) \{\s*html\.shell2 \{[^}]*?--space: (#[0-9a-f]{6})/.exec(styles)[1];
 
 // What Chrome needs to offer Install, and what keeps one installed app however it was opened.
 assert.ok(manifest.name && manifest.short_name.length <= 12, "a name, and a short one that fits under an icon");

@@ -1,5 +1,6 @@
-// Today's page starts on the Canvas; ?cards keeps the cards route. Synthetic map, throwaway browser storage,
-// and the real built UI. SHOTS=dir saves the plain Canvas at laptop/phone device sizes, light and dark.
+// Which page opens: the shell with no flag (and for ?shell=2, its old address, even beside ?cards); the classic page
+// for ?shell=1, starting on the Canvas, and for ?cards, on cards. Synthetic map, throwaway browser storage, and the real
+// built UI. SHOTS=dir saves the classic page's Canvas (?shell=1) at laptop/phone device sizes, light and dark.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -113,12 +114,13 @@ try {
         core.send({ type: "found", thread_id: id, thought_id: point, message: "Found the requested point" });
       };
 
-      // No flags, no previously enabled bricks: today's default is visibly the Canvas.
-      await page("Page.navigate", { url: base });
-      assert.ok(await until("!!document.querySelector('.spine-frame.spine-ready')", 10000), `${label}: plain / opens Canvas`);
+      // The classic page (?shell=1), no other flags, no previously enabled bricks: it starts on the Canvas.
+      await page("Page.navigate", { url: base + "?shell=1" });
+      assert.ok(await until("!!document.querySelector('.spine-frame.spine-ready')", 10000), `${label}: ?shell=1 opens Canvas`);
+      assert.equal(await evaluate("document.documentElement.classList.contains('shell2') || !!document.querySelector('.app.shell, [data-slot=stage]')"), false, `${label}: ?shell=1 is the classic page`);
       await evaluate("document.querySelector('.tour-skip')?.click()");
       await evaluate("document.fonts.ready.then(() => true)");
-      assert.ok(await evaluate("__canvasCheck.fresh"), `${label}: plain / has fresh storage`);
+      assert.ok(await evaluate("__canvasCheck.fresh"), `${label}: ?shell=1 has fresh storage`);
       assert.deepEqual(await evaluate("({ width: innerWidth, height: innerHeight })"), { width, height }, `${label}: actual device viewport`);
       await canvasPoint("p1");
       if (shots) {
@@ -183,33 +185,39 @@ try {
       assert.ok(await until(`(${visiblePoint.toString()})("p2", false)`, 8000), `${label}: cards return visibly reaches p2`);
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: cards return retains cards`);
 
-      // Choosing Map explicitly on the plain page keeps cards for a subsequent Find (the functional updater).
+      // The same with ?shell=1&cards: the cards flag still asks for cards beside the classic flag.
       shown = full;
-      await navigate("", ".spine-frame.spine-ready");
+      await navigate("?shell=1&cards", "main.map .thread");
+      assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: ?shell=1&cards shows cards`);
+
+      // Choosing Map explicitly on the classic page keeps cards for a subsequent Find (the functional updater).
+      shown = full;
+      await navigate("?shell=1", ".spine-frame.spine-ready");
       await view("Cards");
       find("T2", "p2");
       assert.ok(await cardsPoint("p2"), `${label}: chosen Map retains cards on Find`);
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: chosen Map stays on cards after Find`);
       await healthy();
 
-      // Empty maps still show today's first-run welcome; the next snapshot opens the default Canvas.
+      // Empty maps still show the classic page's first-run welcome; the next snapshot opens its Canvas.
       shown = empty;
-      await navigate("", ".empty h1");
+      await navigate("?shell=1", ".empty h1");
       assert.equal(await evaluate("document.querySelector('.empty h1').textContent"), "Think out loud.");
       shown = full;
       core.send({ type: "snapshot", world: shown });
       await canvasPoint("p1");
 
-      // shell=2 retains its existing startup and core list even alongside the cards flag.
-      for (const query of ["?shell=2", "?shell=2&cards"]) {
+      // No flag is the shell, and ?shell=2, its old address, is the same page, even alongside the cards flag.
+      for (const query of ["", "?shell=2", "?shell=2&cards"]) {
         shown = full;
         await navigate(query, ".app.shell .spine-frame.spine-ready");
-        assert.equal(await evaluate("document.documentElement.classList.contains('shell2')"), true, `${label}: shell=2 unchanged`);
-        assert.ok(await evaluate("!!document.querySelector('[data-slot=stage]')"), `${label}: shell stage remains`);
-        assert.equal(await evaluate("!!document.querySelector('.palace-switch')"), false, `${label}: shell layout remains`);
+        assert.equal(await evaluate("document.documentElement.classList.contains('shell2')"), true, `${label}: ${query || "/"} is the shell`);
+        assert.ok(await evaluate("!!document.querySelector('[data-slot=stage]')"), `${label}: ${query || "/"}: shell stage`);
+        assert.equal(await evaluate("!!document.querySelector('.palace-switch')"), false, `${label}: ${query || "/"}: shell layout`);
       }
+      // The shell's first open on an empty map, with no flag and with the old address.
       shown = empty;
-      await navigate("?shell=2", ".shell-welcome");
+      for (const query of ["", "?shell=2"]) await navigate(query, ".shell-welcome");
       await browser.close();
       browser = null;
     }
