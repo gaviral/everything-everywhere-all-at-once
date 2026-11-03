@@ -9,7 +9,7 @@
 // 4. contract.ts runs no app code: what it takes from the app is types only.
 // 5. In the built playground (headless Chrome): each brick mounts on a sample map, on an empty one and at a phone's
 //    width without an error, with nothing running off the side; a view or a card shows something.
-// 6. In the built app (all bricks): at their defaults they add nothing to the first screen; the Catalog lists every
+// 6. In the built app (all bricks): at their defaults they add nothing to the empty first screen; the Catalog lists every
 //    brick; each view brick switched on joins Map and Palace, shows in the map's place and hands back to the map, and
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
 // Bubbles, beyond that: one bubble per thread, a landing ripples only its bubble (in the playground and from the core)
@@ -351,7 +351,7 @@ try {
     for (const [label, seed] of [["empty", empty], ["full", full]]) {
       const where = `notice-timeline (${label} map)`;
       shown = seed;
-      await go(`${base}/`);
+      await go(`${base}/?cards`);
       if (!await until(`!!document.querySelector(".notice-timeline")`, 8000)) { fail(where, "never mounted"); continue; }
       if (await evaluate(`!!document.querySelector(".notice-timeline-clock")`)) fail(where, "a clock before any notice");
       await evaluate(`document.querySelector(".composer textarea, .composer input")?.focus()`);
@@ -592,7 +592,7 @@ try {
       for (const [w, h] of [[1440, 900], [1024, 768], [390, 844], [320, 568]]) {
         const at = `countdown in the app at ${w} px`;
         await width(w, h);
-        await go(`${base}/`);
+        await go(`${base}/?cards`);
         if (!await until(`!!document.querySelector(".countdown-card") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no card"); continue; }
         await settle();
         const all = await evaluate(controls);
@@ -756,7 +756,7 @@ try {
       for (const [w, h] of [[1440, 900], [1024, 768], [768, 1024], [390, 844], [360, 740], [320, 568]]) {
         const at = `live-outline in the app at ${w} × ${h} px`;
         await width(w, h);
-        await go(`${base}/`);
+        await go(`${base}/?cards`);
         if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no panel"); continue; }
         core.send({ type: "notice", message: "A notice to come back to" });
         talk.forEach((threadId, i) => core.send({ type: "change", change: { type: "thought_added", thought: thought(`lo-${w}-${i}`, `Point ${i + 1} of the talk, um, said at a length that takes a line or two of the outline`, threadId) } }));
@@ -987,7 +987,7 @@ try {
     for (const [label, fixture] of [["empty", empty], ["only me", full]]) {
       shown = fixture;
       await width(390, 844);
-      await go(`${base}/`);
+      await go(`${base}/?cards`);
       if (!await until(`!!document.querySelector('[data-brick="read-progress"]')`, 8000)) fail("read-progress", `${label}: never mounted`);
       await settle();
       const state = await evaluate(`({ marks: document.querySelectorAll(".read-progress-point, .read-progress-dot, .read-progress-mark").length,
@@ -1002,13 +1002,13 @@ try {
     const key = "e2a2o.brick.read-progress.read-progress-check";
     await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
-    await go(`${base}/`);
+    await go(`${base}/?cards`);
     const firstPoint = `document.getElementById("point-read-progress-0")`;
     if (!await until(`${firstPoint}?.classList.contains("read-progress-point")`, 8000)) fail("read-progress", "doesn't attach to another participant's point");
     else {
       await evaluate(`${firstPoint}.click()`);
       if (!await until(`${firstPoint}.classList.contains("read-progress-mark") && localStorage.getItem(${JSON.stringify(key)}) === "read-progress-0"`, 2000)) fail("read-progress", "a tap doesn't mark and save the thought");
-      await go(`${base}/`);
+      await go(`${base}/?cards`);
       if (!await until(`${firstPoint}?.classList.contains("read-progress-mark")`, 8000)) fail("read-progress", "the saved mark doesn't survive a reload");
       const state = await evaluate(`({ dot: !!document.querySelector("#point-read-progress-1 .read-progress-dot"),
         broke: !!document.querySelector(".brick-broke"), sideways: document.documentElement.scrollWidth - innerWidth })`);
@@ -1020,7 +1020,7 @@ try {
     shown.thoughts = [...Array.from({ length: 9 }, (_, n) => ({ ...thought(`mine-${n}`, `My point ${n + 1}`, "read-progress-check"), at_ms: now - 9000 + n })),
       friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
     await width(390, 600);
-    await go(`${base}/`);
+    await go(`${base}/?cards`);
     if (await until(`!!document.querySelector("#point-read-progress-1.read-progress-point") && !!document.querySelector(".dock")`, 8000)) {
       await settle();
       const under = await evaluate(`(() => { const dock = document.querySelector(".dock").getBoundingClientRect().top;
@@ -1476,7 +1476,7 @@ try {
           thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
           anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, { thought_id: "T1-0", quote }])) };
         const openSpine = async () => {
-          await go(`${base}/`);
+          await go(`${base}/?cards`);
           if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
           await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
           await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
@@ -1624,7 +1624,7 @@ try {
     const chips = `document.querySelectorAll(".brick-chip").length`;
     await switched(true);
     shown = full;
-    await go(`${base}/`);
+    await go(`${base}/?cards`);
     if (!await until(`!!document.querySelector('[data-brick="brick-chip"]') && !!document.querySelector(".points li")`, 8000)) fail("brick-chip", "never mounted on a full map");
     else {
       await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
@@ -1682,14 +1682,14 @@ try {
   const brickNames = appBricks.map((info) => info.name);
   const viewBricks = appBricks.filter((info) => info.kind === "view");
   shown = empty;
-  await go(`${base}/`);
+  await go(`${base}/?cards`);
   await until(`!!document.querySelector(".empty h1")`, 8000);
   await settle();
   const first = await evaluate(`({ bricks: document.querySelectorAll("[data-brick]").length, catalog: !!document.querySelector(".catalog, .apps-catalog"),
     level: !!document.querySelector(".level-meter") })`);
   if (first.bricks || first.catalog || first.level) fail("app's first screen", `bricks at their defaults show up: ${JSON.stringify(first)}`);
   shown = full;
-  await go(`${base}/`);
+  await go(`${base}/?cards`);
   await until(`document.querySelectorAll(".thread").length > 0`, 8000);
   await settle();
   // The slots today's layout has: one each, and no name the contract doesn't know. No stage yet: today's dock spans the
@@ -1700,7 +1700,7 @@ try {
   const named = [...read(join(bricksDir, "contract.ts")).match(/export const SLOTS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   for (const name of slots) if (!named.includes(name) && !name.startsWith("slot:")) fail("the app's slots", `data-slot="${name}" isn't a contract name`);
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);
-  assert.deepEqual(await views(), ["Map", "Palace"], "at their defaults, no brick joins Map and Palace");
+  assert.deepEqual(await views(), ["Map", "Palace", "Spine"], "the core Spine joins Map and Palace at their defaults");
   await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
   // "What just happened?" with the Notice timeline off: the answer says where to switch it on, and the view stays.
   const viewButton = (name) => `[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)})`;
@@ -1738,7 +1738,8 @@ try {
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
-  for (const { name } of [...viewBricks, ...(tiny ? [tiny] : []), ...(timeline ? [timeline] : [])]) {
+  assert.equal(await evaluate(`${switchFor("Spine")}.getAttribute("aria-checked")`), "true", "the core Spine is already on in the Catalog");
+  for (const { name } of [...viewBricks.filter((info) => info.id !== "spine"), ...(tiny ? [tiny] : []), ...(timeline ? [timeline] : [])]) {
     await evaluate(`${switchFor(name)}.click()`);
     if (await evaluate(`${switchFor(name)}.getAttribute("aria-checked")`) !== "true") fail("Catalog", `${name}'s switch didn't turn on`);
   }
@@ -1887,14 +1888,14 @@ try {
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Map").click()`);
     if (!await until(`!!document.querySelector("main.map .thread")`, 3000)) fail(name, "Map doesn't bring the map back");
   }
-  await go(`${base}/`);
+  await go(`${base}/?cards`);
   await until(`document.querySelectorAll(".thread").length > 0`, 8000);
   if ((await views()).join() !== switched) fail("Catalog", "a switch isn't kept after a reload (it's this browser's)");
   await evaluate(`localStorage.removeItem("e2a2o.bricks")`);
   if (appBricks.some((info) => info.flag === "level")) {
-    await go(`${base}/?level`);
+    await go(`${base}/?level&cards`);
     if (!await until(`!!document.querySelector(".level-meter")`, 4000)) fail("Level meter", "?level doesn't show it");
-    await go(`${base}/`);
+    await go(`${base}/?cards`);
     await until(`document.querySelectorAll(".thread").length > 0`, 8000);
     await settle();
     if (await evaluate(`!!document.querySelector(".level-meter")`)) fail("Level meter", "shows without ?level");
@@ -1906,7 +1907,7 @@ try {
     const clearFlightSettings = `localStorage.removeItem("e2a2o.brick.bubble-flight.show"); localStorage.removeItem("e2a2o.brick.bubble-flight.hinted")`;
     const openSpine = async () => {
       shown = full;
-      await go(`${base}/`);
+      await go(`${base}/?cards`);
       const switchReady = await until(`[...document.querySelectorAll(".palace-switch button")].some((b) => b.textContent === "Spine")`, 8000);
       await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
       await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);

@@ -4,6 +4,7 @@ import type { World } from "./core";
 import { resolveMerged } from "./merges";
 import "./find.css";
 import { look, wordsIn } from "./Attention";
+import type { ViewDestination } from "./bricks/contract";
 
 /** Whether focus is in a field the person types in: a jump shows its point there without taking focus from it. */
 export function typingIn(element: Element | null): boolean {
@@ -19,10 +20,11 @@ type Reveal = {
   setQuery: Dispatch<SetStateAction<string>>;
   setFocusMode: Dispatch<SetStateAction<boolean>>;
   setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setDestination?: Dispatch<SetStateAction<ViewDestination | null>>;
 };
 
 // Only a private, live result moves the viewport. Replaying a journal never does.
-export function useFindJump(found: Found | null, world: World, { setView, setQuery, setFocusMode, setExpanded }: Reveal) {
+export function useFindJump(found: Found | null, world: World, { setView, setQuery, setFocusMode, setExpanded, setDestination }: Reveal, home = "map") {
   const [requested, setRequested] = useState<Found | null>(null);
   useEffect(() => setRequested(found), [found]);
   const reveal = useCallback((thread_id: string, thought_id: string | null = null, item_id?: string) => {
@@ -37,7 +39,8 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
     const world = currentWorld.current;
     const id = resolveMerged(world, found.thread_id);
     if (!world.threads.some((thread) => thread.id === id)) return;
-    setView("map");
+    setView((was) => was === "map" ? "map" : home);
+    setDestination?.((was) => ({ threadId: id, thoughtId: found.thought_id, revision: (was?.revision ?? 0) + 1 }));
     setQuery("");
     setFocusMode(false);
     setExpanded((state) => {
@@ -80,6 +83,6 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
       cancelAnimationFrame(frame);
       unlook();
     };
-  }, [requested, reducedMotion, setView, setQuery, setFocusMode, setExpanded]);
+  }, [requested, reducedMotion, setView, setQuery, setFocusMode, setExpanded, setDestination, home]);
   return reveal;
 }

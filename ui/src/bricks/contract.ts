@@ -183,6 +183,9 @@ export interface BrickEvents {
 /** Listens for one kind of event; returns the way to stop. */
 export type BrickOn = <K extends keyof BrickEvents>(name: K, listener: (value: BrickEvents[K]) => void) => () => void;
 
+/** A live navigation request, kept while a view's code loads; a repeated destination has a new revision. */
+export type ViewDestination = { threadId: string; thoughtId: string | null; revision: number };
+
 /** The props a brick's index.tsx gets: its default export is a component taking these. */
 export interface BrickProps {
   map: MapSnapshot;
@@ -190,6 +193,8 @@ export interface BrickProps {
   on: BrickOn;
   /** Its own brick.json. */
   brick: BrickInfo;
+  /** A private Find or return request: a view aims here even while its camera's follow is held. */
+  destination?: ViewDestination | null;
 }
 
 /** The page's regions, each an element marked `data-slot="<name>"` while it's on screen (docs/bricks.md says where each

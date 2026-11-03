@@ -167,7 +167,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
   return { stage: stage && stage.height ? stage : null, status: status?.height ?? 0, frame: frameBox };
 }
 
-function Canvas({ map, actions, on }: BrickProps) {
+function Canvas({ map, actions, on, destination }: BrickProps) {
   const flow = useReactFlow<ItemNode>();
   const reduced = useReducedMotion();
   const shelf = useShelf(map);
@@ -408,6 +408,24 @@ function Canvas({ map, actions, on }: BrickProps) {
     const card = layout.byKey.get(`t:${open.id}`);
     if (card && !camera.comfortable(card.box)) camera.aim(card.box, { ring: card.key });
   }, [open?.id, open?.by]);
+
+  // Find and return name their destination, rather than the active thread's newest point. Keep the request across
+  // a lazy mount, wait for its layout, and cancel any queued follow so a held camera still goes exactly there.
+  const reached = useRef<BrickProps["destination"]>(null);
+  useEffect(() => {
+    if (!ready || !destination || reached.current === destination) return;
+    const { thoughtId, threadId } = destination;
+    const point = thoughtId ? layout.items.find((item) => item.thoughts?.includes(thoughtId)) : undefined;
+    const thread = map.threads.find((thread) => thread.id === threadId);
+    if (!point && thoughtId && thread?.parent_id && open?.id !== thread.id) {
+      setOpen({ id: thread.id, by: "follow" });
+      return;
+    }
+    const item = point ?? layout.byKey.get(`t:${threadId}`);
+    if (!item) return;
+    reached.current = destination;
+    camera.aim(item.box, { ring: item.key });
+  }, [ready, destination, layout, map.threads, open?.id, camera.aim]);
 
   const stopFollowing = () => { touched.current = Date.now(); setFollowing(false); camera.hold(); };
   const startFollowing = () => {

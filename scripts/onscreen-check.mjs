@@ -41,7 +41,7 @@ const shots = process.env.SHOTS;
 for (const hosted of [false, true]) {
   const header = hosted ? "hosted" : "local";
   const core = await standInCore(() => [{ type: "snapshot", world }], { door: { room: true, member: true, hosted } });
-  const page = await openPage(`http://127.0.0.1:${core.port}/`, { width: 1440, height: 900 });
+  const page = await openPage(`http://127.0.0.1:${core.port}/?cards`, { width: 1440, height: 900 });
   const { evaluate, until, page: cdp } = page;
   const size = async (width, height) => {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
