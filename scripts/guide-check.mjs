@@ -484,11 +484,13 @@ try {
     const [, r, g, b] = inflateSync(Buffer.concat(idat));
     return [r, g, b];
   };
-  /** The caption's own plate (the page's light color) in its right padding, mid-height: nothing is drawn over it. */
+  /** The caption's own plate in its right padding, mid-height: nothing is drawn over it. */
   const onTop = async (selector) => {
     const r = await box(selector);
     const rgb = await pixel(Math.floor(r.right - 5), Math.floor((r.top + r.bottom) / 2));
-    return Math.min(...rgb) >= 240 || `${rgb} at ${Math.floor(r.right - 5)},${Math.floor((r.top + r.bottom) / 2)} in ${JSON.stringify(r)}`;
+    const plate = await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).backgroundColor`);
+    const expected = plate.match(/[\d.]+/g).slice(0, 3).map(Number);
+    return rgb.every((value, i) => Math.abs(value - expected[i]) <= 1) || `${rgb}, expected ${plate}, in ${JSON.stringify(r)}`;
   };
 
   step("over an open sheet");
@@ -730,6 +732,98 @@ try {
   core.send({ type: "partial", text: "" });
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true, "no sideways scroll");
   await shot("11-phone");
+  await page.close();
+  page = null;
+
+  // The shell owns the space between its notice and composer, even while the caption is in the top layer.
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    step(`shell captions at ${width}`);
+    page = await openPage(`http://127.0.0.1:${core.port}/?shell=2`, { width, height });
+    ({ evaluate, until } = page);
+    await toured();
+    assert.ok(await until(`!!document.querySelector('#shell-caption') && !!document.querySelector('[data-guide="search"]')`, 8000), "the shell opens");
+    await evaluate(`document.fonts.ready.then(() => true)`);
+    const emptySlot = `document.querySelector('#shell-caption').getBoundingClientRect().height === 0`;
+    assert.ok(await until(emptySlot, 1000), "an empty caption slot takes no space");
+    for (const scheme of ["light", "dark"]) {
+      step(`shell captions at ${width}, ${scheme}`);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] });
+      core.send({ type: "notice", message: "Your map is saved." });
+      guide("point", "search", "");
+      guide("caption", null, "Find a topic here. Your **rent** is still on the map. Keep your plans together.");
+      assert.ok(await until(`document.querySelectorAll('#shell-caption .guide-caption').length === 1 && document.querySelector('.guide-layer')?.dataset.state === 'aimed'`, 2000), "one caption is portaled into the shell");
+      await sleep(250);
+      const checkSlot = async () => {
+        const [cap, slot, composer, notice] = await Promise.all([box(".guide-caption"), box("#shell-caption"), box('[data-guide="composer"]'), box('[data-guide="notice"]')]);
+        assert.equal(await evaluate(`document.querySelectorAll('.guide-caption').length`), 1, "exactly one caption on the page");
+        assert.ok(slot.bottom > slot.top && Math.abs((slot.bottom - slot.top) - (cap.bottom - cap.top)) <= 1, "the slot reserves the rendered caption height");
+        assert.ok(inside(cap, width, height), `the shell caption stays inside the viewport (${JSON.stringify(cap)})`);
+        assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top && cap.bottom <= composer.top, "between notice and composer without overlap");
+        assert.ok(Math.abs(cap.top - slot.top) <= 1 && Math.abs(cap.bottom - slot.bottom) <= 1, "the visible caption follows its reserved box");
+        assert.ok(await evaluate(`(() => { const line = document.querySelector('.guide-line'); return line.getBoundingClientRect().height <= 2 * parseFloat(getComputedStyle(line.parentElement).lineHeight) + 1; })()`), "sentence pages fit two lines at the slot's width");
+        await lands("search", "the shell caption's arrow");
+      };
+      await checkSlot();
+      await shot(`shell-caption-${width}-${scheme}`);
+      await evaluate(`document.querySelector('[data-guide="composer"]').style.height = '88px'`);
+      await sleep(100);
+      await checkSlot();
+      await evaluate(`document.querySelector('[data-guide="composer"]').style.removeProperty('height')`);
+      // A point's words replace a caption; clearing that point then takes its words down too.
+      guide("point", "search", "Find your topic here.");
+      guide("point", null, "");
+      assert.ok(await until(`!document.querySelector('.guide-caption') && ${emptySlot}`, 1000), "clearing the caption releases the slot");
+
+      await evaluate(`(() => { const dialog = document.createElement('dialog'); dialog.id = 'guide-sheet'; document.body.append(dialog); dialog.showModal(); })()`);
+      guide("point", "search", "Find your topic here.");
+      assert.ok(await until(`document.querySelector('#shell-caption .guide-caption')?.matches(':popover-open')`, 2000), "the shell caption keeps its manual popover over a dialog");
+      await sleep(200);
+      assert.equal(await onTop(".guide-caption"), true, "the shell caption is visible over the open dialog");
+      guide("point", null, "");
+      assert.ok(await until(`!document.querySelector('.guide-caption') && ${emptySlot}`, 1000), "the point's caption releases the slot too");
+      await evaluate(`document.querySelector('#guide-sheet').remove()`);
+    }
+    if (width === 1440) {
+      step("shell caption paging follows unread words through a resize");
+      await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(); const tone = ctx.createOscillator();
+        const out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+      await click('[data-guide="mic"]');
+      assert.ok(await until(`document.querySelector('[data-guide="mic"]')?.getAttribute('aria-pressed') === 'true'`, 5000));
+      const source = Array.from({ length: 80 }, (_, i) => `word${i}`);
+      const captionWords = () => evaluate(`document.querySelector('.guide-caption .guide-text')?.textContent.trim() ?? null`);
+      const resizeSlot = (size) => evaluate(`document.querySelector('#shell-caption').style.width = '${size}px'`);
+      for (const [from, to] of [[300, 640], [640, 300]]) {
+        await resizeSlot(from);
+        guide("caption", null, `**${source.join(" ")}**`);
+        assert.ok(await until(`document.querySelector('.guide-caption .guide-text')?.textContent.startsWith('word0 ')`, 2000));
+        await sleep(100);
+        const firstPage = await captionWords();
+        let start = firstPage.split(/\s+/).length;
+        assert.ok(await until(`document.querySelector('.guide-caption .guide-text')?.textContent.startsWith(${JSON.stringify(source[start] + " ")})`, captionMs(firstPage) + 1200), "the second page starts after the words already read");
+        const shownAt = Date.now();
+        const before = await captionWords();
+        if (to < from) await sleep(2200);
+        await resizeSlot(to);
+        assert.ok(await until(`document.querySelector('.guide-caption')?.getBoundingClientRect().width <= ${to} && document.querySelector('.guide-caption .guide-text')?.textContent !== ${JSON.stringify(before)}`, 1000), "the page is rebuilt at the new slot width");
+        const after = await captionWords();
+        assert.ok(after.startsWith(source[start] + " "), "resizing keeps the source position, without repeating or skipping words");
+        assert.ok(after.split(/\s+/).length * (to > from ? 1 : -1) > before.split(/\s+/).length * (to > from ? 1 : -1), "the slot width changes how many unread words fit");
+        assert.equal(await evaluate(`document.querySelector('.guide-caption strong')?.textContent`), after, "a bold span stays open across the source position");
+        if (to < from) {
+          start += after.split(/\s+/).length;
+          assert.ok(await until(`document.querySelector('.guide-caption .guide-text')?.textContent.startsWith(${JSON.stringify(source[start] + " ")})`, Math.max(0, captionMs(after) - (Date.now() - shownAt)) + 1000), "resizing retains elapsed reading time");
+        }
+        say("so anyway another thought");
+        assert.ok(await until(`!document.querySelector('.guide-caption') && !!document.querySelector('.guide-held-text')`, 1000), "talking over the resized page holds its unread remainder");
+        assert.equal(await evaluate(`document.querySelector('.guide-held-text').textContent.trim()`), source.slice(start).join(" "), "the held remainder contains every unread word once, in order");
+        await evaluate(`document.querySelectorAll('.guide-held-card button:last-child').forEach((button) => button.click())`);
+        await pause();
+      }
+      await evaluate(`document.querySelector('#shell-caption').style.removeProperty('width')`);
+    }
+    await page.close();
+    page = null;
+  }
 } catch (error) {
   failed = error;
 } finally {
