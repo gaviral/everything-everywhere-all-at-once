@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { uiServer } from "./ui-server.mjs";
-import { SVG, PAPER } from "./icons.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -15,7 +14,6 @@ const styles = read("ui/src/styles.css");
 // The page's background in each theme, as styles.css sets it.
 const light = /:root \{[^}]*--bg: (#[0-9a-f]{6})/.exec(styles)[1];
 const dark = /prefers-color-scheme: dark\)[^]*?--bg: (#[0-9a-f]{6})/.exec(styles)[1];
-assert.equal(PAPER, light, "the icon's paper is the page's");
 
 // What Chrome needs to offer Install, and what keeps one installed app however it was opened.
 assert.ok(manifest.name && manifest.short_name.length <= 12, "a name, and a short one that fits under an icon");
@@ -26,23 +24,44 @@ assert.equal(manifest.display, "standalone");
 assert.equal(manifest.theme_color, light);
 assert.equal(manifest.background_color, light, "the splash is the page's own paper, so opening doesn't flash");
 
-/** Width, height, and RGBA rows of a PNG this repo drew (8-bit RGBA, no interlace, filter 0 on every row). */
+/** Width, height and a pixel reader for a PNG in ui/public: 8-bit RGB or RGBA, no interlace, any row filter (Chrome
+ *  picks one per row). A PNG with no alpha channel reads as opaque. */
 function png(path) {
   const bytes = readFileSync(new URL(`ui/public${path}`, root));
   assert.equal(bytes.toString("latin1", 1, 4), "PNG", path);
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
-  assert.deepEqual([bytes[24], bytes[25], bytes[28]], [8, 6, 0], `${path}: 8-bit RGBA`);
+  const channels = { 2: 3, 6: 4 }[bytes[25]];
+  assert.ok(bytes[24] === 8 && channels && bytes[28] === 0, `${path}: 8-bit RGB or RGBA, not interlaced`);
   const data = [];
   for (let at = 8; at < bytes.length;) {
     const length = bytes.readUInt32BE(at), type = bytes.toString("latin1", at + 4, at + 8);
     if (type === "IDAT") data.push(bytes.subarray(at + 8, at + 8 + length));
     at += 12 + length;
   }
-  const raw = inflateSync(Buffer.concat(data));
-  const pixel = (x, y) => { const i = y * (width * 4 + 1) + 1 + x * 4; return [...raw.subarray(i, i + 4)]; };
+  const raw = inflateSync(Buffer.concat(data)), stride = width * channels, rows = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const left = i >= channels ? rows[y * stride + i - channels] : 0;
+      const up = y ? rows[(y - 1) * stride + i] : 0;
+      const upLeft = y && i >= channels ? rows[(y - 1) * stride + i - channels] : 0;
+      const [pa, pb, pc] = [Math.abs(up - upLeft), Math.abs(left - upLeft), Math.abs(left + up - 2 * upLeft)];
+      const paeth = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+      rows[y * stride + i] = (raw[y * (stride + 1) + 1 + i] + [0, left, up, (left + up) >> 1, paeth][filter]) & 255;
+    }
+  }
+  const pixel = (x, y) => { const i = y * stride + x * channels; return [rows[i], rows[i + 1], rows[i + 2], channels === 4 ? rows[i + 3] : 255]; };
   return { width, height, pixel };
 }
-const hex = (p) => "#" + p.slice(0, 3).map((v) => v.toString(16).padStart(2, "0")).join("");
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const near = (p, q, within) => [0, 1, 2].every((k) => Math.abs(p[k] - q[k]) <= within);
+
+// One icon in three places (the tab, the Dock, the home screen): every PNG paints the plate icon.svg paints, a blue
+// that is lighter at the top and deeper at the bottom (its two gradient stops).
+const svg = read("ui/public/icon.svg");
+const plate = [...svg.matchAll(/stop-color="(#[0-9a-f]{6})"/g)].map((m) => rgb(m[1]));
+assert.equal(plate.length, 2, "icon.svg's plate runs between two stops");
+const plateMiddle = plate[0].map((v, k) => (v + plate[1][k]) / 2);
 
 const purposes = new Set();
 for (const icon of manifest.icons) {
@@ -52,19 +71,29 @@ for (const icon of manifest.icons) {
   const { width, height, pixel } = png(icon.src);
   assert.equal(`${width}x${height}`, icon.sizes, `${icon.src} is the size it claims`);
   if (icon.purpose === "maskable") {
-    // Full bleed (a mask cuts it, so no see-through corner), and the mark inside the safe circle (40 % radius).
-    assert.deepEqual(pixel(0, 0), [...pixel(0, 0).slice(0, 3), 255], `${icon.src} corners are opaque`);
+    // Full bleed (a mask cuts it, so no see-through corner) with the plate's bottom blue in its corner, and the glyph
+    // inside the safe circle (40 % radius): outside it only plate, the row's own blue give or take the glyph's soft
+    // shadow (24 of 255; the worst measured is 21). A ribbon or pearl out there would be 100 or more off.
+    for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) assert.equal(pixel(x, y)[3], 255, `${icon.src} corners are opaque`);
+    assert.ok(near(pixel(0, height - 1), plate[1], 8), `${icon.src} is icon.svg's blue at the bottom`);
     for (let y = 0; y < height; y += 4) for (let x = 0; x < width; x += 4) {
-      if (Math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2) > width * 0.4) assert.equal(hex(pixel(x, y)), light, `${icon.src} (${x}, ${y}) outside the safe circle is paper`);
+      if (Math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2) > width * 0.4) assert.ok(near(pixel(x, y), pixel(0, y), 24), `${icon.src} (${x}, ${y}) outside the safe circle is plate`);
     }
   } else {
-    // The Dock shows it as is: the tile with see-through corners, paper inside.
+    // The Dock shows it as is: the tile with see-through corners, the plate's blue inside (the middle of its ramp).
     assert.equal(pixel(0, 0)[3], 0, `${icon.src} corner is see-through`);
-    assert.equal(hex(pixel(Math.round(width * 0.15), Math.round(height / 2))), light, `${icon.src} tile is paper`);
+    const inside = pixel(Math.round(width * 0.15), Math.round(height / 2));
+    assert.equal(inside[3], 255, `${icon.src} tile is opaque`);
+    assert.ok(near(inside, plateMiddle, 24), `${icon.src} tile is icon.svg's blue`);
   }
 }
 for (const needed of ["any 192x192", "any 512x512", "maskable 512x512"]) assert.ok(purposes.has(needed), `manifest has ${needed}`);
-assert.equal(read("ui/public/icon.svg"), SVG, "icon.svg is what scripts/icons.mjs draws (run it after changing the shape)");
+// The hosted sign-in page inlines icon.svg beside its own ids, under a policy that allows styles by hash only: no
+// <style>, no script, no outside reference, every id prefixed; and it's fetched with every page, so it stays small.
+assert.match(svg, /^<svg [^>]*viewBox="0 0 32 32"/, "icon.svg is drawn on a 32 px grid");
+assert.doesNotMatch(svg, /<style|<script|<image|href=/, "icon.svg is self-contained: no style, script or outside reference");
+for (const [, id] of svg.matchAll(/\bid="([^"]+)"/g)) assert.ok(id.startsWith("e2a2o-"), `icon.svg's id ${id} is prefixed e2a2o-`);
+assert.ok(svg.length <= 2048, `icon.svg is ${svg.length} bytes; at most 2 KB`);
 
 // The page links them, with both themes' bar colors.
 const tag = (pattern) => html.match(new RegExp(`<(?:link|meta)[^>]*${pattern}[^>]*>`))?.[0] ?? "";
