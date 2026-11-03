@@ -12,6 +12,9 @@
 //  - A slot (dashed) is where your thought on its way is expected: under the tip of the thread you're on.
 //  - Whatever someone placed by hand stays exactly there; the rest flows around it, never under it. What's on the
 //    shelf is off the canvas; where a point was, its line keeps a small mark.
+//  - Once the AI has sorted the topics under two or more named topics (`thread.topic`, the map's `topics`), each named
+//    topic is a group of columns under a header with its name, in the map's order, those not sorted yet last; a group
+//    grows a column every `perColumn` topics. Within a group, topics stand as the columns always did.
 import type { Note, Position, Speaker, Thought, Thread } from "../contract";
 import { wrap, wrapEnd, type FontKey } from "./measure";
 
@@ -52,6 +55,10 @@ export const G = {
   // strip 12,800 units long (rows of four made it 6,200 tall: zoom 0.1). Under each other, topics keep the same gap
   // as side by side.
   columns: 6, rowGap: 96,
+  // A named topic's group: its header (its name at 24/30 over a hairline, 44 tall), 40 above its first spine; a group
+  // grows a column every 8 spines, so a live map of 37 in 6 topics takes about 7 columns, its tallest 8 spines (the
+  // masonry's was 6 columns of 6 or 7); groups stand twice a column's gap apart, so a group's own columns read as its own.
+  groupHead: 44, groupGap: 40, perColumn: 8, groupSpace: 96,
 } as const;
 
 /** How a point is set: on a topic's line, or inside an open card. Offsets are from the point's own box. */
@@ -91,7 +98,7 @@ export function whoIs(name: string, me: string, speakers?: ReadonlyMap<string, S
   return { name: mine ? "you" : friend ? "Friend" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
 }
 
-export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin";
+export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin" | "group";
 
 /** Words picked in a point, answered in a margin note: where they are in its words, and whether the note is folded. */
 export interface Quote {
@@ -191,6 +198,8 @@ export interface Item {
   margin?: string;
   entries?: Entry[];
   more?: number;
+  /** A named topic's header: the topic ("" for the ones not sorted yet), with `count` its spines and `title` its name. */
+  group?: string;
 }
 
 export interface Mark {
@@ -240,6 +249,9 @@ export interface Layout {
   shelf: Shelved[];
   /** Topics laid out in a row, in order (not those placed by hand). */
   lanes: string[];
+  /** The named topics' groups, left to right: each its name ("" for the ones not sorted yet) and the band its header
+   *  and columns take (what a spine is dropped on to move it there). None until two or more are named. */
+  groups: { name: string; box: Box }[];
 }
 
 /** A margin note as the layout takes it (index.tsx gathers them from the map). */
@@ -279,6 +291,8 @@ export interface LayoutInput {
   margins?: readonly MarginInput[];
   /** Folded questions this viewer opened. */
   opened?: ReadonlySet<string>;
+  /** The map's topics in their order (the map's `topics`): the groups' order. Without it, the order they first come. */
+  topics?: readonly string[];
   /** A phone's width: margin notes tuck under their words. */
   narrow?: boolean;
 }
@@ -582,7 +596,7 @@ export function layout(input: LayoutInput): Layout {
   };
   const threadItem = (t: Thread, box: Box, kind: "head" | "card" | "aside", extra: Partial<Item>): Item => ({
     key: `t:${t.id}`, id: t.id, kind, thread: t.id, box, pinned: pins.has(t.id), by: pins.get(t.id)?.by, topic: topicOf(t.id),
-    room: rooms.get(t.id), depth: depthOf(t), title: t.title, picture: t.picture, dropped: t.status === "dropped", ...extra,
+    room: rooms.get(t.id), depth: depthOf(t), title: t.title, picture: t.picture, dropped: t.status === "dropped", group: t.topic ?? "", ...extra,
   });
   const pointItem = (idea: Idea, thread: string, box: Box, look: Look, up: string | undefined, depth: number): Item => {
     const shape = shapeOf(idea, look);
@@ -858,47 +872,76 @@ export function layout(input: LayoutInput): Layout {
     for (const step of history) if (step.at <= moment) bottom = Math.max(bottom, step.bottom);
     return bottom;
   };
-  const columns: string[][] = Array.from({ length: G.columns }, () => []);
-  for (const t of order2) {
-    const moment = started(t);
-    let best = 0;
-    let lowest = Infinity;
-    columns.forEach((list, c) => {
-      const bottom = list.reduce((sum, id) => sum + heightAt(id, moment) + G.rowGap, 0);
-      if (bottom < lowest - 0.5) { lowest = bottom; best = c; }
-    });
-    columns[best].push(t.id);
-  }
+  /** `ts`, each in the order they started, under the one of `n` columns that was shortest then. */
+  const masonry = (ts: Thread[], n: number) => {
+    const columns: string[][] = Array.from({ length: n }, () => []);
+    for (const t of ts) {
+      const moment = started(t);
+      let best = 0;
+      let lowest = Infinity;
+      columns.forEach((list, c) => {
+        const bottom = list.reduce((sum, id) => sum + heightAt(id, moment) + G.rowGap, 0);
+        if (bottom < lowest - 0.5) { lowest = bottom; best = c; }
+      });
+      columns[best].push(t.id);
+    }
+    return columns;
+  };
+  // Groups: each named topic in the map's order, then those not sorted yet, once two or more are named among the topics
+  // laid out here; else one group of every topic, in six columns, as before.
+  const named = [...new Set([...(input.topics ?? []), ...roots.map((t) => t.topic).filter((name): name is string => !!name)])]
+    .filter((name) => order2.some((t) => t.topic === name));
+  const grouped = named.length >= 2;
+  const groupsIn: { name: string; ts: Thread[] }[] = grouped
+    ? [...named.map((name) => ({ name, ts: order2.filter((t) => t.topic === name) })), { name: "", ts: order2.filter((t) => !t.topic || !named.includes(t.topic)) }].filter((g) => g.ts.length)
+    : [{ name: "", ts: order2 }];
+  const groups: Layout["groups"] = [];
   let x0 = 0;
-  for (const list of columns) {
-    if (!list.length) continue;
-    const left = Math.max(...list.map((id) => -rows.get(id)!.shape.x));
-    const right = Math.max(...list.map((id) => rows.get(id)!.shape.x + rows.get(id)!.shape.w));
-    const spineX = x0 + left;
-    let y = 0;
-    for (const id of list) {
-      const { shape } = rows.get(id)!;
-      // Past anything placed by hand that's in the way: down, keeping the column.
-      let top = y;
-      for (let moved = true, guard = 0; moved && guard < 100; guard++) {
-        moved = false;
-        for (const { box: k, topic } of keepOut) {
-          if (topic !== id && overlaps({ x: spineX + shape.x, y: top + shape.y, w: shape.w, h: shape.h }, k, G.laneGap / 2)) {
-            top = k.y + k.h + G.laneGap - shape.y;
-            moved = true;
+  for (const group of groupsIn) {
+    const groupX = x0;
+    let bottomMost = 0;
+    const columns = masonry(group.ts, grouped ? Math.ceil(group.ts.length / G.perColumn) : G.columns);
+    for (const list of columns) {
+      if (!list.length) continue;
+      const left = Math.max(...list.map((id) => -rows.get(id)!.shape.x));
+      const right = Math.max(...list.map((id) => rows.get(id)!.shape.x + rows.get(id)!.shape.w));
+      const spineX = x0 + left;
+      let y = 0;
+      for (const id of list) {
+        const { shape } = rows.get(id)!;
+        // Past anything placed by hand that's in the way: down, keeping the column.
+        let top = y;
+        for (let moved = true, guard = 0; moved && guard < 100; guard++) {
+          moved = false;
+          for (const { box: k, topic } of keepOut) {
+            if (topic !== id && overlaps({ x: spineX + shape.x, y: top + shape.y, w: shape.w, h: shape.h }, k, G.laneGap / 2)) {
+              top = k.y + k.h + G.laneGap - shape.y;
+              moved = true;
+            }
           }
         }
+        const before = out.items.length;
+        spine(out, byId.get(id)!, spineX, top, false);
+        let bottom = top;
+        for (const item of out.items.slice(before)) bottom = Math.max(bottom, item.box.y + item.box.h);
+        const above = lanes.length && list.indexOf(id) > 0 ? byKey.get(`t:${list[list.indexOf(id) - 1]}`) : undefined;
+        if (above) above.reach = top - above.box.y;
+        lanes.push(id);
+        bottomMost = Math.max(bottomMost, bottom);
+        y = bottom + G.rowGap;
       }
-      const before = out.items.length;
-      spine(out, byId.get(id)!, spineX, top, false);
-      let bottom = top;
-      for (const item of out.items.slice(before)) bottom = Math.max(bottom, item.box.y + item.box.h);
-      const above = lanes.length && list.indexOf(id) > 0 ? byKey.get(`t:${list[list.indexOf(id) - 1]}`) : undefined;
-      if (above) above.reach = top - above.box.y;
-      lanes.push(id);
-      y = bottom + G.rowGap;
+      x0 = spineX + right + G.laneGap;
     }
-    x0 = spineX + right + G.laneGap;
+    if (grouped) {
+      // Its header: over its columns, its name and how many topics (spines) it holds; what a spine is dropped on to join it.
+      const w = Math.max(G.colW, x0 - G.laneGap - groupX);
+      const box = { x: groupX, y: -G.groupHead - G.groupGap, w, h: G.groupHead };
+      // Every spine under it counts, those placed by hand or on the shelf too.
+      const count = roots.filter((t) => (group.name ? t.topic === group.name : !t.topic || !named.includes(t.topic))).length;
+      add(out, { key: `g:${group.name}`, id: `g:${group.name}`, kind: "group", thread: "", box, pinned: false, depth: 0, topic: "", title: group.name, count, group: group.name });
+      groups.push({ name: group.name, box: { x: groupX, y: box.y, w, h: bottomMost - box.y } });
+      x0 += G.groupSpace;
+    }
   }
 
   // 3. What's placed by hand, with what flows from it: a topic's points and tangents, a card's tangents, a point.
@@ -944,7 +987,7 @@ export function layout(input: LayoutInput): Layout {
   shelf.sort((a, b) => b.at_ms - a.at_ms);
   // A link whose end isn't shown goes too (an origin on the shelf).
   const links = out.links.filter((link) => byKey.has(link.from.key) && byKey.has(link.to.key));
-  return { items, links, byKey, tips, slots: slotKeys, shelf, lanes };
+  return { items, links, byKey, tips, slots: slotKeys, shelf, lanes, groups };
 }
 
 /** The smallest box around `boxes`. */

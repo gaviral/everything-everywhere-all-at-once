@@ -1,15 +1,52 @@
 /* Bubbles (index.tsx). Its heading is the Palace's, so the views read as one family; each bubble is a soft sphere in
    its room's color. Blue rings where you are and amber dashes what you left off, as everywhere in the app. */
+/* None of these colors is near the app's reserved blue (you), amber (needs you), purple (AI) or red (stop).
+   In OKLab the six differ by ≥ 12 (light) for normal vision and ≥ 6.8 under protan/deutan/tritan simulation.
+   Color is never the only cue: the legend highlights bubbles, and their labels name the topic. */
+.bubbles {
+  --bubbles-topic-0: #297d2d; --bubbles-topic-1: #16556a; --bubbles-topic-2: #888d29;
+  --bubbles-topic-3: #64707d; --bubbles-topic-4: #299a8b; --bubbles-topic-5: #594c1a;
+  --bubbles-topic-0-soft: color-mix(in oklab, var(--bubbles-topic-0) 22%, var(--card));
+  --bubbles-topic-1-soft: color-mix(in oklab, var(--bubbles-topic-1) 22%, var(--card));
+  --bubbles-topic-2-soft: color-mix(in oklab, var(--bubbles-topic-2) 22%, var(--card));
+  --bubbles-topic-3-soft: color-mix(in oklab, var(--bubbles-topic-3) 22%, var(--card));
+  --bubbles-topic-4-soft: color-mix(in oklab, var(--bubbles-topic-4) 22%, var(--card));
+  --bubbles-topic-5-soft: color-mix(in oklab, var(--bubbles-topic-5) 22%, var(--card));
+}
+@media (prefers-color-scheme: dark) {
+  .bubbles {
+    --bubbles-topic-0: #76c876; --bubbles-topic-1: #569db5; --bubbles-topic-2: #ccd373;
+    --bubbles-topic-3: #cad2db; --bubbles-topic-4: #4dc1ab; --bubbles-topic-5: #9d8b5a;
+    --bubbles-topic-0-soft: color-mix(in oklab, var(--bubbles-topic-0) 30%, var(--card));
+    --bubbles-topic-1-soft: color-mix(in oklab, var(--bubbles-topic-1) 30%, var(--card));
+    --bubbles-topic-2-soft: color-mix(in oklab, var(--bubbles-topic-2) 30%, var(--card));
+    --bubbles-topic-3-soft: color-mix(in oklab, var(--bubbles-topic-3) 30%, var(--card));
+    --bubbles-topic-4-soft: color-mix(in oklab, var(--bubbles-topic-4) 30%, var(--card));
+    --bubbles-topic-5-soft: color-mix(in oklab, var(--bubbles-topic-5) 30%, var(--card));
+  }
+}
 .bubbles-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 12px; }
 .bubbles-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
 .bubbles-intro h1 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(32px, 4vw, 40px); font-weight: 400; letter-spacing: -.035em; line-height: 1.1; }
 .bubbles-intro p { max-width: 300px; margin: 0 0 3px; color: var(--muted); font-size: 13px; }
 .bubbles-empty { margin: 48px auto; color: var(--muted); text-align: center; }
+.bubbles-topics { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
+.bubbles-topics li { min-width: 0; max-width: 100%; }
+.bubbles-topic {
+  display: flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: none;
+  color: var(--ink); font: inherit; font-size: 13px; text-align: left; overflow-wrap: anywhere; cursor: pointer;
+}
+.bubbles-topic[aria-pressed="true"] { border-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+.bubbles-topic:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.bubbles-swatch { flex: 0 0 12px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid var(--room, var(--line)); border-radius: 50%; background: var(--room-soft, var(--card)); }
+.bubbles-topic-count { color: var(--muted); }
 
 /* The field keeps its shape (the spiral's) and grows only when a new bubble needs room at its edge. */
 .bubbles-field { position: relative; width: 100%; margin: 8px auto 0; padding: 0; list-style: none; }
 /* Each bubble's middle sits on its spot; it's a size container, so what it shows follows its own size. */
-.bubbles-bubble { position: absolute; transform: translate(-50%, -50%); container-type: inline-size; transition: width .6s cubic-bezier(.2, .8, .2, 1); animation: bubbles-arrive .5s ease-out both; }
+.bubbles-bubble { position: absolute; transform: translate(-50%, -50%); container-type: inline-size; transition: width .6s cubic-bezier(.2, .8, .2, 1), opacity .15s; animation: bubbles-arrive .5s ease-out both; }
+.bubbles-faded { opacity: .35; }
 .bubbles-face {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   width: 100%; aspect-ratio: 1; padding: 13%; border: 1px solid color-mix(in srgb, var(--room, var(--muted)) 35%, transparent); border-radius: 50%;
@@ -20,6 +57,7 @@
 }
 .bubbles-face:hover { scale: 1.04; }
 .bubbles-face:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.bubbles-sorted .bubbles-face { border: 2px solid color-mix(in srgb, var(--room) 75%, transparent); }
 .bubbles-here .bubbles-face { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
 .bubbles-left .bubbles-face { border: 2px dashed var(--amber); }
 
@@ -41,6 +79,15 @@
 @keyframes bubbles-arrive { from { opacity: 0; scale: .6; } }
 @keyframes bubbles-float { from { translate: 0 -3px; } to { translate: 0 3px; } }
 @keyframes bubbles-ripple { from { opacity: .75; scale: 1; } to { opacity: 0; scale: 1.35; } }
+@keyframes bubbles-arrive-fade { from { opacity: 0; } }
+@keyframes bubbles-ripple-fade { from { opacity: .75; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .bubbles-bubble { animation-name: bubbles-arrive-fade; transition: opacity .15s; }
+  .bubbles-face { animation: none; transition: none; }
+  .bubbles-face:hover { scale: none; }
+  .bubbles-ripple { animation-name: bubbles-ripple-fade; }
+}
 
 @media (max-width: 560px) {
   .bubbles-intro { display: block; }

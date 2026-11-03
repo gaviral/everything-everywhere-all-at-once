@@ -13,6 +13,7 @@ import { discover, type BrickModule } from "../bricks-core";
 import { apply, type Thought, type World } from "../core";
 import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
+import { moveChange, renameChange } from "../topics-core";
 import type { BrickActions, BrickEvents } from "./contract";
 import "../styles.css";
 import "./playground.css";
@@ -171,6 +172,20 @@ function Playground() {
     listen: (on) => said(`listen ${on === undefined ? "(switch)" : on ? "on" : "off"} → in the app: as a tap on the mic`),
     annotate,
     openCatalog: (id) => said(`openCatalog${id ? ` ${id}` : ""} → in the app: the Catalog opens${id ? " at that brick's row" : ""}`),
+    // A topic renamed or a thread moved under one, as the core answers it (topics.rs): the change comes back through the
+    // window's own reducer.
+    renameTopic: (from, to) => {
+      const change = renameChange(world, from, to);
+      said(`renameTopic “${from}” → “${to}” → ${change ? `renamed “${change.type === "topic_renamed" ? change.to : to}”` : "refused: no such theme, no name, or the same"}`);
+      if (change) setWorld((w) => apply(w, change));
+      return !!change;
+    },
+    moveToTopic: (threadId, topic) => {
+      const change = moveChange(world, threadId, topic);
+      said(`moveToTopic ${title(threadId)} → “${topic}” → ${change ? `moved ${change.type === "topic_set" ? title(change.thread_id) : ""} there` : "refused: no such thread, no name, or it's there already"}`);
+      if (change) setWorld((w) => apply(w, change));
+      return !!change;
+    },
     hint: (text, target, by) => {
       const ok = !!text.trim() && !/[\r\n]/.test(text.trim()) && [...text.trim()].length <= 140 && (target === null || /^[A-Za-z0-9:._-]{1,100}$/.test(target));
       said(`hint “${text}”${target ? ` at ${target}` : ""} → ${ok ? `in the app: ${target ? "an arrow at it" : "a corner caption"}, from ${by}` : "refused: not one line of 140 characters, or not a name"}`);

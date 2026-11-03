@@ -8,6 +8,7 @@ import { onReading } from "./apps-audio";
 import type { Thought, World } from "./core";
 import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
+import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
 import "./bricks.css";
 
@@ -15,8 +16,10 @@ import "./bricks.css";
  *  own actions (`actionsFor`), which know which brick asks (a thought it adds lands `by` it; its hint carries its name). */
 export type BrickHost = { map: MapSnapshot; on: BrickOn; actionsFor: (info: BrickInfo) => BrickActions };
 
-/** The app's side of the actions (App.tsx, the playground): a brick's own, and for `hint`, the brick's name to show. */
-export type HostActions = Omit<BrickActions, "hint"> & { hint(text: string, target: string | null, by: string): boolean };
+/** The app's side of the actions (App.tsx, the playground): a brick's own, and for `hint`, the brick's name to show. A
+ *  topic's rename or a move goes to the core by itself (topics-core.ts) unless the host answers it (the playground). */
+export type HostActions = Omit<BrickActions, "hint" | "renameTopic" | "moveToTopic"> & { hint(text: string, target: string | null, by: string): boolean }
+  & Partial<Pick<BrickActions, "renameTopic" | "moveToTopic">>;
 
 /** How long a landing whose model is still to be told waits for it (its route comes right after its changes, so a few
  *  milliseconds as a rule; this bounds a route lost to a reconnect). */
@@ -52,6 +55,8 @@ export function useBrickHost(world: World, revision: number, me: string, connect
       annotate: (thoughtId, quote, text) => latest.current.annotate(thoughtId, quote, text),
       openCatalog: (id) => latest.current.openCatalog(id),
       hint: (text, target) => latest.current.hint(text, target ?? null, info.name),
+      renameTopic: (from, to) => (latest.current.renameTopic ?? renameTopic)(from, to),
+      moveToTopic: (threadId, topic) => (latest.current.moveToTopic ?? moveToTopic)(threadId, topic),
     });
     return actions;
   }, [sends]);

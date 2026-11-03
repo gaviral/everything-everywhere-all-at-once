@@ -20,6 +20,9 @@ pub const THOUGHT_TOO_LONG: &str = "Too long for one thought: 6,000 characters a
 pub const TITLE_MAX: usize = 100;
 /// A hashtag, in characters with its #: the refiner asks for short ones; longest real one 13.
 pub const TAG_MAX: usize = 40;
+/// A topic's name as a person types it, in characters (topics.rs): the AI names one in two or three words (≈ 20
+/// characters); twice that leaves room for a person's own, and keeps a Spine header on one line.
+pub const TOPIC_MAX: usize = 40;
 /// One WebSocket message, in bytes: the biggest the window sends is Explain with a phrase and its context, at most
 /// two thoughts (2 × 6,000 characters × up to 4 bytes ≈ 48 KB with its JSON); a mic frame is 3,840. The default
 /// was 64 MiB, so a room guest could make the core hold gigabytes (256 queued audio frames).
@@ -283,6 +286,10 @@ pub enum ClientMsg {
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.
     Annotate { thought_id: String, quote: String, text: String },
+    /// A topic's new name, typed on its header (topics.rs `rename`): a name already there makes the two one.
+    TopicRename { from: String, to: String },
+    /// A thread moved under a topic, dragged there (topics.rs `set`): its top thread's, with its branches.
+    TopicSet { thread_id: String, topic: String },
     /// How far this person has read the call's turns: the newest one their window has shown them (call.rs).
     Read { thought_id: String },
     /// How far the Friend may interrupt, as the meter at the foot of Talk sets it, for everyone in the call (call.rs).

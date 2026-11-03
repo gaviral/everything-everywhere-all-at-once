@@ -28,6 +28,7 @@ const STEPS: Record<string, string> = {
   picture: "drawing a picture",
   recap: "reading your day",
   "recap draft": "keeping your recap ready",
+  topics: "sorting threads into themes",
   app: "building your app",
   "app search": "looking for an app you have",
   "app run": "running your app",
