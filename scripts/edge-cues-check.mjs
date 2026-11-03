@@ -14,9 +14,9 @@ if (!process.argv.includes("--fixtures")) {
   const server = await uiServer();
   try {
     const { placeCues } = await server.ssrLoadModule("/src/bricks/spine/cues.tsx");
-    const check = (cues, area) => {
-      const result = placeCues(cues, area);
-      for (let i = 0; i < 5; i++) assert.deepEqual(placeCues(cues, area), result, "deterministic placement");
+    const check = (cues, area, avoid = []) => {
+      const result = placeCues(cues, area, avoid);
+      for (let i = 0; i < 5; i++) assert.deepEqual(placeCues(cues, area, avoid), result, "deterministic placement");
       const { chips, hidden } = result;
       const direct = chips.filter((p) => !p.extra);
       assert.equal(direct.length + hidden.length, cues.length, "every arrival accounted for");
@@ -28,6 +28,7 @@ if (!process.argv.includes("--fixtures")) {
         assert.ok([p.x, p.y, p.width, p.height].every(Number.isFinite));
         assert.ok(p.x >= area.x0 && p.y >= area.y0 && p.x + p.width <= area.x1 + 1e-8 && p.y + p.height <= area.y1 + 1e-8, JSON.stringify(p));
         for (const q of chips) if (p !== q) assert.ok(p.x + p.width <= q.x || q.x + q.width <= p.x || p.y + p.height <= q.y || q.y + q.height <= p.y, "hit areas overlap");
+        for (const o of avoid) assert.ok(p.x + p.width <= o.x0 || o.x1 <= p.x || p.y + p.height <= o.y0 || o.y1 <= p.y, `a chip sits under what floats over the area: ${JSON.stringify([p, o])}`);
       }
       return result;
     };
@@ -57,6 +58,20 @@ if (!process.argv.includes("--fixtures")) {
       }
     }
     check(Array.from({ length: 20 }, (_, i) => ({ key: `${i}`, thread: "t", title: "title", at: i, cx: i % 2 ? -10000 : 10000, cy: i % 3 ? -10000 : 10000 })), { x0: 0, y0: 0, x1: 500, y1: 150 });
+    // What floats over the area (the corners' controls, a pill under them): arrivals toward the corner never get a slot under
+    // it, so no chip can be covered; the next slot along the edge takes each.
+    const wide = { x0: 0, y0: 0, x1: 1440, y1: 800 };
+    const floating = [{ x0: 1160, y0: 0, x1: 1440, y1: 60 }, { x0: 1370, y0: 70, x1: 1440, y1: 110 }, { x0: 0, y0: 0, x1: 180, y1: 60 }];
+    for (const [cx, cy] of [[10000, -10000], [10000, 0], [0, -10000], [-10000, -10000], [3000, -3000]]) {
+      for (const n of [1, 2, 4, 6]) {
+        const cues = Array.from({ length: n }, (_, i) => ({ key: `f${i}`, thread: "t", title: "title", at: i, cx: cx + i, cy: cy + i }));
+        const result = check(cues, wide, floating);
+        assert.ok(result.chips.length >= Math.min(n, 2), `the arrivals toward (${cx}, ${cy}) still get chips`);
+      }
+    }
+    // An edge the page covers all along (a panel down the right side): its arrivals take the nearest slot on another edge.
+    const panel = check(Array.from({ length: 3 }, (_, i) => ({ key: `p${i}`, thread: "t", title: "title", at: i, cx: 10000, cy: 100 * i })), wide, [{ x0: 1100, y0: 0, x1: 1440, y1: 800 }]);
+    assert.ok(panel.chips.length === 3 && panel.chips.every((p) => p.edge !== "right"), "a covered edge gives its arrivals another edge");
     // A top aggregate must displace the newer right chip in this short area.
     // Its target then becomes that newer arrival, so its slot must move right too.
     const mixed = check([

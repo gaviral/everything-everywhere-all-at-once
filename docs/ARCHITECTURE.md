@@ -69,7 +69,7 @@ Browser, one page per window (ui/src)
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
-  Guide.tsx      another participant pointing (a big arrow at a part named by its `data-guide`, its caption, a soft spotlight) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)
+  Guide.tsx      another participant pointing (a ring and a short arrow at a part named by its `data-guide`, clear of buttons and text, its caption) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
