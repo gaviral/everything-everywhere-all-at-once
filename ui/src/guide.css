@@ -130,6 +130,41 @@
   opacity: .7;
 }
 
+/* A question that reads "A, or B?" (Guide.tsx `Answers`): each answer a button of its own, its key on it, then your own words,
+   Later and Drop it. An answer can be long (twelve words), so it wraps; the one a key has moved to is the one Enter sends:
+   filled, as the primary button is. */
+.guide-choices { margin-top: 10px; }
+.guide-btn.guide-choice {
+  height: auto;
+  min-height: 36px;
+  max-width: 100%;
+  padding: 7px 14px;
+  border-color: color-mix(in srgb, var(--ink) 26%, var(--line));
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  white-space: normal;
+}
+.guide-btn.guide-choice:focus-visible { border-color: transparent; background: var(--ink); color: var(--bg); outline-offset: 3px; }
+.guide-choice-words { min-width: 0; overflow-wrap: anywhere; }
+.guide-answer { display: flex; flex: 1 1 280px; align-items: center; gap: 8px; min-width: 0; }
+.guide-answer-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.guide-answer-field::placeholder { color: var(--muted); opacity: 1; }
+.guide-answer-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.guide-btn:disabled { opacity: .4; cursor: default; }
+.guide-problem { display: block; margin-top: 6px; color: var(--amber); font-size: 13px; font-weight: 500; line-height: 18px; }
+
 /* The held stack: bottom right over the map until the page has its own place for it (data-slot="held"). */
 .guide-held { display: flex; flex-direction: column; gap: 8px; }
 .guide-held[data-place="floating"] { position: fixed; right: 16px; bottom: 16px; z-index: 7; width: 292px; }
@@ -201,6 +236,10 @@
   }
   .guide-asks { justify-content: flex-start; gap: 6px; margin-top: 9px; font-size: 11px; }
   .guide-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+  .guide-btn.guide-choice { min-height: 32px; padding: 5px 12px; font-size: 13px; line-height: 18px; }
+  .guide-choices { flex-direction: column; align-items: stretch; margin-top: 10px; }
+  .guide-answer { flex-basis: 100%; }
+  .guide-answer-field { height: 30px; font-size: 16px; }
   .guide-btn kbd, .guide-over-more { display: none; }
 }
 

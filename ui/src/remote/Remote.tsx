@@ -11,13 +11,11 @@ import { useCall } from "../talk/call-core";
 import { useJobs } from "../work-jobs";
 import { Counts, DemoLabel, isDemo, JobList, useFresh, useNow } from "../bricks/work-spine/list";
 import "../bricks/work-spine/work-spine.css";
-import { asksOf, options, type Ask } from "./ask";
+import { ANSWER_MAX, asksOf, options, type Ask } from "./ask";
 import { playFeed } from "./demo";
 import { SPEED } from "./flag";
 import "./remote.css";
 
-/** The longest an answer runs (core/src/guide.rs `answer`). */
-const ANSWER_MAX = 280;
 /** How long "Sent" stays up. */
 const SENT_MS = 5000;
 /** How long a question must stand before it's shown: a job's tree arrives a message at a time, the parent first, and a
