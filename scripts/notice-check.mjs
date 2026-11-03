@@ -36,7 +36,7 @@ const until = async (done) => { for (let waited = 0; !done() && waited < 3000; w
 
 const server = await uiServer();
 try {
-  const { staysUp, upFor, SHORTEST_MS, micStopped, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { staysUp, upFor, readingTime, SHORTEST_MS, micStopped, undoUpFor, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const { readMs } = await server.ssrLoadModule("/src/attention-core.ts");
 
   // Each of these asks for something only the person can do, or says the core is gone: up until dismissed.
@@ -69,10 +69,13 @@ try {
   // Up for at least as long as before, longer when the words take longer to read.
   assert.equal(upFor("Back to Rent"), SHORTEST_MS);
   const keyless = "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example).";
-  assert.equal(upFor(keyless), Math.max(SHORTEST_MS, readMs(keyless)));
+  assert.equal(upFor(keyless), readingTime(keyless));
   const long = "Did “Expand the garden” instead. Your earlier words are off the map, and the journal keeps them if you want them back later.";
-  assert.equal(upFor(long), readMs(long));
-  assert.ok(upFor(long) > SHORTEST_MS);
+  assert.equal(upFor(long), readingTime(long));
+  assert.ok(upFor(long) > upFor("Back to Rent"));
+  for (const text of ["Back to Rent", keyless, long]) {
+    assert.ok(upFor(text) >= Math.max(SHORTEST_MS, readMs(text)), "never shorter than the original reading time");
+  }
 
   // The mic stopping on its own says why, when the core said, and stays up until the mic is tapped (bug hunt 26:
   // every reason became the same "The mic stopped").
@@ -108,7 +111,7 @@ try {
   // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review).
   assert.ok(!staysUp("Back to Visa was refused"));
 
-  // The real hook, with App.tsx's answer to "stop listening" while the mic is off.
+  // The real hook: a burst waits in order, keeps its own Undo and survives new speech.
   const { useCore } = await server.ssrLoadModule("/src/core.ts");
   let core;
   function Window() {
@@ -120,14 +123,52 @@ try {
   }
   const root = createRoot(element());
   root.render(React.createElement(Window));
-  // The hook opens its socket in an effect; on a busy machine that can take longer than one settle.
-  for (let waited = 0; !sockets.length && waited < 5000; waited += 20) await settle();
-  assert.ok(sockets.length, "useCore opened no socket within 5 s");
-  await settle();
+  await until(() => sockets.length > 0);
   const say = (message) => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
+  await settle();
+  say({ type: "notice", message: "Moved to Garden" });
+  say({ type: "undoable", id: 1 });
+  say({ type: "notice", message: "Moved to Kitchen" });
+  say({ type: "undoable", id: 2 });
+  await until(() => core.notice !== "");
+  assert.equal(core.notice, "Moved to Garden");
+  assert.equal(core.undoId, null, "a newer answer invalidates the old Undo even while queued");
+  core.clearNotice();
+  await until(() => core.notice === "Moved to Kitchen");
+  assert.equal(core.undoId, 2);
+  say({ type: "correctable", for_ms: 8000, back_to: null });
+  await until(() => core.undoId === null);
+  assert.equal(core.notice, "Moved to Kitchen", "speech doesn't dismiss a notice");
+  core.clearNotice();
+  await until(() => core.notice === "");
+  say({ type: "notice", message: "Again" });
+  say({ type: "notice", message: "Again" });
+  await until(() => core.notice === "Again");
+  core.clearNotice();
+  await settle();
+  assert.equal(core.notice, "Again", "same words from two events are two answers");
+  core.sendText("stop showing this");
+  await until(() => core.notice === "");
+  say({ type: "notice", message: "Muted kind" });
+  await settle();
+  assert.equal(core.notice, "");
+  say({ type: "notice_control", show: true });
+  say({ type: "notice", message: "Back again" });
+  await until(() => core.notice === "Back again");
+  assert.equal(core.notice, "Back again");
+  core.undoLast();
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
+  core.clearNotice();
+  await until(() => core.notice === "");
 
-  // A stream's "listening" is counted, so a window that starts its mic again can tell the old stream's late "not
-  // listening" (before the new one's "listening") from its own stream ending (bug hunt 13).
+  // Preserve the pre-queue lifecycle checks. Each answer is read before the next
+  // scene; within a scene the queue must retain arrival order.
+  const read = async (text) => {
+    await until(() => core.notice === text);
+    assert.equal(core.notice, text);
+    core.clearNotice();
+    await settle();
+  };
   const listened = core.listenedRevision;
   say({ type: "status", listening: false, note: "Stopped listening" });
   await settle();
@@ -135,26 +176,24 @@ try {
   say({ type: "status", listening: true, note: "Listening" });
   await until(() => core.listenedRevision === listened + 1);
   assert.equal(core.listenedRevision, listened + 1);
-  const appSource = readFileSync(new URL("src/App.tsx", ui), "utf8");
-  assert.match(appSource, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
-  assert.match(appSource, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
 
-  // Past the hosted site's daily limit the proxy follows the core's key notice with its own line: the window knows
-  // the key is held back for the day, not missing, until the next connection's snapshot says otherwise.
+  // A snapshot retires every stale key notice, including ones behind an unread answer.
+  say({ type: "notice", message: "Keep this unread answer" });
   say({ type: "notice", message: "MODEL_API_KEY is not set: listening and placement are off." });
-  await settle();
+  await until(() => core.noKey);
   assert.ok(core.noKey && !core.resting);
   say({ type: "notice", message: "Today's free tries are used up; back tomorrow. Your map is still here to read." });
-  await settle();
+  await until(() => core.resting);
   assert.ok(core.noKey && core.resting && !core.keyRefused);
-  // Asking for an app then: the core has no key, so it says making one needs it. Still the day's limit, not a missing key.
   say({ type: "notice", message: "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart." });
   await settle();
-  assert.ok(core.noKey && core.resting && !core.keyRefused, "an app's key notice keeps back tomorrow");
+  assert.ok(core.noKey && core.resting && !core.keyRefused);
   say({ type: "snapshot", world: {} });
-  await settle();
-  assert.ok(!core.noKey && !core.resting, "a new snapshot: the core says again if it still holds");
-  // The header's words, one place for both its dot and its text.
+  await until(() => !core.noKey && !core.resting);
+  assert.ok(!core.noKey && !core.resting);
+  await read("Keep this unread answer");
+  assert.equal(core.notice, "", "no stale key notice remains queued after the snapshot");
+
   const { statusLine } = await server.ssrLoadModule("/src/core.ts");
   const line = (extra) => statusLine({ connected: true, listening: false, noKey: false, refused: false, resting: false, paused: false, ...extra });
   assert.equal(line({}), "Ready");
@@ -162,113 +201,82 @@ try {
   assert.equal(line({ noKey: true, refused: true }), "AI key refused");
   assert.match(line({ noKey: true, resting: true }), /^Free tries .*tomorrow/);
   assert.doesNotMatch(line({ noKey: true, resting: true }), /AI key/);
-  assert.match(app0(), /statusLine\(\{/);
-
-  // The words of a voice error stay readable for the window's "The mic stopped" notice.
   say({ type: "error", message: "Speech service error: Voice Transcribe stopped answering" });
   await until(() => core.voiceError !== "");
   assert.equal(core.voiceError, "Speech service error: Voice Transcribe stopped answering");
-  assert.equal(core.notice, "", "a voice error isn't shown raw");
+  assert.equal(core.notice, "", "voice errors aren't raw notices");
 
-  // A notice made in the window is a newer answer: it clears the Undo an earlier one offered.
   say({ type: "notice", message: "Expanded everything." });
-  say({ type: "undoable", id: 1 });
-  await until(() => core.undoId === 1);
-  assert.equal(core.undoId, 1);
+  say({ type: "undoable", id: 3 });
+  await until(() => core.undoId === 3);
+  assert.equal(core.undoId, 3);
   core.showNotice("Sound isn't available in this browser right now.");
   await until(() => core.undoId === null);
-  assert.equal(core.undoId, null);
+  assert.equal(core.undoId, null, "a local answer invalidates an old Undo");
+  await read("Expanded everything.");
+  await read("Sound isn't available in this browser right now.");
 
-  // Words heard after an Undo was offered: the core now remembers those (each turn's `correctable`, catalog.rs
-  // `remember`), not the turn the button was for. The button goes, so a click never answers "can't be undone any
-  // more" and its "⌘Z works too" never points ⌘Z at the newer words (review ui-notices #1).
-  say({ type: "notice", message: "Moved “rent” to Pottery Class Budget" });
-  say({ type: "correctable", for_ms: 8000, back_to: null });
-  say({ type: "undoable", id: 2 });
-  await until(() => core.undoId === 2);
-  assert.equal(core.undoId, 2, "a turn's own correctable comes before its Undo: that Undo stays");
-  say({ type: "correctable", for_ms: 8000, back_to: null });
-  await until(() => core.undoId === null);
-  assert.equal(core.undoId, null, "a newer turn: the Undo the core can no longer honor goes");
-
-  // The same words again are a new answer: App.tsx restarts its reading time on answerRevision (review).
   const before = core.answerRevision;
   say({ type: "view", view: "pause" });
-  await until(() => core.notice === "The mic is already off.");
-  assert.equal(core.notice, "The mic is already off.");
+  await read("The mic is already off.");
   say({ type: "view", view: "pause" });
-  await until(() => core.answerRevision === before + 2);
-  assert.equal(core.notice, "The mic is already off.");
-  assert.equal(core.answerRevision, before + 2);
-  const app = readFileSync(new URL("src/App.tsx", ui), "utf8");
-  assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.answerRevision,/);
-  // A focused Undo that leaves the notice says no blur: the notice's focus is looked up again on every change, so
-  // later notices still time out (bug hunt 19; wiring).
+  await read("The mic is already off.");
+  assert.equal(core.answerRevision, before + 2, "identical local answers count separately");
+  // A same-render core correction suppresses the local answer.
+  say({ type: "view", view: "pause" });
+  say({ type: "notice", message: "Did stop listening instead." });
+  say({ type: "undoable", id: 7 });
+  await until(() => core.undoId === 7);
+  assert.equal(core.undoId, 7);
+  await read("Did stop listening instead.");
+  assert.equal(core.notice, "", "no stale local answer was queued after the correction");
+  // Separate renders retain the answer already read, then the correction and its Undo.
+  say({ type: "view", view: "pause" });
+  await until(() => core.notice === "The mic is already off.");
+  say({ type: "notice", message: "Did pause instead." });
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  say({ type: "undoable", id: 8 });
+  await settle();
+  await read("The mic is already off.");
+  assert.equal(core.undoId, 8, "the queued correction owns its Undo");
+  say({ type: "correctable", for_ms: 12000, back_to: null });
+  await until(() => core.undoId === null);
+  assert.equal(core.undoId, null, "newer words invalidate Undo");
+  await read("Did pause instead.");
+
+  say({ type: "notice", message: "Moved to Garden" });
+  say({ type: "undoable", id: 9 });
+  await until(() => core.undoId === 9);
+  say({ type: "snapshot", world: {} });
+  await until(() => core.undoId === null);
+  assert.equal(core.undoId, null, "a snapshot invalidates the old core's Undo ids");
+  await read("Moved to Garden");
+  say({ type: "notice", message: "Moved to Health" });
+  say({ type: "undoable", id: 10 });
+  await until(() => core.undoId === 10);
+  const socket = sockets.at(-1), sent = socket.sent.length;
+  socket.readyState = 3;
+  core.undo(10);
+  await settle();
+  assert.equal(socket.sent.length, sent, "no Undo sent on a closed socket");
+  assert.equal(core.undoId, null);
+  await read("Moved to Health");
+  await read("Not connected — try again when connected.");
+  socket.readyState = 1;
+  root.unmount();
+  const app = app0();
+  assert.match(app, /statusLine\(\{/);
+  assert.match(app, /statusNew: core\.voiceStatusRevision > voiceStartedAt\.current, listenedNew: core\.listenedRevision > voiceListenedAt\.current/);
+  assert.match(app, /voiceListenedAt\.current = voiceRevisions\.current\.listened;/);
+  assert.match(app, /window\.setTimeout\(core\.clearNotice[^]*?\}, \[core\.notice, core\.noticeKey,/);
   assert.match(app, /useEffect\(\(\) => \{ setNoticeFocused\(!!core\.notice && !!noticeRef\.current\?\.contains\(document\.activeElement\)\); \}, \[core\.notice, core\.undoId\]\);/);
   assert.match(app, /<motion\.div\s+ref=\{noticeRef\}\s+className="notice"/);
-
-  // "Stop listening" said: the core sends the pause, then the stream's end, often taken in one render. The pause
-  // effect runs first and stops the mic through the shared ref, so the stream-end effect after it in that render
-  // finds the mic off: the answer is "Paused", not a sticky "The mic stopped" (bug hunt 12; wiring, as no check
-  // here renders App).
   const pauseAt = app.indexOf('core.viewAsk?.view !== "pause"');
   const streamEndAt = app.indexOf("core.voiceStatusRevision > voiceStartedAt.current");
-  assert.ok(pauseAt > 0 && pauseAt < streamEndAt, "the pause effect is declared before the stream-end effect");
+  assert.ok(pauseAt > 0 && pauseAt < streamEndAt);
   assert.match(app.slice(pauseAt, streamEndAt), /if \(!releaseMic\(\)\)/);
   assert.match(app.slice(streamEndAt, streamEndAt + 300), /if \(liveStop\.current && /);
   assert.match(app, /const releaseMic = \(\) => \{\s*const stop = liveStop\.current;\s*liveStop\.current = null;/);
-
-  // "No, I meant stop listening": the core sends the view, then "Did … instead" with its Undo. Arriving in one render,
-  // the correction's answer and Undo stay; the window's "already off" stands down (review).
-  say({ type: "view", view: "pause" });
-  say({ type: "notice", message: "Did “stop listening” instead. Your earlier words are off the map." });
-  say({ type: "undoable", id: 7 });
-  await until(() => core.undoId === 7);
-  await settle(); // the window's own answer had its chance to (wrongly) replace the correction
-  assert.equal(core.notice, "Did “stop listening” instead. Your earlier words are off the map.");
-  assert.equal(core.undoId, 7);
-  // Rendered one at a time, the window answers first and the correction replaces it, with its Undo.
-  say({ type: "view", view: "pause" });
-  await until(() => core.notice === "The mic is already off.");
-  assert.equal(core.notice, "The mic is already off.");
-  say({ type: "notice", message: "Did “stop listening” instead." });
-  say({ type: "undoable", id: 8 });
-  await until(() => core.undoId === 8);
-  assert.equal(core.notice, "Did “stop listening” instead.");
-  assert.equal(core.undoId, 8);
-  // The core takes back only the turn an Undo was shown for (catalog.rs `undo_click`): any newer turn says so with its
-  // `correctable` (a thought kept says nothing else), so the button goes; a request's own Undo comes right after it.
-  say({ type: "notice", message: "Deleted “Buy stakes”" });
-  say({ type: "correctable", for_ms: 12000, back_to: null });
-  say({ type: "undoable", id: 9 });
-  await settle();
-  assert.equal(core.undoId, 9, "a request's own Undo shows");
-  say({ type: "correctable", for_ms: 12000, back_to: null });
-  await settle();
-  assert.equal(core.undoId, null, "a newer turn takes down the Undo it can no longer use");
-  // A new connection (maybe to a restarted core, whose Undo ids start again at 1) takes down an Undo from before it.
-  say({ type: "notice", message: "Moved “Buy stakes” to Garden" });
-  say({ type: "undoable", id: 1 });
-  await settle();
-  say({ type: "snapshot", world: { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: false, recaps: [] } });
-  await settle();
-  assert.equal(core.undoId, null, "a snapshot takes down an Undo from before it");
-  // ⌘Z (or Ctrl+Z) asks the core for "undo that": the last turn, whether or not the notice is still up.
-  core.undoLast();
-  assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "undo_last" });
-  // A click that races the drop says so, rather than the button going and nothing happening (review feedback #5).
-  say({ type: "notice", message: "Moved “rent” to Health" });
-  say({ type: "undoable", id: 4 });
-  await settle();
-  assert.equal(core.undoId, 4);
-  const socket = sockets.at(-1), sent = socket.sent.length;
-  socket.readyState = 3;
-  core.undo(4);
-  await settle();
-  assert.equal(socket.sent.length, sent, "nothing sent on a closed socket");
-  assert.equal(core.notice, "Not connected — try again when connected.");
-  socket.readyState = 1;
-  root.unmount();
 
   // The window: a notice with Undo gets the time to act, holds while the pointer or focus is on it, and ⌘Z / Ctrl+Z
   // outside a field with words in it is the app's undo (the key handler skipped every modifier key before).
@@ -311,7 +319,7 @@ try {
 
   // Every answer the window makes for a view request passes the request, so each can stand down the same way.
   const viewAnswers = app.match(/core\.showNotice\([^;]*core\.viewAsk\)/g) ?? [];
-  assert.equal(viewAnswers.length, 9, "pause (2), finish (2), later, forget, nothing to set aside, Notification history off, Cards off");
+  assert.equal(viewAnswers.length, 10, "Talk/features, pause (2), finish (2), later, forget, nothing to set aside, Notification history off, Cards off");
   console.log("notice-check: ok");
 } finally {
   await server.close();

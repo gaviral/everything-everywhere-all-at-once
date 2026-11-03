@@ -1,0 +1,29 @@
+/* Below the page's top-right controls; the Features rail and dialogs remain above this passive panel. */
+.usage {
+  position: fixed;
+  top: max(calc(var(--header-height, 64px) + 8px), calc(env(safe-area-inset-top) + 64px));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 7;
+  box-sizing: border-box;
+  width: 18rem;
+  max-width: calc(100vw - 32px);
+  max-height: min(22rem, calc(100dvh - var(--dock-height, 120px) - 160px));
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: .75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.usage:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.usage-title { font-weight: 600; }
+.usage-rows { margin: 4px 0 0; padding: 0; list-style: none; }
+.usage-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px; padding: 6px 0; }
+.usage-row + .usage-row { border-top: 1px solid var(--line); }
+.usage-label { color: var(--muted); }
+.usage-left { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-asof { grid-column: 1 / -1; color: var(--muted); font-size: .6875rem; }

@@ -31,10 +31,12 @@ mod recap;
 mod protocol;
 mod moves;
 mod spoken;
+mod stay;
 mod tidy;
 mod tls;
 mod topics;
 mod tunnel;
+mod usage;
 mod whyhere;
 mod world;
 #[cfg(test)]
@@ -64,6 +66,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    typed_receipts: Mutex<()>,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
     catalog: catalog::Runtime,
@@ -100,6 +103,8 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Allowances read from USAGE_FILE, outside the saved map (usage.rs).
+    usage: usage::Runtime,
     /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
     hosts: Mutex<std::collections::HashSet<String>>,
     /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
@@ -370,9 +375,32 @@ impl Core {
         self.take_turn(speaker, text, true, true, false);
     }
 
+    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool) {
+        if uuid::Uuid::parse_str(id).is_err() { return; }
+        // Two reconnecting windows can retry the same entry at once.
+        let _receipt = self.typed_receipts.lock().unwrap();
+        let key = (speaker.to_string(), id.to_string());
+        if !self.snapshot().received_text.contains(&key) {
+            self.take_turn(speaker, text, true, true, speak);
+            let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
+            let mut world = self.world.lock().unwrap();
+            if let Err(e) = self.journal.lock().unwrap().append(&change) {
+                self.journal_save_failed(&e);
+                return;
+            }
+            Arc::make_mut(&mut world).apply(&change);
+        }
+        self.send_to(speaker, ServerMsg::TextReceived { id: id.into() });
+    }
+
     /// `add_turn`, saying why when `typed` filler is set aside.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool) {
         self.touch();
+        // These are window preferences, never thoughts or requests for the model.
+        if let Some(show) = notice_control(text) {
+            self.send_to(speaker, ServerMsg::NoticeControl { show });
+            return;
+        }
         // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
         if messages::said(self, speaker, text) {
             return;
@@ -395,7 +423,7 @@ impl Core {
             return;
         }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
-        if filler(text, asked) {
+        if filler(text, asked) && self.snapshot().stay_here.is_none() {
             if typed {
                 self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
             }
@@ -414,7 +442,7 @@ impl Core {
         if let Some(job) = first {
             self.run_command(speaker, job);
         }
-        if !filler(said, asked) {
+        if !said.trim().is_empty() && (!filler(said, asked) || self.snapshot().stay_here.is_some()) {
             let id = self.keep_speaking(speaker, said, speak);
             catalog::kept(self, speaker, said, vec![id]);
         }
@@ -510,7 +538,7 @@ impl Core {
     }
 
     fn keep_speaking(&self, speaker: &str, text: &str, speak: bool) -> String {
-        let thought = Thought {
+        let mut thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
             text: text.into(),
@@ -527,9 +555,24 @@ impl Core {
             decided: false,
         };
         let id = thought.id.clone();
+        // Pin and thought arrival share the world's lock: releasing while the placer is busy never sends
+        // already-pinned words elsewhere. This path also works without a model key.
+        let pinned = loop {
+            let world = self.snapshot();
+            thought.thread_id = world.stay_here.clone().or_else(|| world.active_for(speaker).cloned());
+            let placing = stay::placement(&world, &thought);
+            let pinned = placing.is_some();
+            let changes = std::iter::once(Change::ThoughtAdded { thought: thought.clone() }).chain(placing.into_iter().flatten()).collect();
+            if self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
+                break pinned;
+            }
+        };
+        if pinned {
+            self.new_threads.cancel(speaker);
+            return id;
+        }
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
-        self.commit_speaking(|_| true, vec![Change::ThoughtAdded { thought }], speak);
         let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
         id
     }
@@ -863,6 +906,13 @@ fn is_new_thread(text: &str) -> bool {
     )
 }
 
+/// Whole-turn notice commands share the typed and final speech path.
+fn notice_control(text: &str) -> Option<bool> {
+    if is_command(text, &["stop showing this"], &[]) { Some(false) }
+    else if is_command(text, &["show those again"], &[]) { Some(true) }
+    else { None }
+}
+
 /// A view asked for by voice, as its button sets it: "pictures" or "palace", "show the cards" or "show the map", "let's
 /// focus", "show all"; or the "?" list of what you can say ("What can I say?", "help"). Only the whole turn, so "let's
 /// go to the palace of Versailles", "these cards are old", "I can't focus today" and "help me move the couch on
@@ -1029,6 +1079,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        typed_receipts: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
@@ -1061,6 +1112,7 @@ async fn main() -> anyhow::Result<()> {
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
         service: model::Service::from_env(),
+        usage: usage::Runtime::from_env().await,
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
         github: github::Runtime::from_env(),
@@ -1084,6 +1136,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(refiner::run(core.clone()));
     tokio::spawn(recap::keep(core.clone()));
     tokio::spawn(topics::run(core.clone()));
+    tokio::spawn(usage::run(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -1562,6 +1615,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
+    messages.push(usage::message(core));
     messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1649,8 +1703,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Text { text, .. }) if text.trim().chars().count() > protocol::THOUGHT_MAX => {
                     core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
                 }
-                Ok(ClientMsg::Text { text, speak }) if !text.trim().is_empty() => {
-                    if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
+                Ok(ClientMsg::Text { text, speak, id }) if !text.trim().is_empty() => {
+                    if let Some(id) = id { core.receive_typed(&speaker, &id, text.trim(), speak && ai); }
+                    else if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
                     else { core.add_typed(&speaker, text.trim()); }
                 }
                 // A listener whose voice service ended has a closed channel; start a fresh one.
@@ -1660,6 +1715,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
+                Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }
@@ -1746,8 +1802,13 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
                 Ok(ClientMsg::Answer { to, text }) => guide::answer(&core, &speaker, &mut pace, to, text),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
-                Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
-                    if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
+                Ok(ClientMsg::Annotate { thought_id, quote, text, speak }) => {
+                    let result = if speak && ai {
+                        annotate::note_speaking(&core, &speaker, &thought_id, &quote, &text, true)
+                    } else {
+                        annotate::note(&core, &speaker, &thought_id, &quote, &text)
+                    };
+                    if let Err(why) = result {
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
                 }
@@ -1881,6 +1942,7 @@ fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::ato
 impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
+            typed_receipts: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
             recap: Default::default(),
@@ -1912,6 +1974,7 @@ impl Core {
             wake: Default::default(),
             imports: Default::default(),
             service: Default::default(),
+            usage: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
             github: Default::default(),
@@ -1975,6 +2038,61 @@ mod tests {
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn typed_receipt_survives_a_lost_socket_and_restart() {
+        use tokio_tungstenite::tungstenite::Message;
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let id = uuid::Uuid::new_v4().to_string();
+        let request = serde_json::json!({"type":"text", "id":id, "text":"Keep these words after a dropped connection"}).to_string();
+        let (mut first, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        first.send(Message::Text(request.clone().into())).await.unwrap();
+        // Stop reading immediately after the send: the receipt cannot reach this page.
+        drop(first);
+        for _ in 0..100 {
+            if core.snapshot().received_text.contains(&("you".into(), id.clone())) { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(core.snapshot().thoughts.len(), 1);
+        let (mut reopened, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        reopened.send(Message::Text(request.into())).await.unwrap();
+        loop { if received(&mut reopened).await["type"] == "text_received" { break; } }
+        assert_eq!(core.snapshot().thoughts.len(), 1, "retry must not add another thought");
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restarted = Arc::new(Core::test(journal, world));
+        restarted.receive_typed("you", &id, "Keep these words after a dropped connection", false);
+        assert_eq!(restarted.snapshot().thoughts.len(), 1, "receipt is replayed after restart");
+        server.abort();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn receipted_text_preserves_live_speech_without_replaying_it() {
+        for speak in [false, true] {
+            let (core, _queue, path) = keyless(World::default());
+            let mut updates = core.updates.subscribe();
+            let id = uuid::Uuid::new_v4().to_string();
+            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak);
+            let mut added = 0;
+            while let Ok(update) = updates.try_recv() {
+                if matches!(update.message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }) {
+                    added += 1;
+                    assert_eq!(update.speak, speak);
+                }
+            }
+            assert_eq!(added, 1);
+            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak);
+            let receipt = updates.try_recv().unwrap();
+            assert!(matches!(receipt.message, ServerMsg::TextReceived { .. }));
+            assert!(!receipt.speak);
+            assert!(updates.try_recv().is_err(), "a retry only repeats the receipt");
+            std::fs::remove_file(path).unwrap();
+        }
     }
 
     /// "ok" said is filler, set aside without a word (it's how people talk); typed, it gets an answer instead of vanishing.
@@ -2943,9 +3061,9 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
         let notice = |message: serde_json::Value| (message["type"] == "notice").then(|| message["message"].as_str().unwrap_or_default().to_string());
-        // The world, where placing stands, and that there's no key.
-        for _ in 0..3 {
-            received(&mut window).await;
+        // The complete catch-up, before testing replies to new input.
+        for kind in ["snapshot", "placing", "usage", "notice"] {
+            assert_eq!(received(&mut window).await["type"], kind);
         }
         let send = |json: serde_json::Value| Message::Text(json.to_string().into());
 
@@ -3033,6 +3151,7 @@ mod tests {
         assert_eq!(received(&mut window).await["type"], "snapshot");
         // Where unplaced thoughts stand, so a window that reconnects shows its pills as they are: nothing yet.
         assert_eq!(received(&mut window).await, serde_json::json!({"type": "placing", "now": null, "retries": []}));
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "usage", "data": null}));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
         core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
@@ -3749,6 +3868,40 @@ mod tests {
             for now in [1, u64::MAX / 2] {
                 assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod notice_control_tests {
+    use super::*;
+    #[test]
+    fn notice_control_reaches_the_window_without_keeping_a_thought() {
+        let path = std::env::temp_dir().join(format!("e2a2o-notices-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let mut updates = core.updates.subscribe();
+        for typed in [false, true] {
+            for (words, show) in [("Stop showing this", false), ("Show those again", true)] {
+                if typed { core.add_typed("Tester", words); }
+                else { core.add_turn("Tester", words, true); }
+                let message = updates.try_recv().unwrap();
+                assert_eq!(message.to.as_deref(), Some("Tester"));
+                assert!(matches!(message.message, ServerMsg::NoticeControl { show: actual } if actual == show));
+                assert!(updates.try_recv().is_err());
+                assert!(core.snapshot().thoughts.is_empty());
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn notice_control_uses_the_same_path_for_speech_and_typing() {
+        for (words, show) in [("Stop showing this", false), ("Can you stop showing this, please?", false), ("Show those again.", true)] {
+            assert_eq!(notice_control(words), Some(show));
+        }
+        for words in ["I said stop showing this yesterday", "Show those again to Dana"] {
+            assert_eq!(notice_control(words), None);
         }
     }
 }

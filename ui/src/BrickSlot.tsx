@@ -5,7 +5,7 @@ import { Component, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, u
 import type { ActedBy, BrickActions, BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot } from "./bricks/contract";
 import { BRICKS, brickEvents, landingWatcher, senders, snapshotOf, switchBrick, useBricksOn, type Brick } from "./bricks-core";
 import { onReading } from "./apps-audio";
-import type { Thought, World } from "./core";
+import type { Thought, UsageSnapshot, World } from "./core";
 import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
 import { moveToTopic, renameTopic } from "./topics-core";
@@ -34,9 +34,9 @@ const MODEL_WAIT_MS = 1000;
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"]): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs), [world, me, connected, rooms, partial, jobs]);
+  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);

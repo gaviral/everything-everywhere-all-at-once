@@ -124,7 +124,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
     const { x, y, zoom } = flow.getViewport();
     const sx = box.x * zoom + x - a.x0, sy = box.y * zoom + y - a.y0;
-    return zoom >= READ && sx >= w * COMFORT.left && sx + box.w * zoom <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(box.h * zoom, h * 0.3) <= h * COMFORT.bottom;
+    return zoom >= READ && sx >= w * COMFORT.left && sx + box.w * zoom <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(box.h * zoom, h * 0.6) <= h * COMFORT.bottom;
   }, [area, flow]);
 
   /** The follow: `target()` (asked when the move is due, so it's the latest) into the comfortable middle, if it left it;

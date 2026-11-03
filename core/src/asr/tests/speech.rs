@@ -247,3 +247,17 @@ fn a_later_turns_end_closes_the_primers_too() {
     assert_eq!(texts(&core), ["My biggest problem is that I never finish my", "Uh, oh and rent is due Friday."]);
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn recognized_notice_commands_reach_the_window() {
+    let (core, mut updates, path) = listening();
+    for (turn, words, expected) in [(1, "Stop showing this.", false), (2, "Show those again.", true)] {
+        let event = serde_json::json!({"type":"speechComplete", "transcript":words,
+            "audioProcessedMs": PRIMER_MS + turn * 4000, "turnId":turn});
+        assert!(!handle(&core, "you", &mut Primer::default(), &event.to_string()));
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out|
+            matches!(out.message, ServerMsg::NoticeControl { show } if show == expected)));
+        assert!(core.snapshot().thoughts.is_empty());
+    }
+    std::fs::remove_file(path).unwrap();
+}

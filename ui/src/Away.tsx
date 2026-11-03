@@ -1,3 +1,4 @@
+import { useCardNotice, type NoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WhyHere } from "./whyhere";
 import type { World } from "./core";
@@ -170,7 +171,8 @@ export function useAway(world: World, me: string, ready: boolean) {
   return { items, dismiss };
 }
 
-export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
+export function Away({ items: incoming, onFollow, onDismiss, onDismissFocus, queue }: {
+  queue: NoticeQueue;
   items: AwayItem[];
   onFollow: (item: AwayItem) => void;
   onDismiss: () => void;
@@ -178,11 +180,14 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
 }) {
   const [why, setWhy] = useState<ReadonlySet<string>>(new Set());
   // A card gone forgets what it had open: a later card's row on the same thread would otherwise open (and ask) at once.
-  useEffect(() => { if (!items.length) setWhy((open) => (open.size ? new Set() : open)); }, [items.length]);
-  if (!items.length) return null;
+  useEffect(() => { if (!incoming.length) setWhy((open) => (open.size ? new Set() : open)); }, [incoming.length]);
+  const notice = useCardNotice(queue, "away", incoming.length ? incoming.map((i) => `${i.key}:${i.at}`).join("|") : null,
+    `Since you left ${AWAY_WHAT} ${incoming.map((i) => `${i.title} ${i.detail}`).join(" ")} ${AWAY_WHEN}`, onDismiss, false, incoming);
+  const items = notice.data ?? [];
+  if (!items.length || !notice.visible) return null;
   const flip = (key: string) => setWhy((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
-  const close = () => { onDismiss(); onDismissFocus(); };
-  return <section className="away" data-guide="away" aria-labelledby="away-title" onKeyDown={(event) => {
+  const close = () => { notice.close(); onDismissFocus(); };
+  return <section {...notice.hold} className="away" data-guide="away" aria-labelledby="away-title" onKeyDown={(event) => {
     if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); }
   }}>
     <div className="away-top">
@@ -195,7 +200,7 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
         {/* A row only takes you there; nothing is kept, added or dismissed from here. */}
         <a href={`#${item.itemId ? `item-${item.itemId}` : item.thoughtId ? `point-${item.thoughtId}` : `thread-${item.threadId}`}`}
           aria-describedby="away-when"
-          onClick={(event) => { event.preventDefault(); onFollow(item); }}>
+          onClick={(event) => { event.preventDefault(); onFollow(item); notice.close(); }}>
           <span className="away-text">
             <span className="away-title">{item.kind === "proposal" && <span className="away-mark" role="img" aria-label="AI proposal" data-tip={TIPS.awayProposal}>✦ </span>}{item.title}</span>
             <span className="away-detail">{item.point ? <>{item.detail.slice(0, -item.point.length)}<Markdown text={item.point} /></> : item.detail}</span>

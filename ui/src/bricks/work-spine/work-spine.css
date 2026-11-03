@@ -5,7 +5,7 @@
 /* ── The lane: the page's right side from the window's top to its foot, as wide as the Canvas gives up (`--room-right`
    is set to its width, so the Canvas ends where it begins). Its words start `--work-spine-top` from the window's top (clear of the
    corner buttons and the call's Talk pill) and its list stops `--work-spine-foot` above the window's foot (clear of the stage
-   in a narrow window, and of a held card). ── */
+   in a narrow window, the bottom bar's input row, and a held card). ── */
 .work-spine-lane {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px;
   width: clamp(320px, 26vw, 392px); padding: var(--work-spine-top, 68px) 16px var(--work-spine-foot, 44px);

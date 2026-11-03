@@ -4,7 +4,7 @@
 export type Stop = "words" | "titles" | "pictures";
 export const STOPS: { stop: Stop; label: string; key: string; does: string }[] = [
   { stop: "words", label: "Words", key: "1", does: "every word, at reading size" },
-  { stop: "titles", label: "Titles", key: "2", does: "every topic's title, the whole map" },
+  { stop: "titles", label: "Titles", key: "2", does: "read topic names; drag to see more" },
   { stop: "pictures", label: "Pictures", key: "3", does: "every topic as its picture" },
 ];
 
@@ -28,7 +28,7 @@ export function Corner({ following, title, stop, narrow, follow, seeAll, choose 
     {title && !narrow && <><span className="spine-follow-sep" aria-hidden="true">·</span><span className="spine-follow-title">{title}</span></>}
     {!narrow && <kbd className="spine-key">F</kbd>}
   </button>;
-  if (narrow) return following ? null : followButton;
+  if (narrow) return <>{!following && followButton}<button type="button" className="spine-pill" onClick={seeAll} title="See everything (0)">See all</button></>;
   return <div className="spine-camera" role="group" aria-label="Camera">
     <div className="spine-camera-row">
       <div className="spine-stops" role="group" aria-label="Zoom stops">

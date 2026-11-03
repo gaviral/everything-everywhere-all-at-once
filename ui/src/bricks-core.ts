@@ -4,17 +4,18 @@
 // and events each brick is handed (bricks/contract.ts). BrickSlot.tsx mounts them; Catalog.tsx switches them.
 import { useSyncExternalStore, type ComponentType } from "react";
 import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, Job, MapSnapshot, Speaker } from "./bricks/contract";
-import type { Note, Thought, World } from "./core";
+import type { Note, Thought, UsageSnapshot, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
 import { THOUGHT_MAX } from "./limits";
 import { topicsOf } from "./topics-core";
+import { talkOn, watchTalk } from "./talk-preset";
 import { CORE_BRICKS } from "./shell/flag";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
-const APP_FLAGS = ["room", "recording", "brick", "bricks", "sample", "shell", "demo", "cards", "remote", "speed"];
+const APP_FLAGS = ["room", "recording", "brick", "bricks", "sample", "shell", "demo", "cards", "remote", "speed", "preset"];
 /** Ids a view brick can't take: they're the app's own views. */
 const APP_VIEWS = ["map", "palace"];
 
@@ -111,11 +112,13 @@ const listed = new Set((params.get("bricks") ?? "").split(",").map((id) => id.tr
 const flagged = new Set(BRICKS.filter(({ info }) => (info.flag && params.has(info.flag)) || listed.has(info.id)).map(({ info }) => info.id));
 // A core brick that broke and was switched off from its "stopped working" line: off for this visit only.
 const coreOff = new Set<string>();
-let on = onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff);
+const currentIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"]) : onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff);
+let on = currentIds();
 /** Whether a brick is enabled now, including core bricks and this visit's switches. */
 export const isOn = (id: string) => on.has(id);
 const watchers = new Set<() => void>();
-const changed = () => { on = onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff); for (const watcher of watchers) watcher(); };
+const changed = () => { on = currentIds(); for (const watcher of watchers) watcher(); };
+watchTalk(changed);
 const watch = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 // Switched in another window of this browser: this one follows.
 if (browser) window.addEventListener("storage", (event) => { if (event.key === STORE) { switches = readSwitches(); changed(); } });
@@ -189,7 +192,7 @@ const NO_JOBS: readonly Job[] = Object.freeze([]);
  *  margin note's thread with its `anchor`, each thread with its `topic`), `partial`, this tab's live words (core.ts
  *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on),
  *  and the helpers' jobs (work-jobs.ts: they're the connection's, not the world's). */
-export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS): MapSnapshot {
+export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS, usage: UsageSnapshot | null = null): MapSnapshot {
   const notes = world.notes ?? {};
   const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
@@ -209,6 +212,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     partial,
     connected,
     jobs,
+    usage,
   };
 }
 

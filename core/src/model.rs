@@ -221,6 +221,14 @@ pub struct Service {
     capped_said: AtomicBool,
 }
 
+/// The budget's own rolling-hour count, also when the cap is disabled (limit 0).
+#[derive(Clone, serde::Serialize)]
+pub struct Calls {
+    pub used: usize,
+    pub limit: usize,
+    pub at_ms: u64,
+}
+
 impl Default for Service {
     fn default() -> Self {
         Service::with_limit(CALLS_PER_HOUR)
@@ -261,7 +269,13 @@ impl Service {
         while calls.front().is_some_and(|&at| now.saturating_sub(at) >= HOUR_MS) {
             calls.pop_front();
         }
-        (calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
+        (self.limit > 0 && calls.len() >= self.limit).then(|| (calls[calls.len() - self.limit] + HOUR_MS).saturating_sub(now))
+    }
+
+    pub fn calls(&self, now: u64) -> Calls {
+        let mut calls = self.calls.lock().unwrap();
+        let _ = self.wait(&mut calls, now);
+        Calls { used: calls.len(), limit: self.limit, at_ms: now }
     }
 
     /// How many more calls the cap lets go at `now` (no cap: as many as asked).
@@ -287,13 +301,11 @@ impl Service {
     /// Counts a call about to be sent at `now`, or says how long until one may be. The check and the count are one
     /// step under one lock, so two features asking at once with one call left can't both take it.
     fn spend(&self, now: u64) -> Result<(), u64> {
-        if self.limit > 0 {
-            let mut calls = self.calls.lock().unwrap();
-            if let Some(wait) = self.wait(&mut calls, now) {
-                return Err(wait);
-            }
-            calls.push_back(now);
+        let mut calls = self.calls.lock().unwrap();
+        if let Some(wait) = self.wait(&mut calls, now) {
+            return Err(wait);
         }
+        calls.push_back(now);
         self.capped_said.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -781,8 +793,12 @@ mod tests {
         assert_eq!(service.spend(hour - 1), Err(1));
         assert_eq!(service.spend(hour), Ok(()), "the call at 0 left the hour");
         assert_eq!(service.spend(hour + 5), Err(5), "the next to leave is the one at 10, 5 ms on");
+        assert_eq!(service.calls(hour + 10).used, 2, "reporting usage ages out calls too");
+        assert_eq!(service.calls(hour + 10).limit, 3);
         let off = super::Service::with_limit(0);
         assert!((0..1000).all(|at| off.spend(at).is_ok()), "0 is no cap");
+        assert_eq!(off.calls(1000).used, 1000, "uncapped calls still count");
+        assert_eq!(off.calls(hour + 500).used, 499, "uncapped counts also expire");
         assert_eq!(super::Service::default().limit, super::CALLS_PER_HOUR);
     }
 

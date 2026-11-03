@@ -123,7 +123,16 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   const status = document.querySelector('[data-slot="status"]');
   if (status) {
     const r = status.getBoundingClientRect();
-    if (Math.abs(r.height - 24) > 0.5) out.add(`status: height ${r.height}px, expected 24px`);
+    const composer = status.querySelector(".shell-composer"), field = composer?.querySelector("textarea"), mic = composer?.querySelector(".mic");
+    if (!composer || !field || !mic) out.add("status: missing input row or mic inside bottom bar");
+    else {
+      const c = composer.getBoundingClientRect(), f = field.getBoundingClientRect(), m = mic.getBoundingClientRect();
+      if (c.left < r.left || c.right > r.right || c.top < r.top || c.bottom > r.bottom) out.add("status: input row outside bottom bar");
+      if (f.width < 80 || m.right > f.left || Math.abs((m.top + m.bottom) / 2 - (f.top + f.bottom) / 2) > 1) out.add("status: mic and usable input must share one row");
+      for (const e of status.querySelectorAll(".shell-status-state, .shell-status-right, .tiny-transcript")) {
+        if (e.getBoundingClientRect().bottom > c.top) out.add("status: input overlaps existing status items");
+      }
+    }
     if (Math.abs(r.bottom - innerHeight) > 0.5) out.add(`status: bottom ${r.bottom}px, expected ${innerHeight}px`);
     const inside = normal(textNodes.filter((n) => status.contains(n)).map((n) => n.textContent).join(" ")).toLowerCase();
     if (!inside.startsWith(state.toLowerCase())) out.add(`status: expected first state ${JSON.stringify(state)}, got ${JSON.stringify(short(inside))}`);

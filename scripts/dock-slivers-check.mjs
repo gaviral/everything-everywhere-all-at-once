@@ -135,13 +135,13 @@ try {
         assert.ok(await until(`document.documentElement.dataset.view === "${view}" && !document.querySelector('[data-slot="rail"]')`, 5000), `${label}: Show opens ${id}`);
         await sleep(600);
       };
-      /** The most the page's own pixels differ from its color along the gap between the stage's card and its composer. */
+      /** The most the page's own pixels differ from its color along the gap between the stage's card and the bottom bar. */
       const gap = async () => {
         const geo = await evaluate(`(() => {
-          const cards = document.querySelector(".shell-cards").getBoundingClientRect(), composer = document.querySelector(".shell-composer").getBoundingClientRect(), stage = document.querySelector(".shell-stage").getBoundingClientRect();
-          return { top: cards.bottom, bottom: composer.top, left: stage.left, right: stage.right, bg: getComputedStyle(document.documentElement).getPropertyValue("--space").trim() };
+          const cards = document.querySelector(".shell-cards").getBoundingClientRect(), bar = document.querySelector(".shell-status").getBoundingClientRect(), stage = document.querySelector(".shell-stage").getBoundingClientRect();
+          return { top: cards.bottom, bottom: bar.top, left: stage.left, right: stage.right, bg: getComputedStyle(document.documentElement).getPropertyValue("--space").trim() };
         })()`);
-        assert.ok(geo.bottom - geo.top >= 4, `${label}: the stage's card and composer stand apart (${(geo.bottom - geo.top).toFixed(0)} px)`);
+        assert.ok(geo.bottom - geo.top >= 4, `${label}: the stage's card and bottom bar stand apart (${(geo.bottom - geo.top).toFixed(0)} px)`);
         await frames();
         const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
         const strip = await evaluate(`(async () => {

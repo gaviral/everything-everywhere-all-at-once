@@ -43,7 +43,7 @@ ui_checks() {
       # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
       name=$(basename "$c" .mjs)
       rc=$(cat "$check_logs/$name.status" 2>/dev/null)
-      if [ "$rc" = 3 ]; then warn "$name skipped: no Chrome found (set CHROME)"; continue; fi
+      if [ "$rc" = 3 ]; then warn "$name: $(tail -n 1 "$check_logs/$name.log")"; continue; fi
       if [ "$rc" = 0 ]; then pass "$name passes"
       else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
     done

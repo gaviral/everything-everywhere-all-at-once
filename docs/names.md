@@ -32,6 +32,7 @@ The screen, the help list and the docs use the names in the first column. Code, 
 | **Interruption level**: Mark, Ask, Comment, Speak, Interrupt | | levels: Glance, Hand, Note, Speak, Stop | wire values `glance`, `hand`, `note`, `speak`, `stop` (`Level` in `call.rs`, `LEVELS` in `talk/call-core.ts`) |
 | **Shared map** (the button says **Share**; **Join code**, **Leave**) | | room | `./run.sh room`, `?room=`, the `room=` cookie, `/room`, `ROOM_CODE`, `room.tsx`, CSS `.room-*` |
 | **Help** | | the “?” list | `data-guide="help"`, `Act::Help`; saying “What can I say?” still opens it |
+| **Stay here** | | | `stay_here`, `stay_changed`, `Stay`; the pinned topic shows **Staying here**, released with × or “let go” |
 | **Deadlines** | countdown | Countdown | feature id `countdown`; **Send countdown** keeps its name |
 
 ## Names only the docs use

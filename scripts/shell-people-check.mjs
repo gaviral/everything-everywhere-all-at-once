@@ -9,7 +9,7 @@ import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 import { uiServer } from "./ui-server.mjs";
 
 const why = ready();
-assert.equal(why, "", `shell-people-check requires a built UI and Chrome: ${why}`);
+if (why) { console.log(`SKIP shell-people-check: ${why}`); process.exit(3); }
 const shots = process.env.SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 const server = await uiServer();

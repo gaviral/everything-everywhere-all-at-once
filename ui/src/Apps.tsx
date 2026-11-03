@@ -1,3 +1,4 @@
+import { useCardNotice } from "./notice-queue";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { useCore } from "./core";
@@ -180,23 +181,20 @@ const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 
 /** How long the line after Keep or Discard stays before the card goes: about a second to look at it, then 240 words
  *  a minute. "Loud Silly Tune · Your app is on." stays 2.75 s, "App discarded." 1.5 s. */
-const readingMs = (text: string) => 1000 + 250 * (text.match(/[\p{L}\p{N}']+/gu)?.length ?? 0);
 
 /** A tune an app just played, said in the dock beside your live words, where your eyes are when it plays (the Apps
  *  panel above the map is often scrolled away): "♪ Loud Silly Tune: voices stayed loud for 3 s". Up for reading
- *  time (`readingMs`, about 3 s), as the line after Keep is; a second tune restarts it. It grows the dock as a card
+ *  time, as the line after Keep is; a second tune restarts it. It grows the dock as a card
  *  does, so it carries data-dock-card: a thought that just landed under it moves clear (App.tsx). A tune played from
  *  the Apps panel's "Play tune" shows no line: that card said which app and why where you clicked. */
 export function DockTune({ core }: { core: Core }) {
-  const played = core.apps.played;
+  const incoming = core.apps.played;
   const { setPlayed } = core.apps;
-  useEffect(() => {
-    if (!played) return;
-    const timer = window.setTimeout(() => setPlayed((shown) => (shown?.id === played.id ? null : shown)), readingMs(playedLine(played)));
-    return () => window.clearTimeout(timer);
-  }, [played?.id]);
+  const notice = useCardNotice(core.noticeQueue, "tune", incoming ? String(incoming.id) : null, incoming ? playedLine(incoming) : "",
+    () => setPlayed((shown) => shown?.id === incoming?.id ? null : shown), false, incoming);
+  const played = notice.data;
   return <AnimatePresence>
-    {played && <motion.div key="dock-tune" className="dock-tune" role="status" data-dock-card initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
+    {played && notice.visible && <motion.div {...notice.hold} key="dock-tune" className="dock-tune" role="status" data-dock-card initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
       <span className="dock-tune-mark" aria-hidden="true">♪</span><span><strong>{played.name}</strong>{played.why ? `: ${played.why}` : " played its tune"}</span>
     </motion.div>}
   </AnimatePresence>;
@@ -225,32 +223,33 @@ export function DockBuild({ core, onLeave, dismissed }: { core: Core; onLeave: (
   dismissed?: [string | null, (id: string) => void] }) {
   const own = useState<string | null>(null);
   const [gone, setGone] = dismissed ?? own;
-  const build = dockBuild(core.apps, gone);
+  const incoming = dockBuild(core.apps, gone);
   const card = useRef<HTMLDivElement>(null);
   // A choice made from the keyboard: when its buttons go, focus stays in the card instead of falling to the page.
   const keyed = useRef(false);
-  const matched = core.world.apps.find((a) => a.id === build?.match_id);
-  const app = build?.draft ?? matched;
-  const confirmation = !build || !decided(build) ? "" : build.stage === "kept" && app ? `${app.name} · ${build.message}` : build.message;
+  const matched = core.world.apps.find((a) => a.id === incoming?.match_id);
+  const incomingApp = incoming?.draft ?? matched;
+  const incomingConfirmation = !incoming || !decided(incoming) ? "" : incoming.stage === "kept" && incomingApp ? `${incomingApp.name} · ${incoming.message}` : incoming.message;
   const leave = (id: string) => {
     // Keyboard focus in the card would fall to the page; a click's or a tap's isn't moved (a tap on a phone would
     // open its keyboard).
     const focused = document.activeElement;
     if (focused && card.current?.contains(focused) && (focused === card.current || focused.matches(":focus-visible"))) onLeave();
+    core.noticeQueue.drop("card", `build:${id}`);
     setGone(id);
   };
+  const notice = useCardNotice(core.noticeQueue, "build", incoming?.id ?? null,
+    `${incoming?.request ?? ""} ${incomingApp?.name ?? ""} ${incomingApp?.purpose ?? ""} ${incomingConfirmation}`,
+    () => { if (incoming) leave(incoming.id); }, !!incoming && !decided(incoming),
+    { build: incoming, app: incomingApp, confirmation: incomingConfirmation });
+  const { build, app, confirmation } = notice.data ?? { build: null, app: undefined, confirmation: "" };
   useEffect(() => {
-    if (!build || !decided(build)) return;
-    const timer = window.setTimeout(() => leave(build.id), readingMs(confirmation));
-    return () => window.clearTimeout(timer);
-  }, [build?.id, build?.stage]);
-  useEffect(() => {
-    if (!build) return;
+    if (!build || !notice.visible) return;
     const lost = !document.activeElement || document.activeElement === document.body;
     // As in the panel: a card that needs you takes focus when nothing else has it, so Tab reaches Keep next.
     if (lost && (keyed.current || deciding(build) || withoutApp(build))) card.current?.focus({ preventScroll: true });
     keyed.current = false;
-  }, [build?.id, build?.stage]);
+  }, [build?.id, build?.stage, notice.visible]);
   const status = !build ? ""
     : working(build) ? `Making an app: ${build.steps.at(-1) ?? ""}`
     : build.stage === "ready" && app ? `${app.name}: ${app.purpose} ${build.message}`
@@ -259,7 +258,7 @@ export function DockBuild({ core, onLeave, dismissed }: { core: Core; onLeave: (
   return <>
     <div className="sr-only" role="status">{status}</div>
     <AnimatePresence>
-      {build && <motion.div key="dock-build" ref={card} tabIndex={-1} className={`dock-build ${build.stage}`} role="group" aria-label="App being composed" data-dock-card
+      {build && notice.visible && <motion.div {...notice.hold} key="dock-build" ref={card} tabIndex={-1} className={`dock-build ${build.stage}`} role="group" aria-label="App being composed" data-dock-card
         initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8 }} transition={spring}
         onKeyDown={(event) => {
           if (event.key !== "Escape" || !withoutApp(build)) return;

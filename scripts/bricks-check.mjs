@@ -232,6 +232,8 @@ function sourceProblems(dir, file, text) {
   const specs = [...text.matchAll(/\bfrom\s*["']([^"']+)["']/g), ...text.matchAll(/\bimport\s*["']([^"']+)["']/g), ...text.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
   for (const spec of specs) {
     if (PACKAGES.includes(spec)) continue;
+    // The built-in conversation view shares the pin control and the existing filler cleaner.
+    if (dir === join(bricksDir, "spine") && ["../../StayHere", "../live-outline/outline"].includes(spec)) continue;
     // Relative: inside the brick's own folder, or the contract beside it.
     const to = spec.startsWith(".") ? resolve(dir, dirname(file), spec) : "";
     if (to && (to.startsWith(`${dir}/`) || to === join(bricksDir, "contract") || to === join(bricksDir, "contract.ts"))) continue;
@@ -302,6 +304,8 @@ for (const folder of checked) {
     for (const wrong of sourceProblems(dir, file, text)) fail(`${folder}/${file}`, wrong);
   }
   const words = wordsIn(used);
+  // Classes rendered by the shared StayHere control, whose ternary class name isn't a static word.
+  if (folder === "spine") for (const name of ["stay-control", "staying-here"]) words.add(name);
   for (const sheet of files.filter((f) => f.endsWith(".css"))) {
     for (const wrong of sheetProblems(read(join(dir, sheet)).replace(/\/\*[\s\S]*?\*\//g, ""), folder.replace(/^_/, ""), words)) fail(`${folder}/${sheet}`, wrong);
   }

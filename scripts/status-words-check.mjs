@@ -5,7 +5,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
-assert.equal(ready(), "", "status-words-check needs built UI and Chrome");
+const why = ready();
+if (why) { console.log(`SKIP status-words-check: ${why}`); process.exit(3); }
 const shots = process.env.SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 const now = Date.now();

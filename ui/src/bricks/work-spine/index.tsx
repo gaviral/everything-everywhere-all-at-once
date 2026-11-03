@@ -65,8 +65,8 @@ interface Shared {
 
 /** The lane: the page's right side, from the window's top to its foot. It tells the page how wide it is (`--room-right`,
  *  shell.css), so the Canvas ends where it begins, and where its words may start and stop: below the corner buttons and
- *  the call's Talk pill, above whatever stands at the window's foot where the lane is (the stage in a narrow window, a
- *  held card), else just above the status line. It's drawn at the body, outside the dock's own box, so it stays where
+ *  the call's Talk pill, above whatever stands at the window's foot where the lane is (the stage in a narrow window,
+ *  a held card, the bottom bar with its input row). It's drawn at the body, outside the dock's own box, so it stays where
  *  the window puts it. */
 function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
   const pane = useRef<HTMLElement>(null);
@@ -83,11 +83,11 @@ function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
       const over = (el: Element) => { const at = el.getBoundingClientRect(); return at.width > 0 && at.height > 0 && at.right > box.left && at.left < box.right ? at : null; };
       let top = 68, foot = 36;
       for (const el of document.querySelectorAll('[data-slot="top-right"], .talk-pill')) { const at = over(el); if (at) top = Math.max(top, at.bottom + 12); }
-      for (const el of document.querySelectorAll('[data-slot="stage"], [data-slot="bottom-right"]')) { const at = over(el); if (at) foot = Math.max(foot, innerHeight - at.top + 12); }
+      for (const el of document.querySelectorAll('[data-slot="stage"], [data-slot="status"], [data-slot="bottom-right"]')) { const at = over(el); if (at) foot = Math.max(foot, innerHeight - at.top + 12); }
       set(element!.style, "--work-spine-top", Math.round(top));
       set(element!.style, "--work-spine-foot", Math.round(foot));
       // What's measured may come or go (the Talk pill, a held card): look at whatever's there now.
-      for (const el of document.querySelectorAll('[data-slot="top-right"], [data-slot="stage"], [data-slot="bottom-right"], .talk-pill')) {
+      for (const el of document.querySelectorAll('[data-slot="top-right"], [data-slot="stage"], [data-slot="status"], [data-slot="bottom-right"], .talk-pill')) {
         if (!watched.has(el)) { watched.add(el); watch.observe(el); }
       }
     }

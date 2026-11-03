@@ -21,8 +21,21 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         core.send_to(speaker, ServerMsg::View { view: View::Pause });
         return Some(Done::new(Act::Pause));
     }
+    if let Some(view) = preset(text) {
+        core.send_to(speaker, ServerMsg::View { view });
+        return Some(Done::new(crate::catalog::of_view(view)));
+    }
     let world = core.snapshot();
     let before = world.active_for(speaker).cloned();
+    if let Some(on) = crate::stay::command(text) {
+        let act = if on { Act::StayHere } else { Act::LetGo };
+        let id = on.then(|| crate::catalog::this(core, &world, speaker)).flatten();
+        if on && id.is_none() {
+            core.send_to(speaker, ServerMsg::Notice { message: "Choose a topic, then say “stay here”.".into() });
+            return Some(Done::missed(act));
+        }
+        return Some(if crate::stay::set(core, speaker, id.as_deref()) { Done::new(act) } else { Done::missed(act) });
+    }
     if is_lost_thought(text) {
         drop(world);
         core.run_command(speaker, placer::Job::Back);
@@ -58,7 +71,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         crate::apps::decide(core, &build, keep);
         return Some(Done::new(if keep { Act::KeepApp } else { Act::DiscardApp }));
     }
-    if let Some(first) = new_thread_about(text) {
+    if let Some(first) = new_thread_about(text).filter(|_| world.stay_here.is_none()) {
         let title = title_for(&first);
         let (thought, started, dropped) = land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
         core.send_to(speaker, ServerMsg::Notice { message: format!("New topic: “{title}”") });
@@ -69,6 +82,9 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         if let Some(done) = unfold_act(core, speaker, &world, &ask) {
             return Some(done);
         }
+    }
+    if world.stay_here.is_some() {
+        return None;
     }
     match filing(text).map(|(what, place)| (what, destination(&world, place))) {
         Some((_, Destination::Unsure)) | None => None,
@@ -82,8 +98,12 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
 
 /// The act a whole turn names by the pack's rules, without the map: what `act` would do if the map allowed it.
 pub fn kind(text: &str) -> Option<Act> {
-    if is_stop_listening(text) {
+    if let Some(on) = crate::stay::command(text) {
+        Some(if on { Act::StayHere } else { Act::LetGo })
+    } else if is_stop_listening(text) {
         Some(Act::Pause)
+    } else if let Some(view) = preset(text) {
+        Some(crate::catalog::of_view(view))
     } else if is_lost_thought(text) {
         Some(Act::Back)
     } else if is_what_happened(text) {
@@ -745,3 +765,10 @@ pub fn tests_first(said: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Presets are whole-turn requests, never words taken out of a thought.
+fn preset(text: &str) -> Option<View> {
+    if crate::is_command(text, &["talk mode"], &[]) { Some(View::Talk) }
+    else if crate::is_command(text, &["all features"], &[]) { Some(View::Features) }
+    else { None }
+}

@@ -19,11 +19,13 @@ globalThis.HTMLIFrameElement = class {};
 globalThis.dispatchEvent = () => true;
 globalThis.addEventListener ??= noop;
 globalThis.removeEventListener ??= noop;
+const saved = new Map();
+globalThis.localStorage = { get length() { return saved.size; }, key: (i) => [...saved.keys()][i] ?? null, getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: (key) => saved.delete(key) };
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", hostname: "localhost", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
 globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
   constructor() { sockets.push(this); queueMicrotask(() => this.onopen?.()); }
-  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); }
+  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); const m = JSON.parse(data); if (m.type === "text" && m.id) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "text_received", id: m.id }) })); }
   close() {} addEventListener() {} removeEventListener() {} };
 const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;
@@ -49,6 +51,19 @@ try {
     thoughts: [], active: "T1", active_by: { me: "T1" }, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: true };
   say({ type: "snapshot", world });
   await until(() => core.snapshotRevision === 1, "the map");
+
+  // The topic's Stay here and × send map-wide requests; only the core's journaled updates change the chip.
+  const stayAt = sockets.at(-1).sent.length;
+  assert.equal(core.stay("T1"), true);
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent[stayAt]), { type: "stay", thread_id: "T1" });
+  assert.equal(core.world.stay_here ?? null, null, "pin waits for the shared update");
+  say({ type: "change", change: { type: "stay_changed", thread_id: "T1" } });
+  await until(() => core.world.stay_here === "T1", "the shared pin");
+  assert.equal(core.stay(null), true);
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "stay", thread_id: null });
+  assert.equal(core.world.stay_here, "T1", "release waits for the shared update");
+  say({ type: "change", change: { type: "stay_changed", thread_id: null } });
+  await until(() => core.world.stay_here === null, "the shared release");
 
   // A fresh tab can receive another window's or a previous session's listening state. It stays off.
   say({ type: "status", listening: true, note: "Listening" });
@@ -84,6 +99,8 @@ try {
   assert.equal(core.sendText(pasted), true);
   assert.deepEqual(sockets.at(-1).sent.slice(sentAt).map((data) => JSON.parse(data).text), ["p".repeat(4000), "s".repeat(4000) + "\n\nlast"]);
   await until(() => core.notice === "Sent in 2 parts", "the single split notice");
+  core.clearNotice();
+  await until(() => core.notice === "", "the split notice was read");
 
   // The live line: words as they're heard; at the turn's end they stay up (the hand-off) until the thought they
   // became arrives, so the dock never blanks between the words and the thought on its way.
@@ -147,6 +164,8 @@ try {
   say({ type: "found", thread_id: "T1", thought_id: null, message: "Here: Rent" });
   await until(() => core.found?.thread_id === "T1", "the search's answer");
   assert.equal(core.notice, "Here: Rent");
+  core.clearNotice();
+  await until(() => core.notice === "", "the search answer was read");
 
   // Typed "recap": the sheet opens here and asks the core for one; it isn't sent as a thought.
   const old = sockets.at(-1);

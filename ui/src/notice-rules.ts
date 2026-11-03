@@ -1,7 +1,7 @@
 // How long a notice stays up. Pure, so scripts/notice-check.mjs can run it without a browser.
 import { readMs } from "./attention-core";
 
-/** The shortest time any notice is up: the time it always had, enough for a short answer ("Back to Rent"). */
+/** Short answers keep at least five seconds; longer cards get time for all visible words. */
 export const SHORTEST_MS = 5000;
 
 /** Notices that stay until dismissed: each asks for something only the person can do (tap the mic again, allow it,
@@ -32,9 +32,9 @@ export function micNotice(notice: string): boolean {
   return staysUp(notice) && !/^The AI key was refused/i.test(notice);
 }
 
-/** How long an answer is up: its reading time (238 words a minute, plus a look over), never less than before. */
+/** Every answer uses the Finish it card's reading and reaching time. */
 export function upFor(shown: string): number {
-  return Math.max(SHORTEST_MS, readMs(shown));
+  return readingTime(shown);
 }
 
 /** The slow end of silent reading for most adults, non-fiction, words per minute (175–300, mean 238: Brysbaert 2019).
@@ -75,4 +75,9 @@ export function undoKeyGoesTo(press: { repeat: boolean; field: boolean; composer
 /** The Undo shortcut, as this platform writes it. */
 export function undoKeyLabel(mac: boolean): string {
   return mac ? "⌘Z" : "Ctrl+Z";
+}
+
+/** The Finish it rule: read every visible word at 200 wpm, decide, then reach a button. */
+export function readingTime(text: string): number {
+  return Math.max(SHORTEST_MS, readMs(text, 200) + DECIDE_MS + REACH_MS);
 }

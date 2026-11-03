@@ -73,7 +73,8 @@ try {
   assert.match(away, /<\/a>\s*\{\/\*[^]*?\*\/\}\s*\{item\.why && item\.thoughtId && <button type="button" className="away-why" aria-expanded/);
   assert.match(away, /<WhyHere thoughtId=\{item\.thoughtId\} auto \/>/);
   // A dismissed card forgets its open rows, so a later card never opens one (and asks the model) by itself.
-  assert.match(away, /useEffect\(\(\) => \{ if \(!items\.length\) setWhy\([^]*\}, \[items\.length\]\);\s*if \(!items\.length\) return null;/);
+  assert.match(away, /useEffect\(\(\) => \{ if \(!incoming\.length\) setWhy\([^]*\}, \[incoming\.length\]\);/, "clearing the source card resets open reasons even while queued");
+  assert.match(away, /const items = notice\.data \?\? \[\];\s*if \(!items\.length \|\| !notice\.visible\) return null;/, "empty or queued cards render no reasons");
   const app = ui("App.tsx");
   assert.match(app, /const said = differ \|\| thought\.placed/);
   assert.match(app, /\{differ \? "Words said" : "Why here"\}/, "the toggle says what it opens");

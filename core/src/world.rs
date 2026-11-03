@@ -137,11 +137,17 @@ pub struct Action {
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    /// Saved receipts survive a restart even if the thought is later moved or deleted.
+    #[serde(default, skip_serializing)]
+    pub received_text: std::collections::HashSet<(String, String)>,
     /// Where the talk is now: the thread whoever moved last is on.
     pub active: Option<String>,
     /// Each speaker's own active thread, so in a room placement and "where was I?" follow the person.
     #[serde(default)]
     pub active_by: std::collections::HashMap<String, String>,
+    /// One topic for every speaker's new thoughts, kept whole until released.
+    #[serde(default)]
+    pub stay_here: Option<String>,
     #[serde(default)]
     pub suggestions: Vec<Suggestion>,
     #[serde(default)]
@@ -224,6 +230,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    TextReceived { speaker: String, id: String },
     RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
     AppEnabled { id: String, enabled: bool },
@@ -268,6 +275,8 @@ pub enum Change {
         #[serde(default = "you")]
         speaker: String,
     },
+    /// A map-wide choice, independent of each speaker's focus; none releases it.
+    StayChanged { thread_id: Option<String> },
     /// A rename whose maker isn't said: in journals from before tidy.rs, the refiner's own.
     ThreadRenamed { thread_id: String, title: String },
     ThreadMerged { from: String, into: String },
@@ -424,6 +433,7 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
                 self.recaps.push(recap.clone());
@@ -491,6 +501,9 @@ impl World {
                         self.active = None;
                     }
                     self.active_by.retain(|_, id| id != thread_id);
+                    if self.stay_here.as_ref() == Some(thread_id) {
+                        self.stay_here = None;
+                    }
                 }
             }
             Change::PutBack { id, before } => {
@@ -604,6 +617,9 @@ impl World {
             Change::ActiveChanged { thread_id, speaker } => {
                 self.active = Some(thread_id.clone());
                 self.active_by.insert(speaker.clone(), thread_id.clone());
+            }
+            Change::StayChanged { thread_id } => {
+                self.stay_here = thread_id.as_deref().map(|id| self.resolve(id)).filter(|id| self.thread(id).is_some());
             }
             Change::ThreadRenamed { thread_id, title } | Change::TitleChosen { thread_id, title } => {
                 if let Some(th) = self.thread_mut(thread_id) {
@@ -729,6 +745,9 @@ impl World {
         }
         for id in self.active_by.values_mut().filter(|id| **id == from) {
             *id = into.into();
+        }
+        if self.stay_here.as_deref() == Some(from) {
+            self.stay_here = Some(into.into());
         }
         self.threads.retain(|t| t.id != from);
         // Its card's place goes with it; `into` keeps its own (a late place for `from` isn't followed through the merge).
@@ -1149,6 +1168,20 @@ mod tests {
         }
         assert_eq!(world.active_by.get("you").map(String::as_str), Some("T1"));
         assert_eq!(world.threads[0].dropped_by, "you");
+    }
+
+    #[test]
+    fn stay_here_defaults_off_follows_a_merge_and_releases_when_its_topic_leaves() {
+        let mut world: World = serde_json::from_str(r#"{"threads":[],"thoughts":[],"active":null}"#).unwrap();
+        assert!(world.stay_here.is_none(), "old snapshots have no pin");
+        world.threads.extend([test_thread("T1", None), test_thread("T2", None)]);
+        world.apply(&Change::StayChanged { thread_id: Some("T1".into()) });
+        world.apply(&Change::ThreadMerged { from: "T1".into(), into: "T2".into() });
+        assert_eq!(world.stay_here.as_deref(), Some("T2"));
+        world.apply(&Change::StayChanged { thread_id: Some("T1".into()) });
+        assert_eq!(world.stay_here.as_deref(), Some("T2"), "a late pin follows the merge too");
+        world.apply(&Change::ThreadRemoved { thread_id: "T2".into() });
+        assert!(world.stay_here.is_none(), "an empty topic removed by Undo cannot keep an invisible pin");
     }
 
     #[test]
@@ -1669,6 +1702,7 @@ mod tests {
             Change::AiJoined { speaker: "Friend".into() },
             // A place on a thread that's merged away goes with it; its merge undone, it's back in the layout.
             Change::Positioned { id: "T4".into(), x: Some(40.0), y: Some(40.0), by: "AI".into(), at_ms: 30 },
+            Change::StayChanged { thread_id: Some("T4".into()) },
             Change::ThreadMerged { from: "T4".into(), into: "T1".into() },
             Change::ThreadUnmerged {
                 unmerge: crate::tidy::Unmerge {
@@ -1698,6 +1732,7 @@ mod tests {
             Change::ThoughtDecided { thought_id: "c".into(), decided: true },
             Change::ThreadAdded { thread: test_thread("T5", None) },
             Change::Positioned { id: "T5".into(), x: Some(-3.5), y: Some(0.0), by: "Sam".into(), at_ms: 32 },
+            Change::StayChanged { thread_id: Some("T5".into()) },
             Change::ThreadRemoved { thread_id: "T5".into() },
             Change::ThreadRemoved { thread_id: "T9".into() },
             Change::PutBack { id: "T9".into(), before: "T1".into() },
@@ -1805,6 +1840,9 @@ mod tests {
             Change::TopicRenamed { from: "Demo day".into(), to: "Muse models".into() },
             Change::TopicRenamed { from: "Muse models".into(), to: "Muse Spark".into() },
             Change::TopicRenamed { from: "Muse Spark".into(), to: "".into() },
+            Change::StayChanged { thread_id: Some("T4".into()) },
+            Change::StayChanged { thread_id: None },
+            Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
@@ -1817,12 +1855,14 @@ mod tests {
                 | Change::AppOutput { .. }
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
+                | Change::TextReceived { .. }
                 | Change::ThreadAdded { .. }
                 | Change::ThoughtPlaced { .. }
                 | Change::ThreadTouched { .. }
                 | Change::LastPoint { .. }
                 | Change::ThreadStatus { .. }
                 | Change::ActiveChanged { .. }
+                | Change::StayChanged { .. }
                 | Change::ThreadRenamed { .. }
                 | Change::ThreadMerged { .. }
                 | Change::ThreadRetitled { .. }
@@ -1867,7 +1907,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 48, "one of each kind of change");
+        assert_eq!(kinds.len(), 50, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

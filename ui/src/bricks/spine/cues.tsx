@@ -64,7 +64,9 @@ export function placeCues(cues: readonly CueTarget[], area: Area, avoid: readonl
   for (const edge of ["left", "right", "top", "bottom"] as Edge[]) {
     const vertical = edge === "left" || edge === "right";
     const span = vertical ? bottom - top : right - left, size = vertical ? height : width;
-    const count = Math.min(CUES_SHOWN + 1, Math.floor((span + GAP) / (size + GAP)));
+    // Four direct chips and an aggregate, plus a spare candidate at each end for the corner controls. The bottom
+    // bar's input row raises the Shelf into the edge's last slot; with only five candidates that left just three.
+    const count = Math.min(CUES_SHOWN + 3, Math.floor((span + GAP) / (size + GAP)));
     for (let i = 0; i < count; i++) {
       const along = count === 1 ? (span - size) / 2 : i * (span - size) / (count - 1);
       grid.push({ edge, x: vertical ? (edge === "left" ? left : right - width) : left + along,

@@ -1,8 +1,11 @@
+import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
+import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
-import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
+import { comesFirst as noteFirst, received as noteReceived, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "./work-jobs";
@@ -19,7 +22,7 @@ import { applyMove, type MoveChange } from "./moves-core";
 import { resolveMerged as resolve } from "./merges";
 import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
-import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
+import { applyTidy, settle, tidyNote, type Proposal, type TidyChange, type TidyUndo } from "./tidy-core";
 import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
 import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
 import { applyTopic, isTopicChange, sendTopicsWith, type TopicChange } from "./topics-core";
@@ -92,12 +95,20 @@ export type Explanation = { text: string; failed: boolean };
 // An answer to "Why here?" (whyhere.tsx); pending until it comes, failed when there's none.
 export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
 
+/** USAGE_FILE's allowances, read by the core; the budget's own count has a separate, current timestamp. */
+export type UsageRow = { label: string; used_pct?: number; left?: string; spent_usd?: number; cap_usd?: number };
+export type UsageSnapshot = {
+  updated: string;
+  rows: readonly UsageRow[];
+  calls: { used: number; limit: number; at_ms: number };
+};
+
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
 // mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
 // "What just happened?" ("notices"): the notices this window showed, newest first, which only it keeps (the Notice timeline).
-export type ViewAsk = { view: "map" | "cards" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices"; revision: number; answers: number };
+export type ViewAsk = { view: "map" | "cards" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices" | "talk" | "features"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -151,6 +162,8 @@ export interface World extends AppsWorld {
   /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
   active_by: Record<string, string>;
+  /** Map-wide destination for whole new thoughts, independent of each speaker's focus. */
+  stay_here?: string | null;
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
@@ -200,6 +213,7 @@ type Change =
   | { type: "last_point"; thread_id: string; last_point: string }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
+  | { type: "stay_changed"; thread_id: string | null }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | MoveChange
@@ -224,17 +238,20 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "text_received"; id: string }
   | JobMsg
   | StepMsg
   | RecapServerMsg
   | AppsServerMsg
   | { type: "snapshot"; world: World }
+  | { type: "usage"; data: UsageSnapshot | null }
   | { type: "change"; change: Change; speak?: boolean }
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
   | { type: "error"; message: string }
   | { type: "action_failed"; id: string; message: string }
   | { type: "notice"; message: string }
+  | { type: "notice_control"; show: boolean }
   | { type: "undoable"; id: number }
   | { type: "correctable"; for_ms: number; back_to: string | null }
   | { type: "revert" }
@@ -386,6 +403,10 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
   const r = (id: string) => resolve(world, id);
+  if (raw.type === "stay_changed") {
+    const id = raw.thread_id ? r(raw.thread_id) : null;
+    return { ...world, stay_here: id && world.threads.some((t) => t.id === id) ? id : null };
+  }
   const c: Change =
     raw.type === "suggestion_added"
       ? { ...raw, suggestion: { ...raw.suggestion, thread_id: r(raw.suggestion.thread_id) } }
@@ -433,6 +454,7 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: move(s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: move(a.thread_id)! })),
         active: move(world.active),
+        stay_here: move(world.stay_here ?? null),
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
         // Left behind, as the core does (`tidy::record`): a rename meant for `from` would rename `into`.
@@ -504,6 +526,7 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
         ...world,
         threads: world.threads.filter((t) => t.id !== c.thread_id),
         active: world.active === c.thread_id ? null : world.active,
+        stay_here: world.stay_here === c.thread_id ? null : world.stay_here,
         active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
       };
     }
@@ -670,7 +693,9 @@ export function useCore(speaker?: string) {
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
-  const [mapChange, setMapChange] = useState<(TidyNote & { id: number }) | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
+  const mapChange = currentNotice?.kind === "map" ? currentNotice.value : null;
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
@@ -688,7 +713,18 @@ export function useCore(speaker?: string) {
   // comes before its stream's "listening" is the old stream's, late.
   const [listenedRevision, setListenedRevision] = useState(0);
   const [connected, setConnected] = useState(false);
-  const [notice, setNotice] = useState("");
+  const notice = currentNotice?.kind === "notice" ? currentNotice.value.text : "";
+  const noticeNumber = useRef(0);
+  const setNotice = (change: string | ((shown: string) => string)) => {
+    const current = noticeQueue.snapshot();
+    const shown = current?.kind === "notice" ? current.value.text : "";
+    const text = typeof change === "function" ? change(shown) : change;
+    if (typeof change === "function" && text === shown) return;
+    if (!text) { noticeQueue.drop("notice", "search", false); return; }
+    if (text !== LOOKING) noticeQueue.drop("notice", "search", false);
+    const group = aboutKey(text) ? "key" : /microphone|\bmic\b|Live audio/i.test(text) ? "microphone" : "notice";
+    noticeQueue.push("notice", text === LOOKING ? "search" : String(++noticeNumber.current), { text, undo: null }, group);
+  };
   // Every notice and map update as it comes up, for the bricks' on("notice") (App.tsx `takeNotices` after each render):
   // kept where each is said, since one render can carry several, the same words twice too. Clearing one says nothing.
   const notices = useRef<{ text: string; kind: "notice" | "error" | "map-change"; time: number }[]>([]);
@@ -701,7 +737,8 @@ export function useCore(speaker?: string) {
   const noticeShown = useRef("");
   useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
-  const [undoId, setUndoId] = useState<number | null>(null);
+  const undoId = currentNotice?.kind === "notice" ? currentNotice.value.undo : null;
+  const setUndoId = (id: number | null) => noticeQueue.updateUndo(id);
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
   // answer the window makes for a view request stands down when the core has answered since (showNotice).
   const answers = useRef(0);
@@ -720,19 +757,38 @@ export function useCore(speaker?: string) {
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
-  const [queuedCount, setQueuedCount] = useState(0);
+  const queueKey = `e2a2o.waiting.${speaker ?? "you"}`;
+  const outbox = useRef<string[] | null>(null);
+  if (outbox.current === null) {
+    try {
+      outbox.current = readWaiting(queueKey);
+    } catch { outbox.current = []; }
+  }
+  const [queuedCount, setQueuedCount] = useState(outbox.current.length);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   // The ready-to-send message card, while it counts down and for a moment after (send-card.ts).
-  const [sendCard, setSendCard] = useState<SendCardShown | null>(null);
+  const sendSource = useRef<SendCardShown | null>(null);
+  const setSendCard = (change: SendCardShown | null | ((shown: SendCardShown | null) => SendCardShown | null)) => {
+    sendSource.current = typeof change === "function" ? change(sendSource.current) : change;
+    if (sendSource.current) noticeQueue.push("send", String(sendSource.current.id), sendSource.current);
+    else if (!sendSource.current) noticeQueue.drop("send");
+    redrawSend((n) => n + 1);
+  };
+  const sendCard = currentNotice?.kind === "send" ? currentNotice.value : null;
+  const [, redrawSend] = useState(0);
   // The GitHub card, from asking until it's read or closed, and which ask is newest (pulls-card.ts).
-  const [pulls, setPulls] = useState<Pulls>(NO_PULLS);
+  const pullsSource = useRef<Pulls>(NO_PULLS);
+  const setPulls = (change: Pulls | ((shown: Pulls) => Pulls)) => {
+    pullsSource.current = typeof change === "function" ? change(pullsSource.current) : change;
+    if (pullsSource.current.card) noticeQueue.push("pulls", String(pullsSource.current.card.id), pullsSource.current.card);
+    else noticeQueue.drop("pulls");
+  };
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
-  const [noteCard, setNoteCard] = useState<NoteCardShown | null>(null);
+  const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
-  const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
   const stopWaiting = useRef<number | null>(null);
 
@@ -758,6 +814,7 @@ export function useCore(speaker?: string) {
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
+        noticeQueue.reset("note");
         resetApps();
         resetSteps();
         resetRoute();
@@ -769,13 +826,12 @@ export function useCore(speaker?: string) {
         stopWaiting.current = null;
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
-        for (const message of outbox.current.splice(0)) ws.send(message);
+        // A send only hands bytes to the browser. Keep them saved until the core confirms the id.
+        try { outbox.current = readWaiting(queueKey); } catch { /* Keep the last readable copy. */ }
+        setQueuedCount(outbox.current!.length);
+        for (const message of outbox.current!) ws.send(message);
         attention.current.resend((message) => ws.send(message));
         coreBack();
-        setQueuedCount(0);
-        // A new connection, maybe to a restarted core whose note ids start again at 1: the card from before it goes, and
-        // the core's catch-up sends the one still current (notes.rs `shown_card`).
-        setNoteCard(null);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -790,12 +846,22 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "text_received": {
+            try { receivedWaiting(queueKey, msg.id); outbox.current = readWaiting(queueKey); }
+            catch { break; } // Retrying a saved entry is safe: the core remembers its id.
+            setQueuedCount(outbox.current!.length);
+            break;
+          }
+          case "usage":
+            setUsage(msg.data);
+            break;
           case "snapshot":
+            setUsage(null);
             resetJobs();
             setFound(null);
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
             setKeyNotice("");
-            setNotice((shown) => (aboutKey(shown) ? "" : shown));
+            noticeQueue.dropGroup("key");
             // The core sends a running import's status right after the snapshot; one it doesn't has ended
             // (it finished while this window was away, or the core restarted).
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));
@@ -819,7 +885,7 @@ export function useCore(speaker?: string) {
             if (note) {
               const id = ++changeId;
               notices.current.push({ text: note.text, kind: "map-change", time: Date.now() });
-              setMapChange((shown) => ({ ...joinNotes(shown, note), id }));
+              noticeQueue.push("map", String(id), { ...note, id });
             }
             if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
               window.clearTimeout(handoffTimer);
@@ -864,6 +930,9 @@ export function useCore(speaker?: string) {
             setVoiceStatusRevision((revision) => revision + 1);
             if (msg.listening) setListenedRevision((revision) => revision + 1);
             break;
+          case "notice_control":
+            noticeQueue.control(msg.show);
+            break;
           case "error":
             if (msg.message.startsWith("Voice Transcribe:") || msg.message.startsWith("Speech service error:")) {
               setVoiceError(msg.message);
@@ -876,7 +945,7 @@ export function useCore(speaker?: string) {
             // limit: the window keeps saying back tomorrow until the next snapshot.
             if (aboutKey(msg.message)) setKeyNotice((held) => (isResting(held) && !isResting(msg.message) ? held : msg.message));
             if (msg.message) sayNotice(msg.message, msg.type);
-            else setNotice((shown) => (shown === LOOKING ? "" : shown));
+            else noticeQueue.drop("notice", "search", false);
             // A newer answer: the Undo shown was for the one before.
             if (msg.message) { setUndoId(null); answered(); }
             break;
@@ -929,22 +998,25 @@ export function useCore(speaker?: string) {
             break;
           }
           case "pulls_card":
-            setPulls((shown) => pullsReceived(shown, msg));
+            setPulls(pullsReceived(NO_PULLS, msg));
             break;
           case "note_card":
-            setNoteCard((shown) => noteReceived(shown, msg));
+            const queued = noticeQueue.find("note", String(msg.id));
+            const note = noteReceived(queued?.kind === "note" ? queued.value : null, msg);
+            if (note) noticeQueue.push("note", String(msg.id), note);
             if (noteFirst(msg)) closeRecap();
             break;
         }
       };
       ws.onclose = () => {
+        setUsage(null);
         window.clearTimeout(handoffTimer);
         lastPartial = "";
         awaitingThought = false;
         setPartial("");
         setHandoff("");
         // No answer comes on a closed connection.
-        setNotice((shown) => (shown === LOOKING ? "" : shown));
+        noticeQueue.drop("notice", "search", false);
         setWhys((w) => Object.values(w).some((a) => a.pending) ? Object.fromEntries(Object.entries(w).filter(([, a]) => !a.pending)) : w);
         // A core that restarted has no last turn to correct; one that didn't says so again with your next turn.
         setCorrectable(null);
@@ -960,8 +1032,15 @@ export function useCore(speaker?: string) {
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== queueKey && !event.key.startsWith(`${queueKey}.`)) return;
+      try { outbox.current = readWaiting(queueKey); } catch { return; }
+      setQueuedCount(outbox.current.length);
+    };
+    window.addEventListener("storage", storageChanged);
     open();
     return () => {
+      window.removeEventListener("storage", storageChanged);
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(handoffTimer);
@@ -998,11 +1077,11 @@ export function useCore(speaker?: string) {
     answered();
     return false;
   }, [send]);
-  const pullsCardGone = useCallback((id: number) => setPulls((shown) => pullsGone(shown, id)), []);
-  const sendCardGone = useCallback((id: number) => setSendCard((shown) => (shown?.id === id ? null : shown)), []);
+  const pullsCardGone = useCallback((id: number) => { noticeQueue.drop("pulls", String(id)); pullsSource.current = pullsGone(pullsSource.current, id); }, [noticeQueue]);
+  const sendCardGone = useCallback((id: number) => { noticeQueue.drop("send", String(id)); }, [noticeQueue]);
   // The note card's Open in Notes: the core shows the note it wrote, in Notes on the host's Mac; it never changes it.
   const openNote = useCallback((id: number) => sendOrWarn(JSON.stringify({ type: "open_note", id })), [sendOrWarn]);
-  const noteCardGone = useCallback((id: number) => setNoteCard((shown) => (shown?.id === id ? null : shown)), []);
+  const noteCardGone = useCallback((id: number) => { noticeQueue.drop("note", String(id)); }, [noticeQueue]);
   // "This" for spoken requests: the card you selected or point at (this-card.ts).
   useEffect(() => watchAttention((selected, pointed, point) => attention.current.tell(selected, pointed, send, point)), [send]);
   const correct = useCallback((thought_id: string, accept: boolean) => sendOrWarn(JSON.stringify({ type: "correct", thought_id, accept })), [sendOrWarn]);
@@ -1033,10 +1112,13 @@ export function useCore(speaker?: string) {
     removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
     appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    usage,
     sendCard,
     stopSend,
     sendCardGone,
-    pullsCard: pulls.card,
+    pullsCard: currentNotice?.kind === "pulls" ? currentNotice.value : null,
+    noticeQueue,
+    unfinishedNotice: currentNotice?.kind === "unfinished" ? currentNotice.value : null,
     pullsCardGone,
     noteCard,
     openNote,
@@ -1052,6 +1134,7 @@ export function useCore(speaker?: string) {
     listenedRevision,
     connected,
     notice,
+    noticeKey: currentNotice?.kind === "notice" ? currentNotice.key : null,
     takeNotices,
     answerRevision,
     noKey,
@@ -1063,7 +1146,7 @@ export function useCore(speaker?: string) {
     unfoldAsk,
     queuedCount,
     placing,
-    clearNotice: useCallback(() => setNotice(""), []),
+    clearNotice: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "notice") noticeQueue.drop("notice", e.key); }, [noticeQueue]),
     undoId,
     revertAsk,
     correctable,
@@ -1092,7 +1175,7 @@ export function useCore(speaker?: string) {
     untidy: (undo: TidyUndo[]) => [...undo].reverse().forEach((u) => sendOrWarn(JSON.stringify({ type: "untidy", ...u }))),
     // The Undo on a note about ideas or tasks the AI withdrew or corrected: each as it was, newest first.
     restore: (ids: string[]) => [...ids].reverse().forEach((id) => sendOrWarn(JSON.stringify({ type: "restore", id }))),
-    hideMapChange: useCallback(() => setMapChange(null), []),
+    hideMapChange: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "map") noticeQueue.drop("map", e.key); }, [noticeQueue]),
     // A newer answer, made here: an Undo shown was for the one before ("The mic is already off." had "Expand everything"'s).
     // Said for a view request (`asked`), it stands down if the core has answered since: "No, I meant stop listening"
     // sends the view, then "Did … instead" with its Undo, and both can reach one render (review).
@@ -1103,19 +1186,34 @@ export function useCore(speaker?: string) {
       answered();
     },
     sendText: (text: string) => {
+      const preset = talkCommand(text);
+      if (preset !== null) {
+        switchTalk(preset);
+        sayNotice(preset ? "Talk is on. Say or type “all features” to go back." : "Your features are back.");
+        setUndoId(null); answered(); return true;
+      }
+      const control = noticeCommand(text);
+      if (control !== null) { noticeQueue.control(control); return true; }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
+      try { outbox.current = readWaiting(queueKey); } catch { /* A failed save below keeps the draft. */ }
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
-      if (!online && outbox.current.length + parts.length > 50) {
+      if (outbox.current!.length + parts.length > 50) {
         sayNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
       }
-      for (const part of parts) {
-        const message = JSON.stringify({ type: "text", text: part });
-        if (online) socket.current!.send(message);
-        else outbox.current.push(message);
+      const messages = parts.map((part) => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
+      {
+        try {
+          // Save the entire batch before telling the composer it can clear the draft.
+          saveWaiting(queueKey, messages);
+        } catch {
+          sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
+        }
+        outbox.current = readWaiting(queueKey);
+        setQueuedCount(outbox.current.length);
       }
-      if (!online) setQueuedCount(outbox.current.length);
+      if (online) for (const message of messages) socket.current!.send(message);
       if (parts.length > 1) { sayNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
       return true;
     },
@@ -1132,6 +1230,7 @@ export function useCore(speaker?: string) {
       return sent;
     },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    stay: useCallback((thread_id: string | null) => sendOrWarn(JSON.stringify({ type: "stay", thread_id })), [sendOrWarn]),
     // "Try a sample map": the core fills an empty map with the sample, or the one named (core/src/sample.rs).
     sample: (name?: string) => sendOrWarn(JSON.stringify(name ? { type: "sample", name } : { type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename, remove,

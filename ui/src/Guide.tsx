@@ -313,6 +313,7 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
     try { top?.showPopover?.(); } catch { /* shown already, or no popovers here: it's fixed over the page */ }
     let frame = 0;
     let seenName: string | null | undefined;
+    let viewport = "";
     let last = "";
     const tick = () => {
       const asked = find(shown.target);
@@ -320,10 +321,13 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
       const el = asked ?? (how.via ? find(how.via) : null);
       const name = asked ? shown.target : el ? how.via : null;
       aimed.current = { el, via: !asked && !!el };
-      if (name !== seenName) {
-        // A newly aimed part comes into view once; after that, where you scroll is yours.
+      const size = `${document.documentElement.clientWidth}:${window.innerHeight}`;
+      if (name !== seenName || size !== viewport) {
+        // Reflow can put the target behind the dock. Reveal it again on resize;
+        // ordinary scrolling still belongs to the person.
         if (el) bringIntoView(el, reduced);
         seenName = name;
+        viewport = size;
       }
       if (name !== aimNow.current.name || how.line !== aimNow.current.line || frame === 0) {
         aimNow.current = { name, line: how.line };
@@ -708,7 +712,10 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
         if (column && left < column.right + 8) foot = Math.min(foot, column.top - 8);
         const status = drawnBox('[data-slot="status"]');
         if (status && status.top > height / 2) foot = Math.min(foot, status.top - 8);
-        el.style.bottom = `${Math.round(Math.max(GUTTER, height - foot))}px`;
+        const bottom = Math.round(Math.max(GUTTER, height - foot));
+        const ceiling = Math.max(GUTTER, (drawnBox("header")?.bottom ?? 0) + GUTTER);
+        el.style.bottom = `${bottom}px`;
+        el.style.maxHeight = `${Math.max(0, height - bottom - ceiling)}px`;
       }
       frame = requestAnimationFrame(tick);
     };
@@ -728,7 +735,7 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
     {narrow ? <>
       {open && <div className="guide-held-cards">{cards}</div>}
       <button type="button" className="guide-held-chip" aria-expanded={open} onClick={() => setOpen(!open)}>Held <b>{held.length}</b></button>
-    </> : cards}
+    </> : <div className="guide-held-cards">{cards}</div>}
   </section>, document.body);
 }
 
