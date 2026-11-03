@@ -315,13 +315,19 @@ function Fold({ margin }: { margin: string }) {
     style={at ? { left: at.left, top: at.top } : { visibility: "hidden" }} onClick={(event) => { event.stopPropagation(); acts.unfold(margin); }}>…?</button>;
 }
 
+/** A tangent's name in Pictures, from this zoom in: it is 100 px of text, and the room beside its card (the card, its 48 unit
+ *  gutter and the 96 of lane before the next topic: 376 units, less its 72 unit picture and a 5 px gap) holds that only from
+ *  here. Further out its picture stands alone, as on a phone's whole-map view, where names would only cover each other. */
+const NAMED = 0.35;
+
 function Card({ data, now }: { data: ItemData; now: number }) {
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
   const zoomedOut = useStore((s) => far(s.transform[2]));
+  const named = useStore((s) => s.transform[2] >= NAMED);
   const titleLines = item.titleLines ?? [0];
   const inner = G.cardW - 2 * G.pad;
-  return <div className={cls("spine-card", item.open && "spine-card-open", item.slim && "spine-card-slim", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on",
+  return <div className={cls("spine-card", item.open && "spine-card-open", item.slim && "spine-card-slim", item.side === -1 && "spine-card-west", !!item.tangents && "spine-card-nest", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on",
     picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim", data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}
     data-slot={data.arriving ? `slot:${data.arriving}` : undefined}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
@@ -335,6 +341,8 @@ function Card({ data, now }: { data: ItemData; now: number }) {
         ? <Bars lines={item.latestLines} line={G.smallLine} x={G.pad} y={G.pad + titleLines.length * G.cardTitleLine + 4} />
         : <span key={item.latest} className="spine-card-latest" style={{ WebkitLineClamp: G.cardPointMax, width: inner }}>{item.latest}</span>) : null)}
       {!item.open && !zoomedOut && <span className="spine-card-recap">{`Tangent · ${recap(item, now)}`}</span>}
+      {/* The Pictures stop (CSS shows it there only): the tangent as its small picture and its name, at the edge its curve comes in to. */}
+      {zoomedOut && <span className="spine-card-pic" aria-hidden="true"><Tile item={item} />{named && <span className="spine-label">{item.title}</span>}</span>}
     </button>
     <Tools item={item} />
   </div>;

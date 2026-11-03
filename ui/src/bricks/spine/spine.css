@@ -271,13 +271,35 @@
 /* Far out, the far label stands for the head's title and line (they stay for the keyboard and screen readers). */
 .spine-head-far .spine-title, .spine-head-far .spine-head-meta { opacity: 0; }
 
-/* The Pictures stop: each topic its picture, held at a size you can see, its spine a faint line; no words' bars, and
-   what hangs beside (tangents, notes) waits for Titles or Words. */
-.spine-stop-pictures .spine-point .spine-bars, .spine-stop-pictures .spine-card, .spine-stop-pictures .spine-margin, .spine-stop-pictures .spine-link-branch,
-.spine-stop-pictures .spine-link-note, .spine-stop-pictures .spine-link-end, .spine-stop-pictures .spine-link-pulled { visibility: hidden; }
-.spine-stop-pictures .spine-tile { scale: calc(var(--spine-k, 1) * 1.5); }
-.spine-stop-pictures .spine-label { top: calc(66px * var(--spine-k, 1)); }
+/* The Pictures stop: each topic its picture, held at a size you can see, its spine a faint line; no words' bars, and what
+   is words beside words (margin notes) waits for Titles or Words. A tangent stays, as its own smaller picture and name where
+   its card is, its curve still tying it to the point it came from. */
+.spine-stop-pictures .spine-point .spine-bars, .spine-stop-pictures .spine-margin, .spine-stop-pictures .spine-link-note, .spine-stop-pictures .spine-link-end-note,
+.spine-stop-pictures .spine-link-pulled { visibility: hidden; }
+/* A topic's picture is 60 px on screen however far out, but never wider than its column (7 × 40 = 280 of its 300 units): on a
+   phone's whole map (zoom 0.12) it would otherwise cover the next topic and the tangents beside its own. */
+.spine-stop-pictures .spine-tile { scale: min(calc(var(--spine-k, 1) * 1.5), 7); }
+.spine-stop-pictures .spine-label { top: calc(40px * min(calc(var(--spine-k, 1) * 1.5), 7) + 6px * var(--spine-k, 1)); }
 .spine-stop-pictures .spine-link-spine, .spine-stop-pictures .spine-link-slot { opacity: .2; }
+.spine-stop-pictures .spine-link-branch { opacity: .5; }
+/* A tangent here: no frame, no bars; its picture is 32 px on screen, 72 units at most (the least room a stack of tangents leaves
+   is 74, so none lands on the next), centred on where its curve comes in (the card's near edge, 21 down), and its name beside
+   it, away from that edge: to the right of a card on its topic's right, to the left of one on its left. */
+.spine-card-pic { display: none; }
+.spine-stop-pictures .spine-card:is(.spine-card-slim, .spine-on, .spine-card-open, :hover) { border-color: transparent; background: none; box-shadow: none; }
+.spine-stop-pictures .spine-card { border-color: transparent; background: none; box-shadow: none; }
+.spine-stop-pictures .spine-card .spine-bars, .spine-stop-pictures .spine-card .spine-card-line { display: none; }
+.spine-stop-pictures .spine-card-pic { --spine-t: min(calc(var(--spine-k, 1) * .8), 1.8); position: absolute; top: calc(21px - 20px * var(--spine-t)); left: 0; display: flex; align-items: center;
+  gap: calc(5px * var(--spine-k, 1)); width: max-content; height: calc(40px * var(--spine-t)); }
+.spine-stop-pictures .spine-card-west .spine-card-pic { right: 0; left: auto; flex-direction: row-reverse; }
+.spine-stop-pictures .spine-card-pic .spine-tile { position: relative; flex: none; width: calc(40px * var(--spine-t)); height: calc(40px * var(--spine-t)); scale: none; }
+.spine-stop-pictures .spine-card-pic .spine-letter { font-size: calc(15px * var(--spine-t)); }
+.spine-stop-pictures .spine-card-pic .spine-label { position: relative; top: auto; left: auto; max-width: calc(100px * var(--spine-k, 1)); -webkit-line-clamp: 2; pointer-events: auto; }
+.spine-stop-pictures .spine-card-west .spine-label { text-align: right; }
+/* One with tangents of its own keeps its name short of theirs, which start 280 units past its edge (the card, its gutter). */
+.spine-stop-pictures .spine-card-nest .spine-label { max-width: calc(272px - 40px * var(--spine-t) - 5px * var(--spine-k, 1)); }
+.spine-stop-pictures .spine-card.spine-on .spine-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--spine-room, var(--line)) 34%, transparent), 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.spine-stop-pictures .spine-card.spine-left .spine-tile { outline: 2px dashed var(--amber); outline-offset: 2px; }
 
 @keyframes spine-in { from { opacity: 0; transform: translateY(-4px); } }
 @keyframes spine-draw { to { stroke-dashoffset: 0; } }

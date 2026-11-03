@@ -165,6 +165,8 @@ export interface Item {
   speakers?: Who[];
   /** A card of two points or fewer, closed: drawn unframed, as a note. */
   slim?: boolean;
+  /** A card: how many tangents hang off it (their cards stand just beyond its own). */
+  tangents?: number;
   /** An open card's own small line, from under its title to its last point's dot, in its own coordinates (drawn by the
    *  card: the canvas's lines go under cards). */
   line?: { x: number; y1: number; y2: number };
@@ -790,7 +792,7 @@ export function layout(input: LayoutInput): Layout {
     const list = ideasIn(t.id);
     const item = add(s, threadItem(t, box, "card", {
       up: parent && !pins.has(t.id) ? parent.key : undefined, side, open: isOpen(t), titleLines: size.titleLines, latest: size.latest,
-      latestLines: size.latestLines, count: list.length, since: list.at(-1)?.at, slim: !isOpen(t) && list.length <= G.noteMax && !(kids.get(t.id)?.length),
+      latestLines: size.latestLines, count: list.length, since: list.at(-1)?.at, slim: !isOpen(t) && list.length <= G.noteMax && !(kids.get(t.id)?.length), tangents: kids.get(t.id)?.length,
     }));
     if (origin) {
       const from = side > 0 ? origin.right : origin.left;
