@@ -95,6 +95,13 @@ async function contractRules(server) {
   assert.equal(sent.by("t3"), undefined, "someone else's words aren't the brick's");
   sent.see([yours("t4", "Water the plants", 10)], "you", 2000 + 61_000, 1);
   assert.equal(sent.by("t4"), undefined, "yours a minute later aren't");
+  sent.sent("Book the room for Thursday", template, 62_000);
+  sent.see([yours("t6", "the room", 12)], "you", 62_100, 1);
+  assert.equal(sent.by("t6"), undefined, "your few words inside a brick's aren't its");
+  const long = `${"word ".repeat(1300)}end`;
+  sent.sent(long, template, 63_000);
+  sent.see([yours("t7", long.slice(0, 6000).trim(), 13), yours("t8", long.slice(6000).trim(), 14)], "you", 63_100, 1);
+  assert.deepEqual([sent.by("t7"), sent.by("t8")], [template, template], "each part of one sent in parts is the brick's");
   sent.sent("Call mom", template, 70_000);
   sent.see([yours("t5", "Call mom", 11)], "you", 70_100, 2);
   assert.equal(sent.by("t5"), undefined, "a snapshot's thoughts are only learned");
@@ -882,6 +889,13 @@ try {
       if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring, [data-brick="spine"] .spine-point.spine-cut')`, 3000)) fail("Spine", "a thought landing in the app doesn't ring its point");
       core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Claude", at_ms: Date.now() } });
       if (!await until(`(document.querySelector('.react-flow__node[data-id="p:T4-0"]')?.style.transform ?? "").includes("2400px, 1600px")`, 3000)) fail("Spine", "a point someone else placed doesn't go there");
+      // A margin note from the core (the contract's anchored tangent): its words marked on the point, the note beside them.
+      core.send({ type: "change", change: { type: "thread_added", thread: thread("N9", "Point 1", { parent_id: "T1" }) } });
+      core.send({ type: "change", change: { type: "anchored", thread_id: "N9", thought_id: "T1-0", quote: "point 1" } });
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("note-1", "Due on the first?", "N9") } });
+      if (!await until(`document.querySelector('.spine-quote[data-margin="N9"]')?.textContent === "point 1" && (document.querySelector('.spine-margin[data-margin="N9"]')?.textContent ?? "").includes("Due on the first?")`, 3000)) {
+        fail("Spine", "a margin note from the core isn't tied to its words, with the note beside them");
+      }
       // Once the canvas has settled (a glide is 0.3 s, the camera's at most 0.9 s): a press lands where it's aimed.
       await sleep(1000);
       const tip = await middle(`.react-flow__node[data-id="p:T1-0"] .spine-text`);

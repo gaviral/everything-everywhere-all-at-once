@@ -8,6 +8,7 @@ import type { Note, Thought, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
+import { THOUGHT_MAX } from "./limits";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
@@ -213,9 +214,10 @@ export function landingWatcher() {
 }
 
 /** Which brick added each thought of yours (`landed`'s `by`): a brick's `addThought` is told here (`sent`), and the
- *  thought that comes back with those words, yours and new, is its (a long one sent in parts: each part; the rest of
- *  one the placer cut in two: its first part's brick). Asks older than `FOR_MS` are dropped: the core answers at once,
- *  so a thought that comes later is something else, typed while it waited offline. */
+ *  thought that comes back with those words, yours and new, is its (one too long for a thought, sent in parts
+ *  (limits.ts `splitThought`): each part; the rest of one the placer cut in two: its first part's brick). Asks older
+ *  than `FOR_MS` are dropped: the core answers at once, so a thought that comes later is something else, typed while
+ *  it waited offline. */
 export function senders(FOR_MS = 60_000) {
   const asks: { words: string; brick: BrickInfo; at: number }[] = [];
   const claimed = new Map<string, BrickInfo>();
@@ -238,7 +240,7 @@ export function senders(FOR_MS = 60_000) {
         seen.add(thought.id);
         if (learning || thought.speaker !== me) continue;
         const said = words(thought.text);
-        const at = asks.findIndex((ask) => now - ask.at <= FOR_MS && said && ask.words.includes(said));
+        const at = asks.findIndex((ask) => now - ask.at <= FOR_MS && !!said && (ask.words === said || (ask.words.length > THOUGHT_MAX && ask.words.includes(said))));
         if (at >= 0) {
           claimed.set(thought.id, asks[at].brick);
           if (asks[at].words === said) asks.splice(at, 1);
