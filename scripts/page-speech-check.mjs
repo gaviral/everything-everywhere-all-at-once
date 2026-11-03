@@ -87,6 +87,9 @@ try {
     const old = spoken.at(-1);
     send({ type: "change", speak: true, change: { type: "thought_added", thought: { text: "A thought on the map." } } });
     check(spoken.at(-1).text === "A thought on the map.", "a live thought speaks");
+    send({ type: "change", change: { type: "thought_added", thought: { text: "An older Comment.", thread_id: "N1" } } });
+    send({ type: "change", speak: true, change: { type: "thought_added", thought: { text: "The new Comment.", thread_id: "N1" } } });
+    check(spoken.at(-1).text === "The new Comment.", "only the flagged new Comment speaks");
     old.onend(); old.onerror();
     check(speech.pageSpeaking() && frameIs("0,0"), "late events cannot unpause replacement speech");
     send({ type: "call", people: [{ ai: true, speaking: true }, { ai: false, remote: true, speaking: true }] });

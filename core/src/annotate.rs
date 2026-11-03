@@ -29,6 +29,10 @@ const TITLE_WORDS: usize = 6;
 /// under the point's thread, a later one answers in it. The speaker stays where they are, as a drag leaves them (a
 /// note is beside the talk, not a move in it). Returns the note's thread, or why not.
 pub fn note(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text: &str) -> Result<String, &'static str> {
+    note_speaking(core, speaker, thought_id, quote, text, false)
+}
+
+pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text: &str, speak: bool) -> Result<String, &'static str> {
     let quote = one_line(quote);
     let text = text.trim();
     if quote.is_empty() || text.is_empty() {
@@ -107,7 +111,7 @@ pub fn note(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text
                     None => w.thread(&thread_id).is_none() && !w.merged.contains_key(&thread_id),
                 }
         };
-        if core.commit_if(still, changes) {
+        if core.commit_speaking(still, changes, speak) {
             return Ok(thread_id);
         }
     }

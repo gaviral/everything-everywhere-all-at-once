@@ -178,5 +178,26 @@ async fn a_note_follows_its_point_through_a_merge_and_its_anchor_comes_back_with
 #[test]
 fn the_window_sends_it_as_annotate() {
     let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "Month to month?" })).unwrap();
-    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
+    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text, speak: false } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
+}
+
+#[test]
+fn only_the_live_comment_carries_speech_and_the_journal_never_does() {
+    let f = Fixture::new();
+    note(&f.core, "Claude", "a", "the lease", "An older comment.").unwrap();
+    let mut updates = f.core.updates.subscribe();
+    let thread = note_speaking(&f.core, "Claude", "a", "the lease", "The new reply.", true).unwrap();
+    let mut spoken = Vec::new();
+    while let Ok(out) = updates.try_recv() {
+        if out.speak {
+            if let ServerMsg::Change { change: Change::ThoughtAdded { thought } } = out.message {
+                spoken.push(thought.text);
+            }
+        }
+    }
+    assert_eq!(spoken, ["The new reply."]);
+    assert_eq!(notes(&f.replayed(), &thread).len(), 2);
+    assert!(!f.journaled().contains("\"speak\""), "speech is live delivery, never saved for replay");
+    let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "The new reply.", "speak": true })).unwrap();
+    assert!(matches!(msg, ClientMsg::Annotate { speak: true, .. }));
 }

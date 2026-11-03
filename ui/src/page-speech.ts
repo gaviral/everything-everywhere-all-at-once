@@ -1,5 +1,5 @@
 // Live bridge replies play in this browser; its microphone sends silence until playback finishes.
-// No snapshot playback: only an explicitly flagged caption or newly added AI thought speaks.
+// No snapshot playback: only an explicitly flagged caption or newly added AI thought (including a Comment) speaks.
 import { slowReadMs } from "./notice-rules";
 import { NATURAL_PAUSE_MS } from "./legible";
 
