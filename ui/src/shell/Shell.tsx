@@ -144,9 +144,9 @@ function micHint(s: StatusState): string {
   return "";
 }
 
-/** The status line: 24 px, flush at the very bottom. Live words (Tiny transcript, lane L3) take its middle: anything a
- *  feature puts in `[data-slot="status"]` lands between the state and what waits (shell.css). */
-export const StatusLine = memo(function StatusLine({ state, openHistory }: { state: StatusState; openHistory: () => void }) {
+/** The bottom bar: a status line above the input row. Live words (Tiny transcript, lane L3) occupy the middle of
+ *  the status line, between the state and what waits (shell.css). */
+export const StatusLine = memo(function StatusLine({ state, openHistory, children }: { state: StatusState; openHistory: () => void; children?: ReactNode }) {
   const mic = micWords(state);
   const hint = micHint(state);
   const waiting = state.stalled ? state.stalled : state.waiting ? `${state.waiting} waiting` : "";
@@ -166,6 +166,7 @@ export const StatusLine = memo(function StatusLine({ state, openHistory }: { sta
         state.connected && !state.queued && <span key="saved">Saved</span>,
       ].filter(Boolean).flatMap((item, i) => (i ? [<span key={`sep${i}`} className="shell-status-sep" aria-hidden="true" />, item] : [item]))}
     </button>
+    {children}
   </div>;
 });
 
