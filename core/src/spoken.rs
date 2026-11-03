@@ -21,6 +21,10 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         core.send_to(speaker, ServerMsg::View { view: View::Pause });
         return Some(Done::new(Act::Pause));
     }
+    if let Some(view) = preset(text) {
+        core.send_to(speaker, ServerMsg::View { view });
+        return Some(Done::new(crate::catalog::of_view(view)));
+    }
     let world = core.snapshot();
     let before = world.active_for(speaker).cloned();
     if let Some(on) = crate::stay::command(text) {
@@ -98,6 +102,8 @@ pub fn kind(text: &str) -> Option<Act> {
         Some(if on { Act::StayHere } else { Act::LetGo })
     } else if is_stop_listening(text) {
         Some(Act::Pause)
+    } else if let Some(view) = preset(text) {
+        Some(crate::catalog::of_view(view))
     } else if is_lost_thought(text) {
         Some(Act::Back)
     } else if is_what_happened(text) {
@@ -759,3 +765,10 @@ pub fn tests_first(said: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Presets are whole-turn requests, never words taken out of a thought.
+fn preset(text: &str) -> Option<View> {
+    if crate::is_command(text, &["talk mode"], &[]) { Some(View::Talk) }
+    else if crate::is_command(text, &["all features"], &[]) { Some(View::Features) }
+    else { None }
+}

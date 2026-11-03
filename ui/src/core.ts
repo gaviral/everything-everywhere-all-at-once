@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
@@ -105,7 +106,7 @@ export type UsageSnapshot = {
 // mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
 // "What just happened?" ("notices"): the notices this window showed, newest first, which only it keeps (the Notice timeline).
-export type ViewAsk = { view: "map" | "cards" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices"; revision: number; answers: number };
+export type ViewAsk = { view: "map" | "cards" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices" | "talk" | "features"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -1128,6 +1129,12 @@ export function useCore(speaker?: string) {
       answered();
     },
     sendText: (text: string) => {
+      const preset = talkCommand(text);
+      if (preset !== null) {
+        switchTalk(preset);
+        sayNotice(preset ? "Talk is on. Say or type “all features” to go back." : "Your features are back.");
+        setUndoId(null); answered(); return true;
+      }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
       const online = socket.current?.readyState === WebSocket.OPEN;
