@@ -4,6 +4,7 @@
 #   ./run.sh demo & sh scripts/precheck.sh   # with the app running, also probes it live on :4321 (or $PORT)
 #   ./run.sh room & sh scripts/precheck.sh   # the same for a room, from this laptop's network address
 #   PUBLIC_URL=https://….trycloudflare.com PORT=4410 sh scripts/precheck.sh   # a trial's core (scripts/trial.sh prints it)
+# PRECHECK_PAGES=0 skips browser phases; their source/rule checks still run.
 # FAIL lines stop a release (non-zero exit); WARN lines are known open decisions.
 cd "$(dirname "$0")/.." || exit 1
 failed=0
@@ -38,7 +39,7 @@ if [ -d ui/node_modules ]; then
     # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
     name=$(basename "$c" .mjs)
     rc=$(cat "$check_logs/$name.status" 2>/dev/null)
-    if [ "$rc" = 3 ]; then warn "$name skipped: no Chrome found (set CHROME)"; continue; fi
+    if [ "$rc" = 3 ]; then warn "$name: $(tail -n 1 "$check_logs/$name.log")"; continue; fi
     if [ "$rc" = 0 ]; then pass "$name passes"
     else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
   done

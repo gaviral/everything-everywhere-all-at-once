@@ -37,6 +37,9 @@ Browser, one page per window (ui/src)
   route.ts       live routing: while a thought is placed, the topics the prompt names light up and the bottom bar shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
+  notice-queue.ts one ordered queue for notices and cards, read-state suppression, per-kind preferences and visible-card lifetimes
+  talk-preset.ts Talk mode preference and whole-turn commands, restoring the previous feature selection on exit
+  waiting.ts     per-thought local storage entries shared by tabs; unique receipt IDs and ordered retries until the core acknowledges
   StayHere.tsx   a topic's Stay here action and Staying here chip with × to release (stay-here.css)
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)

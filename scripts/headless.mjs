@@ -14,8 +14,9 @@ const chromePath = [process.env.CHROME, "/Applications/Google Chrome.app/Content
   .find((p) => p && existsSync(p));
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Why this machine can't run a page check, or "" when it can. */
+/** Why a page check is disabled or unavailable, or "" when it can run. */
 export function ready() {
+  if (process.env.PRECHECK_PAGES === "0") return "page checks disabled by PRECHECK_PAGES=0";
   if (!chromePath) return "no Chrome (set CHROME)";
   if (!existsSync(join(dist, "index.html"))) return "no ui/dist (build the UI first)";
   return "";

@@ -110,9 +110,14 @@ export const ACTIONS: Action[] = [
   { id: "guide-held-more", how: "click", at: [["Guide.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS, done: "the rest of the held stack opens under the next in line, or folds back to it", says: ["more held", "Just the next"] },
   { id: "guide-held-chip", how: "click", at: [["Guide.tsx", "onClick={() => setOpen(!open)}"]], pressed: PRESS, done: "on a phone, the held cards open above the chip, or fold back into it", says: ["Held"] },
   { id: "new-landing-note", how: "click", at: [["Attention.tsx", "onClick={onGo}"]], pressed: PRESS, done: "the map scrolls to the new thought, which takes the landing highlight" },
-  { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },
+  { id: "exit-talk", how: "click", at: [["App.tsx", "onClick={() => {\n    switchTalk(false);"]], pressed: PRESS, done: "all features return and focus moves to the input box" },
+  { id: "forget-unfinished", how: "click", at: [["App.tsx", "forget(pullBack)"]], pressed: PRESS, done: "the unfinished card closes and this thought is no longer offered" },
+  { id: "expand-unfinished", how: "click", at: [["App.tsx", "onClick={() => setExpanded(!expanded)}"]], pressed: PRESS, done: "the original words expand or fold; the button changes between Show more and Show less" },
+  { id: "stay-here", how: "click", at: [["StayHere.tsx", "event.stopPropagation(); state.stay("]], pressed: PRESS, waits: "core", done: "the topic shows Staying here or releases it, preserving focus on the control", failed: OFFLINE },
+  { id: "stop-reply-speech", how: "key", at: [["page-speech.ts", 'window.addEventListener("keydown", key, true)']], pressed: INSTANT, done: "Space or Escape stops the spoken reply and returns microphone capture" },
+  { id: "finish-it", how: "click", at: [["App.tsx", "finishThread(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes, the map reveals the unfinished words and the input box keeps focus for the next words", failed: NOT_CONNECTED },
   { id: "later", how: "click", at: [["App.tsx", "later(pullBack)"]], pressed: PRESS, done: "the card fades out" },
-  { id: "install", how: "click", at: [["Install.tsx", "leave(hint.install)"], ["Install.tsx", "leave(hint.close)"]], pressed: PRESS, done: "the hint goes; Install opens the browser's own install sheet" },
+  { id: "install", how: "click", at: [["Install.tsx", "onClick={leave(() => { hint.install?.();"], ["Install.tsx", "onClick={leave(notice.close)}"]], pressed: PRESS, done: "the hint goes; Install opens the browser's own install sheet" },
   { id: "tune", how: "click", at: [["Apps.tsx", "onClick={play}"]], pressed: PRESS, done: "the tune plays and the bottom bar names it: “♪ …”",
     failed: "notice: “Sound isn't available in this browser right now.”", says: ["Sound isn't available in this browser right now."] },
   { id: "dismiss-tune", how: "click", at: [["Apps.tsx", `aria-label="Dismiss tune"`]], pressed: PRESS, done: "the tune's line goes" },
@@ -254,6 +259,7 @@ export const ACTIONS: Action[] = [
 
 /** Handlers that aren't actions of their own: each says why. */
 export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] = [
+  { at: ["SendCard.tsx", "onBlur={(e) =>"], why: "moving focus within the card keeps its reading time paused; leaving resumes it" },
   { at: ["shell/Shell.tsx", "onBlur={() => window.setTimeout(() => setFocused(false), 120)}"], why: "the field narrows back once focus leaves" },
   { at: ["shell/Shell.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "keeps focus in the field so a click on a topic lands" },
   { at: ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"], why: "each corner button's use in App.tsx is its own entry" },
@@ -271,7 +277,7 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["room.tsx", "setName(e.target.value)"], why: "typing your name" },
   { at: ["Moves.tsx", "onInput={(event) => {"], why: "typing a title: the words are the feedback, clipped at the cap as you type" },
   { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },
-  { at: ["App.tsx", "onBlur={() => setNoticeFocused(false)}"], why: "a notice keeps up while it has focus: no change you see" },
+  { at: ["App.tsx", "onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setNoticeFocused(false); }}"], why: "a notice keeps up while it has focus: no change you see" },
   { at: ["PullsCard.tsx", "onBlur={(event) =>"], why: "the GitHub card keeps up while it has focus: no change you see" },
   { at: ["NoteCard.tsx", "onBlur={(event) =>"], why: "the note card keeps up while it has focus: no change you see" },
   { at: ["App.tsx", `document.addEventListener("pointerdown", outside, true)`], why: "a press outside the shortcuts list closes it: the list going is the feedback" },

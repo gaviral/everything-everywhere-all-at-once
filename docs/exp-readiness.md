@@ -22,3 +22,21 @@ Validation: main passed 633 Rust tests (12 ignored); final exp passed 646 (12 ig
 - The focus fixture acknowledges and validates receipt IDs while retaining its exact text, single-submission, keyboard-focus, and draft assertions. The search fixture uses synthetic workshop text.
 
 Validation: 648 Rust tests passed (12 ignored), the UI production build passed, and socket, find-again page, waiting-tabs page, full guide, notice, and speech-correction checks passed. No existing assertion was weakened; the original guide resize assertion remains unchanged. Main remains at `fff9a75`; no push.
+
+## Gate check repair
+
+The seven reported failures were stale coverage or fixtures, not evidence of a new application defect. No application behavior was removed to make them pass.
+
+| Gate | Repair and retained coverage |
+| --- | --- |
+| css-check | Scan nested TypeScript sources too: Talk styles intentionally target classes emitted by the Spine. The unused-class assertion remains, with no class exemptions. |
+| feedback-check | Keep the check unchanged. Update the feedback catalog for Talk exit, original-word expansion, Forget it, Stay here, speech cancellation, install handlers, and focus-preserving blur handlers. |
+| loud-app-check | Seed the real notice queue before static rendering, as apps-check already does. Keep every card, Keep/Discard, and audio RMS assertion. |
+| marks-check | Give the worklet fixture its current postMessage interface and assert a capture message is sent. Keep every track-ending, mic-state, ring, tip, and mark assertion. |
+| readme-check | Keep the check unchanged. Document notice-queue.ts, talk-preset.ts, and waiting.ts in the architecture parts list. |
+| ui-server-check | Keep the check unchanged. Route page-speech-check through uiServer with an explicit loopback listening port; preserve shared root, disabled watcher, and disabled HMR settings. |
+| whyhere-check | Retain source-reset and hidden-card assertions against the queue's incoming source and visible items. Keep every reason, retry, placement, and on-demand wiring assertion. |
+
+The requested PRECHECK_PAGES=0 option was previously unused in this checkout. The shared page readiness helper now honors it; phone-walk, shell-people, and status-words use the same prerequisite skip convention as the other browser checks. Their application assertions are unchanged, and default runs still execute their browser checks. Precheck now prints each actual skip reason instead of calling all skips a missing Chrome installation.
+
+Validation: `PRECHECK_PAGES=0 sh scripts/precheck.sh` exited 0 with no FAIL lines, including all seven reported checks, the UI build, and Rust tests. Separately, `node scripts/page-speech-check.mjs` passed its real-browser/worklet checks using the shared Vite helper. Browser phases were intentionally skipped by the requested gate option; live probes and external integration fixtures were unavailable. Existing release-content warnings remain warnings.

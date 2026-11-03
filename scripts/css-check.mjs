@@ -8,8 +8,10 @@ import { readdirSync, readFileSync } from "node:fs";
 
 const ui = new URL("../ui/", import.meta.url);
 const files = (dir, test) => readdirSync(new URL(dir, ui)).filter(test).map((f) => readFileSync(new URL(dir + f, ui), "utf8"));
-// The app's own folders beside src/: the new shell (src/shell/, behind ?shell=2) has its code and stylesheet there.
-const code = [...files("src/", (f) => /\.tsx?$/.test(f)), ...files("src/shell/", (f) => /\.tsx?$/.test(f)), ...files("public/", (f) => f.endsWith(".js")), readFileSync(new URL("index.html", ui), "utf8")]
+// Shared styles also reference classes emitted by nested features, including the Spine.
+const sources = (dir) => readdirSync(new URL(dir, ui), { withFileTypes: true }).flatMap((entry) =>
+  entry.isDirectory() ? sources(`${dir}${entry.name}/`) : /\.tsx?$/.test(entry.name) ? [readFileSync(new URL(`${dir}${entry.name}`, ui), "utf8")] : []);
+const code = [...sources("src/"), ...files("public/", (f) => f.endsWith(".js")), readFileSync(new URL("index.html", ui), "utf8")]
   .join("\n").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:\w"'`\\])\/\/.*$/gm, "$1");
 const quoted = [...code.matchAll(/"([^"\\\n]*(?:\\.[^"\\\n]*)*)"|'([^'\\\n]*(?:\\.[^'\\\n]*)*)'/g)].map((m) => m[1] ?? m[2]);
 const templates = [...code.matchAll(/`([^`\\]*(?:\\.[^`\\]*)*)`/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, " "));

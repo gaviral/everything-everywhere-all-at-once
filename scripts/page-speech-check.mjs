@@ -1,12 +1,10 @@
 // Real Chrome, fake speech and capture devices: no voice service or audio hardware needed.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import { openPage, ready } from "./headless.mjs";
 
 if (ready()) { console.log(`SKIP page-speech-check: ${ready()}`); process.exit(3); }
-const server = await createServer({
-  root: new URL("../ui", import.meta.url).pathname,
-  server: { host: "127.0.0.1", port: Number(process.env.SPEECH_CHECK_PORT ?? 4620), strictPort: true, hmr: false, ws: false, watch: null },
+const server = await uiServer({
   plugins: [{ name: "speech-check", configureServer(server) {
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/speech-check") return next();
@@ -14,7 +12,7 @@ const server = await createServer({
       res.end('<!doctype html><button class="guide-caption"><span>Claude says</span></button><button id="elsewhere">Elsewhere</button><textarea></textarea>');
     });
   } }],
-});
+}, { port: Number(process.env.SPEECH_CHECK_PORT ?? 4620) });
 let browser;
 try {
   await server.listen();

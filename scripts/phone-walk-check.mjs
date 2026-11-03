@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { openPage, ready, sleep, standInCore } from "./headless.mjs";
 
-assert.equal(ready(), "");
+const why = ready();
+if (why) { console.log(`SKIP phone-walk-check: ${why}`); process.exit(3); }
 const shots = process.env.SHOTS ?? "/private/tmp/e2a2o-r-phone-check";
 mkdirSync(shots, { recursive: true });
 const now = Date.now() - 60_000;

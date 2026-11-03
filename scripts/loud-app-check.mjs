@@ -12,6 +12,7 @@ const React = ui("react");
 const { renderToStaticMarkup } = ui("react-dom/server");
 const server = await uiServer();
 try {
+  const { noticeQueue } = await server.ssrLoadModule("/src/notice-queue.ts");
   const { DockBuild } = await server.ssrLoadModule("/src/Apps.tsx");
   const { volumeReporter } = await server.ssrLoadModule("/src/apps-audio.ts");
   const text = (html) => html.replace(/<div class="sr-only" role="status">.*?<\/div>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -24,8 +25,14 @@ try {
     enabled: false, request, cooldown_secs: 60, created_ms: 0, last_run_ms: 0 };
   const build = (stage, extra = {}) => ({ id: "build-7", request, stage, steps: ["Checking existing apps", "Choosing blocks for your app",
     "Checking the watcher, prompt and publishers", "Ready to keep. It starts when you keep it."], draft, match_id: null, message: "", instead: "", ...extra });
-  const core = (current) => ({ connected: true, snapshotRevision: 1, world: { apps: [] }, apps: { build: current, inPanel: false },
-    decideApp() {}, composeApp: () => true });
+  const core = (current) => {
+    const queue = noticeQueue();
+    queue.push("card", `build:${current.id}`, { data: {
+      build: current, app: current.draft, confirmation: `${current.draft.name} · ${current.message}`,
+    }, text: current.message, waiting: false, done() {} }, "build");
+    return { connected: true, snapshotRevision: 1, world: { apps: [] }, noticeQueue: queue,
+      apps: { build: current, inPanel: false }, decideApp() {}, composeApp: () => true };
+  };
   const dock = (current) => text(renderToStaticMarkup(React.createElement(DockBuild, { core: core(current), onLeave() {} })));
   const ready = dock(build("ready"));
   assert.ok(ready.startsWith("✦ Loud Silly Tune · Plays a silly tune when voices stay loud."), ready);
