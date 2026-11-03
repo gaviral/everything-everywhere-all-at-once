@@ -438,17 +438,22 @@ mod tests {
         ear_messages.extend(drain(&mut ears, 100).await);
         let mut relayed = None;
         for got in [drain(&mut you, 100).await, drain(&mut other_tab, 100).await, ear_messages] {
-            assert_eq!(got.len(), 3, "{got:?}");
-            assert_eq!(got[0]["steps"], serde_json::json!([
-                {"target": "thread:T1", "text": "Start here."},
-                {"target": null, "text": "Then look around."},
-                {"target": null, "text": "最后一步"}
-            ]));
-            assert_eq!(got[1]["steps"], serde_json::json!([{"target": null, "text": "Next tour."}]));
-            assert_eq!(got[2]["steps"], serde_json::json!([]));
+            let shape = |m: &serde_json::Value| (m["type"].clone(), m["steps"].clone(), m["by"].clone());
+            assert_eq!(
+                got.iter().map(shape).collect::<Vec<_>>(),
+                [
+                    ("tour".into(), serde_json::json!([
+                        {"target": "thread:T1", "text": "Start here."},
+                        {"target": null, "text": "Then look around."},
+                        {"target": null, "text": "最后一步"}
+                    ]), "Claude".into()),
+                    ("tour".into(), serde_json::json!([{"target": null, "text": "Next tour."}]), "Claude".into()),
+                    ("tour".into(), serde_json::json!([]), "Claude".into()),
+                ],
+                "{got:?}"
+            );
+            // As with points and captions, check the server timestamp separately from the ordered payload.
             for message in &got {
-                assert_eq!(message["type"], "tour");
-                assert_eq!(message["by"], "Claude");
                 assert!(message["at_ms"].as_u64().is_some_and(|at| at > 0));
                 assert!(message.get("from").is_none());
                 assert_eq!(message.as_object().unwrap().len(), 4);
