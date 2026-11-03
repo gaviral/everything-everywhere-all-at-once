@@ -20,10 +20,12 @@ import type { BrickOn } from "./bricks/contract";
 import type { World } from "./core";
 import { Markdown } from "./md";
 import {
-  aimAt, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld, dropIt, echoOf, goAhead, GUTTER, heard,
+  aimAt, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
   inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, RING_PAD, route, stepBack,
   useGuide, useWindowOn, watchGuide, type Held, type Said, type Shown, type Where,
 } from "./guide-core";
+import { SHELL2 } from "./shell/flag";
+import { holdQuestion, dropHeld as dropShellHeld } from "./shell/held";
 import "./guide.css";
 
 type Props = { world: World; view: string; query: string; focus: boolean };
@@ -35,6 +37,23 @@ export function Guide(props: Props) {
   const { point, caption, held } = useGuide();
   const on = useWindowOn();
   const ai = (name: string) => !!props.world.ai?.includes(name);
+  const aiNames = JSON.stringify(props.world.ai ?? []);
+  useLayoutEffect(() => {
+    if (!SHELL2) return;
+    const identities: string[] = JSON.parse(aiNames);
+    const line = inLine(held);
+    // The shell prepends new entries: reverse insertion keeps the guide's next item first.
+    for (const item of [...line].reverse()) {
+      const ink = identities.includes(item.by);
+      holdQuestion({
+        id: `guide:${item.n}`, by: item.by, ai: ink, main: plain(mainWords(item.text)),
+        answer: () => askNow(item.n), later: () => { if (item.state === "waiting") laterHeld(item.n); },
+        content: <HeldCard item={item} ai={ink} />,
+      });
+    }
+    // Only this projection's entries leave on a new snapshot or when the guide unmounts.
+    return () => { for (const item of line) dropShellHeld(`guide:${item.n}`); };
+  }, [held, aiNames]);
   usePauses(on);
   useKeys();
   // What a screen reader hears, set once per message (a region whose words change on their own would say them again).
@@ -52,7 +71,7 @@ export function Guide(props: Props) {
     {point && <Arrow key={point.n} shown={point} ink={ai(point.by)} {...props} say={setPointSaid} where={setWhere} />}
     {(caption || point) && <Line key={caption ? `c${caption.n}` : `p${point!.n}`} said={caption} point={point} where={point ? where : ""}
       ai={ai(caption?.by ?? point!.by)} raise={point?.n ?? 0} on={on} />}
-    {held.length > 0 && <HeldStack held={held} ai={ai} />}
+    {!SHELL2 && held.length > 0 && <HeldStack held={held} ai={ai} />}
     <div className="sr-only" role="status">{pointSaid}</div>
     <div className="sr-only" role="status">{captionSaid}</div>
     <div className="sr-only" role="status">{heldSaid}</div>
@@ -575,10 +594,10 @@ function HeldCard({ item, ai }: { item: Held; ai: boolean }) {
     </div>
     <p className="guide-held-text"><Markdown text={question ? mainWords(item.text) : item.text} /></p>
     <div className="guide-held-acts">
-      <button type="button" className="guide-btn" onClick={() => askNow(item.n)}>{open}</button>
+      <button type="button" className="guide-btn" onClick={() => askNow(item.n)} aria-keyshortcuts={SHELL2 ? "Enter" : undefined}>{open}{SHELL2 && <kbd>↵</kbd>}</button>
       {item.state === "waiting"
-        ? <button type="button" className="guide-btn" onClick={() => laterHeld(item.n)}>Later</button>
-        : <button type="button" className="guide-btn" onClick={() => dropHeld(item.n)}>Drop it</button>}
+        ? <button type="button" className="guide-btn" onClick={() => laterHeld(item.n)}>Later{SHELL2 && <kbd>L</kbd>}</button>
+        : <button type="button" className="guide-btn" onClick={() => dropGuideHeld(item.n)}>Drop it</button>}
     </div>
   </div>;
 }

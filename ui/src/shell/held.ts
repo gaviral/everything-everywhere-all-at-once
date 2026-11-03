@@ -1,7 +1,7 @@
 // Questions held for your pause (the Friend's, lane L4's `hold` message): a stack above the shelf, bottom right, its main
 // words bold so they catch the eye, each with Answer ↵ and Later L. The guide holds a question here instead of saying it
 // mid-sentence; the shell only shows the stack (shell/Held.tsx). Of this window only, newest on top.
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 export type HeldQuestion = {
   /** One per question: holding the same id again replaces it. */
@@ -18,6 +18,8 @@ export type HeldQuestion = {
   answer?: () => void;
   /** Later L: set aside until the next pause; the asker may hold it again then. */
   later?: () => void;
+  /** The guide's own card, with its question and state-specific actions. */
+  content?: ReactNode;
 };
 
 let held: readonly HeldQuestion[] = [];

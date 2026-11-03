@@ -170,27 +170,54 @@ export const StatusLine = memo(function StatusLine({ state, openHistory }: { sta
 
 // ── The held stack ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Questions held for your pause, newest on top: their main words bold, Answer ↵ and Later L. Amber: they need you. */
+/** One held region: the next card first, the rest behind a count, or all behind a phone chip. */
 export function HeldStack({ answerFallback, phone }: { answerFallback: () => void; phone: boolean }) {
   const held = useHeld();
   const [open, setOpen] = useState(false);
-  useEffect(() => { if (!held.length) setOpen(false); }, [held.length]);
-  if (!held.length) return null;
+  const [all, setAll] = useState(false);
+  useEffect(() => { if (!held.length) { setOpen(false); setAll(false); } }, [held.length]);
   const top = held[0];
-  const answer = () => { dropHeld(top.id); (top.answer ?? answerFallback)(); };
-  const later = () => { dropHeld(top.id); top.later?.(); };
+  useEffect(() => {
+    // Supplied cards own their state and removal. Handle their keys before the shell's default Later removes one.
+    const key = (event: KeyboardEvent) => {
+      if (top?.content == null || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.repeat || document.querySelector("dialog[open]")) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest("input, textarea, select, [contenteditable]")) return;
+      if (event.key.toLowerCase() === "l") top.later?.();
+      else if (event.key === "Enter" && !event.shiftKey && (!target || target === document.body || target === document.documentElement ||
+        (target instanceof Element && target.closest(".shell-held-chip")))) top.answer?.();
+      else return; // A focused card button keeps its native Enter click, which answers just once.
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("keydown", key, true);
+    return () => document.removeEventListener("keydown", key, true);
+  }, [top]);
+  if (!held.length) return null;
+  const more = held.length - 1;
   if (phone && !open) return <div className="shell-held-chip-row" data-slot="held">
-    <button type="button" className="shell-held-chip" onClick={() => setOpen(true)} aria-keyshortcuts="L" title={NAMES.held.label}>
+    <button type="button" className="shell-held-chip" onClick={() => setOpen(true)} aria-expanded={false} aria-keyshortcuts="L" title={NAMES.held.label}>
       {NAMES.held.label.split(" ")[0]} <span className="shell-count">{held.length}</span>
     </button>
   </div>;
-  return <section className="shell-held" data-slot="held" aria-label={NAMES.held.label}>
-    <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
-    <p className="shell-held-q">{top.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {top.by}</span> : <span className="shell-held-by">{top.by}</span>} <b>{top.main}</b>{top.rest ? ` ${top.rest}` : ""}</p>
-    <div className="shell-held-acts" data-held-keys="">
-      <button type="button" className="shell-btn" onClick={answer} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
-      <button type="button" className="shell-btn" onClick={later} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
-    </div>
+  return <section className="shell-held guide-held" data-slot="held" aria-label={NAMES.held.label}
+    style={{ maxHeight: "calc(100dvh - 180px)", overflowY: "auto", ...(top.content != null ? { padding: 0, border: 0, background: "none", boxShadow: "none" } : {}) }}>
+    {(all ? held : held.slice(0, 1)).map((item) => <div key={item.id} data-held-id={item.id}>
+      {item.content ?? <>
+        <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
+        <p className="shell-held-q">{item.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {item.by}</span> : <span className="shell-held-by">{item.by}</span>} <b>{item.main}</b>{item.rest ? ` ${item.rest}` : ""}</p>
+        <div className="shell-held-acts" data-held-keys="">
+          <button type="button" className="shell-btn" onClick={() => { dropHeld(item.id); (item.answer ?? answerFallback)(); }} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
+          <button type="button" className="shell-btn" onClick={() => { dropHeld(item.id); item.later?.(); }} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
+        </div>
+      </>}
+    </div>)}
+    {more > 0 && <button type="button" className="guide-held-more" aria-expanded={all} onClick={() => setAll(!all)}>
+      {all ? "Just the next" : <><b>{more}</b> more held</>}
+    </button>}
+    {phone && <button type="button" className="shell-held-chip" aria-expanded={open} onClick={() => setOpen(false)}>
+      {NAMES.held.label.split(" ")[0]} <span className="shell-count">{held.length}</span>
+    </button>}
   </section>;
 }
 
