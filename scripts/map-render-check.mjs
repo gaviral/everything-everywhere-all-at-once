@@ -101,7 +101,7 @@ try {
   const first = text(empty);
   const idle = { connected: true, listening: false, noKey: false, refused: false, resting: false, paused: false };
   for (const words of ["Think out loud.", emptyLine({ starting: false, listening: false, pending: 0, noKey: false }),
-    "Tap the mic to talk, or type below and press Enter.", "Try a sample map", modelsLine(models), statusLine(idle)]) {
+    "Tap the mic to talk, or type below and press Enter.", "See an example", modelsLine(models), statusLine(idle)]) {
     assert.ok(first.includes(words), `first screen says “${words}”`);
   }
   assert.match(modelsLine(models), /Muse Voice Transcribe 1\.0[^]*Muse Spark 1\.2|Muse Spark 1\.2[^]*Muse Voice Transcribe 1\.0/, "both models named");
@@ -148,7 +148,7 @@ try {
   // Every thread once, as a heading of its card (branches inside their parent's card).
   for (const thread of world.threads) assert.equal(count(opened, `id="title-${thread.id}"`), 1, thread.title);
   assert.equal(count(opened, '<section id="thread-'), world.threads.length, "one card a thread");
-  assert.match(text(page), /This session · 30 thoughts · 8 threads/, "the header counts the session");
+  assert.match(text(page), /This session · 30 thoughts · 8 topics/, "the header counts the session");
   // The thread you're on is open, with its points, each with its placing time; the rest are folded.
   const active = world.threads.find((t) => t.id === world.active);
   assert.match(tagWith(opened, `id="thread-${active.id}"`), /class="thread active /, "your thread is marked active");
@@ -158,8 +158,8 @@ try {
   assert.match(opened, /<span class="speed" aria-hidden="true">\d+\.\d s<\/span><span class="sr-only">Placed in \d+\.\d seconds<\/span>/);
   assert.equal(count(opened, 'class="chip now"'), 1, "one active chip");
   // A folded thread still says what waits there: Rent's reminder, the group project's reminder and idea.
-  assert.match(shown, /Rent[^]*?left off[^]*?1 to review/, "rent: left off, one to review");
-  assert.ok(shown.includes("2 to review"), "group project: a reminder and an idea");
+  assert.match(shown, /Rent[^]*?left off[^]*?1 new/, "rent: left off, one new");
+  assert.ok(shown.includes("2 new"), "group project: a reminder and an idea");
   // Every picture slot: the letter tile under it, the picture fading in once decoded (pictures.ts).
   assert.equal(count(opened, 'class="picture picture-letter"'), world.threads.length);
   assert.equal(count(opened, 'class="picture slot-picture"'), world.threads.filter((t) => t.picture).length);
@@ -230,7 +230,7 @@ try {
   assert.ok(!mapOf(joined).includes("left off"), "picked up: no flag");
   assert.match(joined, /aria-label="Joined across a pause; keep apart: “My biggest problem is that I never finish my” as its own point"/);
   assert.equal(count(mapOf(joined), '<li id="point-'), 1, "one point on the open card, not two");
-  assert.match(text(joined), /This session · 2 thoughts · 2 threads/, "the header counts ideas, as the cards do");
+  assert.match(text(joined), /This session · 2 thoughts · 2 topics/, "the header counts ideas, as the cards do");
 
   // 6. What the AI adds, each with its ✦ and its way back: a rename it was sure of (a note with Undo), one it asks
   // about, an idea (Keep, ×), suggested tags once a thread says enough, a fix it made, and a word it may have misheard.

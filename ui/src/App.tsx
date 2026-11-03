@@ -972,7 +972,7 @@ export default function App() {
   const noticeText = (text: string) => text && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
     (site.hosted || !core.keyRefused) && aboutKey(text) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
-    : text.startsWith("Couldn't place a thought:") ? "Couldn't place a thought. It's saved and will retry automatically."
+    : text.startsWith("Couldn't place a thought:") ? "Couldn't sort that thought yet. It's saved and will retry."
     : text
   );
   const friendlyNotice = noticeText(core.notice);
@@ -1250,8 +1250,8 @@ export default function App() {
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
       <header ref={headerRef}>
         <div className="brand" data-slot="top-left">
-          E2A2O <small>threads</small>
-          {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
+          E2A2O
+          {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "topic" : "topics"}</span>}
         </div>
         <div className="header-actions" data-slot="top-right">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
@@ -1352,14 +1352,14 @@ export default function App() {
             <button aria-pressed={view === "palace"} onClick={() => showView("palace")} data-guide="view:palace">Palace</button>
             {viewBricks.map((brick) => <button key={brick.info.id} aria-pressed={view === brick.info.id} onClick={() => showView(brick.info.id)} data-guide={`view:${brick.info.id}`}>{brick.info.name}</button>)}
           </div>
-          {view === "map" && <><label className="search" data-guide="search"><span className="sr-only">Search threads</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search threads" type="search" /></label>
+          {view === "map" && <><label className="search" data-guide="search"><span className="sr-only">Search topics</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }} placeholder="Search topics" type="search" /></label>
           {/* With one thread, Focus and Back to active would show the screen you already have. Focus keeps its name
               while on: pressed is its state, as a toggle button's is. */}
           {world.threads.length > 1 && <button aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setQuery(""); }} disabled={!world.active} data-guide="focus">Focus</button>}
-          {world.threads.length > 1 && world.active && <button className="back-to-active" onClick={jumpToActive} data-guide="back-to-active">Back to active</button>}
+          {world.threads.length > 1 && world.active && <button className="back-to-active" onClick={jumpToActive} data-guide="back-to-active">Back to current</button>}
           </>}
         </div>
-        {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "thread" : "threads"} found <button onClick={() => setQuery("")}>Clear</button></div>}
+        {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "topic" : "topics"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
       {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
         : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Thread map" data-guide="map">
@@ -1371,8 +1371,8 @@ export default function App() {
             {!core.listening && !pending.length && <p className="empty-hint">Tap the mic to talk, or type below and press Enter.</p>}
             {/* A newcomer sees a full map at once, if they'd rather look around first (core/src/sample.rs). */}
             {site.sample && !core.listening && !pending.length && !world.thoughts.length && <p className="empty-sample">
-              <button type="button" className="sample-button" onClick={() => core.sample()} disabled={!core.connected}>Try a sample map</button>
-              <span>A student's week, with pictures. Your own thoughts join it.</span>
+              <button type="button" className="sample-button" onClick={() => core.sample()} disabled={!core.connected}>See an example</button>
+              <span>A student's week, with pictures. Add your own thoughts.</span>
               {moreSamples(site.samples).length > 0 && <span className="more-samples" role="group" aria-label="Shorter sample maps">
                 <span>Or a shorter one:</span>
                 <span className="sample-links">{moreSamples(site.samples).map((choice) =>
@@ -1436,7 +1436,7 @@ export default function App() {
           <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           <DockTune core={core} />
           {core.queuedCount > 0 && <div className="first-hint" role="status">{core.queuedCount} {core.queuedCount === 1 ? "thought" : "thoughts"} waiting to send when connected.</div>}
-          {firstHint && !core.partial && <div className="first-hint">Your thought found a thread. Keep going, or try another topic.</div>}
+          {firstHint && !core.partial && <div className="first-hint">Got it. Keep going, or start a new topic.</div>}
           <AttentionNote onGo={attention.go} />
           <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
@@ -1731,7 +1731,7 @@ const MapCards = memo(function MapCards(props: MapProps) {
   const roots = props.childrenByParent.get(null) ?? [];
   // A wide window holds two columns (legible.ts); a lone thread sits in the middle (legible.css).
   const two = useTwoColumns();
-  if (roots.length === 0) return <p className="no-results">No threads match. Try another search.</p>;
+  if (roots.length === 0) return <p className="no-results">Nothing found. Try different words.</p>;
   if (!two) return roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
   return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
 });
@@ -1795,7 +1795,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
             {/* Folding a thread mustn't hide what waits for you there: the AI's proposals still to keep or dismiss. */}
-            {collapsed && waiting > 0 && <span className="chip waiting">{waiting} to review</span>}
+            {collapsed && waiting > 0 && <span className="chip waiting">{waiting} new</span>}
           </div>
           {/* A suggested tag waits until the thread has said enough (3 thoughts) for it to add anything; kept tags always show. */}
           {!collapsed && (thread.tags ?? []).some((t) => t.kept || thoughts.length >= 3) && (
