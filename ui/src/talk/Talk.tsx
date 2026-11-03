@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
+import { TIPS } from "../Tips";
 import { clock, initialOf, LEVELS, named, ordered, stateWord, useCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
 import { newerMark, readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
 import "./talk.css";
@@ -47,7 +48,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
     let live = -1;
     if (captioning) for (let i = theirs.length - 1; i >= 0 && live < 0; i--) if (theirs[i].level === "Speak" && theirs[i].by === captioning.by && theirs[i].text === captioning.text) live = i;
     return theirs.filter((_, i) => i !== live);
-  }, [saidAll, captioning]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [saidAll, captioning, map.speakers, call.people]);
 
   // How far you've read: the newer of this browser's mark and the core's (another window of yours), told to the core
   // as it moves and again on each connection, so the others see it and a restarted core learns it again.
@@ -131,7 +132,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
     const wholeOf = turn.parts[0].placed ? { key: turn.key, thoughtId: turn.parts[0].thoughtId, quote: turn.parts[0].text } : null;
     const seenHere = readers.get(i);
     items.push(<li key={turn.key} className={["talk-turn", turn.speaker === me && "talk-mine", seenHere && "talk-has-seen"].filter(Boolean).join(" ")} data-turn={i} data-read-ms={readFor(turn)} tabIndex={-1}
-      onKeyDown={(event: KeyboardEvent) => {
+      onMouseUp={pick} onKeyUp={pick} onKeyDown={(event: KeyboardEvent) => {
         if (event.key !== "r" || event.metaKey || event.ctrlKey || event.altKey || event.target !== event.currentTarget) return;
         const to = noteOf ?? wholeOf;
         if (to) { event.preventDefault(); setReplying(to); }
@@ -140,7 +141,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
         onShow={() => actions.hint("Here on the map", `point:${turn.note?.thoughtId ?? turn.parts[0].thoughtId}`)}
         reply={noteOf && replying?.key !== turn.key ? () => setReplying(noteOf) : undefined} />}
       {turn.note && <div className="talk-on">on “{turn.note.quote}”</div>}
-      <div className="talk-words" onMouseUp={pick} onKeyUp={pick}>
+      <div className="talk-words">
         {turn.parts.map((part) => <span key={part.thoughtId} data-part={part.thoughtId} data-placed={String(part.placed)} data-turn-key={turn.key}>{part.text} </span>)}
       </div>
       {seenHere && <span className="talk-seen" title={`${seenHere.join(", ")} read up to here`}>
@@ -251,7 +252,7 @@ export function People({ call, me, captioning }: { call: Call; me: string; capti
 /** Someone's letter: yours ringed blue, the Friend's ✦ in its purple, a ring while they have the floor. */
 export function Avatar({ person, me, speaking }: { person: Person; me: string; speaking: boolean }) {
   const cls = ["talk-avatar", person.name === me && "talk-avatar-you", person.ai && "talk-avatar-ai", speaking && "talk-avatar-speaking"].filter(Boolean).join(" ");
-  return <span className={cls} aria-hidden="true">{initialOf(person.name, person.ai)}</span>;
+  return <span className={cls} aria-hidden="true" data-tip={person.ai ? TIPS.participant : undefined}>{initialOf(person.name, person.ai)}</span>;
 }
 
 /** How far the Friend may interrupt: five levels, the one set filled; anyone in the call may change it. */

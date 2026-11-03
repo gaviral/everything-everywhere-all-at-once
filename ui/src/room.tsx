@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import "./room.css";
 import { useOnScreen } from "./onscreen";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
+import { TIPS } from "./Tips";
 import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, shownCode, stateWord, useCall } from "./talk/call-core";
 
 type Seat = { me: string; code: string };
@@ -92,7 +93,7 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
         {call ? <>
           <p className="room-panel-label">Here now</p>
           {here.length > 0
-            ? <ul>{here.map((person) => <li key={person.name}><span className={person.ai ? "room-person-mark ai-mark" : "room-person-mark other-mark"} aria-hidden="true">{person.ai ? "✦" : "◆"}</span> {named(person)} <span className="room-state">· {stateWord(person)}</span></li>)}</ul>
+            ? <ul>{here.map((person) => <li key={person.name}><span className={person.ai ? "room-person-mark ai-mark" : "room-person-mark other-mark"} aria-hidden="true" data-tip={person.ai ? TIPS.participant : undefined}>{person.ai ? "✦" : "◆"}</span> {named(person)} <span className="room-state">· {stateWord(person)}</span></li>)}</ul>
             : <p className="room-panel-hint">No one else right now.</p>}
         </> : others.length > 0 ? <>
           <p className="room-panel-label">Also on this map</p>
