@@ -9,8 +9,8 @@ import "./bricks.css";
 
 /** Each kind's heading and what it means for a person. */
 const GROUPS: Record<BrickKind, [title: string, line: string]> = {
-  view: ["Views", "Other ways to see the map, beside Map and Palace"],
-  card: ["Cards", "Small cards above the composer"],
+  view: ["Views", "Other ways to see the map, beside Cards and Pictures"],
+  card: ["Cards", "Small cards above the input box"],
   input: ["Inputs", "More ways to add a thought or point at one"],
   panel: ["Panels", "Tools that float over the page"],
 };
@@ -58,7 +58,7 @@ function CatalogSheet() {
     onClick={(event) => { if (event.target === event.currentTarget) closeCatalog(); }}>
     <div className="catalog-top">
       <div>
-        <h2 id="catalog-title">Catalog</h2>
+        <h2 id="catalog-title">Features</h2>
         <p>Features you can switch on or off · {count} of {BRICKS.length} on</p>
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>

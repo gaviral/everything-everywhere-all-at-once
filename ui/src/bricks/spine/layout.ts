@@ -95,7 +95,7 @@ export function whoIs(name: string, me: string, speakers?: ReadonlyMap<string, S
   const mine = name === me || name === "you";
   const friend = !mine && AI_NAME.test(name.trim());
   const ai = !mine && (friend || !!speakers?.get(name)?.ai);
-  return { name: mine ? "you" : friend ? "Friend" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
+  return { name: mine ? "you" : friend ? "AI helper" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
 }
 
 export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin" | "group";

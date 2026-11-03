@@ -156,14 +156,14 @@ export function mapMarkdown(world: World, { now = Date.now(), timeZone, locale =
 
   const threads = world.threads.length;
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  const head = ["# Thread map", "", `Exported ${dateYear.format(now)}, ${clock.format(now)} · ${plural(threads, "thread")} · ${plural(count, "thought")}`];
+  const head = ["# Topic map", "", `Exported ${dateYear.format(now)}, ${clock.format(now)} · ${plural(threads, "topic")} · ${plural(count, "thought")}`];
   const stamp = `${day.format(now)}-${new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(now).replace(":", "")}`;
-  return { name: `thread-map-${stamp}.md`, text: [...head, ...out, ""].join("\n"), threads, thoughts: count };
+  return { name: `topic-map-${stamp}.md`, text: [...head, ...out, ""].join("\n"), threads, thoughts: count };
 }
 
 /** What the notice says once the file is made. */
 export function exportedNotice(e: Exported): string {
-  return `Exported ${e.threads} ${e.threads === 1 ? "thread" : "threads"} and ${e.thoughts} ${e.thoughts === 1 ? "thought" : "thoughts"} as ${e.name}`;
+  return `Exported ${e.threads} ${e.threads === 1 ? "topic" : "topics"} and ${e.thoughts} ${e.thoughts === 1 ? "thought" : "thoughts"} as ${e.name}`;
 }
 
 /** Hands the file to the browser to save. */

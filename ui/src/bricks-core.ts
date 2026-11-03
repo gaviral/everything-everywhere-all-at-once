@@ -36,12 +36,12 @@ export function infoProblems(json: unknown, folder: string): string[] {
   if (typeof info.name !== "string" || !info.name.trim() || info.name.length > 24) problems.push("name: a word or two, at most 24 characters");
   if (typeof info.does !== "string" || !info.does.trim() || info.does.length > 90 || /\n/.test(info.does)) problems.push("does: one line, at most 90 characters");
   if (!KINDS.includes(info.kind as BrickKind)) problems.push(`kind: one of ${KINDS.join(", ")}`);
-  if (typeof info.defaultOn !== "boolean") problems.push("defaultOn: true or false (a new brick starts off: false)");
+  if (typeof info.defaultOn !== "boolean") problems.push("defaultOn: true or false (a new feature starts off: false)");
   if (typeof info.demoSafe !== "boolean") problems.push("demoSafe: true or false");
   if (info.flag !== undefined && (typeof info.flag !== "string" || !/^[a-z][a-z0-9-]*$/.test(info.flag) || APP_FLAGS.includes(info.flag))) {
     problems.push(`flag: a lowercase word for the address (?word), not one of the app's own: ${APP_FLAGS.join(", ")}`);
   }
-  if (info.showsLiveWords !== undefined && typeof info.showsLiveWords !== "boolean") problems.push("showsLiveWords: true or false (true: it shows map.partial, so the dock doesn't)");
+  if (info.showsLiveWords !== undefined && typeof info.showsLiveWords !== "boolean") problems.push("showsLiveWords: true or false (true: it shows map.partial, so the bottom bar doesn't)");
   return problems;
 }
 
@@ -77,7 +77,7 @@ const found = discover(
   import.meta.glob(["./bricks/*/brick.json", "!./bricks/_*/brick.json"], { eager: true, import: "default" }),
   import.meta.glob<BrickModule>(["./bricks/*/index.tsx", "!./bricks/_*/index.tsx"]),
 );
-for (const [folder, wrong] of Object.entries(found.problems)) console.warn(`Brick "${folder}" left out: ${wrong.join("; ")} (docs/bricks.md)`);
+for (const [folder, wrong] of Object.entries(found.problems)) console.warn(`Feature "${folder}" left out: ${wrong.join("; ")} (docs/bricks.md)`);
 export const BRICKS: readonly Brick[] = found.bricks;
 
 // Which bricks are on, in this browser: only what was switched in the Catalog is kept (by id); every other brick

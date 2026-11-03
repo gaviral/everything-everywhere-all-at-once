@@ -1,6 +1,6 @@
 {
   "id": "read-progress",
-  "name": "Read progress",
+  "name": "Read marker",
   "does": "Keeps your place in other participants' thoughts, by scrolling or tapping a point.",
   "kind": "input",
   "defaultOn": false,

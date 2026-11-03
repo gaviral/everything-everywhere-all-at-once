@@ -157,7 +157,7 @@ class BrickBoundary extends Component<{ info: BrickInfo; children: ReactNode }, 
   }
 
   componentDidCatch(error: unknown) {
-    console.warn(`The ${this.props.info.name} brick stopped:`, error);
+    console.warn(`The ${this.props.info.name} feature stopped:`, error);
   }
 
   render() {

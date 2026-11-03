@@ -132,6 +132,8 @@ try {
         await check('!document.querySelector(".keys-panel")', "first-use key hint dismissed by canvas input");
       } else {
         // Expose both memberships in the original cards renderer without invoking Finish it or changing the offer.
+        // The snapshot first: an unfold that reaches a window before its threads are drawn (a slow machine) opens nothing.
+        await check('!!document.querySelector("#thread-T2 .thread-toggle")', "legacy cards drawn");
         core.send({ type: "unfold", thread_id: null, open: true });
         await check('document.querySelector("#thread-T2 .thread-toggle")?.getAttribute("aria-expanded") === "true"', "legacy thread expanded");
       }

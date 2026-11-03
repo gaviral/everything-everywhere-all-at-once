@@ -241,8 +241,10 @@ const PLACES: [&str; 6] = ["notes", "my notes", "apple notes", "the notes app", 
 const BARE: [&str; 3] = ["notes", "my notes", "the notes"];
 const AS_NOTE: [&str; 4] = ["as a note", "as a new note", "as an apple note", "as a note in notes"];
 /// The thread "this" means, said so.
-const THIS: [&str; 13] =
-    ["", "this", "this one", "this thread", "this card", "this topic", "it", "that", "that one", "that thread", "that card", "the thread", "this whole thread"];
+const THIS: [&str; 16] = [
+    "", "this", "this one", "this thread", "this card", "this topic", "it", "that", "that one", "that thread", "that card", "that topic", "the thread",
+    "the topic", "this whole thread", "this whole topic",
+];
 /// The most words a thread's name may take here: titles are asked for in 5 words (protocol.rs `TITLE_MAX`), plus
 /// "the" and "thread". More is a sentence about notes, not a request.
 const NAME_WORDS: usize = 7;
@@ -352,8 +354,8 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
             return None;
         }
         let message = match &ask.target {
-            Target::This => "Not saved: there's no thread yet. Say something first, then “save this thread as a note”.".to_string(),
-            Target::Named(said) => format!("Not saved: no thread called “{}” on the map.", name(said)),
+            Target::This => "Not saved: there's no topic yet. Say something first, then “save this topic as a note”.".to_string(),
+            Target::Named(said) => format!("Not saved: no topic called “{}” on the map.", name(said)),
         };
         core.send_to(speaker, ServerMsg::Notice { message });
         return Some(Done::missed(Act::Note));

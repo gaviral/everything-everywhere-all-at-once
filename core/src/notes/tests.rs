@@ -115,6 +115,13 @@ fn a_turn_reads_as_a_note_only_when_it_says_so() {
     assert_eq!(read("Add this thread to the Notes app"), this(false));
     assert_eq!(read("Save as a note"), this(false));
     assert_eq!(read("Save the picnic thread as a note"), Some(Ask { target: Target::Named("the picnic thread".into()), bare: false }));
+    // "Topic" is the noun a thread has on screen: it reads wherever "thread" does.
+    assert_eq!(read("Save this topic as a note"), this(false));
+    assert_eq!(read("Save that topic as a note"), this(false));
+    assert_eq!(read("Save the topic as a note"), this(false));
+    assert_eq!(read("Save this whole topic as a note"), this(false));
+    assert_eq!(read("Add this topic to the Notes app"), this(false));
+    assert_eq!(read("Save the picnic topic as a note"), Some(Ask { target: Target::Named("the picnic topic".into()), bare: false }));
     assert_eq!(read("add milk to my notes"), Some(Ask { target: Target::Named("milk".into()), bare: true }));
     for not in [
         "I put it in my notes",                         // talk about notes
@@ -128,13 +135,17 @@ fn a_turn_reads_as_a_note_only_when_it_says_so() {
         assert_eq!(read(not), None, "{not}");
     }
     // The catalog's reading, without the map: "put this in Notes" and filing words stay the rules' they were.
-    for note in ["Save this thread as a note", "Save this to Notes", "Put this in Apple Notes", "Save the picnic thread to Notes"] {
+    for note in [
+        "Save this thread as a note", "Save this to Notes", "Put this in Apple Notes", "Save the picnic thread to Notes", "Save this topic as a note",
+        "Save the picnic topic to Notes",
+    ] {
         assert_eq!(kind(note), Some(Act::Note), "{note}");
         assert_eq!(crate::catalog::classify(note), Some(Act::Note), "{note}");
     }
     assert_eq!(kind("Put this in Notes"), None);
     assert_eq!(kind("add milk to my notes"), None);
     assert_eq!(name("the picnic thread"), "picnic");
+    assert_eq!(name("the picnic topic"), "picnic");
 }
 
 #[test]
@@ -236,7 +247,24 @@ async fn a_named_thread_saves_that_thread_and_a_missing_one_is_said() {
     assert!(told[0].starts_with("card DryRun Bills (1 points"), "{told:?}");
     f.core.add_thought("me", "Save the garden thread to Notes");
     settle().await;
-    assert_eq!(f.told(), vec!["notice Not saved: no thread called “garden” on the map.".to_string()]);
+    assert_eq!(f.told(), vec!["notice Not saved: no topic called “garden” on the map.".to_string()]);
+    assert!(f.ran().is_empty());
+    // Said with "topic", the same.
+    f.core.add_thought("me", "Save the bills topic as a note");
+    settle().await;
+    let told = f.told();
+    assert!(told[0].starts_with("card DryRun Bills (1 points"), "{told:?}");
+    f.core.add_thought("me", "Save the garden topic to Notes");
+    settle().await;
+    assert_eq!(f.told(), vec!["notice Not saved: no topic called “garden” on the map.".to_string()]);
+}
+
+#[tokio::test]
+async fn with_no_topic_yet_saving_this_one_says_so() {
+    let mut f = Fixture::new(Preset::Full, false, World::default());
+    f.core.add_thought("me", "Save this topic as a note");
+    settle().await;
+    assert_eq!(f.told(), vec!["notice Not saved: there's no topic yet. Say something first, then “save this topic as a note”.".to_string()]);
     assert!(f.ran().is_empty());
 }
 

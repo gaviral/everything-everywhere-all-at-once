@@ -91,16 +91,20 @@ const LAST: [&str; 4] = ["that last thought", "my last thought", "the last thoug
 const BELONGS: [&str; 3] = ["should go", "goes", "belongs"];
 const INTO: [&str; 7] = ["into", "onto", "under", "with", "to", "in", "on"];
 /// A thread of its own: "move that to a new thread", "… into its own thread".
-const NEW: [&str; 9] = [
-    "a new thread", "a new one", "a new topic", "a new card", "its own thread", "its own topic", "its own card", "a thread of its own", "new thread",
+const NEW: [&str; 11] = [
+    "a new thread", "a new one", "a new topic", "a new card", "its own thread", "its own topic", "its own card", "a thread of its own",
+    "a topic of its own", "new thread", "new topic",
 ];
 /// Which thread "rename this …" means; longest first.
-const THIS: [&str; 11] = ["this thread", "that thread", "this card", "that card", "this topic", "the thread", "this one", "that one", "this", "that", "it"];
+const THIS: [&str; 13] = [
+    "this thread", "that thread", "this card", "that card", "this topic", "that topic", "the thread", "the topic", "this one", "that one", "this", "that",
+    "it",
+];
 /// "Call this thread …": only with the kind of place, since "call this a win" is talk.
-const THIS_KIND: [&str; 5] = ["this thread", "that thread", "this card", "this topic", "this one"];
-const TITLE_OF: [&str; 9] = [
-    "the title of this thread", "the name of this thread", "the title of this", "the name of this", "the title", "the name", "its title", "its name",
-    "this title",
+const THIS_KIND: [&str; 6] = ["this thread", "that thread", "this card", "this topic", "that topic", "this one"];
+const TITLE_OF: [&str; 11] = [
+    "the title of this thread", "the name of this thread", "the title of this topic", "the name of this topic", "the title of this", "the name of this",
+    "the title", "the name", "its title", "its name", "this title",
 ];
 
 /// How many bytes of `l` the longest of `words` takes, with the space after it; or all of `l` when it is one of them
@@ -446,7 +450,7 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
         To::Thread(id) => {
             let id = world.resolve(&id);
             let Some(thread) = world.thread(&id) else {
-                notice(core, speaker, "That thread isn't on the map any more".into());
+                notice(core, speaker, "That topic isn't on the map any more".into());
                 return Done::missed(Act::Move);
             };
             if id == from {
@@ -522,7 +526,7 @@ pub(crate) fn shift(core: &Arc<Core>, speaker: &str, thought_id: &str, to: To) -
     let what = crate::catalog::short(if thought.point.is_empty() { &thought.text } else { &thought.point });
     drop(world);
     core.commit(changes);
-    notice(core, speaker, if started.is_some() { format!("Moved “{what}”{cards} to a new thread: {title}") } else { format!("Moved “{what}”{cards} to {title}") });
+    notice(core, speaker, if started.is_some() { format!("Moved “{what}”{cards} to a new topic: {title}") } else { format!("Moved “{what}”{cards} to {title}") });
     Done::with(Act::Move, Some(Undo::Unmove(Unmove { thoughts: ids, from, to: target, notes, emptied, started, cards: moved_cards, stayed, back })))
 }
 
@@ -679,7 +683,7 @@ fn rename_said(core: &Arc<Core>, speaker: &str, targets: Vec<(Target, String)>) 
         let message = match &targets[0].0 {
             Target::Named(name) => format!("I couldn't find “{name}”. Try words from its title."),
             Target::This if world.threads.is_empty() => "Nothing on the map yet: say a thought first".into(),
-            Target::This => "Point at a thread, then say “rename this to …”".into(),
+            Target::This => "Point at a topic, then say “rename this to …”".into(),
         };
         notice(core, speaker, message);
         return Done::missed(Act::Rename);
@@ -692,7 +696,7 @@ fn rename_said(core: &Arc<Core>, speaker: &str, targets: Vec<(Target, String)>) 
 fn rename(core: &Arc<Core>, speaker: &str, thread: &str, title: String) -> Done {
     let world = core.snapshot();
     let Some(was) = world.thread(thread).map(|t| t.title.clone()) else {
-        notice(core, speaker, "That thread isn't on the map any more".into());
+        notice(core, speaker, "That topic isn't on the map any more".into());
         return Done::missed(Act::Rename);
     };
     if title.is_empty() {

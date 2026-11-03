@@ -61,7 +61,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     if let Some(first) = new_thread_about(text) {
         let title = title_for(&first);
         let (thought, started, dropped) = land(core, speaker, &world, &first, &first, Landing::New(title.clone()));
-        core.send_to(speaker, ServerMsg::Notice { message: format!("New thread: “{title}”") });
+        core.send_to(speaker, ServerMsg::Notice { message: format!("New topic: “{title}”") });
         let reopen = dropped.is_some() && dropped == before;
         return Some(Done::with(Act::NewThreadAbout, Some(Undo::Unfile { thought, started, to: before, reopen })));
     }
@@ -290,7 +290,7 @@ fn approve(core: &Arc<Core>, speaker: &str, world: &World) -> bool {
             (format!("Adding “{}”…", action.title), true)
         }
         None if world.actions.iter().any(|a| a.status == ItemStatus::New) => {
-            ("More than one is waiting: say it on the thread it's on, or press its Add.".into(), false)
+            ("More than one is waiting: say it on the topic it's on, or press its Add.".into(), false)
         }
         None => ("Nothing is waiting to be added yet.".into(), false),
     };
@@ -320,10 +320,10 @@ fn keep_app(text: &str) -> Option<bool> {
 }
 
 /// "New thread" asks that end in "about …" ("on …" after "thread"); "a new thread about …" is how talk about one goes.
-const NEW_THREAD: [&str; 13] = [
+const NEW_THREAD: [&str; 16] = [
     "new thread", "new topic", "start a new one", "start a new thread", "start a new topic", "create a new one", "create a new thread",
-    "make a new one", "make a new thread", "open a new thread", "let s start a new one", "let s start a new thread",
-    "let s start a new topic",
+    "create a new topic", "make a new one", "make a new thread", "make a new topic", "open a new thread", "open a new topic",
+    "let s start a new one", "let s start a new thread", "let s start a new topic",
 ];
 
 /// "New thread about the garden" or "New thread. The tomatoes need stakes.": what starts it, as said. Only a whole
@@ -392,14 +392,17 @@ fn unfold(text: &str) -> Option<Unfold> {
         .find(|(v, _)| l == *v || l.starts_with(&format!("{v} ")))?;
     let strong = matches!(verb, "expand" | "unfold" | "collapse");
     let rest = l[verb.len()..].trim();
-    const THIS: [&str; 10] = ["this", "this one", "this thread", "this card", "it", "that", "that one", "that thread", "here", "it all"];
+    const THIS: [&str; 12] = [
+        "this", "this one", "this thread", "this topic", "this card", "it", "that", "that one", "that thread", "that topic", "here", "it all",
+    ];
     if rest.is_empty() || THIS.contains(&rest) {
         return strong.then_some(Unfold { target: Target::This, open, sure: true, title_only: false });
     }
-    const ALL: [&str; 19] = [
+    const ALL: [&str; 26] = [
         "everything", "all of the sub cards", "all the sub cards", "all the subcards", "all sub cards", "all the cards", "all the branches",
-        "all the threads", "all threads", "all cards", "all branches", "every card", "every thread", "the sub cards", "the subcards",
-        "the branches", "all of it", "all of", "all",
+        "all the tangents", "all the threads", "all the topics", "all threads", "all topics", "all cards", "all branches", "all tangents",
+        "every card", "every thread", "every topic", "every tangent", "the sub cards", "the subcards", "the branches", "the tangents",
+        "all of it", "all of", "all",
     ];
     const IN: [&str; 7] = ["inside of", "inside", "under", "within", "in", "of", "on"];
     if let Some(all) = ALL.iter().find(|a| rest == **a || rest.starts_with(&format!("{a} "))) {
@@ -424,7 +427,8 @@ fn as_said(text: &str, part: &str) -> String {
 }
 
 /// Words that name a kind of place rather than which one ("the shopping list", "the garden thread").
-const CONTAINERS: [&str; 12] = ["list", "thread", "topic", "card", "notes", "page", "board", "folder", "one", "branch", "stuff", "section"];
+const CONTAINERS: [&str; 13] =
+    ["list", "thread", "topic", "card", "notes", "page", "board", "folder", "one", "branch", "tangent", "stuff", "section"];
 
 pub(crate) fn kinds() -> HashSet<String> {
     CONTAINERS.iter().map(|c| find::stem(c)).collect()
@@ -471,7 +475,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
     let id = match &ask.target {
         Target::All => {
             core.send_to(speaker, ServerMsg::Unfold { thread_id: None, open: ask.open });
-            notice(if ask.open { "Every thread is open" } else { "Every thread is folded" }.into());
+            notice(if ask.open { "Every topic is open" } else { "Every topic is folded" }.into());
             return Some(Done::with(act, Some(Undo::Refold)));
         }
         // "Expand this": what the speaker selected, else points at, else is on.
@@ -482,7 +486,7 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
         if ask.sure {
             notice(match &ask.target {
                 Target::Named(name) => format!("I couldn't find “{name}”. Try words from its title."),
-                _ => "Say which thread: “expand” and its title".into(),
+                _ => "Say which topic: “expand” and its title".into(),
             });
         }
         return missed(ask.sure);
@@ -492,8 +496,8 @@ fn unfold_act(core: &Arc<Core>, speaker: &str, world: &World, ask: &Unfold) -> O
     notice(match (ask.open, branches) {
         (false, _) => format!("Folded {}", thread.title),
         (true, 0) => format!("Opened {}", thread.title),
-        (true, 1) => format!("Opened {} and its branch", thread.title),
-        (true, n) => format!("Opened {} and its {n} branches", thread.title),
+        (true, 1) => format!("Opened {} and its tangent", thread.title),
+        (true, n) => format!("Opened {} and its {n} tangents", thread.title),
     });
     Some(Done::with(act, Some(Undo::Refold)))
 }
@@ -600,7 +604,7 @@ fn file(core: &Arc<Core>, speaker: &str, world: &World, said: &str, what: &str, 
             (Landing::Thread(id), format!("Added to {title}"))
         }
         Destination::New(title) => {
-            let message = format!("Added to a new thread: {title}");
+            let message = format!("Added to a new topic: {title}");
             (Landing::New(title), message)
         }
         Destination::Unsure => return None,

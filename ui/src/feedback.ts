@@ -36,7 +36,7 @@ const NOT_CONNECTED = "notice: “Not connected — try again when connected.”
 export const ACTIONS: Action[] = [
   // The new shell: corners, Find, held questions and the rail.
   { id: "catalog-corner", how: "click", at: [["App.tsx", `toggleTab("catalog")`], ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"]], pressed: PRESS,
-    done: "the rail opens at the Catalog tab, or closes; the button stays pressed while it's open" },
+    done: "the rail opens at the Features tab, or closes; the button stays pressed while it's open" },
   { id: "see-an-example", how: "click", at: [["App.tsx", "onClick={() => loadSample()}"]], pressed: PRESS, waits: "core",
     done: "the example map fills the window, stamped SAMPLE", failed: OFFLINE },
   { id: "find-type", how: "key", at: [["shell/Shell.tsx", "onChange={(event) => setQuery(event.target.value)}"], ["shell/Shell.tsx", "onKeyDown={key}"]], pressed: INSTANT,
@@ -46,7 +46,7 @@ export const ACTIONS: Action[] = [
   { id: "status-history", how: "click", at: [["shell/Shell.tsx", "onClick={openHistory}"]], pressed: PRESS,
     done: "the rail opens at History, or closes" },
   { id: "held-open", how: "click", at: [["shell/Shell.tsx", "onClick={() => setOpen(true)}"]], pressed: PRESS,
-    done: "the held question's card opens above the composer" },
+    done: "the held question's card opens above the input box" },
   { id: "held-close", how: "click", at: [["shell/Shell.tsx", "onClick={() => setOpen(false)}"]], pressed: PRESS,
     done: "on a phone, the held cards fold back into the chip with their full count" },
   { id: "held-more", how: "click", at: [["shell/Shell.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS,
@@ -54,7 +54,7 @@ export const ACTIONS: Action[] = [
   { id: "held-keys", how: "key", at: [["shell/Shell.tsx", 'document.addEventListener("keydown", key, true)']], pressed: INSTANT,
     done: "Enter asks the next supplied card once; L uses its Later action and preserves its state" },
   { id: "held-answer", how: "click", at: [["shell/Shell.tsx", "onClick={answer}"]], pressed: PRESS,
-    done: "the question leaves the stack and the asker asks it now (else the composer takes focus)" },
+    done: "the question leaves the stack and the asker asks it now (else the input box takes focus)" },
   { id: "held-later", how: "click", at: [["shell/Shell.tsx", "onClick={later}"]], pressed: PRESS,
     done: "the question leaves the stack until the next pause" },
   { id: "rail-tab", how: "click", at: [["shell/Shell.tsx", "onClick={() => setTab(t)}"]], pressed: INSTANT,
@@ -73,13 +73,13 @@ export const ACTIONS: Action[] = [
 
   // The dock: what you say or type.
   { id: "type-a-thought", how: "form", at: [["App.tsx", `<form className="composer" onSubmit={submit}`]], pressed: INSTANT, waits: "model",
-    done: "the field clears and the thought shows at once in the dock, then lands on the map with the landing highlight",
-    working: "the pending thought: “Finding a place for your thought…”, then where it stands", failed: NOT_CONNECTED + "; a thought that can't be placed yet says why in the dock",
+    done: "the field clears and the thought shows at once in the bottom bar, then lands on the map with the landing highlight",
+    working: "the pending thought: “Finding a place for your thought…”, then where it stands", failed: NOT_CONNECTED + "; a thought that can't be placed yet says why in the bottom bar",
     says: ["Finding a place for your thought…", "Not connected — try again when connected."] },
   { id: "mic", how: "click", at: [["MicButton.tsx", "onClick={onClick}"], ["App.tsx", "onClick={toggleMic}"]], pressed: PRESS + " (the mic's own: it sinks 5%)", waits: "network",
     working: "“Starting the microphone…” in the empty map and the live line", done: "the mic turns on, its ring follows your voice, the header says Listening",
     failed: "the mic shows blocked and says how to allow it (mic.ts)", says: ["Starting the microphone…"] },
-  { id: "skip-to-composer", how: "click", at: [["App.tsx", "Skip to Type a thought"]], pressed: PRESS, done: "focus lands in the composer, its ring lights" },
+  { id: "skip-to-composer", how: "click", at: [["App.tsx", "Skip to Type a thought"]], pressed: PRESS, done: "focus lands in the input box, its ring lights" },
   { id: "dismiss-notice", how: "click", at: [["App.tsx", `aria-label="Dismiss notice"`]], pressed: PRESS, done: "the notice fades out" },
   { id: "undo-notice", how: "click", at: [["Undo.tsx", "onClick={() => onUndo(id)}"]], pressed: PRESS, waits: "core",
     done: "the change is taken back on the map and the core says what: “Undone: …” or “Put back”", failed: OFFLINE + "; a click racing the drop: " + NOT_CONNECTED },
@@ -104,7 +104,7 @@ export const ACTIONS: Action[] = [
   { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },
   { id: "later", how: "click", at: [["App.tsx", "later(pullBack)"]], pressed: PRESS, done: "the card fades out" },
   { id: "install", how: "click", at: [["Install.tsx", "leave(hint.install)"], ["Install.tsx", "leave(hint.close)"]], pressed: PRESS, done: "the hint goes; Install opens the browser's own install sheet" },
-  { id: "tune", how: "click", at: [["Apps.tsx", "onClick={play}"]], pressed: PRESS, done: "the tune plays and the dock names it: “♪ …”",
+  { id: "tune", how: "click", at: [["Apps.tsx", "onClick={play}"]], pressed: PRESS, done: "the tune plays and the bottom bar names it: “♪ …”",
     failed: "notice: “Sound isn't available in this browser right now.”", says: ["Sound isn't available in this browser right now."] },
   { id: "dismiss-tune", how: "click", at: [["Apps.tsx", `aria-label="Dismiss tune"`]], pressed: PRESS, done: "the tune's line goes" },
 
@@ -116,10 +116,10 @@ export const ACTIONS: Action[] = [
     working: "none needed: the file is written in the page, in one frame", failed: "notice: “Nothing on the map yet to export.”",
     says: ["Nothing on the map yet to export."] },
   { id: "map-or-palace", how: "click", at: [["App.tsx", `showView("map")`], ["App.tsx", `showView("palace")`], ["App.tsx", "showView(brick.info.id)"]], pressed: PRESS, done: "the view changes and its button stays pressed" },
-  { id: "search", how: "key", at: [["App.tsx", "searchRef}"]], pressed: INSTANT, done: "matching threads stay, “N threads found” with Clear; Esc clears", says: ["found"] },
+  { id: "search", how: "key", at: [["App.tsx", "searchRef}"]], pressed: INSTANT, done: "matching topics stay, “N topics found” with Clear; Esc clears", says: ["found"] },
   { id: "clear-search", how: "click", at: [["App.tsx", `onClick={() => setQuery("")}`]], pressed: PRESS, done: "the whole map is back" },
-  { id: "focus-mode", how: "click", at: [["App.tsx", "setFocusMode((value) => !value)"]], pressed: PRESS, done: "the map shows one thread; Focus stays pressed while on" },
-  { id: "back-to-active", how: "click", at: [["App.tsx", "onClick={jumpToActive}"]], pressed: PRESS, done: "the map scrolls your thread to the top" },
+  { id: "focus-mode", how: "click", at: [["App.tsx", "setFocusMode((value) => !value)"]], pressed: PRESS, done: "the map shows one topic; Focus stays pressed while on" },
+  { id: "back-to-active", how: "click", at: [["App.tsx", "onClick={jumpToActive}"]], pressed: PRESS, done: "the map scrolls your topic to the top" },
   { id: "sample-map", how: "click", at: [["App.tsx", "onClick={() => core.sample()}"], ["App.tsx", "onClick={() => core.sample(choice.id)}"]], pressed: PRESS, waits: "core",
     done: "the chosen sample map (the student's week, or a shorter one) fills the window", failed: OFFLINE },
   { id: "reload-after-crash", how: "click", at: [["Crash.tsx", "location.reload()"]], pressed: PRESS, done: "the page reloads" },
@@ -152,9 +152,9 @@ export const ACTIONS: Action[] = [
     done: "the question goes: the guess swapped in, or the heard words kept", failed: NOT_CONNECTED },
   { id: "keep-apart", how: "click", at: [["chunks.tsx", "unlink(thought.id)"]], pressed: PRESS, waits: "core", done: "the joined words split into two points; focus stays on the point", failed: NOT_CONNECTED },
   { id: "delete-point", how: "click", at: [["Moves.tsx", "remove(thought.id)"]], pressed: PRESS, waits: "core", done: "the point goes: “Deleted “…”” with Undo", failed: NOT_CONNECTED },
-  { id: "move-menu", how: "click", at: [["Moves.tsx", "setOpen((was) => !was)"]], pressed: PRESS, done: "the list of threads opens under it, filter focused" },
+  { id: "move-menu", how: "click", at: [["Moves.tsx", "setOpen((was) => !was)"]], pressed: PRESS, done: "the list of topics opens under it, filter focused" },
   { id: "move-pick", how: "click", at: [["Moves.tsx", "onClick={() => pick(t.id)}"], ["Moves.tsx", "onClick={() => pick(null)}"]], pressed: PRESS, waits: "core",
-    done: "the point glides to its new thread: “Moved “…” to …” with Undo", failed: NOT_CONNECTED },
+    done: "the point glides to its new topic: “Moved “…” to …” with Undo", failed: NOT_CONNECTED },
   { id: "move-keys", how: "key", at: [["Moves.tsx", `if (event.key === "Enter") { event.preventDefault(); pick(targets[0]`], ["Moves.tsx", `document.addEventListener("keydown", key)`]], pressed: INSTANT,
     done: "Enter moves to the first match; Esc closes the list, focus back on Move" },
   { id: "move-list-keys", how: "key", at: [["Moves.tsx", "onKeyDown={(event) => {"]], pressed: INSTANT, done: "arrow keys walk the list, focus ring on each" },
@@ -163,7 +163,7 @@ export const ACTIONS: Action[] = [
     done: "the point glides into that card: “Moved “…” to …” with Undo", failed: NOT_CONNECTED },
 
   // The Palace.
-  { id: "palace-tile", how: "click", at: [["Palace.tsx", "onClick={() => onOpen(thread)}"]], pressed: PRESS, done: "the map opens on that thread with the landing highlight" },
+  { id: "palace-tile", how: "click", at: [["Palace.tsx", "onClick={() => onOpen(thread)}"]], pressed: PRESS, done: "the map opens on that topic with the landing highlight" },
 
   // Keys anywhere (App.tsx, keys.ts; the ? list says them).
   { id: "keys", how: "key", at: [["App.tsx", `document.addEventListener("keydown", onKey)`]], pressed: INSTANT,
@@ -176,7 +176,7 @@ export const ACTIONS: Action[] = [
   { id: "explain-dismiss", how: "click", at: [["Explain.tsx", "setPicked(null)"]], pressed: PRESS, done: "the answer goes and focus goes back to where it was" },
 
   // Recap sheet.
-  { id: "recap-link", how: "click", at: [["Recap.tsx", "follow(id)"]], pressed: PRESS, done: "the sheet closes and the map shows that thread with the landing highlight" },
+  { id: "recap-link", how: "click", at: [["Recap.tsx", "follow(id)"]], pressed: PRESS, done: "the sheet closes and the map shows that topic with the landing highlight" },
   { id: "recap-backdrop", how: "click", at: [["Recap.tsx", "if (event.target === event.currentTarget)"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
   { id: "recap-close", how: "click", at: [["Recap.tsx", "onClick={onClose}"]], pressed: PRESS, done: "the sheet closes" },
   { id: "recap-period", how: "click", at: [["Recap.tsx", `onRequest("session")`], ["Recap.tsx", `onRequest("today")`], ["Recap.tsx", "onRequest(view.period)"]], pressed: PRESS, waits: "model",
@@ -191,7 +191,7 @@ export const ACTIONS: Action[] = [
   // Apps.
   { id: "apps-panel", how: "click", at: [["Apps.tsx", "onClick={() => setOpen(!open)}"], ["Apps.tsx", `getElementById("app-request")?.focus()`]], pressed: PRESS, done: "the panel opens or closes; Make an app focuses its field" },
   { id: "make-app", how: "form", at: [["Apps.tsx", `<form className="apps-form" onSubmit={submit}`], ["Apps.tsx", "compose(build.instead)"], ["Apps.tsx", "core.composeApp(build.instead)"]], pressed: PRESS, waits: "model",
-    working: "the build card rises in the dock, one ✓ step at a time, a spinner on the step in progress", done: "Keep app or Discard", failed: "the step shows × and says why" },
+    working: "the build card rises in the bottom bar, one ✓ step at a time, a spinner on the step in progress", done: "Keep app or Discard", failed: "the step shows × and says why" },
   { id: "keep-app", how: "click", at: [["Apps.tsx", "onClick={() => decide(true)}"], ["Apps.tsx", "onClick={() => decide(false)}"]], pressed: PRESS, waits: "core",
     done: "the card says what happened (“Your app is on.”) and goes", failed: OFFLINE },
   { id: "dismiss-build", how: "click", at: [["Apps.tsx", "leave(build.id)"]], pressed: PRESS, done: "the build card fades out" },
@@ -202,11 +202,11 @@ export const ACTIONS: Action[] = [
 
   // Bricks (docs/bricks.md): the Catalog, opened from the Apps panel, and the switches in it. A switch is this
   // browser's own, so it waits on nothing.
-  { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Catalog sheet opens: every brick with its line and its switch" },
-  { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Catalog" },
+  { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Features page opens: every feature with its line and its switch" },
+  { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Features" },
   { id: "catalog-backdrop", how: "click", at: [["Catalog.tsx", "if (event.target === event.currentTarget) closeCatalog()"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
   { id: "brick-switch", how: "click", at: [["Catalog.tsx", "switchBrick(info.id, !shown)"], ["BrickSlot.tsx", "switchBrick(info.id, false)"]], pressed: PRESS,
-    done: "the switch says On or Off and the brick shows or goes at once (a view's name joins or leaves Map and Palace); a broken brick's line goes" },
+    done: "the switch says On or Off and the feature shows or goes at once (a view's name joins or leaves Cards and Pictures); a broken feature's line goes" },
 
   // Import.
   { id: "import-open", how: "click", at: [["Import.tsx", "setOpen(true)"], ["Import.tsx", "import-close"], ["Import.tsx", "onClick={(event) => {"]], pressed: PRESS, done: "the import dialog opens or closes" },
@@ -219,13 +219,13 @@ export const ACTIONS: Action[] = [
 
   // Tour and the room.
   { id: "tour", how: "click", at: [["Tour.tsx", "onClick={finish}"], ["Tour.tsx", "onClick={next}"]], pressed: PRESS, done: "the next tip, or the tour ends" },
-  { id: "room-menu", how: "key", at: [["room.tsx", `<details className="room-menu" onKeyDown`]], pressed: INSTANT, done: "Esc closes the room menu, focus back on it" },
+  { id: "room-menu", how: "key", at: [["room.tsx", `<details className="room-menu" onKeyDown`]], pressed: INSTANT, done: "Esc closes the Share menu, focus back on it" },
   { id: "leave-room", how: "click", at: [["room.tsx", "onClick={actions.leave}"]], pressed: PRESS, done: "“You left. Your thoughts stay.”", says: ["You left. Your thoughts stay."] },
   { id: "copy-invite", how: "click", at: [["room.tsx", "onClick={() => void copyInvite(join)"]], pressed: PRESS, done: "the button says “Link copied”", says: ["Link copied"] },
   { id: "copy-remote-link", how: "click", at: [["room.tsx", "onClick={() => void copyText(phone)"]], pressed: PRESS, done: "the button says “Link copied”: the link that opens Remote on your phone", says: ["Link copied"] },
   { id: "join-room", how: "form", at: [["room.tsx", `<form className="join-card" onSubmit={join}>`]], pressed: PRESS, waits: "network",
-    working: "the button says “Joining…” and waits", done: "the map opens", failed: "“Can't reach the room. …”, or what's wrong with the code or name",
-    says: ["Joining…", "Can't reach the room."] },
+    working: "the button says “Joining…” and waits", done: "the map opens", failed: "“Can't reach the shared map. …”, or what's wrong with the code or name",
+    says: ["Joining…", "Can't reach the shared map."] },
 
   // The Messages card (Full preset): a counting message comes down unsent.
   { id: "stop-send", how: "click", at: [["SendCard.tsx", "onClick={() => onStop(card.id)}"]], pressed: PRESS, waits: "core",
@@ -255,10 +255,10 @@ export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] 
   { at: ["this-card.ts", `doc.addEventListener("keydown", key, true)`], why: "tracks which card “this” means" },
   { at: ["App.tsx", "event.key === \"Esc"], why: "Esc in search clears it (search's own feedback)" },
   { at: ["Moves.tsx", "onChange={(event) => setQuery(event.target.value)}"], why: "typing in the move list's filter: the list narrows as you type" },
-  { at: ["App.tsx", "onKeyDown={submitOnEnter}"], why: "Enter submits the composer through its existing send feedback" },
+  { at: ["App.tsx", "onKeyDown={submitOnEnter}"], why: "Enter submits the input box through its existing send feedback" },
   { at: ["App.tsx", "typedSinceSend.current = true; setDraft"], why: "typing a thought: the words are the feedback" },
   { at: ["Apps.tsx", "onChange={(e) => setRequest(e.target.value)}"], why: "typing an app request: the words are the feedback" },
-  { at: ["room.tsx", "setCode(e.target.value)"], why: "typing the room code" },
+  { at: ["room.tsx", "setCode(e.target.value)"], why: "typing the join code" },
   { at: ["room.tsx", "setName(e.target.value)"], why: "typing your name" },
   { at: ["Moves.tsx", "onInput={(event) => {"], why: "typing a title: the words are the feedback, clipped at the cap as you type" },
   { at: ["Moves.tsx", "press.current = { type: event.pointerType"], why: "notes a touch or a mouse, so the title's click that follows knows open from rename" },

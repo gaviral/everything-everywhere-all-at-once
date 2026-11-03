@@ -116,12 +116,28 @@ fn the_words_read_as_a_move_or_a_rename_only_as_the_whole_turn() {
     assert_eq!(read("Move my last thought to the garden"), Some(Ask::Move { place: Place::Named("the garden".into()), sure: false, last: true }));
     assert_eq!(read("Move that to a new thread"), Some(Ask::Move { place: Place::New, sure: true, last: false }));
     assert_eq!(read("Move it into its own thread"), Some(Ask::Move { place: Place::New, sure: true, last: false }));
+    // "Topic" is the noun a thread has on screen: it reads wherever "thread" does ("thread" still does).
+    assert_eq!(read("Move that to the pottery topic."), moved("the pottery topic", true));
+    assert_eq!(read("Put that in the bills topic"), moved("the bills topic", true));
+    assert_eq!(read("That goes in the garden topic"), moved("the garden topic", true));
+    for new in ["Move that to a new topic", "Move it into its own topic", "Move that to a topic of its own", "Move that to new topic"] {
+        assert_eq!(read(new), Some(Ask::Move { place: Place::New, sure: true, last: false }), "{new}");
+    }
     let renamed = |target: Target, title: &str| Some(Ask::Rename { targets: vec![(target, title.into())] });
     assert_eq!(read("Rename this to pottery class."), renamed(Target::This, "Pottery class"));
     assert_eq!(read("Rename it “Pottery”"), renamed(Target::This, "Pottery"));
     assert_eq!(read("Call this thread Pottery class"), renamed(Target::This, "Pottery class"));
     assert_eq!(read("Change the title to Kiln days"), renamed(Target::This, "Kiln days"));
     assert_eq!(read("Rename"), renamed(Target::This, ""));
+    assert_eq!(read("Call this topic Pottery class"), renamed(Target::This, "Pottery class"));
+    assert_eq!(read("Call that topic Pottery class"), renamed(Target::This, "Pottery class"));
+    assert_eq!(read("Rename that topic to Pottery class"), renamed(Target::This, "Pottery class"));
+    assert_eq!(read("Rename the topic as Kiln days"), renamed(Target::This, "Kiln days"));
+    assert_eq!(read("Change the name of this topic to Kiln days"), renamed(Target::This, "Kiln days"));
+    assert_eq!(
+        read("Rename the garden topic to Backyard"),
+        Some(Ask::Rename { targets: vec![(Target::Named("the garden topic".into()), "Backyard".into())] })
+    );
     assert_eq!(
         read("Rename trip to Japan to Travel"),
         Some(Ask::Rename { targets: vec![(Target::Named("trip".into()), "Japan to Travel".into()), (Target::Named("trip to Japan".into()), "Travel".into())] }),
@@ -131,6 +147,25 @@ fn the_words_read_as_a_move_or_a_rename_only_as_the_whole_turn() {
     for talk in ["I want to move that to Friday because of the rain", "Move the meeting to Friday", "Call this a win", "Put the kids in the car", "That's in the car"] {
         assert_eq!(kind(talk), None, "{talk}");
     }
+}
+
+/// "Topic" is the noun a thread has on screen: a move or a rename said with it acts as one said with "thread".
+#[tokio::test]
+async fn a_move_or_rename_said_with_topic_works_as_with_thread() {
+    let f = Fixture::new(slipped());
+    let lines = f.say("Move that to the pottery topic").await;
+    assert_eq!(&lines[..3], ["moved w to T2", "on T2", "notice Moved “Learn to throw on the wheel” to Pottery class"], "{lines:?}");
+    f.say("Rename the bills topic to Money").await;
+    assert_eq!(f.title("T3"), "Money");
+    // "That topic" and "this topic" are the card "this" means: the one the speaker is on, Pottery class after the move.
+    f.say("Rename that topic to Kiln days").await;
+    assert_eq!(f.title("T2"), "Kiln days");
+    f.say("Call this topic Clay").await;
+    assert_eq!(f.title("T2"), "Clay");
+    f.say("Change the name of this topic to Pots").await;
+    assert_eq!(f.title("T2"), "Pots");
+    let new = f.say("Move that to a new topic").await;
+    assert!(new.iter().any(|l| l == "notice Moved “Learn to throw on the wheel” to a new topic: Learn to throw"), "{new:?}");
 }
 
 #[tokio::test]
@@ -177,7 +212,7 @@ async fn a_move_to_a_new_thread_starts_it_and_undo_takes_it_away() {
     let new = f.on("w");
     // Its title from the point, at most the refiner's 5 words, never ending on a small word ("… on the").
     assert!(lines.contains(&format!("thread {new} Learn to throw")), "{lines:?}");
-    assert!(lines.contains(&"notice Moved “Learn to throw on the wheel” to a new thread: Learn to throw".to_string()));
+    assert!(lines.contains(&"notice Moved “Learn to throw on the wheel” to a new topic: Learn to throw".to_string()));
     let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&lines)));
     assert!(undone.contains(&format!("removed {new}")), "{undone:?}");
     assert!(f.core.snapshot().thread(&new).is_none() && f.on("w") == "T1");
