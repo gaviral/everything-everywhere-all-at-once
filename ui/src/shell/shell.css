@@ -194,6 +194,8 @@ html.shell2 .shell-rail-close {
 }
 html.shell2 .shell-rail-close:hover { background: var(--surface-3); color: var(--ink); }
 html.shell2 .shell-rail-close:hover .keycap { color: var(--ink); }
+/* On a laptop its key says it all; on a phone, where there are no keys, its ×. */
+html.shell2 .shell-tabs .shell-rail-close .shell-icon { display: none; }
 /* A notice's ×: the icon alone, as quiet as the rail's close. */
 html.shell2 .shell-stage .shell-rail-close { margin: 0; }
 html.shell2 .shell-tabpanel { flex: 1; min-height: 0; padding: 14px 16px 16px; overflow-y: auto; overscroll-behavior: contain; }
@@ -304,7 +306,9 @@ html.shell2 .shell-sample { cursor: pointer; }
   html.shell2 .shell-rail {
     top: auto; right: 0; bottom: 0; left: 0; z-index: 47; width: auto; height: min(78dvh, 640px); border-width: 1px 0 0; border-radius: 18px 18px 0 0;
   }
-  html.shell2 .shell-tab .keycap, html.shell2 .shell-rail-close .keycap { display: none; }
+  html.shell2 .shell-tab .keycap, html.shell2 .shell-tabs .shell-rail-close .keycap { display: none; }
+  html.shell2 .shell-tabs .shell-rail-close .shell-icon { display: block; width: 18px; height: 18px; }
+  html.shell2 .shell-tabs .shell-rail-close { padding: 8px; }
   html.shell2 .shell-held { width: calc(100vw - 32px); }
   html.shell2 .shell-welcome { top: 76px; translate: -50% 0; }
   html.shell2 .shell-welcome h1 { font-size: 24px; }

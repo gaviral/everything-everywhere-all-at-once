@@ -63,7 +63,8 @@ export function useHistory(on: BrickOn, world: World, mapChange: (TidyNote & { i
     add({
       at: Date.now(), kind: "landing", ai: !!landed.model,
       text: `${who}“${words}”${thread ? ` → ${thread.title}` : ""}`,
-      detail: landed.model ? `${modelWords(landed.model)} put this here${seconds(landed.ms) ? ` in ${seconds(landed.ms)}` : ""}` : undefined,
+      // Which model and how fast, as a line's facts: the map's own landing note says it in a sentence.
+      detail: landed.model ? [modelWords(landed.model), seconds(landed.ms)].filter(Boolean).join(" · ") : undefined,
       threadId: landed.threadId,
       undo: landed.mine ? { kind: "remove", thoughtId: landed.thoughtId } : undefined,
     });

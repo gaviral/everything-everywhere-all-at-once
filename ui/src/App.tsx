@@ -365,7 +365,9 @@ export default function App() {
 
   // Keep the end of the map reachable even when pending thoughts or the card grow, and never shorten the page under
   // you when they go.
-  useHeightVar(dockRef, "--dock-height");
+  // In the new shell the stage floats above the status line: what floats over the stage (Tiny transcript's words, until
+  // they move into the status line) keeps clear of all of it.
+  useHeightVar(dockRef, "--dock-height", true, SHELL2 ? 36 : 0);
   const dockRoom = useDockRoom(dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
   // (Back to active, Finish it, a Palace tile) stops under both.
@@ -1061,7 +1063,6 @@ export default function App() {
     // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
     const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
     const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
-    const hearers = [...new Set(world.thoughts.map((t) => t.speaker))].filter((name) => name && name !== me && name !== "you");
     const aiNames = new Set(world.ai ?? []);
     const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
       .map((thread) => ({ thread, points: thoughtsByThread.get(thread.id)?.length ?? 0 })) : [];
@@ -1206,13 +1207,14 @@ export default function App() {
           <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
         </div>
         <StatusLine openHistory={() => toggleTab("history")} state={{
-          mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, hearers,
+          mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
           first: !world.thoughts.length, waiting: pending.length,
           stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
-          queued: core.queuedCount, connected: core.connected, here: inCall ? hearers.length + 1 : 0,
+          queued: core.queuedCount, connected: core.connected,
         }} />
 
         {railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
+          {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
           {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
           {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.undoId} now={now} onUndo={undoEntry} onShow={show}
             recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
@@ -1557,9 +1559,9 @@ function scrollForMap(following: { current: boolean }, top: number, instant: boo
 /** Publishes an element's height as a CSS variable while it's on the page, so styles use what is measured: on any
  *  resize, and at once after each render, since a scroll can read it in the next frame, before the resize is
  *  observed (a Palace tile opens the map, whose tools are three rows on a phone, not one). */
-function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present = true) {
+function useHeightVar(ref: RefObject<HTMLElement | null>, name: string, present = true, below = 0) {
   const publish = (element: HTMLElement) => {
-    const height = `${element.offsetHeight}px`;
+    const height = `${element.offsetHeight + below}px`;
     if (document.documentElement.style.getPropertyValue(name) !== height) document.documentElement.style.setProperty(name, height);
   };
   useLayoutEffect(() => { if (ref.current) publish(ref.current); });

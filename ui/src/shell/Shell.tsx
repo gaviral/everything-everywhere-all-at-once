@@ -93,8 +93,8 @@ export type StatusState = {
   /** When the mic started (ms), while it runs. */
   since: number | null;
   now: number;
-  /** In a call: the others who hear you (names; an AI's with ✦). */
-  hearers: string[];
+  /** In a call: the mic is "on" for the room (lane L5 says who's here). */
+  call: boolean;
   /** First open: nothing said yet, so the line says how to start. */
   first: boolean;
   /** Your thoughts on their way, and the first one's trouble, if any (pendingLabel's words). */
@@ -103,8 +103,6 @@ export type StatusState = {
   /** Typed while away from the core: they go once it's back. */
   queued: number;
   connected: boolean;
-  /** In a call: how many are here. */
-  here: number;
 };
 
 /** "2:14": minutes and seconds since `since`. */
@@ -120,7 +118,7 @@ export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn";
     case "offline": return { dot: "wait", text: "Connecting…" };
     case "starting": return { dot: "wait", text: "Starting the mic…" };
     case "listening":
-    case "hearing": return { dot: "on", text: `${s.hearers.length ? "Mic on" : "Listening"}${s.since ? ` ${clock(s.now - s.since)}` : ""}` };
+    case "hearing": return { dot: "on", text: `${s.call ? "Mic on" : "Listening"}${s.since ? ` ${clock(s.now - s.since)}` : ""}` };
     case "paused": return { dot: "off", text: "Paused" };
     case "nokey": return { dot: "warn", text: s.hosted ? "Listening unavailable" : "No AI key" };
     case "refused": return { dot: "warn", text: s.hosted ? "Service error" : "AI key refused" };
@@ -132,10 +130,9 @@ export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn";
 
 const DOTS = { on: "shell-dot shell-dot-on", off: "shell-dot shell-dot-off", wait: "shell-dot shell-dot-wait", warn: "shell-dot shell-dot-warn" } as const;
 
-/** What follows the state, when there's one thing to know: who hears you in a call, how to start on a first open. */
+/** What follows the state, when there's one thing to know: what a state that needs something needs, how to start on a
+ *  first open. */
 function micHint(s: StatusState): string {
-  const on = s.mic === "listening" || s.mic === "hearing";
-  if (on && s.hearers.length) return `${andList(s.hearers)} ${s.hearers.length === 1 ? "hears" : "hear"} you`;
   if (s.typingOnly) return "";
   const help = NAMES.stateHelp;
   if (s.mic === "nokey") return s.hosted ? help.nokeyHosted : help.nokey;
@@ -145,8 +142,6 @@ function micHint(s: StatusState): string {
   if (s.first && (s.mic === "off" || s.mic === "paused")) return `Nothing is heard until you tap the mic or press ${mod("D")}.`;
   return "";
 }
-
-const andList = (names: string[]) => names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
 /** The status line: 24 px, flush at the very bottom. Live words (Tiny transcript, lane L3) take its middle: anything a
  *  feature puts in `[data-slot="status"]` lands between the state and what waits (shell.css). */
@@ -167,7 +162,6 @@ export const StatusLine = memo(function StatusLine({ state, openHistory }: { sta
       {[
         waiting && <span key="wait" className={cls("shell-status-wait", !!state.stalled && "shell-amber")}><i aria-hidden="true" />{waiting}</span>,
         state.queued > 0 && <span key="queued" className="shell-status-wait shell-amber"><i aria-hidden="true" />{state.queued} to send when connected</span>,
-        state.here > 1 && <span key="call">Call · {state.here} here</span>,
         state.connected && !state.queued && <span key="saved">Saved</span>,
       ].filter(Boolean).flatMap((item, i) => (i ? [<span key={`sep${i}`} className="shell-status-sep" aria-hidden="true" />, item] : [item]))}
     </button>
@@ -223,7 +217,7 @@ export function Rail({ tab, setTab, close, tabs, children }: { tab: RailTab; set
         <Icon name={TAB_ICONS[t]} />{NAMES.tabs[t]}<Keycap>{RAIL_KEYS[t]}</Keycap>
       </button>)}
       <button type="button" className="shell-rail-close" onClick={close} aria-label={`${NAMES.close} the panel`} aria-keyshortcuts="Escape" title={NAMES.close}>
-        <Keycap>esc</Keycap>
+        <Icon name="close" /><Keycap>esc</Keycap>
       </button>
     </div>
     <div className="shell-tabpanel" id="shell-tabpanel" role="tabpanel" aria-labelledby={`shell-tab-${tab}`}>{children}</div>

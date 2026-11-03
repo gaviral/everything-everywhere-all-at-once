@@ -26,7 +26,6 @@ export const NAMES = {
     empty: "Nothing yet. What the AI does and every notice show here, newest first, each with what takes it back.",
     undo: "Undo",
     undone: "Undone",
-    putHere: (model: string, ms: string) => `${model} put this here${ms ? ` in ${ms}` : ""}`,
   },
   catalogTab: {
     lead: (on: number, all: number) => `Features you can switch on · ${on} of ${all} on`,
