@@ -428,16 +428,27 @@ mod tests {
         claude.send(send(serde_json::json!({"type": "tour", "steps": steps}))).await.unwrap();
         // Once a recipient has the active tour, a newly connected window must not catch it up.
         let first = next(&mut ears, 500).await.unwrap();
+        for window in [&mut you, &mut other_tab] {
+            assert_eq!(next(window, 500).await.unwrap(), first, "the active tour reaches every recipient");
+        }
+        assert!(drain(&mut claude, 100).await.is_empty(), "no originating-window echo");
         let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
         let caught_up = drain(&mut reconnected, 100).await;
         assert!(caught_up.iter().any(|message| message["type"] == "snapshot"), "{caught_up:?}");
         assert!(caught_up.iter().all(|message| message["type"] != "tour"), "tours aren't retained for reconnect");
+        // Reconnecting changes call presence. Consume that independent broadcast explicitly, so the relay and
+        // no-echo assertions below still check every message produced by the tours themselves.
+        for window in [&mut claude, &mut ears, &mut you, &mut other_tab] {
+            let presence = drain(window, 100).await;
+            assert_eq!(presence.len(), 1, "{presence:?}");
+            assert_eq!(presence[0]["type"], "call", "{presence:?}");
+        }
         claude.send(send(serde_json::json!({"type": "tour", "steps": [{"text": "Next tour."}]}))).await.unwrap();
         claude.send(send(serde_json::json!({"type": "tour", "steps": []}))).await.unwrap();
-        let mut ear_messages = vec![first];
-        ear_messages.extend(drain(&mut ears, 100).await);
         let mut relayed = None;
-        for got in [drain(&mut you, 100).await, drain(&mut other_tab, 100).await, ear_messages] {
+        for window in [&mut you, &mut other_tab, &mut ears] {
+            let mut got = vec![first.clone()];
+            got.extend(drain(window, 100).await);
             let shape = |m: &serde_json::Value| (m["type"].clone(), m["steps"].clone(), m["by"].clone());
             assert_eq!(
                 got.iter().map(shape).collect::<Vec<_>>(),
