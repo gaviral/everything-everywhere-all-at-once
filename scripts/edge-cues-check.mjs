@@ -14,15 +14,23 @@ if (!process.argv.includes("--fixtures")) {
   const server = await uiServer();
   try {
     const { placeCues } = await server.ssrLoadModule("/src/bricks/spine/cues.tsx");
-    const check = (cues, area, avoid = []) => {
+    // Availability is a fixture expectation, independent of whether placement returned any chips.
+    const check = (cues, area, avoid = [], legalSlot = [area.x0, area.y0, area.x1, area.y1].every(Number.isFinite)
+      && Number.isFinite(area.x1 - area.x0) && Number.isFinite(area.y1 - area.y0) && area.x1 > area.x0 && area.y1 > area.y0) => {
       const result = placeCues(cues, area, avoid);
       for (let i = 0; i < 5; i++) assert.deepEqual(placeCues(cues, area, avoid), result, "deterministic placement");
       const { chips, hidden } = result;
       const direct = chips.filter((p) => !p.extra);
-      assert.equal(direct.length + hidden.length, cues.length, "every arrival accounted for");
-      assert.equal(new Set([...direct.map((p) => p.cue.key), ...hidden.map((c) => c.key)]).size, cues.length);
-      assert.equal(chips.filter((p) => p.extra).length, hidden.length && chips.length ? 1 : 0);
-      assert.equal(chips.find((p) => p.extra)?.extra ?? 0, chips.length ? hidden.length : 0);
+      const accounted = [...direct.map((p) => p.cue), ...hidden];
+      assert.deepEqual(accounted.map((c) => c.key).sort(), cues.map((c) => c.key).sort(), "every arrival direct or hidden exactly once");
+      for (const cue of accounted) assert.ok(cues.includes(cue), "only actual arrivals are represented");
+      const aggregates = chips.filter((p) => p.extra);
+      assert.equal(aggregates.length, hidden.length && legalSlot ? 1 : 0, "a legal slot represents every hidden arrival with one aggregate");
+      if (aggregates.length) {
+        assert.equal(aggregates[0].extra, hidden.length, "aggregate counts all hidden arrivals, including displaced chips");
+        assert.ok(hidden.includes(aggregates[0].cue), "aggregate targets a hidden arrival");
+      }
+      if (!legalSlot) assert.deepEqual(chips, [], "no illegal fallback when no slot exists");
       assert.deepEqual(direct.map((p) => p.cue.at), direct.map((p) => p.cue.at).sort((a, b) => b - a));
       for (const p of chips) {
         assert.ok([p.x, p.y, p.width, p.height].every(Number.isFinite));
@@ -58,6 +66,61 @@ if (!process.argv.includes("--fixtures")) {
       }
     }
     check(Array.from({ length: 20 }, (_, i) => ({ key: `${i}`, thread: "t", title: "title", at: i, cx: i % 2 ? -10000 : 10000, cy: i % 3 ? -10000 : 10000 })), { x0: 0, y0: 0, x1: 500, y1: 150 });
+    // Mixed directions exceed the four direct chips. Cover each edge in turn, then two adjacent edges;
+    // the uncovered edges still have legal slots, so overflow must remain represented there.
+    const crowdedArea = { x0: 0, y0: 0, x1: 1000, y1: 400 };
+    const crowded = Array.from({ length: 17 }, (_, i) => {
+      const [cx, cy] = [[-10000, 200], [10000, 200], [500, -10000], [500, 10000]][i % 4];
+      return { key: `mixed-${i}`, thread: `t${i}`, title: "Mixed arrival", at: i, cx, cy };
+    });
+    const edges = [
+      { x0: 0, y0: 0, x1: 260, y1: 400 }, { x0: 740, y0: 0, x1: 1000, y1: 400 },
+      { x0: 0, y0: 0, x1: 1000, y1: 60 }, { x0: 0, y0: 340, x1: 1000, y1: 400 },
+    ];
+    for (const blocked of [[], ...edges.map((edge) => [edge]), [edges[0], edges[2]], [edges[1], edges[3]]]) {
+      check(crowded, crowdedArea, blocked, true);
+    }
+    // A left aggregate displaces the top chip, then retargets to that chip's freed top slot. With
+    // fixed arrivals, area and controls, that original slot remains legal and no surviving chip
+    // overlaps it: the retry can reuse it without another displacement. Cover all four ranks.
+    const short = { x0: 0, y0: 0, x1: 1440, y1: 80 };
+    for (let rank = 0; rank < 4; rank++) {
+      const points = [[-57680, -2360], [10000, 40], [720, -10000], [-28480, 2440]];
+      const order = [1, 2, 3];
+      order.splice(rank, 0, 0);
+      const direct = order.map((point, i) => ({ key: `direct-${point}`, thread: `t${point}`, title: "Direct arrival", at: 4 - i,
+        cx: points[point][0], cy: points[point][1] }));
+      const before = check(direct, short);
+      assert.equal(before.chips.length, 4, "all four direct chips occupied before displacement");
+      assert.equal(before.hidden.length, 0);
+      assert.equal(before.chips[rank].cue.key, "direct-0", "victim occupies the intended direct position");
+      for (const n of [1, 3, 9]) {
+        const arrivals = [...direct, ...Array.from({ length: n }, (_, i) => ({ key: `overflow-${i}`, thread: `o${i}`, title: "Overflow arrival",
+          at: -i, cx: -10000, cy: 40 }))];
+        const after = check(arrivals, short);
+        assert.deepEqual(after.chips.filter((p) => !p.extra).map((p) => p.cue.key), direct.filter((c) => c.key !== "direct-0").map((c) => c.key));
+        const aggregate = after.chips.find((p) => p.extra);
+        assert.equal(aggregate.cue.key, "direct-0", "displacement retargets to the newer hidden arrival");
+        assert.equal(aggregate.edge, "top", "retargeting moves the aggregate from left to top");
+        assert.equal(aggregate.extra, n + 1, "displaced arrival joins every original hidden arrival");
+        const victim = before.chips[rank];
+        for (const field of ["edge", "x", "y", "width", "height"]) {
+          assert.equal(aggregate[field], victim[field], `the retry reuses the displaced arrival's freed slot: ${field}`);
+        }
+        assert.deepEqual(after.chips.filter((p) => !p.extra), before.chips.filter((p) => p !== victim),
+          "retargeting preserves every other direct chip and its slot");
+      }
+    }
+    // No legal slot: neither a full cover nor four edge controls may cause a fallback under controls.
+    for (const blocked of [[crowdedArea], edges]) check(crowded, crowdedArea, blocked, false);
+    for (const area of [
+      { x0: 0, y0: 0, x1: 0, y1: 400 }, { x0: 0, y0: 0, x1: 1000, y1: 0 },
+      { x0: 1000, y0: 400, x1: 0, y1: 0 },
+      ...[NaN, Infinity, -Infinity].flatMap((value) => [
+        { x0: value, y0: 0, x1: 1000, y1: 400 }, { x0: 0, y0: value, x1: 1000, y1: 400 },
+        { x0: 0, y0: 0, x1: value, y1: 400 }, { x0: 0, y0: 0, x1: 1000, y1: value },
+      ]),
+    ]) check(crowded, area, [], false);
     // What floats over the area (the corners' controls, a pill under them): arrivals toward the corner never get a slot under
     // it, so no chip can be covered; the next slot along the edge takes each.
     const wide = { x0: 0, y0: 0, x1: 1440, y1: 800 };
