@@ -116,6 +116,10 @@ pub enum ServerMsg {
         text: String,
         by: String,
         at_ms: u64,
+        /// A held question that may jump the line (the Interrupt level): asked first at the next pause. Omitted when
+        /// false.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        urgent: bool,
         /// The window it came from (guide.rs `window`), which doesn't get it back; not sent.
         #[serde(skip)]
         from: u64,
@@ -262,11 +266,14 @@ pub enum ClientMsg {
     /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
     Caption { text: String },
     /// A question for the other windows to hold until the person pauses, then ask, with an arrow at `target` if given
-    /// (guide.rs): never a thought on the map. No words take back this speaker's questions still held.
+    /// (guide.rs): never a thought on the map. `urgent` (the Interrupt level) jumps the line of held questions. No words
+    /// take back this speaker's questions still held.
     Hold {
         text: String,
         #[serde(default)]
         target: Option<String>,
+        #[serde(default)]
+        urgent: bool,
     },
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI

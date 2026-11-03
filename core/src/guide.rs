@@ -98,33 +98,35 @@ fn clip(name: &str) -> String {
 /// `target` with `caption`, from `speaker`'s window `window`; no target takes their point down.
 pub fn point(core: &Core, speaker: &str, window: u64, pace: &mut Pace, target: Option<String>, caption: Option<String>) {
     // Taking a point down says nothing more than that: any caption with it is left out.
-    let Some(name) = target else { return send(core, speaker, window, pace, Kind::Point, None, String::new(), None) };
+    let Some(name) = target else { return send(core, speaker, window, pace, Kind::Point, None, String::new(), false, None) };
     let caption = one_line(&caption.unwrap_or_default());
     let refused = bad_name(&name).or_else(|| too_long(&caption, POINT_MAX, "A point's caption"));
-    send(core, speaker, window, pace, Kind::Point, Some(name), caption, refused);
+    send(core, speaker, window, pace, Kind::Point, Some(name), caption, false, refused);
 }
 
 /// `text` as a caption in the corner of the other windows, from `speaker`'s window `window`.
 pub fn caption(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String) {
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
-    send(core, speaker, window, pace, Kind::Caption, None, text, refused);
+    send(core, speaker, window, pace, Kind::Caption, None, text, false, refused);
 }
 
 /// `text`, a question for the other windows to hold until the person pauses and then ask, with an arrow at `target`
-/// once asked if given; from `speaker`'s window `window`. No words take back this speaker's questions still held
-/// (any target with them is left out, as with taking a point down).
-pub fn hold(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, target: Option<String>) {
+/// once asked if given; `urgent` (the Interrupt level) jumps the line of held questions. From `speaker`'s window
+/// `window`. No words take back this speaker's questions still held (any target with them is left out, as with taking
+/// a point down).
+#[allow(clippy::too_many_arguments)]
+pub fn hold(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, target: Option<String>, urgent: bool) {
     let text = one_line(&text);
     if text.is_empty() {
-        return send(core, speaker, window, pace, Kind::Hold, None, text, None);
+        return send(core, speaker, window, pace, Kind::Hold, None, text, false, None);
     }
     let refused = target.as_deref().and_then(bad_name).or_else(|| too_long(&text, HOLD_MAX, "A held question"));
-    send(core, speaker, window, pace, Kind::Hold, target, text, refused);
+    send(core, speaker, window, pace, Kind::Hold, target, text, urgent, refused);
 }
 
 #[allow(clippy::too_many_arguments)]
-fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, refused: Option<String>) {
+fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, urgent: bool, refused: Option<String>) {
     let now = Instant::now();
     let refused = refused.or_else(|| (!pace.allow(now)).then(|| format!("{PER_SECOND} a second at most.")));
     if let Some(why) = refused {
@@ -134,7 +136,7 @@ fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, ta
         }
         return;
     }
-    core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), from: window });
+    core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
 }
 
 #[cfg(test)]
@@ -317,8 +319,8 @@ mod tests {
         let [mut claude, mut ears, mut you] = windows(address, ["Claude", "Claude", ""]).await;
 
         claude.send(send(serde_json::json!({"type": "hold", "text": "Which Saturday?\nLena leaves on the 14th.", "target": "thread:T1"}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "hold", "text": "Bring chairs?"}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "hold", "text": "  ", "target": "thread:T1"}))).await.unwrap();
+        claude.send(send(serde_json::json!({"type": "hold", "text": "Bring chairs?", "urgent": true}))).await.unwrap();
+        claude.send(send(serde_json::json!({"type": "hold", "text": "  ", "target": "thread:T1", "urgent": true}))).await.unwrap();
         for window in [&mut you, &mut ears] {
             let got = drain(window, 500).await;
             let shape = |m: &serde_json::Value| (m["type"].clone(), m["kind"].clone(), m["target"].clone(), m["text"].clone(), m["by"].clone());
@@ -331,6 +333,8 @@ mod tests {
                 ],
                 "{got:?}"
             );
+            // Urgent (it jumps the line) only where it was asked for: not on a plain one, nor on taking them back.
+            assert_eq!(got.iter().map(|m| m.get("urgent").cloned()).collect::<Vec<_>>(), [None, Some(serde_json::Value::Bool(true)), None], "{got:?}");
         }
         assert_eq!(drain(&mut claude, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
 

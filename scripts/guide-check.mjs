@@ -28,7 +28,7 @@ const server = await uiServer();
 let rules;
 try { rules = await server.ssrLoadModule("/src/guide-core.ts"); } finally { await server.close(); }
 const {
-  NAMES, route, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, asked, wentAhead,
+  NAMES, route, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, inLine, asked, wentAhead,
   putOff, dropped, talkedOver, heldLater, heldDropped, instead, label, GUTTER, TIP_GAP, RING_PAD, NEAR, HELD_MAX, NATURAL_PAUSE_MS,
 } = rules;
 
@@ -172,6 +172,14 @@ assert.deepEqual(talkedOver(said, { rest: "" }), { ...said, caption: null });
 // A held card's Later and Drop it.
 assert.equal(heldLater(s, 11).held[0].state, "later");
 assert.deepEqual(heldDropped(s, 11).held.map((h) => h.n), [12]);
+// One thing at a time: the urgent (the Interrupt level) jump the line; the rest in the order they came; what waits
+// for you (put off, talked over) after; nothing dropped.
+let queue = guided(guided(NOTHING, hold("First?"), 40), hold("Second?"), 41);
+queue = guided(queue, { ...hold("Now, please?"), urgent: true }, 42);
+queue = heldLater(queue, 40);
+assert.deepEqual(inLine(queue.held).map((h) => h.text), ["Now, please?", "Second?", "First?"]);
+assert.equal(nextAsk(queue).text, "Now, please?", "the urgent one comes up first");
+assert.equal(asked(queue, 42, 50, 0).caption.ask.urgent, true, "asked as urgent");
 
 // A part not on screen: what reveals it and where it is, by rule; no rule, no arrow.
 const T = (id, title, parent_id = null) => ({ id, title, parent_id, status: "open", last_point: "", touched_ms: 0, tags: [], picture: null, dropped_by: "" });
@@ -574,7 +582,16 @@ try {
   assert.ok(await until(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Quick thing") && c.innerText.includes("asks when you stop"))`, 1500), "held while you talk");
   assert.equal(await evaluate(`document.querySelector(".guide-held-card strong")?.textContent`), "Rent is due Friday?", "its main words bold");
   assert.equal(await evaluate(`!!document.querySelector(".guide-caption")`), false, "nothing said over you");
-  assert.ok(await evaluate(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Said while you talk") && c.innerText.includes("says when you stop"))`), "a caption said while you talk waits too");
+  // One thing at a time: the next in line shows, the rest are a count that opens them.
+  assert.equal(await evaluate(`document.querySelectorAll(".guide-held-card").length`), 1, "one card at a time");
+  assert.equal(await evaluate(`document.querySelector(".guide-held-more")?.innerText.replace(/\s+/g, " ")`), "1 more held", "the rest a count");
+  await click(".guide-held-more");
+  assert.ok(await until(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Said while you talk") && c.innerText.includes("says when you stop"))`, 1000), "a caption said while you talk waits too, behind the count");
+  await click(".guide-held-more");
+  // Urgent (the Interrupt level): it jumps the line, shown and asked first.
+  core.send({ type: "guide", kind: "hold", target: null, text: "The landlord's deadline is today?", by: "Claude", at_ms: Date.now(), urgent: true });
+  assert.ok(await until(`document.querySelectorAll(".guide-held-card").length === 1 && document.querySelector(".guide-held-card").innerText.includes("Interrupt") && document.querySelector(".guide-held-card").innerText.includes("deadline")`, 1500), "the urgent one is next in line");
+  assert.equal(await evaluate(`document.querySelector(".guide-held-more")?.innerText.replace(/\s+/g, " ")`), "2 more held", "nothing dropped");
   const stack = await box(".guide-held");
   assert.ok(inside(stack, 1440, 900) && stack.right >= 1440 - GUTTER - 1, `bottom right, whole on screen (${JSON.stringify(stack)})`);
   assert.ok(!overlap(stack, await box('[data-guide="composer"]')), "clear of the composer");
@@ -585,6 +602,11 @@ try {
   const quiet = Date.now();
   assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 1500), "asked at your pause");
   assert.ok(Date.now() - quiet >= NATURAL_PAUSE_MS - 150, `not before a natural pause (${Date.now() - quiet} ms)`);
+  assert.match(await words(), /^✦ Claude · Interrupt The landlord's deadline is today\?/, "the urgent one first, marked");
+  await shot("9a-asked-urgent");
+  await key("Escape", 27);
+  // Then, a beat later, the next in line.
+  assert.ok(await until(`document.querySelector(".guide-caption[data-asking]")?.innerText.includes("Quick thing")`, NATURAL_PAUSE_MS + 1500), "one per pause: the next comes up after a beat");
   assert.match(await words(), /^✦ Claude Quick thing: you said Friday\. Rent is due Friday\? Go ahead ↵ Later L Drop it esc or talk over me to stop$/);
   assert.equal(await atStage(), true, "at the stage");
   assert.equal(await evaluate(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Quick thing"))`), false, "no sentence twice: out of the stack");

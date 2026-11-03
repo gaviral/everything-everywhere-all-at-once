@@ -149,21 +149,23 @@
 .guide-held-state { color: var(--muted); font-weight: 500; }
 /* Waiting for you, not for your pause: it needs you. */
 .guide-held-card:not([data-state="waiting"]) .guide-held-state { color: var(--amber); }
-/* A glance, not a read: three lines at most; the whole of it shows once it's asked. */
-.guide-held-text {
-  display: -webkit-box;
-  margin: 4px 0 8px;
-  overflow: hidden;
-  font-size: 15px;
-  line-height: 21px;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-}
+/* Whole, never cut (legible-check): a question is 140 characters at most; its main words catch the eye. */
+.guide-held-text { margin: 4px 0 8px; font-size: 15px; line-height: 21px; overflow-wrap: anywhere; }
 .guide-held-acts { display: flex; gap: 8px; }
 .guide-held-acts .guide-btn { height: 28px; padding: 0 10px; font-size: 12px; }
-.guide-held-more { margin: 0; color: var(--muted); font-size: 11px; text-align: right; }
+/* One thing at a time: the next in line shows; the rest are a count that opens them. */
+.guide-held-more {
+  align-self: flex-end;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+/* The Interrupt level, the one urgent enough to jump the line: the design's only red. */
+.guide-urgent { color: var(--red, var(--room-red)); font-weight: 600; }
 .guide-held-more b, .guide-held-chip b { color: var(--amber); font-weight: 600; }
 .guide-held-chip {
   display: inline-flex;

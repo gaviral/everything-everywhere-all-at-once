@@ -61,6 +61,7 @@ export const ACTIONS: Action[] = [
     done: "the question (or line) is gone, its arrow too", says: ["Drop it"] },
   { id: "guide-answer", how: "click", at: [["Guide.tsx", "onClick={() => askNow(item.n)}"]], pressed: PRESS,
     done: "the held card leaves the stack and is asked (said) at once: its caption at the stage, its arrow if it has one", says: ["Answer", "Continue"] },
+  { id: "guide-held-more", how: "click", at: [["Guide.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS, done: "the rest of the held stack opens under the next in line, or folds back to it", says: ["more held", "Just the next"] },
   { id: "guide-held-chip", how: "click", at: [["Guide.tsx", "onClick={() => setOpen(!open)}"]], pressed: PRESS, done: "on a phone, the held cards open above the chip, or fold back into it", says: ["Held"] },
   { id: "new-landing-note", how: "click", at: [["Attention.tsx", "onClick={onGo}"]], pressed: PRESS, done: "the map scrolls to the new thought, which takes the landing highlight" },
   { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },

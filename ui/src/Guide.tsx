@@ -21,12 +21,15 @@ import type { World } from "./core";
 import { Markdown } from "./md";
 import {
   aimAt, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld, dropIt, echoOf, goAhead, GUTTER, heard,
-  instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, RING_PAD, route, stepBack,
+  inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, RING_PAD, route, stepBack,
   useGuide, useWindowOn, watchGuide, type Held, type Said, type Shown, type Where,
 } from "./guide-core";
 import "./guide.css";
 
 type Props = { world: World; view: string; query: string; focus: boolean };
+
+/** What an AI participant's ✦ means, on its name (every ✦ carries its tip: marks-check). */
+const AI_TIP = "An AI on this map, not a person: what it says and points at carries this mark.";
 
 export function Guide(props: Props) {
   const { point, caption, held } = useGuide();
@@ -464,7 +467,7 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     onPointerEnter={() => clock.hold(true)}
     onPointerLeave={() => clock.hold(false)}>
     <span className="guide-line" aria-hidden="true">
-      <span ref={name} className="guide-by">{ai ? "✦ " : ""}{by}</span>{" "}
+      <span ref={name} className="guide-by" data-tip={ai ? AI_TIP : undefined}>{ai ? "✦ " : ""}{by}{said?.ask?.urgent && <span className="guide-urgent"> · Interrupt</span>}</span>{" "}
       <span ref={words} key={page} className="guide-text"><Markdown text={shownText} /></span>
     </span>
     {where && <span className="guide-where" aria-hidden="true">{where}</span>}
@@ -477,18 +480,18 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
   </div>, document.body);
 }
 
-/** At most this many held cards at once; the rest are a count. */
-const CARDS = 3;
 /** Below this width the held stack folds to a chip (a phone): cards would cover the map you're talking about. */
 const NARROW = 560;
 
-/** The held stack: questions waiting for your pause and what you talked over, in L1's held region once the page has
- *  one (data-slot="held"), else bottom right over the map, clear of the dock and the shelf; on a phone a chip. */
+/** The held stack: questions waiting for your pause and what you talked over, one thing at a time (the next in line,
+ *  the rest a count that opens them), in L1's held region once the page has one (data-slot="held"), else bottom right
+ *  over the map, clear of the dock and the shelf; on a phone a chip. */
 function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => boolean }) {
   const slot = useSlot("held");
   const box = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW);
   const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
   useEffect(() => {
     if (slot) return;
     let frame = 0;
@@ -513,11 +516,13 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
     tick();
     return () => cancelAnimationFrame(frame);
   }, [slot]);
-  const shown = held.slice(0, CARDS);
-  const more = held.length - shown.length;
+  const line = inLine(held);
+  const more = line.length - 1;
   const cards = <>
-    {shown.map((item) => <HeldCard key={item.n} item={item} ai={ai(item.by)} />)}
-    {more > 0 && <p className="guide-held-more"><b>{more}</b> more held</p>}
+    {(all ? line : line.slice(0, 1)).map((item) => <HeldCard key={item.n} item={item} ai={ai(item.by)} />)}
+    {more > 0 && <button type="button" className="guide-held-more" aria-expanded={all} onClick={() => setAll(!all)}>
+      {all ? "Just the next" : <><b>{more}</b> more held</>}
+    </button>}
   </>;
   if (slot) return createPortal(<section className="guide-held" data-place="slot" aria-label="Held for your pause">{cards}</section>, slot);
   return createPortal(<section ref={box} className="guide-held" data-place="floating" data-narrow={narrow || undefined} aria-label="Held for your pause">
@@ -531,11 +536,12 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
 function HeldCard({ item, ai }: { item: Held; ai: boolean }) {
   const question = item.kind === "question";
   const state = item.state === "waiting" ? (question ? "asks when you stop" : "says when you stop") : item.state === "later" ? "Later" : "Talked over";
+  const urgent = item.urgent && item.state === "waiting";
   const open = question ? "Answer" : item.state === "over" ? "Continue" : "Go ahead";
   return <div className="guide-held-card" data-state={item.state} data-held={item.n} role="group" aria-label={`${item.by}, ${state}`}>
     <div className="guide-held-head">
-      <span className="guide-by" data-ai={ai || undefined}>{ai ? "✦ " : ""}{item.by}</span>
-      <span className="guide-held-state">{state}</span>
+      <span className="guide-by" data-ai={ai || undefined} data-tip={ai ? AI_TIP : undefined}>{ai ? "✦ " : ""}{item.by}</span>
+      <span className="guide-held-state">{urgent && <span className="guide-urgent">Interrupt · </span>}{state}</span>
     </div>
     <p className="guide-held-text"><Markdown text={question ? mainWords(item.text) : item.text} /></p>
     <div className="guide-held-acts">

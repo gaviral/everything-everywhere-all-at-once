@@ -15,7 +15,8 @@ import { DECIDE_MS, REACH_MS, SHORTEST_MS, slowReadMs } from "./notice-rules";
 export { NATURAL_PAUSE_MS };
 
 /** The core's relay of a point, a caption or a held question (protocol.rs `ServerMsg::Guide`). */
-export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; target: string | null; text: string; by: string; at_ms: number };
+/** `urgent`: a held question that may jump the line (the Interrupt level). */
+export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; target: string | null; text: string; by: string; at_ms: number; urgent?: boolean };
 
 /** The fixed names, in the order docs/guide.md lists them: what each is, as a sentence names it. Threads, points and a
  *  view brick's switch are named with their id: `thread:<id>`, `point:<id>`, `view:<id>`. */
@@ -177,8 +178,9 @@ export const TIP_GAP = RING_PAD + 8;
 const RUN = 24;
 /** Between the caption and where the arrow leaves it (its first dot). */
 export const START_GAP = 8;
-/** Room an arrow needs beside a part to come in from that side: the tip's gap, the head, and a short run before it. */
-export const SIDE_ROOM = TIP_GAP + 16 + RUN;
+/** Room an arrow needs beside a part to come in from that side: the tip's gap, the head and a little more (the curve
+ *  can run in the screen's gutter, as on a phone, where a line leaves only its margin). */
+export const SIDE_ROOM = TIP_GAP + 16 + 8;
 /** A part this small is a control (a button, a chip): the arrow comes up under it, where nothing else is. */
 const SMALL = { width: 200, height: 56 };
 /** A part nearer the caption than this needs no arrow (it would be shorter than a run between its two gaps): the
@@ -352,8 +354,8 @@ export function echoOf(heard: string, said: string): boolean {
 export type Shown = { target: string; text: string; by: string; at: number; n: number; of?: number };
 /** A question held for your pause, or a line of a caption (`line`): one said while you talked or typed, or what you
  *  talked over. `waiting`: it's asked (said) by itself at your next pause; `later` (you said Later, or left it
- *  unanswered) and `over` (you talked over it) wait for you. */
-export type Held = { n: number; text: string; target: string | null; by: string; kind: "question" | "line"; state: "waiting" | "later" | "over" };
+ *  unanswered) and `over` (you talked over it) wait for you. `urgent` (the Interrupt level): it jumps the line. */
+export type Held = { n: number; text: string; target: string | null; by: string; kind: "question" | "line"; state: "waiting" | "later" | "over"; urgent: boolean };
 /** The caption up: `ask` while it's a held question asked, with Go ahead, Later and Drop it. */
 export type Said = { text: string; by: string; n: number; ask?: Held };
 export type GuideState = { point: Shown | null; caption: Said | null; held: readonly Held[] };
@@ -382,7 +384,7 @@ function unsaid(state: GuideState): GuideState {
 export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false): GuideState {
   if (msg.kind === "caption") {
     if (!msg.text) return state;
-    if (busy) return { ...state, held: [...state.held, { n, text: msg.text, target: null, by: msg.by, kind: "line" as const, state: "waiting" as const }].slice(-HELD_MAX) };
+    if (busy) return { ...state, held: [...state.held, { n, text: msg.text, target: null, by: msg.by, kind: "line" as const, state: "waiting" as const, urgent: false }].slice(-HELD_MAX) };
     // A newer caption replaces the one up (and its arrow); a question being asked goes back to wait for your pause.
     return { ...unsaid(returned(state, "waiting")), caption: { text: msg.text, by: msg.by, n } };
   }
@@ -395,7 +397,7 @@ export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false
     // The same question again is the one held, not a second (its arrow as sent last).
     if (state.caption?.ask?.by === msg.by && state.caption.ask.text === msg.text) return state;
     const held = state.held.filter((h) => !(h.by === msg.by && h.text === msg.text));
-    return { ...state, held: [...held, { n, text: msg.text, target: msg.target, by: msg.by, kind: "question" as const, state: "waiting" as const }].slice(-HELD_MAX) };
+    return { ...state, held: [...held, { n, text: msg.text, target: msg.target, by: msg.by, kind: "question" as const, state: "waiting" as const, urgent: !!msg.urgent }].slice(-HELD_MAX) };
   }
   // A point with words says them now: they take the caption's place (a question being asked keeps it).
   if (msg.target) {
@@ -405,9 +407,17 @@ export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false
   return state.point && state.point.by === msg.by ? { ...state, point: null } : state;
 }
 
-/** The held question your pause asks: the first that waits for one, unless a caption is up (the speaker is talking). */
+/** The held stack in the order it comes up, one thing at a time: what waits for your pause first, the urgent (the
+ *  Interrupt level) ahead of the line, each in the order it came; then what waits for you (put off, talked over),
+ *  the latest first. Nothing is dropped: the rest wait their turn. */
+export function inLine(held: readonly Held[]): Held[] {
+  const waiting = held.filter((h) => h.state === "waiting");
+  return [...waiting.filter((h) => h.urgent), ...waiting.filter((h) => !h.urgent), ...held.filter((h) => h.state !== "waiting")];
+}
+
+/** What your pause brings up: the first in line that waits for one, unless a caption is up (the speaker is talking). */
 export function nextAsk(state: GuideState): Held | null {
-  return state.caption ? null : state.held.find((h) => h.state === "waiting") ?? null;
+  return state.caption ? null : inLine(state.held).find((h) => h.state === "waiting") ?? null;
 }
 
 /** Held `heldN` asked now (your pause came, or you opened it): its caption with Go ahead, Later and Drop it, and its
@@ -447,7 +457,7 @@ export function talkedOver(state: GuideState, { rest = "", early = false }: { re
   if (caption.ask) return early ? returned(state, "over") : unsaid(state);
   const gone = unsaid(state);
   if (!rest.trim()) return gone;
-  const held: Held = { n: caption.n, text: rest.trim(), target: null, by: caption.by, kind: "line", state: "over" };
+  const held: Held = { n: caption.n, text: rest.trim(), target: null, by: caption.by, kind: "line", state: "over", urgent: false };
   return { ...gone, held: [held, ...gone.held].slice(0, HELD_MAX) };
 }
 
