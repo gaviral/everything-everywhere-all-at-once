@@ -71,6 +71,8 @@ pub struct Core {
     guide: guide::Runtime,
     world: Mutex<Arc<World>>,
     journal: Mutex<Journal>,
+    /// Last save-failure notice, shared by all write paths without taking their locks.
+    journal_save_notice_at: Mutex<Option<tokio::time::Instant>>,
     updates: broadcast::Sender<Outgoing>,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Who said "new thread", and the thought that starts each one.
@@ -148,17 +150,11 @@ impl Core {
                 return false;
             }
             let mut journal = self.journal.lock().unwrap();
-            let mut failed = false;
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
                 positions::settle(self, &world);
                 if let Err(e) = journal.append(change) {
-                    if failed {
-                        tracing::error!("journal write failed: {e:#}");
-                    } else {
-                        self.journal_save_failed(&e);
-                        failed = true;
-                    }
+                    self.journal_save_failed(&e);
                 }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
@@ -177,9 +173,17 @@ impl Core {
         }
     }
 
-    /// Safe while holding world, journal or position locks: only logs and broadcasts, without taking any of them.
+    /// Safe while holding world, journal or position locks: the notice gate takes none of them.
     fn journal_save_failed(&self, e: &anyhow::Error) {
         tracing::error!("journal write failed: {e:#}");
+        {
+            let mut last = self.journal_save_notice_at.lock().unwrap();
+            let now = tokio::time::Instant::now();
+            if last.is_some_and(|at| now.duration_since(at) < std::time::Duration::from_secs(10)) {
+                return;
+            }
+            *last = Some(now);
+        }
         self.send(ServerMsg::Notice {
             message: "Couldn't save. Keep this window open; recent changes may be lost when you restart.".into(),
         });
@@ -1000,6 +1004,7 @@ async fn main() -> anyhow::Result<()> {
         guide: guide::Runtime::default(),
         world: Mutex::new(world.into()),
         journal: Mutex::new(journal),
+        journal_save_notice_at: Mutex::new(None),
         updates,
         placer_queue,
         new_threads: placer::NewThreads::default(),
@@ -1826,6 +1831,7 @@ impl Core {
             guide: Default::default(),
             world: Mutex::new(world.into()),
             journal: Mutex::new(journal),
+            journal_save_notice_at: Mutex::new(None),
             updates: broadcast::channel(1024).0,
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),

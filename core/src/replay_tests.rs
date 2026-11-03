@@ -98,9 +98,11 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
             assert_eq!(sent, save_failure_updates(&mut second_window), "both windows receive the same broadcast");
             let notices: Vec<_> = sent.iter().filter(|out| out["message"]["type"] == "notice").cloned().collect();
             assert_eq!(notices, if failing { vec![save_failure_notice()] } else { vec![] });
-            let told: Vec<_> = sent.into_iter().filter(|out| out["message"]["type"] == "change").collect();
-            let wanted: Vec<_> = changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect();
-            assert_eq!(told, wanted, "change order and broadcast routing stay the same");
+            let mut wanted: Vec<_> = changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect();
+            if failing {
+                wanted.insert(0, save_failure_notice());
+            }
+            assert_eq!(sent, wanted, "the notice precedes changes; change order and broadcast routing stay the same");
 
             assert!(!f.core.commit_if(|_| false, changes));
             assert!(f.core.commit_if(|_| true, vec![]));
@@ -109,12 +111,14 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
             assert!(save_failure_updates(&mut second_window).is_empty());
             if failing {
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
-                // Deduplication is per batch, not per core: the next failed batch warns again.
-                f.core.commit(vec![Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() }]);
+                let change = Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() };
+                f.core.commit(vec![change.clone()]);
+                expected.apply(&change);
                 for updates in [&mut first_window, &mut second_window] {
-                    let sent = save_failure_updates(updates);
-                    assert_eq!(sent.iter().filter(|out| **out == save_failure_notice()).count(), 1);
+                    assert_eq!(save_failure_updates(updates), vec![serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })]);
                 }
+                assert_eq!(full(&f.core.snapshot()), full(&expected));
+                assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
             } else {
                 assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&expected));
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap().lines().count(), 4);
@@ -124,7 +128,7 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
 }
 
 #[test]
-fn journal_save_failure_record_reports_each_failure_to_every_window() {
+fn journal_save_failure_record_throttles_notices_to_every_window() {
     journal_save_failure_without_deadlock(async {
         for failing in [false, true] {
             let f = SaveFailureFixture::new(failing);
@@ -135,7 +139,7 @@ fn journal_save_failure_record_reports_each_failure_to_every_window() {
             for off in [true, false] {
                 let change = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off, speaker: "Sam".into(), at_ms: 3 };
                 f.core.record(change);
-                let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
+                let wanted = if failing && off { vec![save_failure_notice()] } else { vec![] };
                 assert_eq!(save_failure_updates(&mut first_window), wanted);
                 assert_eq!(save_failure_updates(&mut second_window), wanted);
             }
@@ -177,9 +181,8 @@ fn journal_save_failure_positions_report_immediate_and_held_writes_without_chang
             // Existing restart helper drives the delayed write through positions::write while all three locks
             // are held. Only the latest held step is written, and it must not broadcast another Change.
             crate::positions::flush_all(&f.core);
-            let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
-            assert_eq!(save_failure_updates(&mut first_window), wanted);
-            assert_eq!(save_failure_updates(&mut second_window), wanted);
+            assert!(save_failure_updates(&mut first_window).is_empty(), "the held write shares the notice gate");
+            assert!(save_failure_updates(&mut second_window).is_empty());
             crate::positions::flush_all(&f.core);
             assert!(save_failure_updates(&mut first_window).is_empty(), "a failed flush is still consumed, without retry");
             assert!(save_failure_updates(&mut second_window).is_empty());
@@ -196,7 +199,7 @@ fn journal_save_failure_positions_report_immediate_and_held_writes_without_chang
 }
 
 #[test]
-fn journal_save_failure_scheduled_position_flush_broadcasts_when_due() {
+fn journal_save_failure_scheduled_position_flush_is_throttled_when_due() {
     journal_save_failure_without_deadlock(async {
         for failing in [false, true] {
             let f = SaveFailureFixture::new(failing);
@@ -209,15 +212,121 @@ fn journal_save_failure_scheduled_position_flush_broadcasts_when_due() {
             tokio::task::yield_now().await;
             tokio::time::advance(crate::positions::JOURNAL_EVERY).await;
             tokio::task::yield_now().await;
-            let wanted = if failing { vec![save_failure_notice()] } else { vec![] };
-            assert_eq!(save_failure_updates(&mut first_window), wanted);
-            assert_eq!(save_failure_updates(&mut second_window), wanted);
+            assert!(save_failure_updates(&mut first_window).is_empty(), "the scheduled write shares the notice gate");
+            assert!(save_failure_updates(&mut second_window).is_empty());
             assert_eq!(f.core.snapshot().positions["T1"].x, 2.0);
             let kept = std::fs::read_to_string(&f.path).unwrap();
             assert_eq!(kept.lines().count(), if failing { 1 } else { 3 });
             if !failing {
                 assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&f.core.snapshot()));
             }
+        }
+    });
+}
+
+#[test]
+fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
+    journal_save_failure_without_deadlock(async {
+        use tokio::time::{advance, Duration, Instant};
+
+        let f = SaveFailureFixture::new(true);
+        let before = std::fs::read_to_string(&f.path).unwrap();
+        let mut first_window = f.core.updates.subscribe();
+        let mut second_window = f.core.updates.subscribe();
+        let change = Change::ActiveChanged { thread_id: "T1".into(), speaker: "Sam".into() };
+        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Sam".into(), at_ms: 3 };
+        let started = Instant::now();
+        f.core.commit(vec![change.clone()]);
+        let wanted = vec![save_failure_notice(), serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })];
+        assert_eq!(save_failure_updates(&mut first_window), wanted);
+        assert_eq!(save_failure_updates(&mut second_window), wanted);
+
+        // Every path shares the window, including a flush with world, journal and position locks held.
+        for (x, elapsed) in [(1.0, Duration::ZERO), (3.0, Duration::from_secs(10) - Duration::from_nanos(1))] {
+            advance(elapsed).await;
+            f.core.record(mark.clone());
+            f.core.commit(vec![change.clone()]);
+            crate::positions::set(&f.core, "Sam", "T1", Some(x), Some(-x)).unwrap();
+            let first = f.core.snapshot().positions["T1"].clone();
+            crate::positions::set(&f.core, "Sam", "T1", Some(x + 1.0), Some(-x - 1.0)).unwrap();
+            let held = f.core.snapshot().positions["T1"].clone();
+            crate::positions::flush_all(&f.core);
+            let wanted = vec![
+                serde_json::json!({ "to": null, "message": { "type": "change", "change": change } }),
+                serde_json::json!({ "to": null, "message": { "type": "change", "change":
+                    { "type": "positioned", "id": "T1", "x": first.x, "y": first.y, "by": first.by, "at_ms": first.at_ms } } }),
+                serde_json::json!({ "to": null, "message": { "type": "change", "change":
+                    { "type": "positioned", "id": "T1", "x": held.x, "y": held.y, "by": held.by, "at_ms": held.at_ms } } }),
+            ];
+            assert_eq!(save_failure_updates(&mut first_window), wanted, "suppressed failures still broadcast live changes in order");
+            assert_eq!(save_failure_updates(&mut second_window), wanted);
+        }
+        assert_eq!(Instant::now() - started, Duration::from_secs(10) - Duration::from_nanos(1));
+        crate::positions::set(&f.core, "Sam", "T1", Some(5.0), Some(-5.0)).unwrap();
+        assert_eq!(save_failure_updates(&mut first_window), save_failure_updates(&mut second_window));
+        advance(Duration::from_nanos(1)).await;
+        assert_eq!(Instant::now() - started, Duration::from_secs(10));
+        crate::positions::flush_all(&f.core);
+        assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()], "a held flush at the boundary warns without another change");
+        assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
+        f.core.record(mark.clone());
+        f.core.commit(vec![change.clone()]);
+        let wanted = vec![serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })];
+        assert_eq!(save_failure_updates(&mut first_window), wanted);
+        assert_eq!(save_failure_updates(&mut second_window), wanted);
+        advance(Duration::from_secs(10)).await;
+        f.core.record(mark);
+        assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
+        assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
+        assert_eq!(f.core.snapshot().positions["T1"].x, 5.0);
+        assert_eq!(f.core.snapshot().active_by["Sam"], "T1");
+        assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
+    });
+}
+
+#[test]
+fn journal_save_failure_gate_is_per_core() {
+    journal_save_failure_without_deadlock(async {
+        let first = SaveFailureFixture::new(true);
+        let second = SaveFailureFixture::new(true);
+        let mut first_window = first.core.updates.subscribe();
+        let mut second_window = second.core.updates.subscribe();
+        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Sam".into(), at_ms: 3 };
+        first.core.record(mark.clone());
+        tokio::time::advance(std::time::Duration::from_secs(5)).await;
+        second.core.record(mark.clone());
+        assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
+        assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
+        tokio::time::advance(std::time::Duration::from_secs(5)).await;
+        first.core.record(mark.clone());
+        second.core.record(mark);
+        assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
+        assert!(save_failure_updates(&mut second_window).is_empty(), "each core keeps its own notice deadline");
+    });
+}
+
+#[test]
+fn journal_save_failure_concurrent_failures_emit_one_notice_per_window() {
+    journal_save_failure_without_deadlock(async {
+        let f = SaveFailureFixture::new(true);
+        let mut first_window = f.core.updates.subscribe();
+        let mut second_window = f.core.updates.subscribe();
+        for elapsed in [0, 10] {
+            tokio::time::advance(std::time::Duration::from_secs(elapsed)).await;
+            let barrier = std::sync::Barrier::new(8);
+            let runtime = tokio::runtime::Handle::current();
+            // Exercise the notice gate itself concurrently, without serialization by the journal lock.
+            std::thread::scope(|scope| {
+                for _ in 0..8 {
+                    scope.spawn(|| {
+                        let _entered = runtime.enter();
+                        barrier.wait();
+                        f.core.journal_save_failed(&anyhow::anyhow!("append failed"));
+                    });
+                }
+            });
+            assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
+            assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
         }
     });
 }
