@@ -178,6 +178,9 @@
 
 /* Pointed at or focused: open on the map, shelve, unpin. */
 .spine-tools { position: absolute; top: -12px; right: -8px; display: none; gap: 4px; }
+/* Stay here sits above the measured topic box, clear of the title and hover tools, even while folded. */
+.spine-head > .stay-control, .spine-card > .stay-control, .spine-aside > .stay-control,
+.spine-head > .staying-here, .spine-card > .staying-here, .spine-aside > .staying-here { position: absolute; bottom: 100%; left: 0; margin-bottom: 14px; z-index: 5; }
 .spine-head:hover .spine-tools, .spine-point:hover .spine-tools, .spine-card:hover .spine-tools, .spine-aside:hover .spine-tools,
 .spine-head:focus-within .spine-tools, .spine-point:focus-within .spine-tools, .spine-card:focus-within .spine-tools, .spine-aside:focus-within .spine-tools { display: flex; }
 .spine-frame .spine-tool { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--card);

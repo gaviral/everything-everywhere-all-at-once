@@ -37,6 +37,7 @@ Browser, one page per window (ui/src)
   route.ts       live routing: while a thought is placed, the topics the prompt names light up and the bottom bar shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
+  StayHere.tsx   a topic's Stay here action and Staying here chip with × to release (stay-here.css)
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
   whyhere.tsx    "Why here" on demand: a point's reason, a Since you left row's Why?, asked of the core when none is kept
@@ -93,6 +94,7 @@ Core, one process (core/src: axum, tokio)
   guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the topics weighed, then where it went and why)
+  stay.rs        journaled map-wide pin: everyone's new thoughts land whole in one topic without model placing or splitting; “stay here” and “let go”
   chunks.rs      two parts said across a pause as one idea (the later linked to the earlier), assumptions that moved a thought
   decided.rs     decisions said out loud ("Decided: …", "let's go with …"), found by rule, so the point is marked and Recap leads with them
   trace.rs       E2A2O_TRACE=1: every model request (a contributor model's turned-away try too), placement and saved picture to data/<map>/trace.jsonl

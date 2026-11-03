@@ -165,7 +165,7 @@ impl NewThreads {
     }
 
     /// Placed by `changes`; when they set aside only filler before the words, the `rest` starts the thread instead.
-    fn placed(&self, thought_id: &str, changes: &[Change], rest: Option<&str>) {
+    pub(crate) fn placed(&self, thought_id: &str, changes: &[Change], rest: Option<&str>) {
         let mut thoughts = self.thoughts.lock().unwrap();
         thoughts.remove(thought_id);
         if changes.iter().any(|c| matches!(c, Change::ThoughtSkipped { .. })) {
@@ -551,6 +551,9 @@ fn retry_in(round: u32) -> Duration {
 /// Places one thought, asking the model at `url` and giving each call `limit` for its room; when the turn moved on to
 /// another topic partway, returns the rest's id.
 async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Duration) -> anyhow::Result<Option<String>> {
+    if crate::stay::place_waiting(core, thought_id) {
+        return Ok(None);
+    }
     core.key()?;
     let world = core.snapshot();
     let thought = world
@@ -647,6 +650,10 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // Words taken back while the model thought ("scratch that", catalog.rs) leave no thread, touch or move behind.
     let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
     let (changes, rest, rule, landed) = loop {
+        // A pin set while the model was answering wins, keeping the original words whole.
+        if crate::stay::place_waiting(core, thought_id) {
+            return Ok(None);
+        }
         let moves = !moved_meanwhile && !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
         let (changes, rest, rule) = settle_ruled(&world, &thought, placement.clone(), place_ms, new_thread, moves);
         if !waiting(&core.snapshot()) {
@@ -668,11 +675,14 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         // The ask for a new thread is spent only when the words land: placed again, they still start it.
         let landed = if new_thread { changes.clone() } else { Vec::new() };
         let traced_line = || traced(&world, &thought, answer.clone(), new_thread, &changes, rest.as_deref());
-        if core.commit_if(|w| waiting(w) && there(w) && !(moves && moved(w)), changes.clone()) {
+        if core.commit_if(|w| w.stay_here.is_none() && waiting(w) && there(w) && !(moves && moved(w)), changes.clone()) {
             core.trace.write(traced_line);
             break (changes, rest, rule, landed);
         }
         let now = core.snapshot();
+        if now.stay_here.is_some() && waiting(&now) {
+            continue;
+        }
         if moves && waiting(&now) && there(&now) {
             // They moved while the model thought (only that refuses it with the words waiting and their thread there):
             // settle again without moving them.
@@ -1703,6 +1713,97 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let asked = asked.lock().unwrap().clone();
         (result, asked, placed)
+    }
+
+    #[tokio::test]
+    async fn stay_here_keeps_every_speaker_whole_and_release_restores_normal_placing() {
+        let reply = json!({"action": "return", "thread_id": "T2", "point": "Paint the wall", "split": "rent is due Friday"});
+        let path = std::env::temp_dir().join(format!("e2a2o-stay-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let (placer_queue, mut queue) = tokio::sync::mpsc::unbounded_channel();
+        // No key: the pin is a choice, and placing or splitting must never ask a model.
+        let mut core = Arc::new(Core { placer_queue, placer_race: 1, ..Core::test(journal, world) });
+        core.commit(vec![Change::ThreadAdded { thread: thread("T1") }, Change::ThreadAdded { thread: thread("T2") }, Change::AiJoined { speaker: "Claude".into() }]);
+        core.focus("User", "T1");
+        core.add_thought("User", "Stay here");
+        assert_eq!(core.snapshot().stay_here.as_deref(), Some("T1"));
+        // Different speakers' active topics and later Focus changes never release or redirect the pin.
+        core.focus("Sam", "T2");
+        core.focus("Claude", "T2");
+        core.focus("User", "T2");
+        const TEXT: &str = "Paint the wall, and rent is due Friday.";
+        for speaker in ["User", "Sam", "Claude"] {
+            core.add_thought(speaker, TEXT);
+        }
+        core.add_typed("Claude", "okay");
+        core.add_thought("Sam", "New topic about the garden");
+        core.add_thought("User", "Add milk to the Topic T2 topic");
+        let pinned = core.snapshot();
+        assert_eq!(pinned.threads.len(), 2);
+        assert_eq!(pinned.thoughts.len(), 6, "commands aren't thoughts; every other turn stays whole");
+        assert_eq!(pinned.thoughts.iter().map(|t| (t.speaker.as_str(), t.text.as_str())).collect::<Vec<_>>(), [
+            ("User", TEXT), ("Sam", TEXT), ("Claude", TEXT), ("Claude", "okay"),
+            ("Sam", "New topic about the garden"), ("User", "Add milk to the Topic T2 topic"),
+        ], "the original turns stay whole and in arrival order");
+        for t in &pinned.thoughts {
+            assert!(t.placed);
+            assert_eq!(t.thread_id.as_deref(), Some("T1"));
+            assert_eq!(t.point, t.text, "no shortening or splitting");
+        }
+        assert!(queue.try_recv().is_err(), "pinned arrivals never enter the model's queue");
+        let (_, reopened) = crate::world::Journal::open(&path).unwrap();
+        assert_eq!(reopened.stay_here, pinned.stay_here);
+        assert_eq!(reopened.thoughts.len(), 6);
+
+        // A journal reopened with the pin still accepts words whole, before it has a key.
+        let replay_path = std::env::temp_dir().join(format!("e2a2o-stay-replay-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&replay_path).unwrap();
+        let replay = Core::test(journal, reopened);
+        let replayed = replay.keep("Claude", TEXT);
+        assert!(replay.snapshot().thoughts.iter().any(|t| t.id == replayed && t.placed && t.point == TEXT && t.thread_id.as_deref() == Some("T1")));
+
+        core.add_thought("Sam", "Let go");
+        assert!(core.snapshot().stay_here.is_none());
+        assert!(crate::world::Journal::open(&path).unwrap().1.stay_here.is_none());
+        Arc::get_mut(&mut core).unwrap().key = Some("good".into());
+        let id = core.keep("User", TEXT);
+        assert!(matches!(queue.try_recv(), Ok(super::Job::Place(queued)) if queued == id));
+        // The released arrival is queued normally. Apply the same model answer through the normal settlement:
+        // it can choose another topic and split again. No local HTTP listener is needed for this regression.
+        let thought = core.snapshot().thoughts.iter().find(|t| t.id == id).unwrap().clone();
+        let (changes, rest) = settle(&core.snapshot(), &thought, serde_json::from_value(reply).unwrap(), 0, false, true);
+        core.commit(changes);
+        let rest = rest.expect("normal placing splits again");
+        let released = core.snapshot();
+        let first = released.thoughts.iter().find(|t| t.id == id).unwrap();
+        assert_eq!(first.thread_id.as_deref(), Some("T2"), "the model's destination wins after release");
+        assert_eq!(first.point, "Paint the wall");
+        assert_ne!(first.text, TEXT);
+        assert!(released.thoughts.iter().any(|t| t.id == rest && t.text == "rent is due Friday."));
+        let journal = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(journal.lines().filter(|line| line.contains("\"type\":\"thought_split\"")).count(), 1, "only the released thought split");
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(replay_path);
+    }
+
+    #[tokio::test]
+    async fn a_queued_thought_obeys_a_new_pin_before_asking_for_a_key_or_splitting() {
+        let path = std::env::temp_dir().join(format!("e2a2o-stay-queued-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        core.commit(vec![Change::ThreadAdded { thread: thread("T1") }]);
+        let text = "The wall needs paint, and the rent is due Friday.";
+        let id = core.keep("Claude", text);
+        core.new_threads.ask("Claude");
+        core.new_threads.said("Claude", &id);
+        assert!(crate::stay::set(&core, "User", Some("T1")));
+        assert!(super::place(&core, &id, "unused: no model call", super::patience).await.unwrap().is_none());
+        let world = core.snapshot();
+        assert_eq!(world.thoughts.len(), 1);
+        assert_eq!(world.thoughts[0].point, text);
+        assert_eq!(world.thoughts[0].thread_id.as_deref(), Some("T1"));
+        assert!(!core.new_threads.starts(&id));
+        let _ = std::fs::remove_file(path);
     }
 
     /// What a burst's stand-in does with a thought, by a word in it: "stall" hangs on its first call (past the first

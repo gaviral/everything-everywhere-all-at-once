@@ -3,6 +3,7 @@ import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { ImportChats } from "./Import";
+import { StayHere, StayProvider } from "./StayHere";
 import { Away, useAway } from "./Away";
 import { usePicture } from "./pictures";
 import { actionLine, dismissable } from "./action-line";
@@ -1114,6 +1115,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
+    <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
@@ -1141,6 +1143,7 @@ export default function App() {
           <div>“Finish it”, “Later” or “Forget it” · the unfinished card's buttons</div>
           <div>“Expand [topic]” · opens it and every tangent · “Collapse this” · “Expand everything”</div>
           <div>“Pictures” or “Cards” · switch the view, as the buttons do · “Focus” or “Show all” · turn Focus on or off · “Focus on this” · the card you point at</div>
+          <div>“Stay here” · everyone's new thoughts stay whole in this topic · “Let go” or × on Staying here · release it</div>
           <div>“Where did I talk about [topic]?” or “Go to the one about [topic]” · “Recap” or “Recap this session” · “Make an app that…”</div>
           <div>“Export my map” · saves it as a Markdown file, as Export does</div>
           <div>“Add it to Reminders” · the proposed reminder · “Keep it” · the app just built · “Stop listening” · tap the mic to talk again</div>
@@ -1355,6 +1358,7 @@ export default function App() {
         });
       }} />
     </div>
+    </StayProvider>
     </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>
@@ -1412,6 +1416,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
+    <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
@@ -1548,6 +1553,7 @@ export default function App() {
         if (thread) goBack(thread);
       }} />
     </div>
+    </StayProvider>
     </WhyContext.Provider>
     </AttentionProvider>
     </MotionConfig>
@@ -1560,6 +1566,7 @@ function ShellSay() {
     <div>“Where was I?” · back to where you left off</div>
     <div>“Next one” or “Last one” · the topic after or before yours</div>
     <div>“New topic about …” · starts one with those words</div>
+    <div>“Stay here” · everyone's new thoughts stay whole here · “Let go” · release</div>
     <div>“Add … to …” · files the words there at once</div>
     <div>“Move that to …” · “Rename this to …” · “Delete this”</div>
     <div>“What just happened?” · opens History</div>
@@ -1858,6 +1865,7 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
         <div className="head-text">
           <div className="head-line">
             <ThreadTitle thread={thread} depth={depth} onOpen={toggle} />
+            <StayHere thread={thread.id} title={thread.title} />
             {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
             {isActive && <span className="chip now">active</span>}
             <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>

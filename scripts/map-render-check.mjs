@@ -143,6 +143,17 @@ try {
   assert.equal(world.active_by.you, world.active, "your place is the sample's");
 
   const page = draw({ world, snapshotRevision: 2 });
+  // Stay here is shared state, visible even when its card is folded; releasing restores its action.
+  const pinnedId = world.threads.find((t) => t.id !== world.active).id;
+  const pinnedWorld = apply(world, { type: "stay_changed", thread_id: pinnedId });
+  const staying = mapOf(draw({ world: pinnedWorld }));
+  assert.equal(count(staying, 'class="staying-here nodrag nopan"'), 1, "only the pinned topic wears the chip");
+  assert.ok(staying.includes(`aria-label="Let go of ${world.threads.find((t) => t.id === pinnedId).title}"`), "release names its topic");
+  const released = mapOf(draw({ world: apply(pinnedWorld, { type: "stay_changed", thread_id: null }) }));
+  assert.ok(!released.includes('class="staying-here'), "release takes down the chip");
+  assert.equal(count(released, 'class="stay-here"'), world.threads.length, "every topic offers Stay here");
+  const offline = mapOf(draw({ world: pinnedWorld, connected: false }));
+  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Let go of /, "disconnected release cannot silently disappear");
   assert.equal(junk(page), null, "the sample map");
   const opened = mapOf(page);
   const shown = text(opened);

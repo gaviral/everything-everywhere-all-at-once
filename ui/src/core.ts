@@ -151,6 +151,8 @@ export interface World extends AppsWorld {
   /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
   active_by: Record<string, string>;
+  /** Map-wide destination for whole new thoughts, independent of each speaker's focus. */
+  stay_here?: string | null;
   suggestions: Suggestion[];
   actions: Action[];
   merged: Record<string, string>;
@@ -200,6 +202,7 @@ type Change =
   | { type: "last_point"; thread_id: string; last_point: string }
   | { type: "thread_status"; thread_id: string; status: ThreadStatus; speaker: string }
   | { type: "active_changed"; thread_id: string; speaker: string }
+  | { type: "stay_changed"; thread_id: string | null }
   | { type: "thread_renamed"; thread_id: string; title: string }
   | { type: "thread_merged"; from: string; into: string }
   | MoveChange
@@ -386,6 +389,10 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
   const r = (id: string) => resolve(world, id);
+  if (raw.type === "stay_changed") {
+    const id = raw.thread_id ? r(raw.thread_id) : null;
+    return { ...world, stay_here: id && world.threads.some((t) => t.id === id) ? id : null };
+  }
   const c: Change =
     raw.type === "suggestion_added"
       ? { ...raw, suggestion: { ...raw.suggestion, thread_id: r(raw.suggestion.thread_id) } }
@@ -433,6 +440,7 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
         suggestions: world.suggestions.map((s) => ({ ...s, thread_id: move(s.thread_id)! })),
         actions: world.actions.map((a) => ({ ...a, thread_id: move(a.thread_id)! })),
         active: move(world.active),
+        stay_here: move(world.stay_here ?? null),
         active_by: Object.fromEntries(Object.entries(world.active_by).map(([who, id]) => [who, move(id)!])),
         merged: { ...world.merged, [c.from]: c.into },
         // Left behind, as the core does (`tidy::record`): a rename meant for `from` would rename `into`.
@@ -504,6 +512,7 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
         ...world,
         threads: world.threads.filter((t) => t.id !== c.thread_id),
         active: world.active === c.thread_id ? null : world.active,
+        stay_here: world.stay_here === c.thread_id ? null : world.stay_here,
         active_by: Object.fromEntries(Object.entries(world.active_by).filter(([, id]) => id !== c.thread_id)),
       };
     }
@@ -1132,6 +1141,7 @@ export function useCore(speaker?: string) {
       return sent;
     },
     focus: (thread_id: string) => sendOrWarn(JSON.stringify({ type: "focus", thread_id })),
+    stay: useCallback((thread_id: string | null) => sendOrWarn(JSON.stringify({ type: "stay", thread_id })), [sendOrWarn]),
     // "Try a sample map": the core fills an empty map with the sample, or the one named (core/src/sample.rs).
     sample: (name?: string) => sendOrWarn(JSON.stringify(name ? { type: "sample", name } : { type: "sample" })),
     setItem, approve, correct, unlink, tag, move, rename, remove,
