@@ -77,9 +77,58 @@ try {
   const loaders = Object.fromEntries(folders.filter((f) => existsSync(join(bricksDir, f, "index.tsx"))).map((f) => [`./bricks/${f}/index.tsx`, async () => ({})]));
   const { problems: across } = discover(infos, loaders);
   for (const [folder, wrong] of Object.entries(across)) for (const w of wrong) if (/^flag ?/.test(w) && / too$/.test(w) && checked.includes(folder)) fail(folder, w);
+  if (checked.includes("live-outline")) await liveOutlineRules(server);
   if (!only) await contractRules(server);
 } finally {
   await server.close();
+}
+
+/** Live outline's pure rules, with room names supplied exactly as map.rooms supplies them to the component. */
+async function liveOutlineRules(server) {
+  const { trimFillers, layoutOutline, QUIET_MS } = await server.ssrLoadModule("/src/bricks/live-outline/outline.ts");
+  const threads = Object.freeze([
+    Object.freeze({ id: "main", title: "The main line", parent_id: null, color: "green" }),
+    Object.freeze({ id: "side", title: "A side trip with details", parent_id: null, color: "pink" }),
+    Object.freeze({ id: "nested", title: "A smaller detour", parent_id: "side", color: "pink" }),
+  ]);
+  const landing = (threadId, n, at = n * 1000) => Object.freeze({ kind: "landed", thoughtId: `lo-${n}`, threadId, text: `Point ${n}`, at });
+  const points = (events, now = events.at(-1)?.at ?? 0) => layoutOutline(Object.freeze(events), threads, now).filter((row) => row.kind === "thought");
+  // 1. Main -> side trip -> main. The side's title is at most three words and its room color is carried through.
+  const first = [landing("main", 1), landing("side", 2), landing("main", 3)];
+  assert.deepEqual(points(first).map((row) => row.level), [0, 1, 0], "live-outline: return to the main line steps back out");
+  assert.deepEqual(points(first).map((row) => [row.color, row.chip]), [["green", null], ["pink", "A side trip…"], ["green", null]], "live-outline: room colors and short side-trip chips");
+  // 2. A tangent of the side trip steps in a second level, even when it isn't a child of the main thread.
+  assert.deepEqual(points([...first.slice(0, 2), landing("nested", 3), landing("main", 4)]).map((row) => row.level), [0, 1, 2, 0], "live-outline: a side trip's tangent is level two");
+  // 3. A tie keeps the thread that landed first; strictly more thoughts makes the other thread the main line.
+  const tied = [...first, landing("side", 4)];
+  assert.deepEqual(points(tied).map((row) => row.level), [0, 1, 0, 1], "live-outline: first thought wins a tie");
+  assert.deepEqual(points([...tied, landing("side", 5)]).map((row) => row.level), [1, 0, 1, 0, 0], "live-outline: a new main line re-indents every earlier thought");
+  assert.equal(points([...first, first[1]]).length, 3, "live-outline: a repeated event isn't another thought");
+  // 4. Trim only the listed fillers, with the remaining words in exactly their original order and case.
+  for (const [said, cleaned] of [
+    ["Um, uh, erm, the the plan is ready.", "the plan is ready."],
+    ["You know, we can try. I mean, we should.", "we can try. we should."],
+    ["We, you know, need it; I mean the budget.", "We need it; the budget."],
+    ["It is, I mean, kind of slow.", "It is kind of slow."],
+    ["Basically, it is like, a map; so yeah, let's go.", "it is a map; let's go."],
+    ["the the the plan", "the plan"],
+    ["um, so yeah.", ""],
+  ]) assert.deepEqual(trimFillers(said), { text: cleaned, trimmed: true }, `live-outline: trim ${JSON.stringify(said)}`);
+  for (const said of ["I like pizza", "kind of slow", "it's like a map", "Do you know the way?", "What I mean is this.",
+    "We basically need a map.", "Basically this works.", "We basically, need this.", "The album is ready; uh-oh.", "Spacing  stays."]) {
+    assert.deepEqual(trimFillers(said), { text: said, trimmed: false }, `live-outline: keep ${JSON.stringify(said)}`);
+  }
+  // 5. Quiet is two minutes since either words or a landing, including when no next landing arrives.
+  assert.equal(QUIET_MS, 120_000, "live-outline: two minutes");
+  assert.equal(points(first, 3000 + QUIET_MS - 1).length, 3, "live-outline: keep this talk until two quiet minutes");
+  const quiet = layoutOutline(first, threads, 3000 + QUIET_MS);
+  assert.deepEqual(quiet, [{ kind: "break", key: `talk:${3000 + QUIET_MS}`, at: 3000 + QUIET_MS }], "live-outline: clear the outline with a New talk divider at two minutes");
+  assert.deepEqual(points([...first, landing("side", 4, 3000 + QUIET_MS)]).map((row) => [row.thoughtId, row.level]), [["lo-4", 0]], "live-outline: a fresh talk has fresh counts");
+  const speaking = [landing("main", 1, 0), { kind: "words", at: 60_000 }, { kind: "words", at: 119_000 },
+    { kind: "words", at: 180_000 }, landing("side", 2, 200_000)];
+  assert.deepEqual(points(speaking).map((row) => row.level), [0, 1], "live-outline: ongoing words prevent a break between distant landings");
+  assert.equal(points(speaking, 200_000 + QUIET_MS).length, 0, "live-outline: a landing also restarts the quiet clock");
+  assert.deepEqual(points([{ kind: "opened", at: 0 }]), [], "live-outline: opening starts an empty talk");
 }
 
 /** The contract's rules, without a page (contract.ts, through Vite as the app runs them). */
