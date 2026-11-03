@@ -68,6 +68,7 @@ pub struct Core {
     catalog: catalog::Runtime,
     recap: recap::Runtime,
     apps: apps::Runtime,
+    guide: guide::Runtime,
     world: Mutex<Arc<World>>,
     journal: Mutex<Journal>,
     updates: broadcast::Sender<Outgoing>,
@@ -996,6 +997,7 @@ async fn main() -> anyhow::Result<()> {
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
+        guide: guide::Runtime::default(),
         world: Mutex::new(world.into()),
         journal: Mutex::new(journal),
         updates,
@@ -1462,12 +1464,18 @@ const GUEST: &str = "Guest";
 /// rooms), so another laptop that asks for it, or for no name, is "Guest": else it would get the host's
 /// live words, mic and notices.
 fn speaker_name(name: &str, here: bool) -> String {
-    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(24).collect();
-    match name.trim() {
+    let name = normalized_speaker_name(name);
+    match name.as_str() {
         name if !here && (name.is_empty() || name.eq_ignore_ascii_case("you")) => GUEST.into(),
         "" => "you".into(),
         name => name.into(),
     }
+}
+
+/// The room's spelling of a speaker identity, before assigning host or guest defaults.
+fn normalized_speaker_name(name: &str) -> String {
+    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(24).collect();
+    name.trim().into()
 }
 
 /// Journals a window's "off" mark on an Explain or a Recap. Anything else, or an id no answer could have, is
@@ -1481,7 +1489,12 @@ fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
 
 /// What a window needs to be current: the world, an app still being built, and this speaker's import in progress,
 /// message counting down and note card.
-fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
+fn subscribe_catch_up(core: &Core, speaker: &str) -> (broadcast::Receiver<Outgoing>, Vec<ServerMsg>) {
+    let (updates, jobs) = core.guide.subscribe(core);
+    (updates, catch_up_with_jobs(core, speaker, jobs))
+}
+
+fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<ServerMsg> {
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
     // card back with its Stop; one whose count ended while the window was away gets how it ended.
@@ -1490,6 +1503,7 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
+    messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
     // A note card still saving, or just ended, comes back too: its end and Open in Notes reach a window that dropped.
@@ -1502,6 +1516,11 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
         messages.push(ServerMsg::Notice { message });
     }
     messages
+}
+
+#[cfg(test)]
+fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
+    subscribe_catch_up(core, speaker).1
 }
 
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
@@ -1518,8 +1537,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let _window = messages::window(&core, &speaker);
     // In the call until it closes: told to the other windows now, and to this one in its catch-up (call.rs).
     let _here = call::join(&core, &speaker, ai);
-    let updates = core.updates.subscribe();
-    for message in catch_up(&core, &speaker) {
+    let (updates, replay) = subscribe_catch_up(&core, &speaker);
+    for message in replay {
         if write(&mut out, &message).await.is_err() { return; }
     }
     if renamed {
@@ -1661,6 +1680,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Hold { text, target, urgent }) => guide::hold(&core, &speaker, window, &mut pace, text, target, urgent),
                 Ok(ClientMsg::Tour { steps }) => guide::tour(&core, &speaker, window, &mut pace, steps),
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
+                Ok(ClientMsg::Answer { to, text }) => guide::answer(&core, &speaker, &mut pace, to, text),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
                 Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
                     if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
@@ -1686,10 +1706,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Level { level }) => call::level(&core, &speaker, level),
                 Ok(_) => {}
                 Err(e) => {
-                    if serde_json::from_str::<serde_json::Value>(text.as_str()).is_ok_and(|message| message["type"] == "job") {
-                        guide::malformed_job(&core, &speaker, &mut pace);
-                    } else {
-                        tracing::warn!("ignoring a message I can't read: {e}");
+                    match serde_json::from_str::<serde_json::Value>(text.as_str()).ok().and_then(|message| message["type"].as_str().map(str::to_owned)).as_deref() {
+                        Some("job") => guide::malformed_job(&core, &speaker, &mut pace),
+                        Some("answer") => guide::malformed_answer(&core, &speaker, &mut pace),
+                        _ => tracing::warn!("ignoring a message I can't read: {e}"),
                     }
                 }
             },
@@ -1714,6 +1734,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 /// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
 async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
+    let mut replayed = 0usize;
     loop {
         let update = tokio::select! {
             update = updates.recv() => update,
@@ -1725,18 +1746,26 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
             }
         };
         match update {
-            // Someone else's live words, mic and notices.
-            Ok(Outgoing { to: Some(to), .. }) if to != speaker => {}
-            // Its own guide, tour or job: only the other windows receive it (guide.rs).
-            Ok(Outgoing { message: ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. }, .. }) if from == window => {}
-            Ok(Outgoing { message, .. }) => {
+            Ok(Outgoing { to, message }) => {
+                let superseded = replayed > 0;
+                replayed = replayed.saturating_sub(1);
+                // Consume all pre-replay messages, forwarding non-jobs with the usual privacy rules.
+                if to.as_deref().is_some_and(|to| to != speaker) { continue; }
+                match &message {
+                    ServerMsg::Job { .. } if superseded => continue,
+                    // Its own guide, tour or job: only the other windows receive it (guide.rs).
+                    ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. } if *from == window => continue,
+                    _ => {}
+                }
                 if write(&mut out, &message).await.is_err() {
                     return;
                 }
             }
             // Fell too far behind to replay the missed changes: catch up as if just connected.
             Err(broadcast::error::RecvError::Lagged(_)) => {
-                for message in catch_up(&core, &speaker) {
+                let (pending, jobs) = core.guide.recover(&updates);
+                replayed = pending;
+                for message in catch_up_with_jobs(&core, &speaker, jobs) {
                     if write(&mut out, &message).await.is_err() {
                         return;
                     }
@@ -1791,6 +1820,7 @@ impl Core {
             catalog: Default::default(),
             recap: Default::default(),
             apps: Default::default(),
+            guide: Default::default(),
             world: Mutex::new(world.into()),
             journal: Mutex::new(journal),
             updates: broadcast::channel(1024).0,
