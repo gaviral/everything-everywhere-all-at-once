@@ -13,8 +13,17 @@ export type { Action, Anchor, MiniApp, Note, Position, Suggestion, Thought };
 
 /** A thread. A margin note (`actions.annotate`) is one too, a tangent anchored to words: under the point's thread, its
  *  thoughts the note and its replies, and `anchor` the words it's tied to. A view shows it beside those words; the
- *  map shows it as a branch. */
-export type Thread = MapThread & { readonly anchor?: Anchor };
+ *  map shows it as a branch. `topic`: the theme it's under, by name (`MapSnapshot.topics`), a branch its top thread's;
+ *  none until the AI sorts it. */
+export type Thread = MapThread & { readonly anchor?: Anchor; readonly topic?: string };
+
+/** A theme: a few top threads (threads with no parent: a spine each) that belong together, named by the AI in two or
+ *  three plain words, or by a person; `threads` is how many top threads it holds. On screen it's a "theme" (people call
+ *  one thread a topic); in code it stays `topic`. */
+export interface Topic {
+  readonly name: string;
+  readonly threads: number;
+}
 
 /** Where a brick shows:
  *  - view: another way to see the map; its name joins the Map and Palace switch, and it shows in the map's place
@@ -70,6 +79,12 @@ export interface MapSnapshot {
   readonly points: ReadonlyMap<string, number>;
   /** Each thread's room color (a thread and its branches share one): `var(--room-<color>)`, `var(--room-<color>-soft)`. */
   readonly rooms: ReadonlyMap<string, string>;
+  /** Every theme on the map, in the order they first come among the threads. The AI names them (6 at most) once the map
+   *  has 4 top threads, and sorts each new top thread within a minute; a person renames one or moves a thread
+   *  (`renameTopic`, `moveToTopic`), and the AI never undoes it. A thread's own is its `topic`. A view that colors by
+   *  theme takes a theme's place here as its color, so every view agrees. Empty until the AI sorts the map (or with no
+   *  key). */
+  readonly topics: readonly Topic[];
   /** What was placed by hand on a canvas, by id (a thread's card, or a thought's point): where (absolute canvas
    *  coordinates of its top-left), by whom (a person or an AI participant) and when. Only what someone placed is here;
    *  a view lays out the rest itself, and never moves these. */
@@ -123,6 +138,13 @@ export interface BrickActions {
    *  click takes a pointed hint down, a corner one goes once read; the newest replaces it. Your brick's name is on it.
    *  False when nothing showed: no words, more than a line, or a target that isn't a name. */
   hint(text: string, target?: string): boolean;
+  /** Renames theme `from` to `to` for every window (40 characters at most, spaces as one): every thread under it goes
+   *  with it, and a name already there (in any case) makes the two one. False when it couldn't go (no name, the same
+   *  name, the core away); the core says why if the theme has left the map. */
+  renameTopic(from: string, to: string): boolean;
+  /** Moves thread `threadId` under theme `topic` for every window: its top thread goes, with its branches, and stays
+   *  there whatever the AI says. A name already there (in any case) is that theme. False when it couldn't go. */
+  moveToTopic(threadId: string, topic: string): boolean;
 }
 
 /** Who acted: the brick that did (its id and name, as the Catalog lists it), or a person (by the name their thoughts

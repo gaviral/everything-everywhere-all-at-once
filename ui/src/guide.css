@@ -52,6 +52,7 @@
 
 /* The caption: subtitles at the stage, 18 px, the speaker's name first; on a plate of the page's own color, so it
    reads over whatever the map has under it and still looks like the page. */
+.guide-caption-slot { flex: none; width: 100%; min-width: 0; }
 .guide-caption {
   position: fixed;
   inset: 0 auto auto 0;

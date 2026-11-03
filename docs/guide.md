@@ -11,6 +11,14 @@ A window sends these over the WebSocket (`core/src/guide.rs` checks and relays t
 
 Every other window gets `{"type":"guide","kind":"point"|"caption"|"hold","target":…,"text":…,"by":"<sender's name>","at_ms":…}` (and `"urgent":true` on an urgent question); the window that sent it doesn't. Nothing is journaled. One window may send 4 a second at most; past that, past a cap, or with a target that isn't a name, only the sender's windows hear why, in a notice.
 
+### Tour relay
+
+A window sends `{"type":"tour","steps":[{"target":"thread:T1","text":"Start here."},{"text":"Then look around."}]}`. A tour has 1–20 ordered steps. Each text is normalized to one line (control characters and runs of whitespace become spaces, with surrounding whitespace removed), then must contain 1–140 Unicode characters. Each supplied target must pass the same name check as a point: 1–100 ASCII letters, digits, `:`, `-`, `_` or `.`. An omitted or null target means a caption alone. The complete tour is validated before anything is relayed; an invalid later step refuses the whole tour.
+
+Every other window, including another window belonging to the sender, receives `{"type":"tour","steps":[{"target":"thread:T1","text":"Start here."},{"target":null,"text":"Then look around."}],"by":"<sender's name>","at_ms":…}`. `at_ms` is the server's timestamp in Unix milliseconds. `{"type":"tour","steps":[]}` clears the sender's tour and is relayed with the same `by` and `at_ms` fields. The originating window receives no echo; the internal `from` window id is never serialized.
+
+One whole tour, including an empty clear, counts as one message against the shared per-window guide budget of 4 messages per second. Refusals use the existing notice route to the sender's windows, begin `Not shown: `, and are limited to one notice per second; other participants receive nothing. Tours are never journaled, do not change the map or enqueue model work, and are not retained for reconnect. This job implements relay only; window playback is left for the next job.
+
 ## What the window shows
 
 - **The caption:** bottom center, just above where you type (the stage; on today's layout, above the dock). The speaker's name first, ✦ and purple for an AI participant's. Markdown as on the map: bold, italics, code. At most two lines at a time. A longer caption shows page by page, whole sentences where they fit. Each page stays for a slow reader's time for its words, 4 s at least, which also outlasts it being spoken. Time counts only while the page shows. The pointer on it holds it. The next caption replaces it.

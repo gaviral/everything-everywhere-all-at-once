@@ -199,6 +199,10 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const [selecting, setSelecting] = useState<{ key: string; thoughtId: string } | null>(null);
   const [picking, setPicking] = useState<Picking | null>(null);
   const [pointing, setPointing] = useState<{ thread: string } | null>(null);
+  // A spine moved under another topic, shown there at once until the map says so (a refused move lets go).
+  const [moving, setMoving] = useState<Record<string, string>>({});
+  // The named topic a carried spine is over, while it's carried: dropped, it goes under it.
+  const [dropTo, setDropTo] = useState<string | null>(null);
   const touched = useRef(0);
   const timers = useRef(new Set<number>());
   useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
@@ -296,10 +300,23 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   // Your thoughts on their way: a slot each, under the tip of the thread you're on.
   const slots = useMemo(() => map.thoughts.filter((t) => !t.placed && !t.thread_id && t.speaker === map.me).slice(-SLOTS_MAX).map((t) => t.id), [map.thoughts, map.me]);
   const slotKey = slots.join("|");
-  const threads = useMemo(() => (notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads), [map.threads, notes.anchored]);
+  const threads = useMemo(() => {
+    const shown = notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads;
+    return Object.keys(moving).length ? shown.map((t) => (moving[t.id] && t.topic !== moving[t.id] ? { ...t, topic: moving[t.id] } : t)) : shown;
+  }, [map.threads, notes.anchored, moving]);
+  const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
   const layout = useMemo(() => place({ threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, speakers: map.speakers, active: map.active, slots, landing, margins: notes.margins, opened, narrow }),
-  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow]);
+    me: map.me, speakers: map.speakers, active: map.active, slots, landing, margins: notes.margins, opened, narrow, topics: topicNames }),
+  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames]);
+  // A move the map now shows, or one that never came (refused, or the core away), stops being held.
+  useEffect(() => {
+    const ids = Object.keys(moving);
+    if (!ids.length) return;
+    const there = ids.filter((id) => map.threads.find((t) => t.id === id)?.topic === moving[id]);
+    if (there.length) setMoving((was) => Object.fromEntries(Object.entries(was).filter(([id]) => !there.includes(id))));
+    const timer = window.setTimeout(() => setMoving({}), 4000);
+    return () => window.clearTimeout(timer);
+  }, [map.threads, moving]);
   const hereKey = map.active ? layout.tips.get(map.active) : undefined;
   const here = hereKey ? layout.byKey.get(hereKey) : undefined;
   const slotsHere = map.active ? layout.slots.get(map.active) ?? [] : [];
@@ -567,25 +584,30 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       setPicking({ key: item.key, thoughtId, quote: quote ?? item.text ?? "", x: element.left - frameBox.left + G.textX, y: element.top - frameBox.top + (item.lines?.length ?? 1) * (item.look?.line ?? G.pointLine), typing: true });
     },
     unfold: (margin) => setOpened((was) => { const next = new Set(was); if (next.has(margin)) next.delete(margin); else next.add(margin); return next; }),
-  }), [actions, put, shelf.items, notes.margins, layout, area]);
+    topics: topicNames,
+    renameTopic: (from, to) => { actions.renameTopic(from, to); },
+    moveToTopic: (thread, topic) => { if (actions.moveToTopic(thread, topic)) setMoving((was) => ({ ...was, [thread]: topic })); },
+  }), [actions, put, shelf.items, notes.margins, layout, area, topicNames]);
 
   // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
   const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
   const datas = useMemo(() => new Map(layout.items.map((item): [string, ItemData] => [item.key, {
     item, here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
-    dim: pointing ? item.thread !== pointing.thread : !!focusTopic && item.topic !== focusTopic,
+    // A topic's header is where things are, never dimmed.
+    dim: item.kind === "group" ? false : pointing ? item.thread !== pointing.thread : !!focusTopic && item.topic !== focusTopic,
+    hot: item.kind === "group" && !!dropTo && item.group === dropTo,
     // A closed card is the slot of the tangent you're on (its points are folded inside it).
     arriving: arriving && item.thoughts?.includes(arriving) ? arriving
       : item.kind === "card" && !item.open && item.thread === map.active && slots.length ? slots[0] : null,
     cut: camera.cut === item.key, selecting: selecting?.key === item.key,
-  }])), [layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey]);
+  }])), [layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
     id: item.key, type: "item", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
-    draggable: item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin", selectable: false, focusable: false, connectable: false,
+    draggable: item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin" && item.kind !== "group", selectable: false, focusable: false, connectable: false,
     // Heads over points: far out, a topic's title covers the top of its own spine (in reach of a point, never at it).
-    zIndex: (item.kind === "notch" || item.kind === "slot" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)
+    zIndex: (item.kind === "notch" || item.kind === "slot" || item.kind === "group" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)
       + (item.pinned ? 5 : 0) + (group?.has(item.key) ? 20 : 0),
   }));
 
@@ -601,6 +623,17 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
   }, [layout, map.positions, map.connected, actions]);
   const pointer = (event: MouseEvent | TouchEvent) => ("touches" in event ? event.changedTouches[0] : event);
+  /** The named topic whose columns a carried spine is over (anywhere over its header or its columns, a little past
+   *  either end), when it isn't the spine's own: dropped there, the spine goes under it. Only a spine laid out by topic,
+   *  and only while two or more topics are named. */
+  const topicUnder = (event: MouseEvent | TouchEvent, item: Item | undefined) => {
+    if (!item || item.kind !== "head" || layout.groups.length < 2) return null;
+    const { clientX, clientY } = pointer(event);
+    const at = flow.screenToFlowPosition({ x: clientX, y: clientY });
+    const over = layout.groups.find(({ box }) => at.x >= box.x - G.laneGap / 2 && at.x <= box.x + box.w + G.laneGap / 2
+      && at.y >= box.y - G.groupGap * 3 && at.y <= box.y + box.h + G.rowGap * 3);
+    return over && over.name && over.name !== item.group ? over.name : null;
+  };
   const overShelfAt = (event: MouseEvent | TouchEvent) => {
     const box = shelfRef.current?.getBoundingClientRect();
     const { clientX, clientY } = pointer(event);
@@ -673,18 +706,30 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       <ReactFlow<ItemNode>
         className="spine-flow" nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
-        onNodeDrag={(event) => setOverShelf(overShelfAt(event))}
+        onNodeDrag={(event, node) => {
+          const shelfHot = overShelfAt(event);
+          setOverShelf(shelfHot);
+          const to = shelfHot ? null : topicUnder(event, layout.byKey.get(node.id));
+          setDropTo((was) => (was === to ? was : to));
+        }}
         onNodeDragStop={(event, node) => {
           const item = layout.byKey.get(node.id);
           const was = grip.current;
           grip.current = null;
           setDrag(null);
           setOverShelf(false);
+          setDropTo(null);
           if (!item) return;
+          const to = overShelfAt(event) ? null : topicUnder(event, item);
           // Onto the shelf: kept there, and its place on the canvas is what it was before the drag.
           if (overShelfAt(event)) {
             keep(item.id);
             if (was?.id === item.id) put(item.id, was.was?.x ?? null, was.was?.y ?? null);
+          } else if (to) {
+            // Onto another topic's columns: it goes under that topic, laid out there with the rest (placed by hand before,
+            // it's laid out now: that's where it was dropped).
+            put(item.id, null, null);
+            acts.moveToTopic(item.thread, to);
           } else put(item.id, node.position.x, node.position.y);
         }}
         onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}

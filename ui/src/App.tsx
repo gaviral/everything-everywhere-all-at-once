@@ -62,6 +62,7 @@ import { Guide } from "./Guide";
 import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
+import { useShellCountdownPlacement } from "./shell/countdown";
 import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
@@ -376,6 +377,7 @@ export default function App() {
   // In the new shell the stage floats above the status line: what floats over the stage (Tiny transcript's words, until
   // they move into the status line) keeps clear of all of it.
   useHeightVar(dockRef, "--dock-height", true, SHELL2 ? 36 : 0);
+  useShellCountdownPlacement(SHELL2);
   const dockRoom = useDockRoom(dockRef);
   // The map's tools stick right under the header, whatever height it wraps to, and a card brought to the top
   // (Back to active, Finish it, a Palace tile) stops under both.

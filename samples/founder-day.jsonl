@@ -102,3 +102,4 @@
 {"type":"thread_touched","thread_id":"T7","last_point":"Team lunch could surface hiring concerns","at_ms":1793728140000}
 {"type":"thread_status","thread_id":"T7","status":"dropped"}
 {"type":"thread_picture","thread_id":"T7","path":"/images/T7-3232b4cafdc24b1e9f2cef71006f3042-small.webp"}
+{"type":"topics_assigned","assigned":[{"thread_id":"T1","topic":"Fundraising"},{"thread_id":"T2","topic":"Team"},{"thread_id":"T7","topic":"Team"},{"thread_id":"T3","topic":"Product"},{"thread_id":"T8","topic":"Product"},{"thread_id":"T5","topic":"Family"}]}
