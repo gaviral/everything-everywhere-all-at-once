@@ -157,8 +157,15 @@ function inspectCountdown() {
   if (!card) return ["countdown: missing card"];
   if (!camera) errors.push("countdown: missing camera corner on populated Canvas");
   const inside = (r) => r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
+  const root = getComputedStyle(document.documentElement);
+  const edge = parseFloat(root.getPropertyValue("--shell-edge")), gap = parseFloat(root.getPropertyValue("--shell-corner-gap"));
   if (!inside(card)) errors.push("countdown: card outside viewport");
-  if (camera && (card.bottom > camera.top - 7.5 || Math.abs(card.left - camera.left) > 0.5)) errors.push("countdown: card not above left camera corner with 8px clearance");
+  if (camera) {
+    // A stage that fills the window leaves no room above the camera: the card then stays on screen, at the top edge.
+    const room = camera.top - gap - card.height >= edge - 0.5;
+    if (Math.abs(card.left - camera.left) > 0.5 || (room && card.bottom > camera.top - 7.5)) errors.push("countdown: card not above left camera corner with 8px clearance");
+    if (!room && Math.abs(card.top - edge) > 0.5) errors.push("countdown: card with no room above the camera is not at the top edge");
+  }
   for (const e of document.querySelectorAll(".shell-stage,.shell-composer,.shell-bl")) {
     const r = e.getBoundingClientRect();
     if (r.width && r.height && card.left < r.right && card.right > r.left && card.top < r.bottom && card.bottom > r.top) errors.push(`countdown: card overlaps ${e.className}`);
@@ -166,8 +173,7 @@ function inspectCountdown() {
   const editor = document.querySelector(".countdown-editor");
   if (editor) {
     const r = editor.getBoundingClientRect();
-    const s = getComputedStyle(editor), root = getComputedStyle(document.documentElement);
-    const edge = parseFloat(root.getPropertyValue("--shell-edge")), gap = parseFloat(root.getPropertyValue("--shell-corner-gap"));
+    const s = getComputedStyle(editor);
     const chrome = [s.paddingTop, s.paddingBottom, s.borderTopWidth, s.borderBottomWidth].reduce((sum, value) => sum + parseFloat(value), 0);
     const heading = editor.querySelector(".countdown-top").getBoundingClientRect().height;
     const control = Math.max(...[...editor.querySelectorAll("input,button")].map(e => e.getBoundingClientRect().height));
@@ -197,11 +203,15 @@ for (const scene of scenes) {
           try {
             browser = await openPage("about:blank", { width, height });
             await browser.page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width === 390 });
-            if (scene.name === "countdown") await browser.page("Page.addScriptToEvaluateOnNewDocument", { source: `
-              localStorage.setItem("e2a2o.bricks", JSON.stringify({ countdown: true }));
-              localStorage.setItem("e2a2o.toured", "1");
-              localStorage.setItem("e2a2o.countdown", JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ label: "Deadline " + (i + 1), at: new Date(Date.now() + (i + 24) * 3600000).toISOString() }))));
-            ` });
+            if (scene.name === "countdown") {
+              // Without Page.enable, Chrome accepts the script below and never runs it: Countdown would stay off.
+              await browser.page("Page.enable");
+              await browser.page("Page.addScriptToEvaluateOnNewDocument", { source: `
+                localStorage.setItem("e2a2o.bricks", JSON.stringify({ countdown: true }));
+                localStorage.setItem("e2a2o.toured", "1");
+                localStorage.setItem("e2a2o.countdown", JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ label: "Deadline " + (i + 1), at: new Date(Date.now() + (i + 24) * 3600000).toISOString() }))));
+              ` });
+            }
             await browser.page("Page.navigate", { url });
             if (!await browser.until(`document.readyState === "complete" && !!document.querySelector(".app.shell")`, 10000)) throw new Error("shell page did not load");
             const content = scene.world.threads.length ? ".spine-frame" : ".shell-welcome";
@@ -229,6 +239,11 @@ for (const scene of scenes) {
             await settle(); await sleep(200);
             await check(where); runs++;
             if (scene.name === "countdown") {
+              if (!await until('!!document.querySelector(".countdown-card")', 3000)) {
+                record(where, ["countdown: card never rendered"]);
+                continue;
+              }
+              await settle();
               const geometry = async (suffix = "") => record(where + suffix, await evaluate(`(${inspectCountdown.toString()})()`));
               const press = async (key, code, keyCode) => {
                 await page("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: keyCode, ...(key === "Enter" ? { text: "\r" } : {}) });
@@ -278,7 +293,10 @@ for (const scene of scenes) {
               await toggle(false);
               if (!await until('!document.querySelector(".countdown") && ![...document.documentElement.style].some(name => name.startsWith("--shell-countdown-"))', 2000)) record(where, ["countdown: off left stale placement"]);
               await toggle(true);
-              if (!await until('!!document.querySelector(".countdown-card")', 2000)) record(where, ["countdown: on did not remount"]);
+              if (!await until('!!document.querySelector(".countdown-card")', 3000)) {
+                record(where, ["countdown: on did not remount"]);
+                continue;
+              }
               await settle(); await settle(); await geometry(" remounted");
               await open(); await geometry(" remounted editor");
             }
