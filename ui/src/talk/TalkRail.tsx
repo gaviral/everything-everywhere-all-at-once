@@ -1,15 +1,15 @@
-// STAND-IN (lane L1): the Talk tab in a rail of its own, behind ?shell=2, until the shell's rail (Talk · History ·
+// STAND-IN (lane L1): the Talk tab in a rail of its own, in the shell, until the shell's rail (Talk · History ·
 // Catalog · Settings) hosts <Talk /> and its corners carry the join code, the people and Leave. Then this file goes.
 // In a call only: open on a wide screen once two people are here (closed when it's you and an AI participant), a sheet
 // on a phone, and a pill to bring it back when closed, with how many turns wait unread.
 import { useEffect, useState } from "react";
 import type { BrickHost } from "../BrickSlot";
 import { copyInvite, useJoin, useLeave } from "../room";
+import { SHELL2 } from "../shell/flag";
 import { inCall, peopleHere, shownCode, useCall } from "./call-core";
 import { Talk, TALK } from "./Talk";
 import { turnIndex, turnsOf, unreadOf, newerMark } from "./turns";
 
-const SHELL2 = typeof location !== "undefined" && new URLSearchParams(location.search).get("shell") === "2";
 const OPEN_KEY = "e2a2o.talk.open";
 const PHONE = "(max-width: 560px)";
 

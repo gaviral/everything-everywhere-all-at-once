@@ -3,7 +3,7 @@
 // each person has read, a catch-up for what you missed, replies tied to the words they answer (margin notes, through
 // `actions.annotate`, so the map shows them too), and how far the Friend may interrupt. It reads the map as a brick
 // does and the call as the core tells it (call-core.ts). The rail's Talk tab once the shell has one; until then
-// TalkRail.tsx stands in behind ?shell=2.
+// TalkRail.tsx stands in under the shell.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";

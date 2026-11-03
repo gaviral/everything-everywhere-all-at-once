@@ -1023,7 +1023,7 @@ export default function App() {
   useEffect(() => {
     for (const notice of core.takeNotices()) brickHost.emit("notice", { ...notice, text: noticeText(notice.text) });
   });
-  // The revamped shell's own state (?shell=2, shell/): the rail's tab, the built-ins' switches, History, the mode.
+  // The shell's own state (shell/): the rail's tab, the built-ins' switches, History, the mode.
   const listeningOn = !SHELL2 || builtIns.has("listening");
   const [railTab, setRailTab] = useState<RailTab | null>(null);
   const catalogOpen = useCatalogOpen();
@@ -1109,7 +1109,7 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Today's page; the new shell (?shell=2) follows it.
+  // The classic page (`?shell=1`, kept for one release; `?cards` too), and the shell after it.
   if (!SHELL2) return (
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
@@ -1360,7 +1360,7 @@ export default function App() {
     </MotionConfig>
   );
 
-  // The new shell (?shell=2, shell/): four corners, the stage, the status line, the rail.
+  // The shell (the default, shell/): four corners, the stage, the status line, the rail.
   const empty = world.threads.length === 0;
   const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
   // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.

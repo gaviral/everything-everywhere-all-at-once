@@ -1,4 +1,4 @@
-/* The Talk tab (Talk.tsx) and, behind ?shell=2, its stand-in rail (TalkRail.tsx). Today's tokens, with the revamp's
+/* The Talk tab (Talk.tsx) and, in the shell, its stand-in rail (TalkRail.tsx). Today's tokens, with the revamp's
    where the shell defines them (L1): ink for people, blue for you and the read line, purple for the AI, red for Stop
    only. Two sizes of type: 13 for turns and labels, 11 for times, states and meta. No motion. */
 .talk {
@@ -93,7 +93,7 @@ button.talk-time:hover { color: var(--ink); text-decoration: underline; }
 .talk-level-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .talk-meter-says { margin: 0; color: var(--muted); font-size: 11px; line-height: 16px; }
 
-/* STAND-IN (L1): the rail and its pill, behind ?shell=2, until the shell's rail hosts Talk. */
+/* STAND-IN (L1): the rail and its pill, in the shell, until the shell's rail hosts Talk. */
 .talk-rail { position: fixed; z-index: 30; top: calc(var(--header-height, 64px) + 8px); right: 16px; bottom: calc(var(--dock-height, 112px) + 12px);
   display: flex; flex-direction: column; width: 360px; overflow: hidden; border: 1px solid var(--line); border-radius: 18px;
   background: var(--surface-2, var(--card)); box-shadow: var(--shadow); }

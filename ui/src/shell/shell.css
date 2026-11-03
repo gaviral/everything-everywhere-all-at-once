@@ -1,6 +1,6 @@
-/* The revamped shell (?shell=2): four corners and no header bar, the stage at the bottom center, the status line flush
+/* The shell, the default page: four corners and no header bar, the stage at the bottom center, the status line flush
    at the bottom, the rail at the right. Solid surfaces (no blur over a panning canvas); six type sizes (11 13 15 18 24
-   32); weights 400 500 600. Every rule is scoped to html.shell2, so today's page is untouched. Tokens: styles.css. */
+   32); weights 400 500 600. Every rule is scoped to html.shell2, so the classic page (?shell=1) is untouched. Tokens: styles.css. */
 
 html.shell2, html.shell2 body { background: var(--space); }
 html.shell2 body { font-size: 15px; letter-spacing: -.003em; }
