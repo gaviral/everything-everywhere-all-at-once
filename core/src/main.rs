@@ -2751,6 +2751,66 @@ mod tests {
     }
 
     #[test]
+    fn the_link_to_share_is_the_address_a_guest_can_open() {
+        let room = Room::from("k7m2x9qp");
+        let guest = link("192.168.1.9:51000", "192.168.1.5:4321");
+        let host = Some("192.168.1.5:4321");
+        assert_eq!(super::invite(&room, guest, host), "http://192.168.1.5:4321/?room=k7m2x9qp");
+        assert!(super::invite(&room, Link { tls: true, ..guest }, host).starts_with("https://"));
+
+        let here = link("127.0.0.1:50000", "127.0.0.1:4321");
+        let invite = super::invite(&room, here, Some("localhost:4321"));
+        assert!(invite.starts_with("http://"), "{invite}");
+        assert!(invite.ends_with(":4321/?room=k7m2x9qp"), "{invite}");
+        assert!(!invite.contains("localhost") && !invite.contains("127.0.0.1"), "{invite}");
+
+        let tunnel = crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com/").unwrap();
+        let origin = tunnel.origin().to_string();
+        let room = Room { tunnel: Some(tunnel), ..room };
+        let invite = super::invite(&room, here, Some("localhost:4321"));
+        assert!(invite.starts_with(&origin), "{invite}");
+        assert!(invite.ends_with("/?room=k7m2x9qp"), "{invite}");
+    }
+
+    #[tokio::test]
+    async fn only_a_member_hears_the_join_code() {
+        let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let core = Arc::new(Core { room: Some(Room::from("k7m2x9qp")), ..Core::test(journal, world) });
+        let routes = axum::Router::new()
+            .route("/room", axum::routing::get(super::room_info))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate))
+            .with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(5)).build().unwrap();
+        let response = client.get(format!("http://{address}/room")).header("host", address.to_string()).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let member: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(member["member"], true);
+        assert_eq!(member["code"], "k7m2x9qp");
+        assert!(member["invite"].as_str().unwrap().ends_with("/?room=k7m2x9qp"));
+
+        // A loopback socket is always this machine: exercise the guest decision and handler directly.
+        let guest = link("192.168.1.9:51000", "192.168.1.5:4321");
+        let host = "192.168.1.5:4321";
+        let access = access(true, guest, Some(host), None, false);
+        assert_eq!(access, Access::Page);
+        let mut request = axum::http::Request::builder().uri("/room").header("host", host).body(axum::body::Body::empty()).unwrap();
+        request.extensions_mut().insert(access);
+        let join = axum::extract::Query::<super::Join>::try_from_uri(request.uri()).unwrap();
+        let axum::Json(non_member) = super::room_info(axum::extract::State(core), axum::extract::ConnectInfo(guest), join, request).await;
+        assert_eq!(non_member["member"], false);
+        assert_eq!(non_member.get("code"), Some(&serde_json::Value::Null));
+        assert_eq!(non_member.get("invite"), Some(&serde_json::Value::Null));
+
+        server.abort();
+        let _ = server.await;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn alone_only_this_machines_pages_get_in() {
         let here = link("127.0.0.1:50000", "127.0.0.1:4321");
         assert_eq!(access(false, here, Some("localhost:4321"), Some("http://localhost:4321"), false), Access::Map);

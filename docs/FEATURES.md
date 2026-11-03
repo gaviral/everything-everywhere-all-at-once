@@ -229,6 +229,8 @@ Choose Import chats (top right), then a ChatGPT or Claude `conversations.json` e
 
 `./run.sh room` sets a fresh 8-character code and puts the core on the local network; without a room it answers only this laptop. A laptop without the code gets only the page, to type the code in, not the map or the pictures. Every window streams its mic through the host's core, one Voice Transcribe session per window, under that person's name. Only the host's own window can approve actions, since they land in the host's apps.
 
+In a call, the Talk tab (behind `?shell=2` for now) shows who's here and what each is doing: speaking, mic on, here or left. What was said appears as messages; whoever has the floor shows "Speaking now…", never their live words. A read line moves as you read, with marks for where each other person has read. Catch up takes you to what you missed; a late joiner might see "Joined 7:36 · 9 turns before you". Replies on picked words become margin notes. With the Friend here, its interruption level is Glance · Hand · Note · Speak · Stop (Speak by default). The Room menu has the join code, Copy link and Leave; Talk has the code to copy and Leave, on a phone too.
+
 ### Places on the canvas
 
 Any window, a person's or an AI participant's, can put a thread's card or a thought's point anywhere on the canvas, and every window gets it; no place calls a model. Over the WebSocket:
