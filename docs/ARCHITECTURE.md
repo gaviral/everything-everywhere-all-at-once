@@ -6,7 +6,7 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 
 ```
 Browser, one page per window (ui/src)
-  App.tsx        map, dock, header, unfinished-thought card
+  App.tsx        map and shared state/actions; legacy header/dock by default, shell integration with `?shell=2` (below)
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   pictures.ts    the one picture-slot rule (map, unfinished card, Palace): letter until decoded, capped refetches
@@ -57,11 +57,21 @@ Browser, one page per window (ui/src)
   BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
   work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to bricks as `map.jobs` (the Work spine's)
   Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
+  shell/         the optional `?shell=2` layout; without the flag the legacy header and dock remain the default
+    flag.ts      SHELL2, CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core bricks are built in
+    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Catalog wording
+    parts.tsx    Icon, Keycap, Stamp and Mode; mod and modAria for platform-specific key labels
+    names.ts     NAMES, FEATURE_NAMES, KIND_NAMES and FeatureName: shell labels, stamps and feature descriptions
+    features.ts  BUILT_INS and BuiltIn; useBuiltInsOn and switchBuiltIn, browser-local switches in e2a2o.features, shared through storage events
+    held.ts      HeldQuestion, holdQuestion, dropHeld and useHeld: this window's held stack, replacing by id; window.e2a2oHold exposes the same hold function
+    history.ts   useHistory, Entry and Undo: this window's newest 80 landings, notices and map updates with Undo; canUndo checks availability, modelWords and seconds format details
+    countdown.ts useShellCountdownPlacement measures camera, stage and controls to place the Countdown and size its editor through CSS properties
+    shell.css    layout and styles scoped to html.shell2: fixed corners, centered stage, bottom status line, right rail and phone sheet
   talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
     call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back
     turns.ts     thoughts as turns (a split turn together, margin notes with their words), unread turns and where each person has read
     Talk.tsx     people, messages, "Speaking now…", read marks, Catch up, replies on picked words and the Friend's interruption level; talk.css draws them
-    TalkRail.tsx a stand-in until the shell's rail hosts Talk: a rail or phone sheet, a pill with unread turns, the join code to copy and Leave
+    TalkRail.tsx the current call rail or phone sheet, mounted separately from the shell's Rail; hosts Talk, join-code copying and Leave, or a closed pill with unread turns; remembers open/closed in sessionStorage
   bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
     bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
@@ -70,13 +80,14 @@ Browser, one page per window (ui/src)
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
-  Guide.tsx      another participant pointing (a ring and a short arrow at a part named by its `data-guide`, clear of buttons and text, its caption) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)
+  Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the composer and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
+  guide-core.ts  this window's transient point, caption and held-question rules, pauses and local brick hints (docs/guide.md, held by `scripts/guide-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
-  guide.rs       a window's `point` and `caption`, checked and passed to every other window as it comes: never journaled, no model
+  guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the threads weighed, then where it went and why)
   chunks.rs      two parts said across a pause as one idea (the later linked to the earlier), assumptions that moved a thought
@@ -112,6 +123,33 @@ Core, one process (core/src: axum, tokio)
 ```
 
 Not listed: `main.tsx` (the page's entry), `vite-env.d.ts`, and tests kept beside the code (`*_tests.rs`, `*/tests.rs`). `node scripts/readme-check.mjs` fails when a source file is missing from this list.
+
+## The optional shell
+
+`shell/flag.ts` enables this layout only for `?shell=2`; it is not the default. `App.tsx` keeps the same core, map, mic, composer actions and brick host for both returns. Its shell return assembles the corners, map view, stage, held stack, status line and tabbed rail using the exports above. It opens on the Spine canvas, shows `Welcome` after an empty snapshot, and uses Catalog's Show actions for enabled alternate views. App owns the stage's cards, notice/map update, `#shell-caption` host and composer. It measures the shelf and held stack so the bottom-right stack and rail clear them, and invokes the Countdown placement hook. The existing `data-slot` markers and their layout-dependent presence are listed in [Bricks](bricks.md#slots).
+
+App connects Catalog requests to the Catalog tab, “what just happened?” to History, and help to Settings. `useHistory` records activity in this window from opening, with Show and available Undo actions; it is not a saved map log. The shell makes Spine, Bubble flight, Tiny transcript and Notice history built in through `CORE_BRICKS`; it uses History in place of mounting the Notice timeline panel. Other bricks and the built-in feature switches feed Catalog's rows.
+
+`Guide.tsx` supplies the held cards and caption content. It asks one waiting item after a 2.5 s natural pause with no unfinished draft or open dialog, while the page is visible and no caption is up. Urgent questions come first. The held card can ask now, wait for later or drop an item; talking over a caption returns its unread words to the stack. This state belongs to the receiving window, outside the saved map.
+
+The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`: the last 60 thoughts with nonempty text, oldest first, with speaker and time. In a call (`talk/call-core.ts`'s `inCall`), App removes that tab and closes it if selected; `talk/TalkRail.tsx` independently hosts the full `Talk` UI. TalkRail opens by default on a wide screen with at least two people, stays closed by default with one person and an AI participant, and uses a sheet on a phone. Its pill reopens it and shows unread turns. Both open rails use `data-slot="rail"`; the call rail and another shell tab can be mounted together.
+
+## Guide relay and runtime jobs
+
+`protocol.rs` defines the existing WebSocket messages; `main.rs` dispatches them to `guide.rs`. They do not change `World`, write the journal or start model work. The core adds the sender's room identity (`by`) and server time (`at_ms`). Live point/caption/hold, tour and job messages go to every window except the originating window, including other windows of the same speaker. Answers use the recipient route instead.
+
+| Sent by a window | Core behavior |
+|---|---|
+| `point { target?, caption? }` | Relays `guide` with `kind: "point"`. A target is an existing `data-guide` name to look up in the receiving page; the core validates its syntax, not whether it is on screen. Caption: at most 140 characters. Null or omitted target takes the sender's point down and discards its caption. |
+| `caption { text }` | Relays `guide` with `kind: "caption"`, no target; requires nonempty text, at most 400 characters. Guide draws it above the composer, or holds it while the person is busy. |
+| `hold { text, target?, urgent? }` | Relays `guide` with `kind: "hold"`; at most 140 characters, optional target for when asked. `urgent` moves it ahead of other waiting questions at the next pause. Empty text takes back that sender's held items and question being asked. Each receiving window owns the pause/held state; Guide projects its cards into `shell/held.ts` under `?shell=2`. |
+| `tour { steps }` | Validates the whole ordered list before relaying `tour`: at most 20 steps, each with nonempty text of at most 140 characters and an optional target. Empty steps clear the sender's tour. This is relay only; the current guide receiver handles `guide` messages, without tour playback. |
+| `job { id, title, status, result?, parent?, demo? }` | Relays a flat `job` update and retains the latest accepted state per id in core memory. Title: nonempty, at most 80 characters; result: at most 160. Status: running, done, failed or waiting; demo defaults false. Id and optional parent use the same syntax as target names. |
+| `answer { to, text }` | Normalizes `to` as a room speaker name (whitespace collapsed, controls removed, at most 24 characters), requires a nonempty recipient and text of at most 280 characters, then sends `answer { by, text, at_ms }` only to that recipient's windows, including the origin when answering oneself. It does not use screen-target syntax or broadcast the answer to the room. |
+
+Text is normalized to one line before length checks. Target names allow 1–100 ASCII letters, digits, `:`, `-`, `_` or `.`. All six message kinds share a limit of four accepted messages per second per window (a whole tour counts once); refusals go only to the sender's windows as `Not shown: …`, at most once a second. Malformed job/answer fields use that same refusal route.
+
+Points, captions, held questions, tours and answers are transient and have no reconnect replay. Jobs also never persist to disk, but survive window disconnects while the core runs: `guide::Runtime` retains at most 60 distinct ids in first-appearance order, replaces an existing id in place, and evicts the oldest row for a new id past the cap. `main.rs` subscribes and captures job replay under the publication lock, sends the snapshot and placing state before the latest jobs, then forwards newer updates. Lag recovery repeats that catch-up, skips queued jobs superseded by replay, and keeps forwarding buffered non-job messages, including recipient-only answers. Restarting the core clears the jobs. `ui/src/work-jobs.ts` keeps the connection's job list outside the map for `map.jobs`; `core.ts` resets it on each snapshot before replay, and start/end times derive only from states this window saw.
 
 ## State and the journal
 
