@@ -102,7 +102,7 @@ Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](doc
 
 ## Run it
 
-**Hosted sample:** follow the browser path above, sign in, and choose **Try a sample map**. After the sample loads, edit the map's URL to open the demonstrated shell: replace any existing `shell` parameter with `shell=2`; otherwise, append `?shell=2` (or `&shell=2` if there are already query parameters). Keep the other parameters and press Enter. Set this after sign-in and sample loading; do not rely on sign-in preserving query parameters. A fresh hosted sign-in and microphone check remain unverified.
+**Hosted sample:** follow the browser path above, sign in, and choose **Try a sample map**. The page that opens is the shell the video shows; nothing to add to the address. A fresh hosted sign-in and microphone check remain unverified.
 
 Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
@@ -128,9 +128,9 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 
 The first source build takes about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. When the terminal says `E2A2O core on`, open the URL on that line. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample`.
 
-**No key: a sample map.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. Try its Unfinished thought card, `j`/`k` and Enter, `/` to search, the Pictures view, and the “Did you mean BC Hydro?” question, which is written into the sample. Without a key the header says “No AI key”. `./run.sh sample founder` opens a founder's day.
+**No key: a sample map.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. Try its Unfinished thought card, `j`/`k` and Enter, `/` to search, and the “Did you mean BC Hydro?” question, which is written into the sample. Cards and Pictures start off: switch one on in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”. `./run.sh sample founder` opens a founder's day.
 
-After the local sample loads, edit its URL for the demonstrated shell: replace any existing `shell` parameter with `shell=2`; otherwise, append `?shell=2` (or `&shell=2` if there are already query parameters). Keep the other parameters and press Enter; the flag takes effect when the page loads. The usual URL is `http://localhost:4321/?shell=2`.
+The page that opens is the shell the video shows, at `http://localhost:4321/`. The classic page it replaced (a header across the top and a bottom bar) stays for one more release at `http://localhost:4321/?shell=1`.
 
 **With a key: watch the story build itself.**
 
@@ -141,7 +141,7 @@ node scripts/demo.mjs scripts/story-talk.jsonl      # in a second terminal: the 
 ```
 
 - Open the URL as soon as it says `E2A2O core on`, then start the talk. Every placement, tidy-up, picture and app is a live model call; allow 3 to 4 s a line.
-- A wrong or expired key is refused on the first call: the header says “AI key refused”, the app stops calling, and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart.
+- A wrong or expired key is refused on the first call: the status line says “AI key refused”, the app stops calling, and new thoughts wait, saved, until you fix `MODEL_API_KEY` and restart.
 - Speak it instead of typing it: `node scripts/voice.mjs scripts/story-talk.jsonl` says each line in a synthesized voice through the real speech path (macOS). The tune needs a loud voice, so say that line yourself.
 
 **Your own voice.** `./run.sh` (your map lives in `data/`), open http://localhost:4321, press the mic and talk, or type and press Enter. Say “what can I say?” for every command; [docs/COMMANDS.md](docs/COMMANDS.md) has them all.
@@ -186,7 +186,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 ## Accessibility
 
 - The first Tab stop is “Skip to Type a thought”; `?` opens Help, which lists every keyboard shortcut and spoken command; a focused point opens its words with Enter or Space.
-- The mic shows its state by shape as well as color; Reduce Motion is respected; at 200% zoom and up the header scrolls away and only the input box stays pinned.
+- The mic shows its state by shape as well as color; Reduce Motion is respected; at 200% zoom and up the corners, the input box and the status line stay in place.
 
 ## Privacy
 
