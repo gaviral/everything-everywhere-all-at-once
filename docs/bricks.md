@@ -58,6 +58,7 @@ Where each kind shows:
   - `asked`: something you asked for by voice or typing that a feature answers, only in your windows: `{ what: "notices" }` is "what just happened?". It never lands on the map.
   - `speaking`: in a call, someone took the floor or gave it back, `{ speaker, on, mine }` (yours too, `mine`): the core's word from their live words (`core/src/call.rs`), never the words themselves, which come with the turn's thought as it ends. Alone, never.
 - `brick`: its own `brick.json`.
+- `map.usage`: allowances from the core's `USAGE_FILE` (`updated`, `rows`) and its own rolling-hour model budget (`calls: { used, limit, at_ms }`). Null with no readable file or while disconnected; refreshed every 60 seconds and never journaled. The playground supplies null. Usage hides when null; [Architecture](ARCHITECTURE.md#usage-allowances) documents the file's shape and `core/src/usage.rs` reads it.
 
 Three conventions come with the page:
 - An element marked `data-thread={id}` is "this" while pointed at or focused (`this-card.ts`), so "rename this to …" works on it without calling `select`.
@@ -107,6 +108,7 @@ The Features page lists every feature by kind, each with its name, its line and 
 
 ## The features so far
 
+- `usage` (panel, off): a small top-right meter of remaining plan and model allowances, with each reading's as-of time and this core's rolling-hour call budget. `ui/src/bricks/usage/` contains `brick.json`, `index.tsx` and `usage.css`; `core/src/usage.rs` reads the optional `USAGE_FILE` every minute. With no readable file or connection the meter is hidden without an error. Toggle it on the Features page; `scripts/usage-check.mjs` checks it against a real core.
 - `level` (panel, off): the `?level` meter of the loudness readings the core hears, for setting a volume app's level. Moved here from `Level.tsx` unchanged: `?level` shows it, and without it nothing loads.
 - `brick-chip` (panel, off): a small chip naming a feature on each point that lands while it's on, anyone's, first in the point's own tools (left of Delete and Move), so it shows when they do: pointed at, or tapped on a phone. It's meant to name the feature that acted on a thought; `landed`'s `by` now says which, and for now it still names only itself. Kept for the visit; switched off, every chip goes.
 - `bubbles` (view, off, demo-safe): every topic as a bubble in a place of its own, sized by its points, floating gently (still under Reduce Motion); a landing ripples its bubble. A bubble opens its topic on the map. Once there are two or more themes, each bubble is tinted by its theme from a fixed set of six (none near the app's blue, amber, purple or red; checked for color blindness), with a legend of themes: pointing at one, or picking it, fades the other bubbles.

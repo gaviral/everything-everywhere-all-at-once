@@ -1018,7 +1018,7 @@ export default function App() {
     annotate: core.annotate,
     openCatalog: (id) => openCatalogAt(id ?? null),
     hint: showHint,
-  }, destination);
+  }, destination, core.usage);
   const bricksOn = useBricksOn();
   const builtIns = useBuiltInsOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.

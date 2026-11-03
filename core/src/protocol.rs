@@ -44,6 +44,8 @@ pub enum ServerMsg {
     /// Approving an action didn't add it; it is offered again, and the window shows `message` on its row.
     ActionFailed { id: String, message: String },
     Snapshot { world: std::sync::Arc<World> },
+    /// USAGE_FILE's allowances and this core's hourly calls, or no data. Replayed on joining, refreshed every minute.
+    Usage { data: Option<crate::usage::Snapshot> },
     Change { change: Change },
     /// The ready-to-send message card (messages.rs), to the asker's windows: `counting` with `in_ms` left (it sends
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.

@@ -4,7 +4,7 @@
 // and events each brick is handed (bricks/contract.ts). BrickSlot.tsx mounts them; Catalog.tsx switches them.
 import { useSyncExternalStore, type ComponentType } from "react";
 import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, Job, MapSnapshot, Speaker } from "./bricks/contract";
-import type { Note, Thought, World } from "./core";
+import type { Note, Thought, UsageSnapshot, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
@@ -189,7 +189,7 @@ const NO_JOBS: readonly Job[] = Object.freeze([]);
  *  margin note's thread with its `anchor`, each thread with its `topic`), `partial`, this tab's live words (core.ts
  *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on),
  *  and the helpers' jobs (work-jobs.ts: they're the connection's, not the world's). */
-export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS): MapSnapshot {
+export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS, usage: UsageSnapshot | null = null): MapSnapshot {
   const notes = world.notes ?? {};
   const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
@@ -209,6 +209,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     partial,
     connected,
     jobs,
+    usage,
   };
 }
 

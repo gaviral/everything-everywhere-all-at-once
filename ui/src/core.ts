@@ -92,6 +92,14 @@ export type Explanation = { text: string; failed: boolean };
 // An answer to "Why here?" (whyhere.tsx); pending until it comes, failed when there's none.
 export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
 
+/** USAGE_FILE's allowances, read by the core; the budget's own count has a separate, current timestamp. */
+export type UsageRow = { label: string; used_pct?: number; left?: string; spent_usd?: number; cap_usd?: number };
+export type UsageSnapshot = {
+  updated: string;
+  rows: readonly UsageRow[];
+  calls: { used: number; limit: number; at_ms: number };
+};
+
 // A view asked for by voice ("palace", "show the map", "let's focus", "show all"), or the "?" list ("what can I
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
 // mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
@@ -232,6 +240,7 @@ type ServerMsg =
   | RecapServerMsg
   | AppsServerMsg
   | { type: "snapshot"; world: World }
+  | { type: "usage"; data: UsageSnapshot | null }
   | { type: "change"; change: Change; speak?: boolean }
   | { type: "partial"; text: string }
   | { type: "status"; listening: boolean; note: string }
@@ -679,6 +688,7 @@ export function useCore(speaker?: string) {
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [mapChange, setMapChange] = useState<(TidyNote & { id: number }) | null>(null);
   const [partial, setPartial] = useState("");
   const [handoff, setHandoff] = useState("");
@@ -799,7 +809,11 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "usage":
+            setUsage(msg.data);
+            break;
           case "snapshot":
+            setUsage(null);
             resetJobs();
             setFound(null);
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
@@ -947,6 +961,7 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        setUsage(null);
         window.clearTimeout(handoffTimer);
         lastPartial = "";
         awaitingThought = false;
@@ -1042,6 +1057,7 @@ export function useCore(speaker?: string) {
     removeApp: (id: string) => send(JSON.stringify({ type: "remove_app", id })),
     appOutput: (id: string, sound: boolean) => send(JSON.stringify({ type: "app_output", id, sound })),
     world,
+    usage,
     sendCard,
     stopSend,
     sendCardGone,
