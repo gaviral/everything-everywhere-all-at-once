@@ -33,6 +33,9 @@
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
 //    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
+// Countdown, beyond that: its deadlines kept in this browser (a store that throws changes nothing), the nearer first as
+//    "<label> in 21 h 14 m" with past ones off, amber under three hours, a phone's one line with the label cut and the
+//    time kept, the editor by keyboard; in the app the card and its editor cover no control of the page.
 // The contract's own names (contract.ts), on a full run: its rules without a page (which brick added a thought, the
 //    threads a brick is handed with each note's anchor, a note as the window sends it, a hint as the guide shows it);
 //    in the playground, each event as a brick hears it and each action answered; in the app, the slots on today's
@@ -355,6 +358,199 @@ try {
   }
   // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
   await width(1280, 860);
+  // Countdown: a panel that keeps its deadlines in this browser (`e2a2o.countdown`). Its logic runs in the playground on
+  // a clock the check holds (and ticks by hand, as the 30 s timer and a return to the tab would): an empty store says
+  // "No deadlines" and Add (Enter opens the editor, Add adds a row, a change and Remove are kept, Esc gives focus back
+  // to the card); two deadlines and a past one show the nearer first, "<label> in 21 h 14 m" and "in 2 d 5 h", on a
+  // real button naming both, in plain ink, a saved instant shown in local time; the minutes round down ("in 60 min"
+  // never, "in 1 min" for the last); amber from under three hours, light and dark, nothing moving; the time brought up
+  // to date by the timer and by a return to the tab, past ones off; on a phone one line and the nearest only, a long
+  // label cut and its time kept; a store that throws still lets you add one and see it. In the app, where the page's own
+  // controls are, the card and its editor stay in the window and cover none of them, at 1440, 1024, 390 and 320 px.
+  if (checked.includes("countdown")) {
+    const where = "countdown";
+    const info = infos["./bricks/countdown/brick.json"];
+    if (info.kind !== "panel" || info.defaultOn !== false || info.demoSafe !== true || info.name !== "Countdown") fail(where, "brick.json: Countdown must be a demo-safe panel, off by default");
+    // What the check changes in this browser's storage, put back at the end.
+    const keys = ["e2a2o.countdown", "e2a2o.bricks", "e2a2o.toured"];
+    const saved = JSON.parse(await evaluate(`JSON.stringify(${JSON.stringify(keys)}.map((key) => localStorage.getItem(key)))`));
+    const fixed = Date.UTC(2030, 4, 7, 12);
+    const hour = 3_600_000, minute = 60_000;
+    const entry = (label, ms) => ({ label, at: new Date(fixed + ms).toISOString() });
+    let injected;
+    // The playground with this store (and its clock held at `fixed`, `window.countdownNow` to move it, `countdownTick` the
+    // brick's own 30 s timer) before the brick starts, or with its storage throwing.
+    const load = async (entries, throws = false) => {
+      // A script for every new document only runs once the Page domain is enabled.
+      await cdp("Page.enable");
+      if (injected) await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      ({ identifier: injected } = await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
+        localStorage.setItem("e2a2o.countdown", ${JSON.stringify(JSON.stringify(entries))});
+        window.countdownNow = ${fixed};
+        Date.now = () => window.countdownNow;
+        const interval = window.setInterval;
+        window.setInterval = (fn, ms, ...args) => {
+          if (ms === 30000) window.countdownTick = fn;
+          return interval(fn, ms, ...args);
+        };
+        ${throws ? `for (const method of ["getItem", "setItem"]) {
+          const original = Storage.prototype[method];
+          Storage.prototype[method] = function(key, ...args) {
+            if (key === "e2a2o.countdown") throw new Error("Storage unavailable");
+            return original.call(this, key, ...args);
+          };
+        }` : ""}
+      ` }));
+      await go(`${base}/bricks.html?brick=countdown&sample=empty`);
+      if (!await until(`!!document.querySelector(".countdown-card")`, 8000)) fail(where, "never mounted");
+      await settle();
+    };
+    /** Moves the held clock, and has the brick's timer fire. */
+    const tick = (ms) => evaluate(`window.countdownNow = ${fixed + ms}; window.countdownTick?.()`);
+    const nearest = () => evaluate(`document.querySelector(".countdown-nearest")?.textContent ?? null`);
+    const input = (selector, value) => evaluate(`(() => {
+      const field = document.querySelector(${JSON.stringify(selector)});
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, ${JSON.stringify(value)});
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    })()`);
+    const edit = async () => {
+      await evaluate(`document.querySelector(".countdown-card").focus()`);
+      // A key press that types ("\r") is the one a button answers with a click.
+      for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
+      if (!await until(`!!document.querySelector(".countdown-editor")`, 2000)) fail(where, "Enter doesn't open the editor");
+    };
+    const escape = () => evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    try {
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "America/Vancouver" });
+      await load([]);
+      if (!await evaluate(`document.querySelector(".countdown-card").textContent.includes("No deadlines") && document.querySelector(".countdown-add-label").textContent === "Add"`)) fail(where, "empty store doesn't show No deadlines and Add");
+      await edit();
+      if (!await evaluate(`document.activeElement === document.querySelector(".countdown-add")`)) fail(where, "empty editor doesn't focus Add");
+      await evaluate(`document.querySelector(".countdown-add").click()`);
+      if (!await until(`document.activeElement === document.querySelector('.countdown-field input[type="text"]')`, 2000)) fail(where, "a new row doesn't take focus in its label");
+      await input('.countdown-field input[type="text"]', "Feature freeze");
+      await input('.countdown-field input[type="datetime-local"]', "2030-05-08T10:15");
+      if (!await until(`JSON.parse(localStorage.getItem("e2a2o.countdown"))[0]?.label === "Feature freeze" && JSON.parse(localStorage.getItem("e2a2o.countdown"))[0]?.at === "2030-05-08T17:15:00.000Z"`, 2000)) fail(where, "changes aren't saved, or local time isn't converted correctly");
+      await evaluate(`document.querySelector(".countdown-remove").click()`);
+      if (!await until(`localStorage.getItem("e2a2o.countdown") === "[]" && !document.querySelector(".countdown-row") && document.activeElement === document.querySelector(".countdown-add")`, 2000)) fail(where, "Remove doesn't save, or doesn't leave focus on Add");
+      await escape();
+      if (!await until(`!document.querySelector(".countdown-editor") && document.activeElement === document.querySelector(".countdown-card")`, 2000)) fail(where, "Esc doesn't close and return focus");
+
+      await load([entry("Submission", 53 * hour), entry("Already done", -hour), entry("Feature freeze", 21 * hour + 14 * minute)]);
+      const lines = await evaluate(`[...document.querySelectorAll(".countdown-nearest, .countdown-next")].map((line) => line.textContent)`);
+      if (JSON.stringify(lines) !== JSON.stringify(["Feature freeze in 21 h 14 m", "Submission in 2 d 5 h"])) fail(where, `wrong order, formatting or expired deadline: ${JSON.stringify(lines)}`);
+      const accessible = await evaluate(`(() => { const b = document.querySelector(".countdown-card"); return b.tagName === "BUTTON" && b.getAttribute("aria-label").includes("Feature freeze in 21 h 14 m") && b.getAttribute("aria-label").includes("Submission in 2 d 5 h") && !document.querySelector(".countdown [aria-live], .countdown [role=status], .countdown [role=alert]"); })()`);
+      if (!accessible) fail(where, "needs a real button with the full text and no live announcements");
+      if (!await evaluate(`getComputedStyle(document.querySelector(".countdown-nearest")).color === getComputedStyle(document.querySelector(".countdown-card")).color`)) fail(where, "a distant deadline doesn't use plain ink");
+      await edit();
+      if (!await evaluate(`document.querySelector('input[type="datetime-local"]').value === "2030-05-09T10:00"`)) fail(where, "saved dates aren't displayed in local time");
+      await evaluate(`document.querySelector(".countdown-close").click()`);
+
+      // Where it changes unit: days only over 48 h; the minutes round down, never 60, never 0. (`left`: the time left.)
+      await load([entry("Later", 49 * hour)]);
+      for (const [left, text] of [[49 * hour, "2 d 1 h"], [48 * hour + minute, "2 d 0 h"], [48 * hour, "48 h 0 m"], [hour, "1 h 0 m"], [59.5 * minute, "59 min"], [30_000, "1 min"]]) {
+        await tick(49 * hour - left);
+        if (!await until(`document.querySelector(".countdown-nearest")?.textContent === ${JSON.stringify(`Later in ${text}`)}`, 2000)) fail(where, `with ${left / minute} min left it says ${JSON.stringify(await nearest())}, not "Later in ${text}"`);
+      }
+
+      // A phone: one line and the nearest only; a long label gives way and the time stays.
+      await load([entry("Submission", 53 * hour), entry("Feature freeze", 21 * hour + 14 * minute)]);
+      await width(390, 844);
+      const phone = await evaluate(`(() => {
+        const b = document.querySelector(".countdown-card"), r = b.getBoundingClientRect(), n = document.querySelector(".countdown-nearest");
+        return { next: getComputedStyle(document.querySelector(".countdown-next")).display, oneLine: n.getBoundingClientRect().height <= parseFloat(getComputedStyle(n).lineHeight) + 1,
+          fits: r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth + 1 };
+      })()`);
+      if (phone.next !== "none" || !phone.oneLine || !phone.fits) fail(where, `phone card isn't one line with only the nearest: ${JSON.stringify(phone)}`);
+      await edit();
+      if (!await evaluate(`(() => { const r = document.querySelector(".countdown-editor").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`)) fail(where, "phone editor leaves the screen");
+      await load([entry("A deadline named with far more words than one line of a phone's width can hold", 2 * hour)]);
+      const long = await evaluate(`(() => {
+        const card = document.querySelector(".countdown-card").getBoundingClientRect(), label = document.querySelector(".countdown-label"), time = document.querySelector(".countdown-time");
+        return { cut: label.scrollWidth > label.clientWidth, timeInside: time.getBoundingClientRect().right <= card.right && time.getBoundingClientRect().left >= card.left, time: time.textContent };
+      })()`);
+      if (!long.cut || !long.timeInside || long.time !== "in 2 h 0 m") fail(where, `a long label should be cut and its time kept: ${JSON.stringify(long)}`);
+      await width(1280, 860);
+
+      await load([entry("Soon", 3 * hour), entry("Later", 5 * hour)]);
+      if (await evaluate(`!!document.querySelector(".countdown-nearest.countdown-soon")`)) fail(where, "amber begins before under three hours");
+      await tick(minute);
+      if (!await until(`!!document.querySelector(".countdown-nearest.countdown-soon")`, 2000)) fail(where, "30 s timer isn't registered or doesn't refresh");
+      for (const scheme of ["light", "dark"]) {
+        await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }, { name: "prefers-reduced-motion", value: "reduce" }] });
+        const appearance = await evaluate(`(() => {
+          const line = document.querySelector(".countdown-nearest"), probe = document.createElement("span");
+          probe.style.color = "var(--amber)"; document.body.append(probe);
+          const amber = getComputedStyle(probe).color; probe.remove();
+          return { amber: getComputedStyle(line).color === amber,
+            still: [...document.querySelectorAll(".countdown, .countdown *")].every((el) => getComputedStyle(el).animationName === "none" && getComputedStyle(el).transitionDuration === "0s") };
+        })()`);
+        if (!appearance.amber || !appearance.still) fail(where, `${scheme}: not app amber or moves under reduced motion`);
+      }
+      await evaluate(`window.countdownNow = ${fixed + 3 * hour + 18 * minute}; document.dispatchEvent(new Event("visibilitychange"))`);
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Later in 1 h 42 m" && !document.querySelector(".countdown-next")`, 2000)) fail(where, "returning to the visible tab doesn't drop past deadlines immediately");
+      await tick(4 * hour + 18 * minute);
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Later in 42 min"`, 2000)) fail(where, "under one hour doesn't use minutes");
+      await tick(5 * hour);
+      if (!await until(`!!document.querySelector(".countdown-empty")`, 2000)) fail(where, "expired deadlines don't leave No deadlines");
+
+      await load([], true);
+      await edit();
+      await evaluate(`document.querySelector(".countdown-add").click()`);
+      await input('.countdown-field input[type="text"]', "Still works");
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Still works in 1 h 0 m"`, 2000)) fail(where, "throwing storage prevents editing in memory");
+      if (await evaluate(`!!document.querySelector(".brick-broke") || document.querySelector(".playground").dataset.errors !== "0"`)) fail(where, "throwing storage crashes or logs an uncaught error");
+
+      // In the app, which has controls of its own: the card sits above the dock and covers none, and its editor, at its
+      // tallest (six rows), stays under the header and above the card, covering none of the dock's.
+      await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      injected = undefined;
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "" });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await go(`${base}/bricks.html`); // A page with the real clock and storage again.
+      const rows = ["Feature freeze", "Submission", "Demo video", "Pitch", "Practice", "Thank-you notes"].map((label, i) => ({ label, at: new Date(Date.now() + (21 + 9 * i) * hour + 14 * minute).toISOString() }));
+      await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ countdown: true })); localStorage.setItem("e2a2o.toured", "1"); localStorage.setItem("e2a2o.countdown", ${JSON.stringify(JSON.stringify(rows))})`);
+      shown = full;
+      // What a person touches in the page's fixed parts and first screen, found by their parts' names.
+      const controls = `(() => {
+        scrollTo(0, 0);
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+        return [...document.querySelectorAll("header, .apps-panel, .map-tools, .dock")].flatMap((part) => [...part.querySelectorAll("button, input, textarea, select, a[href]")])
+          .filter((el) => !el.closest(".countdown") && getComputedStyle(el).visibility !== "hidden").map((el) => ({ name: (el.getAttribute("aria-label") || el.textContent || el.placeholder || el.tagName).trim().slice(0, 24), part: el.closest("header, .apps-panel, .map-tools, .dock").className || "header", box: box(el) }))
+          .filter(({ box: b }) => b.right - b.left > 1 && b.bottom - b.top > 1 && b.right > 0 && b.left < innerWidth && b.bottom > 0 && b.top < innerHeight);
+      })()`;
+      const meets = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      for (const [w, h] of [[1440, 900], [1024, 768], [390, 844], [320, 568]]) {
+        const at = `countdown in the app at ${w} px`;
+        await width(w, h);
+        await go(`${base}/`);
+        if (!await until(`!!document.querySelector(".countdown-card") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no card"); continue; }
+        await settle();
+        const all = await evaluate(controls);
+        if (all.length < 6) fail(at, `found only ${all.length} controls of the page to keep clear of: the check can't see its parts`);
+        const place = await evaluate(`(() => { const r = document.querySelector(".countdown-card").getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, dock: document.querySelector(".dock").getBoundingClientRect().top, header: document.querySelector("header").getBoundingClientRect().bottom }; })()`);
+        if (place.left < 0 || place.right > w || place.top < place.header || place.bottom > place.dock) fail(at, `the card leaves the free part of the window: ${JSON.stringify(place)}`);
+        for (const control of all) if (meets(place, control.box)) fail(at, `the card covers "${control.name}" (${control.part})`);
+        await evaluate(`document.querySelector(".countdown-card").click()`);
+        await until(`!!document.querySelector(".countdown-editor")`, 2000);
+        await settle();
+        const editor = await evaluate(`(() => { const r = document.querySelector(".countdown-editor").getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, scrolls: document.querySelector(".countdown-editor").scrollHeight > document.querySelector(".countdown-editor").clientHeight }; })()`);
+        if (editor.left < 0 || editor.right > w || editor.top < place.header || editor.bottom > place.top) fail(at, `the editor leaves the free part of the window: ${JSON.stringify(editor)}`);
+        for (const control of all) if (control.part.includes("dock") && meets(editor, control.box)) fail(at, `the editor covers "${control.name}" in the dock`);
+        await escape();
+        if (!await until(`!document.querySelector(".countdown-editor")`, 2000)) fail(at, "Esc doesn't close the editor in the app");
+        if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail(at, "it broke");
+      }
+    } finally {
+      if (injected) await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "" });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await width(1280, 860);
+      await go(`${base}/bricks.html`); // Fresh native clock and storage methods before putting the storage back.
+      await evaluate(`${JSON.stringify(keys)}.forEach((key, i) => { const was = ${JSON.stringify(saved)}[i]; if (was === null) localStorage.removeItem(key); else localStorage.setItem(key, was); })`);
+      shown = full;
+    }
+  }
   // Tiny transcript: a panel that takes the live words from the dock (`showsLiveWords`); nothing before words are
   // said, nor for a typed thought; said words show as they come, inside a 320 px screen's edges, and stay with the
   // first-use hint after the turn ends (time to try the slider) until a click dismisses both, for good.

@@ -1,0 +1,54 @@
+/* Countdown (index.tsx): a corner card at the bottom left, above the dock, where a floating brick keeps (so it covers
+   none of the page's own controls: the header, the Apps panel and the Map's tools are above, the Spine's zoom and shelf
+   at the right). It stands beside the Notice timeline's clock, on its line: the clock is 32 px wide, 16 px from the
+   edge and 16 px above the dock (32 on a phone, clear of Tiny transcript's line). Its editor opens upward from it. No
+   animation or transition at all, so there is nothing to turn off for Reduce Motion, not even as the time changes. */
+.countdown {
+  position: fixed; left: max(56px, calc(env(safe-area-inset-left) + 16px)); bottom: calc(var(--dock-height, 120px) + 16px); z-index: 7;
+  width: min(260px, calc(100vw - 72px)); color: var(--ink); font-size: 13px;
+}
+.countdown-card {
+  display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; width: 100%; padding: 8px 12px; text-align: left; font: inherit; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); cursor: pointer;
+}
+/* One line each: a long label gives way (…) and the time stays, as it is the point of the line. */
+.countdown-nearest, .countdown-next { display: flex; gap: .3em; min-width: 0; font-variant-numeric: tabular-nums; }
+.countdown-nearest { font-weight: 600; }
+.countdown-next { margin-top: 2px; font-size: 11px; }
+.countdown-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.countdown-time { flex: none; white-space: nowrap; }
+/* Amber, the app's own token, never red: it needs you soon, it hasn't gone wrong. */
+.countdown-soon { color: var(--amber); }
+.countdown-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.countdown-add-label { text-decoration: underline; text-underline-offset: 3px; }
+.countdown-editor {
+  box-sizing: border-box; position: absolute; bottom: calc(100% + 8px); left: 0; width: min(360px, calc(100vw - 72px));
+  max-height: max(160px, calc(100dvh - var(--header-height, 64px) - var(--dock-height, 120px) - 100px)); overflow-y: auto; overscroll-behavior: contain;
+  padding: 4px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow);
+}
+.countdown-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.countdown-close { width: 36px; height: 36px; margin-right: -8px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font: inherit; font-size: 22px; cursor: pointer; }
+.countdown-close:hover { background: var(--bg); color: var(--ink); }
+.countdown-list { margin: 0; padding: 0; list-style: none; }
+/* A row: the label across, then the date and Remove side by side (Remove drops under it where the width is tight). */
+.countdown-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 8px; padding: 8px 0 10px; border-top: 1px solid var(--line); }
+.countdown-field { display: grid; gap: 2px; min-width: 0; font-size: 11px; color: var(--muted); }
+.countdown-what { flex: 1 0 100%; }
+.countdown-when { flex: 1 1 190px; }
+.countdown-remove { flex: none; margin-left: auto; }
+.countdown-field input {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 16px; color-scheme: light dark;
+}
+.countdown-add, .countdown-remove { min-height: 36px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.countdown-add { margin-top: 4px; }
+.countdown-card:focus-visible, .countdown-close:focus-visible, .countdown-add:focus-visible, .countdown-remove:focus-visible, .countdown-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A phone: one line, the nearest only, 44 px to touch, as wide as the page's edges allow; 16 px higher, with the clock,
+   clear of Tiny transcript's line. */
+@media (max-width: 575.98px) {
+  .countdown { bottom: calc(var(--dock-height, 120px) + 32px); width: min(360px, calc(100vw - 72px)); }
+  .countdown-card { min-height: 44px; }
+  .countdown-next { display: none; }
+  .countdown-close { width: 44px; height: 44px; }
+  .countdown-add, .countdown-remove { min-height: 44px; }
+}
