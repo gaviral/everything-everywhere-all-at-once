@@ -428,6 +428,10 @@ try {
     // asked: "what just happened?".
     await press("Ask what just happened");
     if (JSON.stringify((await heard("asked"))[0]) !== '{"what":"notices"}') fail(where, "asked isn't heard as { what: \"notices\" }");
+    // speaking: someone in the call takes the floor, then gives it back; never their words.
+    await press("Someone speaks");
+    if (JSON.stringify((await heard("speaking"))[0]) !== '{"speaker":"Maya","on":true,"mine":false}') fail(where, "speaking isn't heard as Maya taking the floor");
+    if (!await until(`document.querySelector('.playground-heard li[data-event="speaking"]')?.textContent.includes('"on":false')`, 3000)) fail(where, "speaking isn't heard as the floor given back");
     // annotate: a note on the words starts it, the same words again answer in it, other words start another; a point
     // that isn't on the map is refused.
     if (first) {

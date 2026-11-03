@@ -1,40 +1,77 @@
 // Rooms: two people think out loud on one map, each on their own laptop. When the core runs with a
 // room code, everyone joins with a short name (remembered in this browser), and a laptop other than
 // the host's also needs the code. Alone, nothing changes: your thoughts are "you".
+// In a room the map is a call (talk/): this window's socket also tells the call what it hears (who's here, who has the
+// floor, how far each has read) and carries what Talk sends back.
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import "./room.css";
 import { useOnScreen } from "./onscreen";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
+import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, shownCode, stateWord, useCall } from "./talk/call-core";
 
 type Seat = { me: string; code: string };
 // What the core says at /room: is a room open, may this page use the map, and (asked with a name) does
 // another laptop hold that name? Private things (live words, the mic, notices) go to every window with a name.
 // `tunnel`: a trial link (scripts/trial.sh), a fresh map for one person that whoever sent it may watch.
+// `code` and `invite`, to a page already in: the join code and the address another person opens with it.
 // The rest says how the core runs (site.ts): hosted or on someone's computer, and what that changes on screen.
-type Door = { room: boolean; member: boolean; taken?: boolean; tunnel?: boolean } & SiteDoor;
+type Door = { room: boolean; member: boolean; taken?: boolean; tunnel?: boolean; code?: string | null; invite?: string | null } & SiteDoor;
 
 const ALONE: Seat = { me: "you", code: "" };
 const NAME = "e2a2o.name";
 const CODE = "e2a2o.room";
 const JOINED = "e2a2o.joined";
 const GUEST_MACHINE = !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-const TAKEN = "That name is taken in this room. Pick another.";
+const TAKEN = "That name is already taken. Pick another.";
 
 // The socket reads the seat each time it connects; Room keeps both current.
 let seat = ALONE;
 let recheck = () => {};
+// The map's socket while it's open: what Talk sends goes on it (`sendToCore`).
+let socketNow: WebSocket | null = null;
 
 const Me = createContext(ALONE.me);
 const RoomActions = createContext<{ leave: () => void } | null>(null);
+/** The join code and the address to share, in a room; null alone (or before the core said). */
+const JoinContext = createContext<{ code: string; invite: string | null } | null>(null);
 
-/** Room controls are absent when thinking alone. Contributors are not a live presence list. */
+/** In a room: Leave, as the room menu's button does. Null alone. */
+export const useLeave = () => useContext(RoomActions)?.leave ?? null;
+
+/** In a room: the join code, as people read it out ("K7M2 X9QP"), and the address another person opens with it. */
+export const useJoin = () => useContext(JoinContext);
+
+/** Sends one message to the core on the map's socket (Talk's read mark, the Friend's level); false while it's closed. */
+export function sendToCore(message: object): boolean {
+  if (socketNow?.readyState !== WebSocket.OPEN) return false;
+  socketNow.send(JSON.stringify(message));
+  return true;
+}
+
+/** Copies the invite to the clipboard; says whether it went. */
+export async function copyInvite(join: { code: string; invite: string | null }): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(join.invite ?? shownCode(join.code));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Room controls are absent when thinking alone. Once the call is on (talk/call-core.ts), who's here now, live;
+ *  before it, who has added a thought. */
 export function RoomControl({ speakers }: { speakers: string[] }) {
   const actions = useContext(RoomActions);
   const me = useMe();
   const { hosted } = useSite();
+  const join = useJoin();
+  const call = useCall();
+  // Copying needs a secure page (this laptop's own, or HTTPS): elsewhere the link shows, to copy by hand.
+  const [copied, setCopied] = useState<boolean | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   useOnScreen(panel, { rendered: !!actions });
   if (!actions) return null;
+  const here = hereNow(call, me).filter((person) => person.name !== me);
   const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
   return (
     <details className="room-menu" onKeyDown={(event) => {
@@ -49,7 +86,15 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
         <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
         {hosted ? <p className="room-guest">{savedWhere(true)}</p>
           : GUEST_MACHINE && <p className="room-guest">Guest on this map · {savedWhere(false)}</p>}
-        {others.length > 0 ? <>
+        {join && <p className="room-code">Join code <b>{shownCode(join.code)}</b>
+          <button type="button" className="room-copy" onClick={() => void copyInvite(join).then(setCopied)}>{copied ? "Link copied" : "Copy link"}</button></p>}
+        {join && copied === false && <p className="room-link">{join.invite ?? shownCode(join.code)}</p>}
+        {call ? <>
+          <p className="room-panel-label">Here now</p>
+          {here.length > 0
+            ? <ul>{here.map((person) => <li key={person.name}><span className={person.ai ? "room-person-mark ai-mark" : "room-person-mark other-mark"} aria-hidden="true">{person.ai ? "✦" : "◆"}</span> {named(person)} <span className="room-state">· {stateWord(person)}</span></li>)}</ul>
+            : <p className="room-panel-hint">No one else right now.</p>}
+        </> : others.length > 0 ? <>
           <p className="room-panel-label">Also on this map</p>
           <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
           <p className="room-panel-hint">Names appear here after someone adds a thought.</p>
@@ -77,8 +122,11 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   if (seat !== ALONE) params.set("name", seat.me);
   const query = params.toString();
   const ws = new WebSocket(query ? `${url}?${query}` : url);
-  ws.addEventListener("open", () => recheck());
-  ws.addEventListener("close", () => recheck());
+  socketNow = ws;
+  ws.addEventListener("open", () => { callOpened(); recheck(); });
+  ws.addEventListener("close", () => { if (socketNow === ws) socketNow = null; callClosed(); recheck(); });
+  // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
+  ws.addEventListener("message", (event) => callHeard(event.data));
   return ws;
 }
 
@@ -136,7 +184,7 @@ export function Room({ children }: { children: ReactNode }) {
           if (!d.room) setCurrent(ALONE);
           else if (d.member && joined && d.taken) setNote(TAKEN);
           else if (d.member && joined) setCurrent({ me: joined, code });
-          else if (!d.member && code) setNote("That code doesn't match this room.");
+          else if (!d.member && code) setNote("That code doesn't match. Ask for the right one.");
         })
         .catch(() => {
           if (!stop) timer = window.setTimeout(look, 1500);
@@ -164,7 +212,7 @@ export function Room({ children }: { children: ReactNode }) {
           setDoor(d);
           if (d.room === (current !== ALONE) && (!d.room || d.member) && !d.taken) return;
           setCurrent(d.room ? null : ALONE);
-          setNote(!d.room ? "" : !d.member ? "The room has a new code. Ask the host for it." : d.taken ? TAKEN : "");
+          setNote(!d.room ? "" : !d.member ? "The code changed. Ask the other person for the new one." : d.taken ? TAKEN : "");
         })
         .catch(() => {}); // the core is down; the socket keeps trying
     };
@@ -176,7 +224,7 @@ export function Room({ children }: { children: ReactNode }) {
   const leave = () => {
     write(JOINED, "", "sessionStorage");
     document.cookie = "room=; path=/; Max-Age=0; SameSite=Strict";
-    setNote("You left the room. Thoughts already on the map stay there.");
+    setNote("You left. Your thoughts stay.");
     setCurrent(null);
   };
 
@@ -190,7 +238,7 @@ export function Room({ children }: { children: ReactNode }) {
       const d = await knock(tried, me);
       setDoor(d);
       if (!d.room) return setCurrent(ALONE);
-      if (!d.member) return setNote(tried ? "That code doesn't match this room." : "Type the room code from the host.");
+      if (!d.member) return setNote(tried ? "That code doesn't match. Ask for the right one." : "Type the code the other person gave you.");
       if (d.taken) return setNote(TAKEN);
       write(NAME, me);
       if (tried) write(CODE, tried);
@@ -205,28 +253,33 @@ export function Room({ children }: { children: ReactNode }) {
   };
 
   const site = useMemo(() => siteFrom(door), [door]);
+  // The code from the core (the host's own window has none in its address), else the one typed.
+  const joinCode = door?.code || current?.code || "";
+  const joinInfo = useMemo(() => (joinCode ? { code: joinCode, invite: door?.invite ?? null } : null), [joinCode, door?.invite]);
   if (current) {
     // A new seat is a new connection: the map starts fresh under the new name.
     return (
       <SiteContext.Provider value={site}>
       <Me.Provider key={`${current.me}|${current.code}`} value={current.me}>
         <RoomActions.Provider value={current === ALONE ? null : { leave }}>
-          {children}
+          <JoinContext.Provider value={current === ALONE ? null : joinInfo}>
+            {children}
+          </JoinContext.Provider>
         </RoomActions.Provider>
       </Me.Provider>
       </SiteContext.Provider>
     );
   }
-  if (!door) return <div className="join"><div className="join-loading" role="status">Opening the room…</div></div>;
+  if (!door) return <div className="join"><div className="join-loading" role="status">Loading…</div></div>;
   return (
     <main className="join">
       <div className="join-brand">E2A2O <span>threads</span></div>
       <form className="join-card" onSubmit={join}>
         {door.tunnel ? (
           <>
-            <div className="join-kicker">Your own map</div>
+            <div className="join-kicker">Just for you</div>
             <h1>Think out loud.</h1>
-            <p className="join-intro">A fresh map, just for you. Talk, and your thoughts sort themselves into threads as you go.</p>
+            <p className="join-intro">A fresh map, just for you. Talk, and your thoughts organize themselves as you go.</p>
           </>
         ) : (
           <>
@@ -237,11 +290,11 @@ export function Room({ children }: { children: ReactNode }) {
         )}
         {!door.member && (
           <label className="join-field">
-            <span>Room code</span>
+            <span>Join code</span>
             <input
               value={code}
               onChange={(e) => { setCode(e.target.value); setNote(""); }}
-              placeholder="Code from the host"
+              placeholder="From the person who started this"
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
@@ -267,7 +320,7 @@ export function Room({ children }: { children: ReactNode }) {
         </label>
         {note && <div id="join-note" className="join-note" role="status">{note}</div>}
         <button type="submit" disabled={busy || !cleanName(name) || (!door.member && !normal(code))}>
-          {busy ? "Joining…" : door.tunnel ? "Start" : "Join the map"}
+          {busy ? "Joining…" : door.tunnel ? "Start" : "Join"}
         </button>
       </form>
     </main>

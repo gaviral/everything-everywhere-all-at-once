@@ -1,0 +1,114 @@
+/* The Talk tab (Talk.tsx) and, behind ?shell=2, its stand-in rail (TalkRail.tsx). Today's tokens, with the revamp's
+   where the shell defines them (L1): ink for people, blue for you and the read line, purple for the AI, red for Stop
+   only. Two sizes of type: 13 for turns and labels, 11 for times, states and meta. No motion. */
+.talk {
+  --talk-surface: var(--surface-2, var(--card));
+  --talk-raised: var(--surface-3, var(--bg));
+  --talk-ink-2: var(--ink-2, var(--ink));
+  --talk-red: var(--red, #b3261e);
+  display: flex; flex-direction: column; min-height: 0; flex: 1;
+  color: var(--ink); font-size: 13px; line-height: 19px; font-variant-numeric: tabular-nums;
+}
+@media (prefers-color-scheme: dark) { .talk { --talk-red: var(--red, #ff6e61); } }
+
+/* People: you first, a letter each, what they're doing now. */
+.talk-people { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); list-style: none; }
+.talk-person { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.talk-gone { opacity: .6; }
+.talk-avatar { position: relative; display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--talk-raised); color: var(--ink); font-size: 13px; font-weight: 600; }
+.talk-avatar-you { box-shadow: 0 0 0 2px var(--accent); }
+.talk-avatar-ai { background: var(--ai-soft); color: var(--ai); }
+.talk-avatar-speaking { box-shadow: 0 0 0 2px var(--ink); }
+.talk-avatar-you.talk-avatar-speaking { box-shadow: 0 0 0 2px var(--accent), 0 0 0 4px var(--talk-surface), 0 0 0 5px var(--ink); }
+.talk-avatar-ai.talk-avatar-speaking { box-shadow: 0 0 0 2px var(--ai); }
+.talk-person-text { display: grid; min-width: 0; }
+.talk-person-name { overflow: hidden; font-weight: 600; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.talk-person-state { color: var(--muted); font-size: 11px; line-height: 14px; }
+.talk-ai { color: var(--ai); }
+
+/* Turns, as messages, newest at the foot. */
+.talk-list { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.talk-scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.talk-turns { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 12px 16px; list-style: none; }
+.talk-start { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; line-height: 16px; }
+.talk-start::before, .talk-start::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.talk-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.talk-turn { position: relative; outline-offset: 4px; border-radius: 6px; }
+.talk-turn:focus-visible { outline: 2px solid var(--accent); }
+.talk-head { display: flex; align-items: baseline; gap: 6px; font-weight: 600; }
+.talk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.talk-time { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; font-weight: 400; }
+button.talk-time { cursor: pointer; }
+button.talk-time:hover { color: var(--ink); text-decoration: underline; }
+.talk-level { padding: 0 5px; border-radius: 5px; background: var(--ai-soft); color: var(--ai); font-size: 11px; font-weight: 500; }
+.talk-on { margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 16px; }
+.talk-words { margin-top: 2px; color: var(--talk-ink-2); overflow-wrap: anywhere; }
+.talk-words::selection, .talk-words ::selection { background: var(--accent-soft); color: var(--ink); }
+.talk-mine .talk-words { color: var(--talk-ink-2); }
+
+/* Speaking now…: whoever has the floor, never their words (those come with the turn). */
+.talk-live { margin: 0 -11px; padding: 9px 11px; border-radius: 12px; background: var(--talk-raised); }
+.talk-live-ai { background: var(--ai-soft); }
+.talk-speaking { display: flex; align-items: center; gap: 8px; font-style: italic; }
+.talk-live-ai .talk-speaking { color: var(--ai); }
+.talk-bars { display: inline-flex; align-items: center; gap: 2px; height: 12px; }
+.talk-bars i { width: 2.5px; border-radius: 1px; background: currentColor; }
+.talk-bars i:nth-child(1) { height: 6px; } .talk-bars i:nth-child(2) { height: 11px; } .talk-bars i:nth-child(3) { height: 8px; } .talk-bars i:nth-child(4) { height: 4px; }
+
+/* How far you've read (blue: you, here), and where each of the others is. */
+.talk-read-line { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 11px; font-weight: 500; line-height: 16px; }
+.talk-read-line::before, .talk-read-line::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .55; }
+.talk-seen { position: absolute; right: 0; bottom: -2px; display: flex; gap: 2px; }
+.talk-seen-mark { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--talk-raised); color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; }
+
+/* Catch up: what was said while you were away, when it isn't in view. */
+.talk-catch-up { position: absolute; top: 0; right: 0; left: 0; z-index: 1; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 8px 16px;
+  border: 0; border-bottom: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.talk-catch-up-go { margin-left: auto; color: var(--accent); font-weight: 600; }
+
+/* A reply beside the words picked, sent as a margin note. */
+.talk-reply-start { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--talk-surface); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.talk-reply-start kbd { padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font: inherit; font-size: 11px; line-height: 16px; }
+.talk-reply-quiet { min-height: 24px; border-color: transparent; background: none; color: var(--accent); padding: 0; }
+.talk-reply-quiet:hover { text-decoration: underline; }
+.talk-reply { display: grid; gap: 4px; margin-top: 6px; }
+.talk-reply-label { color: var(--muted); font-size: 11px; line-height: 16px; }
+.talk-reply input { width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--accent); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
+.talk-reply input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* How far the Friend may interrupt: five levels, the one set filled in its purple; Stop in red. */
+.talk-meter { padding: 12px 16px 14px; border-top: 1px solid var(--line); }
+.talk-meter-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; line-height: 16px; text-transform: uppercase; }
+.talk-levels { display: flex; gap: 4px; margin: 8px 0 7px; }
+.talk-level-step { flex: 1; min-width: 0; min-height: 28px; padding: 0 4px; border: 0; border-radius: 7px; background: var(--talk-raised);
+  color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.talk-level-in { color: var(--talk-ink-2); }
+.talk-level-on { background: var(--ai); color: var(--ai-button-ink); }
+.talk-level-on.talk-level-stop { background: var(--talk-red); color: #fff; }
+.talk-level-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talk-meter-says { margin: 0; color: var(--muted); font-size: 11px; line-height: 16px; }
+
+/* STAND-IN (L1): the rail and its pill, behind ?shell=2, until the shell's rail hosts Talk. */
+.talk-rail { position: fixed; z-index: 30; top: calc(var(--header-height, 64px) + 8px); right: 16px; bottom: calc(var(--dock-height, 112px) + 12px);
+  display: flex; flex-direction: column; width: 360px; overflow: hidden; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--surface-2, var(--card)); box-shadow: var(--shadow); }
+.talk-rail-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 0 12px; border-bottom: 1px solid var(--line); }
+.talk-rail-tab { margin-bottom: -1px; padding: 6px 4px 9px; border-bottom: 2px solid var(--ink); color: var(--ink); font-size: 13px; font-weight: 500; }
+.talk-code { display: inline-flex; align-items: baseline; gap: 4px; margin-left: auto; padding: 4px 6px; border: 0; border-radius: 8px; background: none;
+  color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.talk-code b { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.talk-code:hover { background: var(--talk-raised, var(--bg)); }
+.talk-leave { min-height: 28px; padding: 0 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.talk-leave:hover { border-color: var(--muted); }
+.talk-close { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); font: inherit; font-size: 18px; cursor: pointer; }
+.talk-close:hover { background: var(--bg); color: var(--ink); }
+.talk-pill { position: fixed; z-index: 30; top: calc(var(--header-height, 64px) + 8px); right: 16px; min-height: 36px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.talk-pill-count { color: var(--muted); font-weight: 400; }
+.talk-pill-phone { top: auto; right: auto; left: 16px; bottom: calc(var(--dock-height, 112px) + 10px); min-height: 32px; font-size: 13px; }
+.talk-sheet { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+@media (max-width: 560px) {
+  .talk-rail:not(.talk-sheet) { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; }
+}
