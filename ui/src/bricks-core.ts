@@ -9,10 +9,11 @@ import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
 import { THOUGHT_MAX } from "./limits";
+import { CORE_BRICKS } from "./shell/flag";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
-const APP_FLAGS = ["room", "recording", "brick", "sample"];
+const APP_FLAGS = ["room", "recording", "brick", "sample", "shell", "demo"];
 /** Ids a view brick can't take: they're the app's own views. */
 const APP_VIEWS = ["map", "palace"];
 
@@ -92,18 +93,24 @@ function readSwitches(): Switches {
   } catch { return {}; }
 }
 
-/** The ids on, given what was switched (`switches`) and what the address turned on for this visit (`flagged`). */
-export function onIds(bricks: readonly Brick[], switches: Switches, flagged: ReadonlySet<string>): ReadonlySet<string> {
-  return new Set(bricks.filter(({ info }) => flagged.has(info.id) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
+/** The ids on, given what was switched (`switches`), what the address turned on for this visit (`flagged`) and the
+ *  shell's core (`core`, shell/flag.ts): on with no switch, unless one broke and was switched off this visit (`off`). */
+export function onIds(bricks: readonly Brick[], switches: Switches, flagged: ReadonlySet<string>, core: readonly string[] = [], off: ReadonlySet<string> = new Set()): ReadonlySet<string> {
+  return new Set(bricks.filter(({ info }) => (core.includes(info.id) && !off.has(info.id)) || flagged.has(info.id) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
 }
+
+/** A feature the shell is built around (shell/flag.ts `CORE_BRICKS`): the Catalog shows it on, with no switch. */
+export const isCore = (id: string) => CORE_BRICKS.includes(id);
 
 const browser = typeof window !== "undefined";
 const params = browser ? new URLSearchParams(location.search) : new URLSearchParams();
 let switches: Switches = browser ? readSwitches() : {};
 const flagged = new Set(BRICKS.filter(({ info }) => info.flag && params.has(info.flag)).map(({ info }) => info.id));
-let on = onIds(BRICKS, switches, flagged);
+// A core brick that broke and was switched off from its "stopped working" line: off for this visit only.
+const coreOff = new Set<string>();
+let on = onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff);
 const watchers = new Set<() => void>();
-const changed = () => { on = onIds(BRICKS, switches, flagged); for (const watcher of watchers) watcher(); };
+const changed = () => { on = onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff); for (const watcher of watchers) watcher(); };
 const watch = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 // Switched in another window of this browser: this one follows.
 if (browser) window.addEventListener("storage", (event) => { if (event.key === STORE) { switches = readSwitches(); changed(); } });
@@ -115,6 +122,11 @@ export function useBricksOn(): ReadonlySet<string> {
 
 /** Switches a brick on or off in this browser, at once, and keeps it so. */
 export function switchBrick(id: string, value: boolean) {
+  if (isCore(id)) {
+    if (value) coreOff.delete(id); else coreOff.add(id);
+    changed();
+    return;
+  }
   flagged.delete(id);
   switches = { ...switches, [id]: value };
   try { localStorage.setItem(STORE, JSON.stringify(switches)); } catch { /* private mode: on for this visit only */ }
