@@ -244,7 +244,7 @@ setTimeout(async () => {
 let page = null;
 let failed = null;
 try {
-  page = await openPage(`http://127.0.0.1:${core.port}/`);
+  page = await openPage(`http://127.0.0.1:${core.port}/?cards`);
   let { evaluate, until } = page;
   const cdp = (...args) => page.page(...args);
   const shot = async (name) => {
@@ -715,7 +715,7 @@ try {
 
   step("a phone");
   // A phone: the caption a card the screen's width over the dock, the point's arrow from it; the held stack a chip.
-  page = await openPage(`http://127.0.0.1:${core.port}/`, { width: 390, height: 844 });
+  page = await openPage(`http://127.0.0.1:${core.port}/?cards`, { width: 390, height: 844 });
   ({ evaluate, until } = page);
   await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await toured();

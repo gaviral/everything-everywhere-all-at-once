@@ -40,7 +40,7 @@ const core = await standInCore(() => [{ type: "snapshot", world }]);
 let page = null;
 let failed = null;
 try {
-  page = await openPage(`http://127.0.0.1:${core.port}/`);
+  page = await openPage(`http://127.0.0.1:${core.port}/?cards`);
   const { evaluate } = page;
   for (let i = 0; i < 100 && !(await evaluate(`!!document.querySelector("#thread-T3 li[id^='point-']")`).catch(() => false)); i++) await sleep(100);
   await sleep(800);

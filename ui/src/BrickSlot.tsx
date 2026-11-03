@@ -14,7 +14,7 @@ import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
  *  own actions (`actionsFor`), which know which brick asks (a thought it adds lands `by` it; its hint carries its name). */
-export type BrickHost = { map: MapSnapshot; on: BrickOn; actionsFor: (info: BrickInfo) => BrickActions };
+export type BrickHost = { map: MapSnapshot; on: BrickOn; actionsFor: (info: BrickInfo) => BrickActions; destination?: BrickProps["destination"] };
 
 /** The app's side of the actions (App.tsx, the playground): a brick's own, and for `hint`, the brick's name to show. A
  *  topic's rename or a move goes to the core by itself (topics-core.ts) unless the host answers it (the playground). */
@@ -32,7 +32,7 @@ const MODEL_WAIT_MS = 1000;
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"]): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial), [world, me, connected, rooms, partial]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
@@ -117,7 +117,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
     events.emit("pointing", { target: point.target, by: point.by, ...(thoughtId ? { thoughtId } : {}), ...(threadId ? { threadId } : {}) });
   }), [events]);
 
-  return useMemo(() => ({ map, on, actionsFor, emit: events.emit }), [map, on, actionsFor, events]);
+  return useMemo(() => ({ map, on, actionsFor, emit: events.emit, destination }), [map, on, actionsFor, events, destination]);
 }
 
 const components = new Map<string, LazyExoticComponent<ComponentType<BrickProps>>>();
@@ -133,7 +133,7 @@ function componentOf(brick: Brick) {
 export const BrickMount = memo(function BrickMount({ brick, host }: { brick: Brick; host: BrickHost }) {
   const Shown = componentOf(brick);
   const { info } = brick;
-  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} /></Suspense></BrickBoundary>;
+  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} /></Suspense></BrickBoundary>;
   if (info.kind === "view") return <main className="brick-view" aria-label={info.name} data-brick={info.id}>{inner}</main>;
   if (info.kind === "card") return <div className="brick-card" data-brick={info.id} data-dock-card>{inner}</div>;
   return <div className="brick-float" data-brick={info.id}>{inner}</div>;

@@ -30,7 +30,7 @@
 .tiny-transcript-in-box .tiny-transcript-text { position: absolute; background: var(--card); }
 
 /* In the status line, it takes the room its neighbors leave. */
-.tiny-transcript-in-status { position: relative; flex: 1 1 auto; align-self: center; min-width: 0; }
+.tiny-transcript-in-status { position: relative; grid-row: 1; flex: 1 1 auto; align-self: center; min-width: 0; }
 
 /* No box to go in (the playground), or your own typing in it: just above it, centered. */
 .tiny-transcript-floating {
@@ -68,6 +68,7 @@
   pointer-events: auto;
 }
 .tiny-transcript-hint-center { left: 50%; transform: translateX(-50%); }
+.tiny-transcript-hint-in-status { position: fixed; bottom: auto; z-index: 46; }
 .tiny-transcript-hint::after {
   content: "";
   position: absolute;
@@ -78,6 +79,7 @@
   border-top-color: color-mix(in srgb, var(--card) 86%, transparent);
 }
 .tiny-transcript-hint-center::after { left: 50%; }
+.tiny-transcript-hint-in-status::after { left: var(--tiny-transcript-tail, 22px); }
 
 .tiny-transcript-help { margin: 0 0 8px; text-wrap: balance; }
 .tiny-transcript-size-row { display: flex; align-items: center; gap: 8px; color: var(--muted); }

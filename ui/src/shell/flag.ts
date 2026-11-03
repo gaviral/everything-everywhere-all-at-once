@@ -7,10 +7,13 @@ const params = typeof location === "undefined" ? new URLSearchParams() : new URL
 
 export const SHELL2 = params.get("shell") === "2";
 
+/** Open today's page on cards instead of the Canvas for this visit. */
+export const CARDS_FLAG = params.has("cards");
+
 /** Features the shell is built around: on, with no switch (the Catalog lists them as built in). The Canvas (the Spine)
  *  is the view it opens in; the flight, the tiny
- *  transcript and the Notice timeline join it (its list is the History tab's). Today's page: none yet (the card's spec). */
-export const CORE_BRICKS: readonly string[] = SHELL2 ? ["spine", "bubble-flight", "tiny-transcript", "notice-timeline"] : [];
+ *  transcript and the Notice timeline join it (its list is the History tab's). Today's page opens on the Canvas too. */
+export const CORE_BRICKS: readonly string[] = SHELL2 ? ["spine", "bubble-flight", "tiny-transcript", "notice-timeline"] : ["spine"];
 
 /** A scripted demo (`?demo`): the DEMO stamp says so, top left, so a take never passes for real talk. */
 export const DEMO = params.has("demo");
