@@ -22,9 +22,20 @@
 //    there in 400 ms or less, and F follows again. Under Reduce Motion the camera cuts, with a ring for a second where it
 //    went, and a landing rings without moving. In the app: a landing from the core pulses, a place someone else gave
 //    moves the point there, and a drag reaches the core as a position.
+//    Margin notes: double-click a point's words, take more with a shift-click or a drag (Esc lets them go), Reply, type,
+//    Enter; the host is asked (`annotate`) for that thought, those words and that text, the words show underlined and the
+//    note beside them, tied by a string from where they end; it stays over another landing and tucks under its point at
+//    390 px; typing it moves no camera. In the app, notes are the map's (a thread tied to words in `anchors`): they stay over
+//    a new snapshot and a reload, another person's unanswered question folds to "…?" until it's opened, while yours and an
+//    answered one show.
+//    Zoom stops: 1 2 3 are Words · Titles · Pictures and 0 sees all; each changes what's drawn, the control shows the one
+//    that's on, and none fires while a field (the reply box, the app's composer) has the keyboard.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
 //    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
+// Countdown, beyond that: its deadlines kept in this browser (a store that throws changes nothing), the nearer first as
+//    "<label> in 21 h 14 m" with past ones off, amber under three hours, a phone's one line with the label cut and the
+//    time kept, the editor by keyboard; in the app the card and its editor cover no control of the page.
 // The contract's own names (contract.ts), on a full run: its rules without a page (which brick added a thought, the
 //    threads a brick is handed with each note's anchor, a note as the window sends it, a hint as the guide shows it);
 //    in the playground, each event as a brick hears it and each action answered; in the app, the slots on today's
@@ -347,6 +358,199 @@ try {
   }
   // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
   await width(1280, 860);
+  // Countdown: a panel that keeps its deadlines in this browser (`e2a2o.countdown`). Its logic runs in the playground on
+  // a clock the check holds (and ticks by hand, as the 30 s timer and a return to the tab would): an empty store says
+  // "No deadlines" and Add (Enter opens the editor, Add adds a row, a change and Remove are kept, Esc gives focus back
+  // to the card); two deadlines and a past one show the nearer first, "<label> in 21 h 14 m" and "in 2 d 5 h", on a
+  // real button naming both, in plain ink, a saved instant shown in local time; the minutes round down ("in 60 min"
+  // never, "in 1 min" for the last); amber from under three hours, light and dark, nothing moving; the time brought up
+  // to date by the timer and by a return to the tab, past ones off; on a phone one line and the nearest only, a long
+  // label cut and its time kept; a store that throws still lets you add one and see it. In the app, where the page's own
+  // controls are, the card and its editor stay in the window and cover none of them, at 1440, 1024, 390 and 320 px.
+  if (checked.includes("countdown")) {
+    const where = "countdown";
+    const info = infos["./bricks/countdown/brick.json"];
+    if (info.kind !== "panel" || info.defaultOn !== false || info.demoSafe !== true || info.name !== "Countdown") fail(where, "brick.json: Countdown must be a demo-safe panel, off by default");
+    // What the check changes in this browser's storage, put back at the end.
+    const keys = ["e2a2o.countdown", "e2a2o.bricks", "e2a2o.toured"];
+    const saved = JSON.parse(await evaluate(`JSON.stringify(${JSON.stringify(keys)}.map((key) => localStorage.getItem(key)))`));
+    const fixed = Date.UTC(2030, 4, 7, 12);
+    const hour = 3_600_000, minute = 60_000;
+    const entry = (label, ms) => ({ label, at: new Date(fixed + ms).toISOString() });
+    let injected;
+    // The playground with this store (and its clock held at `fixed`, `window.countdownNow` to move it, `countdownTick` the
+    // brick's own 30 s timer) before the brick starts, or with its storage throwing.
+    const load = async (entries, throws = false) => {
+      // A script for every new document only runs once the Page domain is enabled.
+      await cdp("Page.enable");
+      if (injected) await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      ({ identifier: injected } = await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
+        localStorage.setItem("e2a2o.countdown", ${JSON.stringify(JSON.stringify(entries))});
+        window.countdownNow = ${fixed};
+        Date.now = () => window.countdownNow;
+        const interval = window.setInterval;
+        window.setInterval = (fn, ms, ...args) => {
+          if (ms === 30000) window.countdownTick = fn;
+          return interval(fn, ms, ...args);
+        };
+        ${throws ? `for (const method of ["getItem", "setItem"]) {
+          const original = Storage.prototype[method];
+          Storage.prototype[method] = function(key, ...args) {
+            if (key === "e2a2o.countdown") throw new Error("Storage unavailable");
+            return original.call(this, key, ...args);
+          };
+        }` : ""}
+      ` }));
+      await go(`${base}/bricks.html?brick=countdown&sample=empty`);
+      if (!await until(`!!document.querySelector(".countdown-card")`, 8000)) fail(where, "never mounted");
+      await settle();
+    };
+    /** Moves the held clock, and has the brick's timer fire. */
+    const tick = (ms) => evaluate(`window.countdownNow = ${fixed + ms}; window.countdownTick?.()`);
+    const nearest = () => evaluate(`document.querySelector(".countdown-nearest")?.textContent ?? null`);
+    const input = (selector, value) => evaluate(`(() => {
+      const field = document.querySelector(${JSON.stringify(selector)});
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, ${JSON.stringify(value)});
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    })()`);
+    const edit = async () => {
+      await evaluate(`document.querySelector(".countdown-card").focus()`);
+      // A key press that types ("\r") is the one a button answers with a click.
+      for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
+      if (!await until(`!!document.querySelector(".countdown-editor")`, 2000)) fail(where, "Enter doesn't open the editor");
+    };
+    const escape = () => evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    try {
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "America/Vancouver" });
+      await load([]);
+      if (!await evaluate(`document.querySelector(".countdown-card").textContent.includes("No deadlines") && document.querySelector(".countdown-add-label").textContent === "Add"`)) fail(where, "empty store doesn't show No deadlines and Add");
+      await edit();
+      if (!await evaluate(`document.activeElement === document.querySelector(".countdown-add")`)) fail(where, "empty editor doesn't focus Add");
+      await evaluate(`document.querySelector(".countdown-add").click()`);
+      if (!await until(`document.activeElement === document.querySelector('.countdown-field input[type="text"]')`, 2000)) fail(where, "a new row doesn't take focus in its label");
+      await input('.countdown-field input[type="text"]', "Feature freeze");
+      await input('.countdown-field input[type="datetime-local"]', "2030-05-08T10:15");
+      if (!await until(`JSON.parse(localStorage.getItem("e2a2o.countdown"))[0]?.label === "Feature freeze" && JSON.parse(localStorage.getItem("e2a2o.countdown"))[0]?.at === "2030-05-08T17:15:00.000Z"`, 2000)) fail(where, "changes aren't saved, or local time isn't converted correctly");
+      await evaluate(`document.querySelector(".countdown-remove").click()`);
+      if (!await until(`localStorage.getItem("e2a2o.countdown") === "[]" && !document.querySelector(".countdown-row") && document.activeElement === document.querySelector(".countdown-add")`, 2000)) fail(where, "Remove doesn't save, or doesn't leave focus on Add");
+      await escape();
+      if (!await until(`!document.querySelector(".countdown-editor") && document.activeElement === document.querySelector(".countdown-card")`, 2000)) fail(where, "Esc doesn't close and return focus");
+
+      await load([entry("Submission", 53 * hour), entry("Already done", -hour), entry("Feature freeze", 21 * hour + 14 * minute)]);
+      const lines = await evaluate(`[...document.querySelectorAll(".countdown-nearest, .countdown-next")].map((line) => line.textContent)`);
+      if (JSON.stringify(lines) !== JSON.stringify(["Feature freeze in 21 h 14 m", "Submission in 2 d 5 h"])) fail(where, `wrong order, formatting or expired deadline: ${JSON.stringify(lines)}`);
+      const accessible = await evaluate(`(() => { const b = document.querySelector(".countdown-card"); return b.tagName === "BUTTON" && b.getAttribute("aria-label").includes("Feature freeze in 21 h 14 m") && b.getAttribute("aria-label").includes("Submission in 2 d 5 h") && !document.querySelector(".countdown [aria-live], .countdown [role=status], .countdown [role=alert]"); })()`);
+      if (!accessible) fail(where, "needs a real button with the full text and no live announcements");
+      if (!await evaluate(`getComputedStyle(document.querySelector(".countdown-nearest")).color === getComputedStyle(document.querySelector(".countdown-card")).color`)) fail(where, "a distant deadline doesn't use plain ink");
+      await edit();
+      if (!await evaluate(`document.querySelector('input[type="datetime-local"]').value === "2030-05-09T10:00"`)) fail(where, "saved dates aren't displayed in local time");
+      await evaluate(`document.querySelector(".countdown-close").click()`);
+
+      // Where it changes unit: days only over 48 h; the minutes round down, never 60, never 0. (`left`: the time left.)
+      await load([entry("Later", 49 * hour)]);
+      for (const [left, text] of [[49 * hour, "2 d 1 h"], [48 * hour + minute, "2 d 0 h"], [48 * hour, "48 h 0 m"], [hour, "1 h 0 m"], [59.5 * minute, "59 min"], [30_000, "1 min"]]) {
+        await tick(49 * hour - left);
+        if (!await until(`document.querySelector(".countdown-nearest")?.textContent === ${JSON.stringify(`Later in ${text}`)}`, 2000)) fail(where, `with ${left / minute} min left it says ${JSON.stringify(await nearest())}, not "Later in ${text}"`);
+      }
+
+      // A phone: one line and the nearest only; a long label gives way and the time stays.
+      await load([entry("Submission", 53 * hour), entry("Feature freeze", 21 * hour + 14 * minute)]);
+      await width(390, 844);
+      const phone = await evaluate(`(() => {
+        const b = document.querySelector(".countdown-card"), r = b.getBoundingClientRect(), n = document.querySelector(".countdown-nearest");
+        return { next: getComputedStyle(document.querySelector(".countdown-next")).display, oneLine: n.getBoundingClientRect().height <= parseFloat(getComputedStyle(n).lineHeight) + 1,
+          fits: r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth + 1 };
+      })()`);
+      if (phone.next !== "none" || !phone.oneLine || !phone.fits) fail(where, `phone card isn't one line with only the nearest: ${JSON.stringify(phone)}`);
+      await edit();
+      if (!await evaluate(`(() => { const r = document.querySelector(".countdown-editor").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`)) fail(where, "phone editor leaves the screen");
+      await load([entry("A deadline named with far more words than one line of a phone's width can hold", 2 * hour)]);
+      const long = await evaluate(`(() => {
+        const card = document.querySelector(".countdown-card").getBoundingClientRect(), label = document.querySelector(".countdown-label"), time = document.querySelector(".countdown-time");
+        return { cut: label.scrollWidth > label.clientWidth, timeInside: time.getBoundingClientRect().right <= card.right && time.getBoundingClientRect().left >= card.left, time: time.textContent };
+      })()`);
+      if (!long.cut || !long.timeInside || long.time !== "in 2 h 0 m") fail(where, `a long label should be cut and its time kept: ${JSON.stringify(long)}`);
+      await width(1280, 860);
+
+      await load([entry("Soon", 3 * hour), entry("Later", 5 * hour)]);
+      if (await evaluate(`!!document.querySelector(".countdown-nearest.countdown-soon")`)) fail(where, "amber begins before under three hours");
+      await tick(minute);
+      if (!await until(`!!document.querySelector(".countdown-nearest.countdown-soon")`, 2000)) fail(where, "30 s timer isn't registered or doesn't refresh");
+      for (const scheme of ["light", "dark"]) {
+        await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }, { name: "prefers-reduced-motion", value: "reduce" }] });
+        const appearance = await evaluate(`(() => {
+          const line = document.querySelector(".countdown-nearest"), probe = document.createElement("span");
+          probe.style.color = "var(--amber)"; document.body.append(probe);
+          const amber = getComputedStyle(probe).color; probe.remove();
+          return { amber: getComputedStyle(line).color === amber,
+            still: [...document.querySelectorAll(".countdown, .countdown *")].every((el) => getComputedStyle(el).animationName === "none" && getComputedStyle(el).transitionDuration === "0s") };
+        })()`);
+        if (!appearance.amber || !appearance.still) fail(where, `${scheme}: not app amber or moves under reduced motion`);
+      }
+      await evaluate(`window.countdownNow = ${fixed + 3 * hour + 18 * minute}; document.dispatchEvent(new Event("visibilitychange"))`);
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Later in 1 h 42 m" && !document.querySelector(".countdown-next")`, 2000)) fail(where, "returning to the visible tab doesn't drop past deadlines immediately");
+      await tick(4 * hour + 18 * minute);
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Later in 42 min"`, 2000)) fail(where, "under one hour doesn't use minutes");
+      await tick(5 * hour);
+      if (!await until(`!!document.querySelector(".countdown-empty")`, 2000)) fail(where, "expired deadlines don't leave No deadlines");
+
+      await load([], true);
+      await edit();
+      await evaluate(`document.querySelector(".countdown-add").click()`);
+      await input('.countdown-field input[type="text"]', "Still works");
+      if (!await until(`document.querySelector(".countdown-nearest")?.textContent === "Still works in 1 h 0 m"`, 2000)) fail(where, "throwing storage prevents editing in memory");
+      if (await evaluate(`!!document.querySelector(".brick-broke") || document.querySelector(".playground").dataset.errors !== "0"`)) fail(where, "throwing storage crashes or logs an uncaught error");
+
+      // In the app, which has controls of its own: the card sits above the dock and covers none, and its editor, at its
+      // tallest (six rows), stays under the header and above the card, covering none of the dock's.
+      await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      injected = undefined;
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "" });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await go(`${base}/bricks.html`); // A page with the real clock and storage again.
+      const rows = ["Feature freeze", "Submission", "Demo video", "Pitch", "Practice", "Thank-you notes"].map((label, i) => ({ label, at: new Date(Date.now() + (21 + 9 * i) * hour + 14 * minute).toISOString() }));
+      await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ countdown: true })); localStorage.setItem("e2a2o.toured", "1"); localStorage.setItem("e2a2o.countdown", ${JSON.stringify(JSON.stringify(rows))})`);
+      shown = full;
+      // What a person touches in the page's fixed parts and first screen, found by their parts' names.
+      const controls = `(() => {
+        scrollTo(0, 0);
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+        return [...document.querySelectorAll("header, .apps-panel, .map-tools, .dock")].flatMap((part) => [...part.querySelectorAll("button, input, textarea, select, a[href]")])
+          .filter((el) => !el.closest(".countdown") && getComputedStyle(el).visibility !== "hidden").map((el) => ({ name: (el.getAttribute("aria-label") || el.textContent || el.placeholder || el.tagName).trim().slice(0, 24), part: el.closest("header, .apps-panel, .map-tools, .dock").className || "header", box: box(el) }))
+          .filter(({ box: b }) => b.right - b.left > 1 && b.bottom - b.top > 1 && b.right > 0 && b.left < innerWidth && b.bottom > 0 && b.top < innerHeight);
+      })()`;
+      const meets = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      for (const [w, h] of [[1440, 900], [1024, 768], [390, 844], [320, 568]]) {
+        const at = `countdown in the app at ${w} px`;
+        await width(w, h);
+        await go(`${base}/`);
+        if (!await until(`!!document.querySelector(".countdown-card") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no card"); continue; }
+        await settle();
+        const all = await evaluate(controls);
+        if (all.length < 6) fail(at, `found only ${all.length} controls of the page to keep clear of: the check can't see its parts`);
+        const place = await evaluate(`(() => { const r = document.querySelector(".countdown-card").getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, dock: document.querySelector(".dock").getBoundingClientRect().top, header: document.querySelector("header").getBoundingClientRect().bottom }; })()`);
+        if (place.left < 0 || place.right > w || place.top < place.header || place.bottom > place.dock) fail(at, `the card leaves the free part of the window: ${JSON.stringify(place)}`);
+        for (const control of all) if (meets(place, control.box)) fail(at, `the card covers "${control.name}" (${control.part})`);
+        await evaluate(`document.querySelector(".countdown-card").click()`);
+        await until(`!!document.querySelector(".countdown-editor")`, 2000);
+        await settle();
+        const editor = await evaluate(`(() => { const r = document.querySelector(".countdown-editor").getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, scrolls: document.querySelector(".countdown-editor").scrollHeight > document.querySelector(".countdown-editor").clientHeight }; })()`);
+        if (editor.left < 0 || editor.right > w || editor.top < place.header || editor.bottom > place.top) fail(at, `the editor leaves the free part of the window: ${JSON.stringify(editor)}`);
+        for (const control of all) if (control.part.includes("dock") && meets(editor, control.box)) fail(at, `the editor covers "${control.name}" in the dock`);
+        await escape();
+        if (!await until(`!document.querySelector(".countdown-editor")`, 2000)) fail(at, "Esc doesn't close the editor in the app");
+        if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail(at, "it broke");
+      }
+    } finally {
+      if (injected) await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injected });
+      await cdp("Emulation.setTimezoneOverride", { timezoneId: "" });
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await width(1280, 860);
+      await go(`${base}/bricks.html`); // Fresh native clock and storage methods before putting the storage back.
+      await evaluate(`${JSON.stringify(keys)}.forEach((key, i) => { const was = ${JSON.stringify(saved)}[i]; if (was === null) localStorage.removeItem(key); else localStorage.setItem(key, was); })`);
+      shown = full;
+    }
+  }
   // Tiny transcript: a panel that takes the live words from the dock (`showsLiveWords`); nothing before words are
   // said, nor for a typed thought; said words show as they come, inside a 320 px screen's edges, and stay with the
   // first-use hint after the turn ends (time to try the slider) until a click dismisses both, for good.
@@ -694,6 +898,300 @@ try {
       if (await evaluate(`[...document.querySelectorAll(".spine-ring")].some((ring) => getComputedStyle(ring).display !== "none")`)) fail("spine", "under Reduce Motion a landing still pulses");
     }
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+
+    // Round 3: margin notes and zoom stops. Words and keys go in as a hand sends them (real mouse and key events), so a press
+    // that lands on the wrong thing, or a key a field should keep, shows here.
+    {
+      const mouse = (type, x, y, extra = {}) => cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, ...extra });
+      // A click, a double-click (count 2) or a shift-click (modifiers 8).
+      const click = async ({ x, y }, count = 1, modifiers = 0) => {
+        await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+        for (let n = 1; n <= count; n++) for (const type of ["mousePressed", "mouseReleased"]) await mouse(type, x, y, { clickCount: n, modifiers });
+      };
+      const tap = async (name, { code, vk, text } = {}) => {
+        for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: name, code, windowsVirtualKeyCode: vk, text: type === "keyDown" ? text : undefined });
+      };
+      const digit = (d) => tap(d, { code: `Digit${d}`, vk: 48 + Number(d), text: d });
+      const typed = async (words) => { for (const ch of words) await tap(ch, { code: ch === " " ? "Space" : undefined, text: ch }); };
+      const lit = () => evaluate(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join()`);
+      // Calm once nothing moves (a glide is 400 ms at most): the view and every thing's place unchanged for 240 ms.
+      const calm = async () => {
+        let last = "", same = 0;
+        for (let i = 0; i < 50 && same < 3; i++) {
+          const at = await evaluate(`document.querySelector(".react-flow__viewport").style.transform + JSON.stringify(${nodesAt})`);
+          same = at === last ? same + 1 : 0;
+          last = at;
+          await sleep(80);
+        }
+      };
+
+      // 1. Margin notes (margin.tsx). The playground answers `annotate` as the core would (annotate-core.ts `noteChanges`) and logs the
+      // call, so a note made here is the map's, as in the app: a thread under the point's, tied to the words in `anchors`.
+      // Where `words` are in point `id`, in screen px: a real range over its text, so a press or a drag lands on them.
+      const wordsAt = (id, words) => evaluate(`(() => {
+        const text = document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-text');
+        if (!text) return null;
+        const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const at = node.textContent.indexOf(${JSON.stringify(words)});
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + ${words.length});
+          const r = range.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: r.left, right: r.right };
+        }
+        return null;
+      })()`);
+      const picking = () => evaluate(`({ words: getSelection().toString(), on: !!document.querySelector(".spine-selecting"), reply: document.querySelector(".spine-reply-ask")?.getAttribute("aria-label") ?? "" })`);
+      // One note as a person makes it: a double-click on `first`, `extend` to take more, Reply, the typing, Enter.
+      const makeNote = async (what, id, first, extend, words, text) => {
+        // A failed note reloads the page, so the next one starts from a clean canvas (a key that zoomed it out, a box left open).
+        const no = async (why) => { fail("spine (notes)", `${what}: ${why}`); await spineAgain(); return false; };
+        const at = await wordsAt(id, first);
+        if (!at) return no(`the check can't find “${first}” in point ${id}`);
+        await click(at, 2);
+        if (!await until(`getSelection().toString() === ${JSON.stringify(first)} && !!document.querySelector(".spine-reply-ask")`, 2000)) return no(`a double-click on “${first}” doesn't pick it and offer Reply (${JSON.stringify(await picking())})`);
+        await extend();
+        if (!await until(`getSelection().toString() === ${JSON.stringify(words)} && document.querySelector(".spine-reply-ask")?.getAttribute("aria-label") === ${JSON.stringify(`Reply to “${words}”`)}`, 2000)) return no(`it doesn't take more than the word: wanted “${words}”, got ${JSON.stringify(await picking())}`);
+        const ask = await evaluate(`(() => { const r = document.querySelector(".spine-reply-ask").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        // The button is what's asserted. Its ↵ (Enter) isn't: with the focus still on the picked words, Enter goes to the words' own
+        // key handler (it picks the point and swallows the key), so the reply opens only once the focus has moved off them.
+        await click(ask);
+        if (!await until(`document.activeElement === document.querySelector(".spine-reply-field")`, 1500)) return no("Reply doesn't open a box with the cursor in it");
+        // Typed as a hand types it: digits and F are the canvas's keys, and a box keeps them.
+        const rested = { view: await view(), lit: await lit(), following: await following() };
+        await typed(text);
+        const value = await evaluate(`document.querySelector(".spine-reply-field")?.value`);
+        const moved = { view: await view(), lit: await lit(), following: await following() };
+        const wrong = [];
+        if (value !== text) wrong.push(`the box has ${JSON.stringify(value)}, not ${JSON.stringify(text)}`);
+        if (JSON.stringify(moved) !== JSON.stringify(rested)) wrong.push(`the camera moved (${JSON.stringify(rested)} → ${JSON.stringify(moved)})`);
+        if (wrong.length) return no(`typing the reply: ${wrong.join("; ")} (its digits and letters are the canvas's keys, and a box keeps them)`);
+        await tap("Enter", { code: "Enter", vk: 13, text: "\r" });
+        if (!await until(`!document.querySelector(".spine-reply") && [...document.querySelectorAll(".spine-quote")].some((q) => q.textContent === ${JSON.stringify(words)})`, 2000)) return no("Enter doesn't send the reply and underline its words");
+        return true;
+      };
+      // What the page shows for the note on `words`: the underlined words, the note, the strings (screen px).
+      const tied = (words) => evaluate(`(() => {
+        const quotes = [...document.querySelectorAll(".spine-quote")];
+        const quote = quotes.find((q) => q.textContent === ${JSON.stringify(words)});
+        if (!quote) return { found: false, quotes: quotes.length };
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+        const note = document.querySelector('.spine-margin[data-margin="' + quote.dataset.margin + '"]');
+        const ends = [...quote.getClientRects()];
+        return { found: true, quotes: quotes.length, underline: getComputedStyle(quote).textDecorationLine, end: ends[ends.length - 1].toJSON(), column: box(quote.closest(".spine-text")),
+          note: note && { ...box(note), text: note.textContent, role: note.getAttribute("role") },
+          dots: [...document.querySelectorAll(".spine-link-end-note")].map((c) => { const r = c.getBoundingClientRect(); return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }; }),
+          strings: [...document.querySelectorAll(".spine-link-note")].map(box) };
+      })()`);
+      // Each made note shows tied to its exact words: those words, and only those, underlined; the note in the column to the
+      // right of its point, level with them; a string from where the words end to the note.
+      const looksTied = async (stage, made) => {
+        await settle();
+        await calm();
+        for (const { words, text } of made) {
+          const t = await tied(words);
+          const bad = (why) => fail("spine (notes)", `${stage}: the note on “${words}” ${why}`);
+          if (!t.found) { bad(`has no underlined words (${t.quotes} underlined)`); continue; }
+          if (t.quotes !== made.length) fail("spine (notes)", `${stage}: ${t.quotes} stretches underlined for ${made.length} notes (only the words picked)`);
+          if (!t.underline.includes("underline")) bad(`isn't underlined (${t.underline})`);
+          if (!t.note) { bad("isn't shown beside its words"); continue; }
+          if (!t.note.text.includes(text) || t.note.role !== "note") bad(`doesn't say ${JSON.stringify(text)} as a note (${JSON.stringify(t.note)})`);
+          if (t.note.left < t.column.right || Math.abs(t.note.top - t.end.top) > 14) bad(`isn't beside its words, level with them (note ${JSON.stringify(t.note)}; the words end at ${Math.round(t.end.right)}, ${Math.round(t.end.top)})`);
+          const dot = t.dots.find((d) => Math.abs(d.x - (t.end.right + 3)) <= 3 && Math.abs(d.y - (t.end.top + t.end.bottom) / 2) <= 6);
+          if (!dot) bad(`has no string starting where its words end (they end at ${Math.round(t.end.right)}, ${Math.round((t.end.top + t.end.bottom) / 2)}; strings start at ${JSON.stringify(t.dots.map((d) => [Math.round(d.x), Math.round(d.y)]))})`);
+          else if (!t.strings.some((s) => Math.abs(s.left - dot.x) <= 3 && Math.abs(s.right - (t.note.left - 4)) <= 3)) bad("has a string that doesn't reach the note");
+        }
+      };
+
+      await spineAgain();
+      const made = [];
+      // A: a shift-click takes the words up to it; the reply is started by Reply's button.
+      const A = { id: "th-2", first: "precheck", words: "precheck passes", text: "Only 2 of 3 runs pass" };
+      const shiftToPasses = async () => { const to = await wordsAt(A.id, "passes"); if (to) await click({ x: to.right - 2, y: to.y }, 1, 8); };
+      if (await makeNote("a note by double-click and shift-click", A.id, A.first, shiftToPasses, A.words, A.text)) made.push(A);
+      // B: a drag across the words takes them (the point stays: a drag moves a point only when its words aren't being picked).
+      const B = { id: "th-1", first: "Deadline", words: "need to record", text: "Check 1 first, then 0" };
+      const dragAcross = async () => {
+        const from = await wordsAt(B.id, "need"), to = await wordsAt(B.id, "record");
+        if (!from || !to) return;
+        const spot = () => evaluate(`document.querySelector('.react-flow__node[data-id="p:${B.id}"]').style.transform`);
+        const was = await spot();
+        await drag({ x: from.left + 1, y: from.y }, { x: to.right - 1, y: to.y }, 8);
+        if (await spot() !== was) fail("spine (notes)", "a drag across picked words moved the point instead of taking the words");
+      };
+      if (await makeNote("a note by double-click and drag", B.id, B.first, dragAcross, B.words, B.text)) made.push(B);
+      // Esc lets picked words go, and the Reply with them.
+      const goer = await wordsAt("th-3", "README");
+      if (goer) await click(goer, 2);
+      if (!goer || !await until(`!!document.querySelector(".spine-reply-ask")`, 2000)) fail("spine (notes)", `a double-click on “README” picks nothing (${JSON.stringify(await picking())})`);
+      else {
+        await tap("Escape", { code: "Escape", vk: 27 });
+        if (!await until(`!document.querySelector(".spine-reply-ask") && !document.querySelector(".spine-selecting") && getSelection().toString() === ""`, 1500)) fail("spine (notes)", `Esc doesn't let picked words go (${JSON.stringify(await picking())})`);
+      }
+      if (made.length) {
+        await looksTied("just made", made);
+        // The host is asked for what was picked and said: which thought, which words, what text (the playground logs the call; the
+        // first note on words starts their note, so it says "a new note").
+        const log = await evaluate(`[...document.querySelectorAll(".playground-log li")].map((li) => li.textContent)`);
+        for (const { id, words, text } of made) if (!log.includes(`annotate ${id} “${words}”: “${text}” → a new note on those words`)) fail("spine (notes)", `the host wasn't asked for ${JSON.stringify([id, words, text])} (asked: ${JSON.stringify(log.filter((line) => line.startsWith("annotate")))})`);
+        // A new map (another thought lands): the notes stay on their words.
+        await press("Add a thought");
+        if (!await until(`!!document.querySelector('.react-flow__node[data-id^="p:pg-"]')`, 4000)) fail("spine (notes)", "the check's thought never landed");
+        else await looksTied("after another thought landed", made);
+        // A phone's width (the window narrows): the note tucks under its point (no column beside it, so no string), words still
+        // underlined.
+        await width(390, 844);
+        await settle();
+        await calm();
+        for (const { id, words, text } of made) {
+          const t = await evaluate(`(() => {
+            const node = document.querySelector('.react-flow__node[data-id="p:${id}"]');
+            const quote = [...(node?.querySelectorAll(".spine-quote") ?? [])].find((q) => q.textContent === ${JSON.stringify(words)});
+            const tuck = quote && node.querySelector('.spine-tuck[data-margin="' + quote.dataset.margin + '"]');
+            const under = node?.querySelector(".spine-text")?.getBoundingClientRect() ?? { left: 0, right: 0, bottom: 0 }, r = tuck?.getBoundingClientRect();
+            return { underlined: !!quote && getComputedStyle(quote).textDecorationLine.includes("underline"), tuck: r && { left: r.left, right: r.right, top: r.top, text: tuck.textContent },
+              under: { left: under.left, right: under.right, bottom: under.bottom }, beside: document.querySelectorAll(".spine-margin").length, strings: document.querySelectorAll(".spine-link-note").length,
+              sideways: document.documentElement.scrollWidth - innerWidth };
+          })()`);
+          const bad = (why) => fail("spine (notes)", `at 390 px the note on “${words}” ${why} (${JSON.stringify(t)})`);
+          if (!t.underlined) bad("isn't on underlined words");
+          if (!t.tuck) bad("doesn't tuck under its point");
+          else if (t.tuck.top < t.under.bottom - 1 || t.tuck.left < t.under.left - 1 || t.tuck.right > t.under.right + 1 || !t.tuck.text.includes(text)) bad("isn't under its point's words, in their column, with what was said");
+          if (t.beside || t.strings) bad("still hangs beside the point (a column and a string)");
+          if (t.sideways > 1) bad("makes the page scroll sideways");
+        }
+        await width(1280, 860);
+      }
+
+      // 2. Zoom stops (corner.tsx): 1 2 3 are Words · Titles · Pictures, 0 sees all. Each changes what's drawn, the control
+      // shows the one that's on, and no key fires while a field has the keyboard (the reply box above, the composer below).
+      await spineAgain();
+      const level = () => evaluate(`(() => {
+        const frame = document.querySelector(".spine-frame").getBoundingClientRect();
+        const inside = [...document.querySelectorAll(".react-flow__node")].every((node) => { const r = node.getBoundingClientRect();
+          return r.left >= frame.left - 2 && r.right <= frame.right + 2 && r.top >= frame.top - 2 && r.bottom <= frame.bottom + 2; });
+        return {
+          zoom: +(document.querySelector(".react-flow__viewport").style.transform.match(/scale\\(([-\\d.]+)\\)/)?.[1] ?? 0),
+          lit: [...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join(),
+          words: document.querySelectorAll(".spine-text").length, bars: document.querySelectorAll(".spine-point .spine-bars").length,
+          heads: [...document.querySelectorAll(".spine-head .spine-title")].map((t) => t.textContent).sort().join(" | "),
+          labels: [...document.querySelectorAll(".spine-label")].map((l) => l.textContent).sort().join(" | "),
+          pictures: document.querySelector(".spine-frame").classList.contains("spine-stop-pictures"),
+          cards: [...document.querySelectorAll(".spine-card")].map((c) => getComputedStyle(c).visibility).join(),
+          tile: Math.round(document.querySelector(".spine-tile").getBoundingClientRect().width), inside };
+      })()`);
+      const goTo = async (k, want) => {
+        await digit(k);
+        if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === ${JSON.stringify(want)}`, 2500)) {
+          fail("spine (zoom stops)", `${k} doesn't light ${want} on the control (it shows ${await lit() || "none"})`);
+          return null;
+        }
+        await calm();
+        return level();
+      };
+      const judge = (what, shows, rules) => {
+        const wrong = rules.filter(([ok]) => !ok).map(([, why]) => why);
+        if (wrong.length) fail("spine (zoom stops)", `${what}: ${wrong.join("; ")} (${JSON.stringify(shows)})`);
+      };
+      const atWords = await level();
+      const control = await evaluate(`({ stops: [...document.querySelectorAll(".spine-stop")].map((b) => b.textContent).join(), all: document.querySelector(".spine-camera-row .spine-pill")?.textContent })`);
+      if (control.stops !== "Words1,Titles2,Pictures3" || control.all !== "See all0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Words 1 · Titles 2 · Pictures 3 and See all 0`);
+      judge("it opens at Words", atWords, [[atWords.lit === "Words", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
+        [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
+      const atTitles = await goTo("2", "Titles");
+      if (atTitles) judge("2 (Titles)", atTitles, [[atTitles.zoom < atWords.zoom, "the view didn't zoom out"], [!atTitles.words && atTitles.bars > 0, "words didn't turn to bars"],
+        [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.inside, "the whole map isn't in view"]]);
+      const atPictures = await goTo("3", "Pictures");
+      if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [!!atPictures.cards && !atPictures.cards.split(",").some((v) => v !== "hidden"), "tangent cards still show"],
+        [!atTitles || atPictures.tile > atTitles.tile * 1.5, "each topic's picture isn't bigger than at Titles"], [atPictures.inside, "the whole map isn't in view"]]);
+      const atBack = await goTo("1", "Words");
+      if (atBack) judge("1 (Words)", atBack, [[atBack.zoom >= atWords.zoom, "the view isn't back at reading size"], [atBack.words > 0 && !atBack.bars, "not every word shows"], [!atBack.labels && !atBack.pictures, "a far-out look stays on"]]);
+      // Far out, with no stop asked for, the control says Titles: it tells where the view is.
+      const atAll = await goTo("0", "Titles");
+      if (atAll) judge("0 (See all)", atAll, [[atAll.zoom < atWords.zoom, "the view didn't zoom out"], [atAll.inside, "the whole map isn't in view"], [!atAll.pictures, "it has the Pictures look"]]);
+
+      // 3. In the app, where the stand-in core can send what the playground can't: notes as the core keeps them (a thread under the
+      // point's, tied to words in `anchors`), another person's among them, and the app's own composer, which has the keyboard
+      // when the app opens.
+      {
+        const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+        await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ spine: true }))`);
+        // T1's one point is "Rent due Friday, point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's
+        // question on "point 1" is answered.
+        const quoted = { N1: "Friday", N2: "Rent due", N3: "point 1" };
+        const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
+        shown = { ...full, threads: [...full.threads, ...Object.entries(quoted).map(([id, quote]) => thread(id, quote, { parent_id: "T1" }))],
+          thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
+          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, { thought_id: "T1-0", quote }])) };
+        const openSpine = async () => {
+          await go(`${base}/`);
+          if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
+          await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+          await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
+          if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) return false;
+          await settle();
+          return true;
+        };
+        const notesShown = () => evaluate(`(() => {
+          const box = (el) => { const r = el?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          const quote = (id) => document.querySelector('.spine-quote[data-margin="' + id + '"]');
+          const fold = document.querySelector('.spine-fold[data-fold-for="N1"]');
+          return { quotes: ["N1", "N2", "N3"].map((id) => quote(id)?.textContent ?? null).join(" | "),
+            underlined: [...document.querySelectorAll(".spine-quote")].every((q) => getComputedStyle(q).textDecorationLine.includes("underline")),
+            folds: [...document.querySelectorAll(".spine-fold")].map((f) => f.dataset.foldFor + " " + f.textContent).join(),
+            fold: fold && { ...box(fold), shown: getComputedStyle(fold).visibility === "visible" }, words: box(quote("N1")),
+            notes: Object.fromEntries([...document.querySelectorAll(".spine-margin")].map((m) => [m.dataset.margin, m.textContent])),
+            tangents: [...document.querySelectorAll(".spine-card")].map((c) => c.dataset.thread).filter((id) => /^N/.test(id)).join() };
+        })()`);
+        // What the notes show, with N1's question folded (nobody has opened it here) or open.
+        const judgeNotes = (stage, look, folded) => {
+          const bad = (why) => fail("spine (notes)", `in the app, ${stage}: ${why} (${JSON.stringify(look)})`);
+          if (look.quotes !== "Friday | Rent due | point 1" || !look.underlined) bad("each note's own words aren't underlined");
+          if (look.tangents) bad("a note is drawn as a tangent card");
+          if (look.folds !== (folded ? "N1 …?" : "")) bad(folded ? "another person's unanswered question should fold to “…?”, and nothing else should" : "an opened question still shows its “…?”");
+          else if (folded) {
+            if (!look.fold.shown || look.fold.left < look.words.right - 2 || look.fold.left > look.words.right + 24 || look.fold.top > look.words.bottom || look.fold.bottom < look.words.top) bad("the “…?” isn't right after its words");
+            if ("N1" in look.notes) bad("a folded question's note shows before it's opened");
+          } else if (!look.notes.N1?.includes("Which Friday?")) bad("an opened question doesn't show");
+          if (!look.notes.N2?.includes("Is it paid?")) bad("your own question is hidden from you (it shows at once)");
+          if (!look.notes.N3?.includes("Which one?") || !look.notes.N3.includes("The first")) bad("an answered question doesn't show with its answer");
+        };
+        if (!await openSpine()) fail("spine (notes)", "the Spine never showed in the app");
+        else {
+          judgeNotes("when it opens", await notesShown(), true);
+          await evaluate(`document.querySelector('.spine-fold[data-fold-for="N1"]')?.click()`);
+          const opened = await until(`!document.querySelector(".spine-fold") && !!document.querySelector('.spine-margin[data-margin="N1"]')`, 2000);
+          if (!opened) fail("spine (notes)", "in the app, the “…?” doesn't open the question");
+          else judgeNotes("once the question is opened", await notesShown(), false);
+          // A new snapshot, as the core sends one when a window reconnects: the notes stay, and the question opened stays open.
+          core.send({ type: "snapshot", world: shown });
+          await settle();
+          await calm();
+          judgeNotes("after a new snapshot", await notesShown(), !opened);
+          // A reload: the map alone brings the notes back (nothing is kept in the window), the question folded again.
+          if (!await openSpine()) fail("spine (notes)", "the Spine never showed in the app after a reload");
+          else {
+            judgeNotes("after a reload", await notesShown(), true);
+            // The composer has the keyboard when the app opens: the camera's keys are typed into it, and move nothing.
+            await evaluate(`document.querySelector(".composer textarea")?.focus()`);
+            const rested = { view: await view(), lit: await lit(), following: await following() };
+            await typed("2 3 0 f");
+            const value = await evaluate(`document.querySelector(".composer textarea")?.value`);
+            const moved = { view: await view(), lit: await lit(), following: await following() };
+            if (value !== "2 3 0 f") fail("spine (zoom stops)", `typing in the composer left ${JSON.stringify(value)}, not "2 3 0 f"`);
+            if (JSON.stringify(moved) !== JSON.stringify(rested)) fail("spine (zoom stops)", `typing in the composer moved the camera (${JSON.stringify(rested)} → ${JSON.stringify(moved)})`);
+            // The same keys do work once the keyboard is the canvas's.
+            await evaluate(`document.activeElement?.blur()`);
+            await digit("2");
+            if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Titles"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Titles once the composer lets go of the keyboard");
+          }
+        }
+        await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+        shown = full;
+      }
+    }
   }
   // Brick chip: a panel that marks the app's points (the playground draws none), so it's checked in the app. Nothing on
   // the map that was there, nor on an empty one; a chip naming the brick on each point that lands after, anyone's,
