@@ -179,6 +179,12 @@ pub struct World {
     /// its topic; only a thread on the map counts.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub topics: std::collections::HashMap<String, String>,
+    /// Threads whose theme a person chose by moving the thread or renaming its theme. Rebuilt by journal replay.
+    #[serde(default, skip_serializing)]
+    pub topics_chosen: std::collections::HashSet<String>,
+    /// The thread count at the last grouping baseline. Rebuilt by journal replay.
+    #[serde(default, skip_serializing)]
+    pub topics_grouped: usize,
     /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
     #[serde(default, skip_serializing)]
     pub read_ms: std::collections::HashSet<u64>,
@@ -340,7 +346,11 @@ pub enum Change {
     /// A window joined as an AI participant (`?ai`) under `speaker`: from now on its words are marked as an AI's.
     AiJoined { speaker: String },
     /// The AI's pass put these top threads under these topics (topics.rs): only threads on the map, a name each.
-    TopicsAssigned { assigned: Vec<crate::topics::Assigned> },
+    TopicsAssigned {
+        assigned: Vec<crate::topics::Assigned>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        grouped: Option<usize>,
+    },
     /// A person moved a top thread under a topic (topics.rs `set`): theirs, whatever the AI said.
     TopicSet { thread_id: String, topic: String },
     /// A person renamed a topic: every thread under `from` is under `to` now (an existing name: the two are one).
@@ -508,7 +518,10 @@ impl World {
                 }
             }
             // By the ids as given (topics.rs never names a thread merged away), and never an empty name.
-            Change::TopicsAssigned { assigned } => {
+            Change::TopicsAssigned { assigned, grouped } => {
+                if let Some(grouped) = grouped {
+                    self.topics_grouped = *grouped;
+                }
                 for a in assigned {
                     if !a.topic.trim().is_empty() && self.thread(&a.thread_id).is_some() {
                         self.topics.insert(a.thread_id.clone(), a.topic.clone());
@@ -517,12 +530,16 @@ impl World {
             }
             Change::TopicSet { thread_id, topic } => {
                 if !topic.trim().is_empty() && self.thread(thread_id).is_some() {
+                    self.topics_chosen.insert(thread_id.clone());
                     self.topics.insert(thread_id.clone(), topic.clone());
                 }
             }
             Change::TopicRenamed { from, to } => {
                 if !to.trim().is_empty() {
-                    self.topics.values_mut().filter(|name| *name == from).for_each(|name| *name = to.clone());
+                    for (id, name) in self.topics.iter_mut().filter(|(_, name)| *name == from) {
+                        self.topics_chosen.insert(id.clone());
+                        *name = to.clone();
+                    }
                 }
             }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
@@ -1361,6 +1378,151 @@ mod tests {
         }
     }
 
+    const TOPICS_MEMORY_LEGACY: &str = r#"{"type":"topics_assigned","assigned":[{"thread_id":"T1","topic":"Work"},{"thread_id":"T2","topic":"Work"},{"thread_id":"T3","topic":"Money"},{"thread_id":"T4","topic":"Family"}]}"#;
+
+    fn topics_memory_world() -> World {
+        let mut world = World::default();
+        for id in ["T1", "T2", "T3", "T4"] {
+            world.apply(&Change::ThreadAdded { thread: test_thread(id, None) });
+        }
+        world.apply(&serde_json::from_str::<Change>(TOPICS_MEMORY_LEGACY).unwrap());
+        world
+    }
+
+    #[test]
+    fn topics_memory_manual_choices_include_the_existing_theme() {
+        let mut world = topics_memory_world();
+        assert!(world.topics_chosen.is_empty(), "AI assignments are not personal choices");
+        world.apply(&Change::TopicSet { thread_id: "T1".into(), topic: "Work".into() });
+        assert_eq!(world.topics_chosen, ["T1".into()].into());
+        world.apply(&Change::TopicSet { thread_id: "T2".into(), topic: "Travel".into() });
+        assert_eq!(world.topics["T2"], "Travel");
+        assert_eq!(world.topics_chosen, ["T1".into(), "T2".into()].into());
+
+        world.apply(&Change::TopicsAssigned {
+            assigned: vec![
+                crate::topics::Assigned { thread_id: "T1".into(), topic: "Plans".into() },
+                crate::topics::Assigned { thread_id: "T3".into(), topic: "Bills".into() },
+                crate::topics::Assigned { thread_id: "T4".into(), topic: " ".into() },
+                crate::topics::Assigned { thread_id: "missing".into(), topic: "Plans".into() },
+            ],
+            grouped: None,
+        });
+        assert_eq!(world.topics["T1"], "Plans", "assignment behavior is unchanged");
+        assert_eq!(world.topics["T3"], "Bills");
+        assert_eq!(world.topics["T4"], "Family");
+        assert!(!world.topics.contains_key("missing"));
+        assert_eq!(world.topics_chosen, ["T1".into(), "T2".into()].into());
+    }
+
+    #[test]
+    fn topics_memory_rename_marks_only_source_members_before_joining() {
+        let mut world = topics_memory_world();
+        world.apply(&Change::ThreadRemoved { thread_id: "T2".into() });
+        world.apply(&Change::TopicRenamed { from: "Work".into(), to: "Money".into() });
+        assert_eq!(world.topics_chosen, ["T1".into(), "T2".into()].into(), "retained themes follow renames too");
+        for id in ["T1", "T2", "T3"] {
+            assert_eq!(world.topics[id], "Money");
+        }
+        assert_eq!(world.topics["T4"], "Family");
+        world.apply(&Change::TopicRenamed { from: "Family".into(), to: "Family".into() });
+        assert_eq!(world.topics_chosen, ["T1".into(), "T2".into(), "T4".into()].into());
+    }
+
+    #[test]
+    fn topics_memory_invalid_manual_changes_leave_choices_unchanged() {
+        let mut world = topics_memory_world();
+        let before = world.topics.clone();
+        for change in [
+            Change::TopicSet { thread_id: "missing".into(), topic: "Work".into() },
+            Change::TopicSet { thread_id: "T1".into(), topic: " \n ".into() },
+            Change::TopicRenamed { from: "Work".into(), to: " \t ".into() },
+            Change::TopicRenamed { from: "missing".into(), to: "Work".into() },
+        ] {
+            world.apply(&change);
+        }
+        assert_eq!(world.topics, before);
+        assert!(world.topics_chosen.is_empty());
+        assert_eq!(world.topics_grouped, 0);
+    }
+
+    #[test]
+    fn topics_memory_legacy_decoding_and_optional_grouped() {
+        let legacy: Change = serde_json::from_str(TOPICS_MEMORY_LEGACY).unwrap();
+        assert!(matches!(&legacy, Change::TopicsAssigned { grouped: None, .. }));
+        let value = serde_json::to_value(&legacy).unwrap();
+        assert!(value.get("grouped").is_none());
+        assert_eq!(value, serde_json::from_str::<serde_json::Value>(TOPICS_MEMORY_LEGACY).unwrap());
+
+        let mut world = topics_memory_world();
+        world.apply(&Change::TopicsAssigned { assigned: vec![], grouped: Some(8) });
+        world.apply(&legacy);
+        world.apply(&Change::TopicsAssigned { assigned: vec![], grouped: None });
+        assert_eq!(world.topics_grouped, 8);
+        world.apply(&Change::TopicsAssigned { assigned: vec![], grouped: Some(0) });
+        assert_eq!(world.topics_grouped, 0, "an explicit zero replaces the baseline");
+        assert!(world.topics_chosen.is_empty());
+    }
+
+    #[test]
+    fn topics_memory_world_serialization_omits_bookkeeping() {
+        let mut world = topics_memory_world();
+        world.apply(&Change::TopicSet { thread_id: "T1".into(), topic: "Work".into() });
+        world.apply(&Change::TopicsAssigned { assigned: vec![], grouped: Some(8) });
+        let value = serde_json::to_value(&world).unwrap();
+        assert!(value.get("topics_chosen").is_none());
+        assert!(value.get("topics_grouped").is_none());
+        let snapshot: World = serde_json::from_value(value).unwrap();
+        assert_eq!(snapshot.topics, world.topics);
+        assert!(snapshot.topics_chosen.is_empty());
+        assert_eq!(snapshot.topics_grouped, 0);
+    }
+
+    #[test]
+    fn topics_memory_journal_reopening_preserves_choices_and_baseline() {
+        let path = std::env::temp_dir().join(format!("e2a2o-topics-memory-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut lines = Vec::new();
+        for id in ["T1", "T2", "T3", "T4"] {
+            lines.push(serde_json::to_string(&Change::ThreadAdded { thread: test_thread(id, None) }).unwrap());
+        }
+        lines.push(TOPICS_MEMORY_LEGACY.into());
+        std::fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+        {
+            let (mut journal, mut world) = super::Journal::open(&path).unwrap();
+            assert_eq!(world.topics["T1"], "Work", "legacy records replay");
+            assert!(world.topics_chosen.is_empty());
+            assert_eq!(world.topics_grouped, 0);
+            for change in [
+                Change::TopicSet { thread_id: "T1".into(), topic: "Work".into() },
+                Change::TopicRenamed { from: "Work".into(), to: "Money".into() },
+                Change::TopicsAssigned { assigned: vec![], grouped: Some(8) },
+            ] {
+                world.apply(&change);
+                journal.append(&change).unwrap();
+            }
+        }
+        {
+            let (mut journal, mut world) = super::Journal::open(&path).unwrap();
+            assert_eq!(world.topics_chosen, ["T1".into(), "T2".into()].into());
+            assert_eq!(world.topics_grouped, 8);
+            let change = Change::TopicsAssigned {
+                assigned: vec![crate::topics::Assigned { thread_id: "T4".into(), topic: "Travel".into() }],
+                grouped: None,
+            };
+            world.apply(&change);
+            journal.append(&change).unwrap();
+            assert_eq!(world.topics_grouped, 8);
+            assert_eq!(world.topics_chosen, ["T1".into(), "T2".into()].into());
+        }
+        let (_, replayed) = super::Journal::open(&path).unwrap();
+        assert_eq!(replayed.topics_chosen, ["T1".into(), "T2".into()].into());
+        assert_eq!(replayed.topics_grouped, 8);
+        assert_eq!(replayed.topics["T1"], "Money");
+        assert_eq!(replayed.topics["T2"], "Money");
+        assert_eq!(replayed.topics["T4"], "Travel");
+        std::fs::remove_file(path).unwrap();
+    }
+
     fn test_thought(id: &str, speaker: &str, thread: &str) -> Thought {
         Thought {
             id: id.into(),
@@ -1629,6 +1791,7 @@ mod tests {
                     crate::topics::Assigned { thread_id: "T2".into(), topic: "Gone".into() },
                     crate::topics::Assigned { thread_id: "T8".into(), topic: " ".into() },
                 ],
+                grouped: Some(3),
             },
             Change::TopicSet { thread_id: "T4".into(), topic: "Demo day".into() },
             Change::TopicSet { thread_id: "T8".into(), topic: "Muse models".into() },

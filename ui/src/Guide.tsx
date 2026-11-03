@@ -323,6 +323,7 @@ function stageSpot(): { x: number; foot: number } {
  *  caption keeps it from ending, its time still running (that's reading it); off it, at least a moment more. */
 function useReadingClock(done: () => void) {
   const left = useRef(0); // the time still owed as of `since`
+  const duration = useRef(0);
   const since = useRef(0); // when the page last showed; 0 while hidden
   const over = useRef(false);
   const running = useRef(false);
@@ -346,7 +347,8 @@ function useReadingClock(done: () => void) {
     return () => { window.clearTimeout(timer.current); document.removeEventListener("visibilitychange", seen); };
   }, []);
   return useRef({
-    start(ms: number) { running.current = true; owe(ms); arm(); },
+    start(ms: number) { duration.current = ms; running.current = true; owe(ms); arm(); },
+    resize(ms: number) { left.current += ms - duration.current; duration.current = ms; arm(); },
     hold(on: boolean) {
       over.current = on;
       if (on) window.clearTimeout(timer.current);
@@ -359,6 +361,8 @@ function useReadingClock(done: () => void) {
 /** The caption at the stage: what's said now, or the point's own words while it's up alone; the arrow comes from it. */
 function Line({ said, point, where, ai, raise, on }: { said: Said | null; point: Shown | null; where: string; ai: boolean; raise: number; on: BrickOn | null }) {
   const reduced = !!useReducedMotion();
+  const slot = useSlot("caption", "#shell-caption");
+  const reservation = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const name = useRef<HTMLSpanElement>(null);
   const words = useRef<HTMLSpanElement>(null);
@@ -370,6 +374,8 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
   const [leaving, setLeaving] = useState<"" | "read" | "back">("");
   const [settled, setSettled] = useState(false);
   const [micOn, setMicOn] = useState(false);
+  const [captionWidth, setCaptionWidth] = useState(0);
+  const position = useRef(0); // words in the original text before the current page
   const now = useRef({ list, page, shown: Date.now(), leaving: false });
   now.current.list = list;
   now.current.page = page;
@@ -390,7 +396,16 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     const el = card.current;
     if (!el) return;
     const width = document.documentElement.clientWidth;
-    const { x, foot } = stageSpot();
+    const wrapper = reservation.current;
+    if (slot && wrapper) {
+      const room = Math.min(680, width - 2 * GUTTER, wrapper.getBoundingClientRect().width);
+      el.style.maxWidth = `${room}px`;
+      setCaptionWidth((was) => was === room ? was : room);
+      // A manual popover leaves normal flow; its wrapper keeps precisely the room it uses.
+      wrapper.style.height = `${el.offsetHeight}px`;
+    } else setCaptionWidth((was) => was === 0 ? was : 0);
+    const reserved = slot ? drawnBox(".guide-caption-slot") : null;
+    const { x, foot } = reserved ? { x: (reserved.left + reserved.right) / 2, foot: reserved.bottom } : stageSpot();
     const left = Math.min(Math.max(GUTTER, x - el.offsetWidth / 2), width - GUTTER - el.offsetWidth);
     el.style.translate = `${Math.round(left)}px ${Math.round(Math.max(GUTTER, foot - el.offsetHeight))}px`;
   };
@@ -406,10 +421,10 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [slot]);
 
-  // Two lines at a time: measured once, in the caption's own font and width (a question asked is one page: it's held
-  // short, guide.rs HOLD_MAX; so is a point's own line).
+  // Two lines at a time: measured in the caption's own font and width, again when the slot resizes (a question asked
+  // is one page: it's held short, guide.rs HOLD_MAX; so is a point's own line).
   useLayoutEffect(() => {
     const el = words.current, box = card.current;
     if (!said || asking || !el || !box) return;
@@ -417,17 +432,27 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     const pen = document.createElement("canvas").getContext("2d");
     if (!pen) return;
     pen.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const room = (parseFloat(boxStyle.maxWidth) || box.offsetWidth) - parseFloat(boxStyle.paddingLeft) - parseFloat(boxStyle.paddingRight) - 2;
-    // The name, its margin and the space after it come first on page one's first line.
+    const room = (captionWidth || parseFloat(boxStyle.maxWidth) || box.offsetWidth) - parseFloat(boxStyle.paddingLeft) - parseFloat(boxStyle.paddingRight) - 2;
+    // The name, its margin and the space after it start the newly paged remainder's first line.
     const lead = (name.current?.offsetWidth ?? 0) + parseFloat(getComputedStyle(name.current ?? el).marginRight || "0") + pen.measureText(" ").width;
-    setList(pages(text, room, (run) => pen.measureText(run).width, lead));
-  }, [said?.n]);
+    const source = text.split(/\s+/).filter(Boolean);
+    const before = source.slice(0, position.current).join(" ");
+    const rest = source.slice(position.current).join(" ");
+    // Reopen a bold span at the source position, as pages does at each page break.
+    const unread = (before.match(/\*\*/g) ?? []).length % 2 ? `**${rest}` : rest;
+    const next = [...now.current.list.slice(0, now.current.page), ...pages(unread, room, (run) => pen.measureText(run).width, lead)];
+    setList((was) => was.length === next.length && was.every((line, i) => line === next[i]) ? was : next);
+  }, [said?.n, asking, captionWidth]);
 
   const clock = useReadingClock(() => {
     if (!said) return;
     // Unanswered: back to the stack, to wait for you.
     if (said.ask) { later(said.n); return; }
-    if (now.current.page < now.current.list.length - 1) { setPage((p) => p + 1); return; }
+    if (now.current.page < now.current.list.length - 1) {
+      position.current += now.current.list[now.current.page].split(/\s+/).filter(Boolean).length;
+      setPage((p) => p + 1);
+      return;
+    }
     setLeaving("read");
   });
   // Each page its reading time; a question asked, the time to read it, look and decide; gone ahead, its reading time.
@@ -435,7 +460,11 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
     if (!said) return;
     now.current.shown = Date.now();
     clock.start(said.ask ? askMs(said.text) : captionMs(list[page] ?? said.text));
-  }, [said?.n, asking, page, list]);
+  }, [said?.n, asking, page]);
+  // A different width changes the page's reading time, retaining time already spent and any pointer/hidden hold.
+  useEffect(() => {
+    if (said) clock.resize(said.ask ? askMs(said.text) : captionMs(list[page] ?? said.text));
+  }, [list]);
 
   // Faded out: gone. Without motion it goes at once.
   useEffect(() => {
@@ -461,7 +490,7 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
   }, [on, said?.n]);
 
   const shownText = said ? (list[page] ?? text) : text;
-  return createPortal(<div ref={card} className="guide-caption" popover="manual" role="group" aria-label={`${by} says`} data-n={said?.n ?? ""}
+  const caption = <div ref={card} className="guide-caption" popover="manual" role="group" aria-label={`${by} says`} data-n={said?.n ?? ""}
     data-ai={ai || undefined} data-asking={asking || undefined} data-settled={settled || undefined} data-leaving={leaving || undefined}
     onAnimationEnd={(event) => { if (event.target === card.current) setSettled(true); }}
     onPointerEnter={() => clock.hold(true)}
@@ -477,7 +506,8 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
       <button type="button" className="guide-btn" onClick={() => dropIt(said.n)}>Drop it <kbd>esc</kbd></button>
       {micOn && <span className="guide-over">or talk over me<span className="guide-over-more"> to stop</span></span>}
     </span>}
-  </div>, document.body);
+  </div>;
+  return createPortal(slot ? <div ref={reservation} className="guide-caption-slot">{caption}</div> : caption, slot ?? document.body);
 }
 
 /** Below this width the held stack folds to a chip (a phone): cards would cover the map you're talking about. */
@@ -554,8 +584,8 @@ function HeldCard({ item, ai }: { item: Held; ai: boolean }) {
 }
 
 /** The page's region named `name` (bricks/contract.ts `SlotName`) while it's there: it comes and goes with the layout. */
-function useSlot(name: string): HTMLElement | null {
-  const find = () => document.querySelector<HTMLElement>(`[data-slot="${name}"]`);
+function useSlot(name: string, selector = `[data-slot="${name}"]`): HTMLElement | null {
+  const find = () => document.querySelector<HTMLElement>(selector);
   const [slot, setSlot] = useState<HTMLElement | null>(find);
   useEffect(() => {
     let frame = 0;
@@ -563,6 +593,6 @@ function useSlot(name: string): HTMLElement | null {
     const watcher = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(look); });
     watcher.observe(document.body, { childList: true, subtree: true });
     return () => { watcher.disconnect(); cancelAnimationFrame(frame); };
-  }, [name]);
+  }, [selector]);
   return slot;
 }
