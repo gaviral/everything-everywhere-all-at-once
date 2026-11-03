@@ -1056,189 +1056,8 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  if (SHELL2) {
-    const empty = world.threads.length === 0;
-    const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
-    const phone = typeof window !== "undefined" && window.innerWidth <= 560;
-    // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
-    const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
-    const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
-    const aiNames = new Set(world.ai ?? []);
-    const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
-      .map((thread) => ({ thread, points: thoughtsByThread.get(thread.id)?.length ?? 0 })) : [];
-    const rows: CatalogRow[] = [
-      ...BRICKS.map(({ info }): CatalogRow => {
-        const named = FEATURE_NAMES[info.id];
-        return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
-          on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value) };
-      }),
-      ...BUILT_INS.map((b): CatalogRow => {
-        const named = FEATURE_NAMES[b.id];
-        return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false, toggle: (value) => switchBuiltIn(b.id, value) };
-      }),
-      ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
-        toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected })),
-    ].sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
-    const undoEntry = (entry: Entry) => {
-      const undo = entry.undo;
-      if (!undo) return;
-      if (undo.kind === "turn") core.undo(undo.id);
-      else if (undo.kind === "change") { core.untidy(undo.undo); core.restore(undo.restore); }
-      else core.remove(undo.thoughtId);
-      history.markUndone(entry.n);
-    };
-    const show = (id: string) => {
-      const thread = threadById.get(resolveMerged(world, id));
-      if (!thread) return;
-      if (phone) setRailTab(null);
-      goBack(thread);
-    };
-    const keys: [string, string][] = [
-      ["/", "Find a topic or words"], [mod("D"), "Start or stop listening"], [RAIL_KEYS.talk, "Talk: what's said, as turns"],
-      [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Catalog: the features, on or off"], [RAIL_KEYS.settings, "Settings"],
-      ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
-    ];
-    const tabs: RailTab[] = ["talk", "history", "catalog", "settings"];
-    return (
-      <MotionConfig reducedMotion="user">
-      <AttentionProvider value={attention.value}>
-      <WhyContext.Provider value={whyAsk}>
-      <div className="app shell" onClickCapture={(event) => {
-        const target = event.target as HTMLElement;
-        if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
-      }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
-        <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
-        <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
-        <TopRight>
-          {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={(thread) => goBack(thread)} />}
-          {builtIns.has("export") && (world.threads.length > 0 || world.thoughts.length > 0) &&
-            <CornerButton icon="export" label={NAMES.export} keyName="E" keyAria="E" onClick={() => exportMap()} guide="export" />}
-          {builtIns.has("import") && <ImportChats core={core} />}
-          <CornerButton icon="catalog" label={NAMES.catalog} keyName={RAIL_KEYS.catalog} keyAria={RAIL_KEYS.catalog} pressed={railTab === "catalog"}
-            onClick={() => toggleTab("catalog")} guide="catalog" controls="shell-tabpanel" />
-          <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
-        </TopRight>
-
-        <div className="sr-only" role="status">{friendlyNotice}</div>
-        <div className="sr-only" role="status">{mapAnnouncement}</div>
-        <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
-
-        {view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-          : viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
-          : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
-          : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
-            {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
-            {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening && !pending.length && !world.thoughts.length
-              ? <p className="shell-samples">
-                <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
-                <span>A student's week. Add your own thoughts.</span>
-              </p> : null} />}
-            {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
-          </main>}
-        {view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
-          <button type="button" className="shell-pill shell-button" onClick={() => showView("map")} aria-keyshortcuts="M">
-            <Icon name="back" /><span className="shell-label">{NAMES.backToMap}</span><Keycap>M</Keycap>
-          </button>
-        </div>}
-
-        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-        {/* The stage, bottom up: the composer, captions (the guide's), one notice, a card. */}
-        <section ref={dockRef} className="shell-stage" data-slot="stage" aria-label="Your thoughts">
-          <div className="shell-cards">
-            <NotesContext.Provider value={notes}>
-            <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
-              jumps.jumped(world, item.threadId);
-              core.focus(item.threadId);
-              reveal(item.threadId, item.thoughtId ?? null, item.itemId);
-              away.dismiss();
-            }} />
-            </NotesContext.Provider>
-            {!hasAway && pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))}>
-              <ThreadPicture thread={pullBack} />
-              <div className="pullback-text">
-                <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
-                {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
-              </div>
-              <div className="pullback-actions">
-                <button onClick={() => goBack(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
-                <button className="quiet" onClick={() => later(pullBack)} aria-keyshortcuts="L">Later</button>
-              </div>
-            </div>}
-            <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
-            <DockTune core={core} />
-            <AttentionNote onGo={attention.go} />
-            <BrickSlot kind="card" host={brickHost} />
-            {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
-            <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
-            <PullsCard card={core.pullsCard} onGone={core.pullsCardGone} />
-            <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
-          </div>
-          {/* With History open, a notice is its newest line there, with its Undo: not said twice. */}
-          <AnimatePresence>
-            {core.notice && railTab !== "history" && !aboutKey(core.notice) && (
-              <motion.div ref={noticeRef} className="notice" data-guide="notice" role="status"
-                onFocus={() => setNoticeFocused(true)} onBlur={() => setNoticeFocused(false)}
-                onMouseEnter={() => setNoticeHeld(true)} onMouseLeave={() => setNoticeHeld(false)}
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <span>{friendlyNotice}</span>
-                <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} offline={!core.connected} />
-                <button className="shell-rail-close" onClick={core.clearNotice} aria-label="Dismiss notice" aria-keyshortcuts="Escape"><Icon name="close" /></button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {core.mapChange && !core.notice && railTab !== "history" && <div className="map-change" role="status">
-            <span>{core.mapChange.ai && <span aria-hidden="true" className="ai-mark" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦ </span>}{core.mapChange.text}</span>
-            {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} aria-keyshortcuts={modAria("Z")}
-              onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
-            <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
-          </div>}
-          <div className="shell-captions" id="shell-caption" />
-          <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-            {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} shortcut={modAria("D")} />}
-            {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
-            <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
-              onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
-              placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-            {listeningOn && <Keycap>{mod("D")}</Keycap>}
-          </form>
-        </section>
-
-        <div className="shell-corner shell-br" data-slot="bottom-right">
-          <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
-        </div>
-        <StatusLine openHistory={() => toggleTab("history")} state={{
-          mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
-          first: !world.thoughts.length, waiting: pending.length,
-          stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
-          queued: core.queuedCount, connected: core.connected,
-        }} />
-
-        {railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
-          {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
-          {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
-          {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.undoId} now={now} onUndo={undoEntry} onShow={show}
-            recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
-          {railTab === "catalog" && <CatalogTab rows={rows} at={catalogAt?.id ?? null} />}
-          {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
-        </Rail>}
-
-        {/* Floating features; the Notice timeline's list is History's here. */}
-        {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline")
-          .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
-        <Tips />
-        <Guide world={world} view={view} query={query} focus={focusMode} />
-        <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
-          const thread = world.threads.find((t) => t.id === id);
-          if (thread) goBack(thread);
-        }} />
-      </div>
-      </WhyContext.Provider>
-      </AttentionProvider>
-      </MotionConfig>
-    );
-  }
-
-  return (
+  // Today's page; the new shell (?shell=2) follows it.
+  if (!SHELL2) return (
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
@@ -1479,6 +1298,187 @@ export default function App() {
           const target = document.getElementById(`thread-${id}`)?.querySelector<HTMLButtonElement>(".thread-toggle");
           target?.focus({ preventScroll: true });
         });
+      }} />
+    </div>
+    </WhyContext.Provider>
+    </AttentionProvider>
+    </MotionConfig>
+  );
+
+  // The new shell (?shell=2, shell/): four corners, the stage, the status line, the rail.
+  const empty = world.threads.length === 0;
+  const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
+  const phone = typeof window !== "undefined" && window.innerWidth <= 560;
+  // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
+  const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
+  const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
+  const aiNames = new Set(world.ai ?? []);
+  const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
+    .map((thread) => ({ thread, points: thoughtsByThread.get(thread.id)?.length ?? 0 })) : [];
+  const rows: CatalogRow[] = [
+    ...BRICKS.map(({ info }): CatalogRow => {
+      const named = FEATURE_NAMES[info.id];
+      return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
+        on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value) };
+    }),
+    ...BUILT_INS.map((b): CatalogRow => {
+      const named = FEATURE_NAMES[b.id];
+      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false, toggle: (value) => switchBuiltIn(b.id, value) };
+    }),
+    ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
+      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected })),
+  ].sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
+  const undoEntry = (entry: Entry) => {
+    const undo = entry.undo;
+    if (!undo) return;
+    if (undo.kind === "turn") core.undo(undo.id);
+    else if (undo.kind === "change") { core.untidy(undo.undo); core.restore(undo.restore); }
+    else core.remove(undo.thoughtId);
+    history.markUndone(entry.n);
+  };
+  const show = (id: string) => {
+    const thread = threadById.get(resolveMerged(world, id));
+    if (!thread) return;
+    if (phone) setRailTab(null);
+    goBack(thread);
+  };
+  const keys: [string, string][] = [
+    ["/", "Find a topic or words"], [mod("D"), "Start or stop listening"], [RAIL_KEYS.talk, "Talk: what's said, as turns"],
+    [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Catalog: the features, on or off"], [RAIL_KEYS.settings, "Settings"],
+    ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
+  ];
+  const tabs: RailTab[] = ["talk", "history", "catalog", "settings"];
+  return (
+    <MotionConfig reducedMotion="user">
+    <AttentionProvider value={attention.value}>
+    <WhyContext.Provider value={whyAsk}>
+    <div className="app shell" onClickCapture={(event) => {
+      const target = event.target as HTMLElement;
+      if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
+    }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
+      <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
+      <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
+      <TopRight>
+        {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={(thread) => goBack(thread)} />}
+        {builtIns.has("export") && (world.threads.length > 0 || world.thoughts.length > 0) &&
+          <CornerButton icon="export" label={NAMES.export} keyName="E" keyAria="E" onClick={() => exportMap()} guide="export" />}
+        {builtIns.has("import") && <ImportChats core={core} />}
+        <CornerButton icon="catalog" label={NAMES.catalog} keyName={RAIL_KEYS.catalog} keyAria={RAIL_KEYS.catalog} pressed={railTab === "catalog"}
+          onClick={() => toggleTab("catalog")} guide="catalog" controls="shell-tabpanel" />
+        <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
+      </TopRight>
+
+      <div className="sr-only" role="status">{friendlyNotice}</div>
+      <div className="sr-only" role="status">{mapAnnouncement}</div>
+      <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
+
+      {view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+        : viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
+        : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
+        : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
+          {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
+          {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening && !pending.length && !world.thoughts.length
+            ? <p className="shell-samples">
+              <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
+              <span>A student's week. Add your own thoughts.</span>
+            </p> : null} />}
+          {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
+        </main>}
+      {view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
+        <button type="button" className="shell-pill shell-button" onClick={() => showView("map")} aria-keyshortcuts="M">
+          <Icon name="back" /><span className="shell-label">{NAMES.backToMap}</span><Keycap>M</Keycap>
+        </button>
+      </div>}
+
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
+      {/* The stage, bottom up: the composer, captions (the guide's), one notice, a card. */}
+      <section ref={dockRef} className="shell-stage" data-slot="stage" aria-label="Your thoughts">
+        <div className="shell-cards">
+          <NotesContext.Provider value={notes}>
+          <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
+            jumps.jumped(world, item.threadId);
+            core.focus(item.threadId);
+            reveal(item.threadId, item.thoughtId ?? null, item.itemId);
+            away.dismiss();
+          }} />
+          </NotesContext.Provider>
+          {!hasAway && pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))}>
+            <ThreadPicture thread={pullBack} />
+            <div className="pullback-text">
+              <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
+              {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
+            </div>
+            <div className="pullback-actions">
+              <button onClick={() => goBack(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
+              <button className="quiet" onClick={() => later(pullBack)} aria-keyshortcuts="L">Later</button>
+            </div>
+          </div>}
+          <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
+          <DockTune core={core} />
+          <AttentionNote onGo={attention.go} />
+          <BrickSlot kind="card" host={brickHost} />
+          {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
+          <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
+          <PullsCard card={core.pullsCard} onGone={core.pullsCardGone} />
+          <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
+        </div>
+        {/* With History open, a notice is its newest line there, with its Undo: not said twice. */}
+        <AnimatePresence>
+          {core.notice && railTab !== "history" && !aboutKey(core.notice) && (
+            <motion.div ref={noticeRef} className="notice" data-guide="notice" role="status"
+              onFocus={() => setNoticeFocused(true)} onBlur={() => setNoticeFocused(false)}
+              onMouseEnter={() => setNoticeHeld(true)} onMouseLeave={() => setNoticeHeld(false)}
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <span>{friendlyNotice}</span>
+              <UndoButton id={core.undoId} onUndo={core.undo} what={friendlyNotice} mac={MAC} offline={!core.connected} />
+              <button className="shell-rail-close" onClick={core.clearNotice} aria-label="Dismiss notice" aria-keyshortcuts="Escape"><Icon name="close" /></button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {core.mapChange && !core.notice && railTab !== "history" && <div className="map-change" role="status">
+          <span>{core.mapChange.ai && <span aria-hidden="true" className="ai-mark" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦ </span>}{core.mapChange.text}</span>
+          {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} aria-keyshortcuts={modAria("Z")}
+            onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
+          <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
+        </div>}
+        <div className="shell-captions" id="shell-caption" />
+        <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
+          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} shortcut={modAria("D")} />}
+          {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
+          <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
+            onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
+            placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
+          {listeningOn && <Keycap>{mod("D")}</Keycap>}
+        </form>
+      </section>
+
+      <div className="shell-corner shell-br" data-slot="bottom-right">
+        <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
+      </div>
+      <StatusLine openHistory={() => toggleTab("history")} state={{
+        mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
+        first: !world.thoughts.length, waiting: pending.length,
+        stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
+        queued: core.queuedCount, connected: core.connected,
+      }} />
+
+      {railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
+        {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
+        {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
+        {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.undoId} now={now} onUndo={undoEntry} onShow={show}
+          recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
+        {railTab === "catalog" && <CatalogTab rows={rows} at={catalogAt?.id ?? null} />}
+        {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
+      </Rail>}
+
+      {/* Floating features; the Notice timeline's list is History's here. */}
+      {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline")
+        .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
+      <Tips />
+      <Guide world={world} view={view} query={query} focus={focusMode} />
+      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+        const thread = world.threads.find((t) => t.id === id);
+        if (thread) goBack(thread);
       }} />
     </div>
     </WhyContext.Provider>
