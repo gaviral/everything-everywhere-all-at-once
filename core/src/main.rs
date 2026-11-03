@@ -31,6 +31,7 @@ mod moves;
 mod spoken;
 mod tidy;
 mod tls;
+mod topics;
 mod tunnel;
 mod whyhere;
 mod world;
@@ -1025,6 +1026,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(placer::run(core.clone(), queue));
     tokio::spawn(refiner::run(core.clone()));
     tokio::spawn(recap::keep(core.clone()));
+    tokio::spawn(topics::run(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -1609,6 +1611,17 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
                 Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
                     if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
+                        core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
+                    }
+                }
+                // A topic renamed on its header, or a thread dragged under one, by anyone in the room (topics.rs).
+                Ok(ClientMsg::TopicRename { from, to }) => {
+                    if let Err(why) = topics::rename(&core, &from, &to) {
+                        core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
+                    }
+                }
+                Ok(ClientMsg::TopicSet { thread_id, topic }) => {
+                    if let Err(why) = topics::set(&core, &thread_id, &topic) {
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
                 }
