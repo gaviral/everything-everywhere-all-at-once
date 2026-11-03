@@ -108,6 +108,13 @@ Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh
 
 If you supply an executable regular file named exactly `e2a2o-core-PLATFORM-ARCH` beside `run.sh`, it uses that core without Rust or native build tools. Replace `PLATFORM` and `ARCH` with Node's `process.platform` and `process.arch` (see `node -p 'process.platform + "-" + process.arch'`); for example, `e2a2o-core-darwin-arm64` on an Apple-silicon Mac. These instructions do not promise a published binary release. Node and the UI build are still required.
 
+If a release containing your machine's `e2a2o-core-PLATFORM-ARCH` binary and `SHA256SUMS` has been published, you can optionally install it with the commands below from the repository root, replacing `TAG` with that release's actual tag. The installer checks SHA-256 and installs beside `run.sh`; an existing destination is refused rather than replaced.
+
+```sh
+node scripts/fetch-core.mjs TAG
+./run.sh sample
+```
+
 Without a matching executable, it builds from source. Needs Rust 1.89 or newer ([rustup.rs](https://rustup.rs)); on a Mac with no developer tools, run `xcode-select --install` first.
 
 **Linux:** the source build also needs a C compiler, pkg-config and OpenSSL's headers; `run.sh` checks them and prints the command for whatever is missing. Not tested on Linux.
