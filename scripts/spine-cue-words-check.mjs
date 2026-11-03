@@ -88,7 +88,8 @@ try {
         const separate = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
         const inside = (a, b) => a.width > 0 && a.height > 0 && a.left >= b.left - 0.5 && a.right <= b.right + 0.5 && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
         const individuals = geometry.chips.filter((c) => c.title);
-        assert.ok(individuals.length >= 2, "multiple individual arrivals remain readable");
+        // A phone's row gives one chip fewer, and counts it in "+N", before it squeezes a title to a few letters (cues.tsx MIN_LABEL).
+        assert.ok(individuals.length >= (width < 600 ? 1 : 2), "individual arrivals remain readable");
         assert.deepEqual(individuals.map((c) => c.title.text), awaiting.slice(0, individuals.length), "newest arrivals first");
         for (const c of geometry.chips) {
           assert.ok(inside(c.box, { left: 0, top: 0, right: width, bottom: height }), "chip within viewport");
@@ -103,7 +104,7 @@ try {
             assert.equal(c.prefix?.text, "New · ", "individual prefix at both widths");
             assert.equal(c.prefix.color, c.muted, "prefix uses muted color");
             assert.ok(inside(c.prefix.box, c.box), "prefix remains visible outside title ellipsis");
-            assert.ok(inside(c.title.box, c.box) && c.title.box.width >= 12, `nonzero readable title space: ${JSON.stringify(c)}`);
+            assert.ok(inside(c.title.box, c.box) && c.title.box.width >= (width < 600 ? 64 : 12), `nonzero readable title space: ${JSON.stringify(c)}`);
             assert.equal(c.title.ellipsis, "ellipsis", "only title truncates");
           } else {
             assert.match(c.count?.text ?? "", /^\+\d+$/, "overflow displays +N");
@@ -112,8 +113,8 @@ try {
           }
         }
         if (width < 600) {
-          assert.equal(geometry.chips.length, 3, "two individual phone chips and one aggregate");
-          assert.equal(geometry.chips.find((c) => c.count)?.count.text, `+${awaiting.length - 2}`, "phone overflow counts every hidden arrival");
+          assert.equal(geometry.chips.length, individuals.length + 1, "the individual phone chips and one aggregate");
+          assert.equal(geometry.chips.find((c) => c.count)?.count.text, `+${awaiting.length - individuals.length}`, "phone overflow counts every hidden arrival");
           if (open) {
             assert.ok(inside(geometry.list, { left: 0, top: 0, right: width, bottom: height }), "open Shelf list inside phone viewport");
             assert.deepEqual(geometry.chips.map((c) => c.box), closed.chips.map((c) => c.box), "opening Shelf preserves phone cue space");
