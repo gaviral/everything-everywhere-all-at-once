@@ -107,7 +107,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     move(next, options.ring);
   }, [viewFor, move, flow]);
 
-  /** Fits `box` with `pad` around it, no closer than `most`. */
+  /** Fits `box` with 32 px around it in the free part, between `least` and `most` zoom. */
   const fit = useCallback((box: Box, most = 1, least = 0.04, options: { instant?: boolean } = {}) => {
     window.clearTimeout(waiting.current);
     const a = area();
