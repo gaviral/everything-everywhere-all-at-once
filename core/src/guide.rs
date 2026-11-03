@@ -802,7 +802,10 @@ mod tests {
         let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
         let caught_up = drain(&mut reconnected, 100).await;
         assert!(caught_up.iter().any(|message| message["type"] == "snapshot"));
-        assert!(caught_up.iter().all(|message| message["type"] != "job"), "jobs aren't retained for reconnect");
+        let replay: Vec<_> = caught_up.into_iter().filter(|message| message["type"] == "job").collect();
+        let relayed = relayed.unwrap();
+        assert_eq!(replay, [relayed[3].clone(), relayed[1].clone()],
+            "reconnect replays the last accepted states in first-appearance order with their original server attribution");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "never journaled");
         assert!(Arc::ptr_eq(&world, &core.snapshot()), "the entire map is unchanged");
         assert!(queue.try_recv().is_err(), "no model work");
