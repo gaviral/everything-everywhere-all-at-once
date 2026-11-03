@@ -143,8 +143,8 @@ export function Cues({ cues, layout, area, narrow, go, seen }: {
     const body = <>
       {narrow && way === "left" && chevron}
       <span className="spine-cue-dot" aria-hidden="true" />
-      <span className="spine-cue-title">{label}</span>
-      {!narrow && !extra && <span className="spine-cue-new">new</span>}
+      {!extra && <span className="spine-cue-new">New · </span>}
+      <span className={extra ? "spine-cue-count" : "spine-cue-title"}>{label}</span>
       {(!narrow || way !== "left") && chevron}
       {first && !narrow && <kbd className="spine-key">N</kbd>}
     </>;
