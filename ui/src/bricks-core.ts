@@ -9,6 +9,7 @@ import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
 import { THOUGHT_MAX } from "./limits";
+import { topicsOf } from "./topics-core";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
@@ -162,15 +163,18 @@ function speakersOf() {
   };
 }
 const threadsWithAnchors = anchoredThreads();
+const threadsWithTopics = topicsOf<ReturnType<typeof threadsWithAnchors>[number]>();
 const speakersNow = speakersOf();
 
 /** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only (a
- *  margin note's thread with its `anchor`), and `partial`, this tab's live words (core.ts `partial`: the core sends them
- *  to the speaker's windows alone, and a tab takes them only while its own mic is on). */
+ *  margin note's thread with its `anchor`, each thread with its `topic`), and `partial`, this tab's live words (core.ts
+ *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on). */
 export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string): MapSnapshot {
   const notes = world.notes ?? {};
+  const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
-    threads: threadsWithAnchors(world.threads, world.anchors),
+    threads: sorted.threads,
+    topics: sorted.topics,
     thoughts: world.thoughts,
     active: world.active_by[me] ?? world.active,
     suggestions: world.suggestions,

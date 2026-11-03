@@ -17,7 +17,7 @@ try {
     assert.ok(m, `${name} in protocol.rs`);
     return Number(m[1].replaceAll("_", "")) * 2 ** Number(m[2] ?? 0);
   };
-  for (const name of ["THOUGHT_MAX", "TITLE_MAX", "FRAME_MAX"]) assert.equal(limits[name], rust(name), name);
+  for (const name of ["THOUGHT_MAX", "TITLE_MAX", "TOPIC_MAX", "FRAME_MAX"]) assert.equal(limits[name], rust(name), name);
   const place = protocol.match(/pub const POSITION_MAX: f64 = ([0-9_]+)\.0;/);
   assert.ok(place, "POSITION_MAX in protocol.rs");
   assert.equal(limits.POSITION_MAX, Number(place[1].replaceAll("_", "")), "POSITION_MAX");

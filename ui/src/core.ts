@@ -21,6 +21,7 @@ import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
 import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
+import { applyTopic, isTopicChange, sendTopicsWith, type TopicChange } from "./topics-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -162,6 +163,8 @@ export interface World extends AppsWorld {
   anchors?: Record<string, Anchor>;
   /** The speakers who joined as an AI participant, in the order they first came (the core's `World::ai`). */
   ai?: string[];
+  /** Top thread id → the topic it's under (topics-core.ts). */
+  topics?: Record<string, string>;
 }
 
 type Change =
@@ -201,6 +204,7 @@ type Change =
   | MoveChange
   | PositionChange
   | AnchoredChange
+  | TopicChange
   // A window joined as an AI participant under this name (`?ai`): its words are an AI's from now on.
   | { type: "ai_joined"; speaker: string }
   | { type: "suggestion_added"; suggestion: Suggestion }
@@ -370,10 +374,12 @@ export function apply(world: World, raw: Change): World {
   if (raw.type === "positioned") return applyPosition(world, raw);
   // Its thread id isn't followed through merges, as the core's isn't: the note's thread is new when it's tied.
   if (raw.type === "anchored") return applyAnchored(world, raw);
+  // By the ids as given, as the core's: a topic names a thread on the map, never one merged away.
+  if (isTopicChange(raw)) return applyTopic(world, raw);
   return keepPlaced(applyChange(world, raw));
 }
 
-function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange>): World {
+function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange | TopicChange>): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
@@ -974,6 +980,8 @@ export function useCore(speaker?: string) {
     answered();
     return false;
   }, [send]);
+  // A brick's renameTopic and moveToTopic (topics-core.ts) go through this window's connection.
+  useEffect(() => sendTopicsWith(sendOrWarn), [sendOrWarn]);
   const setItem = useCallback((id: string, status: ItemStatus) => sendOrWarn(JSON.stringify({ type: "item", id, status })), [sendOrWarn]);
   const approve = useCallback((id: string) => sendOrWarn(JSON.stringify({ type: "approve", id })), [sendOrWarn]);
   // The message card's Stop or Esc: the core stops it (it alone sends); its "stopped" takes the card down.

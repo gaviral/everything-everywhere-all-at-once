@@ -23,6 +23,8 @@ export type ItemData = {
   cut: boolean;
   /** Its words are being picked for a margin note. */
   selecting: boolean;
+  /** A named topic's header with a spine carried over its columns: where the spine would go. */
+  hot?: boolean;
 };
 export type ItemNode = Node<ItemData, "item">;
 
@@ -40,6 +42,12 @@ export interface Acts {
   reply(item: Item, quote?: string): void;
   /** Opens or folds a folded question. */
   unfold(margin: string): void;
+  /** The named topics, in the map's order: what a spine can be moved under. */
+  topics: readonly string[];
+  /** A topic renamed on its header, for everyone. */
+  renameTopic(from: string, to: string): void;
+  /** A spine moved under another topic, for everyone. */
+  moveToTopic(thread: string, topic: string): void;
 }
 export const ActsContext = createContext<Acts | null>(null);
 
@@ -94,11 +102,80 @@ function Tools({ item }: { item: Item }) {
   return <span className="spine-tools">
     {thread && <button type="button" className="spine-tool nodrag" aria-label={`Open ${item.title} on the map`} title="Open on the map" onClick={() => acts.openOnMap(item.thread)}>↗</button>}
     <button type="button" className="spine-tool nodrag" aria-label="Keep on the shelf" title="Keep on the shelf" onClick={() => acts.shelve(item)}>⤓</button>
+    {item.kind === "head" && acts.topics.length >= 2 && <TopicTool item={item} />}
     {item.pinned && <button type="button" className="spine-tool spine-tool-pin nodrag" aria-label="Unpin: back to its place in the layout"
       title={item.by && item.by !== "you" ? `Placed by ${item.by} · unpin` : "Unpin: back to its place"} onClick={() => acts.unpin(item)}>
       <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 1.5h6l-1 4.5 2.5 2.5h-9L6 6z M8 8.5v6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /></svg>
     </button>}
   </span>;
+}
+
+/** A spine's topic, picked from the named ones: the keyboard's and a phone's way to move it, as dragging it onto another
+ *  topic's columns does. */
+function TopicTool({ item }: { item: Item }) {
+  const acts = useContext(ActsContext)!;
+  const now = item.group ?? "";
+  return <label className="spine-tool spine-tool-topic nodrag" title={now ? `Theme: ${now} · move to another` : "Not sorted yet · put it under a theme"}>
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2.5 5h9m-2.5-2.5L11.5 5 9 7.5M13.5 11h-9M7 8.5 4.5 11 7 13.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <select className="spine-tool-select" value={now} aria-label={`Theme of ${item.title}`} onChange={(event) => { if (event.target.value) acts.moveToTopic(item.thread, event.target.value); }}>
+      {!now && <option value="">Not sorted yet</option>}
+      {acts.topics.map((name) => <option key={name} value={name}>{name}</option>)}
+    </select>
+  </label>;
+}
+
+/** Far out, a topic's name is 18 px on screen, unless its longest word wouldn't fit across its columns (`cqi`: the
+ *  header's width), so it wraps only between words: a word's width is about 0.6 of the size a letter. */
+const farSize = (name: string) => {
+  const longest = Math.max(4, ...name.split(/\s+/).map((word) => [...word].length));
+  return `min(calc(18px * var(--spine-k, 1)), ${(100 / (0.6 * longest)).toFixed(1)}cqi)`;
+};
+
+/** A named topic's header: its name over a hairline as wide as its columns, and how many spines it holds. A double click
+ *  (or Enter) renames it for everyone; "Not sorted yet" holds new spines until the AI sorts them (within a minute) and
+ *  isn't renamed. Far out, its name keeps a size you can read, growing up from its line, never into the spines under it. */
+function Group({ data }: { data: ItemData }) {
+  const { item } = data;
+  const acts = useContext(ActsContext)!;
+  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const name = item.group ?? "";
+  const [editing, setEditing] = useState(false);
+  // Shown at once while the core makes it so (the header comes back under its new name); a refused one lets go.
+  const [pending, setPending] = useState<string | null>(null);
+  const done = useRef(false);
+  useLayoutEffect(() => {
+    if (pending === null) return;
+    const timer = window.setTimeout(() => setPending(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [pending]);
+  const shown = pending ?? name;
+  const count = `${item.count ?? 0} ${item.count === 1 ? "thread" : "threads"}`;
+  const finish = (value: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    setEditing(false);
+    const next = value?.trim().split(/\s+/).join(" ") ?? "";
+    if (next && next !== name) {
+      setPending(next);
+      acts.renameTopic(name, next);
+    }
+  };
+  const start = () => { if (name) { done.current = false; setEditing(true); } };
+  return <div className={cls("spine-group", !name && "spine-group-unsorted", data.hot && "spine-group-hot", zoomedOut && "spine-group-far", data.fresh && "spine-fresh")}>
+    {editing
+      ? <input className="spine-group-field nodrag nopan" defaultValue={name} maxLength={40} autoFocus aria-label={`New name for the theme ${name}`}
+        onFocus={(event) => event.currentTarget.select()} onBlur={(event) => finish(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") { event.preventDefault(); finish(event.currentTarget.value); }
+          else if (event.key === "Escape") { event.preventDefault(); finish(null); }
+        }} />
+      : <button type="button" className="spine-group-name" style={zoomedOut ? { fontSize: farSize(name ? shown : "Not sorted yet") } : { maxWidth: Math.max(80, item.box.w - 90) }} onDoubleClick={start} onFocus={() => acts.focus(item)}
+        onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); start(); } }}
+        title={name ? `${shown} · double-click to rename` : "New threads wait here until the AI puts them under a theme, within a minute"}
+        aria-label={name ? `Theme ${shown}, ${count}. Press Enter to rename it` : `Not sorted yet, ${count}`}>{name ? shown : "Not sorted yet"}</button>}
+    {(!zoomedOut || data.hot) && !editing && <span className="spine-group-count" aria-hidden="true">{data.hot ? "Move here" : count}</span>}
+  </div>;
 }
 
 function Tile({ item }: { item: Item }) {
@@ -319,6 +396,7 @@ export const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
     case "slot": return <Slot data={data} />;
     case "aside": return <Aside data={data} />;
     case "margin": return <Margin data={data} />;
+    case "group": return <Group data={data} />;
     default: return <Notch data={data} />;
   }
 });
