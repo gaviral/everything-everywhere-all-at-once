@@ -11,6 +11,8 @@ const DEMO_WORDS = "Demo mode · simulated";
 const FRESH_MS = 2400;
 /** A window that opens (or a connection's replay that arrives) within this of the list isn't news. */
 const SETTLE_MS = 600;
+/** How long after a wheel, a finger, a key or a press the list's place is its reader's. */
+const HAND_MS = 400;
 
 const COUNT_CLASS = { running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
 const STATE_CLASS = { running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
@@ -130,12 +132,25 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
   const asks = useMemo(() => questions(jobs), [jobs]);
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
+  /** When a hand last touched the list (wheel, finger, key, press): for that moment its place is the hand's, whether or not
+   *  the scroll event has come yet. */
+  const handAt = useRef(0);
+  const byHand = () => { handAt.current = Date.now(); };
   const [away, setAway] = useState(false);
+  const atFoot = (box: HTMLElement) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const follow = () => {
     const box = scroller.current;
     if (!box) return;
-    // With nothing to scroll there's nothing to hold your place in: following resumes.
-    if (box.scrollHeight <= box.clientHeight + 1) { stuck.current = true; setAway(false); }
+    if (box.scrollHeight <= box.clientHeight + 1) {
+      // With nothing to scroll there's nothing to hold your place in: following resumes.
+      stuck.current = true;
+      setAway(false);
+    } else if (Date.now() - handAt.current < HAND_MS) {
+      // A hand is on it: a render landing between its scroll and the scroll event must not pull the list back.
+      stuck.current = atFoot(box);
+      setAway(!stuck.current);
+      return;
+    }
     if (stuck.current) box.scrollTop = box.scrollHeight;
   };
   useLayoutEffect(follow);
@@ -148,18 +163,28 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
     if (box.firstElementChild) watch.observe(box.firstElementChild);
     return () => watch.disconnect();
   }, [empty]);
+  /** "Latest": back to the newest, and following again; the press that asked is a hand, but this is where it wanted to go. */
+  const toFoot = () => {
+    const box = scroller.current;
+    if (!box) return;
+    handAt.current = 0;
+    stuck.current = true;
+    setAway(false);
+    box.scrollTop = box.scrollHeight;
+  };
   const scrolled = () => {
     const box = scroller.current;
     if (!box) return;
-    stuck.current = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    stuck.current = atFoot(box);
     setAway(!stuck.current);
   };
   const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => { stuck.current = false; } };
   return <div className="work-spine-listbox">
-    <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}>
+    <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}
+      onWheel={byHand} onTouchMove={byHand} onKeyDown={byHand} onPointerDown={byHand}>
       {empty ? <p className="work-spine-empty">When an AI helper starts work, it shows up here.</p>
         : <ol className="work-spine-list">{tree.map((node) => <Bubble key={node.job.id} node={node} shared={shared} />)}</ol>}
     </div>
-    {away && <button type="button" className="work-spine-latest" onClick={() => { stuck.current = true; setAway(false); follow(); }}>↓ Latest</button>}
+    {away && <button type="button" className="work-spine-latest" onClick={toFoot}>↓ Latest</button>}
   </div>;
 }

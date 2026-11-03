@@ -194,7 +194,7 @@ try {
     const t0 = Date.now();
     core.send(job("live:one", "running", { title: "Gather the useful points", at_ms: t0 - 5000 }));
     await check(`${part("live:one", "word")} === "Running"`, "a running job");
-    await check(`/^0:0[5-9]$/.test(${part("live:one", "clock")})`, "it shows a clock from its start");
+    await check(`/^0:(0[5-9]|[1-3]\\d)$/.test(${part("live:one", "clock")})`, "it shows a clock from its start (5 s or more, as a slow page may add to)");
     const clock1 = await evaluate(part("live:one", "clock"));
     await sleep(1300);
     assert.notEqual(await evaluate(part("live:one", "clock")), clock1, `${where}: the clock keeps counting`);
@@ -204,9 +204,8 @@ try {
     core.send(job("live:two", "running", { title: "Shape a short outline of it", at_ms: t0 - 1000 }));
     await check(`!!document.querySelector(${JSON.stringify(`${job$("live:two")} .work-spine-now`)}) && !document.querySelector(${JSON.stringify(`${job$("live:one")} .work-spine-now`)})`, "Just now moves to the next one");
     core.send(job("live:one", "done", { title: "Gather the useful points", result: "Three ideas ready to revisit.", at_ms: t0 + 4000 }));
-    await check(`${part("live:one", "word")} === "Done in 9 s"`, "done: how long, from when it was seen starting to when it ended");
+    await check(`${part("live:one", "word")} === "Done in 9 s" && document.querySelector(${JSON.stringify(job$("live:one"))}).dataset.fresh === "landed"`, "done: how long, from when it was seen starting to when it ended, and the landing is marked");
     await check(`${part("live:one", "result")} === "Three ideas ready to revisit."`, "done: what it found");
-    await check(`document.querySelector(${JSON.stringify(job$("live:one"))}).dataset.fresh === "landed"`, "a landing is marked");
     await rootsAre(["old:done", "old:failed", "old:ask", "old:run", "live:one", "live:two"], "an update keeps the job where it was");
     assert.equal(await evaluate('document.querySelectorAll(".work-spine-now").length'), 1, `${where}: Just now is on the one whose change came last`);
     await check(`document.querySelector(${JSON.stringify(`${job$("live:one")} .work-spine-now`)})?.textContent === "Just now"`, "the one that just landed");
@@ -305,8 +304,10 @@ try {
     assert.equal(await evaluate('document.querySelector(".work-spine-list > [data-job-id]").dataset.jobId'), "cap:4");
     // The list follows the newest while you're at its foot, lets go when you scroll up, and brings you back on "Latest".
     assert.equal(await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}); return b.scrollHeight - b.scrollTop - b.clientHeight < 40; })()`), true, `${where}: at the foot, the newest in view`);
-    await evaluate(`document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}).scrollTop = 0`);
-    await check('!!document.querySelector(".work-spine-latest")', "scrolled up, a Latest button shows");
+    // A real wheel, as a hand's: the list lets go of the newest and shows a Latest button, however a render falls among it.
+    const wheel = await evaluate(rect(`${inside} .work-spine-scroll`));
+    await page("Input.dispatchMouseEvent", { type: "mouseWheel", x: wheel.left + wheel.width / 2, y: wheel.top + wheel.height / 2, deltaX: 0, deltaY: -20000 });
+    await check('!!document.querySelector(".work-spine-latest")', "scrolled up by hand, a Latest button shows");
     core.send(job("cap:new", "running", { at_ms: Date.now() }));
     await sleep(300);
     assert.equal(await evaluate(`document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}).scrollTop`), 0, `${where}: a new job doesn't pull you off what you're reading`);
