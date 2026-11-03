@@ -95,6 +95,7 @@ async function scene({ width, height = width === 390 ? 844 : 900, door, joinRepl
   const shot = async (name, schemeName) => {
     if (!shots) return;
     await settle();
+    await sleep(400); // a loaded machine may still be drawing the page's last tiles
     const { data } = await page("Page.captureScreenshot", { format: "png" });
     writeFileSync(join(shots, `${name}-${width}-${schemeName}.png`), Buffer.from(data, "base64"));
   };
