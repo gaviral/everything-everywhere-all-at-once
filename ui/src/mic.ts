@@ -4,6 +4,8 @@
 // Safari and Firefox run at the device's rate and the worklet resamples (ui/public/pcm-worklet.js, checked by
 // scripts/mic-check.mjs), since what their own resampling does to a mic at 24 kHz can't be checked here: Firefox
 // refuses a mic in a context at another rate, and Safari's has had bugs.
+import { pageSpeaking } from "./page-speech";
+
 export const RATE = 24000;
 
 /** A reason the page itself gives, already in plain words: said as it is (`micFailure`). */
@@ -102,7 +104,12 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     await context.audioWorklet.addModule("/pcm-worklet.js");
     signal?.throwIfAborted();
     const writer = new AudioWorkletNode(context, "pcm-writer");
-    writer.port.onmessage = (event) => onFrame(event.data as ArrayBuffer);
+    writer.port.onmessage = (event) => {
+      // Keep the connection alive with silence, so neither the speakers nor the person is transcribed.
+      const frame = event.data as ArrayBuffer;
+      if (pageSpeaking()) new Int16Array(frame).fill(0);
+      onFrame(frame);
+    };
     source.connect(writer);
     // Some browsers only run a worklet that reaches the speakers; keep it silent.
     const silent = context.createGain();
