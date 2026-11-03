@@ -3,6 +3,10 @@
 //! (ui/src/talk/). What was said is the journal's (every turn is a thought); this is only the call around it, of the
 //! moment and never journaled: a restarted core starts a new call, and each window tells it its read mark again as it
 //! reconnects (ui/src/room.tsx). Alone, none of it is ever sent, so a map for one is as it was.
+//!
+//! A person's Remote (a phone's page for the AI helpers' work, joined with `?remote`: ui/src/remote/) is a window of the
+//! room that isn't another person: it is listed, marked `remote`, so no one is ever hidden from the room, but it never
+//! starts a call or counts toward one, and the pages show it as a device, not as someone who joined.
 
 use crate::protocol::ServerMsg;
 use crate::Core;
@@ -31,6 +35,9 @@ pub struct Person {
     pub name: String,
     /// An AI participant (joined with `?ai`, as the Friend's bridge does).
     pub ai: bool,
+    /// A Remote (joined with `?remote`): every window of theirs that is open is one, or the last was. Not another person:
+    /// it doesn't start a call or count toward one (`tell`), and the pages list it as a device (ui/src/talk/call-core.ts).
+    pub remote: bool,
     /// When they first joined in this run, ms since 1970: a late joiner's "Joined 7:36".
     pub joined_ms: u64,
     /// A window of theirs is open now.
@@ -46,6 +53,9 @@ pub struct Person {
     pub read: Option<String>,
     #[serde(skip)]
     windows: usize,
+    /// How many of `windows` are Remotes.
+    #[serde(skip)]
+    remotes: usize,
     #[serde(skip)]
     mics: usize,
 }
@@ -72,15 +82,19 @@ impl State {
         self.people.iter_mut().find(|p| p.name == name)
     }
 
-    /// The call as windows get it, once it has started.
+    /// The call as windows get it, once it has started, or once a Remote has joined (with `started_ms` 0 until a call
+    /// starts): a Remote is told to the room whether or not anyone is in a call with it.
     fn message(&self) -> Option<ServerMsg> {
-        let started_ms = self.started_ms?;
-        Some(ServerMsg::Call { started_ms, people: self.people.clone(), level: self.level, level_by: self.level_by.clone() })
+        if self.started_ms.is_none() && !self.people.iter().any(|p| p.remote) {
+            return None;
+        }
+        Some(ServerMsg::Call { started_ms: self.started_ms.unwrap_or(0), people: self.people.clone(), level: self.level, level_by: self.level_by.clone() })
     }
 
-    /// Tells every window, once the call has started (a window that stays sees it shrink back to one, too).
+    /// Tells every window, once the call has started (a window that stays sees it shrink back to one, too). Two are in
+    /// a call when two are here at once; a Remote is not one of them.
     fn tell(&mut self, core: &Core) {
-        if self.started_ms.is_none() && self.people.iter().filter(|p| p.here).count() >= 2 {
+        if self.started_ms.is_none() && self.people.iter().filter(|p| p.here && !p.remote).count() >= 2 {
             self.started_ms = Some(crate::now_ms());
         }
         if let Some(message) = self.message() {
@@ -96,18 +110,30 @@ pub fn message(core: &Core) -> Option<ServerMsg> {
 
 /// A window of `speaker`'s is open: they're here until the last one closes (dropping what this returns).
 pub fn join(core: &Arc<Core>, speaker: &str, ai: bool) -> Here {
+    enter(core, speaker, ai, false)
+}
+
+/// A Remote of `speaker`'s is open (`?remote`): listed as here, as a device, until it closes. It is not another person.
+pub fn join_remote(core: &Arc<Core>, speaker: &str) -> Here {
+    enter(core, speaker, false, true)
+}
+
+fn enter(core: &Arc<Core>, speaker: &str, ai: bool, remote: bool) -> Here {
     let mut state = core.call.state.lock().unwrap();
     let now = crate::now_ms();
     match state.person(speaker) {
         Some(person) => {
             person.windows += 1;
+            person.remotes += usize::from(remote);
             person.here = true;
             person.left_ms = None;
             person.ai |= ai;
+            person.remote = person.remotes == person.windows;
         }
         None => state.people.push(Person {
             name: speaker.into(),
             ai,
+            remote,
             joined_ms: now,
             here: true,
             left_ms: None,
@@ -115,17 +141,19 @@ pub fn join(core: &Arc<Core>, speaker: &str, ai: bool) -> Here {
             speaking: false,
             read: None,
             windows: 1,
+            remotes: usize::from(remote),
             mics: 0,
         }),
     }
     state.tell(core);
-    Here { core: core.clone(), speaker: speaker.into() }
+    Here { core: core.clone(), speaker: speaker.into(), remote }
 }
 
 /// A window's hold on its place in the call (`join`).
 pub struct Here {
     core: Arc<Core>,
     speaker: String,
+    remote: bool,
 }
 
 impl Drop for Here {
@@ -133,7 +161,14 @@ impl Drop for Here {
         let mut state = self.core.call.state.lock().unwrap();
         let Some(person) = state.person(&self.speaker) else { return };
         person.windows = person.windows.saturating_sub(1);
+        person.remotes = person.remotes.saturating_sub(usize::from(self.remote));
         if person.windows > 0 {
+            // What's left decides what they are: a laptop closing leaves a Remote of the same name only a Remote.
+            let remote = person.remotes == person.windows;
+            if remote != person.remote {
+                person.remote = remote;
+                state.tell(&self.core);
+            }
             return;
         }
         person.here = false;

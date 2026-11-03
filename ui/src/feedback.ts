@@ -222,6 +222,7 @@ export const ACTIONS: Action[] = [
   { id: "room-menu", how: "key", at: [["room.tsx", `<details className="room-menu" onKeyDown`]], pressed: INSTANT, done: "Esc closes the Share menu, focus back on it" },
   { id: "leave-room", how: "click", at: [["room.tsx", "onClick={actions.leave}"]], pressed: PRESS, done: "“You left. Your thoughts stay.”", says: ["You left. Your thoughts stay."] },
   { id: "copy-invite", how: "click", at: [["room.tsx", "onClick={() => void copyInvite(join)"]], pressed: PRESS, done: "the button says “Link copied”", says: ["Link copied"] },
+  { id: "copy-remote-link", how: "click", at: [["room.tsx", "onClick={() => void copyText(phone)"]], pressed: PRESS, done: "the button says “Link copied”: the link that opens Remote on your phone", says: ["Link copied"] },
   { id: "join-room", how: "form", at: [["room.tsx", `<form className="join-card" onSubmit={join}>`]], pressed: PRESS, waits: "network",
     working: "the button says “Joining…” and waits", done: "the map opens", failed: "“Can't reach the shared map. …”, or what's wrong with the code or name",
     says: ["Joining…", "Can't reach the shared map."] },

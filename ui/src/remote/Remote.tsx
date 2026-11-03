@@ -1,7 +1,8 @@
 // The Remote (`?remote`, main.tsx): a phone's page for the AI helpers' work, beside nothing else. The Work spine fills the
 // screen, and at its foot the question a helper holds for you, with a box to answer it and a Send that tells the helper
 // (`answer`, core/src/guide.rs). In a room it joins as any other window does, by its name (room.tsx), and shows what the
-// core relays; with no room it plays a demo feed in the page (demo.ts) and says so, and nothing it sends goes anywhere.
+// core relays; it says it is a Remote on its socket, so the call lists it as a device and not as another person (the laptop
+// opens no Talk for it). With no room it plays a demo feed in the page (demo.ts) and says so, and nothing it sends goes anywhere.
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { useCore } from "../core";
 import { dropHeld, useGuide } from "../guide-core";

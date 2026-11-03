@@ -2,13 +2,15 @@
 // room code, everyone joins with a short name (remembered in this browser), and a laptop other than
 // the host's also needs the code. Alone, nothing changes: your thoughts are "you".
 // In a room the map is a call (talk/): this window's socket also tells the call what it hears (who's here, who has the
-// floor, how far each has read) and carries what Talk sends back.
+// floor, how far each has read) and carries what Talk sends back. A phone's Remote (remote/) joins the same way and says
+// so on its socket (`remote`), so the call lists it as a device and not as another person.
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import "./room.css";
 import { useOnScreen } from "./onscreen";
+import { REMOTE, REMOTE_NAME, remoteLink } from "./remote/flag";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 import { TIPS } from "./Tips";
-import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, shownCode, stateWord, useCall } from "./talk/call-core";
+import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, remotesHere, shownCode, stateWord, useCall } from "./talk/call-core";
 
 type Seat = { me: string; code: string };
 // What the core says at /room: is a room open, may this page use the map, and (asked with a name) does
@@ -49,14 +51,19 @@ export function sendToCore(message: object): boolean {
   return true;
 }
 
-/** Copies the invite to the clipboard; says whether it went. */
-export async function copyInvite(join: { code: string; invite: string | null }): Promise<boolean> {
+/** Copies words to the clipboard; says whether they went. */
+async function copyText(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(join.invite ?? shownCode(join.code));
+    await navigator.clipboard.writeText(text);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Copies the invite to the clipboard; says whether it went. */
+export async function copyInvite(join: { code: string; invite: string | null }): Promise<boolean> {
+  return copyText(join.invite ?? shownCode(join.code));
 }
 
 /** Room controls are absent when thinking alone. Once the call is on (talk/call-core.ts), who's here now, live;
@@ -69,10 +76,14 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
   const call = useCall();
   // Copying needs a secure page (this laptop's own, or HTTPS): elsewhere the link shows, to copy by hand.
   const [copied, setCopied] = useState<boolean | null>(null);
+  const [phoneCopied, setPhoneCopied] = useState<boolean | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   useOnScreen(panel, { rendered: !!actions });
   if (!actions) return null;
   const here = hereNow(call, me).filter((person) => person.name !== me);
+  // Your own phone's Remote: the invite's address, so it comes in by the same code, and the name it should join under.
+  const phone = join?.invite ? remoteLink(join.invite, me) : null;
+  const remotes = remotesHere(call);
   const others = [...new Set(speakers)].filter((name) => name && name !== me && name !== ALONE.me);
   return (
     <details className="room-menu" onKeyDown={(event) => {
@@ -90,10 +101,17 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
         {join && <p className="room-code">Join code <b>{shownCode(join.code)}</b>
           <button type="button" className="room-copy" onClick={() => void copyInvite(join).then(setCopied)}>{copied ? "Link copied" : "Copy link"}</button></p>}
         {join && copied === false && <p className="room-link">{join.invite ?? shownCode(join.code)}</p>}
+        {phone && <p className="room-code room-remote">Open Remote on your phone
+          <button type="button" className="room-copy" onClick={() => void copyText(phone).then(setPhoneCopied)}
+            aria-label={phoneCopied ? "Link copied: open it on your phone" : "Copy link to open Remote on your phone"}>{phoneCopied ? "Link copied" : "Copy link"}</button></p>}
+        {phone && phoneCopied === false && <p className="room-link">{phone}</p>}
         {call ? <>
           <p className="room-panel-label">Here now</p>
-          {here.length > 0
-            ? <ul>{here.map((person) => <li key={person.name}><span className={person.ai ? "room-person-mark ai-mark" : "room-person-mark other-mark"} aria-hidden="true" data-tip={person.ai ? TIPS.participant : undefined}>{person.ai ? "✦" : "◆"}</span> {named(person)} <span className="room-state">· {stateWord(person)}</span></li>)}</ul>
+          {here.length > 0 || remotes.length > 0
+            ? <ul>
+              {here.map((person) => <li key={person.name}><span className={person.ai ? "room-person-mark ai-mark" : "room-person-mark other-mark"} aria-hidden="true" data-tip={person.ai ? TIPS.participant : undefined}>{person.ai ? "✦" : "◆"}</span> {named(person)} <span className="room-state">· {stateWord(person)}</span></li>)}
+              {remotes.map((remote) => <li key={remote.name}><span className="room-person-mark" aria-hidden="true" data-tip={TIPS.remote}>◇</span> {remote.name} <span className="room-state">· remote</span></li>)}
+            </ul>
             : <p className="room-panel-hint">No one else right now.</p>}
         </> : others.length > 0 ? <>
           <p className="room-panel-label">Also on this map</p>
@@ -121,6 +139,8 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   const params = new URLSearchParams(extra);
   if (seat.code) params.set("room", seat.code);
   if (seat !== ALONE) params.set("name", seat.me);
+  // A phone's Remote says so, so the call lists it as a device and not as another person (core/src/call.rs).
+  if (REMOTE) params.set("remote", "1");
   const query = params.toString();
   const ws = new WebSocket(query ? `${url}?${query}` : url);
   socketNow = ws;
@@ -167,7 +187,8 @@ async function knock(code: string, name = ""): Promise<Door> {
 export function Room({ children }: { children: ReactNode }) {
   const [door, setDoor] = useState<Door | null>(null);
   const [current, setCurrent] = useState<Seat | null>(null);
-  const [name, setName] = useState(() => read(NAME));
+  // A Remote's link carries the name it should join under (remote/flag.ts), so a phone isn't asked for one.
+  const [name, setName] = useState(() => REMOTE_NAME || read(NAME));
   const [code, setCode] = useState(() => normal(new URLSearchParams(location.search).get("room") || read(CODE)));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -276,7 +297,13 @@ export function Room({ children }: { children: ReactNode }) {
     <main className="join">
       <div className="join-brand">E2A2O <span>topics</span></div>
       <form className="join-card" onSubmit={join}>
-        {door.tunnel ? (
+        {REMOTE ? (
+          <>
+            <div className="join-kicker">Remote</div>
+            <h1>Answer from your phone.</h1>
+            <p className="join-intro">What your AI helpers are doing, and the questions they hold for you.</p>
+          </>
+        ) : door.tunnel ? (
           <>
             <div className="join-kicker">Just for you</div>
             <h1>Think out loud.</h1>
@@ -312,11 +339,12 @@ export function Room({ children }: { children: ReactNode }) {
             placeholder="A short name"
             maxLength={24}
             autoComplete="nickname"
-            autoFocus={door.member}
+            autoFocus={door.member && !(REMOTE && !!name)}
             aria-describedby={note ? "join-note" : "name-hint"}
           />
           <small id="name-hint">
-            {door.hosted ? "Shown next to your thoughts." : door.tunnel ? "Shown next to your thoughts. Whoever sent you this link can watch along." : "The other person will see this next to your thoughts."}
+            {REMOTE ? "Your helpers see this next to your answers."
+              : door.hosted ? "Shown next to your thoughts." : door.tunnel ? "Shown next to your thoughts. Whoever sent you this link can watch along." : "The other person will see this next to your thoughts."}
           </small>
         </label>
         {note && <div id="join-note" className="join-note" role="status">{note}</div>}

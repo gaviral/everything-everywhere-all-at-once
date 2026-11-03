@@ -73,10 +73,12 @@ const marked = (lines, i) => /names-ok/.test(lines[i] ?? "") || /names-ok/.test(
 /** Markdown prose: code spans, fenced blocks, link targets, HTML comments and bare URLs are code or addresses, not prose. */
 export function proseOf(markdown) {
   const lines = markdown.split("\n");
-  let fenced = false;
+  // A fenced block with a language (sh, rust, json) is code. One without is a diagram or a file tree, whose descriptions are prose.
+  let fenced = false, code = false;
   return lines.map((line) => {
-    if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return ""; }
-    if (fenced) return "";
+    const fence = line.match(/^\s*(?:```|~~~)\s*(\S*)/);
+    if (fence) { fenced = !fenced; code = fenced && fence[1] !== ""; return ""; }
+    if (fenced && code) return "";
     return line
       .replace(/<!--(?!.*names-ok).*?-->/g, " ")
       .replace(/\[([^\]]*)\]\(\s*<?(?:\.\/|\.\.\/)?(?:docs\/)?trace\.md[^)]*\)/g, " ")
@@ -233,7 +235,7 @@ function selfTest() {
   const fine = ["Add to Dock", "Send countdown", "a 5-second countdown, then Sent", "git branch", "brick.json", "bricks/spine", "catalog.rs", "room for more", "there is no room", "Work spine", "a friend's trial link", "Plant the tomatoes", "your map", "./run.sh room", "?room=abc", "the Palace of Versailles", "Pictures", "AI helper", "Share"];
   for (const text of bad) if (!retired(text).length) { console.error(`names-check self-test: should flag “${text}”`); process.exit(2); }
   for (const text of fine) if (retired(text).length) { console.error(`names-check self-test: should let “${text}” be`); process.exit(2); }
-  if (proseOf("a `thread` here\n```\nthread\n```\n[composer](docs/trace.md#composer) and [x](docs/thread.md)").join("|") !== "a   here||||  and x") { console.error("names-check self-test: Markdown prose"); process.exit(2); }
+  if (proseOf("a `thread` here\n```sh\nthread\n```\n[composer](docs/trace.md#composer) and [x](docs/thread.md)").join("|") !== "a   here||||  and x" || proseOf("```\nthread\n```").join("|") !== "|thread|") { console.error("names-check self-test: Markdown prose"); process.exit(2); }
 }
 
 selfTest();

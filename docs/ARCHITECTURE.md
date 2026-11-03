@@ -6,20 +6,20 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 
 ```
 Browser, one page per window (ui/src)
-  App.tsx        map and shared state/actions; legacy header/dock by default, shell integration with `?shell=2` (below)
+  App.tsx        map and shared state/actions; legacy header/bottom bar by default, shell integration with `?shell=2` (below)
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
-  pictures.ts    the one picture-slot rule (map, unfinished card, Palace): letter until decoded, capped refetches
+  pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
   MicButton.tsx  the mic's states (off, starting, listening, hearing you, paused, no key, refused, connecting)
   Tips.tsx       one shared tip for every element with `data-tip` (each ✦ says what the AI did and its undo)
-  Symbols.tsx    the ? list's legend, drawn with the map's own classes
+  Symbols.tsx    Help's legend, drawn with the map's own classes
   Attention.tsx  the one "look here" highlight, the "latest" bar, "New in X ↓", unseen dots, "this" (rules in attention-core.ts)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
   Crash.tsx      what shows if the page throws: "Something broke" and Reload, not a white page (the map is in the core)
   Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, committed as drawn files: icon.svg and four PNGs of one icon)
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
-  ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
+  ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the bottom bar shows its live line (held by `scripts/ux-check.mjs`)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
   revert.ts      what the window showed before a voice view or fold, put back on the core's Revert
   action-line.ts what an "Add to Reminders" row says at each step (only "Added" on Apple's answer), and the notice for a refusal said where no row shows (held by `scripts/actions-check.mjs`)
@@ -27,62 +27,62 @@ Browser, one page per window (ui/src)
   send-card.ts the message card's countdown, words, Esc and how long an ended card stays (held by `scripts/send-card-check.mjs`); SendCard.tsx draws it
   note-card.ts the note card's words, marks, Open in Notes only once saved, and how long an ended card stays (held by `scripts/note-card-check.mjs`); NoteCard.tsx draws it
   feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
-  Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
-  moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
+  Moves.tsx      a point's Move (a list of topics to type into, or drag onto a card) and a click on a title to rename it, each with Undo
+  moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two topics past)
   positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
-  annotate-core.ts margin notes as the window holds them, mirroring annotate.rs (a note is a tangent anchored to words), the note as sent, and the threads a brick is handed with their anchors
-  topics-core.ts themes (named `topic` in code) as the window holds them, mirroring topics.rs (by the ids as given, only for a thread on the map), each thread's theme and the themes in order as bricks get them, and a brick's rename or move sent to the core
-  onscreen.ts    keeps a popover anchored to a button (Room, the ? list, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
-  ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
-  route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
+  annotate-core.ts comments as the window holds them, mirroring annotate.rs (a comment is a tangent anchored to words), the comment as sent, and the topics a feature is handed with their anchors
+  topics-core.ts themes (named `topic` in code) as the window holds them, mirroring topics.rs (by the ids as given, only for a topic on the map), each topic's theme and the themes in order as features get them, and a feature's rename or move sent to the core
+  onscreen.ts    keeps a popover anchored to a button (Share, Help, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
+  ModelLine.tsx  the Meta model doing each step, in the input box: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
+  route.ts       live routing: while a thought is placed, the topics the prompt names light up and the bottom bar shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
-  whyhere.tsx    "Why here" on demand: a point's reason, an away row's Why?, asked of the core when none is kept
+  whyhere.tsx    "Why here" on demand: a point's reason, a Since you left row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
-  keys.ts        keys the README, tour and ? list promise: ? opens the list, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
-  unfinished.ts  the unfinished card: which thread you left last, your last words there, Later and forget it
+  keys.ts        keys the README, tour and Help promise: ? opens Help, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
+  unfinished.ts  the Unfinished thought card: which topic you left last, your last words there, Later and forget it
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×
   tidy-core.ts   the rules behind it, mirroring tidy.rs (what a merge undone puts back, which proposals wait where)
   site.ts        where the core runs (/room): hosted or a laptop, and the words and calendar file (.ics) that depend on it
   limits.ts      the core's caps on what the window sends (protocol.rs), checked first; a thought past the cap goes in parts, cut at paragraphs, else sentences, else words (held by `scripts/limits-check.mjs`)
-  merges.ts      which thread a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
+  merges.ts      which topic a merged one became (mirrors `World::resolve`), shared by every rule that follows merges
   landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
-  rooms.ts       each room's color (a thread and its branches) for the map's rails and the Palace, as pictures.rs paints it
+  rooms.ts       the color of each topic and its tangents, for the map's rails and the Pictures view, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
-  bricks-core.ts the bricks (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
-  BrickSlot.tsx  where bricks mount (a view beside Map and Palace, a card in the dock, a panel or an input over the page), each lazily and behind its own boundary
-  work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to bricks as `map.jobs` (the Work spine's)
-  Catalog.tsx    the Catalog sheet (Apps › Catalog): every brick with its line and switch
-  shell/         the optional `?shell=2` layout; without the flag the legacy header and dock remain the default
-    flag.ts      SHELL2, CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core bricks are built in
-    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Catalog wording
+  bricks-core.ts the features (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
+  BrickSlot.tsx  where features mount (a view beside Cards and Pictures, a card in the bottom bar, a panel or an input over the page), each lazily and behind its own boundary
+  work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to features as `map.jobs` (the Work spine's)
+  Catalog.tsx    the Features page (Features in the top bar): every feature with its line and switch
+  shell/         the optional `?shell=2` layout; without the flag the legacy header and bottom bar remain the default
+    flag.ts      SHELL2, CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core features are built in
+    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Features page wording
     parts.tsx    Icon, Keycap, Stamp and Mode; mod and modAria for platform-specific key labels
     names.ts     NAMES, FEATURE_NAMES, KIND_NAMES and FeatureName: shell labels, stamps and feature descriptions
     features.ts  BUILT_INS and BuiltIn; useBuiltInsOn and switchBuiltIn, browser-local switches in e2a2o.features, shared through storage events
     held.ts      HeldQuestion, holdQuestion, dropHeld and useHeld: this window's held stack, replacing by id; window.e2a2oHold exposes the same hold function
     history.ts   useHistory, Entry and Undo: this window's newest 80 landings, notices and map updates with Undo; canUndo checks availability, modelWords and seconds format details
-    countdown.ts useShellCountdownPlacement measures camera, stage and controls to place the Countdown and size its editor through CSS properties
+    countdown.ts useShellCountdownPlacement measures camera, stage and controls to place Deadlines and size its editor through CSS properties
     shell.css    layout and styles scoped to html.shell2: fixed corners, centered stage, bottom status line, right rail and phone sheet
   talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
-  remote/        the Remote (`?remote`): a phone's page with the Work spine full height and the question a helper holds for you, to answer; in a room the core's jobs and holds, with no room its own demo feed (`demo.ts`, from `samples/demo-jobs.json`); `ask.ts` is what waits and what a question offers; held by `scripts/remote-check.mjs`
+  remote/        the Remote (`?remote`): a phone's page with the Work spine full height and the question a helper holds for you, to answer; on a shared map the core's jobs and holds, with none its own demo feed (`demo.ts`, from `samples/demo-jobs.json`); `ask.ts` is what waits and what a question offers; `flag.ts` reads `?remote` (which may carry the name the phone joins under) and builds the link the Share menu hands out; on a shared map it says it is a Remote on its socket (room.tsx), so the call lists it as a device and not another person; held by `scripts/remote-check.mjs` and `scripts/remote-person-check.mjs`
     call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back
-    turns.ts     thoughts as turns (a split turn together, margin notes with their words), unread turns and where each person has read
-    Talk.tsx     people, messages, "Speaking now…", read marks, Catch up, replies on picked words and the Friend's interruption level; talk.css draws them
+    turns.ts     thoughts as turns (a split turn together, comments with their words), unread turns and where each person has read
+    Talk.tsx     people, messages, "Speaking now…", read marks, Catch up, replies on picked words and the AI helper's interruption level; talk.css draws them
     TalkRail.tsx the current call rail or phone sheet, mounted separately from the shell's Rail; hosts Talk, join-code copying and Leave, or a closed pill with unread turns; remembers open/closed in sessionStorage
-  bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
+  bricks/        one folder per feature, and contract.ts, the one file a feature imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
-    bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
-    bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your thread while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
+    bubbles/     a view: every topic as a bubble in a place of its own, sized by its points
+    bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your topic while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
-    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
-    _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
+    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the input box (the status line once there is one), in place of the bottom bar's big line
+    _template/   the feature to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
-  Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the composer and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
-  guide-core.ts  this window's transient point, caption and held-question rules, pauses and local brick hints (docs/guide.md, held by `scripts/guide-check.mjs`)
+  Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
+  guide-core.ts  this window's transient point, caption and held-question rules, pauses and local feature hints (docs/guide.md, held by `scripts/guide-check.mjs`)
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
@@ -91,34 +91,34 @@ Core, one process (core/src: axum, tokio)
   protocol.rs    ServerMsg, ClientMsg
   guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
   asr.rs         relay to Muse Voice Transcribe
-  placer.rs      places one thought at a time, telling the map as it decides (`Route`: the threads weighed, then where it went and why)
+  placer.rs      places one thought at a time, telling the map as it decides (`Route`: the topics weighed, then where it went and why)
   chunks.rs      two parts said across a pause as one idea (the later linked to the earlier), assumptions that moved a thought
   decided.rs     decisions said out loud ("Decided: …", "let's go with …"), found by rule, so the point is marked and Recap leads with them
   trace.rs       E2A2O_TRACE=1: every model request (a contributor model's turned-away try too), placement and saved picture to data/<map>/trace.jsonl
   refiner.rs     tidies the map at pauses
   tidy.rs        the refiner's renames and merges: sure ones land with Undo, the rest wait on the card as proposals
-  pictures.rs    one picture per thread
+  pictures.rs    one picture per topic
   explain.rs     one sentence on a selected phrase
-  whyhere.rs     why a thought is on its thread, on request: from the map (move, first thought), else one fast call kept as its note
+  whyhere.rs     why a thought is on its topic, on request: from the map (move, first thought), else one fast call kept as its note
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
-  spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
-  moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
+  spoken.rs      the command pack: "add … to X", "new topic about …", "expand …", "forget it", "stop listening"
+  moves.rs       move a thought and rename a topic, said or clicked, each undone in one step; the refiner never merges two topics a move set apart
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
-  annotate.rs    margin notes, a person's or an AI participant's: the first on words starts their tangent under the point's thread, tied to them; a later one answers in it; journaled, to every window; no model call
-  topics.rs      themes (on screen; `topic` in code): the AI sorts top threads under at most 6 short names, reusing the names there (a thread keeps its theme once given); a pass at most once a minute while a thread waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
-  call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the Friend's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent
-  catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
-  apps.rs        watchers, prompts, publishers; the composer
+  annotate.rs    comments, a person's or an AI participant's: the first on words starts their tangent under the point's topic, tied to them; a later one answers in it; journaled, to every window; no model call
+  topics.rs      themes (on screen; `topic` in code): the AI sorts top-level topics under at most 6 short names, reusing the names there (a topic keeps its theme once given); a pass at most once a minute while a topic waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
+  call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the AI helper's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent. A Remote (`?remote` on the socket, `call::join_remote`) is listed with `remote: true` and is never one of the two: it starts no call and counts toward none, and once one has joined `call` is told with `started_ms` 0 until a call starts, so the shared map never hides a window
+  catalog.rs     the command list (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
+  apps.rs        watchers, prompts, publishers; the app builder
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
-  import.rs      past AI chats into threads
+  import.rs      past AI chats into topics
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
   messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
   github.rs      the GitHub card (Full only, not hosted, the host's only): "show me the open pull requests" reads gh pr list / view, read-only, and says in one line when gh is missing, signed out or slow
-  notes.rs       Full preset: "save this thread as a note" shows the note (points in order, decisions and unfinished marked, branches under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
+  notes.rs       Full preset: "save this topic as a note" shows the note (points in order, decisions and unfinished marked, tangents under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
   sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/
-  tls.rs         HTTPS for a room's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
+  tls.rs         HTTPS for a shared map's guests: a self-signed certificate kept in data/<map>/tls/, and its listener
   tunnel.rs      tunnel mode (PUBLIC_URL): who gets in through an HTTPS tunnel, always as a guest with the code
   perf.rs        opt-in timings of the change, journal and prompt paths (`cargo test --release -- --ignored perf`)
   refiner_live.rs  the refiner against the real model, on maps built to tempt it (`--ignored refiner_live`)
@@ -134,7 +134,7 @@ App connects Features page requests to the Features tab, “what just happened?�
 
 `Guide.tsx` supplies the held cards and caption content. It asks one waiting item after a 2.5 s natural pause with no unfinished draft or open dialog, while the page is visible and no caption is up. Urgent questions come first. The held card can ask now, wait for later or drop an item; talking over a caption returns its unread words to the stack. This state belongs to the receiving window, outside the saved map.
 
-The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`: the last 60 thoughts with nonempty text, oldest first, with speaker and time. In a call (`talk/call-core.ts`'s `inCall`), App removes that tab and closes it if selected; `talk/TalkRail.tsx` independently hosts the full `Talk` UI. TalkRail opens by default on a wide screen with at least two people, stays closed by default with one person and an AI participant, and uses a sheet on a phone. Its pill reopens it and shows unread turns. Both open rails use `data-slot="rail"`; the call rail and another shell tab can be mounted together.
+The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`: the last 60 thoughts with nonempty text, oldest first, with speaker and time. In a call (`talk/call-core.ts`'s `inCall`), App removes that tab and closes it if selected; `talk/TalkRail.tsx` independently hosts the full `Talk` UI. TalkRail opens by default on a wide screen with at least two people (a Remote, listed in the Share menu as a device, is never one), stays closed by default with one person and an AI participant, and uses a sheet on a phone. Its pill reopens it and shows unread turns. Both open rails use `data-slot="rail"`; the call rail and another shell tab can be mounted together.
 
 ## Guide relay and runtime jobs
 

@@ -1459,6 +1459,10 @@ struct Join {
     /// Present (`?ai`, any value) when the window is an AI participant's, as the Friend's bridge joins: its name is
     /// listed as an AI's (`World::ai`), so every window marks its words ✦. Not for the host's "you" or a "Guest".
     ai: Option<String>,
+    /// Present (`?remote`, any value) when the window is a person's Remote (ui/src/remote/): a phone's page for the AI
+    /// helpers' work. It comes in as any window does, by the room's code and a name of its own, and gets no more; the
+    /// call lists it as a Remote, not as another person (call.rs). Not for an AI participant's window.
+    remote: Option<String>,
 }
 
 async fn connect(
@@ -1481,7 +1485,8 @@ async fn connect(
     // Bounded (protocol.rs `FRAME_MAX`): axum's default is 64 MiB a message.
     let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
     let ai = join.ai.is_some() && speaker != "you" && speaker != GUEST;
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, ai, seat))
+    let remote = join.remote.is_some() && !ai;
+    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, ai, remote, seat))
 }
 
 /// What another laptop is called when it asks for this machine's name, or for none.
@@ -1554,17 +1559,19 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
 /// `renamed`: it asked for a name it can't have, so the reply says what it's called instead. `ai`: an AI
-/// participant's window (`Join::ai`). `_seat` holds its name in a room until it closes.
+/// participant's window (`Join::ai`); `remote`: a person's Remote (`Join::remote`). `_seat` holds its name in a room
+/// until it closes.
 #[allow(clippy::too_many_arguments)]
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, _seat: Seat) {
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, remote: bool, _seat: Seat) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the shared map");
     }
     // Counted before its catch-up, so a count that ends now still has this window to stop it (messages.rs `finish`).
     let _window = messages::window(&core, &speaker);
-    // In the call until it closes: told to the other windows now, and to this one in its catch-up (call.rs).
-    let _here = call::join(&core, &speaker, ai);
+    // In the call until it closes: told to the other windows now, and to this one in its catch-up (call.rs). A Remote is
+    // listed there too, as a Remote.
+    let _here = if remote { call::join_remote(&core, &speaker) } else { call::join(&core, &speaker, ai) };
     let (updates, replay) = subscribe_catch_up(&core, &speaker);
     for message in replay {
         if write(&mut out, &message).await.is_err() { return; }
@@ -2725,6 +2732,9 @@ mod tests {
             ("name=you&room=k7m2x9qpab", None, tunnel_host, "no visitor address: not through the tunnel"),
             ("name=you&room=k7m2x9qpab", Some("127.0.0.1"), tunnel_host, "a visitor claiming this machine"),
             ("name=you&room=k7m2x9qpab", Some("203.0.113.7"), &*format!("{address}"), "this laptop's own address"),
+            // A Remote is a window like any other at the door: it needs the code, the tunnel and a visitor too.
+            ("name=Phone&remote=1", Some("203.0.113.7"), tunnel_host, "a Remote with no code"),
+            ("name=Phone&room=k7m2x9qpab&remote=1", Some("127.0.0.1"), tunnel_host, "a Remote claiming this machine"),
         ] {
             let refused = tokio_tungstenite::connect_async(request(query, visitor, host)).await;
             assert!(refused.is_err(), "{why}");
@@ -2747,6 +2757,17 @@ mod tests {
             }
         }
         assert!(core.hosts.lock().unwrap().is_empty(), "no one through the tunnel is the host");
+        // Their Remote comes in the same way and no further: the code, the visitor's address, a name of its own; a
+        // guest, never the host. The call lists it as a Remote, and no call has started.
+        let (mut phone, _) = tokio_tungstenite::connect_async(request("name=Phone&room=k7m2x9qpab&remote=1", Some("203.0.113.7"), tunnel_host)).await.unwrap();
+        let call = loop {
+            let message = received(&mut phone).await;
+            if message["type"] == "call" { break message; }
+        };
+        let who: Vec<_> = call["people"].as_array().unwrap().iter().map(|p| (p["name"].as_str().unwrap(), p["remote"].as_bool().unwrap())).collect();
+        assert_eq!((call["started_ms"].as_u64(), who), (Some(0), vec![("Guest", false), ("Phone", true)]), "{call}");
+        assert!(core.hosts.lock().unwrap().is_empty(), "a Remote through the tunnel is no more the host than the window beside it");
+        phone.close(None).await.unwrap();
         window.close(None).await.unwrap();
         let _ = std::fs::remove_file(&path);
     }

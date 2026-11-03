@@ -30,6 +30,7 @@ export const TIPS = {
   recap: "Written by AI from your map. Off? notes an answer that misses the point.",
   build: "An app the AI is making from your words. Nothing new runs until you keep it.",
   participant: "An AI in the call, not a person: what it says or adds is marked ✦.",
+  remote: "A phone showing your AI helpers' work. A window of the shared map, not another person.",
 } as const;
 
 type Shown = { text: string; el: HTMLElement };
