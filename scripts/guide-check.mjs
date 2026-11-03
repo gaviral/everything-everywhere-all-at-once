@@ -1,14 +1,17 @@
 // No extra dependencies: run with `node scripts/guide-check.mjs` (after the UI is built; precheck builds it first).
-// Another participant shows you a part of the screen and says a line in the corner (docs/guide.md: the core relays
-// `point` and `caption`, core/src/guide.rs; ui/src/Guide.tsx draws them). Held here:
+// Another participant shows you a part of the screen, says a line, or holds a question for your pause (docs/guide.md:
+// the core relays `point`, `caption` and `hold`, core/src/guide.rs; ui/src/Guide.tsx draws them). Held here:
 //  1. The rules (ui/src/guide-core.ts, through Vite): docs/guide.md lists exactly the names the code knows, and each
-//     fixed name is on an element; where the arrow and its caption go; how long a caption stays; one point at a time;
-//     where a part that isn't on screen is instead.
+//     fixed name is on an element; the arrow's path from the caption to a part; how long a caption, a page of it and a
+//     question stay; pages of two lines; a question's main words; the mic hearing the caption's own voice; one point
+//     at a time; held questions asked, gone ahead, put off, dropped and talked over; where a part not on screen is.
 //  2. On the built UI in headless Chrome over a stand-in core (exit 3, precheck's WARN, without Chrome or ui/dist): the
-//     arrow lands on the named part, scrolled into view, and follows it; Esc and a click take it down; Show on the card
-//     a thought is in and the Map button lead it on to the part; a part not on screen is said, not guessed; a caption
-//     shows bottom-left, off the composer and over an open sheet, goes once read and holds under the pointer; a phone
-//     keeps both on screen; Reduce Motion scrolls at once and moves nothing.
+//     caption bottom center above where you type, its Markdown, its pages; the arrow from it lands on the named part,
+//     scrolled into view, and follows it; Esc and a click take it down; Show on the card a thought is in and the Map
+//     button lead it on to the part; a part not on screen is said, not guessed; the caption over an open sheet, gone
+//     once read, held under the pointer and while the page is hidden; talking over it steps it back at once (not its
+//     own voice), what you didn't read held; a held question waits while you talk or type and is asked at your pause,
+//     with ink buttons and keys: Go ahead, Later, Drop it; a phone keeps both on screen; Reduce Motion moves nothing.
 // GUIDE_SHOTS=<folder> also saves a screenshot of each step there.
 import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -24,7 +27,10 @@ const read = (path) => readFileSync(new URL(path, root), "utf8");
 const server = await uiServer();
 let rules;
 try { rules = await server.ssrLoadModule("/src/guide-core.ts"); } finally { await server.close(); }
-const { NAMES, place, aimAt, arrowLength, captionMs, CAPTION_SHORTEST_MS, guided, NOTHING, instead, label, GUTTER, TIP_GAP, HOLE_PAD } = rules;
+const {
+  NAMES, route, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, asked, wentAhead,
+  putOff, dropped, talkedOver, heldLater, heldDropped, instead, label, GUTTER, TIP_GAP, RING_PAD, NEAR, HELD_MAX, NATURAL_PAUSE_MS,
+} = rules;
 
 // The docs list every name the code knows and no other; each fixed name is on an element, each made one has its maker.
 const listed = [...read("docs/guide.md").matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]);
@@ -33,42 +39,86 @@ const src = readdirSync(new URL("ui/src/", root)).filter((f) => f.endsWith(".tsx
 for (const name of Object.keys(NAMES)) assert.ok(src.includes(`data-guide="${name}"`), `no element in ui/src has data-guide="${name}"`);
 for (const made of ["thread:${thread.id}", "point:${thought.id}", "view:${brick.info.id}"]) assert.ok(src.includes(`data-guide={\`${made}\`}`), `no element is named ${made}`);
 
-// Where the arrow goes: onto the composer from above, its caption above it; a header button from below; a caption kept
-// whole on screen at its edge; a card taller than the screen from the side, at its head; a phone's shorter arrow.
-const laptop = { width: 1440, height: 900 }, size = { width: 220, height: 58 };
-let p = place({ left: 340, top: 820, right: 1100, bottom: 872 }, laptop, size);
-assert.equal(p.side, "above");
-assert.deepEqual(p.tip, { x: 720, y: 820 - TIP_GAP });
-assert.ok(p.caption.top + size.height <= p.tail.y && p.caption.left <= 720 && p.caption.left + size.width >= 720, "the caption sits on the arrow's tail");
-assert.equal(place({ left: 1200, top: 14, right: 1280, bottom: 50 }, laptop, size).side, "below");
-p = place({ left: 1386, top: 14, right: 1430, bottom: 50 }, laptop, size);
-assert.ok(p.caption.left >= GUTTER && p.caption.left + size.width <= laptop.width - GUTTER, "the caption stays whole on screen");
-p = place({ left: 400, top: 40, right: 1040, bottom: 890 }, laptop, size);
-assert.ok(p.side === "left" || p.side === "right", p.side);
-assert.equal(p.tip.y, 40 + 28, "at a tall card's head");
-// A card of the page, between the header (180) and the dock (700): below would fit on the screen, but only over the
-// dock, so the arrow comes from the side, and its caption stays between the two.
-const card = { left: 130, top: 190, right: 714, bottom: 595 };
-assert.equal(place(card, laptop, size).side, "below");
-p = place(card, { ...laptop, top: 180, bottom: 700 }, size);
-assert.equal(p.side, "right");
-assert.ok(p.caption.top >= 180 + GUTTER && p.caption.top + size.height <= 700 - GUTTER, "between the header and the dock");
+// The arrow, from the caption at the stage to the part, never across the part's words.
+const laptop = { width: 1440, height: 900 };
+const within = (r, screen) => [r.c1, r.c2].every((p) => p.x >= 8 && p.x <= screen.width - 8 && p.y >= 8 && p.y <= screen.height - 8);
+const caption = { left: 420, top: 718, right: 1020, bottom: 770 };
+// A line of text up the map: from its right, at its middle; out of the caption's top, as near the line as it reaches.
+let r = route(caption, { left: 586, top: 392, right: 834, bottom: 422 }, laptop);
+assert.equal(r.side, "right");
+assert.deepEqual(r.end, { x: 834 + TIP_GAP, y: 407 });
+assert.deepEqual(r.start, { x: 834 + TIP_GAP, y: 718 - 8 });
+assert.ok(r.c2.x > r.end.x && Math.abs(r.c2.y - r.end.y) < 0.5, "it arrives along the line, from the right");
+assert.ok(within(r, laptop), "its bends stay on screen");
+// A tall card: at its head, where its title is.
+assert.equal(route(caption, { left: 130, top: 190, right: 714, bottom: 595 }, laptop).end.y, 190 + 28);
+// A button at the top: from under it, at its middle.
+r = route(caption, { left: 1200, top: 14, right: 1280, bottom: 50 }, laptop);
+assert.deepEqual([r.side, r.end], ["below", { x: 1240, y: 50 + TIP_GAP }]);
+// A card against the right edge: from its left.
+assert.equal(route(caption, { left: 800, top: 300, right: 1420, bottom: 500 }, laptop).side, "left");
+// The composer just under the caption: no arrow, its ring says which (the caption is at it already).
+assert.equal(route(caption, { left: 340, top: 770 + NEAR - 4, right: 1100, bottom: 840 }, laptop), null);
+// The mic, level with the caption and left of it: from its right.
+assert.equal(route(caption, { left: 350, top: 784, right: 390, bottom: 824 }, laptop).side, "right");
+// A phone: a line as wide as the card that holds it, no room beside it: from under it, near its right end, where a
+// line of text ends first.
 const phone = { width: 390, height: 844 };
-p = place({ left: 330, top: 776, right: 370, bottom: 816 }, phone, { width: 260, height: 76 });
-assert.equal(arrowLength(phone.width), 52);
-assert.equal(p.side, "above");
-assert.ok(p.caption.left >= GUTTER && p.caption.left + 260 <= phone.width - GUTTER);
+r = route({ left: 16, top: 600, right: 374, bottom: 700 }, { left: 23, top: 470, right: 367, bottom: 520 }, phone);
+assert.deepEqual([r.side, r.end], ["below", { x: 327, y: 520 + TIP_GAP }]);
+assert.ok(within(r, phone));
 // What it aims at: the part as seen between the header and the dock; past the band, a sliver at the edge it's past.
 const band = { top: 120, bottom: 760, width: 1440 };
 assert.deepEqual(aimAt({ left: 400, top: 100, right: 1000, bottom: 300 }, band), { box: { left: 400, top: 120, right: 1000, bottom: 300 }, seen: true });
 assert.deepEqual(aimAt({ left: 400, top: -200, right: 1000, bottom: 80 }, band), { box: { left: 400, top: 120, right: 1000, bottom: 120 }, seen: false });
 assert.deepEqual(aimAt({ left: 400, top: 900, right: 1000, bottom: 1000 }, band), { box: { left: 400, top: 760, right: 1000, bottom: 760 }, seen: false });
 
-// How long a caption stays: 4 s at least; a long one outlasts being spoken at the bridge's 200 words a minute.
+// How long: a caption 4 s at least; a long one outlasts being spoken at the bridge's 200 words a minute; a question
+// asked waits longer than it takes to read (read, look, decide, reach); talking over it is before an average reader
+// could have read it.
 assert.equal(captionMs("Look here."), CAPTION_SHORTEST_MS);
 assert.ok(captionMs(Array(70).fill("word").join(" ")) >= (70 / 200) * 60_000 + 1000, "a long caption outlasts its words spoken");
+const question = "Quick thing: Maya said Lena is away Saturday. Sunday works?";
+assert.ok(askMs(question) > captionMs(question) + 2000, "a question waits for an answer longer than a line is read");
+assert.ok(overMs(question) < captionMs(question), "talking over is before a slow reader's time, not after");
+assert.equal(captionMs("**Look** here."), captionMs("Look here."), "Markdown isn't read");
 
-// One point at a time; only its sender takes it down; the same words again are a new caption.
+// Pages: two lines at most each, whole sentences where they fit, a sentence too long cut at its words, the name's
+// room on page one; a bold span cut by a page closes and opens again.
+const nine = (run) => run.length * 9; // 9 px a character: 66 to a 600 px line
+const fitsTwo = (page, first = 0) => {
+  let lines = 1, x = first;
+  for (const word of page.replace(/\*\*/g, "").split(" ")) {
+    const w = nine(word);
+    if (x > first && x + 9 + w > 600) { lines++; x = w; } else x += (x > first ? 9 : 0) + w;
+  }
+  return lines <= 2;
+};
+assert.deepEqual(pages("Short and sweet.", 600, nine), ["Short and sweet."]);
+const long = "Here's what I'd suggest for the dinner. Sunday at noon works for Lena, since she's back by then. Maya can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place.";
+let paged = pages(long, 600, nine, 80);
+assert.ok(paged.length >= 2, `a long caption pages (${paged.length})`);
+assert.equal(paged.join(" "), long, "every word, once, in order");
+assert.ok(paged.every((page, i) => fitsTwo(page, i ? 0 : 80)), `each page two lines at most: ${JSON.stringify(paged)}`);
+assert.ok(paged.slice(0, -1).every((page) => /[.!?…]$/.test(page)), "pages end at a sentence's end");
+const run = `${Array(40).fill("word").join(" ")} **${Array(30).fill("bold").join(" ")}** end.`;
+paged = pages(run, 600, nine);
+assert.ok(paged.length >= 2 && paged.every((page) => (page.match(/\*\*/g) ?? []).length % 2 === 0), `a bold span cut by a page closes and opens again: ${JSON.stringify(paged)}`);
+
+// A question's main words: the sender's, else its short question, else a short first sentence.
+assert.equal(mainWords("Which Saturday? Lena leaves on the 14th."), "**Which Saturday?** Lena leaves on the 14th.");
+assert.equal(mainWords(question), "Quick thing: Maya said Lena is away Saturday. **Sunday works?**");
+assert.equal(mainWords("Bring chairs?"), "Bring chairs?");
+assert.equal(mainWords("Is **this** the one? Yes."), "Is **this** the one? Yes.");
+
+// The caption's own voice through the mic isn't you talking over it; your words are.
+assert.equal(echoOf("quick thing Maya said", question), true);
+assert.equal(echoOf("no wait I meant Friday", question), false);
+assert.equal(echoOf("so", question), false);
+assert.equal(echoOf("", question), false);
+
+// One point at a time; only its sender takes it down; the same words again are a new caption; a point's words take
+// the caption's place.
 const msg = (kind, target, text, by = "Claude") => ({ type: "guide", kind, target, text, by, at_ms: 1 });
 let s = guided(NOTHING, msg("point", "composer", "Type here"), 1);
 s = guided(s, msg("point", "mic", ""), 2);
@@ -77,11 +127,56 @@ assert.equal(guided(s, msg("point", null, "", "Sam"), 3), s, "someone else's cle
 assert.equal(guided(s, msg("point", null, ""), 4).point, null);
 s = guided(guided(s, msg("caption", null, "Hello"), 5), msg("caption", null, "Hello"), 6);
 assert.equal(s.caption.n, 6);
+assert.equal(s.point.target, "mic", "a caption leaves the point up");
+assert.equal(guided(s, msg("point", "composer", "Here"), 7).caption, null, "a point's words take the caption's place");
+assert.equal(guided(s, msg("point", "composer", ""), 7).caption.n, 6, "a point without words leaves it");
+// Said while you talk or type: held, said at your pause.
+s = guided(NOTHING, msg("caption", null, "Mid-sentence"), 8, true);
+assert.equal(s.caption, null);
+assert.deepEqual(s.held.map((h) => [h.kind, h.state, h.text]), [["line", "waiting", "Mid-sentence"]]);
+
+// Held questions: in the order they came, once each; the sender's "" takes back what it holds.
+const hold = (text, target = null, by = "Friend") => msg("hold", target, text, by);
+s = guided(NOTHING, hold(question, "point:a4"), 10);
+s = guided(s, hold("Bring chairs?"), 11);
+s = guided(s, hold(question, "point:a4"), 12);
+assert.deepEqual(s.held.map((h) => [h.n, h.kind, h.state]), [[11, "question", "waiting"], [12, "question", "waiting"]], "the same question again is the one held");
+assert.equal(guided(s, hold("", null), 13).held.length, 0, "taken back");
+assert.equal(guided(s, hold("", null, "Sam"), 13).held.length, 2, "only by its sender");
+let many = NOTHING;
+for (let i = 0; i < HELD_MAX + 3; i++) many = guided(many, hold(`Question ${i}?`), 100 + i);
+assert.deepEqual([many.held.length, many.held[0].text], [HELD_MAX, "Question 3?"], "the oldest go past the cap");
+// Your pause asks the first waiting, unless a caption is up: its caption with the buttons, its arrow; out of the stack.
+assert.equal(nextAsk(s).n, 11);
+assert.equal(nextAsk({ ...s, caption: { text: "x", by: "Friend", n: 1 } }), null, "not over a caption");
+let a = asked(s, 12, 20, 0);
+assert.deepEqual([a.caption.n, a.caption.ask.n, a.point.target, a.point.of], [20, 12, "point:a4", 20]);
+assert.deepEqual(a.held.map((h) => h.n), [11], "no sentence twice: out of the stack while asked");
+// Go ahead: the buttons go, the arrow stays with its caption, and a caption after it takes both.
+const ahead = wentAhead(a);
+assert.deepEqual([ahead.caption.ask, ahead.point.of], [undefined, 20]);
+assert.equal(guided(ahead, msg("caption", null, "Next"), 21).point, null, "its arrow goes with its caption");
+// Later: back first in line, waiting for you; Drop it: gone; both take its arrow.
+const off = putOff(a);
+assert.deepEqual([off.caption, off.point, off.held.map((h) => [h.n, h.state])], [null, null, [[12, "later"], [11, "waiting"]]]);
+assert.equal(nextAsk(off).n, 11, "what's put off doesn't ask by itself");
+const gone = dropped(a);
+assert.deepEqual([gone.caption, gone.point, gone.held.map((h) => h.n)], [null, null, [11]]);
+// Talked over: before you could read it, back to the stack as talked over; after, answered and done.
+assert.deepEqual(talkedOver(a, { early: true }).held.map((h) => [h.n, h.state]), [[12, "over"], [11, "waiting"]]);
+assert.deepEqual(talkedOver(a, { early: false }).held.map((h) => h.n), [11]);
+// A caption talked over: what you didn't get to read waits, nothing to answer; with nothing left, nothing.
+const said = guided(NOTHING, msg("caption", null, "One. Two. Three."), 30);
+assert.deepEqual(talkedOver(said, { rest: "Two. Three." }).held.map((h) => [h.kind, h.state, h.text]), [["line", "over", "Two. Three."]]);
+assert.deepEqual(talkedOver(said, { rest: "" }), { ...said, caption: null });
+// A held card's Later and Drop it.
+assert.equal(heldLater(s, 11).held[0].state, "later");
+assert.deepEqual(heldDropped(s, 11).held.map((h) => h.n), [12]);
 
 // A part not on screen: what reveals it and where it is, by rule; no rule, no arrow.
 const T = (id, title, parent_id = null) => ({ id, title, parent_id, status: "open", last_point: "", touched_ms: 0, tags: [], picture: null, dropped_by: "" });
-const said = (id, thread_id, placed = true) => ({ id, speaker: "you", text: id, point: id, thread_id, placed, unclear: "", complete: true, at_ms: 0, place_ms: null });
-const map = { threads: [T("T1", "Rent"), T("T2", "Garden"), T("T3", "Seedlings", "T2"), T("T4", "Old")], thoughts: [said("a", "T3"), said("p", "T1", false)], merged: { T4: "T1" } };
+const saidAt = (id, thread_id, placed = true) => ({ id, speaker: "you", text: id, point: id, thread_id, placed, unclear: "", complete: true, at_ms: 0, place_ms: null });
+const map = { threads: [T("T1", "Rent"), T("T2", "Garden"), T("T3", "Seedlings", "T2"), T("T4", "Old")], thoughts: [saidAt("a", "T3"), saidAt("p", "T1", false)], merged: { T4: "T1" } };
 const at = (over = {}) => ({ map, view: "map", query: "", focus: false, shown: (n) => ["thread:T1", "thread:T2"].includes(n), folded: (id) => id === "T2", ...over });
 assert.deepEqual(instead("thread:T3", at()), { via: "thread:T2", line: "“Seedlings” is folded inside “Garden”: Show opens it." });
 assert.deepEqual(instead("thread:T3", at({ query: "rent" })), { via: "search", line: "“Seedlings” is hidden by your search: clear it to see it." });
@@ -123,19 +218,20 @@ const thoughts = [
   ...titles.slice(1).map((title, i) => thought(`t${i + 2}`, `${title} needs a look this week`, `T${i + 2}`)),
   thought("seed", "Start the tomato seedlings indoors in March", "T2b"),
 ];
-const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [] };
+// Claude joined as an AI participant: its name ✦ and purple, its arrow purple.
+const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["Claude"] };
 const core = await standInCore(() => [{ type: "snapshot", world }]);
 const guide = (kind, target, text, by = "Claude") => core.send({ type: "guide", kind, target, text, by, at_ms: Date.now() });
-// Never stuck: past 3 minutes (it takes about one), it fails naming the step it was on.
+// Never stuck: past 4 minutes (it takes about two), it fails naming the step it was on.
 let doing = "opening the page";
 const step = (name) => { doing = name; };
 setTimeout(async () => {
-  console.error(`guide-check: stuck at “${doing}” after 3 minutes`);
+  console.error(`guide-check: stuck at “${doing}” after 4 minutes`);
   core.close();
   // Its browser too, or it outlives the check (it did once, before this).
   await Promise.race([page?.close(), sleep(4000)]).catch(() => {});
   process.exit(1);
-}, 180_000).unref();
+}, 240_000).unref();
 
 let page = null;
 let failed = null;
@@ -168,38 +264,56 @@ try {
     const floating = !!el.closest("header, .map-tools, .notice-lane, .dock, dialog");
     const tools = document.querySelector(".map-tools"), under = tools && tools.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
     const top = floating ? 0 : Math.max(0, edge("header", "bottom") ?? 0, under ? edge(".map-tools", "bottom") ?? 0 : 0);
-    const bottom = floating ? innerHeight : Math.min(innerHeight, edge(".dock", "top") ?? Infinity);
+    const bottom = floating ? innerHeight : Math.min(innerHeight, edge(".dock", "top") ?? Infinity, edge(".guide-caption", "top") ?? Infinity);
     return { left: r.left, right: r.right, top: Math.max(r.top, top), bottom: Math.min(r.bottom, bottom), whole: r.top >= top && r.bottom <= bottom };
   })()`);
+  // The arrow: where its head is and the side it comes in from, and where its line starts.
   const tip = () => evaluate(`(() => {
-    const m = document.querySelector(".guide-arrow > g")?.getAttribute("transform")?.match(/translate\\(([-\\d.]+) ([-\\d.]+)\\) rotate\\((-?\\d+)\\)/);
-    return m && { x: +m[1], y: +m[2], turn: +m[3] };
+    const head = document.querySelector(".guide-arrow-head"), line = document.querySelector(".guide-arrow-line");
+    const m = head?.getAttribute("transform")?.match(/translate\\(([-\\d.]+) ([-\\d.]+)\\)/), s = line?.getAttribute("d")?.match(/^M ([-\\d.]+) ([-\\d.]+)/);
+    return m && s && { x: +m[1], y: +m[2], side: head.dataset.side, from: { x: +s[1], y: +s[2] } };
   })()`);
   const layer = () => evaluate(`document.querySelector(".guide-layer")?.dataset.state ?? null`);
-  const words = () => evaluate(`document.querySelector(".guide-tip")?.innerText.replace(/\\s+/g, " ") ?? null`);
+  const words = () => evaluate(`document.querySelector(".guide-caption")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
   const box = (selector) => evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
   const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   const inside = (a, w, h, gutter = GUTTER) => a.left >= gutter - 0.5 && a.top >= gutter - 0.5 && a.right <= w - gutter + 0.5 && a.bottom <= h - gutter + 0.5;
-  /** The arrowhead touches the part's facing edge (TIP_GAP out), within its span. */
+  /** The arrowhead touches the part's facing edge (TIP_GAP out), within its span, and the arrow starts at the caption. */
   const lands = async (name, why) => {
-    const [part, t] = [await seen(name), await tip()];
-    assert.ok(part && t, `${why}: an arrow and its part (${JSON.stringify({ part, t })})`);
+    const [part, t, from] = [await seen(name), await tip(), await box(".guide-caption")];
+    assert.ok(part && t && from, `${why}: an arrow, its part and its caption (${JSON.stringify({ part, t, from })})`);
     const near = (a, b) => Math.abs(a - b) <= 1.5;
-    const ok = t.turn === 90 ? near(t.y, part.top - TIP_GAP) && t.x >= part.left && t.x <= part.right
-      : t.turn === -90 ? near(t.y, part.bottom + TIP_GAP) && t.x >= part.left && t.x <= part.right
-      : t.turn === 0 ? near(t.x, part.left - TIP_GAP) && t.y >= part.top && t.y <= part.bottom
+    const ok = t.side === "above" ? near(t.y, part.top - TIP_GAP) && t.x >= part.left && t.x <= part.right
+      : t.side === "below" ? near(t.y, part.bottom + TIP_GAP) && t.x >= part.left && t.x <= part.right
+      : t.side === "left" ? near(t.x, part.left - TIP_GAP) && t.y >= part.top && t.y <= part.bottom
       : near(t.x, part.right + TIP_GAP) && t.y >= part.top && t.y <= part.bottom;
     assert.ok(ok, `${why}: the arrow lands on ${name} (tip ${JSON.stringify(t)}, part ${JSON.stringify(part)})`);
+    const edge = (n, low, high) => n >= low - 9.5 && n <= high + 9.5;
+    assert.ok(edge(t.from.x, from.left, from.right) && edge(t.from.y, from.top, from.bottom), `${why}: the arrow starts at the caption (${JSON.stringify({ start: t.from, from })})`);
     return { part, t };
   };
+  /** The ring round the part, RING_PAD out. */
+  const ringed = async (name) => {
+    const [part, ring] = [await seen(name), await box(".guide-ring")];
+    return !!part && !!ring && Math.abs(ring.left - (part.left - RING_PAD)) <= 1 && Math.abs(ring.bottom - (part.bottom + RING_PAD)) <= 1;
+  };
+  /** Bottom center, just above where you type (today's dock: above its column), whole on screen, off the composer. */
+  const atStage = async (w = 1440, h = 900) => {
+    const [cap, composer, column] = [await box(".guide-caption"), await box('[data-guide="composer"]'), await box(".dock-inner")];
+    const center = (b) => (b.left + b.right) / 2;
+    const ok = Math.abs(center(cap) - center(composer)) <= 1.5 && cap.bottom <= Math.min(composer.top, column?.top ?? Infinity) - 4 && !overlap(cap, composer) && inside(cap, w, h);
+    return ok || JSON.stringify({ cap, composer, column });
+  };
+  /** A color as the page computes it (a token, say), to compare with an element's. */
+  const colorOf = (value) => evaluate(`(() => { const p = document.createElement("i"); p.style.color = ${JSON.stringify(value)}; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })()`);
   const click = async (selector) => {
     const r = await box(selector);
     assert.ok(r, `${selector} to click`);
     const [x, y] = [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
     for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
   };
-  const key = async (name, code) => {
-    for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: name, code: name, windowsVirtualKeyCode: code });
+  const key = async (name, code, text) => {
+    for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: name, code: name, windowsVirtualKeyCode: code, ...(text && type === "keyDown" ? { text } : {}) });
   };
   // Every caption's life, from the page: when it showed and when it went.
   await evaluate(`window.__captions = []; new MutationObserver(() => {
@@ -209,61 +323,53 @@ try {
   }).observe(document.body, { childList: true })`);
 
   step("a caption");
-  // A caption: bottom-left, who said it, off the composer; its life is measured while the points below run.
+  // A caption: bottom center above where you type, its name first (✦: Claude joined as an AI), up for its time.
   const line = "Do you see the arrow? That's where you type.";
   guide("caption", null, line);
   assert.ok(await until(`!!document.querySelector(".guide-caption")`, 2000), "a caption shows");
   await sleep(250);
-  const cap = await box(".guide-caption"), composer = await box('[data-guide="composer"]');
-  assert.match(await evaluate(`document.querySelector(".guide-caption").innerText`), /^Claude\s+Do you see the arrow\?/);
-  assert.ok(Math.abs(cap.left - GUTTER) <= 0.5 && !overlap(cap, composer) && inside(cap, 1440, 900), `bottom-left, off the composer (${JSON.stringify({ cap, composer })})`);
-  // A pixel as drawn, from a 1 × 1 screenshot: hit tests can't say what's on top (the arrow's layer takes no pointer,
-  // and an open sheet makes the page around it unclickable, a caption over it too).
-  const pixel = async (x, y) => {
-    // The clip is in the page's coordinates: the viewport's point plus how far it's scrolled.
-    const [left, top] = await evaluate(`[scrollX, scrollY]`);
-    const { data } = await cdp("Page.captureScreenshot", { format: "png", clip: { x: x + left, y: y + top, width: 1, height: 1, scale: 1 } });
-    const png = Buffer.from(data, "base64"), idat = [];
-    for (let at = 8; at < png.length;) {
-      const n = png.readUInt32BE(at), type = png.toString("ascii", at + 4, at + 8);
-      if (type === "IDAT") idat.push(png.subarray(at + 8, at + 8 + n));
-      at += 12 + n;
-    }
-    // One pixel: every filter leaves it as it is (no neighbors), after the row's filter byte.
-    const [, r, g, b] = inflateSync(Buffer.concat(idat));
-    return [r, g, b];
-  };
-  /** The card's own white in its right padding, mid-height, or the pixel found there: nothing is drawn over it. */
-  const onTop = async (selector) => {
-    const r = await box(selector);
-    const rgb = await pixel(Math.floor(r.right - 6), Math.floor((r.top + r.bottom) / 2));
-    return Math.min(...rgb) >= 250 || `${rgb} at ${Math.floor(r.right - 6)},${Math.floor((r.top + r.bottom) / 2)} in ${JSON.stringify(r)}`;
-  };
+  assert.match(await words(), /^✦ Claude Do you see the arrow\?/);
+  assert.equal(await atStage(), true, "bottom center, above the dock");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-caption .guide-by")).color`), await colorOf("var(--ai)"), "an AI's name in purple");
+  await shot("0-caption");
+  assert.ok(await until(`!document.querySelector(".guide-caption")`, captionMs(line) + 1500), "then it goes");
+  const first = await evaluate(`window.__captions.map((c) => ({ text: c.text, ms: c.gone - c.at }))[0]`);
+  assert.ok(first.ms >= captionMs(line) - 50 && first.ms <= captionMs(line) + 900, `the caption was up ${Math.round(first.ms)} ms, its time ${captionMs(line)}`);
+
+  step("Markdown and pages");
+  // Markdown as the map shows it: bold and code, never their marks. Two lines at a time, page by page.
+  guide("caption", null, "Your **rent** is due `Friday`.");
+  assert.ok(await until(`!!document.querySelector(".guide-caption strong")`, 2000), "bold shows as bold");
+  assert.deepEqual(await evaluate(`[document.querySelector(".guide-caption strong").textContent, document.querySelector(".guide-caption code").textContent, /[*\`]/.test(document.querySelector(".guide-caption").innerText)]`), ["rent", "Friday", false]);
+  const story = "Here's what I'd suggest for the dinner. Sunday at noon works for Lena, since she's back by then. Maya can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place, and we keep the playlist going.";
+  guide("caption", null, story);
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("Here's what")`, 2000));
+  await sleep(300);
+  const shown = await evaluate(`(() => { const t = document.querySelector(".guide-caption .guide-line"), lh = parseFloat(getComputedStyle(t.parentElement).lineHeight);
+    return { lines: Math.round(t.getBoundingClientRect().height / lh), text: t.innerText.replace(/\\s+/g, " ") }; })()`);
+  assert.ok(shown.lines <= 2 && !shown.text.includes("playlist"), `two lines at a time: ${JSON.stringify(shown)}`);
+  await shot("1-caption-paged");
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("playlist")`, 3 * captionMs(story) / 2), "the next page follows once read");
+  await evaluate(`document.querySelector(".guide-caption")?.dispatchEvent(new PointerEvent("pointerleave"))`);
 
   step("a point at the composer");
-  // The composer: the arrow comes down onto it with its caption, a ring around it; in the top layer.
+  // The composer, right under the caption: its ring and no arrow (the caption is at it), in the top layer.
   guide("point", "composer", "Type your answer here.");
-  assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "a point lands");
+  assert.ok(await until(`["near", "aimed"].includes(document.querySelector(".guide-layer")?.dataset.state)`, 2000), "a point lands");
   await sleep(300);
-  const { part } = await lands("composer", "the composer");
-  assert.equal((await tip()).turn, 90, "from above");
-  assert.equal(await words(), "Claude Type your answer here.");
+  assert.equal(await words(), "✦ Claude Type your answer here.", "its words take the caption's place");
+  assert.equal(await layer(), "near", "no arrow: the caption is at it already");
+  assert.ok(await ringed("composer"), "its ring");
   assert.ok(await evaluate(`document.querySelector(".guide-layer").matches(":popover-open")`), "in the top layer");
-  const hole = await box(".guide-hole");
-  assert.ok(Math.abs(hole.left - (part.left - HOLE_PAD)) <= 1 && Math.abs(hole.bottom - (part.bottom + HOLE_PAD)) <= 1, `the spotlight rings it (${JSON.stringify(hole)})`);
-  assert.ok(inside(await box(".guide-tip"), 1440, 900), "its caption is whole on screen");
-  await shot("1-point-composer");
-  // The corner caption stays over the point's shade: what's said is never dimmed.
-  assert.equal(await onTop(".guide-caption"), true, "the corner caption is over a later point's spotlight, not shaded by it");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-caption")).opacity`), "1");
+  assert.equal(await atStage(), true, "the caption stays at the stage");
+  await shot("2-point-composer");
 
   step("Esc");
-  // Esc takes it down.
   await key("Escape", 27);
-  assert.ok(await until(`!document.querySelector(".guide-layer")`, 1000), "Esc takes the point down");
+  assert.ok(await until(`!document.querySelector(".guide-layer") && !document.querySelector(".guide-caption")`, 1000), "Esc takes the point down, and its words");
 
   step("a far thread");
-  // A thread far down the map: scrolled into view between the header and the dock, the arrow on it.
+  // A thread far down the map: scrolled into view between the header and the dock, the arrow from the caption on it.
   const far = "thread:T25";
   assert.equal((await seen(far)).whole, false, "the far thread starts out of view");
   guide("point", far, "Your concert tickets are here.");
@@ -271,14 +377,17 @@ try {
   await sleep(900);
   assert.ok((await seen(far)).whole, "whole between the header and the dock");
   await lands(far, "a far thread");
-  await shot("2-point-thread");
+  assert.ok(await ringed(far), "the thread ringed");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-arrow-line")).stroke`), await colorOf("var(--ai)"), "an AI's arrow is purple");
+  await shot("3-point-thread");
   step("following");
   // It follows the part: the page scrolls (up: the far card is at the page's end), then the window narrows and the
   // cards reflow.
   const before = (await tip()).y;
   await evaluate(`scrollBy({ top: -60, behavior: "instant" })`);
   await sleep(120);
-  assert.ok(Math.abs((await tip()).y - (before + 60)) <= 1.5, `the arrow moves with the page (${before} → ${(await tip()).y})`);
+  assert.ok((await tip()).y > before + 20, `the arrow moves with the page (${before} → ${(await tip()).y})`);
+  await lands(far, "scrolled toward the caption, what's left above it");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(1200);
   await lands(far, "after the cards reflow");
@@ -286,25 +395,23 @@ try {
   await sleep(800);
 
   step("a click elsewhere");
-  // A click elsewhere takes it down.
   await click(".brand");
   assert.ok(await until(`!document.querySelector(".guide-layer")`, 1000), "a click elsewhere takes the point down");
 
   step("a folded thought");
-  // A thought in a folded card: the arrow on its card, saying Show opens it; Show is the way, so the point stays and
-  // moves on to the thought itself.
+  // A thought in a folded card: the arrow on its card, the caption saying Show opens it; Show is the way, so the point
+  // stays and moves on to the thought itself.
   guide("point", "point:seed", "This is the seedling idea.");
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000));
   await sleep(700);
   await lands("thread:T2b", "the card a folded thought is in");
-  assert.equal(await words(), "Claude This is the seedling idea. It's in “Tomato Seedlings”: Show opens it.");
-  await shot("3-point-folded");
+  assert.equal(await words(), "✦ Claude This is the seedling idea. It's in “Tomato Seedlings”: Show opens it.");
+  await shot("4-point-folded");
   await click('[data-guide="thread:T2b"] .thread-toggle');
-  assert.ok(await until(`!!document.querySelector('[data-guide="point:seed"]') && document.querySelector(".guide-tip")?.innerText.indexOf("Show opens it") < 0`, 2000), "Show leads the arrow on");
+  assert.ok(await until(`!!document.querySelector('[data-guide="point:seed"]') && document.querySelector(".guide-caption")?.innerText.indexOf("Show opens it") < 0`, 2000), "Show leads the arrow on");
   await sleep(700);
   await lands("point:seed", "the thought, once its card opens");
-  assert.equal(await words(), "Claude This is the seedling idea.");
-  await shot("4-point-opened");
+  assert.equal(await words(), "✦ Claude This is the seedling idea.");
 
   step("the Palace");
   // In the Palace: a thread is its picture; search is on the Map, said so, and the Map button leads there.
@@ -319,16 +426,15 @@ try {
   guide("point", "search", "Search finds the words you used.");
   await sleep(700);
   await lands("view:map", "the way to search");
-  assert.equal(await words(), "Claude Search finds the words you used. Search is on the Map: switch to it here.");
+  assert.equal(await words(), "✦ Claude Search finds the words you used. Search is on the Map: switch to it here.");
   await shot("5-point-other-view");
   await click('[data-guide="view:map"]');
-  assert.ok(await until(`document.querySelector(".guide-tip")?.innerText.indexOf("switch") < 0`, 2000), "the Map button leads the arrow on");
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.indexOf("switch") < 0`, 2000), "the Map button leads the arrow on");
   await sleep(600);
   await lands("search", "search, once on the Map");
 
   step("the Catalog in Apps");
-  // The Catalog button is in Apps: the arrow on Apps (above the map's tools: on screen, not scrolled under them), and
-  // opening Apps leads it on to the button.
+  // The Catalog button is in Apps: the arrow on Apps, and opening Apps leads it on to the button.
   await key("Escape", 27);
   await evaluate(`scrollTo({ top: 0, behavior: "instant" })`);
   if (await evaluate(`document.querySelector(".apps-title").getAttribute("aria-expanded") === "true"`)) await click(".apps-title");
@@ -337,9 +443,9 @@ try {
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on Apps, seen");
   await sleep(600);
   await lands("apps", "the Apps panel the Catalog is in");
-  assert.equal(await words(), "Claude More views live in the Catalog. The Catalog button is in Apps: open Apps.");
+  assert.equal(await words(), "✦ Claude More views live in the Catalog. The Catalog button is in Apps: open Apps.");
   await click(".apps-title");
-  assert.ok(await until(`!!document.querySelector('[data-guide="catalog"]') && document.querySelector(".guide-tip")?.innerText.indexOf("open Apps") < 0`, 2000), "opening Apps leads the arrow on");
+  assert.ok(await until(`!!document.querySelector('[data-guide="catalog"]') && document.querySelector(".guide-caption")?.innerText.indexOf("open Apps") < 0`, 2000), "opening Apps leads the arrow on");
   await sleep(800);
   await lands("catalog", "the Catalog button");
   await key("Escape", 27);
@@ -348,30 +454,43 @@ try {
   // A part that's nowhere: no arrow, said where; someone else's clear leaves it, the sender's takes it down.
   guide("point", "nope", "Look at this.");
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "alone"`, 2000), "no arrow for a name not on screen");
-  assert.equal(await words(), "Claude Look at this. Nothing called “nope” is on this screen.");
-  assert.ok(inside(await box(".guide-tip"), 1440, 900), "said whole on screen");
-  await sleep(300);
-  await shot("6-point-nowhere");
+  assert.equal(await words(), "✦ Claude Look at this. Nothing called “nope” is on this screen.");
+  assert.equal(await atStage(), true, "said at the stage, whole on screen");
   guide("point", null, "", "Sam");
   await sleep(300);
   assert.equal(await layer(), "alone", "someone else's clear leaves it");
   guide("point", null, "");
   assert.ok(await until(`!document.querySelector(".guide-layer")`, 1000), "the sender's clear takes it down");
 
-  step("the caption's time");
-  // The first caption went once read: its time, and gone within the fade.
-  const first = await evaluate(`window.__captions.map((c) => ({ text: c.text, ms: c.gone - c.at }))[0]`);
-  assert.ok(first.ms >= captionMs(line) - 50 && first.ms <= captionMs(line) + 900, `the caption was up ${Math.round(first.ms)} ms, its time ${captionMs(line)}`);
+  // A pixel as drawn, from a 1 × 1 screenshot: hit tests can't say what's on top (the arrow's layer takes no pointer,
+  // and an open sheet makes the page around it unclickable, a caption over it too).
+  const pixel = async (x, y) => {
+    const [left, top] = await evaluate(`[scrollX, scrollY]`);
+    const { data } = await cdp("Page.captureScreenshot", { format: "png", clip: { x: x + left, y: y + top, width: 1, height: 1, scale: 1 } });
+    const png = Buffer.from(data, "base64"), idat = [];
+    for (let at = 8; at < png.length;) {
+      const n = png.readUInt32BE(at), type = png.toString("ascii", at + 4, at + 8);
+      if (type === "IDAT") idat.push(png.subarray(at + 8, at + 8 + n));
+      at += 12 + n;
+    }
+    const [, r, g, b] = inflateSync(Buffer.concat(idat));
+    return [r, g, b];
+  };
+  /** The caption's own plate (the page's light color) in its right padding, mid-height: nothing is drawn over it. */
+  const onTop = async (selector) => {
+    const r = await box(selector);
+    const rgb = await pixel(Math.floor(r.right - 5), Math.floor((r.top + r.bottom) / 2));
+    return Math.min(...rgb) >= 240 || `${rgb} at ${Math.floor(r.right - 5)},${Math.floor((r.top + r.bottom) / 2)} in ${JSON.stringify(r)}`;
+  };
 
   step("over an open sheet");
-  // Over an open sheet: Recap open, a caption shows over it, on top.
   await click('[data-guide="recap"]');
   assert.ok(await until(`!!document.querySelector("dialog.recap-sheet[open]")`, 2000), "Recap opens");
   guide("caption", null, "I'll wait while you read your recap.");
   assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("I'll wait")`, 2000));
   await sleep(250);
   assert.equal(await onTop(".guide-caption"), true, "the caption is over the open sheet, not under its shade");
-  await shot("7-caption-over-sheet");
+  await shot("6-caption-over-sheet");
   await key("Escape", 27);
   assert.ok(await until(`!document.querySelector("dialog.recap-sheet[open]")`, 2000), "Recap closes");
 
@@ -383,7 +502,7 @@ try {
   const held = await box(".guide-caption");
   await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: (held.left + held.right) / 2, y: (held.top + held.bottom) / 2 });
   await sleep(captionMs("Hold me.") + 700);
-  assert.ok(await evaluate(`!!document.querySelector(".guide-caption") && !document.querySelector(".guide-caption.leaving")`), "held while the pointer is on it");
+  assert.ok(await evaluate(`!!document.querySelector(".guide-caption") && !document.querySelector(".guide-caption[data-leaving]")`), "held while the pointer is on it");
   await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 720, y: 300 });
   assert.ok(await until(`!document.querySelector(".guide-caption")`, 1500 + 1500), "off it, it goes");
 
@@ -394,12 +513,132 @@ try {
   assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("another window")`, 2000));
   await hide(true);
   await sleep(captionMs("Said while you were in another window.") + 700);
-  assert.ok(await evaluate(`!!document.querySelector(".guide-caption") && !document.querySelector(".guide-caption.leaving")`), "kept while the page is hidden");
+  assert.ok(await evaluate(`!!document.querySelector(".guide-caption") && !document.querySelector(".guide-caption[data-leaving]")`), "kept while the page is hidden");
   await hide(false);
   await sleep(1000);
   assert.ok(await evaluate(`!!document.querySelector(".guide-caption")`), "back on the page, its time starts then");
   assert.ok(await until(`!document.querySelector(".guide-caption")`, captionMs("Said while you were in another window.") + 1000), "then it goes");
   await evaluate(`delete document.hidden`);
+
+  // ---- Your words: the mic on (a stand-in microphone, a tone through a real stream, and a real tap), as bricks-check
+  // starts it, so the core's words reach this tab.
+  step("the mic");
+  await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(); const tone = ctx.createOscillator();
+    const out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+  await click('[data-guide="mic"]');
+  assert.ok(await until(`document.querySelector('[data-guide="mic"]')?.getAttribute("aria-pressed") === "true"`, 5000), "the mic starts");
+  const say = (text) => core.send({ type: "partial", text });
+  /** Quiet for a natural pause: what the Friend holds may be said now. */
+  const pause = async () => { say(""); await sleep(NATURAL_PAUSE_MS + 200); };
+
+  step("talked over");
+  // Your words while a caption is up: it steps back at once, and the line you didn't get to read waits, talked over.
+  const remark = "The rent card is the one at the top left.";
+  guide("caption", null, remark);
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("rent card")`, 2000));
+  await sleep(200);
+  const spoke = Date.now();
+  say("so anyway the");
+  assert.ok(await until(`!document.querySelector(".guide-caption")`, 600), "it steps back at once");
+  assert.ok(Date.now() - spoke < 700, `within a press of your first words (${Date.now() - spoke} ms)`);
+  assert.ok(await until(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("rent card") && c.innerText.includes("Talked over"))`, 1000), "what you didn't read waits in the held stack");
+  await shot("7-talked-over");
+  // Continue says it again, as a caption.
+  await pause();
+  await evaluate(`[...document.querySelectorAll(".guide-held-card")].find((c) => c.innerText.includes("rent card")).querySelector("button").click()`);
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("rent card") && !document.querySelector(".guide-held-card")`, 1500), "Continue says it, out of the stack");
+  await key("Escape", 27);
+  await evaluate(`document.querySelector(".guide-caption") && document.querySelector(".guide-caption").dispatchEvent(new PointerEvent("pointerleave"))`);
+
+  step("its own voice");
+  // The caption's own words coming back through the mic aren't you talking over it.
+  await until(`!document.querySelector(".guide-caption")`, captionMs(remark) + 2000);
+  const echo = "Look at the garden card, two rows down.";
+  guide("caption", null, echo);
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("garden card")`, 2000));
+  say("look at the garden card");
+  await sleep(500);
+  assert.ok(await evaluate(`!!document.querySelector(".guide-caption") && !document.querySelector(".guide-caption[data-leaving]")`), "its own voice doesn't step it back");
+  say("no I meant the rent one");
+  assert.ok(await until(`!document.querySelector(".guide-caption")`, 600), "yours does");
+
+  step("a held question waits for your pause");
+  // While you talk, a question waits in the held stack (main words bold); a caption said then waits too. At your pause
+  // (NATURAL_PAUSE_MS without words) the question is asked: its caption at the stage, ink buttons with keys, an arrow
+  // at what it's about; out of the stack.
+  await evaluate(`document.querySelectorAll(".guide-held-card button:last-child").forEach((b) => b.click())`);
+  say("and then on Friday we could");
+  const ask = "Quick thing: you said Friday. Rent is due Friday?";
+  guide("hold", "thread:T1", ask);
+  guide("caption", null, "Said while you talk.");
+  assert.ok(await until(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Quick thing") && c.innerText.includes("asks when you stop"))`, 1500), "held while you talk");
+  assert.equal(await evaluate(`document.querySelector(".guide-held-card strong")?.textContent`), "Rent is due Friday?", "its main words bold");
+  assert.equal(await evaluate(`!!document.querySelector(".guide-caption")`), false, "nothing said over you");
+  assert.ok(await evaluate(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Said while you talk") && c.innerText.includes("says when you stop"))`), "a caption said while you talk waits too");
+  const stack = await box(".guide-held");
+  assert.ok(inside(stack, 1440, 900) && stack.right >= 1440 - GUTTER - 1, `bottom right, whole on screen (${JSON.stringify(stack)})`);
+  assert.ok(!overlap(stack, await box('[data-guide="composer"]')), "clear of the composer");
+  await shot("8-held-while-talking");
+  await sleep(NATURAL_PAUSE_MS + 400);
+  assert.equal(await evaluate(`!!document.querySelector(".guide-caption")`), false, "your words keep it waiting, however long the turn");
+  say("");
+  const quiet = Date.now();
+  assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 1500), "asked at your pause");
+  assert.ok(Date.now() - quiet >= NATURAL_PAUSE_MS - 150, `not before a natural pause (${Date.now() - quiet} ms)`);
+  assert.match(await words(), /^✦ Claude Quick thing: you said Friday\. Rent is due Friday\? Go ahead ↵ Later L Drop it esc or talk over me to stop$/);
+  assert.equal(await atStage(), true, "at the stage");
+  assert.equal(await evaluate(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Quick thing"))`), false, "no sentence twice: out of the stack");
+  await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000);
+  await sleep(600);
+  await lands("thread:T1", "a question's evidence");
+  const ink = await evaluate(`(() => { const b = getComputedStyle(document.querySelector(".guide-btn.guide-primary")), p = document.createElement("i"); document.body.append(p);
+    const color = (v) => { p.style.color = v; return getComputedStyle(p).color; }; const out = [b.backgroundColor, color("var(--ink)"), color("var(--ai)")]; p.remove(); return out; })()`);
+  assert.ok(ink[0] === ink[1] && ink[0] !== ink[2], `Go ahead is ink, not the AI's purple (${ink})`);
+  await shot("9-asked");
+  // Go ahead (↵ from the page): its buttons go, it stays with its arrow its reading time.
+  await evaluate(`document.activeElement?.blur()`);
+  await key("Enter", 13, "\r");
+  assert.ok(await until(`!document.querySelector(".guide-caption[data-asking]") && !!document.querySelector(".guide-caption")`, 1000), "↵ goes ahead");
+  assert.equal(await layer(), "aimed", "its arrow stays with it");
+  await key("Escape", 27);
+  assert.ok(await until(`!document.querySelector(".guide-caption") && !document.querySelector(".guide-layer")`, 1000), "Esc takes it and its arrow down");
+
+  step("Later, Drop it, talked over");
+  // The caption said while you talked comes next at the same pause, once the question is done.
+  assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("Said while you talk")`, NATURAL_PAUSE_MS + 1500), "the line said while you talked, at the pause");
+  await key("Escape", 27);
+  await evaluate(`document.querySelector(".guide-caption")?.dispatchEvent(new PointerEvent("pointerleave"))`);
+  await until(`!document.querySelector(".guide-caption")`, captionMs("Said while you talk.") + 1500);
+  // Later (L): back to the stack, waiting for you; Answer asks it again; Drop it (esc): gone.
+  guide("hold", null, "Should I add the lease date to your calendar?");
+  assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 1500), "asked (you're quiet)");
+  await key("l", 76, "l");
+  assert.ok(await until(`!document.querySelector(".guide-caption") && [...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("lease date") && c.innerText.includes("Later"))`, 1000), "L puts it off, back in the stack");
+  await sleep(NATURAL_PAUSE_MS + 400);
+  assert.equal(await evaluate(`!!document.querySelector(".guide-caption")`), false, "put off, it doesn't ask by itself");
+  await evaluate(`[...document.querySelectorAll(".guide-held-card")].find((c) => c.innerText.includes("lease date")).querySelector("button").click()`);
+  assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, 1000), "Answer asks it now");
+  await key("Escape", 27);
+  assert.ok(await until(`!document.querySelector(".guide-caption") && !document.querySelector(".guide-held-card")`, 1000), "esc drops it");
+  // Talked over before you could read it: back in the stack, marked so.
+  guide("hold", null, "One more: is the late fee still ten dollars?");
+  assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 1500));
+  say("yes and");
+  assert.ok(await until(`!document.querySelector(".guide-caption") && [...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("late fee") && c.innerText.includes("Talked over"))`, 1000), "talked over at once: back in the stack");
+  // Typing is talking too: nothing is asked while the box holds a half-typed thought.
+  await evaluate(`document.querySelectorAll(".guide-held-card button:last-child").forEach((b) => b.click())`);
+  say("");
+  await click('[data-guide="composer"] textarea');
+  for (const ch of "half a tho") await key(ch, ch.toUpperCase().charCodeAt(0), ch);
+  guide("hold", null, "Is this about rent?");
+  await sleep(NATURAL_PAUSE_MS + 800);
+  assert.equal(await evaluate(`!!document.querySelector(".guide-caption")`), false, "not asked over a half-typed thought");
+  await evaluate(`(() => { const t = document.querySelector('[data-guide="composer"] textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    set.call(t, ""); t.dispatchEvent(new Event("input", { bubbles: true })); t.blur(); })()`);
+  assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 3500), "asked once the box is empty and you've paused");
+  await key("Escape", 27);
+  await click('[data-guide="mic"]');
+  await until(`document.querySelector('[data-guide="mic"]')?.getAttribute("aria-pressed") !== "true"`, 3000);
 
   step("a view brick");
   // A view brick marks its threads `data-thread` (bricks/contract.ts): with Bubbles on, a thread is its bubble.
@@ -417,7 +656,7 @@ try {
   const at3 = await tip();
   assert.ok(Math.min(Math.abs(at3.y - (bubble.top - TIP_GAP)), Math.abs(at3.y - (bubble.bottom + TIP_GAP)), Math.abs(at3.x - (bubble.left - TIP_GAP)), Math.abs(at3.x - (bubble.right + TIP_GAP))) <= 1.5,
     `the arrow lands on the bubble (${JSON.stringify({ at3, bubble })})`);
-  assert.equal(await words(), "Claude Your midterm is this bubble.");
+  assert.equal(await words(), "✦ Claude Your midterm is this bubble.");
   await shot("5b-point-bubble");
   await key("Escape", 27);
   await evaluate(`localStorage.removeItem("e2a2o.bricks")`);
@@ -426,55 +665,54 @@ try {
   await sleep(600);
 
   step("Reduce Motion");
-  // Reduce Motion: the far thread comes into view at once, and the arrow doesn't move in.
+  // Reduce Motion: the far thread comes into view at once, and the arrow isn't drawn out: it's there.
   await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }, { name: "prefers-color-scheme", value: "light" }] });
   await evaluate(`scrollTo({ top: 0, behavior: "instant" })`);
   await sleep(300);
   guide("point", far, "At once.");
   await sleep(150);
   assert.ok((await seen(far)).whole, "in view at once, no smooth scroll");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-arrow-move")).animationName`), "none", "no arrow motion");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-arrow-line")).animationName`), "none", "no drawing out");
   await lands(far, "under Reduce Motion");
   await key("Escape", 27);
 
   step("dark");
-  // Dark: the same point, for the eye (no assertion past landing).
+  // Dark: a question asked with its arrow, for the eye (no assertion past landing).
   if (shots) {
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "dark" }] });
-    guide("point", "thread:T1", "Rent is the one you're on.");
-    guide("caption", null, "This is your map in the dark.");
+    guide("hold", "thread:T1", "Rent is the one you're on. **Pay it Thursday?**");
+    await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 2000);
     await sleep(900);
-    await shot("8-dark");
+    await shot("10-dark");
     await key("Escape", 27);
   }
   await page.close();
   page = null;
 
   step("a phone");
-  // A phone: the arrow onto the mic, its caption whole on screen; the corner caption over the dock, off the composer.
+  // A phone: the caption a card the screen's width over the dock, the point's arrow from it; the held stack a chip.
   page = await openPage(`http://127.0.0.1:${core.port}/`, { width: 390, height: 844 });
   ({ evaluate, until } = page);
   await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await toured();
   assert.ok(await until(`!!document.querySelector('[data-guide="thread:T1"]')`, 8000));
   await sleep(600);
-  guide("point", "mic", "Tap here to talk.");
-  guide("caption", null, "On a phone, the mic is at the bottom right.");
-  assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed" && !!document.querySelector(".guide-caption")`, 2000));
+  guide("point", "thread:T1", "Tap here to open your rent.");
+  assert.ok(await until(`["aimed", "near"].includes(document.querySelector(".guide-layer")?.dataset.state) && !!document.querySelector(".guide-caption")`, 2000));
   await sleep(500);
-  await lands("mic", "the mic on a phone");
-  assert.ok(inside(await box(".guide-tip"), 390, 844), "the point's caption is whole on a phone");
-  const phoneCap = await box(".guide-caption"), phoneComposer = await box('[data-guide="composer"]');
-  assert.ok(inside(phoneCap, 390, 844) && !overlap(phoneCap, phoneComposer), `the corner caption is whole and off the composer (${JSON.stringify({ phoneCap, phoneComposer })})`);
-  const phoneTip = await box(".guide-tip"), phoneArrow = await box(".guide-arrow > g");
-  assert.ok(!overlap(phoneCap, phoneTip) && !overlap(phoneCap, phoneArrow), `the corner caption is clear of the point (${JSON.stringify({ phoneCap, phoneTip, phoneArrow })})`);
+  const card = await box(".guide-caption");
+  assert.ok(inside(card, 390, 844) && card.right - card.left >= 390 - 2 * GUTTER - 1, `the caption is the screen's width, whole (${JSON.stringify(card)})`);
+  assert.ok(!overlap(card, await box('[data-guide="composer"]')), "off the composer");
+  if (await layer() === "aimed") await lands("thread:T1", "a thread on a phone");
+  guide("hold", null, "Want me to set a reminder for Thursday?");
+  core.send({ type: "partial", text: "" });
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true, "no sideways scroll");
-  await shot("9-phone");
+  await shot("11-phone");
 } catch (error) {
   failed = error;
 } finally {
   await page?.close();
   core.close();
 }
-if (failed) { console.error(failed.stack ?? failed.message); process.exit(1); }
-console.log("guide-check: the names, the rules, and on the page: an arrow on the named part, followed, taken down, led on to a hidden part, said when nowhere; a caption off the composer, over a sheet, gone once read, held by the pointer; a phone; Reduce Motion");
+if (failed) { console.error(`guide-check failed at “${doing}”:`, failed.stack ?? failed.message); process.exit(1); }
+console.log("guide-check: the names, the rules, and on the page: the caption at the stage, its Markdown and pages; the arrow from it on the named part, followed, taken down, led on to a hidden part, said when nowhere; over a sheet, gone once read, held by the pointer and a hidden page; talked over at once, not by its own voice; a held question asked at your pause with Go ahead, Later, Drop it; a phone; Reduce Motion");

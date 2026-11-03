@@ -1,14 +1,21 @@
-// Pointing and captions from another participant (an AI joined with a name, over the core's `point` and `caption`
-// messages: core/src/guide.rs): what each `data-guide` name is, where a part that isn't on screen is instead, where the
-// arrow and its caption go, and how long a caption stays. Pure, so scripts/guide-check.mjs runs it without a browser;
-// Guide.tsx draws it. docs/guide.md lists the names (the check holds the two to each other).
+// The guide's rules: another participant (an AI joined with a name, e.g. the Friend over its bridge, over the core's
+// `point`, `caption` and `hold` messages: core/src/guide.rs) shows you a part of the screen, says a line, or holds a
+// question for your pause. What each `data-guide` name is, where a part that isn't on screen is instead, the arrow's
+// path from the caption to the part, how a long caption pages and how long each page stays, and the held questions:
+// when one is asked and what Go ahead, Later, Drop it and talking over do. Pure, so scripts/guide-check.mjs runs it
+// without a browser; Guide.tsx draws it. docs/guide.md lists the names (the check holds the two to each other).
 import { useSyncExternalStore } from "react";
+import type { BrickOn } from "./bricks/contract";
 import type { Thread, Thought, World } from "./core";
+import { readMs } from "./attention-core";
+import { NATURAL_PAUSE_MS } from "./legible";
 import { resolveMerged } from "./merges";
-import { slowReadMs } from "./notice-rules";
+import { DECIDE_MS, REACH_MS, SHORTEST_MS, slowReadMs } from "./notice-rules";
 
-/** The core's relay of a point or a caption (protocol.rs `ServerMsg::Guide`). */
-export type GuideMsg = { type: "guide"; kind: "point" | "caption"; target: string | null; text: string; by: string; at_ms: number };
+export { NATURAL_PAUSE_MS };
+
+/** The core's relay of a point, a caption or a held question (protocol.rs `ServerMsg::Guide`). */
+export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; target: string | null; text: string; by: string; at_ms: number };
 
 /** The fixed names, in the order docs/guide.md lists them: what each is, as a sentence names it. Threads, points and a
  *  view brick's switch are named with their id: `thread:<id>`, `point:<id>`, `view:<id>`. */
@@ -150,56 +157,82 @@ export function instead(name: string, at: Where): Instead {
   return { via: null, line: `Nothing called “${name}” is on this screen.` };
 }
 
-// ---- Where the arrow and its caption go.
+// ---- The arrow: from the caption, bottom center, to the part.
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 export type Point2 = { x: number; y: number };
+/** The side of the part the arrow comes in from. */
 export type Side = "above" | "below" | "left" | "right";
-export type Placed = { side: Side; tip: Point2; tail: Point2; caption: { left: number; top: number } };
+/** The arrow as a curve: from `start` on the caption's edge, leaving along `c1`, arriving along `c2` at `end`, its
+ *  tip, clear of the part's ring on its `side`. */
+export type Route = { side: Side; start: Point2; c1: Point2; c2: Point2; end: Point2 };
 
 /** The gutter every popover keeps from the screen's edge (onscreen.ts). */
 export const GUTTER = 16;
-/** Between the arrowhead and the part: clear of the spotlight's ring (`HOLE_PAD` out, 2 px wide), so the tip
- *  touches neither the part nor the ring. */
-export const TIP_GAP = 10;
-/** The spotlight's room around the part, as a focus ring's offset is. */
-export const HOLE_PAD = 6;
-/** Between the arrow's tail and its caption. */
-export const CAPTION_GAP = 4;
-/** The arrow's length: long enough to read as an arrow from across a laptop screen (≈ the composer's height and a
- *  half), shorter on a phone, where the caption needs the room. */
-export const arrowLength = (width: number) => (width < 560 ? 52 : 72);
+/** The ring's room around the part, as a focus ring's offset is. */
+export const RING_PAD = 6;
+/** Between the arrowhead's tip and the part: clear of its ring (`RING_PAD` out, 2 px wide). */
+export const TIP_GAP = RING_PAD + 8;
+/** The shortest run of an arrow that reads as one. */
+const RUN = 24;
+/** Between the caption and where the arrow leaves it (its first dot). */
+export const START_GAP = 8;
+/** Room an arrow needs beside a part to come in from that side: the tip's gap, the head, and a short run before it. */
+export const SIDE_ROOM = TIP_GAP + 16 + RUN;
+/** A part this small is a control (a button, a chip): the arrow comes up under it, where nothing else is. */
+const SMALL = { width: 200, height: 56 };
+/** A part nearer the caption than this needs no arrow (it would be shorter than a run between its two gaps): the
+ *  caption is at it already, and its ring shows which. */
+export const NEAR = START_GAP + TIP_GAP + RUN;
 
 const clamp = (n: number, low: number, high: number) => Math.min(Math.max(n, low), Math.max(low, high));
 
-/** The arrow aimed at `part` (as drawn on screen), and its caption of `size` at the arrow's tail: on the side of the
- *  part with room for both, above or below first (the caption reads along a line), else left or right, else wherever
- *  there's most; the caption kept whole on screen. `screen.top` and `screen.bottom` bound them where the part is one of
- *  the page's: between the header and the dock, so neither covers the composer or the dock's cards. */
-export function place(part: Box, screen: { width: number; height: number; top?: number; bottom?: number }, size: { width: number; height: number }, arrow = arrowLength(screen.width)): Placed {
+/** The arrow from the caption at `from` to the part at `to` (both as drawn on screen), within `screen` (`top` and
+ *  `bottom` bound the room the page's parts are seen in). It never crosses the part's words: a line of text or a card
+ *  is reached from its right, where a line leaves room (else its left, else from under it), at its head when it's
+ *  tall; a small control from under it; a part level with the caption or under it (the composer, the mic) from the
+ *  caption's side. Null when the part touches the caption already. */
+export function route(from: Box, to: Box, screen: { width: number; height: number; top?: number; bottom?: number }): Route | null {
   const [high, low] = [screen.top ?? 0, screen.bottom ?? screen.height];
-  const room: Record<Side, number> = { above: part.top - high, below: low - part.bottom, left: part.left, right: screen.width - part.right };
-  const need = (side: Side) => arrow + TIP_GAP + CAPTION_GAP + GUTTER + (side === "above" || side === "below" ? size.height : size.width);
-  const fits = (side: Side) => room[side] >= need(side);
-  const side: Side = fits("above") || fits("below") ? (room.above >= room.below ? "above" : "below")
-    : fits("left") || fits("right") ? (room.left >= room.right ? "left" : "right")
-    : (["above", "below", "left", "right"] as Side[]).reduce((best, s) => (room[s] / need(s) > room[best] / need(best) ? s : best));
-  // Aimed at the middle of the part's facing edge; on a tall part (a card), at its head, where its title is.
-  const x = clamp((part.left + part.right) / 2, GUTTER + 14, screen.width - GUTTER - 14);
-  const y = clamp(part.top + Math.min((part.bottom - part.top) / 2, 28), high + GUTTER + 14, low - GUTTER - 14);
-  const tip = side === "above" ? { x, y: part.top - TIP_GAP } : side === "below" ? { x, y: part.bottom + TIP_GAP }
-    : side === "left" ? { x: part.left - TIP_GAP, y } : { x: part.right + TIP_GAP, y };
-  const tail = side === "above" ? { x, y: tip.y - arrow } : side === "below" ? { x, y: tip.y + arrow }
-    : side === "left" ? { x: tip.x - arrow, y } : { x: tip.x + arrow, y };
-  const left = side === "left" ? tail.x - CAPTION_GAP - size.width : side === "right" ? tail.x + CAPTION_GAP : tail.x - size.width / 2;
-  const top = side === "above" ? tail.y - CAPTION_GAP - size.height : side === "below" ? tail.y + CAPTION_GAP : tail.y - size.height / 2;
+  const mid = (from.left + from.right) / 2;
+  const width = to.right - to.left, height = to.bottom - to.top;
+  const headY = to.top + Math.min(height / 2, 28);
+  // From under or over it: a control at its middle; a wide part (a line of text, a card) near its right end, where a
+  // line of text ends first, so the arrow crosses the fewest words on its way.
+  const facing = width <= SMALL.width ? (to.left + to.right) / 2 : clamp(Math.max(mid, to.right - 40), to.left + 24, to.right - 24);
+  let side: Side;
+  if (to.bottom > from.top) {
+    // Level with the caption or under it: from the side it's on, or onto its top when it's under the caption; at the
+    // caption or touching it from under, the caption is at it already.
+    const across = to.right > from.left && to.left < from.right;
+    if (across && to.top - from.bottom < NEAR) return null;
+    side = across ? "above" : to.right <= from.left ? "right" : "left";
+  } else if (width <= SMALL.width && height <= SMALL.height && from.top - to.bottom >= NEAR + SIDE_ROOM) side = "below";
+  else if (screen.width - to.right >= SIDE_ROOM) side = "right";
+  else if (to.left >= SIDE_ROOM) side = "left";
+  else if (from.top - to.bottom >= NEAR) side = "below";
+  else return null;
+  const end = side === "right" ? { x: to.right + TIP_GAP, y: headY } : side === "left" ? { x: to.left - TIP_GAP, y: headY }
+    : side === "below" ? { x: facing, y: to.bottom + TIP_GAP } : { x: facing, y: to.top - TIP_GAP };
+  // It leaves the caption from the edge facing where it's going, as near the part as the caption reaches.
+  const along = clamp(end.x, from.left + 18, from.right - 18);
+  const [start, out] = end.y < from.top ? [{ x: along, y: from.top - START_GAP }, { x: side === "right" ? 0.35 : side === "left" ? -0.35 : 0, y: -1 }]
+    : end.y > from.bottom ? [{ x: along, y: from.bottom + START_GAP }, { x: 0, y: 1 }]
+    : end.x < from.left ? [{ x: from.left - START_GAP, y: (from.top + from.bottom) / 2 }, { x: -1, y: 0 }]
+    : [{ x: from.right + START_GAP, y: (from.top + from.bottom) / 2 }, { x: 1, y: 0 }];
+  const into = { above: { x: 0, y: -1 }, below: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }[side];
+  const reach = Math.hypot(end.x - start.x, end.y - start.y);
+  const k = clamp(reach * 0.42, RUN, 240), k2 = clamp(reach * 0.3, RUN, 170);
+  const norm = Math.hypot(out.x, out.y);
+  const inside = (p: Point2) => ({ x: clamp(p.x, 8, screen.width - 8), y: clamp(p.y, high + 8, low - 8) });
   return {
-    side, tip, tail,
-    caption: { left: clamp(left, GUTTER, screen.width - GUTTER - size.width), top: clamp(top, high + GUTTER, low - GUTTER - size.height) },
+    side, start, end,
+    c1: inside({ x: start.x + (out.x / norm) * k, y: start.y + (out.y / norm) * k }),
+    c2: inside({ x: end.x + into.x * k2, y: end.y + into.y * k2 }),
   };
 }
 
-/** What the arrow aims at for a part drawn at `rect` within `band` (the room not covered by what floats above it):
+/** What the arrow aims at for a part drawn at `rect` within `band` (the room not covered by what floats over the map):
  *  the part as seen, or, when it's out of the band, a sliver at the band's edge it's past, so the arrow says where. */
 export function aimAt(rect: Box, band: { top: number; bottom: number; width: number }): { box: Box; seen: boolean } {
   const left = clamp(rect.left, 0, band.width), right = clamp(rect.right, 0, band.width);
@@ -209,55 +242,304 @@ export function aimAt(rect: Box, band: { top: number; bottom: number; width: num
   return { box: { left, top: edge, right, bottom: edge }, seen: false };
 }
 
-// ---- How long a caption stays.
+// ---- How a caption reads: in pages of two lines, each up for its reading time.
 
-/** At least this long, however short: the time to notice something new in a corner and look at it, as with notices
- *  (notice-rules.ts `SHORTEST_MS` is 5 s for answers that may need acting on; a caption only needs reading). */
+/** At least this long, however short: the time to notice something new at the foot of the screen and look at it, as
+ *  with notices (notice-rules.ts `SHORTEST_MS` is 5 s for answers that may need acting on; a caption only needs reading). */
 export const CAPTION_SHORTEST_MS = 4000;
-/** How long a caption is up: a slow reader's time for it (175 words a minute, notice-rules.ts), which also outlasts the
- *  caption spoken aloud (the bridge speaks at 200), so the words never go while they're still being said. */
+/** How long a caption, or one page of it, is up: a slow reader's time for it (175 words a minute, notice-rules.ts), which
+ *  also outlasts it spoken aloud (the bridge speaks at 200), so the words never go while they're still being said. */
 export function captionMs(text: string): number {
-  return Math.max(CAPTION_SHORTEST_MS, slowReadMs(text));
+  return Math.max(CAPTION_SHORTEST_MS, slowReadMs(plain(text)));
+}
+/** How long a question asked at your pause waits for Go ahead, Later or Drop it: a slow reader reads it with its buttons,
+ *  looks at what its arrow shows (about as many words again), decides and reaches, as an Undo notice gives
+ *  (notice-rules.ts `undoUpFor`). Unanswered, it goes back to wait for you. */
+export function askMs(text: string): number {
+  const words = plain(text);
+  return Math.max(SHORTEST_MS, slowReadMs(`${words} Go ahead Later Drop it`) + slowReadMs(words) + DECIDE_MS + REACH_MS);
+}
+/** Talking before an average reader could have read a question is talking over it, not answering it. */
+export function overMs(text: string): number {
+  return readMs(plain(text));
 }
 
-// ---- The window's store: the point shown, and the caption shown, fed by core.ts's socket.
+/** The words as shown, without the Markdown that marks them. */
+export const plain = (text: string) => text.replace(/\*\*|\*|`/g, "");
 
-export type Shown = { target: string; text: string; by: string; at: number; n: number };
-export type Said = { text: string; by: string; n: number };
-export type GuideState = { point: Shown | null; caption: Said | null };
-export const NOTHING: GuideState = { point: null, caption: null };
+/** At most this many lines at once, as subtitles keep (ux-revamp §3: the stage's captions, ≤ 2 lines). */
+export const CAPTION_LINES = 2;
+
+/** `text` in pages of at most `lines` lines `width` wide (`measure` gives a run of words' width in the caption's font;
+ *  `first` is the room the speaker's name takes on page one's first line): whole sentences where they fit, a sentence
+ *  too long for a page at its words. A bold span a page break cuts is closed and opened again, so each page reads as
+ *  Markdown on its own. One page when it fits. */
+export function pages(text: string, width: number, measure: (words: string) => number, first = 0, lines = CAPTION_LINES): string[] {
+  const space = measure(" ");
+  // How many lines `words` takes, the first `indent` narrower, as the browser breaks them (a word too long for a line
+  // has a line of its own).
+  const linesOf = (words: string[], indent: number) => {
+    let count = 1, x = indent;
+    for (const word of words) {
+      const w = measure(plain(word));
+      if (x > indent && x + space + w > width) { count++; x = w; } else x += (x > indent ? space : 0) + w;
+    }
+    return count;
+  };
+  const fits = (words: string[], indent: number) => linesOf(words, indent) <= lines;
+  const all = text.split(/\s+/).filter(Boolean);
+  if (fits(all, first)) return [all.join(" ")];
+  const sentences = all.join(" ").split(/(?<=[.!?…])\s+/).map((s) => s.split(" "));
+  const out: string[][] = [];
+  let page: string[] = [];
+  const indent = () => (out.length ? 0 : first);
+  for (const sentence of sentences) {
+    if (fits([...page, ...sentence], indent())) { page.push(...sentence); continue; }
+    if (page.length) { out.push(page); page = []; }
+    // A sentence longer than a page: as many words as fit, page by page.
+    for (const word of sentence) {
+      if (page.length && !fits([...page, word], indent())) { out.push(page); page = []; }
+      page.push(word);
+    }
+  }
+  if (page.length) out.push(page);
+  // Each page whole as Markdown: a bold span left open at a page's end closes there and opens the next.
+  const texts = out.map((words) => words.join(" "));
+  for (let i = 0; i < texts.length - 1; i++) {
+    if ((texts[i].match(/\*\*/g) ?? []).length % 2) { texts[i] += "**"; texts[i + 1] = `**${texts[i + 1]}`; }
+  }
+  return texts;
+}
+
+/** A sentence short enough to take in at a glance, in words. */
+const GLANCE = 6;
+/** The question's main words in bold, so they catch your eye in the held stack ("main words that can catch your eye"):
+ *  as the sender marked them (`**…**`); else, when it's more than one sentence, its short question ("Quick thing: Maya
+ *  said Lena is away Saturday. **Sunday works?**"), or a short first sentence ("**Which Saturday?** Lena leaves on the
+ *  14th."); else as it is. */
+export function mainWords(text: string): string {
+  if (/[*`]/.test(text)) return text;
+  const sentences = text.split(/(?<=[.!?…])\s+/);
+  if (sentences.length < 2) return text;
+  const short = (s: string) => s.split(/\s+/).length <= GLANCE;
+  const main = sentences.findIndex((s) => s.endsWith("?") && short(s));
+  const at = main >= 0 ? main : short(sentences[0]) ? 0 : -1;
+  return at < 0 ? text : sentences.map((s, i) => (i === at ? `**${s}**` : s)).join(" ");
+}
+
+// ---- Talking over: your words while a caption is up.
+
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+/** Whether `heard` (your words as they come) is the caption's own voice through the mic, not you: most of what's heard is
+ *  in what's said (the bridge reads its captions aloud, and the mic of the window it speaks beside hears them). */
+export function echoOf(heard: string, said: string): boolean {
+  const words = wordsOf(heard);
+  if (!words.length) return false;
+  const left = new Map<string, number>();
+  for (const word of wordsOf(plain(said))) left.set(word, (left.get(word) ?? 0) + 1);
+  let shared = 0;
+  for (const word of words) {
+    const n = left.get(word) ?? 0;
+    if (n) { shared++; left.set(word, n - 1); }
+  }
+  return shared >= Math.max(1, 0.6 * words.length);
+}
+
+// ---- The window's store: the point, the caption and the held questions, fed by core.ts's socket.
+
+/** A point: the arrow at `target`, from `by`. `of`: the caption it belongs to (a question asked with an arrow), which
+ *  takes it down when it goes. */
+export type Shown = { target: string; text: string; by: string; at: number; n: number; of?: number };
+/** A question held for your pause, or a line of a caption (`line`): one said while you talked or typed, or what you
+ *  talked over. `waiting`: it's asked (said) by itself at your next pause; `later` (you said Later, or left it
+ *  unanswered) and `over` (you talked over it) wait for you. */
+export type Held = { n: number; text: string; target: string | null; by: string; kind: "question" | "line"; state: "waiting" | "later" | "over" };
+/** The caption up: `ask` while it's a held question asked, with Go ahead, Later and Drop it. */
+export type Said = { text: string; by: string; n: number; ask?: Held };
+export type GuideState = { point: Shown | null; caption: Said | null; held: readonly Held[] };
+export const NOTHING: GuideState = { point: null, caption: null, held: [] };
+/** At most this many held at once: the oldest go first (a sender stuck in a loop can't bury the screen). */
+export const HELD_MAX = 12;
+
+/** The question being asked, back to the held stack, first in line, as `state` (a newer caption, or another question
+ *  opened, came first: `waiting`; you said Later or left it: `later`; you talked over it: `over`), its arrow down. */
+function returned(state: GuideState, as: Held["state"]): GuideState {
+  const ask = state.caption?.ask;
+  if (!ask) return state;
+  return { point: state.point?.of === state.caption!.n ? null : state.point, caption: null, held: [{ ...ask, state: as }, ...state.held] };
+}
+
+/** The caption gone (read, stepped back or dropped), and the arrow that was its. */
+function unsaid(state: GuideState): GuideState {
+  if (!state.caption) return state;
+  return { ...state, caption: null, point: state.point?.of === state.caption.n ? null : state.point };
+}
 
 /** The state after a message: one point at a time (a new one replaces it; only its own sender takes it down), one
- *  caption at a time. `n` counts messages, so the same words again are a new caption, read again. */
-export function guided(state: GuideState, msg: GuideMsg, n: number): GuideState {
-  if (msg.kind === "caption") return msg.text ? { ...state, caption: { text: msg.text, by: msg.by, n } } : state;
-  if (msg.target) return { ...state, point: { target: msg.target, text: msg.text, by: msg.by, at: msg.at_ms, n } };
+ *  caption at a time, and the held questions in the order they came. `n` counts messages, so the same words again
+ *  are a new caption, read again. A caption said while you're `busy` (talking or typing, until a natural pause) never
+ *  talks over you: it waits in the held stack and is said at your pause. */
+export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false): GuideState {
+  if (msg.kind === "caption") {
+    if (!msg.text) return state;
+    if (busy) return { ...state, held: [...state.held, { n, text: msg.text, target: null, by: msg.by, kind: "line" as const, state: "waiting" as const }].slice(-HELD_MAX) };
+    // A newer caption replaces the one up (and its arrow); a question being asked goes back to wait for your pause.
+    return { ...unsaid(returned(state, "waiting")), caption: { text: msg.text, by: msg.by, n } };
+  }
+  if (msg.kind === "hold") {
+    // No words: the sender takes back what it still holds, the question it's asking too.
+    if (!msg.text) {
+      const asking = state.caption?.ask?.by === msg.by;
+      return { ...(asking ? unsaid(state) : state), held: state.held.filter((h) => h.by !== msg.by) };
+    }
+    // The same question again is the one held, not a second (its arrow as sent last).
+    if (state.caption?.ask?.by === msg.by && state.caption.ask.text === msg.text) return state;
+    const held = state.held.filter((h) => !(h.by === msg.by && h.text === msg.text));
+    return { ...state, held: [...held, { n, text: msg.text, target: msg.target, by: msg.by, kind: "question" as const, state: "waiting" as const }].slice(-HELD_MAX) };
+  }
+  // A point with words says them now: they take the caption's place (a question being asked keeps it).
+  if (msg.target) {
+    const base = msg.text && !state.caption?.ask ? unsaid(state) : state;
+    return { ...base, point: { target: msg.target, text: msg.text, by: msg.by, at: msg.at_ms, n } };
+  }
   return state.point && state.point.by === msg.by ? { ...state, point: null } : state;
+}
+
+/** The held question your pause asks: the first that waits for one, unless a caption is up (the speaker is talking). */
+export function nextAsk(state: GuideState): Held | null {
+  return state.caption ? null : state.held.find((h) => h.state === "waiting") ?? null;
+}
+
+/** Held `heldN` asked now (your pause came, or you opened it): its caption with Go ahead, Later and Drop it, and its
+ *  arrow if it points at something; a question asked before it goes back to wait for you. What you talked over of a
+ *  caption is said again as a caption, nothing to answer. */
+export function asked(state: GuideState, heldN: number, n: number, now: number): GuideState {
+  const item = state.held.find((h) => h.n === heldN);
+  if (!item) return state;
+  const before = unsaid(returned(state, "later"));
+  const held = before.held.filter((h) => h.n !== heldN);
+  if (item.kind === "line") return { ...before, held, caption: { text: item.text, by: item.by, n } };
+  const point = item.target ? { target: item.target, text: "", by: item.by, at: now, n, of: n } : before.point;
+  return { point, held, caption: { text: item.text, by: item.by, n, ask: item } };
+}
+
+/** Go ahead: the question is yours to answer; it stays its reading time, its arrow with it, and leaves the stack. */
+export function wentAhead(state: GuideState): GuideState {
+  return state.caption?.ask ? { ...state, caption: { text: state.caption.text, by: state.caption.by, n: state.caption.n } } : state;
+}
+
+/** Later, or left unanswered: back to the stack, where it waits for you. */
+export function putOff(state: GuideState): GuideState {
+  return returned(state, "later");
+}
+
+/** Drop it: gone, its arrow too. */
+export function dropped(state: GuideState): GuideState {
+  return state.caption?.ask ? unsaid(state) : state;
+}
+
+/** Your words came while the caption was up: it steps back. A question you talked over before you could have read it
+ *  (`early`) goes back to the stack, marked so; one you answered is done. What a caption hadn't shown yet (`rest`) waits
+ *  in the stack, nothing asked. */
+export function talkedOver(state: GuideState, { rest = "", early = false }: { rest?: string; early?: boolean } = {}): GuideState {
+  const caption = state.caption;
+  if (!caption) return state;
+  if (caption.ask) return early ? returned(state, "over") : unsaid(state);
+  const gone = unsaid(state);
+  if (!rest.trim()) return gone;
+  const held: Held = { n: caption.n, text: rest.trim(), target: null, by: caption.by, kind: "line", state: "over" };
+  return { ...gone, held: [held, ...gone.held].slice(0, HELD_MAX) };
+}
+
+/** A held card's Later: it waits for you, not your next pause. */
+export function heldLater(state: GuideState, n: number): GuideState {
+  return { ...state, held: state.held.map((h) => (h.n === n ? { ...h, state: "later" as const } : h)) };
+}
+
+/** A held card's Drop it: gone. */
+export function heldDropped(state: GuideState, n: number): GuideState {
+  return { ...state, held: state.held.filter((h) => h.n !== n) };
+}
+
+// ---- Your turn: whether you're talking or typing, for the pause a held question waits for.
+
+/** Your words are being heard now (a turn under way). */
+let speaking = false;
+/** When you last talked, typed or came back to the page (ms since 1970); 0 before any of it. */
+let lastBusy = 0;
+/** When the last caption went (read, answered, dropped or stepped back): the next held line waits a beat after it. */
+let lastSaid = 0;
+/** Your words, as the window hears them (`on("words")`): "" once a turn ends, which starts the pause. */
+export function heard(words: string, now = Date.now()) { speaking = !!words.trim(); lastBusy = now; }
+/** You typed, or came back to the page: the pause starts again. */
+export function busy(now = Date.now()) { lastBusy = now; }
+/** Whether it's your turn: your words are being heard, or came (or keys did) within a natural pause (legible.ts
+ *  NATURAL_PAUSE_MS). A caption said then waits for your pause. */
+export function yourTurn(now = Date.now()): boolean {
+  return speaking || now - lastBusy < NATURAL_PAUSE_MS;
+}
+/** How long until a held question may be asked: a natural pause of quiet since your last words or keys, and since the
+ *  last caption went (a beat between two of the speaker's lines); 0 once there, Infinity while your words are heard. */
+export function pauseIn(now = Date.now()): number {
+  return speaking ? Infinity : Math.max(0, Math.max(lastBusy, lastSaid) + NATURAL_PAUSE_MS - now);
 }
 
 let state = NOTHING;
 let count = 0;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
-const set = (next: GuideState) => { if (next !== state) { state = next; notify(); } };
+const set = (next: GuideState) => {
+  if (next === state) return;
+  if (state.caption && !next.caption) lastSaid = Date.now();
+  state = next;
+  notify();
+};
+
+/** The state now (for event handlers; a component uses `useGuide`). */
+export const current = () => state;
 
 /** Takes a guide message from the socket; false for any other message. */
 export function receiveGuide(msg: { type: string }): boolean {
   if (msg.type !== "guide") return false;
-  set(guided(state, msg as GuideMsg, ++count));
+  set(guided(state, msg as GuideMsg, ++count, yourTurn()));
   return true;
 }
 
-/** Esc or a click: the point goes. */
-export function dismissPoint() { set({ ...state, point: null }); }
+/** Esc or a click: the point goes. A question's arrow stays with it: its own buttons end it. */
+export function dismissPoint() { if (state.point && !state.point.of) set({ ...state, point: null }); }
 
-/** Caption `n` has been read (or the next replaced it). */
-export function captionRead(n: number) { if (state.caption?.n === n) set({ ...state, caption: null }); }
+/** Caption `n` has been read (or the next replaced it), and its arrow with it. */
+export function captionRead(n: number) { if (state.caption?.n === n) set(unsaid(state)); }
+
+/** Your pause: the first question (or line) waiting for one is asked. False when none waits (or a caption is up). */
+export function askAtPause(): boolean {
+  const next = nextAsk(state);
+  if (next) set(asked(state, next.n, ++count, Date.now()));
+  return !!next;
+}
+/** A held card's Answer, Go ahead or Continue: asked (said) now. */
+export function askNow(heldN: number) { set(asked(state, heldN, ++count, Date.now())); }
+// What the caption's buttons and keys do, to caption `n` only (it may have been replaced while a click was under way).
+const to = (n: number, change: (s: GuideState) => GuideState) => { if (state.caption?.n === n) set(change(state)); };
+export function goAhead(n: number) { to(n, wentAhead); }
+export function later(n: number) { to(n, putOff); }
+export function dropIt(n: number) { to(n, dropped); }
+export function stepBack(n: number, how: { rest?: string; early?: boolean }) { to(n, (s) => talkedOver(s, how)); }
+export function laterHeld(heldN: number) { set(heldLater(state, heldN)); }
+export function dropHeld(heldN: number) { set(heldDropped(state, heldN)); }
 
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 const read = () => state;
 export function useGuide(): GuideState {
   return useSyncExternalStore(subscribe, read, read);
+}
+/** Calls `listener` each time the guide's state changes (a question held, asked or answered). Returns the way to stop. */
+export function watchGuide(listener: () => void) { return subscribe(listener); }
+
+/** The questions held for your pause and what you talked over, oldest first: for a count where the page has one (the
+ *  phone's tab row), as the held stack (Guide.tsx) shows them. */
+export function useHeld(): readonly Held[] {
+  return useSyncExternalStore(subscribe, () => state.held, () => state.held);
 }
 
 /** Calls `listener` with the point shown each time that changes: a new one, or null once it's taken down (the bricks'
@@ -267,6 +549,26 @@ export function watchPoint(listener: (point: Shown | null) => void) {
   return subscribe(() => { if (state.point !== last) { last = state.point; listener(last); } });
 }
 
+// ---- What the guide hears: the window's events, as the bricks get them (BrickSlot.tsx hands them over).
+
+let windowOn: BrickOn | null = null;
+const onWatchers = new Set<() => void>();
+/** The window's `on` (bricks/contract.ts), so the guide hears your words as bricks do: a caption steps back when you
+ *  talk over it, and a held question waits for your pause. Returns the way to stop. */
+export function hearFrom(on: BrickOn) {
+  windowOn = on;
+  onWatchers.forEach((watcher) => watcher());
+  return () => {
+    if (windowOn !== on) return;
+    windowOn = null;
+    onWatchers.forEach((watcher) => watcher());
+  };
+}
+const watchOn = (watcher: () => void) => { onWatchers.add(watcher); return () => { onWatchers.delete(watcher); }; };
+export function useWindowOn(): BrickOn | null {
+  return useSyncExternalStore(watchOn, () => windowOn, () => null);
+}
+
 // ---- A brick's hint (bricks/contract.ts `hint`): shown as a point or a caption is, in this window only, never sent.
 
 /** A hint's words at most: one line beside the arrow, as a point's caption (guide.rs `POINT_MAX`). */
@@ -274,9 +576,9 @@ export const HINT_MAX = 140;
 /** A part's name, as the core takes one for a point (guide.rs `bad_name`). */
 const NAME = /^[A-Za-z0-9:._-]{1,100}$/;
 
-/** Shows `text` from `by` (a brick's name): an arrow at the part named `target` with the words beside it, as another
- *  participant's point; without a target, in the corner, as a caption. False when nothing showed: no words, more than
- *  one line or `HINT_MAX` characters, or a target that isn't a name. */
+/** Shows `text` from `by` (a brick's name): an arrow at the part named `target` with the words in the caption it comes
+ *  from, as another participant's point; without a target, as a caption. False when nothing showed: no words, more
+ *  than one line or `HINT_MAX` characters, or a target that isn't a name. */
 export function showHint(text: string, target: string | null, by: string): boolean {
   const line = text.trim();
   if (!line || /[\r\n]/.test(line) || [...line].length > HINT_MAX || (target !== null && !NAME.test(target))) return false;

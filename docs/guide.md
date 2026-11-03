@@ -1,23 +1,30 @@
-# Guide: pointing and captions
+# Guide: pointing, captions and held questions
 
-Another participant on the map, such as an AI that joined with a name ("Claude"), can show you one exact part of the screen with a big arrow and a one-line caption, and say what it says as a caption in the corner instead of adding cards to your map. One at a time, of the moment: nothing is kept, and no model is asked.
+Another participant (an AI that joined with a name, the Friend over its bridge) can show one exact part of the screen, say a line as a caption, or hold a question for your next pause, instead of adding cards to the map. Of the moment: nothing is kept, and no model is asked.
 
 ## Messages
 
 A window sends these over the WebSocket (`core/src/guide.rs` checks and relays them):
-- `{"type":"point","target":"<name>","caption":"<140 characters at most>"}`: an arrow at that part, the caption beside it. `{"type":"point","target":null}` takes your point down.
-- `{"type":"caption","text":"<400 characters at most>"}`: a line in the corner.
+- `{"type":"point","target":"<name>","caption":"<140 characters at most>"}`: an arrow at that part, from the caption that shows these words. `{"type":"point","target":null}` takes your point down.
+- `{"type":"caption","text":"<400 characters at most>"}`: a line in the caption, bottom center.
+- `{"type":"hold","text":"<question, 140 characters at most>","target":"<name>"|null}`: a question for the other windows to hold until you pause, then ask, with an arrow at `target` once asked if given. `{"type":"hold","text":""}` takes back the sender's held questions and captions, including their question being asked.
 
-Every other window gets `{"type":"guide","kind":"point"|"caption","target":…,"text":…,"by":"<sender's name>","at_ms":…}`; the window that sent it doesn't. Nothing is journaled. One window may send 4 a second at most; past that, past a cap, or with a target that isn't a name, only the sender hears why, in a notice.
+Every other window gets `{"type":"guide","kind":"point"|"caption"|"hold","target":…,"text":…,"by":"<sender's name>","at_ms":…}`; the window that sent it doesn't. Nothing is journaled. One window may send 4 a second at most; past that, past a cap, or with a target that isn't a name, only the sender's windows hear why, in a notice.
 
 ## What the window shows
 
-- **A point:** the part scrolled into view, a big arrow at it with its caption, and a soft spotlight; the arrow follows the part as it moves. A new point replaces it; Esc or a click takes it down.
+- **The caption:** bottom center, just above where you type (the stage; on today's layout, above the dock). The speaker's name first, ✦ and purple for an AI participant's. Markdown as on the map: bold, italics, code. At most two lines at a time. A longer caption shows page by page, whole sentences where they fit. Each page stays for a slow reader's time for its words, 4 s at least, which also outlasts it being spoken. Time counts only while the page shows. The pointer on it holds it. The next caption replaces it.
+- **Said while you talk or type:** a caption that arrives while your words are being heard, or within a natural pause (2.5 s, the app's `NATURAL_PAUSE_MS`) of your last words or keys, waits in the held stack. It is said at your pause.
+- **Talked over:** your words while a caption is up, apart from its own voice coming back through the mic, make it step back at once. What you didn't get to read waits in the held stack with Continue. That includes the page showing if you spoke before you could have read it.
+- **A point:** one arrow from the caption to the named part, and a ring round the part. The part scrolls into view and is followed as it moves. A line of text or a card is reached from its right where there's room, else its left, else from under it. A small control is reached from under it where there's room. A part under the caption (the composer, the mic) is reached from above. A part right next to the caption gets the ring alone. Purple for an AI participant's arrow, the accent's blue for anyone else's or a feature's hint. Nothing else is shaded. A view that dims (the Spine) dims the rest itself. A new point replaces it. Esc or a click takes it down; a held question's arrow goes with its caption and buttons.
 - **A part not on screen:** never guessed at. The arrow shows what reveals it (Show on the card a thought is in, the Map button, Apps, search, Focus) and the caption says where it is; a click there moves the arrow on to the part itself. With no such way, there's no arrow, and the caption says it isn't on screen.
-- **A caption:** bottom-left, never on the composer, with who said it. The next replaces it; it goes once read: a slow reader's time for its words, 4 s at least, which also outlasts it being spoken, counted only while the page shows. The pointer on it holds it.
-- Both draw over an open sheet and keep still under Reduce Motion. `ui/src/Guide.tsx` draws them; the rules are in `ui/src/guide-core.ts`, held by `scripts/guide-check.mjs`.
-- **A brick's hint** (`actions.hint`, docs/bricks.md) shows the same way, with the brick's name: an arrow at a named part, or a line in the corner. It's this window's only: never sent, nor relayed.
+- **A held question:** waits in the held stack while you talk or type. Bottom right, above the shelf, or in the page's `data-slot="held"` region once it has one. On a phone, the floating stack is a “Held N” chip. The sender can mark its main words in bold. For text without Markdown, a short question or opening sentence is made bold when there is more than one sentence.
+- **At your next pause:** 2.5 s with no words or keys, nothing half-typed in the box, no sheet open, the page in view, no caption up, and a beat as long since the last one went. The first one waiting is asked: its caption with **Go ahead ↵ · Later L · Drop it esc**, and an arrow at its target if given. While the mic is on it adds “or talk over me to stop” (“or talk over me” on a phone). Go ahead: it stays its reading time, then goes. Later, or no answer in the time to read it, look and decide: back to the stack, where it waits for you (Answer). Drop it: gone. Talking over it before you could have read it puts it back, marked “Talked over”. Talking after that answers it, and it's done.
+- **On a held card:** Answer asks a question now. Go ahead says a waiting caption; Continue says what you talked over. Later stops it asking or speaking by itself. Once set aside or talked over, Drop it removes it.
+- **Drawing:** both draw over an open sheet and keep still under Reduce Motion. `ui/src/Guide.tsx` draws them; the rules are in `ui/src/guide-core.ts`, held by `scripts/guide-check.mjs`.
+- **A brick's hint** (`actions.hint`, docs/bricks.md) shows the same way, with the brick's name: an arrow at the named part from the caption, or a caption alone. It's this window's only: never sent, nor relayed.
 - **What a view hears:** bricks get `on("pointing")` with the part the arrow points at (a thought's or a thread's id with it), and null once it's down, so a view dims the rest once.
+- **What the guide hears:** the window's `on("words")`, the same events bricks get (`ui/src/bricks/contract.ts`), handed over by the brick host (`ui/src/BrickSlot.tsx`).
 
 ## Names
 

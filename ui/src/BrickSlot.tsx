@@ -6,7 +6,7 @@ import type { ActedBy, BrickActions, BrickEvents, BrickInfo, BrickKind, BrickOn,
 import { BRICKS, brickEvents, landingWatcher, senders, snapshotOf, switchBrick, useBricksOn, type Brick } from "./bricks-core";
 import { onReading } from "./apps-audio";
 import type { Thought, World } from "./core";
-import { watchPoint } from "./guide-core";
+import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
 import "./bricks.css";
 
@@ -56,6 +56,9 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   }, [sends]);
   const [events] = useState(brickEvents);
   const on = useMemo<BrickOn>(() => (name, listener) => name === "loudness" ? onReading(listener as (level: number) => void) : events.on(name, listener), [events]);
+  // The guide hears what the bricks hear (your words: a caption steps back when you talk over it, a held question
+  // waits for your pause).
+  useEffect(() => hearFrom(on), [on]);
 
   // Landings, each with who added it and, once its route has said, the model that placed it.
   const [landings] = useState(landingWatcher);

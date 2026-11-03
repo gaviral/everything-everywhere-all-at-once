@@ -1606,6 +1606,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
                 Ok(ClientMsg::Point { target, caption }) => guide::point(&core, &speaker, window, &mut pace, target, caption),
                 Ok(ClientMsg::Caption { text }) => guide::caption(&core, &speaker, window, &mut pace, text),
+                Ok(ClientMsg::Hold { text, target }) => guide::hold(&core, &speaker, window, &mut pace, text, target),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
                 Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
                     if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {

@@ -1,8 +1,9 @@
-//! Pointing and captions: another participant (an AI joined with a name, e.g. `?name=Claude`) shows the person one
-//! exact part of the screen, with an arrow and a one-line caption, or says a line as a caption in the corner, instead
-//! of adding a thought to the map. Both are of the moment: relayed as they come to every window but the one that sent
-//! them, never journaled, and no model is asked. The names are the window's `data-guide` names (docs/guide.md);
-//! ui/src/Guide.tsx draws them.
+//! Pointing, captions and held questions: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
+//! the person one exact part of the screen, with an arrow and a one-line caption, says a line as a caption, or holds a
+//! question for the person's next pause, instead of adding a thought to the map. All are of the moment: relayed as
+//! they come to every window but the one that sent them, never journaled, and no model is asked. Each window keeps
+//! its held questions and asks one when the person pauses (ui/src/guide-core.ts). The names are the window's
+//! `data-guide` names (docs/guide.md); ui/src/Guide.tsx draws them.
 
 use crate::protocol::ServerMsg;
 use crate::Core;
@@ -15,6 +16,9 @@ use std::time::{Duration, Instant};
 pub const POINT_MAX: usize = 140;
 /// A caption in the corner, in characters: two or three spoken sentences, about 70 words.
 pub const CAPTION_MAX: usize = 400;
+/// A held question, in characters: read at a glance in the held stack, and two lines at most once it's asked, as a
+/// point's caption is one.
+pub const HOLD_MAX: usize = POINT_MAX;
 /// A part's name, in characters: `composer`, `view:palace`, `point:th-` and 32 hex digits (41), with room to spare.
 pub const NAME_MAX: usize = 100;
 /// At most this many from one window in any second. Someone guiding sends about one a second; a point, its spoken
@@ -26,6 +30,7 @@ pub const PER_SECOND: usize = 4;
 pub enum Kind {
     Point,
     Caption,
+    Hold,
 }
 
 /// A number for a new window, so what it sends is never sent back to it (main.rs `forward`).
@@ -104,6 +109,18 @@ pub fn caption(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: S
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
     send(core, speaker, window, pace, Kind::Caption, None, text, refused);
+}
+
+/// `text`, a question for the other windows to hold until the person pauses and then ask, with an arrow at `target`
+/// once asked if given; from `speaker`'s window `window`. No words take back this speaker's questions still held
+/// (any target with them is left out, as with taking a point down).
+pub fn hold(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, target: Option<String>) {
+    let text = one_line(&text);
+    if text.is_empty() {
+        return send(core, speaker, window, pace, Kind::Hold, None, text, None);
+    }
+    let refused = target.as_deref().and_then(bad_name).or_else(|| too_long(&text, HOLD_MAX, "A held question"));
+    send(core, speaker, window, pace, Kind::Hold, target, text, refused);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,19 +202,14 @@ mod tests {
         out
     }
 
-    /// A point and a caption from one window (Claude's, over the bridge) reach every other window, the person's two
-    /// and another of Claude's, exactly as sent, with who sent them; never the window they came from; never the
-    /// journal, the map or a model. Too long, not a name, or past 4 a second: only the sender hears why.
-    #[tokio::test]
-    async fn a_point_and_a_caption_reach_every_other_window_and_nothing_else() {
+    /// A core with one thread, T1 "Rent", and a key, so a typed thought would land and be queued for the placer (none
+    /// must be), served on a free port: the core, its address, its journal's path and the placer's queue.
+    async fn served() -> (Arc<Core>, std::net::SocketAddr, std::path::PathBuf, tokio::sync::mpsc::UnboundedReceiver<crate::placer::Job>) {
         let path = std::env::temp_dir().join(format!("e2a2o-guide-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
-        // A key, so a typed thought would land and be queued for the placer: none must be.
-        let (placer_queue, mut queue) = tokio::sync::mpsc::unbounded_channel();
+        let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
         let core = Arc::new(Core { placer_queue, key: Some("test".into()), ..Core::test(journal, world) });
         core.commit(vec![Change::ThreadAdded { thread: crate::world::fixtures::thread("T1", "Rent", 1) }]);
-        let journaled = || std::fs::read_to_string(&path).unwrap();
-        let before = journaled();
         let routes = axum::Router::new()
             .route("/ws", axum::routing::get(crate::connect))
             .layer(axum::middleware::from_fn_with_state(core.clone(), crate::gate))
@@ -205,15 +217,36 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
-        let open = |name: &'static str| {
+        (core, address, path, queue)
+    }
+
+    /// Windows on the core at `address`, by name ("" is the person's), each past its catch-up (the world, placing, the
+    /// missing key), so what comes next is what the test sent.
+    async fn windows<const N: usize>(address: std::net::SocketAddr, names: [&str; N]) -> [Window; N] {
+        let mut out = Vec::new();
+        for name in names {
             let url = format!("ws://{address}/ws{}", if name.is_empty() { String::new() } else { format!("?name={name}") });
-            async move { tokio_tungstenite::connect_async(url).await.unwrap().0 }
-        };
-        let (mut claude, mut ears, mut you, mut other_tab) = (open("Claude").await, open("Claude").await, open("").await, open("").await);
-        for window in [&mut claude, &mut ears, &mut you, &mut other_tab] {
-            drain(window, 300).await; // the catch-up: the world, placing, the missing key
+            out.push(tokio_tungstenite::connect_async(url).await.unwrap().0);
         }
-        let send = |json: serde_json::Value| Message::Text(json.to_string().into());
+        for window in &mut out {
+            drain(window, 300).await;
+        }
+        out.try_into().unwrap_or_else(|_| unreachable!())
+    }
+
+    fn send(json: serde_json::Value) -> Message {
+        Message::Text(json.to_string().into())
+    }
+
+    /// A point and a caption from one window (Claude's, over the bridge) reach every other window, the person's two
+    /// and another of Claude's, exactly as sent, with who sent them; never the window they came from; never the
+    /// journal, the map or a model. Too long, not a name, or past 4 a second: only the sender hears why.
+    #[tokio::test]
+    async fn a_point_and_a_caption_reach_every_other_window_and_nothing_else() {
+        let (core, address, path, mut queue) = served().await;
+        let journaled = || std::fs::read_to_string(&path).unwrap();
+        let before = journaled();
+        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
 
         claude.send(send(serde_json::json!({"type": "point", "target": "thread:T1", "caption": "Your rent notes are here."}))).await.unwrap();
         claude.send(send(serde_json::json!({"type": "caption", "text": "Do you see\nthe card I'm pointing at?"}))).await.unwrap();
@@ -267,6 +300,52 @@ mod tests {
         assert!(seen.iter().any(|m| m["type"] == "guide" && m["target"] == "mic" && m["by"] == "you"), "{seen:?}");
 
         // Nothing journaled, nothing on the map, nothing for the placer (so no model call).
+        assert_eq!(journaled(), before, "never journaled");
+        assert!(core.snapshot().thoughts.is_empty(), "nothing on the map");
+        assert!(queue.try_recv().is_err(), "nothing queued for a model");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A held question reaches every other window as it's sent, one line, with what it points at once asked (or
+    /// nothing) and who holds it; no words take back that speaker's questions (no target with them). Too long, or a
+    /// target that isn't a name: only the sender hears why. Never the journal, the map or a model.
+    #[tokio::test]
+    async fn a_held_question_reaches_every_other_window_and_nothing_else() {
+        let (core, address, path, mut queue) = served().await;
+        let journaled = || std::fs::read_to_string(&path).unwrap();
+        let before = journaled();
+        let [mut claude, mut ears, mut you] = windows(address, ["Claude", "Claude", ""]).await;
+
+        claude.send(send(serde_json::json!({"type": "hold", "text": "Which Saturday?\nLena leaves on the 14th.", "target": "thread:T1"}))).await.unwrap();
+        claude.send(send(serde_json::json!({"type": "hold", "text": "Bring chairs?"}))).await.unwrap();
+        claude.send(send(serde_json::json!({"type": "hold", "text": "  ", "target": "thread:T1"}))).await.unwrap();
+        for window in [&mut you, &mut ears] {
+            let got = drain(window, 500).await;
+            let shape = |m: &serde_json::Value| (m["type"].clone(), m["kind"].clone(), m["target"].clone(), m["text"].clone(), m["by"].clone());
+            assert_eq!(
+                got.iter().map(shape).collect::<Vec<_>>(),
+                [
+                    ("guide".into(), "hold".into(), "thread:T1".into(), "Which Saturday? Lena leaves on the 14th.".into(), "Claude".into()),
+                    ("guide".into(), "hold".into(), serde_json::Value::Null, "Bring chairs?".into(), "Claude".into()),
+                    ("guide".into(), "hold".into(), serde_json::Value::Null, "".into(), "Claude".into()),
+                ],
+                "{got:?}"
+            );
+        }
+        assert_eq!(drain(&mut claude, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
+
+        // Refused: only the sender hears why; the others get nothing.
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        claude.send(send(serde_json::json!({"type": "hold", "text": "q".repeat(super::HOLD_MAX + 1)}))).await.unwrap();
+        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: A held question is 140 characters at most.");
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        claude.send(send(serde_json::json!({"type": "hold", "text": "Here?", "target": "<b>"}))).await.unwrap();
+        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: “<b>” isn't the name of a part of the screen (docs/guide.md).");
+        assert!(drain(&mut you, 300).await.iter().all(|m| m["type"] != "guide"), "nothing refused reaches another window");
+        let at_cap = "q".repeat(super::HOLD_MAX);
+        claude.send(send(serde_json::json!({"type": "hold", "text": at_cap}))).await.unwrap();
+        assert_eq!(next(&mut you, 500).await.unwrap()["text"], at_cap, "a question at the cap is held");
+
         assert_eq!(journaled(), before, "never journaled");
         assert!(core.snapshot().thoughts.is_empty(), "nothing on the map");
         assert!(queue.try_recv().is_err(), "nothing queued for a model");

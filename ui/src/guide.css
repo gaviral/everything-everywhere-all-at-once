@@ -1,9 +1,10 @@
-/* Guide.tsx: an arrow at one part of the screen, its caption and a soft spotlight; and a caption in the corner. Both are
-   manual popovers (the top layer, over an open sheet too). A popover's own display is the browser's (hidden until
-   shown), so nothing here sets one on them. */
+/* Guide.tsx, the Friend's face: its caption at the stage (bottom center), one arrow from the caption to a part with a
+   ring round the part, and the held stack. The caption and the arrow are manual popovers (the top layer, over an open
+   sheet too); a popover's own display is the browser's (hidden until shown), so nothing here sets one on them.
+   Colors are roles (ux-revamp §3): purple is the AI's (its name, arrow and ring), amber needs you (the held count, a
+   question waiting for you), buttons are ink. */
 .guide-layer {
-  --guide-dim: rgba(29, 29, 31, .16);
-  --guide-ring: color-mix(in srgb, var(--accent) 60%, transparent);
+  --guide-ink: var(--accent);
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -19,81 +20,187 @@
   color: var(--ink);
   pointer-events: none;
 }
-@media (prefers-color-scheme: dark) {
-  .guide-layer { --guide-dim: rgba(0, 0, 0, .45); }
-}
+/* A person's point, or a feature's hint, keeps the accent's blue; the AI's is purple. */
+.guide-layer[data-ai] { --guide-ink: var(--ai); }
 /* Placed before its first frame (Guide.tsx), so it never shows anywhere else first. */
 .guide-layer[data-state=""] { visibility: hidden; }
 
-/* The spotlight: the part in a ring, everything else a shade darker, only while the part is in view. */
-.guide-hole {
+/* The ring: the part outlined and faintly tinted. Nothing else is shaded here: a view that dims (the Spine) dims the
+   rest to 78% itself, once (ux-revamp §6, L2). */
+.guide-ring {
   position: absolute;
   left: 0;
   top: 0;
-  border-radius: 12px;
-  box-shadow: 0 0 0 2px var(--guide-ring), 0 0 0 200vmax var(--guide-dim);
-  animation: guide-in .2s ease-out backwards;
+  border: 2px solid var(--guide-ink);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--guide-ink) 7%, transparent);
+  animation: guide-ring .3s ease-out backwards;
 }
-.guide-layer:not([data-state="aimed"]) .guide-hole { display: none; }
+.guide-layer:not([data-state="aimed"]):not([data-state="near"]) .guide-ring { display: none; }
 
-/* The arrow: the accent's blue on a halo of the card's color, so it reads on the page, a card or a picture. */
-.guide-arrow { position: absolute; inset: 0; overflow: visible; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .22)); }
-.guide-layer[data-state="alone"] .guide-arrow { display: none; }
-.guide-arrow-halo { fill: var(--card); stroke: var(--card); stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; }
-.guide-arrow-line { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
-.guide-arrow-head { fill: var(--accent); stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
-/* It arrives along its own line, then nudges toward the part twice and keeps still. */
-.guide-arrow-move { animation: guide-arrive .24s cubic-bezier(.2, .7, .3, 1) backwards, guide-nudge .7s ease-in-out .55s 2; }
+/* The arrow, from the caption to the part, on a halo of the page's color so it reads over a card, a picture or a
+   line of text. */
+.guide-arrow { position: absolute; inset: 0; overflow: visible; }
+.guide-layer[data-state="alone"] .guide-arrow, .guide-layer[data-state="near"] .guide-arrow { display: none; }
+.guide-arrow-halo { fill: none; stroke: var(--bg); stroke-width: 7; stroke-linecap: round; opacity: .85; }
+.guide-arrow-line { fill: none; stroke: var(--guide-ink); stroke-width: 2.75; stroke-linecap: round; }
+.guide-arrow-head { fill: var(--guide-ink); stroke: var(--guide-ink); stroke-width: 1.2; stroke-linejoin: round; }
+.guide-arrow-dot { fill: var(--guide-ink); }
+/* Drawn out from the caption to the part each time it's aimed somewhere new (300 ms, a landing ring's), then its head. */
+.guide-arrow-halo, .guide-arrow-line { stroke-dasharray: 1; animation: guide-draw .3s cubic-bezier(.2, .7, .3, 1) backwards; }
+.guide-arrow-head { animation: guide-in .12s ease-out .22s backwards; }
 
-/* The caption beside the arrow, as the tour's tip looks: who points, what they say, and where the part is when the
-   arrow shows the way to it instead. */
-.guide-tip {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: max-content;
-  max-width: min(280px, calc(100vw - 32px));
-  padding: 8px 12px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
-  border-radius: 12px;
-  background: var(--card);
-  box-shadow: var(--shadow);
-  font-size: 14px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  animation: guide-in .16s ease-out backwards;
-}
-.guide-by, .guide-text, .guide-where { display: block; }
-.guide-by { color: var(--muted); font-size: 12px; font-weight: 600; }
-.guide-text { margin-top: 1px; color: var(--ink); }
-.guide-where { margin-top: 3px; color: var(--muted); font-size: 13px; }
-
-/* The corner caption: one quiet card, replaced by the next, gone once read. Its width and foot are set beside or over
-   the dock, never on the composer (Guide.tsx). */
+/* The caption: subtitles at the stage, 18 px, the speaker's name first; on a plate of the page's own color, so it
+   reads over whatever the map has under it and still looks like the page. */
 .guide-caption {
   position: fixed;
-  inset: auto auto 16px 16px;
+  inset: 0 auto auto 0;
   z-index: 30;
   width: max-content;
-  max-width: min(360px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
   height: auto;
   margin: 0;
-  padding: 8px 14px 11px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  padding: 4px 14px 6px;
+  border: 0;
+  border-radius: 14px;
   overflow: visible;
   overflow-wrap: anywhere;
-  background: var(--card);
+  background: var(--bg);
   color: var(--ink);
-  box-shadow: var(--shadow);
-  font-size: 14px;
-  line-height: 1.4;
-  transition: opacity .4s ease;
+  font-size: 18px;
+  line-height: 26px;
+  text-align: center;
+  transition: opacity .4s ease, scale .12s ease;
   animation: guide-in .16s ease-out backwards;
 }
-.guide-caption.settled { animation: none; }
-.guide-caption.leaving { opacity: 0; }
+.guide-caption[data-settled] { animation: none; }
+.guide-caption[data-leaving="read"] { opacity: 0; }
+/* Talked over: it steps back at once, as quick as a press. */
+.guide-caption[data-leaving="back"] { opacity: 0; scale: .97; transition-duration: .12s; }
+.guide-caption .guide-by { margin-right: 3px; color: var(--muted); font-weight: 600; }
+.guide-caption[data-ai] .guide-by { color: var(--ai); }
+.guide-caption .guide-text { color: var(--ink); animation: guide-in .12s ease-out backwards; }
+.guide-caption strong, .guide-held-text strong { font-weight: 650; }
+.guide-where { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; line-height: 18px; }
+
+/* A question asked at your pause: Go ahead, Later, Drop it, each with its key. */
+.guide-asks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+.guide-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.guide-btn:hover { border-color: color-mix(in srgb, var(--ink) 35%, var(--line)); }
+.guide-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Go ahead is ink, the page's primary button: purple stays the AI's mark, blue stays "you're heard". */
+.guide-btn.guide-primary { border-color: transparent; background: var(--ink); color: var(--bg); }
+.guide-btn kbd {
+  min-width: 16px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  text-align: center;
+  opacity: .7;
+}
+
+/* The held stack: bottom right over the map until the page has its own place for it (data-slot="held"). */
+.guide-held { display: flex; flex-direction: column; gap: 8px; }
+.guide-held[data-place="floating"] { position: fixed; right: 16px; bottom: 16px; z-index: 7; width: 292px; }
+.guide-held[data-place="floating"][data-narrow] { left: 16px; width: auto; align-items: flex-end; }
+.guide-held-cards { display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.guide-held-card {
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  animation: guide-in .16s ease-out backwards;
+}
+.guide-held-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; line-height: 16px; }
+.guide-held-head .guide-by { color: var(--muted); font-weight: 600; }
+.guide-held-head .guide-by[data-ai] { color: var(--ai); }
+.guide-held-state { color: var(--muted); font-weight: 500; }
+/* Waiting for you, not for your pause: it needs you. */
+.guide-held-card:not([data-state="waiting"]) .guide-held-state { color: var(--amber); }
+/* A glance, not a read: three lines at most; the whole of it shows once it's asked. */
+.guide-held-text {
+  display: -webkit-box;
+  margin: 4px 0 8px;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.guide-held-acts { display: flex; gap: 8px; }
+.guide-held-acts .guide-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+.guide-held-more { margin: 0; color: var(--muted); font-size: 11px; text-align: right; }
+.guide-held-more b, .guide-held-chip b { color: var(--amber); font-weight: 600; }
+.guide-held-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* A phone: the caption is a card the width of the screen, as the composer is; no keycaps (no keyboard). */
+@media (max-width: 559px) {
+  .guide-caption {
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    font-size: 15px;
+    line-height: 21px;
+    text-align: left;
+  }
+  .guide-asks { justify-content: flex-start; gap: 6px; margin-top: 9px; font-size: 11px; }
+  .guide-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+  .guide-btn kbd, .guide-over-more { display: none; }
+}
 
 @keyframes guide-in { from { opacity: 0; } }
-@keyframes guide-arrive { from { opacity: 0; transform: translateX(-14px); } }
-@keyframes guide-nudge { 50% { transform: translateX(5px); } }
+@keyframes guide-draw { from { stroke-dashoffset: 1; } }
+@keyframes guide-ring { from { opacity: 0; transform: scale(1.04); } }
