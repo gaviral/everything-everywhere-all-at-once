@@ -38,7 +38,7 @@ const person = (name, ai) => ({ name, ai, joined_ms: now - 60000, here: true, le
 const callMsg = { type: "call", started_ms: now - 50000, people: [person("you", false), person("AI helper", true)], level: "speak", level_by: "" };
 
 /** Every chip as drawn, and every control it must not cover (the canvas's own points are what chips float over); measured in the page. */
-const measure = `(() => {
+const measure = (arrivals = []) => `(() => {
   const box = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
   const shown = (e) => e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
   const chips = [...document.querySelectorAll(".spine-cue")].map((b) => {
@@ -54,7 +54,25 @@ const measure = `(() => {
     .filter((e) => !e.closest(".spine-cues, .spine-cue-line, .guide-layer, .sr-only, .react-flow") && shown(e))
     .map((e) => ({ what: (e.getAttribute("aria-label") || e.textContent || e.tagName).trim().slice(0, 24), box: box(e.getBoundingClientRect()) }))
     .filter((c) => c.box.right > c.box.left && c.box.bottom > c.box.top);
-  return { width: innerWidth, height: innerHeight, chips, controls, overflow: document.documentElement.scrollWidth > innerWidth, pill: !!document.querySelector(".talk-pill") };
+  // Match the canvas's usable area and onScreen reference point using actual node geometry, including zoom.
+  // A thread's seeded position alone doesn't tell us whether its newly laid-out point is in view.
+  const frame = document.querySelector(".spine-frame"), f = frame.getBoundingClientRect();
+  const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
+  const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
+  const dock = parseFloat(getComputedStyle(frame).getPropertyValue("--dock-height")) || 0;
+  const area = { left: f.left, top: f.top,
+    right: f.left + Math.max(160, rail?.width && rail.left > f.left + f.width / 2 ? rail.left - f.left - 8 : f.width),
+    bottom: f.top + Math.max(120, stage?.height ? Math.min(f.height, stage.top - f.top - 8) : f.height - dock) };
+  const zoom = new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a;
+  const landed = ${JSON.stringify(arrivals)}.map((arrival) => {
+    const node = document.querySelector('.react-flow__node[data-id="p:' + arrival.id + '"]');
+    if (!node) return { ...arrival, missing: true };
+    const r = node.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + Math.min(r.height, 44 * zoom) / 2;
+    return { ...arrival, box: box(r), cx, cy,
+      inside: cx > area.left && cx < area.right && cy > area.top && cy < area.bottom };
+  });
+  return { width: innerWidth, height: innerHeight, chips, controls, landed, area, overflow: document.documentElement.scrollWidth > innerWidth, pill: !!document.querySelector(".talk-pill") };
 })()`;
 
 const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -80,6 +98,27 @@ function holds(label, g, { phone }) {
   }
 }
 
+/** In these scenes each arrival has its own thread. Points already in view need no chip. */
+function accounts(label, g, seen) {
+  assert.equal(g.landed.length, 7, `${label}: seven arrivals measured`);
+  for (const a of g.landed) {
+    assert.ok(!a.missing && [a.cx, a.cy].every(Number.isFinite) && a.box.right > a.box.left && a.box.bottom > a.box.top,
+      `${label}: actual arrival node geometry for ${a.id}: ${JSON.stringify(a)}`);
+  }
+  const unseen = g.landed.filter((a) => !a.inside && !seen.has(a.id));
+  const direct = g.chips.filter((c) => c.title), aggregates = g.chips.filter((c) => c.count);
+  assert.ok(unseen.length > 0, `${label}: arrivals remain out of view (${JSON.stringify(g.landed)})`);
+  const directTitles = direct.map((c) => c.title.text);
+  assert.equal(new Set(directTitles).size, direct.length, `${label}: each direct arrival appears once`);
+  for (const title of directTitles) assert.ok(unseen.some((a) => a.title === title), `${label}: direct chip belongs to an unseen arrival: ${title}`);
+  const hidden = unseen.filter((a) => !directTitles.includes(a.title));
+  assert.equal(aggregates.length, hidden.length ? 1 : 0, `${label}: one aggregate for hidden arrivals`);
+  const count = aggregates.length ? Number(aggregates[0].count.text.slice(1)) : 0;
+  assert.equal(count, hidden.length, `${label}: aggregate counts every hidden arrival`);
+  assert.equal(direct.length + count, unseen.length, `${label}: direct chips plus aggregate account for every still-unseen arrival`);
+  if (aggregates.length) assert.equal(aggregates[0].name, `${count} more new out of view: go to the next`, `${label}: accessible aggregate count agrees`);
+}
+
 const scenes = [
   { name: "1440 alone", width: 1440, height: 900 },
   { name: "1440 call", width: 1440, height: 900, call: true },
@@ -99,6 +138,7 @@ try {
       core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, text, null, "Maya"), placed: false, at_ms: Date.now() } } });
       core.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: t, point: text, unclear: "", complete: true, place_ms: 1500 } });
       await sleep(320);
+      return { id, thread: t, title: titles[t] };
     };
     try {
       await page("Page.enable");
@@ -112,9 +152,13 @@ try {
         await evaluate(`document.fonts.ready.then(() => true)`);
         await sleep(500);
         const label = `${scene.name}, ${scheme}`;
+        const arrivals = [];
+        const seen = new Set();
+        const remember = (g) => { for (const a of g.landed) if (a.inside) seen.add(a.id); };
         const look = async (when) => {
           await sleep(400); // chips come in over 0.3 s
-          const g = await evaluate(measure);
+          const g = await evaluate(measure(arrivals));
+          remember(g);
           holds(`${label}, ${when}`, g, { phone });
           return g;
         };
@@ -124,8 +168,13 @@ try {
           writeFileSync(join(shots, `chips-${name}-${width}${height < 600 ? "x" + height : ""}-${scheme}${scene.call ? "-call" : ""}.png`), Buffer.from(shot.data, "base64"));
         };
 
-        for (const key of ["b", "e", "d", "c", "f", "g", "h"]) await arrive(key);
+        for (const key of ["b", "e", "d", "c", "f", "g", "h"]) {
+          arrivals.push(await arrive(key));
+          // Being seen clears a cue permanently, even if later layout moves that point out of view again.
+          remember(await evaluate(measure(arrivals)));
+        }
         const first = await look("seven arrivals");
+        accounts(label, first, seen);
         assert.ok(first.chips.length >= (phone || height < 600 ? 2 : 4), `${label}: chips for the arrivals (${first.chips.length})`);
         if (!phone && width >= 1000) assert.ok(first.chips.some((c) => c.box.top < 120 || c.box.right > width - 300), `${label}: chips reach the corner's side of the screen`);
         await snap("arrivals");
@@ -156,3 +205,4 @@ try {
   process.exit(1);
 }
 console.log("edge-chips-clear-check: at a laptop's size (alone, in a call, in a short window) every edge chip is whole, pressable, clear of every button and of the others, and says its title or its count, before and after a click; on a phone (320 to 430 px) every title is readable, never a lone letter");
+console.log("cue overflow accounting: ok");
