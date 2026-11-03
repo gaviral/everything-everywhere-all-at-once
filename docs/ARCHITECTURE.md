@@ -83,6 +83,7 @@ Browser, one page per window (ui/src)
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
   guide-core.ts  this window's transient point, caption and held-question rules, pauses and local feature hints (docs/guide.md, held by `scripts/guide-check.mjs`)
+  page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
