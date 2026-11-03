@@ -406,8 +406,9 @@ export type Shown = { target: string; text: string; by: string; at: number; n: n
  *  talked over. `waiting`: it's asked (said) by itself at your next pause; `later` (you said Later, or left it
  *  unanswered) and `over` (you talked over it) wait for you. `urgent` (the Interrupt level): it jumps the line. */
 export type Held = { n: number; text: string; target: string | null; by: string; kind: "question" | "line"; state: "waiting" | "later" | "over"; urgent: boolean };
-/** The caption up: `ask` while it's a held question asked, with Go ahead, Later and Drop it. */
-export type Said = { text: string; by: string; n: number; ask?: Held };
+/** The caption up: `ask` while it's a held question asked, with Go ahead, Later and Drop it (a question that reads "A, or
+ *  B?" offers its answers instead of Go ahead: Guide.tsx). `typing`: the box for words of your own is open on it. */
+export type Said = { text: string; by: string; n: number; ask?: Held; typing?: boolean };
 export type GuideState = { point: Shown | null; caption: Said | null; held: readonly Held[] };
 export const NOTHING: GuideState = { point: null, caption: null, held: [] };
 /** At most this many held at once: the oldest go first (a sender stuck in a loop can't bury the screen). */
@@ -498,6 +499,26 @@ export function dropped(state: GuideState): GuideState {
   return state.caption?.ask ? unsaid(state) : state;
 }
 
+/** A question that offers answers: the box for words of your own opens (Enter, or its button). */
+export function answerOpened(state: GuideState): GuideState {
+  const caption = state.caption;
+  return caption?.ask && !caption.typing ? { ...state, caption: { ...caption, typing: true } } : state;
+}
+
+/** The box closed with nothing sent: the question stands as it was asked. */
+export function answerClosed(state: GuideState): GuideState {
+  const caption = state.caption;
+  return caption?.typing ? { ...state, caption: { ...caption, typing: false } } : state;
+}
+
+/** Answered with `words`: the question is done, its arrow too, and in its place a line (caption `n`) says what went and to
+ *  whom, as the sender's own words do. */
+export function sentAnswer(state: GuideState, words: string, n: number): GuideState {
+  const ask = state.caption?.ask;
+  if (!ask) return state;
+  return { ...unsaid(state), caption: { text: `sent “${words}” to ${ask.by}`, by: "You", n } };
+}
+
 /** Your words came while the caption was up: it steps back. A question you talked over before you could have read it
  *  (`early`) goes back to the stack, marked so; one you answered is done. What a caption hadn't shown yet (`rest`) waits
  *  in the stack, nothing asked. */
@@ -585,6 +606,22 @@ export function goAhead(n: number) { to(n, wentAhead); }
 export function later(n: number) { to(n, putOff); }
 export function dropIt(n: number) { to(n, dropped); }
 export function stepBack(n: number, how: { rest?: string; early?: boolean }) { to(n, (s) => talkedOver(s, how)); }
+export function openAnswer(n: number) { to(n, answerOpened); }
+export function closeAnswer(n: number) { to(n, answerClosed); }
+/** What `answerAsk` did: "sent" (it is on its way), "failed" (`send` couldn't, and the question stands), "gone" (caption `n`
+ *  isn't a question asked now: answered already, put off or dropped) or "empty" (no words). */
+export type Answered = "sent" | "failed" | "gone" | "empty";
+/** Answers the question asked in caption `n` with `words`, through `send(to, words)` (to the asker; true once it's on its
+ *  way). Once only: the caption becomes the line that says it went, so a second press finds nothing to answer. */
+export function answerAsk(n: number, words: string, send: (to: string, words: string) => boolean): Answered {
+  const ask = state.caption?.n === n ? state.caption.ask : undefined;
+  if (!ask) return "gone";
+  const said = words.trim().replace(/\s+/g, " ");
+  if (!said) return "empty";
+  if (!send(ask.by, said)) return "failed";
+  set(sentAnswer(state, said, ++count));
+  return "sent";
+}
 export function laterHeld(heldN: number) { set(heldLater(state, heldN)); }
 export function dropHeld(heldN: number) { set(heldDropped(state, heldN)); }
 

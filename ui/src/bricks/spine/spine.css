@@ -153,6 +153,9 @@
 .spine-aside-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .spine-aside-text .spine-who { margin-right: 6px; vertical-align: -5px; }
 .spine-aside.spine-on .spine-aside-face { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+/* Whole or not at all (nodes.tsx `useWhole`): a bubble the edge cuts through is hidden, and can't be pressed where it isn't;
+   one a key has focus in shows, so a focus ring is never on nothing. */
+.spine-aside[data-edge]:not(:focus-within) { opacity: 0; pointer-events: none; }
 
 /* A margin note: the note and its latest reply, unframed, tied to its words by a string. */
 .spine-margin { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; }

@@ -37,6 +37,9 @@ export function asksOf(jobs: readonly Job[], held: readonly Held[], answered: Re
   return [...out.values()].filter((ask) => !answered.has(ask.id));
 }
 
+/** The longest an answer runs (core/src/guide.rs `answer`). */
+export const ANSWER_MAX = 280;
+
 /** A question that begins like one asks for a yes, a no or a choice among things it names, not for what follows. */
 const QUESTION_WORDS = /^(am|are|is|was|were|do|does|did|can|could|will|would|shall|should|may|might|must|have|has|had|which|what|who|whom|whose|when|where|why|how)\b/i;
 /** The longest a quick answer runs. */
