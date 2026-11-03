@@ -23,10 +23,11 @@
 //    went, and a landing rings without moving. In the app: a landing from the core pulses, a place someone else gave
 //    moves the point there, and a drag reaches the core as a position.
 //    Margin notes: double-click a point's words, take more with a shift-click or a drag (Esc lets them go), Reply, type,
-//    Enter; the words show underlined and the note beside them, tied by a string from where they end; it stays over
-//    another landing and a reload (this browser keeps it until the host has `actions.annotate`: each line that depends on
-//    that is marked `// contract:`) and tucks under its point at 390 px; typing it moves no camera. In the app, another
-//    person's unanswered question folds to "…?" until it's opened, while yours and an answered one show.
+//    Enter; the host is asked (`annotate`) for that thought, those words and that text, the words show underlined and the
+//    note beside them, tied by a string from where they end; it stays over another landing and tucks under its point at
+//    390 px; typing it moves no camera. In the app, notes are the map's (a thread tied to words in `anchors`): they stay over
+//    a new snapshot and a reload, another person's unanswered question folds to "…?" until it's opened, while yours and an
+//    answered one show.
 //    Zoom stops: 1 2 3 are Words · Titles · Pictures and 0 sees all; each changes what's drawn, the control shows the one
 //    that's on, and none fires while a field (the reply box, the app's composer) has the keyboard.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
@@ -728,10 +729,8 @@ try {
         }
       };
 
-      // 1. Margin notes (margin.tsx). The host can't keep a note yet (`actions.annotate` isn't in contract.ts), so this browser
-      // does, and says so once: each line marked `// contract:` is what the brick does today and changes once the host keeps
-      // them (the host is asked `annotate(thoughtId, quote, text)` and the note comes back in the map, an anchored thread).
-      const forgetNotes = () => evaluate(`Object.keys(localStorage).filter((k) => k.startsWith("e2a2o.spine.notes:")).forEach((k) => localStorage.removeItem(k))`);
+      // 1. Margin notes (margin.tsx). The playground answers `annotate` as the core would (annotate-core.ts `noteChanges`) and logs the
+      // call, so a note made here is the map's, as in the app: a thread under the point's, tied to the words in `anchors`.
       // Where `words` are in point `id`, in screen px: a real range over its text, so a press or a drag lands on them.
       const wordsAt = (id, words) => evaluate(`(() => {
         const text = document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-text');
@@ -810,7 +809,6 @@ try {
         }
       };
 
-      await forgetNotes();
       await spineAgain();
       const made = [];
       // A: a shift-click takes the words up to it; the reply is started by Reply's button.
@@ -838,45 +836,38 @@ try {
       }
       if (made.length) {
         await looksTied("just made", made);
-        // contract: with no host to keep notes the brick says so once, however many are made; once `actions.annotate` exists
-        // it asks the host instead (the playground would log "annotate th-2 “precheck passes” …") and says nothing.
+        // The host is asked for what was picked and said: which thought, which words, what text (the playground logs the call; the
+        // first note on words starts their note, so it says "a new note").
         const log = await evaluate(`[...document.querySelectorAll(".playground-log li")].map((li) => li.textContent)`);
-        if (log.filter((line) => line.includes("Note kept in this browser for now")).length !== 1) fail("spine (notes)", `without a host to keep notes the brick should say so once: ${JSON.stringify(log)}`);
-        // contract: what's kept is the triple the host will be asked for (which thought, which words, what was said), in this
-        // browser's storage; then nothing is stored here.
-        const kept = await evaluate(`Object.entries(localStorage).filter(([k]) => k.startsWith("e2a2o.spine.notes:")).flatMap(([, v]) => JSON.parse(v)).map((n) => [n.thoughtId, n.quote, n.entries.map((e) => e.text).join()])`);
-        for (const { id, words, text } of made) if (!kept.some(([thoughtId, quote, said]) => thoughtId === id && quote === words && said === text)) fail("spine (notes)", `the note on “${words}” keeps (${JSON.stringify(kept)}), not ${JSON.stringify([id, words, text])}`);
+        for (const { id, words, text } of made) if (!log.includes(`annotate ${id} “${words}”: “${text}” → a new note on those words`)) fail("spine (notes)", `the host wasn't asked for ${JSON.stringify([id, words, text])} (asked: ${JSON.stringify(log.filter((line) => line.startsWith("annotate")))})`);
         // A new map (another thought lands): the notes stay on their words.
         await press("Add a thought");
         if (!await until(`!!document.querySelector('.react-flow__node[data-id^="p:pg-"]')`, 4000)) fail("spine (notes)", "the check's thought never landed");
         else await looksTied("after another thought landed", made);
-        // contract: a reload brings the notes back from this browser; once the map keeps them, the host's snapshot does (the
-        // playground rebuilds its map from the sample, so check a reload with the app's stand-in core instead).
-        await spineAgain();
-        await looksTied("after a reload", made);
-        // A phone's width: the note tucks under its point (no column beside it, so no string), words still underlined.
+        // A phone's width (the window narrows): the note tucks under its point (no column beside it, so no string), words still
+        // underlined.
         await width(390, 844);
-        await spineAgain();
+        await settle();
+        await calm();
         for (const { id, words, text } of made) {
           const t = await evaluate(`(() => {
             const node = document.querySelector('.react-flow__node[data-id="p:${id}"]');
             const quote = [...(node?.querySelectorAll(".spine-quote") ?? [])].find((q) => q.textContent === ${JSON.stringify(words)});
             const tuck = quote && node.querySelector('.spine-tuck[data-margin="' + quote.dataset.margin + '"]');
-            const under = node?.querySelector(".spine-text")?.getBoundingClientRect() ?? { left: 0, bottom: 0 }, r = tuck?.getBoundingClientRect();
+            const under = node?.querySelector(".spine-text")?.getBoundingClientRect() ?? { left: 0, right: 0, bottom: 0 }, r = tuck?.getBoundingClientRect();
             return { underlined: !!quote && getComputedStyle(quote).textDecorationLine.includes("underline"), tuck: r && { left: r.left, right: r.right, top: r.top, text: tuck.textContent },
-              under: { left: under.left, bottom: under.bottom }, beside: document.querySelectorAll(".spine-margin").length, strings: document.querySelectorAll(".spine-link-note").length,
-              sideways: document.documentElement.scrollWidth - innerWidth, width: innerWidth };
+              under: { left: under.left, right: under.right, bottom: under.bottom }, beside: document.querySelectorAll(".spine-margin").length, strings: document.querySelectorAll(".spine-link-note").length,
+              sideways: document.documentElement.scrollWidth - innerWidth };
           })()`);
           const bad = (why) => fail("spine (notes)", `at 390 px the note on “${words}” ${why} (${JSON.stringify(t)})`);
           if (!t.underlined) bad("isn't on underlined words");
           if (!t.tuck) bad("doesn't tuck under its point");
-          else if (t.tuck.top < t.under.bottom - 1 || t.tuck.left < t.under.left - 1 || t.tuck.right > t.width || !t.tuck.text.includes(text)) bad("isn't under its point's words, inside the screen, with what was said");
+          else if (t.tuck.top < t.under.bottom - 1 || t.tuck.left < t.under.left - 1 || t.tuck.right > t.under.right + 1 || !t.tuck.text.includes(text)) bad("isn't under its point's words, in their column, with what was said");
           if (t.beside || t.strings) bad("still hangs beside the point (a column and a string)");
           if (t.sideways > 1) bad("makes the page scroll sideways");
         }
         await width(1280, 860);
       }
-      await forgetNotes();
 
       // 2. Zoom stops (corner.tsx): 1 2 3 are Words · Titles · Pictures, 0 sees all. Each changes what's drawn, the control
       // shows the one that's on, and no key fires while a field has the keyboard (the reply box above, the composer below).
@@ -925,49 +916,68 @@ try {
       const atAll = await goTo("0", "Titles");
       if (atAll) judge("0 (See all)", atAll, [[atAll.zoom < atWords.zoom, "the view didn't zoom out"], [atAll.inside, "the whole map isn't in view"], [!atAll.pictures, "it has the Pictures look"]]);
 
-      // 3. In the app, where the stand-in core can send what the playground can't: notes in the map, another person's among
-      // them, and the app's own composer, which has the keyboard when the app opens.
+      // 3. In the app, where the stand-in core can send what the playground can't: notes as the core keeps them (a thread under the
+      // point's, tied to words in `anchors`), another person's among them, and the app's own composer, which has the keyboard
+      // when the app opens.
       {
         const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
         await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ spine: true }))`);
-        // contract: a note in the map is an anchored thread (margin.tsx: `anchor: { thought_id, quote }`, its thoughts the note
-        // and its replies), the shape the host will send once `actions.annotate` exists. T1's one point is "Rent due Friday,
-        // point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's question on "point 1" is answered.
-        const note = (id, quote) => thread(id, "A note", { parent_id: "T1", anchor: { thought_id: "T1-0", quote } });
+        // T1's one point is "Rent due Friday, point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's
+        // question on "point 1" is answered.
+        const quoted = { N1: "Friday", N2: "Rent due", N3: "point 1" };
         const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
-        shown = { ...full, threads: [...full.threads, note("N1", "Friday"), note("N2", "Rent due"), note("N3", "point 1")],
-          thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)] };
-        await go(`${base}/`);
-        if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) fail("spine (notes)", "the app never showed its map");
-        else {
+        shown = { ...full, threads: [...full.threads, ...Object.entries(quoted).map(([id, quote]) => thread(id, quote, { parent_id: "T1" }))],
+          thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
+          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, { thought_id: "T1-0", quote }])) };
+        const openSpine = async () => {
+          await go(`${base}/`);
+          if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
           await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
           await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
-          if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine (notes)", "the Spine never showed in the app");
+          if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) return false;
+          await settle();
+          return true;
+        };
+        const notesShown = () => evaluate(`(() => {
+          const box = (el) => { const r = el?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          const quote = (id) => document.querySelector('.spine-quote[data-margin="' + id + '"]');
+          const fold = document.querySelector('.spine-fold[data-fold-for="N1"]');
+          return { quotes: ["N1", "N2", "N3"].map((id) => quote(id)?.textContent ?? null).join(" | "),
+            underlined: [...document.querySelectorAll(".spine-quote")].every((q) => getComputedStyle(q).textDecorationLine.includes("underline")),
+            folds: [...document.querySelectorAll(".spine-fold")].map((f) => f.dataset.foldFor + " " + f.textContent).join(),
+            fold: fold && { ...box(fold), shown: getComputedStyle(fold).visibility === "visible" }, words: box(quote("N1")),
+            notes: Object.fromEntries([...document.querySelectorAll(".spine-margin")].map((m) => [m.dataset.margin, m.textContent])),
+            tangents: [...document.querySelectorAll(".spine-card")].map((c) => c.dataset.thread).filter((id) => /^N/.test(id)).join() };
+        })()`);
+        // What the notes show, with N1's question folded (nobody has opened it here) or open.
+        const judgeNotes = (stage, look, folded) => {
+          const bad = (why) => fail("spine (notes)", `in the app, ${stage}: ${why} (${JSON.stringify(look)})`);
+          if (look.quotes !== "Friday | Rent due | point 1" || !look.underlined) bad("each note's own words aren't underlined");
+          if (look.tangents) bad("a note is drawn as a tangent card");
+          if (look.folds !== (folded ? "N1 …?" : "")) bad(folded ? "another person's unanswered question should fold to “…?”, and nothing else should" : "an opened question still shows its “…?”");
+          else if (folded) {
+            if (!look.fold.shown || look.fold.left < look.words.right - 2 || look.fold.left > look.words.right + 24 || look.fold.top > look.words.bottom || look.fold.bottom < look.words.top) bad("the “…?” isn't right after its words");
+            if ("N1" in look.notes) bad("a folded question's note shows before it's opened");
+          } else if (!look.notes.N1?.includes("Which Friday?")) bad("an opened question doesn't show");
+          if (!look.notes.N2?.includes("Is it paid?")) bad("your own question is hidden from you (it shows at once)");
+          if (!look.notes.N3?.includes("Which one?") || !look.notes.N3.includes("The first")) bad("an answered question doesn't show with its answer");
+        };
+        if (!await openSpine()) fail("spine (notes)", "the Spine never showed in the app");
+        else {
+          judgeNotes("when it opens", await notesShown(), true);
+          await evaluate(`document.querySelector('.spine-fold[data-fold-for="N1"]')?.click()`);
+          const opened = await until(`!document.querySelector(".spine-fold") && !!document.querySelector('.spine-margin[data-margin="N1"]')`, 2000);
+          if (!opened) fail("spine (notes)", "in the app, the “…?” doesn't open the question");
+          else judgeNotes("once the question is opened", await notesShown(), false);
+          // A new snapshot, as the core sends one when a window reconnects: the notes stay, and the question opened stays open.
+          core.send({ type: "snapshot", world: shown });
+          await settle();
+          await calm();
+          judgeNotes("after a new snapshot", await notesShown(), !opened);
+          // A reload: the map alone brings the notes back (nothing is kept in the window), the question folded again.
+          if (!await openSpine()) fail("spine (notes)", "the Spine never showed in the app after a reload");
           else {
-            await settle();
-            const look = await evaluate(`(() => {
-              const box = (el) => { const r = el?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
-              const quote = (id) => document.querySelector('.spine-quote[data-margin="' + id + '"]');
-              const fold = document.querySelector('.spine-fold[data-fold-for="N1"]');
-              return { quotes: ["N1", "N2", "N3"].map((id) => quote(id)?.textContent ?? null).join(" | "),
-                underlined: [...document.querySelectorAll(".spine-quote")].every((q) => getComputedStyle(q).textDecorationLine.includes("underline")),
-                folds: [...document.querySelectorAll(".spine-fold")].map((f) => f.dataset.foldFor + " " + f.textContent).join(),
-                fold: fold && { ...box(fold), shown: getComputedStyle(fold).visibility === "visible" }, words: box(quote("N1")),
-                notes: Object.fromEntries([...document.querySelectorAll(".spine-margin")].map((m) => [m.dataset.margin, m.textContent])),
-                tangents: [...document.querySelectorAll(".spine-card")].map((c) => c.dataset.thread).filter((id) => /^N/.test(id)).join() };
-            })()`);
-            const bad = (why) => fail("spine (notes)", `in the app: ${why} (${JSON.stringify(look)})`);
-            if (look.quotes !== "Friday | Rent due | point 1" || !look.underlined) bad("each note's own words aren't underlined");
-            if (look.tangents) bad("a note is drawn as a tangent card");
-            if (look.folds !== "N1 …?") bad("another person's unanswered question should fold to “…?”, and nothing else should");
-            else {
-              if (!look.fold.shown || look.fold.left < look.words.right - 2 || look.fold.left > look.words.right + 24 || look.fold.top > look.words.bottom || look.fold.bottom < look.words.top) bad("the “…?” isn't right after its words");
-              if ("N1" in look.notes) bad("a folded question's note shows before it's opened");
-              await evaluate(`document.querySelector('.spine-fold[data-fold-for="N1"]').click()`);
-              if (!await until(`!document.querySelector(".spine-fold") && document.querySelector('.spine-margin[data-margin="N1"]')?.textContent.includes("Which Friday?")`, 2000)) bad("the “…?” doesn't open the question");
-            }
-            if (!look.notes.N2?.includes("Is it paid?")) bad("your own question is hidden from you (it shows at once)");
-            if (!look.notes.N3?.includes("Which one?") || !look.notes.N3.includes("The first")) bad("an answered question doesn't show with its answer");
+            judgeNotes("after a reload", await notesShown(), true);
             // The composer has the keyboard when the app opens: the camera's keys are typed into it, and move nothing.
             await evaluate(`document.querySelector(".composer textarea")?.focus()`);
             const rested = { view: await view(), lit: await lit(), following: await following() };
