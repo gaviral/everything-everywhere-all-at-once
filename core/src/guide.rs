@@ -1,4 +1,4 @@
-//! Pointing, captions and held questions: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
+//! Pointing, captions, held questions and tours: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
 //! the person one exact part of the screen, with an arrow and a one-line caption, says a line as a caption, or holds a
 //! question for the person's next pause, instead of adding a thought to the map. All are of the moment: relayed as
 //! they come to every window but the one that sent them, never journaled, and no model is asked. Each window keeps
@@ -7,7 +7,7 @@
 
 use crate::protocol::ServerMsg;
 use crate::Core;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -19,11 +19,21 @@ pub const CAPTION_MAX: usize = 400;
 /// A held question, in characters: read at a glance in the held stack, and two lines at most once it's asked, as a
 /// point's caption is one.
 pub const HOLD_MAX: usize = POINT_MAX;
+/// At most this many ordered steps in one tour; an empty tour clears the sender's.
+pub const TOUR_MAX: usize = 20;
 /// A part's name, in characters: `composer`, `view:palace`, `point:th-` and 32 hex digits (41), with room to spare.
 pub const NAME_MAX: usize = 100;
 /// At most this many from one window in any second. Someone guiding sends about one a second; a point, its spoken
 /// caption and taking the last point down can come at once (3). More is a script stuck in a loop.
 pub const PER_SECOND: usize = 4;
+
+/// One tour caption, optionally pointing at a named part of the screen.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Step {
+    #[serde(default)]
+    pub target: Option<String>,
+    pub text: String,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -39,7 +49,7 @@ pub fn window() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// One window's last second of points and captions, for `PER_SECOND`.
+/// One window's last second of guide messages and tours, for `PER_SECOND`.
 #[derive(Default)]
 pub struct Pace {
     sent: VecDeque<Instant>,
@@ -125,8 +135,36 @@ pub fn hold(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: Stri
     send(core, speaker, window, pace, Kind::Hold, target, text, urgent, refused);
 }
 
+/// Relay an entire ordered tour, or clear this speaker's tour with no steps. Nothing is retained for reconnect.
+pub fn tour(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut steps: Vec<Step>) {
+    let refused = if steps.len() > TOUR_MAX {
+        Some(format!("A tour has {TOUR_MAX} steps at most."))
+    } else {
+        steps.iter_mut().find_map(|step| {
+            step.text = one_line(&step.text);
+            step.target.as_deref().and_then(bad_name).or_else(|| {
+                if step.text.is_empty() {
+                    Some("A tour step needs words.".into())
+                } else {
+                    too_long(&step.text, POINT_MAX, "A tour step")
+                }
+            })
+        })
+    };
+    if allowed(core, speaker, pace, refused) {
+        core.send(ServerMsg::Tour { steps, by: speaker.into(), at_ms: crate::now_ms(), from: window });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, urgent: bool, refused: Option<String>) {
+    if allowed(core, speaker, pace, refused) {
+        core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
+    }
+}
+
+/// All guide messages share the window's budget and the sender's refusal route.
+fn allowed(core: &Core, speaker: &str, pace: &mut Pace, refused: Option<String>) -> bool {
     let now = Instant::now();
     let refused = refused.or_else(|| (!pace.allow(now)).then(|| format!("{PER_SECOND} a second at most.")));
     if let Some(why) = refused {
@@ -134,9 +172,9 @@ fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, ta
         if pace.tell(now) {
             core.send_to(speaker, ServerMsg::Notice { message: format!("Not shown: {why}") });
         }
-        return;
+        return false;
     }
-    core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
+    true
 }
 
 #[cfg(test)]
@@ -165,6 +203,20 @@ mod tests {
     #[test]
     fn a_caption_is_one_line_as_shown() {
         assert_eq!(one_line("  Look at\n\nthis\tone \u{7}"), "Look at this one");
+    }
+
+    #[test]
+    fn tour_wire_defaults_targets_and_never_serializes_the_origin() {
+        let message = serde_json::from_value::<crate::protocol::ClientMsg>(serde_json::json!({
+            "type": "tour", "steps": [{"text": "First"}, {"target": null, "text": "Second"}]
+        })).unwrap();
+        let crate::protocol::ClientMsg::Tour { steps } = message else { panic!("expected tour") };
+        assert!(steps.iter().all(|step| step.target.is_none()));
+        let wire = serde_json::to_value(crate::protocol::ServerMsg::Tour { steps, by: "Claude".into(), at_ms: 123, from: 42 }).unwrap();
+        assert_eq!(wire, serde_json::json!({
+            "type": "tour", "steps": [{"target": null, "text": "First"}, {"target": null, "text": "Second"}],
+            "by": "Claude", "at_ms": 123
+        }));
     }
 
     /// Four in any second, then the fifth waits until the first is a second old; why is told once a second.
@@ -205,13 +257,19 @@ mod tests {
     }
 
     /// A core with one thread, T1 "Rent", and a key, so a typed thought would land and be queued for the placer (none
-    /// must be), served on a free port: the core, its address, its journal's path and the placer's queue.
-    async fn served() -> (Arc<Core>, std::net::SocketAddr, std::path::PathBuf, tokio::sync::mpsc::UnboundedReceiver<crate::placer::Job>) {
+    /// must be): the core, its temporary journal's path and the placer's queue.
+    fn prepared() -> (Arc<Core>, std::path::PathBuf, tokio::sync::mpsc::UnboundedReceiver<crate::placer::Job>) {
         let path = std::env::temp_dir().join(format!("e2a2o-guide-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
         let core = Arc::new(Core { placer_queue, key: Some("test".into()), ..Core::test(journal, world) });
         core.commit(vec![Change::ThreadAdded { thread: crate::world::fixtures::thread("T1", "Rent", 1) }]);
+        (core, path, queue)
+    }
+
+    /// The prepared core served on an ephemeral port, with its journal and placer queue.
+    async fn served() -> (Arc<Core>, std::net::SocketAddr, std::path::PathBuf, tokio::sync::mpsc::UnboundedReceiver<crate::placer::Job>) {
+        let (core, path, queue) = prepared();
         let routes = axum::Router::new()
             .route("/ws", axum::routing::get(crate::connect))
             .layer(axum::middleware::from_fn_with_state(core.clone(), crate::gate))
@@ -353,6 +411,155 @@ mod tests {
         assert_eq!(journaled(), before, "never journaled");
         assert!(core.snapshot().thoughts.is_empty(), "nothing on the map");
         assert!(queue.try_recv().is_err(), "nothing queued for a model");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn a_tour_reaches_every_other_window_in_order_and_nothing_else() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
+        let steps = serde_json::json!([
+            {"target": "thread:T1", "text": "  Start\nhere.\t\u{7} "},
+            {"text": "Then look around."},
+            {"target": null, "text": "最后一步"}
+        ]);
+        claude.send(send(serde_json::json!({"type": "tour", "steps": steps}))).await.unwrap();
+        // Once a recipient has the active tour, a newly connected window must not catch it up.
+        let first = next(&mut ears, 500).await.unwrap();
+        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+        let caught_up = drain(&mut reconnected, 100).await;
+        assert!(caught_up.iter().any(|message| message["type"] == "snapshot"), "{caught_up:?}");
+        assert!(caught_up.iter().all(|message| message["type"] != "tour"), "tours aren't retained for reconnect");
+        claude.send(send(serde_json::json!({"type": "tour", "steps": [{"text": "Next tour."}]}))).await.unwrap();
+        claude.send(send(serde_json::json!({"type": "tour", "steps": []}))).await.unwrap();
+        let mut ear_messages = vec![first];
+        ear_messages.extend(drain(&mut ears, 100).await);
+        let mut relayed = None;
+        for got in [drain(&mut you, 100).await, drain(&mut other_tab, 100).await, ear_messages] {
+            assert_eq!(got.len(), 3, "{got:?}");
+            assert_eq!(got[0]["steps"], serde_json::json!([
+                {"target": "thread:T1", "text": "Start here."},
+                {"target": null, "text": "Then look around."},
+                {"target": null, "text": "最后一步"}
+            ]));
+            assert_eq!(got[1]["steps"], serde_json::json!([{"target": null, "text": "Next tour."}]));
+            assert_eq!(got[2]["steps"], serde_json::json!([]));
+            for message in &got {
+                assert_eq!(message["type"], "tour");
+                assert_eq!(message["by"], "Claude");
+                assert!(message["at_ms"].as_u64().is_some_and(|at| at > 0));
+                assert!(message.get("from").is_none());
+                assert_eq!(message.as_object().unwrap().len(), 4);
+            }
+            if let Some(previous) = &relayed {
+                assert_eq!(&got, previous, "all recipients get the same identity and timestamps");
+            }
+            relayed = Some(got);
+        }
+        assert!(drain(&mut claude, 100).await.is_empty(), "no originating-window echo");
+
+        // An invalid later step must not leak the valid first one, even to another sender window.
+        claude.send(send(serde_json::json!({"type": "tour", "steps": [
+            {"text": "Must not escape."}, {"target": "<b>", "text": "Bad target."}
+        ]}))).await.unwrap();
+        for window in [&mut claude, &mut ears] {
+            let got = drain(window, 100).await;
+            assert_eq!(got.len(), 1, "{got:?}");
+            assert_eq!(got[0]["type"], "notice");
+            assert!(got[0]["message"].as_str().unwrap().starts_with("Not shown: "));
+        }
+        for window in [&mut you, &mut other_tab] {
+            assert!(drain(window, 100).await.is_empty(), "other participants hear nothing refused");
+        }
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "never journaled");
+        assert!(Arc::ptr_eq(&world, &core.snapshot()), "the entire map is unchanged");
+        assert!(queue.try_recv().is_err(), "no model work");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn tour_limits_validate_the_whole_message_before_relay() {
+        use super::Step;
+        use crate::protocol::ServerMsg;
+        let (core, path, mut queue) = prepared();
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let mut updates = core.updates.subscribe();
+        let step = |text: String, target: Option<&str>| Step { text, target: target.map(str::to_string) };
+        let cases = [
+            (vec![step("界".repeat(140), None); 20], None),
+            (vec![step("ok".into(), None); 21], Some("A tour has 20 steps at most.")),
+            (vec![step("ok".into(), None), step(" \n\t\u{7} ".into(), None)], Some("A tour step needs words.")),
+            (vec![step("ok".into(), None), step("界".repeat(141), None)], Some("A tour step is 140 characters at most.")),
+            (vec![step("ok".into(), None), step("here".into(), Some("<b>"))], Some("“<b>” isn't the name of a part of the screen (docs/guide.md).")),
+            (vec![step("here".into(), Some(""))], Some("“” isn't the name of a part of the screen (docs/guide.md).")),
+            (vec![step(format!(" {} ", "界\n".repeat(70)), Some("composer"))], None),
+            (vec![], None),
+        ];
+        for (steps, refusal) in cases {
+            let mut pace = Pace::default();
+            let count = steps.len();
+            super::tour(&core, "Claude", 42, &mut pace, steps);
+            let outgoing = updates.try_recv().unwrap();
+            match (outgoing.message, refusal) {
+                (ServerMsg::Notice { message }, Some(why)) => {
+                    assert_eq!(outgoing.to.as_deref(), Some("Claude"));
+                    assert_eq!(message, format!("Not shown: {why}"));
+                    assert!(pace.sent.is_empty(), "invalid input doesn't consume the budget");
+                }
+                (ServerMsg::Tour { steps, by, at_ms, from }, None) => {
+                    assert!(outgoing.to.is_none());
+                    assert_eq!(steps.len(), count);
+                    assert_eq!(by, "Claude");
+                    assert_eq!(from, 42);
+                    assert!(at_ms > 0);
+                    assert!(steps.iter().all(|step| !step.text.is_empty() && step.text.chars().count() <= 140));
+                    assert_eq!(pace.sent.len(), 1, "a whole tour is one message");
+                }
+                _ => panic!("unexpected relay or refusal"),
+            }
+            assert!(updates.try_recv().is_err(), "one atomic relay or notice, with no leaked steps");
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn tours_share_the_guide_budget() {
+        use crate::protocol::ServerMsg;
+        let (core, path, _) = prepared();
+        let mut updates = core.updates.subscribe();
+        let mut pace = Pace::default();
+        super::tour(&core, "Claude", 42, &mut pace, vec![super::Step { target: None, text: "First".into() }; 20]);
+        super::point(&core, "Claude", 42, &mut pace, Some("composer".into()), None);
+        super::caption(&core, "Claude", 42, &mut pace, "Caption".into());
+        super::hold(&core, "Claude", 42, &mut pace, "Question?".into(), None, false);
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Tour { .. }));
+        for _ in 0..3 {
+            assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Guide { .. }));
+        }
+        // Both a clear and an ordinary tour use the same allowance; repeated refusals are told only once.
+        super::tour(&core, "Claude", 42, &mut pace, vec![]);
+        super::tour(&core, "Claude", 42, &mut pace, vec![super::Step { target: None, text: "Later".into() }]);
+        let refused = updates.try_recv().unwrap();
+        assert_eq!(refused.to.as_deref(), Some("Claude"));
+        assert!(matches!(refused.message, ServerMsg::Notice { message } if message == "Not shown: 4 a second at most."));
+        assert!(updates.try_recv().is_err());
+
+        // A full budget of tours also prevents a guide message, and a different window has its own budget.
+        let mut pace = Pace::default();
+        for _ in 0..PER_SECOND {
+            super::tour(&core, "Claude", 43, &mut pace, vec![]);
+            assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Tour { .. }));
+        }
+        super::caption(&core, "Claude", 43, &mut pace, "Too soon".into());
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Notice { .. }));
+
         let _ = std::fs::remove_file(&path);
     }
 }
