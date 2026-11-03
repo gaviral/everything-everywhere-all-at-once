@@ -55,10 +55,13 @@ try {
       // openPage owns a new throwaway Chrome profile. Install error capture before loading any app code.
       browser = await openPage("about:blank", { width, height });
       const { page, evaluate, until } = browser;
+      // Without Page.enable, Chrome accepts the script below and never runs it.
+      await page("Page.enable");
       await page("Page.addScriptToEvaluateOnNewDocument", { source: `
         localStorage.clear(); sessionStorage.clear();
         window.__canvasCheck = { errors: [], fresh: localStorage.length === 0 && sessionStorage.length === 0 };
-        addEventListener("error", e => __canvasCheck.errors.push(e.message || "Resource failed: " + e.target?.src), true);
+        // Chrome reports a size observer whose change lands a frame later (the dock's, on first paint) as a window error: not one.
+        addEventListener("error", e => { if (!/^ResizeObserver loop/.test(e.message)) __canvasCheck.errors.push(e.message || "Resource failed: " + e.target?.src); }, true);
         addEventListener("unhandledrejection", e => __canvasCheck.errors.push(String(e.reason)));
         const error = console.error;
         console.error = (...args) => { __canvasCheck.errors.push(args.map(String).join(" ")); error.apply(console, args); };
@@ -101,6 +104,9 @@ try {
         assert.equal(await evaluate("!!document.querySelector('main.map')"), false, `${label}: retains Canvas`);
         await healthy();
       };
+      // In cards the point can already be in view before the answer arrives: the answer has landed once its "look here"
+      // mark (data-look) is on the point.
+      const cardsPoint = (id) => until(`!!document.getElementById(${JSON.stringify(`point-${id}`)})?.hasAttribute("data-look") && (${visiblePoint.toString()})(${JSON.stringify(id)}, false)`, 8000);
       const find = (id, point) => {
         // The core's Find response focuses first, then sends its private found message (core/src/find.rs).
         move(id);
@@ -171,7 +177,7 @@ try {
       await navigate("?cards", "main.map .thread");
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: ?cards shows cards`);
       find("T3", "p3");
-      assert.ok(await until(`(${visiblePoint.toString()})("p3", false)`, 8000), `${label}: cards Find visibly reaches p3`);
+      assert.ok(await cardsPoint("p3"), `${label}: cards Find visibly reaches p3`);
       await view("Palace");
       await returnTo("T2");
       assert.ok(await until(`(${visiblePoint.toString()})("p2", false)`, 8000), `${label}: cards return visibly reaches p2`);
@@ -182,7 +188,8 @@ try {
       await navigate("", ".spine-frame.spine-ready");
       await view("Map");
       find("T2", "p2");
-      assert.ok(await until(`(${visiblePoint.toString()})("p2", false)`, 8000), `${label}: chosen Map retains cards on Find`);
+      assert.ok(await cardsPoint("p2"), `${label}: chosen Map retains cards on Find`);
+      assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: chosen Map stays on cards after Find`);
       await healthy();
 
       // Empty maps still show today's first-run welcome; the next snapshot opens the default Canvas.

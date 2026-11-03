@@ -24,7 +24,8 @@ globalThis.Date = class extends RealDate {
 };
 
 // Just enough of a browser for the components' render paths (their effects never run here).
-globalThis.location = new URL("http://localhost:4321/");
+// ?cards: today's page opens on the Canvas, and this check reads the cards.
+globalThis.location = new URL("http://localhost:4321/?cards");
 globalThis.window = globalThis;
 globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 globalThis.addEventListener = globalThis.removeEventListener = () => {};
