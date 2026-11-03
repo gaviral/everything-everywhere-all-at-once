@@ -66,6 +66,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   import: { name: "Import chats", aka: "Import", does: "Brings an exported chat in as thoughts on your map.", lives: "Top right" },
   export: { name: "Export", aka: "Markdown export", does: "Saves the whole map as a Markdown file.", lives: "Top right" },
   // Features in their own folders.
+  countdown: { name: "Countdown", aka: "Deadline timer", does: "Keeps upcoming deadlines in view and lets you add or change them.", lives: "Above the camera" },
   spine: { name: "Canvas", aka: "Infinite canvas", does: "Your talk as a canvas: each topic a column, tangents beside their words.", lives: "The map" },
   "bubble-flight": { name: "Bubble flight", aka: "Motion trail", does: "Carries your words from the input box to the topic where they land.", lives: "The Canvas" },
   "tiny-transcript": { name: "Tiny transcript", aka: "Live captions", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
