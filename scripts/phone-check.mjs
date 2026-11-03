@@ -41,7 +41,7 @@ const failures = [];
 const shots = process.env.SHOTS;
 let away = false;
 const core = await standInCore(() => (away ? null : [{ type: "snapshot", world }]), { door: { room: true, member: true, hosted: true } });
-const page = await openPage(`http://127.0.0.1:${core.port}/`, { width: 390, height: 844 });
+const page = await openPage(`http://127.0.0.1:${core.port}/?cards`, { width: 390, height: 844 });
 const { evaluate, until, page: cdp } = page;
 const frames = () => evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`);
 const settled = () => until(`[...document.querySelectorAll(".thread")].every((card) => { const c = getComputedStyle(card); return c.opacity === "1" && c.transform === "none"; })`, 5000);
@@ -363,7 +363,7 @@ try {
 // opens, with nothing to say (no notice).
 if (shots) {
   const desk = await standInCore(() => [{ type: "snapshot", world }], { door: { room: true, member: true, hosted: true } });
-  const laptop = await openPage(`http://127.0.0.1:${desk.port}/`, { width: 1440, height: 900 });
+  const laptop = await openPage(`http://127.0.0.1:${desk.port}/?cards`, { width: 1440, height: 900 });
   try {
     await laptop.until(`document.readyState === "complete"`, 10000);
     await laptop.evaluate(`sessionStorage.setItem("e2a2o.joined", "Sam"); location.reload()`).catch(() => {});

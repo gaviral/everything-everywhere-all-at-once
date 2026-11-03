@@ -54,13 +54,14 @@ import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDE
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
-import { BRICKS, closeCatalog, isCore, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
+import { BRICKS, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
+import type { ViewDestination } from "./bricks/contract";
 import { Catalog } from "./Catalog";
 import { Guide } from "./Guide";
 import { showHint } from "./guide-core";
 import { Markdown } from "./md";
-import { DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
+import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
@@ -104,8 +105,10 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   // "map", "palace", or the id of a view brick that's on (bricks-core.ts): its name joins the Map and Palace switch.
-  const [view, setView] = useState<string>("map");
-  const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded });
+  const home = !SHELL2 && !CARDS_FLAG && isOn("spine") ? "spine" : "map";
+  const [view, setView] = useState<string>(home);
+  const [destination, setDestination] = useState<ViewDestination | null>(null);
+  const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded, setDestination }, home);
   // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
   const jumps = useRef(jumpTracker()).current;
   const worldNow = useRef(world);
@@ -139,6 +142,7 @@ export default function App() {
   // Leaving the map keeps its place; coming back to it, from the Palace or a view brick, puts it back.
   const showView = (next: string) => {
     if (next === view) return;
+    setDestination(null);
     if (view === "map") {
       mapScroll.current = window.scrollY;
       mapRoom.current = dockRoom.now();
@@ -301,7 +305,9 @@ export default function App() {
     // Your place moved by a jump that shows its own point: the jump is the look.
     if (answered && !("thought" in follow)) return;
     // Your landing the map won't show (another view, a search, Recap open): the dock says where it went.
-    if (view !== "map" || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
+    if ((view !== "map" && view !== "spine") || query.trim() || core.recap.view) { if (landing?.mine) attention.held(landing); return; }
+    // The Canvas follows with its own camera; cards' scroll and landing notice stay with cards.
+    if (view === "spine") return;
     followTarget.current = follow;
     if (landing?.mine) followLanding.current = landing;
     // One look once a turn's messages are in: when a thought lands and "Back to …" follows, the map goes back too.
@@ -910,7 +916,9 @@ export default function App() {
   const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
 
   const goBack = (thread: Thread) => {
-    setView("map");
+    setView((was) => was === "map" ? "map" : home);
+    const latest = [...world.thoughts].reverse().find((thought) => thought.thread_id === thread.id && thought.placed);
+    setDestination((was) => ({ threadId: thread.id, thoughtId: latest?.id ?? null, revision: (was?.revision ?? 0) + 1 }));
     setExpanded((state) => {
       const next = { ...state };
       let current: Thread | undefined = thread;
@@ -957,7 +965,7 @@ export default function App() {
     annotate: core.annotate,
     openCatalog: (id) => openCatalogAt(id ?? null),
     hint: showHint,
-  });
+  }, destination);
   const bricksOn = useBricksOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));

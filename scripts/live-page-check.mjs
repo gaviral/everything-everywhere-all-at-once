@@ -34,7 +34,7 @@ const core = await standInCore((query) => { joins.push(query.get("stop")); retur
 let page = null;
 let failed = null;
 try {
-  page = await openPage(`http://127.0.0.1:${core.port}/`);
+  page = await openPage(`http://127.0.0.1:${core.port}/?cards`);
   const { evaluate, until, page: cdp } = page;
   assert.ok(await until(`!!document.querySelector("#thread-T1")`, 10000), "the map loads");
   const connections = async (n) => { for (let waited = 0; core.connected() < n && waited < 15000; waited += 50) await sleep(50); return core.connected(); };

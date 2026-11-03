@@ -85,7 +85,7 @@ const core = await standInCore(() => [{ type: "snapshot", world }]);
 let failed = null;
 try {
   for (const [where, width, height] of [["a laptop", 1440, 900], ["a phone", 390, 844]]) {
-    const page = await openPage(`http://127.0.0.1:${core.port}/`, { width, height });
+    const page = await openPage(`http://127.0.0.1:${core.port}/?cards`, { width, height });
     try {
       const { evaluate, until } = page;
       assert.ok(await until(`!!document.querySelector("#thread-T1")`, 10000), "the map loads");
@@ -121,7 +121,7 @@ try {
 
   // Focus holds a card apart from the pointer: Tab from the GitHub card into the note card, then the pointer crosses the
   // note on its way to the GitHub card. A saved note's time up is about 5.5 s; held, it's still there well after.
-  const page = await openPage(`http://127.0.0.1:${core.port}/`);
+  const page = await openPage(`http://127.0.0.1:${core.port}/?cards`);
   try {
     const { evaluate, until, page: cdp } = page;
     assert.ok(await until(`!!document.querySelector("#thread-T1")`, 10000), "the map loads");
