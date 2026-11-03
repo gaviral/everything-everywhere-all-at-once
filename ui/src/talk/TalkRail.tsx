@@ -74,6 +74,6 @@ function TalkPill({ host, phone, show }: { host: BrickHost; phone: boolean; show
   const said = turns.filter((t) => t.at >= (call?.started_ms ?? 0)).length;
   const count = waiting ? `${waiting} new` : phone && said ? `${said} ${said === 1 ? "turn" : "turns"}` : "";
   return <button type="button" className={phone ? "talk-pill talk-pill-phone" : "talk-pill"} onClick={show}>
-    Talk{count && <span className="talk-pill-count"> · {count}</span>}{phone && <span aria-hidden="true"> ↑</span>}
+    Talk{count && <span className="talk-pill-count"> · {count}</span>}
   </button>;
 }

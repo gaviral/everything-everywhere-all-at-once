@@ -59,7 +59,8 @@ button.talk-time:hover { color: var(--ink); text-decoration: underline; }
 /* How far you've read (blue: you, here), and where each of the others is. */
 .talk-read-line { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 11px; font-weight: 500; line-height: 16px; }
 .talk-read-line::before, .talk-read-line::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .55; }
-.talk-seen { position: absolute; right: 0; bottom: -2px; display: flex; gap: 2px; }
+.talk-has-seen { padding-right: 22px; }
+.talk-seen { position: absolute; right: 0; bottom: 1px; display: flex; gap: 2px; }
 .talk-seen-mark { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--talk-raised); color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; }
 
 /* Catch up: what was said while you were away, when it isn't in view. */
@@ -71,8 +72,10 @@ button.talk-time:hover { color: var(--ink); text-decoration: underline; }
 .talk-reply-start { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line);
   border-radius: 14px; background: var(--talk-surface); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
 .talk-reply-start kbd { padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font: inherit; font-size: 11px; line-height: 16px; }
-.talk-reply-quiet { min-height: 24px; border-color: transparent; background: none; color: var(--accent); padding: 0; }
+.talk-reply-quiet { margin-left: auto; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
 .talk-reply-quiet:hover { text-decoration: underline; }
+/* A note's Reply shows on the note under the pointer or focused: calm at rest. Always on a touch screen. */
+@media (hover: hover) { .talk-turn:not(:hover):not(:focus-within) .talk-reply-quiet { opacity: 0; } }
 .talk-reply { display: grid; gap: 4px; margin-top: 6px; }
 .talk-reply-label { color: var(--muted); font-size: 11px; line-height: 16px; }
 .talk-reply input { width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--accent); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
@@ -107,7 +110,8 @@ button.talk-time:hover { color: var(--ink); text-decoration: underline; }
 .talk-pill { position: fixed; z-index: 30; top: calc(var(--header-height, 64px) + 8px); right: 16px; min-height: 36px; padding: 0 14px;
   border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .talk-pill-count { color: var(--muted); font-weight: 400; }
-.talk-pill-phone { top: auto; right: auto; left: 16px; bottom: calc(var(--dock-height, 112px) + 10px); min-height: 32px; font-size: 13px; }
+/* On a phone too, top right under the header: the map's own corner row (the Spine's) holds the foot. */
+.talk-pill-phone { min-height: 32px; }
 .talk-sheet { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; border-bottom: 0; }
 @media (max-width: 560px) {
   .talk-rail:not(.talk-sheet) { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; }

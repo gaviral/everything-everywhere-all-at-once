@@ -45,9 +45,18 @@ export const LEVELS: readonly { id: Level; name: string; says: string }[] = [
   { id: "stop", name: "Stop", says: "It may stop you mid-sentence, after your last few words." },
 ];
 
-// ---- The store: the call this window was last told, or none.
+/** Something a participant said or showed through the guide (a caption: Speak; a point with words: Glance), as this
+ *  window heard it (core/src/guide.rs relays them, never journaled): Talk keeps an AI participant's as turns once
+ *  they're down, so the call reads in order, even what came while Talk was closed. */
+export type Said = { text: string; by: string; at: number; level: "Speak" | "Glance" };
+
+/** The newest this window keeps. */
+const SAID_MAX = 50;
+
+// ---- The store: the call this window was last told, or none, and what was said through the guide.
 
 let call: Call | null = null;
+let said: Said[] = [];
 // A connection just opened: its catch-up sends the call before the world, so a world with no call before it means the
 // call this window showed is over (a restarted core, or everyone else gone for good).
 let fresh = false;
@@ -64,9 +73,19 @@ function set(next: Call | null) {
   for (const change of changes) for (const listener of floorWatchers) listener(change);
 }
 
-/** A message this window's socket heard, as it came (room.tsx): the call's own, or the world that ends a catch-up. */
+/** A message this window's socket heard, as it came (room.tsx): the call's own, a guide's caption or point, or the
+ *  world that ends a catch-up. */
 export function heard(data: unknown) {
   if (typeof data !== "string") return;
+  if (data.startsWith('{"type":"guide"')) {
+    try {
+      const { kind, text, by, at_ms } = JSON.parse(data) as { kind: string; text: string; by: string; at_ms: number };
+      if (!text || !by) return;
+      said = [...said, { text, by, at: at_ms || Date.now(), level: kind === "caption" ? "Speak" as const : "Glance" as const }].slice(-SAID_MAX);
+      for (const watcher of watchers) watcher();
+    } catch { /* not a guide message after all */ }
+    return;
+  }
   if (data.startsWith('{"type":"call"')) {
     fresh = false;
     try {
@@ -95,6 +114,12 @@ const now = () => call;
 /** The call, or null when there's none (alone, or not told yet). */
 export function useCall(): Call | null {
   return useSyncExternalStore(subscribe, now, now);
+}
+
+const saidNow = () => said;
+/** What participants said or showed through the guide in this window, oldest first (the newest 50). */
+export function useSaid(): readonly Said[] {
+  return useSyncExternalStore(subscribe, saidNow, saidNow);
 }
 
 /** Calls `listener` each time someone takes or gives back the floor (the bricks' `speaking`, BrickSlot.tsx); returns

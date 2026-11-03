@@ -10,7 +10,9 @@
 //     moves as turns are read and the mark reaches the core and the other window; turns said while Talk was closed
 //     wait on its pill and below the read line; a late joiner on a phone gets Join code and Leave in Talk's sheet and
 //     "Joined … · N turns before you · Catch up", which scrolls to them; words picked in a turn take a reply that
-//     reaches both windows as a margin note; the Friend's level set in one window shows in the other.
+//     reaches both windows as a margin note; the Friend's level set in one window shows in the other; the Friend's
+//     caption is "Speaking now…" while it's up and its words a turn once it's down (never both); a turn's time points
+//     at its place on the map; who leaves is shown as left.
 // CALL_SHOTS=<folder> also saves the 1440 and 390 shots there (call-1440.png, call-390.png).
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -152,14 +154,22 @@ setTimeout(async () => {
   process.exit(1);
 }, 180_000).unref();
 
-/** A window of `name`'s: joined (this tab remembers it), the tour seen, at ?shell=2. */
+/** A window of `name`'s: joined (this tab remembers it), the tour seen, at ?shell=2. For the shots, dressed as the
+ *  revamp's page will be: the Spine as the map (on under ?shell=2 once the shell lands), Apps and the install hint
+ *  put away. */
 async function windowOf(name, size) {
   const page = await openPage(`http://127.0.0.1:${core.port}/?shell=2`, size);
   pages.push(page);
   await page.until(`document.readyState === "complete"`);
   await page.evaluate(`sessionStorage.setItem("e2a2o.joined", ${JSON.stringify(name)}); localStorage.setItem("e2a2o.name", ${JSON.stringify(name)}); localStorage.setItem("e2a2o.toured", "1")`);
+  if (shots) await page.evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ spine: true }))`);
   await page.page("Page.reload", {});
   assert.ok(await page.until(`!!document.querySelector('[data-guide="composer"]')`, 8000), `${name}'s map opens`);
+  if (shots) {
+    await page.until(`!!document.querySelector('[data-guide="view:spine"]')`, 8000);
+    await page.evaluate(`document.querySelector('[data-guide="view:spine"]').click()`);
+    await page.evaluate(`document.querySelector(".apps-panel.is-open .apps-title")?.click(); [...document.querySelectorAll("button")].find((b) => b.textContent === "Not now")?.click()`);
+  }
   return page;
 }
 const text = (page, selector) => page.evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map((el) => el.textContent).join(" | ")`);
@@ -228,6 +238,8 @@ try {
   step("a late joiner on a phone");
   const lee = await windowOf("Lee", { width: 390, height: 844 });
   assert.ok(await lee.until(`/^Talk · \\d+ new/.test(document.querySelector(".talk-pill-phone")?.textContent ?? "")`, 4000), "on a phone, Talk waits on its pill with what's new");
+  await sleep(400);
+  await shot(lee, "call-390-pill");
   await click(lee, ".talk-pill-phone");
   assert.ok(await lee.until(`!!document.querySelector(".talk-sheet .talk-people")`, 3000), "it opens as a sheet");
   assert.match(await text(lee, ".talk-sheet .talk-code"), /Join code.*K7M2 X9QP/, "the join code on a phone");
@@ -268,10 +280,22 @@ try {
   assert.ok(await maya.until(`document.querySelector('.talk-level-step[aria-checked="true"]')?.textContent === "Hand" && document.querySelector(".talk-meter-says").textContent.includes("Set by Sam")`, 3000), "Maya's meter shows Sam's level");
   await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Speak").click()`);
 
+  step("the Friend's caption: Speaking now…, then its words as a turn");
+  const line = "Maybe ask Lena which day suits her?";
+  core.send({ type: "guide", kind: "caption", target: null, text: line, by: "Friend", at_ms: Date.now() });
+  assert.ok(await sam.until(`!!document.querySelector(".talk-live-ai")`, 3000), "the Friend's caption shows as Speaking now…");
+  assert.equal(await sam.evaluate(`document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`), false, "its words aren't in Talk while the caption says them");
+  assert.ok(await sam.until(`!document.querySelector(".talk-live-ai") && document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`, 15000), "once said, its words are a turn");
+  assert.match(await sam.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes(${JSON.stringify(line)}))?.textContent ?? ""`), /Speak/, "naming its level");
+
+  step("a turn's time shows it on the map");
+  await sam.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes("Saturday it is."))?.querySelector("button.talk-time")?.click()`);
+  assert.ok(await sam.until(`document.body.textContent.includes("Here on the map")`, 3000), "an arrow at its point says where it is");
+  await sam.page("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await sam.page("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+
   step("the 1440 shot: the Friend speaks, a turn waits below the read line");
   if (shots) {
-    setPerson("Sam", { read: "c7" });
-    tell();
     turn("c9", "Maya", "I can bring the speaker for music.");
     core.send({ type: "guide", kind: "caption", target: null, text: "Quick thing: Maya said Lena is away Saturday. Sunday works?", by: "Friend", at_ms: Date.now() });
     await sam.until(`!!document.querySelector(".talk-live-ai")`, 2000);
@@ -283,7 +307,7 @@ try {
   await maya.close();
   pages.splice(pages.indexOf(maya), 1);
   assert.ok(await sam.until(`/Maya\s*left/.test(document.querySelector(".talk-people")?.textContent ?? "")`, 4000), `Sam sees Maya left: ${await text(sam, ".talk-person")} / ${JSON.stringify(people.map((p) => [p.name, p.here]))}`);
-  console.log(`call-check: ok (the rules; two windows and a late one: the floor, the read line ${waiting}, catch up, a reply on both, the level${shots ? `; shots in ${shots}` : ""})`);
+  console.log(`call-check: ok (the rules; two windows and a late one: the floor, the read line (${waiting}), catch up, a reply on both, the level, the Friend's caption kept${shots ? `; shots in ${shots}` : ""})`);
 } catch (error) {
   failed = error;
 } finally {

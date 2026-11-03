@@ -8,16 +8,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
-import { clock, initialOf, LEVELS, named, ordered, stateWord, useCall, type Call, type Level, type Person } from "./call-core";
+import { clock, initialOf, LEVELS, named, ordered, stateWord, useCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
 import { newerMark, readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
 import "./talk.css";
 
 /** Who Talk acts as when it asks the map for something (a reply it sends is yours; this names it in a hint). */
 export const TALK: BrickInfo = { id: "talk", name: "Talk", does: "Who's in the call, what was said, and how far each of you has read.", kind: "panel", defaultOn: true, demoSafe: true };
-
-/** Something the Friend said or showed in this window: a caption (Speak) or a point with words (Glance). Of the moment
- *  in the core (guide.rs), kept here as a turn once it's down, so Talk reads in order. */
-type Said = { n: number; text: string; by: string; at: number; level: "Speak" | "Glance" };
 
 /** A row of the list: a turn from the journal, or something the Friend said here. */
 type Row = { kind: "turn"; turn: Turn; i: number } | { kind: "said"; said: Said };
@@ -42,9 +38,16 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const me = map.me;
   const turns = useMemo(() => turnsOf(map.thoughts, map.threads), [map.thoughts, map.threads]);
   const ai = (name: string) => !!map.speakers.get(name)?.ai || !!call?.people.find((p) => p.name === name)?.ai;
-  const said = useSaid(ai);
+  // What an AI participant said or showed (call-core.ts keeps it); the caption up now is its live turn, kept once down.
+  const saidAll = useSaid();
   const guide = useGuide();
   const captioning = guide.caption && ai(guide.caption.by) ? guide.caption : null;
+  const said = useMemo(() => {
+    const theirs = saidAll.filter((s) => ai(s.by));
+    let live = -1;
+    if (captioning) for (let i = theirs.length - 1; i >= 0 && live < 0; i--) if (theirs[i].level === "Speak" && theirs[i].by === captioning.by && theirs[i].text === captioning.text) live = i;
+    return theirs.filter((_, i) => i !== live);
+  }, [saidAll, captioning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // How far you've read: the newer of this browser's mark and the core's (another window of yours), told to the core
   // as it moves and again on each connection, so the others see it and a restarted core learns it again.
@@ -76,9 +79,9 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const [showEarlier, setShowEarlier] = useState(false);
   const rows = useMemo(() => {
     const out: Row[] = turns.map((turn, i) => ({ kind: "turn" as const, turn, i })).filter((row) => showEarlier || row.i >= earlier);
-    for (const s of said) if (s.n !== captioning?.n && (showEarlier || s.at >= from)) out.push({ kind: "said", said: s });
+    for (const s of said) if (showEarlier || s.at >= from) out.push({ kind: "said", said: s });
     return out.sort((a, b) => at(a) - at(b));
-  }, [turns, said, captioning?.n, showEarlier, earlier, from]);
+  }, [turns, said, showEarlier, earlier, from]);
 
   // Who has the floor now: a person whose mic hears words, or the Friend while its caption is up.
   const live = ordered(call, me).filter((p) => p.speaking && p.here);
@@ -91,7 +94,8 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const catchUp = () => {
     const row = scroller.current?.querySelector<HTMLElement>(`[data-turn="${firstUnread}"]`);
     row?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    row?.focus({ preventScroll: true });
+    // Focused, so R answers it and the keys go on from there; no ring for a move the page made.
+    row?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
   };
 
   const [replying, setReplying] = useState<{ key: string; thoughtId: string; quote: string } | null>(null);
@@ -110,11 +114,13 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   let previous: Row | null = null;
   const items: ReactNode[] = [];
   for (const row of rows) {
-    const head = !previous || speakerOf(previous) !== speakerOf(row) || at(row) - at(previous) > HEAD_GAP_MS || row.kind === "said" || previous.kind === "said"
+    // A name over each run of one person's turns; again after the read line, a pause, or a note.
+    const afterLine = previous?.kind === "turn" && previous.i === markIndex && unread.length > 0;
+    const head = !previous || afterLine || speakerOf(previous) !== speakerOf(row) || at(row) - at(previous) > HEAD_GAP_MS || row.kind === "said" || previous.kind === "said"
       || (row.kind === "turn" && !!row.turn.note) || (previous.kind === "turn" && !!previous.turn.note);
     previous = row;
     if (row.kind === "said") {
-      items.push(<li key={`said-${row.said.n}`} className="talk-turn">
+      items.push(<li key={`said-${row.said.at}-${row.said.by}`} className="talk-turn">
         <TurnHead name={row.said.by} me={me} ai at={row.said.at} level={row.said.level} />
         <div className="talk-words">{row.said.text}</div>
       </li>);
@@ -123,27 +129,28 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
     const { turn, i } = row;
     const noteOf = turn.note ? { key: turn.key, thoughtId: turn.note.thoughtId, quote: turn.note.quote } : null;
     const wholeOf = turn.parts[0].placed ? { key: turn.key, thoughtId: turn.parts[0].thoughtId, quote: turn.parts[0].text } : null;
-    items.push(<li key={turn.key} className={turn.speaker === me ? "talk-turn talk-mine" : "talk-turn"} data-turn={i} data-read-ms={readFor(turn)} tabIndex={-1}
+    const seenHere = readers.get(i);
+    items.push(<li key={turn.key} className={["talk-turn", turn.speaker === me && "talk-mine", seenHere && "talk-has-seen"].filter(Boolean).join(" ")} data-turn={i} data-read-ms={readFor(turn)} tabIndex={-1}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.key !== "r" || event.metaKey || event.ctrlKey || event.altKey || event.target !== event.currentTarget) return;
         const to = noteOf ?? wholeOf;
         if (to) { event.preventDefault(); setReplying(to); }
       }}>
       {head && <TurnHead name={turn.speaker} me={me} ai={ai(turn.speaker)} at={turn.at} level={turn.note && ai(turn.speaker) ? "Note" : undefined}
-        onShow={() => { const id = turn.note?.thoughtId ?? turn.parts[0].thoughtId; const t = map.thoughts.find((x) => x.id === id); if (t?.thread_id) actions.openThread(t.thread_id); }} />}
+        onShow={() => actions.hint("Here on the map", `point:${turn.note?.thoughtId ?? turn.parts[0].thoughtId}`)}
+        reply={noteOf && replying?.key !== turn.key ? () => setReplying(noteOf) : undefined} />}
       {turn.note && <div className="talk-on">on “{turn.note.quote}”</div>}
       <div className="talk-words" onMouseUp={pick} onKeyUp={pick}>
         {turn.parts.map((part) => <span key={part.thoughtId} data-part={part.thoughtId} data-placed={String(part.placed)} data-turn-key={turn.key}>{part.text} </span>)}
       </div>
-      {readers.get(i) && <span className="talk-seen" title={`${readers.get(i)!.join(", ")} read up to here`}>
-        {readers.get(i)!.map((name) => <span key={name} className="talk-seen-mark" aria-hidden="true">{initialOf(name)}</span>)}
-        <span className="sr-only">{readers.get(i)!.join(", ")} read up to here</span>
+      {seenHere && <span className="talk-seen" title={`${seenHere.join(", ")} read up to here`}>
+        {seenHere.map((name) => <span key={name} className="talk-seen-mark" aria-hidden="true">{initialOf(name)}</span>)}
+        <span className="sr-only">{seenHere.join(", ")} read up to here</span>
       </span>}
       {replying?.key === turn.key
         ? <ReplyBox quote={replying.quote} send={(text) => actions.annotate(replying.thoughtId, replying.quote, text)} done={() => setReplying(null)} />
-        : picked?.key === turn.key ? <button type="button" className="talk-reply-start" onMouseDown={(event) => event.preventDefault()} onClick={() => { setReplying(picked); setPicked(null); }}>
-            Reply to “{short(picked.quote)}” <kbd>↵</kbd></button>
-        : noteOf && <button type="button" className="talk-reply-start talk-reply-quiet" onClick={() => setReplying(noteOf)}>Reply</button>}
+        : picked?.key === turn.key && <button type="button" className="talk-reply-start" onMouseDown={(event) => event.preventDefault()} onClick={() => { setReplying(picked); setPicked(null); }}>
+            Reply to “{short(picked.quote)}” <kbd>↵</kbd></button>}
     </li>);
     if (i === markIndex && unread.length > 0) items.push(<li key="read-line" className="talk-read-line" role="separator">You read up to here</li>);
   }
@@ -196,11 +203,13 @@ const speakerOf = (row: Row) => (row.kind === "turn" ? row.turn.speaker : row.sa
 const short = (quote: string) => (quote.length > 32 ? `${quote.slice(0, 30).trimEnd()}…` : quote);
 const shownName = (name: string, me: string) => (name === me ? "You" : name);
 
-function TurnHead({ name, me, ai, at, level, onShow }: { name: string; me: string; ai: boolean; at: number; level?: string; onShow?: () => void }) {
+/** A turn's name line: who, when (a click shows it on the map), the Friend's level; a note's Reply at its end. */
+function TurnHead({ name, me, ai, at, level, onShow, reply }: { name: string; me: string; ai: boolean; at: number; level?: string; onShow?: () => void; reply?: () => void }) {
   return <div className={ai ? "talk-head talk-ai" : "talk-head"}>
     <span className="talk-name">{ai && "✦ "}{shownName(name, me)}</span>
     {onShow ? <button type="button" className="talk-time" onClick={onShow} title="Show it on the map">{clock(at)}</button> : <span className="talk-time">{clock(at)}</span>}
     {level && <span className="talk-level">{level}</span>}
+    {reply && <button type="button" className="talk-reply-quiet" onClick={reply}>Reply</button>}
   </div>;
 }
 
@@ -269,24 +278,6 @@ function Meter({ call, friend, me }: { call: Call; friend: Person; me: string })
     <p className="talk-meter-says" aria-live="polite">{failed ? "Not connected — try again when connected." : LEVELS[index]?.says}
       {!failed && call.level_by && call.level_by !== me && <span className="talk-meter-by"> Set by {call.level_by}.</span>}</p>
   </div>;
-}
-
-/** What the Friend said or showed in this window (captions and points with words, from an AI participant), kept as turns
- *  once they're down: newest 50. */
-function useSaid(ai: (name: string) => boolean): Said[] {
-  const guide = useGuide();
-  const [said, setSaid] = useState<Said[]>([]);
-  const latest = useRef(ai);
-  latest.current = ai;
-  useEffect(() => {
-    const c = guide.caption;
-    if (c && latest.current(c.by)) setSaid((list) => (list.some((s) => s.n === c.n) ? list : [...list, { n: c.n, text: c.text, by: c.by, at: Date.now(), level: "Speak" as const }].slice(-50)));
-  }, [guide.caption]);
-  useEffect(() => {
-    const p = guide.point;
-    if (p && p.text && latest.current(p.by)) setSaid((list) => (list.some((s) => s.n === p.n) ? list : [...list, { n: p.n, text: p.text, by: p.by, at: p.at || Date.now(), level: "Glance" as const }].slice(-50)));
-  }, [guide.point]);
-  return said;
 }
 
 /** Reading: a turn counts as read once it has been in view, whole, for its reading time (turns.ts `readFor`) while the
