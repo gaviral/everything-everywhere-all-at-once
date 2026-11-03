@@ -131,6 +131,7 @@ async function liveOutlineRules(server) {
   for (const [said, cleaned] of [
     ["Um, uh, erm, the the plan is ready.", "the plan is ready."],
     ["You know, we can try. I mean, we should.", "we can try. we should."],
+    ["You know, we can try. I mean, I mean it.", "we can try. I mean it."],
     ["We, you know, need it; I mean the budget.", "We need it; I mean the budget."],
     ["It is, I mean, kind of slow.", "It is kind of slow."],
     ["YOU KNOW, we can try.\nI MEAN, we should.", "we can try.\nwe should."],
@@ -141,6 +142,7 @@ async function liveOutlineRules(server) {
   ]) assert.deepEqual(trimFillers(said), { text: cleaned, trimmed: true }, `live-outline: trim ${JSON.stringify(said)}`);
   for (const said of ["I like pizza", "kind of slow", "it's like a map", "Do you know the way?", "What I mean is this.",
     "I mean it", "You know what I mean", "You know the way", "We agree I mean it; you know what I mean, and you know the way.",
+    "We agree, I mean it, and you know the way.", "We agree, you know what I mean, and you know the way.",
     "Ready. I mean it! You know what I mean? You know the way.",
     "Ready; I mean it: you know the way — you know what I mean.",
     "  I mean it.\n\tYou know what I mean\nYou know the way  ", "\n  YOU KNOW the way.\n\tI MEAN it.  ",
@@ -727,8 +729,8 @@ try {
     // A short point keeps meaningful phrases while removing only the comma-marked fillers; Enter restores it exactly.
     await go(`${base}/bricks.html?brick=live-outline&sample=founder-day`);
     await until(`!!document.querySelector(".live-outline-empty")`, 8000);
-    const mixed = "You know, I mean it. You know what I mean; you know the way.";
-    const kept = "I mean it. You know what I mean; you know the way.";
+    const mixed = "You know, we can try. I mean, I mean it. You know what I mean; you know the way.";
+    const kept = "we can try. I mean it. You know what I mean; you know the way.";
     if (!await say("T1", mixed, 1)) fail(where, "the mixed filler and meaningful phrases never landed");
     else {
       if (!await until(`(${texts})[0] === ${JSON.stringify(kept)}`, 1000)) fail(where, "the compact point loses meaningful phrases or keeps comma-marked fillers");

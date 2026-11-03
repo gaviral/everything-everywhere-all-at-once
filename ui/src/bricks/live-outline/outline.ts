@@ -12,6 +12,7 @@ export function trimFillers(original: string): { text: string; trimmed: boolean 
     text = text
       // A filler enclosed by commas takes its enclosing commas with it.
       .replace(/,\s*(?:um|uh|erm|you\s+know|I\s+mean|like|basically|so\s+yeah)\s*,\s*/gi, " ")
+      // These phrases need a following comma; unpunctuated words keep their meaning.
       .replace(/(^\s*|[.!?;:,\n—]\s*)(?:you\s+know|I\s+mean)\b\s*,\s*/gi, "$1")
       .replace(/(^\s*|[.!?;:,\n—]\s*)basically\s*,\s*/gi, "$1")
       .replace(/(?<![\p{L}\p{N}'’\-])(?:um|uh|erm)(?![\p{L}\p{N}'’\-])[,\t ]*\s*/giu, "")
