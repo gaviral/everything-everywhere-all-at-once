@@ -92,11 +92,35 @@ export async function standInCore(joinReply, { door = { room: false, member: tru
   };
 }
 
+// A Chrome outlives the check that started it unless something ends it. A check's `finally` does, but `process.exit()`
+// skips a `finally`, and so does a signal (a timeout's SIGTERM): each such run left a headless Chrome and its profile
+// behind (the one-brick run of bricks-check did, 14 in a day). So every Chrome started here is also ended when the
+// process ends, however it ends: the 'exit' event runs for process.exit(), an uncaught error and a normal end, and a
+// signal is turned into an exit.
+const running = new Map(); // each Chrome that hasn't exited yet, with its throwaway profile
+let watching = false;
+function endWhatIsLeft() {
+  for (const [chrome, profile] of running) {
+    try { chrome.kill("SIGKILL"); } catch { /* already gone */ }
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* the OS clears its temp folder */ }
+  }
+  running.clear();
+}
+function watchExit() {
+  if (watching) return;
+  watching = true;
+  process.on("exit", endWhatIsLeft);
+  for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.on(signal, () => process.exit(code));
+}
+
 /** Headless Chrome with one page at `url`, `width` × `height`, light, the app's own motion. */
 export async function openPage(url, { width = 1440, height = 900 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "page-check-"));
   const chrome = spawn(chromePath, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
     "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+  running.set(chrome, profile);
+  chrome.once("exit", () => running.delete(chrome));
+  watchExit();
   const close = async () => {
     const exited = new Promise((resolve) => (chrome.exitCode !== null ? resolve() : chrome.once("exit", resolve)));
     chrome.kill();

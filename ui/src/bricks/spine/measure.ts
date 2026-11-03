@@ -2,11 +2,11 @@
 // front, so nothing moves once it's on screen (a height measured after the first paint would shift the points below it a
 // moment later). A canvas measures the page's own font; with none (a check in Node) an average character stands in.
 
-/** The faces the Spine sets text in, as spine.css sets them. */
+/** The faces the Spine sets text in, as spine.css sets them: the app's six sizes (11, 13, 15, 18) in one sans. */
 export const FONTS = {
-  title: { weight: 650, size: 17 },
+  title: { weight: 600, size: 18 },
   point: { weight: 400, size: 15 },
-  cardTitle: { weight: 600, size: 15 },
+  cardTitle: { weight: 600, size: 13 },
   small: { weight: 400, size: 13 },
 } as const;
 export type FontKey = keyof typeof FONTS;
@@ -69,4 +69,12 @@ export function wrap(text: string, font: FontKey, max: number, limit: number): n
     lines[limit - 1] = max;
   }
   return lines;
+}
+
+/** Where the last of `prefix` sits once wrapped as `wrap` wraps the whole text it begins: its line, and how far along it
+ *  (lines break greedily, so the text after it never moves it). Past `limit` lines, the end of the last one. */
+export function wrapEnd(prefix: string, font: FontKey, max: number, limit: number): { line: number; x: number } {
+  const lines = wrap(prefix, font, max, Number.MAX_SAFE_INTEGER);
+  if (lines.length > limit) return { line: limit - 1, x: max - 3 };
+  return { line: lines.length - 1, x: lines[lines.length - 1] };
 }
