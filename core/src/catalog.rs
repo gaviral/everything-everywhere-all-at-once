@@ -28,6 +28,7 @@ use std::time::Duration;
 #[serde(rename_all = "snake_case")]
 pub enum Act {
     Back,
+    Notices,
     Next,
     Previous,
     Search,
@@ -143,6 +144,7 @@ pub struct Def {
 pub const CATALOG: &[Def] = &[
     Def { act: Act::Help, does: "list what you can say", template: Some("what can I say"), phrases: &["What can I say?", "Help"], needs: Needs::Nothing, answers: "opens the ? list", undo: UndoBy::Not("your next turn, Esc or a click closes it"), external: false, button: Some("?") },
     Def { act: Act::Back, does: "go back to where you left off", template: Some("where was I"), phrases: &["Where was I?", "Take me back to where I was", "What was I thinking?", "Let me finish my thought", "Going back to what I was saying", "Going back to what you were saying", "I lost my place", "I lost my train of thought", "I don't remember what I was saying", "Where did I leave off?"], needs: Needs::Nothing, answers: "moves the map there: “Back to …”", undo: UndoBy::MoveBack, external: false, button: Some("focus") },
+    Def { act: Act::Notices, does: "show what just happened: the notices you may have missed, newest first", template: Some("what just happened"), phrases: &["What just happened?", "What happened just now?", "Show me the notices"], needs: Needs::Nothing, answers: "opens the Notice timeline's list (with it off, says where to switch it on)", undo: UndoBy::Not("Esc, × or a click outside closes it"), external: false, button: Some("the Notice timeline's clock") },
     Def { act: Act::Next, does: "go to the next thread", template: Some("next one"), phrases: &["Next one"], needs: Needs::Nothing, answers: "moves the map: “On to …”", undo: UndoBy::MoveBack, external: false, button: Some("j") },
     Def { act: Act::Previous, does: "go to the thread before", template: Some("last one"), phrases: &["Last one", "Go back one", "Previous one"], needs: Needs::Nothing, answers: "moves the map: “Previous: …”", undo: UndoBy::MoveBack, external: false, button: Some("k") },
     Def { act: Act::Search, does: "find where something was said and go there", template: Some("go to the one about <words>"), phrases: &["Where did I talk about the electric bill?", "Go to the one about the electric bill"], needs: Needs::Key, answers: "jumps there and highlights the point, or says it found nothing", undo: UndoBy::MoveBack, external: false, button: Some("/ search") },
@@ -240,6 +242,7 @@ pub fn of_view(view: View) -> Act {
         View::Finish => Act::Finish,
         View::Pause => Act::Pause,
         View::Export => Act::Export,
+        View::Notices => Act::Notices,
     }
 }
 

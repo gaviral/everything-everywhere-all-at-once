@@ -54,10 +54,11 @@ import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, NONE_HIDDE
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
-import { BRICKS, useBricksOn } from "./bricks-core";
+import { BRICKS, openCatalogAt, useBricksOn } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import { Catalog } from "./Catalog";
 import { Guide } from "./Guide";
+import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
@@ -158,8 +159,8 @@ export default function App() {
   useEffect(() => {
     if (!core.viewAsk) return;
     const asked = core.viewAsk.view;
-    // The unfinished card's buttons and the mic, said aloud: handled where those live.
-    if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause") return;
+    // The unfinished card's buttons, the mic and the notices ("what just happened?"), said aloud: handled where those live.
+    if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause" || asked === "notices") return;
     if (asked === "help") { setHelpOpen(true); return; }
     if (asked === "export") { exportMap(core.viewAsk); return; }
     keepShown();
@@ -922,7 +923,9 @@ export default function App() {
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
   // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does, listen is the mic
   // button's tap (the Keys brick's ⌘D). It starts the mic only inside a click or key press in this tab, as the tap does,
-  // and not while the button can't be pressed (starting, or offline with nothing to stop).
+  // and not while the button can't be pressed (starting, or offline with nothing to stop). annotate sends a margin note
+  // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
+  // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
     addThought: core.sendText,
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
@@ -935,6 +938,9 @@ export default function App() {
       if (!capturing && navigator.userActivation?.isActive === false) return;
       void toggleMic();
     },
+    annotate: core.annotate,
+    openCatalog: (id) => openCatalogAt(id ?? null),
+    hint: showHint,
   });
   const bricksOn = useBricksOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
@@ -960,6 +966,12 @@ export default function App() {
   useEffect(() => {
     for (const notice of core.takeNotices()) brickHost.emit("notice", { ...notice, text: noticeText(notice.text) });
   });
+  // "What just happened?": the notices this window showed are a brick's to show (the Notice timeline's list); with none
+  // on to hear it, the answer says where to switch it on.
+  useEffect(() => {
+    if (core.viewAsk?.view !== "notices") return;
+    if (!brickHost.emit("asked", { what: "notices" })) core.showNotice("The Notice timeline is off: switch it on in Apps › Catalog, and it keeps notices from then on.", core.viewAsk);
+  }, [core.viewAsk]);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -972,16 +984,17 @@ export default function App() {
       {/* The page's first stop: Tab, then Enter, and you're typing (it took 46 Tabs past the header and the map). */}
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
       <header ref={headerRef}>
-        <div className="brand">
+        <div className="brand" data-slot="top-left">
           E2A2O <small>threads</small>
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "thread" : "threads"}</span>}
         </div>
-        <div className="header-actions">
+        <div className="header-actions" data-slot="top-right">
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
         {/* What you can say comes first: asking for this list by voice is how most people open it. */}
         <details className="shortcuts" open={helpOpen} onToggle={(event) => setHelpOpen(event.currentTarget.open)}><summary aria-label="Voice and keyboard commands" data-guide="help">?</summary><div ref={helpList} className="keyboard-hint">
           <strong>Say or type</strong>
           <div>“What can I say?” · opens this list</div>
+          <div>“What just happened?” · the notices you may have missed, newest first, in the Notice timeline</div>
           <div>“Where was I?” or “What was I thinking?” · back to where you left off</div>
           <div>“Next one” or “Last one” · the thread after or before yours in creation order, wrapping around</div>
           <div>These three also work at the end of a sentence: “…due Friday, where was I?” keeps your words</div>
@@ -1011,7 +1024,7 @@ export default function App() {
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
-        <div className={stopMic ? "status capturing" : "status"} data-guide="status">
+        <div className={stopMic ? "status capturing" : "status"} data-guide="status" data-slot="status">
           <span className={!core.connected ? "dot" : core.noKey ? "dot warn" : "dot ok"} role="img" aria-label={core.connected ? status : "Connecting"} />
           {/* On a phone, beside the header's buttons, the short form keeps it to one line; the dot's name says it all. */}
           <span aria-hidden="true">{core.connected && core.resting && !stopMic ? <><span className="status-long">{status}</span><span className="status-short">Back tomorrow</span></> : status}</span>
@@ -1116,7 +1129,7 @@ export default function App() {
 
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
-        <div className="dock-inner">
+        <div className="dock-inner" data-slot="stage">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "While you were away. Your thoughts are ready to explore above the composer." : ""}</div>
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {

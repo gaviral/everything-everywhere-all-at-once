@@ -3,8 +3,9 @@
 // there are (each brick.json, checked), which are on in this browser, the Catalog being open, and the map, actions
 // and events each brick is handed (bricks/contract.ts). BrickSlot.tsx mounts them; Catalog.tsx switches them.
 import { useSyncExternalStore, type ComponentType } from "react";
-import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot } from "./bricks/contract";
+import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot, Speaker } from "./bricks/contract";
 import type { Note, Thought, World } from "./core";
+import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
 
@@ -119,27 +120,56 @@ export function switchBrick(id: string, value: boolean) {
   changed();
 }
 
-// The Catalog sheet: opened from the Apps panel, closed by itself (Catalog.tsx).
+// The Catalog sheet: opened from the Apps panel or by a brick (`openCatalog`, at its row when it names one), closed by
+// itself (Catalog.tsx).
 let catalogOpen = false;
+let catalogAt: { id: string; n: number } | null = null;
+let asks = 0;
 const catalogWatchers = new Set<() => void>();
-const setCatalog = (value: boolean) => { catalogOpen = value; for (const watcher of catalogWatchers) watcher(); };
+const setCatalog = (value: boolean, at: string | null = null) => {
+  catalogOpen = value;
+  catalogAt = value && at ? { id: at, n: ++asks } : null;
+  for (const watcher of catalogWatchers) watcher();
+};
 const watchCatalog = (watcher: () => void) => { catalogWatchers.add(watcher); return () => { catalogWatchers.delete(watcher); }; };
 export const openCatalog = () => setCatalog(true);
+/** Opens the Catalog at brick `id`'s row (none: at its top), as a brick's `openCatalog(id)` asks; again, a new ask. */
+export const openCatalogAt = (id: string | null) => setCatalog(true, id);
 export const closeCatalog = () => setCatalog(false);
 export function useCatalogOpen(): boolean {
   return useSyncExternalStore(watchCatalog, () => catalogOpen, () => false);
+}
+/** The row the Catalog was asked to show, and which ask (`n`), while it's open. */
+export function useCatalogAt(): { id: string; n: number } | null {
+  return useSyncExternalStore(watchCatalog, () => catalogAt, () => null);
 }
 
 /** Nothing placed by hand, the same object each time. */
 const UNPLACED = Object.freeze({});
 
-/** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only, and
- *  `partial`, this tab's live words (core.ts `partial`: the core sends them to the speaker's windows alone, and a tab
- *  takes them only while its own mic is on). */
+/** Everyone on the map (contract.ts `speakers`): each speaker of a thought, then each AI participant that hasn't spoken
+ *  yet; a new map only when the thoughts or the AI participants change, so it doesn't change per word heard. */
+function speakersOf() {
+  let last: { thoughts: readonly Thought[]; ai: readonly string[] | undefined; out: ReadonlyMap<string, Speaker> } | null = null;
+  return (thoughts: readonly Thought[], ai: readonly string[] | undefined): ReadonlyMap<string, Speaker> => {
+    if (last && last.thoughts === thoughts && last.ai === ai) return last.out;
+    const out = new Map<string, Speaker>();
+    for (const thought of thoughts) if (thought.speaker && !out.has(thought.speaker)) out.set(thought.speaker, { ai: !!ai?.includes(thought.speaker) });
+    for (const name of ai ?? []) out.set(name, { ai: true });
+    last = { thoughts, ai, out };
+    return out;
+  };
+}
+const threadsWithAnchors = anchoredThreads();
+const speakersNow = speakersOf();
+
+/** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only (a
+ *  margin note's thread with its `anchor`), and `partial`, this tab's live words (core.ts `partial`: the core sends them
+ *  to the speaker's windows alone, and a tab takes them only while its own mic is on). */
 export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string): MapSnapshot {
   const notes = world.notes ?? {};
   return {
-    threads: world.threads,
+    threads: threadsWithAnchors(world.threads, world.anchors),
     thoughts: world.thoughts,
     active: world.active_by[me] ?? world.active,
     suggestions: world.suggestions,
@@ -149,6 +179,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     points: pointCounts(world.thoughts, notes),
     rooms,
     positions: world.positions ?? UNPLACED,
+    speakers: speakersNow(world.thoughts, world.ai),
     me,
     partial,
     connected,
@@ -172,16 +203,58 @@ export function pointCounts(thoughts: readonly Thought[], notes: Record<string, 
 export function landingWatcher() {
   let seen: { revision: number; placed: Set<string> } | null = null;
   const ever = new Set<string>();
-  return (thoughts: readonly Thought[], me: string, revision: number): BrickEvents["landed"][] => {
+  return (thoughts: readonly Thought[], revision: number): Thought[] => {
     const placed = thoughts.filter((thought) => thought.placed && thought.thread_id);
     const fresh = landedNow(placed, seen?.placed ?? new Set(), ever);
     const same = seen?.revision === revision;
     seen = { revision, placed: new Set(placed.map((thought) => thought.id)) };
-    return same ? fresh.map((thought) => ({ thoughtId: thought.id, threadId: thought.thread_id!, mine: thought.speaker === me })) : [];
+    return same ? fresh : [];
   };
 }
 
-/** Listeners by event name, for `on`; `emit` calls each. */
+/** Which brick added each thought of yours (`landed`'s `by`): a brick's `addThought` is told here (`sent`), and the
+ *  thought that comes back with those words, yours and new, is its (a long one sent in parts: each part; the rest of
+ *  one the placer cut in two: its first part's brick). Asks older than `FOR_MS` are dropped: the core answers at once,
+ *  so a thought that comes later is something else, typed while it waited offline. */
+export function senders(FOR_MS = 60_000) {
+  const asks: { words: string; brick: BrickInfo; at: number }[] = [];
+  const claimed = new Map<string, BrickInfo>();
+  const seen = new Set<string>();
+  let revision = -1;
+  const words = (text: string) => text.trim().split(/\s+/).join(" ");
+  return {
+    sent(text: string, brick: BrickInfo, now = Date.now()) {
+      asks.push({ words: words(text), brick, at: now });
+      if (asks.length > 20) asks.shift();
+    },
+    /** Takes the thoughts as they are now: each new one of `me`'s claimed by the ask it answers. A new `revision` (a
+     *  snapshot) is only learned. */
+    see(thoughts: readonly Thought[], me: string, now = Date.now(), snapshot = revision) {
+      const learning = snapshot !== revision;
+      revision = snapshot;
+      for (let i = 0; i < thoughts.length; i++) {
+        const thought = thoughts[i];
+        if (seen.has(thought.id)) continue;
+        seen.add(thought.id);
+        if (learning || thought.speaker !== me) continue;
+        const said = words(thought.text);
+        const at = asks.findIndex((ask) => now - ask.at <= FOR_MS && said && ask.words.includes(said));
+        if (at >= 0) {
+          claimed.set(thought.id, asks[at].brick);
+          if (asks[at].words === said) asks.splice(at, 1);
+          continue;
+        }
+        // The rest of a turn the placer cut in two comes right after its first part, said at the same moment.
+        const before = thoughts[i - 1];
+        const brick = before && before.speaker === me && before.at_ms === thought.at_ms ? claimed.get(before.id) : undefined;
+        if (brick) claimed.set(thought.id, brick);
+      }
+    },
+    by: (thoughtId: string) => claimed.get(thoughtId),
+  };
+}
+
+/** Listeners by event name, for `on`; `emit` calls each, and says how many heard it. */
 export function brickEvents() {
   const listeners = new Map<keyof BrickEvents, Set<(value: never) => void>>();
   const on: BrickOn = (name, listener) => {
@@ -190,8 +263,10 @@ export function brickEvents() {
     set.add(listener as (value: never) => void);
     return () => { set.delete(listener as (value: never) => void); };
   };
-  const emit = <K extends keyof BrickEvents>(name: K, value: BrickEvents[K]) => {
-    for (const listener of listeners.get(name) ?? []) (listener as (value: BrickEvents[K]) => void)(value);
+  const emit = <K extends keyof BrickEvents>(name: K, value: BrickEvents[K]): number => {
+    const heard = [...(listeners.get(name) ?? [])];
+    for (const listener of heard) (listener as (value: BrickEvents[K]) => void)(value);
+    return heard.length;
   };
   return { on, emit };
 }

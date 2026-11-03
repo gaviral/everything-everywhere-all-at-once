@@ -259,3 +259,28 @@ const read = () => state;
 export function useGuide(): GuideState {
   return useSyncExternalStore(subscribe, read, read);
 }
+
+/** Calls `listener` with the point shown each time that changes: a new one, or null once it's taken down (the bricks'
+ *  `pointing`, BrickSlot.tsx). Returns the way to stop. */
+export function watchPoint(listener: (point: Shown | null) => void) {
+  let last = state.point;
+  return subscribe(() => { if (state.point !== last) { last = state.point; listener(last); } });
+}
+
+// ---- A brick's hint (bricks/contract.ts `hint`): shown as a point or a caption is, in this window only, never sent.
+
+/** A hint's words at most: one line beside the arrow, as a point's caption (guide.rs `POINT_MAX`). */
+export const HINT_MAX = 140;
+/** A part's name, as the core takes one for a point (guide.rs `bad_name`). */
+const NAME = /^[A-Za-z0-9:._-]{1,100}$/;
+
+/** Shows `text` from `by` (a brick's name): an arrow at the part named `target` with the words beside it, as another
+ *  participant's point; without a target, in the corner, as a caption. False when nothing showed: no words, more than
+ *  one line or `HINT_MAX` characters, or a target that isn't a name. */
+export function showHint(text: string, target: string | null, by: string): boolean {
+  const line = text.trim();
+  if (!line || /[\r\n]/.test(line) || [...line].length > HINT_MAX || (target !== null && !NAME.test(target))) return false;
+  const words = line.split(/\s+/).join(" ");
+  set(guided(state, { type: "guide", kind: target ? "point" : "caption", target, text: words, by, at_ms: Date.now() }, ++count));
+  return true;
+}

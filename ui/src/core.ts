@@ -20,6 +20,7 @@ import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
 import { applyTidy, joinNotes, settle, tidyNote, type Proposal, type TidyChange, type TidyNote, type TidyUndo } from "./tidy-core";
 import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
+import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
 
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
@@ -53,6 +54,8 @@ export interface Thought {
   place_ms: number | null;
   /** The words say a decision was made (the core's decided.rs); placements before it have none. */
   decided?: boolean;
+  /** Who agreed, when the room agreed on it (✓ Agreed). Not sent yet: the core knows only that it was decided. */
+  agreed_by?: string[];
 }
 
 /** What the placer read into a thought (chunks.tsx): the words it carries on across a pause, an assumption that moved
@@ -91,7 +94,8 @@ export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
 // say?"); also the unfinished card's Later ("later"), setting it aside ("forget it") and Finish it ("finish"), and the
 // mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export"; revision: number; answers: number };
+// "What just happened?" ("notices"): the notices this window showed, newest first, which only it keeps (the Notice timeline).
+export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
@@ -154,6 +158,10 @@ export interface World extends AppsWorld {
   proposals?: Proposal[];
   /** Thread or thought id → where a person or an AI participant put it on the canvas (positions-core.ts). */
   positions?: Record<string, Position>;
+  /** A margin note's thread id → the words it's tied to (annotate-core.ts). */
+  anchors?: Record<string, Anchor>;
+  /** The speakers who joined as an AI participant, in the order they first came (the core's `World::ai`). */
+  ai?: string[];
 }
 
 type Change =
@@ -192,6 +200,9 @@ type Change =
   | { type: "thread_merged"; from: string; into: string }
   | MoveChange
   | PositionChange
+  | AnchoredChange
+  // A window joined as an AI participant under this name (`?ai`): its words are an AI's from now on.
+  | { type: "ai_joined"; speaker: string }
   | { type: "suggestion_added"; suggestion: Suggestion }
   | { type: "action_proposed"; action: Action }
   | { type: "item_status"; id: string; status: ItemStatus; done_ms: number | null }
@@ -357,10 +368,12 @@ export function actionFailed(world: World, id: string, message: string): World {
  *  map takes its place on the canvas with it (positions-core.ts). */
 export function apply(world: World, raw: Change): World {
   if (raw.type === "positioned") return applyPosition(world, raw);
+  // Its thread id isn't followed through merges, as the core's isn't: the note's thread is new when it's tied.
+  if (raw.type === "anchored") return applyAnchored(world, raw);
   return keepPlaced(applyChange(world, raw));
 }
 
-function applyChange(world: World, raw: Exclude<Change, PositionChange>): World {
+function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange>): World {
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
@@ -385,6 +398,8 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange>): World 
   switch (c.type) {
     case "recap_saved":
       return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
+    case "ai_joined":
+      return world.ai?.includes(c.speaker) ? world : { ...world, ai: [...(world.ai ?? []), c.speaker] };
     case "tag_suggested":
       return onThread(c.thread_id, (t) =>
         t.tags.some((x) => x.name === c.tag) ? t : { ...t, tags: [...t.tags, { name: c.tag, kept: false }] },
@@ -1048,6 +1063,13 @@ export function useCore(speaker?: string) {
     // A brick's `position` (bricks/contract.ts): a card or a point put somewhere on the canvas, for every window; a
     // drag's steps go at most once a frame, its last one on the drop (positions-core.ts `placeSender`).
     position: placeAt,
+    // A brick's `annotate`: a margin note on words of a point, for every window (core annotate.rs); one the core would
+    // refuse for its words is said here and never sent.
+    annotate: useCallback((thoughtId: string, quote: string, text: string) => {
+      const made = annotateMessage(thoughtId, quote, text);
+      if ("refused" in made) { sayNotice(made.refused); setUndoId(null); answered(); return false; }
+      return sendOrWarn(made.message);
+    }, [sendOrWarn]),
     // Offline it's disabled; a click that races the drop says so (sendOrWarn) instead of doing nothing, as ⌘Z does.
     undo: (id: number) => { setUndoId(null); sendOrWarn(JSON.stringify({ type: "undo", id })); },
     // ⌘Z / Ctrl+Z: "undo that" without words, the core's last turn for you (catalog.rs `undo_last`).
