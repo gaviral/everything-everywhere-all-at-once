@@ -1,7 +1,7 @@
 // How long a notice stays up. Pure, so scripts/notice-check.mjs can run it without a browser.
 import { readMs } from "./attention-core";
 
-/** The former minimum, retained for checks of older card formats. Reading time now follows the visible words. */
+/** Short answers keep at least five seconds; longer cards get time for all visible words. */
 export const SHORTEST_MS = 5000;
 
 /** Notices that stay until dismissed: each asks for something only the person can do (tap the mic again, allow it,
@@ -79,5 +79,5 @@ export function undoKeyLabel(mac: boolean): string {
 
 /** The Finish it rule: read every visible word at 200 wpm, decide, then reach a button. */
 export function readingTime(text: string): number {
-  return readMs(text, 200) + DECIDE_MS + REACH_MS;
+  return Math.max(SHORTEST_MS, readMs(text, 200) + DECIDE_MS + REACH_MS);
 }

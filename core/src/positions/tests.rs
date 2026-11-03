@@ -334,9 +334,10 @@ async fn a_person_and_an_ai_participant_place_things_over_their_sockets_and_each
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name={name}")).await.unwrap();
         let snapshot = next(&mut window).await;
         assert_eq!(snapshot["type"], "snapshot");
-        // Where placing stands, and that there's no key.
-        next(&mut window).await;
-        next(&mut window).await;
+        // Assert the complete catch-up before expecting live position changes.
+        for kind in ["placing", "usage", "notice"] {
+            assert_eq!(next(&mut window).await["type"], kind);
+        }
         (window, snapshot)
     }
     let send = |json: Value| Message::Text(json.to_string().into());

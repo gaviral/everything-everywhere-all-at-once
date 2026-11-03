@@ -846,7 +846,7 @@ export function useCore(speaker?: string) {
             setFound(null);
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
             setKeyNotice("");
-            setNotice((shown) => (aboutKey(shown) ? "" : shown));
+            noticeQueue.dropGroup("key");
             // The core sends a running import's status right after the snapshot; one it doesn't has ended
             // (it finished while this window was away, or the core restarted).
             setImportStatus((status) => (status && ["reading", "grouping", "adding"].includes(status.state) ? null : status));

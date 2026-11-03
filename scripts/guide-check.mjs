@@ -462,9 +462,7 @@ try {
   await lands(far, "scrolled toward the caption, what's left above it");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(1200);
-  // A narrower layout can leave room only for the ring; hidden arrow coordinates are then stale.
-  if (await layer() === "near") assert.ok(await ringed(far), "after the cards reflow: the ring follows the visible part");
-  else await lands(far, "after the cards reflow");
+  await lands(far, "after the cards reflow");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(800);
 

@@ -13,7 +13,7 @@ globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
   const { received, comesFirst, cardWords, pointCount, pointWords, announcement, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/note-card.ts");
-  const { readingTime, SHORTEST_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
+  const { readingTime, SHORTEST_MS, slowReadMs, DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   const sections = [
     { title: "", points: [
       { text: "Picnic at the lake", who: "", decided: false, unfinished: false },
@@ -36,6 +36,7 @@ try {
   assert.deepEqual(cardWords(card), { heading: "Note in Notes", status: "Saved to Notes", open: true });
   assert.equal(lingerMs(card), readingTime("Note in Notes Picnic at the lake Saved to Notes Picnic at the lake Saturday at noon Decided Someone to bring the unfinished Weather Check the forecast Open in Notes"));
   assert.ok(lingerMs(card) >= SHORTEST_MS, "never shorter than any notice");
+  assert.ok(lingerMs(card) >= slowReadMs("Note in Notes Picnic at the lake Saved to Notes") + DECIDE_MS + REACH_MS, "keeps the original time to act");
   assert.equal(announcement(card), "Note “Picnic at the lake”, 4 points. Saved to Notes");
 
   // A dry run: says so in its heading and status, offers no Open (nothing is in Notes).
@@ -57,6 +58,8 @@ try {
   assert.equal(comesFirst(msg("failed")), false);
   assert.match(src("core.ts"), /noticeQueue\.find\("note", String\(msg\.id\)\)/, "updates find their own queued note");
   assert.match(src("core.ts"), /noticeQueue\.push\("note", String\(msg\.id\), note\)/, "each note has one queue entry");
+  assert.match(src("core.ts"), /if \(noteFirst\(msg\)\) closeRecap\(\);/, "new notes make way in Recap");
+  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{\s*noticeQueue\.reset\("note"\)/, "a restarted core can reuse note ids");
 
   // Who said a point shows only in a room (the core sends it then).
   assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");

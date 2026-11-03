@@ -49,7 +49,7 @@ Place by what the words are about, not by how they are said or a word they share
 a thought that trails off, or is about something not done yet (an email not answered, a form not filed), belongs with its own topic, \
 never with a thread about unfinished thoughts or habits. \
 \"skip\" if it adds nothing, such as \"yeah\" or \"okay\" when nothing was asked, or only introduces the next part \
-(\"here's the next one\"); never skip an answer, plan or commitment, even \"I'll paste it here\". \
+(\"here's the next one\"); never skip an answer, plan or commitment, even \"We will send the agenda\". \
 split: if it moves on to another topic partway, or has distinct plans, commitments or facts that need separate points, \
 the exact words where the next point starts (the other fields describe only the words before), else an empty string. \
 Separate points may belong to the same thread: a time limit and a promise to record later must both survive. \
@@ -1733,26 +1733,26 @@ mod tests {
         // No key: the pin is a choice, and placing or splitting must never ask a model.
         let mut core = Arc::new(Core { placer_queue, placer_race: 1, ..Core::test(journal, world) });
         core.commit(vec![Change::ThreadAdded { thread: thread("T1") }, Change::ThreadAdded { thread: thread("T2") }, Change::AiJoined { speaker: "Claude".into() }]);
-        core.focus("User", "T1");
-        core.add_thought("User", "Stay here");
+        core.focus("Tester", "T1");
+        core.add_thought("Tester", "Stay here");
         assert_eq!(core.snapshot().stay_here.as_deref(), Some("T1"));
         // Different speakers' active topics and later Focus changes never release or redirect the pin.
         core.focus("Sam", "T2");
         core.focus("Claude", "T2");
-        core.focus("User", "T2");
+        core.focus("Tester", "T2");
         const TEXT: &str = "Paint the wall, and rent is due Friday.";
-        for speaker in ["User", "Sam", "Claude"] {
+        for speaker in ["Tester", "Sam", "Claude"] {
             core.add_thought(speaker, TEXT);
         }
         core.add_typed("Claude", "okay");
         core.add_thought("Sam", "New topic about the garden");
-        core.add_thought("User", "Add milk to the Topic T2 topic");
+        core.add_thought("Tester", "Add milk to the Topic T2 topic");
         let pinned = core.snapshot();
         assert_eq!(pinned.threads.len(), 2);
         assert_eq!(pinned.thoughts.len(), 6, "commands aren't thoughts; every other turn stays whole");
         assert_eq!(pinned.thoughts.iter().map(|t| (t.speaker.as_str(), t.text.as_str())).collect::<Vec<_>>(), [
-            ("User", TEXT), ("Sam", TEXT), ("Claude", TEXT), ("Claude", "okay"),
-            ("Sam", "New topic about the garden"), ("User", "Add milk to the Topic T2 topic"),
+            ("Tester", TEXT), ("Sam", TEXT), ("Claude", TEXT), ("Claude", "okay"),
+            ("Sam", "New topic about the garden"), ("Tester", "Add milk to the Topic T2 topic"),
         ], "the original turns stay whole and in arrival order");
         for t in &pinned.thoughts {
             assert!(t.placed);
@@ -1775,7 +1775,7 @@ mod tests {
         assert!(core.snapshot().stay_here.is_none());
         assert!(crate::world::Journal::open(&path).unwrap().1.stay_here.is_none());
         Arc::get_mut(&mut core).unwrap().key = Some("good".into());
-        let id = core.keep("User", TEXT);
+        let id = core.keep("Tester", TEXT);
         assert!(matches!(queue.try_recv(), Ok(super::Job::Place(queued)) if queued == id));
         // The released arrival is queued normally. Apply the same model answer through the normal settlement:
         // it can choose another topic and split again. No local HTTP listener is needed for this regression.
@@ -1805,7 +1805,7 @@ mod tests {
         let id = core.keep("Claude", text);
         core.new_threads.ask("Claude");
         core.new_threads.said("Claude", &id);
-        assert!(crate::stay::set(&core, "User", Some("T1")));
+        assert!(crate::stay::set(&core, "Tester", Some("T1")));
         assert!(super::place(&core, &id, "unused: no model call", super::patience).await.unwrap().is_none());
         let world = core.snapshot();
         assert_eq!(world.thoughts.len(), 1);
@@ -3193,25 +3193,25 @@ mod tests {
 
     #[test]
     fn a_limit_and_a_commitment_can_land_as_two_points_on_one_thread() {
-        let said = turn("[private text removed]");
+        let said = turn("The workshop must finish within forty minutes. The team will rehearse it next Tuesday.");
         let mut world = World { thoughts: vec![said.clone()], ..map() };
         let first = reply(json!({"action": "continue", "thread_id": "T1",
-            "point": "My demo must be shorter than three minutes", "split": "I will record it after breakfast."}));
+            "point": "The workshop must finish within forty minutes", "split": "The team will rehearse it next Tuesday."}));
         let (changes, rest) = settle(&world, &said, first, 0, false, true);
         for change in changes { world.apply(&change); }
         let rest = world.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap().clone();
-        assert_eq!(world.thoughts[0].text, "My demo must be shorter than three minutes.");
-        assert_eq!(rest.text, "I will record it after breakfast.");
+        assert_eq!(world.thoughts[0].text, "The workshop must finish within forty minutes.");
+        assert_eq!(rest.text, "The team will rehearse it next Tuesday.");
         let prompt = request(&world, &rest, "m", ROOM, false)["messages"][1]["content"].as_str().unwrap().to_string();
         assert!(prompt.contains("it may continue T1"), "{prompt}");
         let next = reply(json!({"action": "continue", "thread_id": "T1",
-            "point": "I will record my demo after breakfast", "joins": "none"}));
+            "point": "The team will rehearse the workshop next Tuesday", "joins": "none"}));
         let (changes, rest) = settle(&world, &rest, next, 0, false, true);
         assert!(rest.is_none());
         for change in changes { world.apply(&change); }
         assert_eq!(world.thoughts.len(), 2);
         assert!(world.thoughts.iter().all(|t| t.placed && t.thread_id.as_deref() == Some("T1")));
-        assert_eq!(world.thoughts[1].point, "I will record my demo after breakfast");
+        assert_eq!(world.thoughts[1].point, "The team will rehearse the workshop next Tuesday");
         assert_eq!(world.thread("T1").unwrap().last_point, world.thoughts[1].point);
         assert!(world.notes.values().all(|n| n.continues.is_empty()), "separate points stay separate");
     }
