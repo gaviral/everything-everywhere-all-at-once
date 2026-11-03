@@ -46,7 +46,8 @@ try {
     const check = async (expression, label) => assert.ok(await until(expression), `${width}/${scheme}: ${label}`);
     const ids = () => evaluate('[...document.querySelectorAll("[data-held-id]")].map(el => el.dataset.heldId)');
     const key = async (key, code, windowsVirtualKeyCode) => {
-      await page("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode });
+      // Enter carries its character (text), as a real keystroke does: without it Chrome never presses a focused button.
+      await page("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, ...(key === "Enter" ? { text: "\r" } : {}) });
       await page("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
     };
     const answerOnce = async (n, label) => {
@@ -160,6 +161,13 @@ try {
     }
 
     {
+      // Live words reach a window only while its own mic is on (core.ts): turn it on with a real tap and a stand-in stream.
+      await evaluate(`navigator.mediaDevices.getUserMedia = async () => { const ctx = new AudioContext(), tone = ctx.createOscillator(), out = ctx.createMediaStreamDestination(); tone.connect(out); tone.start(); return out.stream; }`);
+      const mic = await evaluate(`(() => { const r = document.querySelector("button.mic").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page("Input.dispatchMouseEvent", { type, ...mic, button: "left", clickCount: 1 });
+      await check('document.querySelector("button.mic")?.getAttribute("aria-pressed") === "true"', "microphone starts");
+      core.send({ type: "status", listening: true });
+      await check('document.querySelector("button.mic")?.dataset.state === "listening"', "service listening");
       core.send({ type: "partial", text: "Still speaking while the draft waits" });
       await sleep(100);
       guide("A sentence to continue after being talked over.", "Friend", false, "caption");
