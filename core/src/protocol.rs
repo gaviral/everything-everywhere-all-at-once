@@ -328,7 +328,7 @@ pub enum ClientMsg {
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.
-    Annotate { thought_id: String, quote: String, text: String },
+    Annotate { thought_id: String, quote: String, text: String, #[serde(default)] speak: bool },
     /// A topic's new name, typed on its header (topics.rs `rename`): a name already there makes the two one.
     TopicRename { from: String, to: String },
     /// A thread moved under a topic, dragged there (topics.rs `set`): its top thread's, with its branches.
