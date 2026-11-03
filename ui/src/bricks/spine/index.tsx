@@ -229,7 +229,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   // as wide as the place the page gives a view, and the dock or stage floats over its foot. What scrolls above the view
   // (the Apps panel) pushes it down until the page is scrolled; opening, the page scrolls so the canvas has the whole
   // window.
-  const [box, setBox] = useState<{ top: number; left: number; right: number; tall: number } | null>(null);
+  const [box, setBox] = useState<{ top: number; left: number; right: number; tall: number; width: number } | null>(null);
   const opened_ = useRef(false);
   useLayoutEffect(() => {
     const measure = () => {
@@ -242,8 +242,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       // With nothing pinned (the playground, the new shell), the view's place is where it starts.
       const under = pinned > 0 ? pinned : at + window.scrollY;
       const room = here.closest("main")?.parentElement?.getBoundingClientRect();
-      const next = { top: Math.max(pinned > 0 ? pinned : 0, at), left: Math.max(0, room?.left ?? 0), right: Math.max(0, innerWidth - (room?.right ?? innerWidth)), tall: Math.max(0, innerHeight - under) };
-      setBox((was) => was && Math.abs(was.top - next.top) < 0.5 && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.right - next.right) < 0.5 && Math.abs(was.tall - next.tall) < 0.5 ? was : next);
+      const next = { top: Math.max(pinned > 0 ? pinned : 0, at), left: Math.max(0, room?.left ?? 0), right: Math.max(0, innerWidth - (room?.right ?? innerWidth)), tall: Math.max(0, innerHeight - under), width: innerWidth };
+      setBox((was) => was && Math.abs(was.top - next.top) < 0.5 && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.right - next.right) < 0.5 && Math.abs(was.tall - next.tall) < 0.5 && was.width === next.width ? was : next);
       const docked = parseFloat(getComputedStyle(here).getPropertyValue("--dock-height")) || 0;
       setDock(docked);
       // The corners: beside the shell's stage, above its status line, when there's room; else above the stage (or the
@@ -269,7 +269,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     return () => { window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure); watch.disconnect(); };
   }, []);
   const top = box?.top ?? null;
-  const width = box ? innerWidth - box.left - box.right : innerWidth;
+  const width = box ? box.width - box.left - box.right : innerWidth;
   const narrow = width < NARROW;
   // Once the canvas has its height, the page scrolls (once) so it starts right under what's pinned: an open Apps panel
   // above it goes up out of the way, as it would over the map.
@@ -292,9 +292,13 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const chrome = chromeOf(frameBox);
     // The rail (`data-slot="rail"`, the panel at the right) once the page has one: the camera keeps clear of it.
     const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
+    // The shell's top buttons and Talk pill float over the map. Leave their measured band clear, just as we do the input.
+    const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill')]
+      .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
+    const y0 = Math.max(0, ...topCovers.map((r) => r.bottom - (frameBox?.top ?? 0) + 8));
     const y1 = chrome.stage?.height ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
-    return { x0: 0, y0: 0, x1: Math.max(160, x1), y1: Math.max(120, y1) };
+    return { x0: 0, y0, x1: Math.max(160, x1), y1: Math.max(y0 + 120, y1) };
   }, [dock]);
 
   /** What floats over the canvas, in its pixels: the shell's corners (Find, Catalog, the people in a call), the Talk
@@ -409,7 +413,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const everything = all();
     const a = area();
     return Math.max(0.04, Math.min(0.5, 0.8 * Math.min((a.x1 - a.x0 - 64) / Math.max(everything.w, 1), (a.y1 - a.y0 - 64) / Math.max(everything.h, 1))));
-  }, [layout, dock, top, area]);
+  }, [layout, dock, top, area, width, box?.tall]);
   /** What the follow keeps in view: your latest point, with the slots under it. */
   const goal = () => {
     if (!here) return null;
@@ -430,6 +434,12 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
+  // A resize can leave every topic outside the new window, even with no active thread or following held.
+  useEffect(() => {
+    if (!ready || !box) return;
+    const g = following ? goal() : null;
+    if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+  }, [width, box?.tall]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
   // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
   // look again: what you're on may no longer be in the comfortable middle.

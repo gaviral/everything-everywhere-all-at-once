@@ -112,7 +112,7 @@ button.talk-time:hover { color: var(--ink); text-decoration: underline; }
 .talk-pill-count { color: var(--muted); font-weight: 400; }
 /* On a phone too, top right under the header: the map's own corner row (the Spine's) holds the foot. */
 .talk-pill-phone { min-height: 32px; }
-.talk-sheet { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+.talk-sheet { inset: auto 0 var(--dock-height, 0px) 0; width: auto; height: min(74dvh, calc(100dvh - var(--dock-height, 0px) - var(--header-height, 64px) - 8px)); border-radius: 18px 18px 0 0; }
 @media (max-width: 560px) {
-  .talk-rail:not(.talk-sheet) { inset: auto 0 0 0; width: auto; height: min(74dvh, 640px); border-radius: 18px 18px 0 0; }
+  .talk-rail:not(.talk-sheet) { inset: auto 0 var(--dock-height, 0px) 0; width: auto; height: min(74dvh, calc(100dvh - var(--dock-height, 0px) - var(--header-height, 64px) - 8px)); border-radius: 18px 18px 0 0; }
 }
