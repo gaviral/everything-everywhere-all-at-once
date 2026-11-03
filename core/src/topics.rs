@@ -684,7 +684,7 @@ mod tests {
     /// Live, against the real service (needs MODEL_API_KEY; not run otherwise): a pass on two sample maps with their
     /// themes taken off, and one on a map already at six with a new thread, which may only name one of the six. Prints
     /// what each pass named and how long it took.
-    ///   MODEL_API_KEY=… sh tools/overnight/ctest.sh WORKTREE test --quiet topics_live -- --ignored --nocapture
+    ///   MODEL_API_KEY=… cargo test --quiet topics_live -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn topics_live() {
