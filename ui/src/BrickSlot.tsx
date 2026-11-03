@@ -10,6 +10,7 @@ import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
 import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
+import { useJobs } from "./work-jobs";
 import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
@@ -27,13 +28,15 @@ const MODEL_WAIT_MS = 1000;
 
 /** This window's host: the map from its world (`revision`: the core's snapshot count, so a reconnect's catch-up isn't
  *  taken for landings) with this window's live words (`partial`: a new map with each word heard; the arrays stay the
- *  same, so a brick that works from them redoes nothing), the app's own actions (`act`, the latest each render, behind
+ *  same, so a brick that works from them redoes nothing) and the helpers' jobs (work-jobs.ts: a new map with each
+ *  job that comes), the app's own actions (`act`, the latest each render, behind
  *  actions that keep their identity), and events: landings seen here (with the model that placed each, from its route,
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"]): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial), [world, me, connected, rooms, partial]);
+  const jobs = useJobs();
+  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs), [world, me, connected, rooms, partial, jobs]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);

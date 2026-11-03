@@ -3,7 +3,7 @@
 // there are (each brick.json, checked), which are on in this browser, the Catalog being open, and the map, actions
 // and events each brick is handed (bricks/contract.ts). BrickSlot.tsx mounts them; Catalog.tsx switches them.
 import { useSyncExternalStore, type ComponentType } from "react";
-import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot, Speaker } from "./bricks/contract";
+import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, Job, MapSnapshot, Speaker } from "./bricks/contract";
 import type { Note, Thought, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
@@ -14,7 +14,7 @@ import { CORE_BRICKS } from "./shell/flag";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
-const APP_FLAGS = ["room", "recording", "brick", "sample", "shell", "demo", "cards"];
+const APP_FLAGS = ["room", "recording", "brick", "bricks", "sample", "shell", "demo", "cards"];
 /** Ids a view brick can't take: they're the app's own views. */
 const APP_VIEWS = ["map", "palace"];
 
@@ -81,7 +81,8 @@ for (const [folder, wrong] of Object.entries(found.problems)) console.warn(`Bric
 export const BRICKS: readonly Brick[] = found.bricks;
 
 // Which bricks are on, in this browser: only what was switched in the Catalog is kept (by id); every other brick
-// follows its brick.json's defaultOn. A brick whose flag is in the address is on for this visit until it's switched.
+// follows its brick.json's defaultOn. A brick whose flag is in the address is on for this visit until it's switched,
+// and so is each one `?bricks=` lists by id (`?bricks=work-spine,level`).
 const STORE = "e2a2o.bricks";
 type Switches = Record<string, boolean>;
 
@@ -106,7 +107,8 @@ export const isCore = (id: string) => CORE_BRICKS.includes(id);
 const browser = typeof window !== "undefined";
 const params = browser ? new URLSearchParams(location.search) : new URLSearchParams();
 let switches: Switches = browser ? readSwitches() : {};
-const flagged = new Set(BRICKS.filter(({ info }) => info.flag && params.has(info.flag)).map(({ info }) => info.id));
+const listed = new Set((params.get("bricks") ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+const flagged = new Set(BRICKS.filter(({ info }) => (info.flag && params.has(info.flag)) || listed.has(info.id)).map(({ info }) => info.id));
 // A core brick that broke and was switched off from its "stopped working" line: off for this visit only.
 const coreOff = new Set<string>();
 let on = onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff);
@@ -180,10 +182,14 @@ const threadsWithAnchors = anchoredThreads();
 const threadsWithTopics = topicsOf<ReturnType<typeof threadsWithAnchors>[number]>();
 const speakersNow = speakersOf();
 
+/** No jobs, the same array each time. */
+const NO_JOBS: readonly Job[] = Object.freeze([]);
+
 /** The map a brick is handed (contract.ts `MapSnapshot`), from the window's world: the same arrays, read-only (a
- *  margin note's thread with its `anchor`, each thread with its `topic`), and `partial`, this tab's live words (core.ts
- *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on). */
-export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string): MapSnapshot {
+ *  margin note's thread with its `anchor`, each thread with its `topic`), `partial`, this tab's live words (core.ts
+ *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on),
+ *  and the helpers' jobs (work-jobs.ts: they're the connection's, not the world's). */
+export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS): MapSnapshot {
   const notes = world.notes ?? {};
   const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
@@ -202,6 +208,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     me,
     partial,
     connected,
+    jobs,
   };
 }
 

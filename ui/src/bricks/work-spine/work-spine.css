@@ -1,0 +1,144 @@
+/* The Work spine (index.tsx, list.tsx). The app's tokens only, so light and dark carry through. Blue is now (a running
+   job), amber needs you (a waiting one), purple is the AI's (the ✦ badge); red is the Stop level's alone, so a failed job
+   says ✕ and its reason, in ink, with a dashed edge. Type is the shell's scale (13, 15, 18) in weights 400, 500, 600. */
+
+/* ── The lane: the page's right side from the window's top to its foot, as wide as the Canvas gives up (`--room-right`
+   is set to its width, so the Canvas ends where it begins). Its words start `--work-spine-top` from the window's top (clear of the
+   corner buttons and the call's Talk pill) and its list stops `--work-spine-foot` above the window's foot (clear of the stage
+   in a narrow window, and of a held card). ── */
+.work-spine-lane {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px;
+  width: clamp(320px, 26vw, 392px); padding: var(--work-spine-top, 68px) 16px var(--work-spine-foot, 44px);
+  border-left: 1px solid var(--line); color: var(--ink); font-size: 13px; line-height: 1.45; animation: work-spine-lane-in .24s ease-out;
+  background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 10%, transparent) 1.2px, transparent 1.5px); background-size: 28px 28px;
+}
+.work-spine-head { display: flex; align-items: center; gap: 12px; }
+.work-spine-head-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.work-spine-top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.work-spine-title { margin: 0; color: var(--ink); font-size: 18px; font-weight: 600; line-height: 1.25; }
+.work-spine-counts { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+.work-spine-running { color: var(--accent); }
+.work-spine-waiting { color: var(--amber); }
+.work-spine-failed { color: var(--ink-2, var(--ink)); }
+/* The AI's mark, as a topic's letter sits in its circle on the Canvas. */
+.work-spine-badge {
+  display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--ai); font-size: 18px; line-height: 1;
+  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--ai) 26%, var(--bg)), color-mix(in srgb, var(--ai) 10%, var(--bg)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai) 34%, transparent);
+}
+/* In the heading when any job shown is simulated: plain and always readable. */
+.work-spine-demo {
+  display: inline-block; padding: 2px 10px; border: 1px solid var(--line-2, var(--line)); border-radius: 12px;
+  background: var(--surface-3, var(--bg)); color: var(--ink-2, var(--ink)); font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap;
+}
+
+/* ── The list: oldest at the top, the newest at the foot; it scrolls and fades at its edges. ───────────────────────── */
+.work-spine-listbox { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.work-spine-scroll {
+  flex: 1; min-height: 0; padding: 14px 6px 14px 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-2, var(--line)) transparent;
+  mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+}
+.work-spine-scroll:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
+.work-spine-empty { margin: 0; padding: 4px 4px 0; color: var(--muted); font-size: 13px; }
+.work-spine-list, .work-spine-kids { margin: 0; padding: 0; list-style: none; }
+.work-spine-list { padding-left: 24px; }
+
+/* A job: its node on the line, then its bubble. The line runs from each node to the next. */
+.work-spine-job { position: relative; min-width: 0; padding-bottom: 10px; }
+.work-spine-job::before {
+  content: ""; position: absolute; z-index: 1; top: 15px; left: -24px; box-sizing: border-box; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--muted); box-shadow: 0 0 0 4px var(--bg);
+}
+.work-spine-job::after { content: ""; position: absolute; top: 21px; bottom: -21px; left: -19.5px; width: 2px; background: color-mix(in srgb, var(--muted) 38%, transparent); }
+.work-spine-list > .work-spine-job:last-child::after { display: none; }
+.work-spine-job[data-status="running"]::before { background: var(--accent); animation: work-spine-ring 2.4s ease-in-out infinite; }
+.work-spine-job[data-status="waiting"]::before { background: var(--amber); }
+.work-spine-job[data-status="failed"]::before { border: 2px solid var(--ink-2, var(--ink)); background: var(--bg); }
+
+.work-spine-bubble {
+  padding: 11px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow-wrap: anywhere;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.work-spine-bubble:has(.work-spine-now) { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); }
+.work-spine-job[data-status="waiting"] > .work-spine-bubble { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); }
+.work-spine-job[data-status="failed"] > .work-spine-bubble { border-style: dashed; border-color: var(--line-2, var(--line)); }
+.work-spine-by { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
+.work-spine-job-title { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.work-spine-state { display: flex; align-items: baseline; gap: 6px; margin: 3px 0 0; color: var(--muted); font-size: 15px; font-weight: 500; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.work-spine-state-running { color: var(--accent); }
+.work-spine-state-waiting { color: var(--amber); }
+.work-spine-state-done, .work-spine-state-failed { color: var(--ink-2, var(--ink)); }
+.work-spine-mark { display: inline-grid; flex: none; place-items: center; width: 16px; }
+.work-spine-pulse { display: block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: work-spine-pulse 2.4s ease-in-out infinite; }
+.work-spine-now { margin-left: auto; padding-left: 8px; color: var(--accent); white-space: nowrap; }
+.work-spine-result { margin: 8px 0 0; color: var(--ink-2, var(--ink)); font-size: 15px; line-height: 1.4; text-wrap: pretty; }
+.work-spine-question { margin: 8px 0 0; padding-left: 10px; border-left: 2px solid var(--amber); color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.4; text-wrap: pretty; }
+
+/* Side jobs: folded under their parent, "+3 side jobs" (what in them isn't over shows beside it); open, they hang from the
+   parent on a line of their own, smaller. */
+.work-spine-fold {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-height: 36px; margin: 0 0 0 2px; padding: 4px 8px 4px 2px; border: 0; border-radius: 8px;
+  background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
+}
+.work-spine-fold:hover { color: var(--ink); }
+.work-spine-fold:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.work-spine-fold > :not(.work-spine-fold-count, .work-spine-now)::before { content: "·"; margin-right: 8px; color: var(--muted); }
+.work-spine-kids { margin: 2px 0 0 6px; padding-left: 18px; border-left: 1.5px solid color-mix(in srgb, var(--muted) 38%, transparent); }
+.work-spine-kids > .work-spine-job { padding-bottom: 6px; }
+.work-spine-kids > .work-spine-job::after { display: none; }
+.work-spine-kids > .work-spine-job::before { top: 20px; left: -18px; width: 12px; height: 1.5px; border: 0; border-radius: 0; background: color-mix(in srgb, var(--muted) 38%, transparent); box-shadow: none; animation: none; }
+.work-spine-kids > .work-spine-job[data-status="running"]::before { background: var(--accent); }
+.work-spine-kids > .work-spine-job[data-status="waiting"]::before { background: var(--amber); }
+.work-spine-kids .work-spine-bubble { padding: 10px 12px 11px; border-radius: 12px; }
+.work-spine-kids .work-spine-job-title, .work-spine-kids .work-spine-result, .work-spine-kids .work-spine-state { font-size: 13px; }
+
+/* What just came, or just changed: it settles in; a landed result glows once. */
+.work-spine-job[data-fresh="new"] > .work-spine-bubble { animation: work-spine-in .3s ease-out; }
+.work-spine-job[data-fresh="landed"] > .work-spine-bubble { animation: work-spine-land 2.4s ease-out; }
+.work-spine-latest {
+  position: absolute; bottom: 10px; left: 50%; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; translate: -50% 0;
+  border: 1px solid var(--line-2, var(--line)); border-radius: 16px; background: var(--card); box-shadow: var(--shadow); color: var(--ink-2, var(--ink));
+  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.work-spine-latest:hover { color: var(--ink); }
+.work-spine-latest:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ── The card in the dock (a phone, a small window, today's page): one line above the composer; tapped, the list opens
+   above the dock as a sheet, so nothing moves and the composer is never covered. ───────────────────────────────── */
+.work-spine-card {
+  box-sizing: border-box; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 13px; line-height: 1.45;
+}
+.work-spine-bar {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 14px 8px 12px; border: 0; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.work-spine-bar:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
+.work-spine-card .work-spine-badge { width: 32px; height: 32px; font-size: 15px; }
+.work-spine-card .work-spine-title { font-size: 15px; }
+.work-spine-bar-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.work-spine-card .work-spine-counts { margin: 0; }
+.work-spine-chevron { flex: none; width: 8px; height: 8px; margin: 0 4px 0 0; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; rotate: 225deg; transition: rotate .15s ease; }
+.work-spine-card[data-open="true"] .work-spine-chevron { rotate: 45deg; }
+/* The list, opened: right above the card, as wide as it is (index.tsx sets left, width and bottom from the card; until it
+   has, above the dock the page keeps in `--dock-height`). */
+.work-spine-sheet {
+  position: fixed; right: 16px; bottom: calc(var(--dock-height, 120px) + 8px); left: 16px; z-index: 43; box-sizing: border-box; display: flex; flex-direction: column;
+  max-height: min(68dvh, 560px); padding: 0 12px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 13px; line-height: 1.45;
+}
+
+@keyframes work-spine-pulse { 50% { opacity: .35; } }
+@keyframes work-spine-ring {
+  from { box-shadow: 0 0 0 4px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent); }
+  to { box-shadow: 0 0 0 4px var(--bg), 0 0 0 11px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@keyframes work-spine-lane-in { from { opacity: 0; } }
+@keyframes work-spine-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes work-spine-land { from { border-color: var(--accent); background: var(--accent-soft); } }
+@media (prefers-reduced-motion: reduce) {
+  .work-spine-lane, .work-spine-pulse, .work-spine-job[data-status="running"]::before, .work-spine-job[data-fresh] > .work-spine-bubble { animation: none; }
+  .work-spine-job[data-fresh="landed"] > .work-spine-bubble { border-color: var(--accent); }
+  .work-spine-chevron { transition: none; }
+}

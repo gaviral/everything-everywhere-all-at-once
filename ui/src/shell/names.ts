@@ -76,6 +76,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   keys: { name: "Keys", aka: "Keyboard navigation", does: "Arrows or h j k l move between topics and points.", lives: "Everywhere" },
   level: { name: "Level meter", aka: "VU meter", does: "Every loudness reading, to set a volume feature's level.", lives: "Bottom left" },
   "brick-chip": { name: "Feature chip", aka: "Provenance badge", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },
+  "work-spine": { name: "Work spine", aka: "Agent activity", does: "What your AI helpers are doing: running, done, failed, or waiting on you.", lives: "Beside the Canvas" },
 };
 
 /** What a kind of feature is called, as the Catalog groups them. */

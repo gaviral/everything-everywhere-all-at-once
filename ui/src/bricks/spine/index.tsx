@@ -36,8 +36,10 @@ const ARRIVE_MAX_MS = 700;
 const SLOTS_MAX = 3;
 /** Narrower than this is a phone: notes tuck under their words, edge chips line up above the composer. */
 const NARROW = 560;
-/** The corners need this much beside the stage, else they sit above it. */
+/** The camera's corner (left) needs this much beside the stage, else it sits above it; the shelf (right) needs
+ *  SHELF_W, each from its own side of the stage: a lane at the page's right (the Work spine's) narrows only that side. */
 const CORNER_W = 330;
+const SHELF_W = 110;
 const cls = (...names: (string | false | undefined | null)[]) => names.filter(Boolean).join(" ");
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
@@ -180,7 +182,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const anchor = useRef<HTMLDivElement>(null);
   const shelfRef = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
-  const [corner, setCorner] = useState({ bottom: 12, row: 12, shell: false });
+  const [corner, setCorner] = useState({ bottom: 12, bottomRight: 12, row: 12, shell: false });
   const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
   const [following, setFollowing] = useState(true);
   const [picked, setPicked] = useState<string | null>(null);
@@ -241,12 +243,16 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       // app's dock).
       const chrome = chromeOf(frame.current?.getBoundingClientRect());
       const bottomEdge = chrome.frame?.bottom ?? innerHeight;
+      // The frame's sides as this measure has them (the frame itself follows on the next render).
       const bottom = chrome.stage
-        ? (chrome.stage.left - (chrome.frame?.left ?? 0) >= CORNER_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
+        ? (chrome.stage.left - next.left >= CORNER_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
+        : docked + 12;
+      const bottomRight = chrome.stage
+        ? (innerWidth - next.right - chrome.stage.right >= SHELF_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
         : docked + 12;
       const row = chrome.stage ? bottomEdge - chrome.stage.top + 8 : docked + 8;
       const shell = !!chrome.stage;
-      setCorner((was) => (was.bottom === bottom && was.row === row && was.shell === shell ? was : { bottom, row, shell }));
+      setCorner((was) => (was.bottom === bottom && was.bottomRight === bottomRight && was.row === row && was.shell === shell ? was : { bottom, bottomRight, row, shell }));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -416,9 +422,11 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     return () => window.clearTimeout(timer);
   }, [top, ready]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
+  // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
+  // look again: what you're on may no longer be in the comfortable middle.
   useEffect(() => {
     if (ready && following && here && !drag) camera.follow(() => goalNow.current());
-  }, [ready, following, here?.key, here?.box.x, here?.box.y, here?.box.h, slotsHere.join("|")]);
+  }, [ready, following, here?.key, here?.box.x, here?.box.y, here?.box.h, slotsHere.join("|"), box?.left, box?.right]);
 
   // A tangent you opened comes into view if it's out of it (on a phone, a tucked one opens beside its topic).
   useEffect(() => {
@@ -785,7 +793,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
         <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
-      <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottom }}>
+      <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottomRight }}>
         {narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
         {(narrow || !corner.shell) && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}

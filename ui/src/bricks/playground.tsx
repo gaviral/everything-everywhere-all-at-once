@@ -14,6 +14,7 @@ import { apply, type Thought, type World } from "../core";
 import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
+import { receiveJob, type JobMsg } from "../work-jobs";
 import type { BrickActions, BrickEvents } from "./contract";
 import "../styles.css";
 import "./playground.css";
@@ -25,6 +26,16 @@ const found = discover(
 );
 const SAMPLES: Record<string, string> = Object.fromEntries(Object.entries(import.meta.glob<string>("../../../samples/*.jsonl", { eager: true, query: "?raw", import: "default" }))
   .map(([path, journal]) => [path.split("/").at(-1)!.replace(/\.jsonl$/, ""), journal]));
+
+// "Helper jobs": a simulated helper's work as the core relays it (work-jobs.ts), each step at its offset in ms: a job runs
+// with a side job under it, one ends, one asks, one fails.
+const JOBS: [number, string, JobMsg["status"], string, { result?: string; parent?: string }][] = [
+  [0, "plan", "running", "Plan Mom's birthday on Saturday", {}],
+  [600, "class", "running", "Find the pottery class on Main Street", { parent: "plan" }],
+  [2600, "class", "done", "Find the pottery class on Main Street", { parent: "plan", result: "Saturdays at 10 AM · $45 a person · 2 seats left" }],
+  [3400, "card", "waiting", "Draft a birthday card for Mom", { parent: "plan", result: "Mention the pottery class in Mom's card, or keep it a surprise?" }],
+  [4200, "seats", "failed", "Book two pottery seats", { result: "The booking site needs your sign-in, so it's left for you" }],
+];
 
 // The Volume watcher, as the core seeds it, so the Level meter has its line to draw.
 const VOLUME_APP: World["apps"][number] = { id: "app-volume", name: "Volume watcher", purpose: "Offer a quiet pause when voices stay loud for a few seconds.",
@@ -69,6 +80,7 @@ function Playground() {
   // What the brick heard (`on`), newest first.
   const [heard, setHeard] = useState<{ n: number; name: string; value: string }[]>([]);
   const heardCount = useRef(0);
+  const jobRuns = useRef(0);
   const [notice, setNotice] = useState("");
   const [errors, setErrors] = useState(0);
   const brick = found.bricks.find((b) => b.info.id === id);
@@ -210,6 +222,16 @@ function Playground() {
     if (text) host.emit("notice", { text, kind: "notice", time: Date.now() });
   };
   const hum = () => VOICES.forEach((level, i) => window.setTimeout(() => received(level), i * 320));
+  // Each press is a new run, so its jobs are new ones: what the core would relay, simulated, as it's stamped.
+  const playJobs = () => {
+    const run = ++jobRuns.current;
+    for (const [at, id, status, title, more] of JOBS) {
+      window.setTimeout(() => {
+        const message: JobMsg = { type: "job", id: `run${run}-${id}`, title, status, demo: true, by: "Helper", at_ms: Date.now(), result: more.result, parent: more.parent && `run${run}-${more.parent}` };
+        receiveJob(message);
+      }, at);
+    }
+  };
 
   return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
@@ -227,6 +249,7 @@ function Playground() {
       <button type="button" onClick={hum}>Talk, then shout</button>
       <button type="button" onClick={() => showNotice("A notice to come back to.")}>Show a notice</button>
       <button type="button" onClick={friend}>The Friend says one</button>
+      <button type="button" onClick={playJobs}>Helper jobs</button>
       <button type="button" onClick={() => {
         const thread = world.threads[0];
         host.emit("pointing", pointed || !thread ? null : { target: `thread:${thread.id}`, by: "Friend", threadId: thread.id });

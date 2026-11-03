@@ -5,6 +5,7 @@ import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, typ
 import { comesFirst as noteFirst, received as noteReceived, type NoteCard as NoteCardShown, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
+import { receiveJob, resetJobs, type JobMsg } from "./work-jobs";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
@@ -223,6 +224,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | JobMsg
   | StepMsg
   | RecapServerMsg
   | AppsServerMsg
@@ -786,8 +788,10 @@ export function useCore(speaker?: string) {
         if (receiveRoute(msg)) return;
         // Someone pointing at a part of the screen, or a caption (Guide.tsx): never the map.
         if (receiveGuide(msg)) return;
+        if (receiveJob(msg)) return;
         switch (msg.type) {
           case "snapshot":
+            resetJobs();
             setFound(null);
             // A word about the key is the core's to repeat: it does, right after this, while it still holds.
             setKeyNotice("");
