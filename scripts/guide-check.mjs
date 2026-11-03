@@ -270,16 +270,25 @@ const thoughts = [
 const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["Claude"] };
 const core = await standInCore(() => [{ type: "snapshot", world }]);
 const guide = (kind, target, text, by = "Claude") => core.send({ type: "guide", kind, target, text, by, at_ms: Date.now() });
-// Never stuck: past 4 minutes (it takes about two), it fails naming the step it was on.
+// Never stuck: a step that runs past STEP_LIMIT_MS fails the check, naming it. The longest step takes about 21 s (it waits
+// out a caption's time), the whole check about two minutes with four of them running at once. It watches the steps, not
+// the clock: a total time limit blamed the last step for a check that had finished but whose process was slow to end
+// (a helper of Chrome held its pipe open, headless.mjs), and a slow machine could fail one that was only slow.
+const STEP_LIMIT_MS = 90_000;
 let doing = "opening the page";
-const step = (name) => { doing = name; };
-setTimeout(async () => {
-  console.error(`guide-check: stuck at “${doing}” after 4 minutes`);
-  core.close();
-  // Its browser too, or it outlives the check (it did once, before this).
-  await Promise.race([page?.close(), sleep(4000)]).catch(() => {});
-  process.exit(1);
-}, 240_000).unref();
+let stuck = null;
+const step = (name) => {
+  doing = name;
+  clearTimeout(stuck);
+  stuck = setTimeout(async () => {
+    console.error(`guide-check: stuck at “${doing}” for ${STEP_LIMIT_MS / 1000} seconds`);
+    core.close();
+    // Its browser too, or it outlives the check (it did once, before this).
+    await Promise.race([page?.close(), sleep(4000)]).catch(() => {});
+    process.exit(1);
+  }, STEP_LIMIT_MS).unref();
+};
+step("opening the page");
 
 let page = null;
 let failed = null;
@@ -870,6 +879,7 @@ try {
 } finally {
   await page?.close();
   core.close();
+  clearTimeout(stuck);
 }
 if (failed) { console.error(`guide-check failed at “${doing}”:`, failed.stack ?? failed.message); process.exit(1); }
 console.log("guide-check: the names, the rules, and on the page: the caption at the stage, its Markdown and pages; the arrow at the named part, followed, taken down, led on to a hidden part, said when nowhere; over a sheet, gone once read, held by the pointer and a hidden page; talked over at once, not by its own voice; a held question asked at your pause with Go ahead, Later, Drop it; a phone; Reduce Motion");
