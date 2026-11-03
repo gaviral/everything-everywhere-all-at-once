@@ -1464,9 +1464,10 @@ try {
           lit: [...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join(),
           words: document.querySelectorAll(".spine-text").length, bars: document.querySelectorAll(".spine-point .spine-bars").length,
           heads: [...document.querySelectorAll(".spine-head .spine-title")].map((t) => t.textContent).sort().join(" | "),
-          labels: [...document.querySelectorAll(".spine-label")].map((l) => l.textContent).sort().join(" | "),
+          labels: [...document.querySelectorAll(".spine-label")].filter((l) => l.checkVisibility()).map((l) => l.textContent).sort().join(" | "),
           pictures: document.querySelector(".spine-frame").classList.contains("spine-stop-pictures"),
           cards: [...document.querySelectorAll(".spine-card")].map((c) => getComputedStyle(c).visibility).join(),
+          tangentPictures: [...document.querySelectorAll(".spine-card-pic .spine-tile")].filter((t) => t.checkVisibility()).length, tangents: document.querySelectorAll(".spine-card").length,
           tile: Math.round(document.querySelector(".spine-tile").getBoundingClientRect().width), inside };
       })()`);
       const goTo = async (k, want) => {
@@ -1491,7 +1492,8 @@ try {
       if (atTitles) judge("2 (Titles)", atTitles, [[atTitles.zoom < atWords.zoom, "the view didn't zoom out"], [!atTitles.words && atTitles.bars > 0, "words didn't turn to bars"],
         [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.inside, "the whole map isn't in view"]]);
       const atPictures = await goTo("3", "Pictures");
-      if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [!!atPictures.cards && !atPictures.cards.split(",").some((v) => v !== "hidden"), "tangent cards still show"],
+      // Every thread shows there: a tangent as its own small picture where its card is (scripts/spine-all-threads-check.mjs holds where).
+      if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [atPictures.tangents > 0 && atPictures.tangentPictures === atPictures.tangents, "a tangent has no picture"],
         [!atTitles || atPictures.tile > atTitles.tile * 1.5, "each topic's picture isn't bigger than at Titles"], [atPictures.inside, "the whole map isn't in view"]]);
       const atBack = await goTo("1", "Words");
       if (atBack) judge("1 (Words)", atBack, [[atBack.zoom >= atWords.zoom, "the view isn't back at reading size"], [atBack.words > 0 && !atBack.bars, "not every word shows"], [!atBack.labels && !atBack.pictures, "a far-out look stays on"]]);
