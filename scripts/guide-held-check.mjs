@@ -1,10 +1,11 @@
 // The built app, real guide messages, and the shell's one held region on desktop and phone.
 // SHOTS=dir saves held and expanded scenes at both widths in light and dark.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { join } from "node:path";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
+import { uiServer } from "./ui-server.mjs";
 
 const why = ready();
 if (why) { console.log(`SKIP guide-held-check: ${why}`); process.exit(3); }
@@ -20,7 +21,8 @@ const connected = async () => {
   assert.equal(core.connected(), 1, "one core connection");
 };
 let browser;
-let fixture;
+let lifecycleServer;
+let fixtureServer;
 const timeout = setTimeout(() => { console.error("guide-held-check: timed out"); process.exit(1); }, 120_000);
 
 try {
@@ -193,19 +195,17 @@ try {
 
   // A checker-only mount fixture exercises effect lifetime and identity changes. It imports production modules;
   // no test hook is added to them. Its WebSocket receives the same real guide protocol as the app above.
-  const ui = fileURLToPath(new URL("../ui/", import.meta.url));
-  fixture = mkdtempSync(join(ui, "dist", ".guide-held-"));
-  const { build } = await import("../ui/node_modules/vite/dist/node/index.js");
-  const entry = join(ui, "__guide_held_lifecycle__.js");
-  await build({ configFile: false, root: ui, logLevel: "silent", plugins: [{ name: "guide-held-lifecycle",
+  // Serve this fixture through the shared UI module server, with the app's React transforms and dependencies.
+  const entry = "/__guide_held_lifecycle__.js";
+  lifecycleServer = await uiServer({ plugins: [{ name: "guide-held-lifecycle",
     resolveId: id => id === entry ? entry : null,
     load: id => id !== entry ? null : `
       import React, { StrictMode, useState } from "react";
       import { createRoot } from "react-dom/client";
-      import { Guide } from ${JSON.stringify(join(ui, "src/Guide.tsx"))};
-      import { receiveGuide } from ${JSON.stringify(join(ui, "src/guide-core.ts"))};
-      import { holdQuestion, useHeld } from ${JSON.stringify(join(ui, "src/shell/held.ts"))};
-      const socket = new WebSocket("ws://" + location.host + "/ws");
+      import { Guide } from "/src/Guide.tsx";
+      import { receiveGuide } from "/src/guide-core.ts";
+      import { holdQuestion, useHeld } from "/src/shell/held.ts";
+      const socket = new WebSocket("ws://127.0.0.1:${core.port}/ws");
       socket.onmessage = event => receiveGuide(JSON.parse(event.data));
       holdQuestion({ id: "other", by: "Alex", main: "Unrelated" });
       function Fixture() {
@@ -220,9 +220,21 @@ try {
           mounted && React.createElement(Guide, { world: { ai }, view: "map", query: "", focus: false }));
       }
       createRoot(document.getElementById("root")).render(React.createElement(StrictMode, null, React.createElement(Fixture)));
-    ` }], build: { outDir: fixture, emptyOutDir: false, lib: { entry, formats: ["es"], fileName: () => "fixture.js" } } });
-  writeFileSync(join(fixture, "index.html"), '<div id="root"></div><script type="module" src="./fixture.js"></script>');
-  browser = await openPage(`http://127.0.0.1:${core.port}/${basename(fixture)}/index.html?shell=2`);
+    ` }] });
+  fixtureServer = createServer((req, res) => {
+    if (new URL(req.url, "http://fixture").pathname !== "/") {
+      lifecycleServer.middlewares(req, res, () => { res.writeHead(404).end(); });
+      return;
+    }
+    lifecycleServer.transformIndexHtml(req.url, `<div id="root"></div><script type="module" src="${entry}"></script>`)
+      .then(html => res.writeHead(200, { "content-type": "text/html" }).end(html))
+      .catch(error => { res.writeHead(500).end(String(error)); });
+  });
+  await new Promise((resolve, reject) => {
+    fixtureServer.once("error", reject);
+    fixtureServer.listen(0, "127.0.0.1", resolve);
+  });
+  browser = await openPage(`http://127.0.0.1:${fixtureServer.address().port}/?shell=2`);
   assert.ok(await browser.until('!!document.querySelector("#store")'));
   await connected();
   guide("Lifecycle question?");
@@ -240,6 +252,8 @@ try {
 } finally {
   clearTimeout(timeout);
   await browser?.close();
+  fixtureServer?.closeAllConnections();
+  if (fixtureServer) await new Promise(resolve => fixtureServer.close(resolve));
+  await lifecycleServer?.close();
   core.close();
-  if (fixture) rmSync(fixture, { recursive: true, force: true });
 }

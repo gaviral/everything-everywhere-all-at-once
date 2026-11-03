@@ -201,17 +201,21 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
     </button>
   </div>;
   return <section className="shell-held guide-held" data-slot="held" aria-label={NAMES.held.label}
-    style={{ maxHeight: "calc(100dvh - 180px)", overflowY: "auto", ...(top.content != null ? { padding: 0, border: 0, background: "none", boxShadow: "none" } : {}) }}>
-    {(all ? held : held.slice(0, 1)).map((item) => <div key={item.id} data-held-id={item.id}>
-      {item.content ?? <>
-        <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
-        <p className="shell-held-q">{item.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {item.by}</span> : <span className="shell-held-by">{item.by}</span>} <b>{item.main}</b>{item.rest ? ` ${item.rest}` : ""}</p>
-        <div className="shell-held-acts" data-held-keys="">
-          <button type="button" className="shell-btn" onClick={() => { dropHeld(item.id); (item.answer ?? answerFallback)(); }} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
-          <button type="button" className="shell-btn" onClick={() => { dropHeld(item.id); item.later?.(); }} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
-        </div>
-      </>}
-    </div>)}
+    style={{ maxHeight: "calc(100dvh - 180px)", overflowY: "auto", padding: 0, border: 0, background: "none", boxShadow: "none" }}>
+    {(all ? held : held.slice(0, 1)).map((item) => {
+      const answer = () => { dropHeld(item.id); (item.answer ?? answerFallback)(); };
+      const later = () => { dropHeld(item.id); item.later?.(); };
+      return <div key={item.id} data-held-id={item.id}>
+        {item.content ?? <div className="shell-held" style={{ width: "100%" }}>
+          <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
+          <p className="shell-held-q">{item.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {item.by}</span> : <span className="shell-held-by">{item.by}</span>} <b>{item.main}</b>{item.rest ? ` ${item.rest}` : ""}</p>
+          <div className="shell-held-acts" data-held-keys="">
+            <button type="button" className="shell-btn" onClick={answer} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
+            <button type="button" className="shell-btn" onClick={later} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
+          </div>
+        </div>}
+      </div>;
+    })}
     {more > 0 && <button type="button" className="guide-held-more" aria-expanded={all} onClick={() => setAll(!all)}>
       {all ? "Just the next" : <><b>{more}</b> more held</>}
     </button>}
