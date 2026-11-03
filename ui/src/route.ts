@@ -37,7 +37,7 @@ export function holdMs(text: string): number {
 /** The landing's tag: where it went, and the rule when one put it somewhere other than the model's pick. The model's
  *  own reason is the point's "Why here" already (its note), so the tag stays one short line on a card's edge. */
 export function landTag(d: Decided): string {
-  const where = d.new ? (d.path.length > 1 ? "new branch" : "new thread") : "here";
+  const where = d.new ? (d.path.length > 1 ? "new tangent" : "new topic") : "here";
   return d.rule ? `${where} · rule: ${d.rule}` : where;
 }
 

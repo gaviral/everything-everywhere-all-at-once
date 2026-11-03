@@ -447,7 +447,7 @@ try {
   if (checked.includes("countdown")) {
     const where = "countdown";
     const info = infos["./bricks/countdown/brick.json"];
-    if (info.kind !== "panel" || info.defaultOn !== false || info.demoSafe !== true || info.name !== "Countdown") fail(where, "brick.json: Countdown must be a demo-safe panel, off by default");
+    if (info.kind !== "panel" || info.defaultOn !== false || info.demoSafe !== true || info.name !== "Deadlines") fail(where, "brick.json: Deadlines must be a demo-safe panel, off by default");
     // What the check changes in this browser's storage, put back at the end.
     const keys = ["e2a2o.countdown", "e2a2o.bricks", "e2a2o.toured"];
     const saved = JSON.parse(await evaluate(`JSON.stringify(${JSON.stringify(keys)}.map((key) => localStorage.getItem(key)))`));
@@ -655,8 +655,8 @@ try {
     const opened = `[...document.querySelectorAll(".playground-log li")].filter((li) => li.textContent.startsWith("openThread ")).length`;
     await width(1280, 860);
     await go(`${base}/bricks.html?brick=live-outline&sample=founder-day`);
-    if (!await until(`document.querySelector(".live-outline-empty")?.textContent === "Talk, and your points line up here. Side trips step in, in their thread's color."`, 8000)) fail(where, "a full map doesn't open on an empty talk with its words");
-    await press("The Friend says one");
+    if (!await until(`document.querySelector(".live-outline-empty")?.textContent === "Talk, and your points line up here. Side trips step in, in their topic's color."`, 8000)) fail(where, "a full map doesn't open on an empty talk with its words");
+    await press("The AI helper says one");
     await sleep(1700);
     if (await evaluate(`${bullets}.length !== 0`)) fail(where, "someone else's point appears in your outline");
     const said = "Um, the the plan is kind of slow, you know, but I like pizza and it's like a map. " + "Keep these exact words. ".repeat(9).trim();
@@ -901,7 +901,7 @@ try {
     if (growing.length < 2 || growing[0].length <= growing[1].length) fail(where, `words heard as ${JSON.stringify(growing)}, not growing`);
     if (!await until(`[...document.querySelectorAll('.playground-heard li[data-event="words"]')].some((li) => li.textContent === 'words: ""')`, 5000)) fail(where, "no words \"\" at the turn's end");
     // pointing: at a thread with its id, by who points; then null.
-    await press("Point at a thread");
+    await press("Point at a topic");
     const [pointing] = await heard("pointing");
     if (!pointing?.target.startsWith("thread:") || pointing.threadId !== pointing.target.slice(7) || pointing.by !== "Friend") fail(where, `pointing heard as ${JSON.stringify(pointing)}`);
     await press("Stop pointing");
@@ -924,11 +924,11 @@ try {
     }
     // openCatalog and hint, answered as the app would; a hint that isn't one line is refused.
     await call(`openCatalog("spine")`);
-    if (!await logged("openCatalog spine → in the app: the Catalog opens at that brick's row")) fail(where, "openCatalog(id) isn't answered");
+    if (!await logged("openCatalog spine → in the app: the Features page opens at that feature's row")) fail(where, "openCatalog(id) isn't answered");
     if (await call(`hint("Drag to resize", "template")`) !== true || !await logged("hint “Drag to resize” at template → in the app: an arrow at it, from Template")) fail(where, "a hint isn't answered");
     if (await call(`hint("two\\nlines")`) !== false) fail(where, "a hint of two lines isn't refused");
     // The Friend, an AI participant: listed as one, its thought landing by it.
-    await press("The Friend says one");
+    await press("The AI helper says one");
     if (!await until(`document.querySelector(".playground-map").textContent.includes("AI: Friend")`, 3000)) fail(where, "the Friend isn't listed as an AI");
     if (!await until(`document.querySelector(".playground-heard")?.textContent.includes('"name":"Friend"')`, 4000)) fail(where, "the Friend's thought never landed by it");
     if (await evaluate(`document.querySelector(".playground").dataset.errors !== "0" || !!document.querySelector(".brick-broke")`)) fail(where, "the contract's calls caused an error");
@@ -970,7 +970,7 @@ try {
   if (checked.includes("bubbles")) {
     await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
     await until(`!!document.querySelector(".bubbles-bubble")`, 8000);
-    const n = await evaluate(`({ bubbles: document.querySelectorAll(".bubbles-bubble").length, threads: Number(document.querySelector(".playground-map").textContent.match(/(\\d+) threads/)[1]) })`);
+    const n = await evaluate(`({ bubbles: document.querySelectorAll(".bubbles-bubble").length, threads: Number(document.querySelector(".playground-map").textContent.match(/(\\d+) topics/)[1]) })`);
     if (n.bubbles !== n.threads) fail("bubbles", `${n.bubbles} bubbles for ${n.threads} threads`);
     const before = await evaluate(`[...document.querySelectorAll(".bubbles-bubble")].map((b) => b.style.left + b.style.top).join("|")`);
     await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
@@ -1169,7 +1169,7 @@ try {
         for (const title of arrivalTitles) {
           await evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(title))} + ']').click()`);
           assert.ok(await until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${title.slice(5, -11)}`)})`), "arrival thread becomes active");
-          await press("The Friend says one");
+          await press("The AI helper says one");
           await sleep(1350);
           const responsive = await Promise.race([evaluate(`document.querySelectorAll(".spine-cue").length`), sleep(3000).then(() => { throw new Error("Spine stopped answering after crowded arrivals"); })]);
           if (responsive < 2) fail("spine", "multiple arrivals did not populate the held edge");
@@ -1238,7 +1238,7 @@ try {
           for (const label of labels) {
             await scene.evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']').click()`);
             assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${label.slice(5, -11)}`)})`), "screenshot arrival thread becomes active");
-            await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The Friend says one").click()`);
+            await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The AI helper says one").click()`);
             await sleep(1350);
           }
           const geometry = await scene.evaluate(`({ width: innerWidth, theme: matchMedia("(prefers-color-scheme: dark)").matches, overflow: document.documentElement.scrollWidth > innerWidth,
@@ -1518,7 +1518,7 @@ try {
           await go(`${base}/?cards`);
           if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
           await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
-          await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
+          await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Canvas")?.click()`);
           if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) return false;
           await settle();
           return true;
@@ -1674,7 +1674,7 @@ try {
       if (!await until(`${chips} === 2`, 4000)) fail("brick-chip", "no chip on each new point, yours and someone else's");
       const chip = (id) => `document.querySelector("#point-${id} .brick-chip")`;
       const marks = await evaluate(`[...document.querySelectorAll(".brick-chip")].map((c) => ({ text: c.textContent, first: c === c.parentElement.firstElementChild && c.parentElement.matches(".move-point"), opacity: getComputedStyle(c).opacity }))`);
-      if (marks.some((m) => m.text !== "Brick chip" || !m.first || m.opacity !== "0")) fail("brick-chip", `not the brick's name, first in the point's tools and quiet at rest: ${JSON.stringify(marks)}`);
+      if (marks.some((m) => m.text !== "Source attribution" || !m.first || m.opacity !== "0")) fail("brick-chip", `not the brick's name, first in the point's tools and quiet at rest: ${JSON.stringify(marks)}`);
       const at = await evaluate(`(() => { const r = document.getElementById("point-chip-1").getBoundingClientRect(); return { x: r.left + 20, y: r.top + 6 }; })()`);
       await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
       if (!await until(`getComputedStyle(${chip("chip-1")}).opacity === "1"`, 2000)) fail("brick-chip", "pointing at the point doesn't show its chip");
@@ -1739,15 +1739,15 @@ try {
   const named = [...read(join(bricksDir, "contract.ts")).match(/export const SLOTS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   for (const name of slots) if (!named.includes(name) && !name.startsWith("slot:")) fail("the app's slots", `data-slot="${name}" isn't a contract name`);
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);
-  assert.deepEqual(await views(), ["Map", "Palace", "Spine"], "the core Spine joins Map and Palace at their defaults");
+  assert.deepEqual(await views(), ["Cards", "Pictures", "Canvas"], "the core Canvas joins Cards and Pictures at their defaults");
   await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
   // "What just happened?" with the Notice timeline off: the answer says where to switch it on, and the view stays.
   const viewButton = (name) => `[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)})`;
-  await evaluate(`${viewButton("Palace")}.click()`);
+  await evaluate(`${viewButton("Pictures")}.click()`);
   core.send({ type: "view", view: "notices" });
-  if (!await until(`(document.querySelector(".notice > span")?.textContent ?? "").includes("Notice timeline is off")`, 3000)) fail("what just happened (Notice timeline off)", "no notice says where to switch it on");
-  if (await evaluate(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent`) !== "Palace") fail("what just happened", "the ask switched the view");
-  await evaluate(`${viewButton("Map")}.click()`);
+  if (!await until(`(document.querySelector(".notice > span")?.textContent ?? "").includes("Notification history is off")`, 3000)) fail("what just happened (Notice timeline off)", "no notice says where to switch it on");
+  if (await evaluate(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent`) !== "Pictures") fail("what just happened", "the ask switched the view");
+  await evaluate(`${viewButton("Cards")}.click()`);
   await until(`!!document.querySelector("main.map .thread")`, 3000);
   // Tiny transcript off (its default): the dock's big line shows your words, as ever. A tab takes live words only while
   // its own mic is on, so the mic starts first, as live-page-check starts it: a stand-in microphone (a tone through a
@@ -1777,7 +1777,7 @@ try {
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
-  assert.equal(await evaluate(`${switchFor("Spine")}.getAttribute("aria-checked")`), "true", "the core Spine is already on in the Catalog");
+  assert.equal(await evaluate(`${switchFor("Canvas")}.getAttribute("aria-checked")`), "true", "the core Spine is already on in the Catalog");
   for (const { name } of [...viewBricks.filter((info) => info.id !== "spine"), ...(tiny ? [tiny] : []), ...(timeline ? [timeline] : [])]) {
     await evaluate(`${switchFor(name)}.click()`);
     if (await evaluate(`${switchFor(name)}.getAttribute("aria-checked")`) !== "true") fail("Catalog", `${name}'s switch didn't turn on`);
@@ -1858,7 +1858,7 @@ try {
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
-  const switched = ["Map", "Palace", ...viewBricks.map((info) => info.name)].join();
+  const switched = ["Cards", "Pictures", ...viewBricks.map((info) => info.name)].join();
   if ((await views()).join() !== switched) fail("Catalog", `switched on, the view switch says ${await views()}, not ${switched}`);
   // Each view shows in the map's place, with something in it, and Map brings the map back.
   for (const { id, name } of viewBricks) {
@@ -1875,7 +1875,7 @@ try {
       if (!await until(`!!document.querySelector('[data-brick="bubbles"] [data-thread="T3"] .bubbles-ripple')`, 3000)) fail("Bubbles", "a thought landing in the app doesn't ripple its bubble");
       if (await evaluate(`document.querySelectorAll(".bubbles-ripple").length`) !== 1) fail("Bubbles", "a landing rippled more than its own bubble");
       const target = await evaluate(`(() => { const face = document.querySelectorAll(".bubbles-face")[2]; face.click(); return face.dataset.thread; })()`);
-      if (!await until(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent === "Map" && !!document.getElementById(${JSON.stringify(`thread-${target}`)})`, 3000)) fail("Bubbles", "a bubble doesn't open the map at its thread");
+      if (!await until(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent === "Cards" && !!document.getElementById(${JSON.stringify(`thread-${target}`)})`, 3000)) fail("Bubbles", "a bubble doesn't open the map at its thread");
       await sleep(200);
       if (!core.heard.some((m) => m.type === "focus" && m.thread_id === target)) fail("Bubbles", `opening ${target} didn't move your place there (no focus sent)`);
     }
@@ -1924,7 +1924,7 @@ try {
       await evaluate(`(() => { const select = document.querySelector('[data-brick="spine"] .react-flow__node[data-id="t:T4"] .spine-tool-select'); if (select) { select.value = "Money"; select.dispatchEvent(new Event("change", { bubbles: true })); } })()`);
       if (!await heardTopic({ type: "topic_set", thread_id: "T4", topic: "Money" })) fail("Spine", "moving T4 to Money didn't reach the core");
     }
-    await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Map").click()`);
+    await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Cards").click()`);
     if (!await until(`!!document.querySelector("main.map .thread")`, 3000)) fail(name, "Map doesn't bring the map back");
   }
   await go(`${base}/?cards`);
@@ -1947,9 +1947,9 @@ try {
     const openSpine = async () => {
       shown = full;
       await go(`${base}/?cards`);
-      const switchReady = await until(`[...document.querySelectorAll(".palace-switch button")].some((b) => b.textContent === "Spine")`, 8000);
+      const switchReady = await until(`[...document.querySelectorAll(".palace-switch button")].some((b) => b.textContent === "Canvas")`, 8000);
       await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
-      await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
+      await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Canvas")?.click()`);
       const ready = await until(`!!document.querySelector(".spine-frame.spine-ready")`, 4000);
       if (!switchReady || !ready) fail(where, `The Spine did not become ready: switch available ${switchReady}, frame ready ${ready}.`);
       await sleep(1200);

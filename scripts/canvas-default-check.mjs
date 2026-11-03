@@ -156,13 +156,13 @@ try {
       find("T1", "p1");
       await canvasPoint("p1");
       // A Palace tile uses the existing open-thread/goBack action and its focus request.
-      await view("Palace");
+      await view("Pictures");
       const before = core.heard.length;
       await returnTo("T2");
       await canvasPoint("p2");
       assert.ok(core.heard.slice(before).some((m) => m.type === "focus" && m.thread_id === "T2"), `${label}: return focuses requested thread`);
       // Find also returns from another view to Canvas.
-      await view("Palace");
+      await view("Pictures");
       find("T1", "p1");
       await canvasPoint("p1");
       // A landing is followed by the Canvas without cards' held-landing notice.
@@ -178,7 +178,7 @@ try {
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: ?cards shows cards`);
       find("T3", "p3");
       assert.ok(await cardsPoint("p3"), `${label}: cards Find visibly reaches p3`);
-      await view("Palace");
+      await view("Pictures");
       await returnTo("T2");
       assert.ok(await until(`(${visiblePoint.toString()})("p2", false)`, 8000), `${label}: cards return visibly reaches p2`);
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: cards return retains cards`);
@@ -186,7 +186,7 @@ try {
       // Choosing Map explicitly on the plain page keeps cards for a subsequent Find (the functional updater).
       shown = full;
       await navigate("", ".spine-frame.spine-ready");
-      await view("Map");
+      await view("Cards");
       find("T2", "p2");
       assert.ok(await cardsPoint("p2"), `${label}: chosen Map retains cards on Find`);
       assert.equal(await evaluate("!!document.querySelector('.spine-frame')"), false, `${label}: chosen Map stays on cards after Find`);

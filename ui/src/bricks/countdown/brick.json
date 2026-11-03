@@ -1,6 +1,6 @@
 {
   "id": "countdown",
-  "name": "Countdown",
+  "name": "Deadlines",
   "does": "Keeps your next deadlines in view and lets you add or change them.",
   "kind": "panel",
   "defaultOn": false,

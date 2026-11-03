@@ -51,6 +51,27 @@ fn accepts_whole_requests_with_filler_and_polite_words() {
     assert_eq!(asked("Find where I said the deposit comes back").as_deref(), Some("the deposit comes back"));
 }
 
+/// "Topic" is the noun a thread has on screen: it points a search at the map as "thread" does ("thread" still does), and
+/// a topic of talk with no name before it ("go back to the topic") is no search.
+#[test]
+fn a_topic_points_a_search_at_the_map_as_a_thread_does() {
+    for (ask, query) in [
+        ("Take me to the topic about rent.", "rent"),
+        ("Take me to the topic on rent", "rent"),
+        ("So, take me back to the topic about rent, please.", "rent"),
+        ("Go back to the topic about rent", "rent"),
+        ("find the rent topic", "the rent"),
+        ("go to the rent topic", "the rent"),
+        ("Take me to the thread about rent.", "rent"),
+        ("find the rent thread", "the rent"),
+    ] {
+        assert_eq!(asked(ask).as_deref(), Some(query), "{ask}");
+    }
+    for talk in ["Go back to the topic", "Find a new topic", "Take me to the topic", "Go to another topic", "Go to the other topic", "Find the topic"] {
+        assert_eq!(asked(talk), None, "{talk}");
+    }
+}
+
 #[test]
 fn the_question_is_the_first_sentence_and_the_words_after_it_are_kept() {
     let ask = |query: &str, topic: &str, rest: &str, saying: bool| Some(Ask { query: query.into(), topic: topic.into(), rest: rest.into(), saying });
@@ -379,7 +400,7 @@ async fn newer_words_stop_a_search_and_take_down_its_notice() {
     let mut updates = fixture.core.updates.subscribe();
     fixture.core.add_thought("Ana", "Where did I talk about the rent deposit? The landlord says June.");
     fixture.core.add_thought("Ana", "Hmm.");
-    assert_eq!(told(&mut updates), ["notice: Looking through your threads…"], "\"hmm\" adds nothing, so the search goes on");
+    assert_eq!(told(&mut updates), ["notice: Looking through your topics…"], "\"hmm\" adds nothing, so the search goes on");
     fixture.core.add_thought("Ana", "The kitchen needs paint.");
     assert_eq!(told(&mut updates), ["notice: ", "thought: The landlord says June.", "thought: The kitchen needs paint."]);
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -419,7 +440,7 @@ async fn a_click_stops_a_search_and_any_search_its_words_ask() {
     }]);
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(fixture.core.snapshot().active_for("you").map(String::as_str), Some("T2"), "nothing asked before the click moves you after it");
-    assert_eq!(told(&mut updates), ["notice: Looking through your threads…", "notice: ", "thought: It's due on the first."]);
+    assert_eq!(told(&mut updates), ["notice: Looking through your topics…", "notice: ", "thought: It's due on the first."]);
 }
 
 #[test]
@@ -522,7 +543,7 @@ async fn a_jump_waits_for_the_thought_said_just_before_it() {
             _ => {}
         }
     }
-    assert_eq!(said, ["Looking through your threads…", "Here: Home — Rent deposit comes back in June"]);
+    assert_eq!(said, ["Looking through your topics…", "Here: Home — Rent deposit comes back in June"]);
 }
 
 /// Without a working key the thought said just before is never placed, so the jump doesn't wait for it: with no

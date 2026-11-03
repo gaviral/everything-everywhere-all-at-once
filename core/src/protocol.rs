@@ -163,6 +163,9 @@ pub enum ServerMsg {
 #[serde(rename_all = "lowercase")]
 pub enum View {
     Map,
+    /// The cards view by its name on screen ("cards"): a window that has a home view apart from its cards list
+    /// (the shell's canvas) opens the list; "map" is still the home view.
+    Cards,
     Palace,
     Focus,
     All,

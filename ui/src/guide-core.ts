@@ -22,29 +22,29 @@ export type GuideMsg = { type: "guide"; kind: "point" | "caption" | "hold"; targ
 /** The fixed names, in the order docs/guide.md lists them: what each is, as a sentence names it. Threads, points and a
  *  view brick's switch are named with their id: `thread:<id>`, `point:<id>`, `view:<id>`. */
 export const NAMES: Record<string, string> = {
-  composer: "the box where you type or talk",
+  composer: "the Input box, where you type or talk",
   mic: "the mic",
-  help: "the ? list of what you can say",
+  help: "Help, the list of what you can say",
   recap: "Recap",
   import: "Import chats",
   export: "Export",
   status: "the status line",
-  room: "the room menu",
+  room: "the Share menu",
   apps: "the Apps panel",
   "make-app": "the field that asks for an app",
-  catalog: "the Catalog button",
+  catalog: "the Features button",
   notice: "the notice under the header",
   undo: "Undo",
   views: "the view switch",
-  "view:map": "the Map button",
-  "view:palace": "the Palace button",
+  "view:map": "the Cards button",
+  "view:palace": "the Pictures button",
   search: "search",
   focus: "Focus",
   "back-to-active": "Back to active",
   map: "the map",
-  palace: "the Palace",
+  palace: "the Pictures view",
   unfinished: "the unfinished card",
-  away: "While you were away",
+  away: "Since you left",
   pending: "the thoughts finding their place",
   "send-card": "the message about to send",
 };
@@ -58,7 +58,7 @@ export function label(name: string, map: Map): string {
   if (NAMES[name]) return NAMES[name];
   const id = name.slice(name.indexOf(":") + 1);
   const thread = (threadId: string | null) => (threadId ? map.threads.find((t) => t.id === resolveMerged(map, threadId)) : undefined);
-  if (name.startsWith("thread:")) return thread(id) ? `“${thread(id)!.title}”` : "a thread";
+  if (name.startsWith("thread:")) return thread(id) ? `“${thread(id)!.title}”` : "a topic";
   if (name.startsWith("point:")) {
     const home = thread(map.thoughts.find((t) => t.id === id)?.thread_id ?? null);
     return home ? `a thought in “${home.title}”` : "a thought";
@@ -89,7 +89,7 @@ const theThread = (map: Map, id: string | null | undefined) => (id ? map.threads
 
 /** Where thread `id`'s card is when it isn't on screen: what reveals it, where it is, and what to do. */
 function threadIs(id: string, at: Where): { via: string | null; where: string; act: string } {
-  if (at.view !== "map") return { via: "view:map", where: "on the Map", act: "switch to the Map here" };
+  if (at.view !== "map") return { via: "view:map", where: "in Cards", act: "switch to Cards here" };
   if (at.query.trim()) return { via: "search", where: "hidden by your search", act: "clear it to see it" };
   if (at.focus) return { via: "focus", where: "hidden by Focus", act: "turn Focus off to see it" };
   const seen = new Set<string>();
@@ -105,11 +105,11 @@ const NOT_UP: Record<string, string> = {
   undo: "Undo shows on a notice you can take back, and none is up now.",
   notice: "No notice is up now.",
   unfinished: "The unfinished card isn't up now.",
-  away: "“While you were away” isn't up now.",
+  away: "“Since you left” isn't up now.",
   pending: "No thought is finding its place now.",
   "send-card": "No message is about to send.",
   export: "Export shows once the map has a thought.",
-  room: "The room menu shows in a room.",
+  room: "The Share menu shows on a shared map.",
   status: "The status line isn't on screen now.",
 };
 
@@ -120,7 +120,7 @@ export function instead(name: string, at: Where): Instead {
   if (name.startsWith("thread:")) {
     const asked = name.slice(7);
     const thread = theThread(map, asked);
-    if (!thread) return { via: null, line: "That thread isn't on this map." };
+    if (!thread) return { via: null, line: "That topic isn't on this map." };
     // Merged away: its card is the one it went into.
     if (thread.id !== asked && at.shown(`thread:${thread.id}`)) return { via: `thread:${thread.id}`, line: `It's part of ${quoted(thread)} now.` };
     const is = threadIs(thread.id, at);
@@ -131,7 +131,7 @@ export function instead(name: string, at: Where): Instead {
     if (!thought) return { via: null, line: "That thought isn't on this map." };
     if (!thought.placed) return { via: "pending", line: "It's still finding its place." };
     const thread = theThread(map, thought.thread_id);
-    if (!thread) return { via: null, line: "That thought isn't on a thread." };
+    if (!thread) return { via: null, line: "That thought isn't on a topic." };
     if (at.shown(`thread:${thread.id}`)) {
       // Its card, folded or open, or its picture in the Palace, which opens it on the Map.
       const act = at.view === "palace" ? ": open it here" : at.folded(thread.id) ? ": Show opens it" : "";
@@ -142,18 +142,18 @@ export function instead(name: string, at: Where): Instead {
   }
   const threads = map.threads.length;
   if (name === "catalog" || name === "make-app") return { via: "apps", line: `${sentence(NAMES[name])} is in Apps: open Apps.` };
-  if (name === "map") return { via: "view:map", line: "The map is a view away: switch to the Map here." };
-  if (name === "palace") return { via: "view:palace", line: "The Palace is a view away: switch to it here." };
+  if (name === "map") return { via: "view:map", line: "The map is a view away: switch to Cards here." };
+  if (name === "palace") return { via: "view:palace", line: "Pictures is a view away: switch to it here." };
   if (name === "views" || name.startsWith("view:")) {
-    if (!threads) return { via: null, line: "The views show once the map has a thread." };
-    return { via: null, line: name.startsWith("view:") && !NAMES[name] ? "That view is off: switch it on in Apps › Catalog." : "The views aren't on screen now." };
+    if (!threads) return { via: null, line: "The views show once the map has a topic." };
+    return { via: null, line: name.startsWith("view:") && !NAMES[name] ? "That view is off: switch it on in Features." : "The views aren't on screen now." };
   }
   if (name === "search" || name === "focus" || name === "back-to-active") {
     const what = sentence(NAMES[name]);
-    if (!threads) return { via: null, line: `${what} shows once the map has a thread.` };
-    if (at.view !== "map") return { via: "view:map", line: `${what} is on the Map: switch to it here.` };
-    if (name !== "search" && threads < 2) return { via: null, line: `${what} shows once the map has two threads.` };
-    return { via: null, line: name === "back-to-active" ? "Back to active shows while you have a thread to go back to." : `${what} isn't on screen now.` };
+    if (!threads) return { via: null, line: `${what} shows once the map has a topic.` };
+    if (at.view !== "map") return { via: "view:map", line: `${what} is in Cards: switch to it here.` };
+    if (name !== "search" && threads < 2) return { via: null, line: `${what} shows once the map has two topics.` };
+    return { via: null, line: name === "back-to-active" ? "Back to active shows while you have a topic to go back to." : `${what} isn't on screen now.` };
   }
   if (NOT_UP[name]) return { via: null, line: NOT_UP[name] };
   return { via: null, line: `Nothing called “${name}” is on this screen.` };

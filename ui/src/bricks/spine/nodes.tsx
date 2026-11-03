@@ -78,7 +78,7 @@ export function headMeta(item: Item, now: number) {
   const n = item.count ?? 0;
   const count = n ? `${n} ${n === 1 ? "point" : "points"}` : "Nothing yet";
   const people = item.speakers ?? [];
-  if (people.some((who) => !who.me)) return `${count} · ${people.map((who) => (who.ai ? "✦ Friend" : who.name)).join(", ")}`;
+  if (people.some((who) => !who.me)) return `${count} · ${people.map((who) => (who.ai ? "✦ AI helper" : who.name)).join(", ")}`;
   return item.since ? `${count} · ${ago(now - item.since)}` : count;
 }
 
@@ -91,7 +91,7 @@ function Bars({ lines, line, x, y = 0, thick }: { lines: number[]; line: number;
 
 /** An initial on the line: another person's, or ✦ for the Friend. */
 export function Initial({ who, small, style }: { who: Who; small?: boolean; style?: CSSProperties }) {
-  return <span className={cls("spine-who", small && "spine-who-small", who.ai && "spine-who-ai", who.me && "spine-who-me")} style={style} title={who.ai ? "The Friend" : who.name} aria-hidden="true">{who.initial}</span>;
+  return <span className={cls("spine-who", small && "spine-who-small", who.ai && "spine-who-ai", who.me && "spine-who-me")} style={style} title={who.ai ? "The AI helper" : who.name} aria-hidden="true">{who.initial}</span>;
 }
 
 /** The small controls a thing shows while pointed at or focused: open its thread on the map, keep it on the shelf, and
@@ -149,7 +149,7 @@ function Group({ data }: { data: ItemData }) {
     return () => window.clearTimeout(timer);
   }, [pending]);
   const shown = pending ?? name;
-  const count = `${item.count ?? 0} ${item.count === 1 ? "thread" : "threads"}`;
+  const count = `${item.count ?? 0} ${item.count === 1 ? "topic" : "topics"}`;
   const finish = (value: string | null) => {
     if (done.current) return;
     done.current = true;
@@ -172,7 +172,7 @@ function Group({ data }: { data: ItemData }) {
         }} />
       : <button type="button" className="spine-group-name" style={zoomedOut ? { fontSize: farSize(name ? shown : "Not sorted yet") } : { maxWidth: Math.max(80, item.box.w - 90) }} onDoubleClick={start} onFocus={() => acts.focus(item)}
         onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); start(); } }}
-        title={name ? `${shown} · double-click to rename` : "New threads wait here until the AI puts them under a theme, within a minute"}
+        title={name ? `${shown} · double-click to rename` : "New topics wait here until the AI puts them under a theme, within a minute"}
         aria-label={name ? `Theme ${shown}, ${count}. Press Enter to rename it` : `Not sorted yet, ${count}`}>{name ? shown : "Not sorted yet"}</button>}
     {(!zoomedOut || data.hot) && !editing && <span className="spine-group-count" aria-hidden="true">{data.hot ? "Move here" : count}</span>}
   </div>;
@@ -262,7 +262,7 @@ function Point({ data }: { data: ItemData }) {
   const look = item.look!;
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
-  const label = `${item.who ? `${item.who.ai ? "The Friend" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
+  const label = `${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
     // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
     if (event.key === "Enter" && data.selecting) return;
@@ -367,7 +367,7 @@ function Aside({ data }: { data: ItemData }) {
     data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
-      title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The Friend" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
+      title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
       {zoomedOut ? <Bars lines={item.lines ?? [0]} line={G.asideLine} x={G.asideIn} y={G.asidePad} />
         : <span className="spine-aside-text" style={{ WebkitLineClamp: 2 }}>{item.who && <Initial who={item.who} small />}{item.text}</span>}
     </button>
@@ -382,7 +382,7 @@ function Margin({ data }: { data: ItemData }) {
   const zoomedOut = useStore((s) => far(s.transform[2]));
   if (zoomedOut) return <div className={cls("spine-margin", data.dim && "spine-dim")} aria-hidden="true"><Bars lines={(item.entries ?? []).flatMap((e) => e.lines)} line={G.marginLine} x={26} /></div>;
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
-    aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the Friend" : e.who.name}: ${e.text}`).join("; ")}`}>
+    aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
     <Entries entries={item.entries ?? []} />
     {item.more && <span className="spine-margin-more">{`${item.more} more`}</span>}
     <button type="button" className="spine-margin-reply nodrag" onClick={() => acts.reply(item)}>Reply</button>

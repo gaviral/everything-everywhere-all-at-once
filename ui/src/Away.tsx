@@ -63,7 +63,7 @@ export function awayItems(before: World, after: World, me: string, observed: Map
   const items: AwayItem[] = [];
   for (const [id, thoughts] of groups) {
     const latest = [...thoughts].sort((a, b) => b.at_ms - a.at_ms)[0];
-    const changes = oldThreads.has(id) ? `${thoughts.length} new ${thoughts.length === 1 ? "point" : "points"}` : "New thread";
+    const changes = oldThreads.has(id) ? `${thoughts.length} new ${thoughts.length === 1 ? "point" : "points"}` : "New topic";
     const why = oldThreads.has(id) || !!threads.get(id)!.parent_id;
     items.push({ key: `thread:${id}`, threadId: id, thoughtId: latest.id, why, title: threads.get(id)!.title,
       detail: `${changes}${unfinished?.[0] === id ? " · Left unfinished" : ""} · ${latest.point || latest.text}`,
@@ -187,10 +187,10 @@ export function Away({ items, onFollow, onDismiss, onDismissFocus }: {
   }}>
     <div className="away-top">
       {/* The rule, said where the question comes up (why these threads, and what about the rest): see awayItems. */}
-      <div><h2 id="away-title">While you were away</h2><p>{AWAY_WHAT}</p></div>
-      <button className="away-dismiss" onClick={close} aria-label="Dismiss while you were away">×</button>
+      <div><h2 id="away-title">Since you left</h2><p>{AWAY_WHAT}</p></div>
+      <button className="away-dismiss" onClick={close} aria-label="Dismiss Since you left">×</button>
     </div>
-    <ol className="away-items" aria-label="What landed while you were away">
+    <ol className="away-items" aria-label="What landed since you left">
       {items.map((item) => <li key={item.key}>
         {/* A row only takes you there; nothing is kept, added or dismissed from here. */}
         <a href={`#${item.itemId ? `item-${item.itemId}` : item.thoughtId ? `point-${item.thoughtId}` : `thread-${item.threadId}`}`}

@@ -66,7 +66,7 @@ try {
   assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\}[^>]*\/>/);
   assert.match(app, /useDropPoint\(thread\.id\)[\s\S]*\{\.\.\.drop\.props\}/);
   assert.match(app, /<MovesProvider threads=\{world\.threads\} move=\{core\.move\} rename=\{core\.rename\} remove=\{core\.remove\}>/);
-  assert.match(app, /“Move that to \[thread\]”[^<]*“Rename this to \[title\]”/);
+  assert.match(app, /“Move that to \[topic\]”[^<]*“Rename this to \[title\]”/);
   // On a phone Move shows once a tap focuses its point, so every point takes focus, an imported one (no placement
   // time) too, without becoming a Tab stop of its own.
   const css = readFileSync(new URL("../ui/src/moves.css", import.meta.url), "utf8");

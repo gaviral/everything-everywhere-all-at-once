@@ -19,8 +19,8 @@ pub struct Anchor {
 
 /// What the window that asked hears when a note is refused.
 pub const GONE: &str = "That point isn't on the map any more.";
-pub const NO_WORDS: &str = "A note needs words, and the words it's about.";
-pub const TOO_LONG: &str = "Too long for one note: 6,000 characters at most.";
+pub const NO_WORDS: &str = "A comment needs words, and the words it's about.";
+pub const TOO_LONG: &str = "Too long for one comment: 6,000 characters at most.";
 
 /// How many words of the quote a new note's thread is titled with, as a tangent's title is short (the placer asks for 5).
 const TITLE_WORDS: usize = 6;

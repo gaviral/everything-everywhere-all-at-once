@@ -38,17 +38,17 @@ export interface Call {
 
 /** The levels, least first, with what each lets the Friend do, as the meter at the foot of Talk says it. */
 export const LEVELS: readonly { id: Level; name: string; says: string }[] = [
-  { id: "glance", name: "Glance", says: "It only marks what it noticed. Nothing pops up." },
-  { id: "hand", name: "Hand", says: "It holds its questions until you pause." },
-  { id: "note", name: "Note", says: "It may leave a note beside your words." },
+  { id: "glance", name: "Mark", says: "It only marks what it noticed. Nothing pops up." },
+  { id: "hand", name: "Ask", says: "It holds its questions until you pause." },
+  { id: "note", name: "Comment", says: "It may leave a note beside your words." },
   { id: "speak", name: "Speak", says: "It speaks only at a pause. Talk over it to stop it." },
-  { id: "stop", name: "Stop", says: "It may stop you mid-sentence, after your last few words." },
+  { id: "stop", name: "Interrupt", says: "It may stop you mid-sentence, after your last few words." },
 ];
 
 /** Something a participant said or showed through the guide (a caption: Speak; a point with words: Glance), as this
  *  window heard it (core/src/guide.rs relays them, never journaled): Talk keeps an AI participant's as turns once
  *  they're down, so the call reads in order, even what came while Talk was closed. */
-export type Said = { text: string; by: string; at: number; level: "Speak" | "Glance" };
+export type Said = { text: string; by: string; at: number; level: "Speak" | "Mark" };
 
 /** The newest this window keeps. */
 const SAID_MAX = 50;
@@ -81,7 +81,7 @@ export function heard(data: unknown) {
     try {
       const { kind, text, by, at_ms } = JSON.parse(data) as { kind: string; text: string; by: string; at_ms: number };
       if (!text || !by) return;
-      said = [...said, { text, by, at: at_ms || Date.now(), level: kind === "caption" ? "Speak" as const : "Glance" as const }].slice(-SAID_MAX);
+      said = [...said, { text, by, at: at_ms || Date.now(), level: kind === "caption" ? "Speak" as const : "Mark" as const }].slice(-SAID_MAX);
       for (const watcher of watchers) watcher();
     } catch { /* not a guide message after all */ }
     return;
@@ -159,9 +159,12 @@ export function initialOf(name: string, ai = false): string {
   return first ? first.toLocaleUpperCase() : "?";
 }
 
-/** How a name reads in a sentence: an AI participant named Friend is "the Friend". */
+/** The AI that joins without a name of its own is called Friend in the journal and on the wire; people read it as the AI helper. */
+export const shown = (name: string): string => (name === "Friend" ? "AI helper" : name);
+
+/** How a name reads in a sentence: the AI participant named Friend is "the AI helper". */
 export function named(person: Pick<Person, "name" | "ai">): string {
-  return person.ai && person.name === "Friend" ? "the Friend" : person.name;
+  return person.ai && person.name === "Friend" ? "the AI helper" : person.name;
 }
 
 /** A time of day as the Talk tab shows it: "7:37", no seconds and no AM or PM. */

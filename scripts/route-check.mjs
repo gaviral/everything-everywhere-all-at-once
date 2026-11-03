@@ -44,9 +44,9 @@ try {
   assert.equal(markFor(s, "T2", until), null);
   assert.equal(markFor(s, "T1", until), null);
 
-  // A rule that put it elsewhere is named, over the model's reason; a new thread or branch says so.
-  assert.equal(landTag(decided("x", ["T4"], { new: true, rule: "one level of branches", why: "names the seat" })), "new thread · rule: one level of branches");
-  assert.equal(landTag(decided("x", ["T1", "T4"], { new: true })), "new branch");
+  // A rule that put it elsewhere is named, over the model's reason; a new topic or tangent says so.
+  assert.equal(landTag(decided("x", ["T4"], { new: true, rule: "one level of branches", why: "names the seat" })), "new topic · rule: one level of branches");
+  assert.equal(landTag(decided("x", ["T1", "T4"], { new: true })), "new tangent");
   assert.equal(raceLine(decided("x", ["T1"], { lanes: 1, ms: 900 })), "Answered in 0.9 s");
   // Each lane may ask its own model (core/src/placer.rs `MODELS`): the line names the one that placed it, by its public name.
   assert.equal(raceLine(decided("x", ["T1"], { model: "muse-spark-1.3", why: "names the flight" })),

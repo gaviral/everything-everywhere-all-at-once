@@ -81,9 +81,9 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
       event.currentTarget.open = false;
       event.currentTarget.querySelector("summary")?.focus();
     }} data-guide="room">
-      <summary aria-label="Room details">Room <span aria-hidden="true">⌄</span></summary>
+      <summary aria-label="Shared map details">Share <span aria-hidden="true">⌄</span></summary>
       <div ref={panel} className="room-panel">
-        <div className="room-panel-title">This room</div>
+        <div className="room-panel-title">Shared map</div>
         <p className="room-you"><span className="room-person-mark" aria-hidden="true">●</span> {me} <span>· you</span></p>
         {hosted ? <p className="room-guest">{savedWhere(true)}</p>
           : GUEST_MACHINE && <p className="room-guest">Guest on this map · {savedWhere(false)}</p>}
@@ -100,7 +100,7 @@ export function RoomControl({ speakers }: { speakers: string[] }) {
           <ul>{others.map((name) => <li key={name}><span className="room-person-mark other-mark" aria-hidden="true">◆</span> {name}</li>)}</ul>
           <p className="room-panel-hint">Names appear here after someone adds a thought.</p>
         </> : <p className="room-panel-hint">As people add thoughts, their names appear here.</p>}
-        <button type="button" className="room-leave" onClick={actions.leave}>Leave room</button>
+        <button type="button" className="room-leave" onClick={actions.leave}>Leave</button>
       </div>
     </details>
   );
@@ -247,7 +247,7 @@ export function Room({ children }: { children: ReactNode }) {
       setNote("");
       setCurrent({ me, code: tried });
     } catch {
-      setNote("Can't reach the room. Check the address and try again.");
+      setNote("Can't reach the shared map. Check the address and try again.");
     } finally {
       setBusy(false);
     }
@@ -274,7 +274,7 @@ export function Room({ children }: { children: ReactNode }) {
   if (!door) return <div className="join"><div className="join-loading" role="status">Loading…</div></div>;
   return (
     <main className="join">
-      <div className="join-brand">E2A2O <span>threads</span></div>
+      <div className="join-brand">E2A2O <span>topics</span></div>
       <form className="join-card" onSubmit={join}>
         {door.tunnel ? (
           <>

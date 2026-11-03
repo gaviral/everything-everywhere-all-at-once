@@ -30,7 +30,7 @@ export function Tour({ populated, noKey, resting = false }: { populated: boolean
       : { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" },
     "tour-map": { slot: "tour-map", title: "Your map", text: populated ? "Tap Show to see what was said. Related topics appear below." : "Your thoughts show up here, grouped by topic. Side topics get their own group." },
     "tour-tools": noKey
-      ? { slot: "tour-tools", title: "Try these", text: "Palace shows a picture for every thread, and search finds the words you used. Press ? for everything you can say." }
+      ? { slot: "tour-tools", title: "Try these", text: "Pictures shows a picture for every topic, and search finds the words you used. Press ? for everything you can say." }
       : { slot: "tour-tools", title: "Try these", text: "Select words on the map to get an explanation. Recap gives you a summary. Press ? for everything you can say." },
   };
   const steps = order.map((slot) => copy[slot]);

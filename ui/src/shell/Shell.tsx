@@ -12,6 +12,7 @@ import type { Thread, Thought } from "../core";
 import { canUndo, type Entry } from "./history";
 import { dropHeld, useHeld } from "./held";
 import { FEATURE_NAMES, KIND_NAMES, NAMES } from "./names";
+import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 
 const cls = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(" ");
@@ -208,7 +209,7 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
       return <div key={item.id} data-held-id={item.id}>
         {item.content ?? <div className="shell-held" style={{ width: "100%" }}>
           <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
-          <p className="shell-held-q">{item.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {item.by}</span> : <span className="shell-held-by">{item.by}</span>} <b>{item.main}</b>{item.rest ? ` ${item.rest}` : ""}</p>
+          <p className="shell-held-q">{item.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {shown(item.by)}</span> : <span className="shell-held-by">{shown(item.by)}</span>} <b>{item.main}</b>{item.rest ? ` ${item.rest}` : ""}</p>
           <div className="shell-held-acts" data-held-keys="">
             <button type="button" className="shell-btn" onClick={answer} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
             <button type="button" className="shell-btn" onClick={later} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
@@ -343,7 +344,7 @@ export const TalkTurns = memo(function TalkTurns({ thoughts, me, ai }: { thought
   if (!turns.length) return <p className="shell-empty-line">What's said shows here as turns, oldest first: yours, and in a call everyone's.</p>;
   return <ol className="shell-turns">
     {turns.map((t, i) => <li key={t.id} ref={i === turns.length - 1 ? end : undefined} className="shell-turn">
-      <p className="shell-turn-who">{ai.has(t.speaker) ? <b className="ai-mark" data-tip={NAMES.tips.friend}>✦ {t.speaker}</b>
+      <p className="shell-turn-who">{ai.has(t.speaker) ? <b className="ai-mark" data-tip={NAMES.tips.friend}>✦ {shown(t.speaker)}</b>
         : <b>{t.speaker === me || t.speaker === "you" ? "You" : t.speaker}</b>} <span>{time(t.at_ms)}</span></p>
       <p className="shell-turn-text">{t.text}</p>
     </li>)}

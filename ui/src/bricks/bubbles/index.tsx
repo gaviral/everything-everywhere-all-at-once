@@ -103,8 +103,8 @@ export default function Bubbles({ map, actions, on }: BrickProps) {
   };
   return <div className="bubbles">
     <div className="bubbles-intro">
-      <div><span className="bubbles-eyebrow">Every thread, sized by what was said</span><h1>Your bubbles</h1></div>
-      <p>{showTopics ? "Open a bubble to go to its thread. Pick a theme to see only its bubbles." : "Open a bubble to go to its thread."}</p>
+      <div><span className="bubbles-eyebrow">Every topic, sized by what was said</span><h1>Your bubbles</h1></div>
+      <p>{showTopics ? "Open a bubble to go to its topic. Pick a theme to see only its bubbles." : "Open a bubble to go to its topic."}</p>
     </div>
     {showTopics && <ul className="bubbles-topics" aria-label="Themes">
       {topics.map(({ name, label, style, count }) => <li key={name}>
@@ -122,7 +122,7 @@ export default function Bubbles({ map, actions, on }: BrickProps) {
         </button>
       </li>)}
     </ul>}
-    <ul className="bubbles-field" aria-label="Threads as bubbles" style={{ aspectRatio: `${field.width} / ${field.height}`, maxWidth: `${field.width * STEP}px` }}>
+    <ul className="bubbles-field" aria-label="Topics as bubbles" style={{ aspectRatio: `${field.width} / ${field.height}`, maxWidth: `${field.width * STEP}px` }}>
       {map.threads.map(bubble)}
     </ul>
   </div>;

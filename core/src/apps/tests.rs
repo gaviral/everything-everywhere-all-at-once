@@ -329,7 +329,7 @@ fn a_tune_says_what_set_it_off() {
         (Watcher::Time { at_ms: 0, every_secs: 86_400 }, "its timer, every day".into()),
         (Watcher::Time { at_ms: 0, every_secs: 45 }, "its timer, every 45 s".into()),
         (Watcher::NewThought { min_points: 0 }, "a new thought landed".into()),
-        (Watcher::NewThought { min_points: 5 }, "a thread reached 5 points".into()),
+        (Watcher::NewThought { min_points: 5 }, "a topic reached 5 points".into()),
     ];
     for (watcher, expected) in cases { assert_eq!(why(&watcher), expected); }
     let once = why(&Watcher::Time { at_ms: 1_793_800_000_000, every_secs: 0 });
