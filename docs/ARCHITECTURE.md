@@ -58,6 +58,7 @@ Browser, one page per window (ui/src)
   bricks/        one folder per brick, and contract.ts, the one file a brick imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
     bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
+    bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your thread while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core

@@ -379,7 +379,7 @@ try {
       if (!await until(`document.querySelector(".playground-map").textContent.includes("2 placed")`, 6000)) fail(where, "the thought said never landed");
       if (!await evaluate(`!!document.querySelector(".tiny-transcript-hint input[type=range]") && !!document.querySelector(".tiny-transcript-text")`)) fail(where, "the first-use hint left with the turn, before it was dismissed");
       else {
-        // It says what it is (a person asked "what's it for?"), and the slider's name is on screen, not only read out.
+        // It says what it's for, and the slider's name is on screen, not only read out.
         const hint = await evaluate(`(() => { const hint = document.querySelector(".tiny-transcript-hint"), range = hint.querySelector("input[type=range]"), label = range.labels?.[0];
           const words = [...hint.querySelectorAll("p")].map((p) => p.textContent.trim()).join(" ");
           return { words, label: label ? label.innerText.trim() : "", wide: label ? label.getBoundingClientRect().width : 0, named: range.getAttribute("aria-label") ?? "" }; })()`);
