@@ -97,6 +97,8 @@ try {
   assert.equal(core.sendText(pasted), true);
   assert.deepEqual(sockets.at(-1).sent.slice(sentAt).map((data) => JSON.parse(data).text), ["p".repeat(4000), "s".repeat(4000) + "\n\nlast"]);
   await until(() => core.notice === "Sent in 2 parts", "the single split notice");
+  core.clearNotice();
+  await until(() => core.notice === "", "the split notice was read");
 
   // The live line: words as they're heard; at the turn's end they stay up (the hand-off) until the thought they
   // became arrives, so the dock never blanks between the words and the thought on its way.
@@ -160,6 +162,8 @@ try {
   say({ type: "found", thread_id: "T1", thought_id: null, message: "Here: Rent" });
   await until(() => core.found?.thread_id === "T1", "the search's answer");
   assert.equal(core.notice, "Here: Rent");
+  core.clearNotice();
+  await until(() => core.notice === "", "the search answer was read");
 
   // Typed "recap": the sheet opens here and asks the core for one; it isn't sent as a thought.
   const old = sockets.at(-1);

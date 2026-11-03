@@ -1,7 +1,7 @@
 // The note card (core/src/notes.rs), as the window shows it: the note's title and points as Notes gets them, what
 // happened to it (saving, saved, a dry run, refused), and Open in Notes once it's there. The core alone writes; the
 // window only asks it to open a note it wrote. Plain functions, so scripts/note-card-check.mjs checks them without a page.
-import { readingTime } from "./notice-rules";
+import { readingTime, slowReadMs, DECIDE_MS, REACH_MS } from "./notice-rules";
 
 export type NoteState = "saving" | "saved" | "dry_run" | "failed";
 export type NotePoint = { text: string; who: string; decided: boolean; unfinished: boolean };
@@ -62,7 +62,8 @@ export function announcement(card: NoteCard): string {
 export function lingerMs(card: NoteCard): number {
   if (card.state === "saving") return 0;
   const { heading, status } = cardWords(card);
-  return readingTime([heading, card.title, status, ...card.sections.flatMap((s) =>
+  return Math.max(slowReadMs(`${heading} ${card.title} ${status}`) + DECIDE_MS + REACH_MS,
+    readingTime([heading, card.title, status, ...card.sections.flatMap((s) =>
     [s.title, ...s.points.map((p) => `${pointWords(p)} ${p.decided ? "Decided" : ""} ${p.unfinished ? "unfinished" : ""}`)]),
-    ...(cardWords(card).open ? ["Open in Notes"] : [])].join(" "));
+    ...(cardWords(card).open ? ["Open in Notes"] : [])].join(" ")));
 }

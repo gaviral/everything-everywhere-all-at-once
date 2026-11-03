@@ -8,8 +8,11 @@ import { openPage } from "./headless.mjs";
 
 const port = Number(process.env.HUB_PORT);
 const state = process.env.BRIDGE_STATE;
-assert.ok(port >= 4620 && state, "set an isolated HUB_PORT (4620+) and BRIDGE_STATE");
-const bridge = process.env.BRIDGE_HOME || "/workspace/app";
+const bridge = process.env.BRIDGE_HOME;
+if (!(port >= 4620 && state && bridge)) {
+  console.log("SKIP comment-reply-check: set isolated HUB_PORT (4620+), BRIDGE_STATE and BRIDGE_HOME");
+  process.exit(3);
+}
 const env = { ...process.env, BRIDGE_PORT: String(port), BRIDGE_APP: path.resolve(".") };
 const read = name => fs.readFileSync(path.join(state, name), "utf8");
 const run = (name, args) => new Promise((resolve, reject) => {
@@ -20,13 +23,13 @@ const run = (name, args) => new Promise((resolve, reject) => {
   child.on("error", reject);
   child.on("close", code => code ? reject(new Error(`${name}: ${code}: ${stderr}`)) : resolve(stdout.trim()));
 });
-const browser = await openPage(`http://127.0.0.1:${port}/?name=User`);
+const browser = await openPage(`http://127.0.0.1:${port}/?name=Tester`);
 try {
   const { page, evaluate, until } = browser;
   await page("Page.enable");
   await page("Page.addScriptToEvaluateOnNewDocument", { source: `
-    sessionStorage.setItem("e2a2o.joined", "User");
-    localStorage.setItem("e2a2o.name", "User"); localStorage.setItem("e2a2o.toured", "1");
+    sessionStorage.setItem("e2a2o.joined", "Tester");
+    localStorage.setItem("e2a2o.name", "Tester"); localStorage.setItem("e2a2o.toured", "1");
     window.spoken = []; window.messages = []; window.mapWorld = null;
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
       getVoices: () => [], cancel() {}, speak(u) { spoken.push(u.text); queueMicrotask(() => u.onend?.()); }

@@ -52,6 +52,12 @@ export function noticeQueue() {
       items = items.filter((e) => e.kind !== kind);
       publish();
     },
+    dropGroup(group: string) {
+      const kept = items.filter((e) => e.group !== group);
+      if (kept.length === items.length) return;
+      items = kept;
+      publish();
+    },
     control(show: boolean) {
       if (show) { hidden = []; save(); return; }
       const current = items[0];

@@ -2984,9 +2984,9 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
         let notice = |message: serde_json::Value| (message["type"] == "notice").then(|| message["message"].as_str().unwrap_or_default().to_string());
-        // The world, where placing stands, and that there's no key.
-        for _ in 0..3 {
-            received(&mut window).await;
+        // The complete catch-up, before testing replies to new input.
+        for kind in ["snapshot", "placing", "usage", "notice"] {
+            assert_eq!(received(&mut window).await["type"], kind);
         }
         let send = |json: serde_json::Value| Message::Text(json.to_string().into());
 
@@ -3074,6 +3074,7 @@ mod tests {
         assert_eq!(received(&mut window).await["type"], "snapshot");
         // Where unplaced thoughts stand, so a window that reconnects shows its pills as they are: nothing yet.
         assert_eq!(received(&mut window).await, serde_json::json!({"type": "placing", "now": null, "retries": []}));
+        assert_eq!(received(&mut window).await, serde_json::json!({"type": "usage", "data": null}));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
         core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
@@ -3805,10 +3806,10 @@ mod notice_control_tests {
         let mut updates = core.updates.subscribe();
         for typed in [false, true] {
             for (words, show) in [("Stop showing this", false), ("Show those again", true)] {
-                if typed { core.add_typed("User", words); }
-                else { core.add_turn("User", words, true); }
+                if typed { core.add_typed("Tester", words); }
+                else { core.add_turn("Tester", words, true); }
                 let message = updates.try_recv().unwrap();
-                assert_eq!(message.to.as_deref(), Some("User"));
+                assert_eq!(message.to.as_deref(), Some("Tester"));
                 assert!(matches!(message.message, ServerMsg::NoticeControl { show: actual } if actual == show));
                 assert!(updates.try_recv().is_err());
                 assert!(core.snapshot().thoughts.is_empty());
