@@ -291,7 +291,7 @@ fn land(core: &Core, sent: &World, asked: &[String], answer: &[(String, String)]
             return 0;
         }
         let n = assigned.len();
-        let change = Change::TopicsAssigned { assigned: assigned.clone() };
+        let change = Change::TopicsAssigned { assigned: assigned.clone(), grouped: None };
         if core.commit_if(|now| assignments(now, sent, asked, answer) == assigned, vec![change]) {
             return n;
         }
@@ -513,7 +513,7 @@ mod tests {
         }
         let assigned: Vec<Assigned> = named.iter().map(|(id, name)| Assigned { thread_id: (*id).into(), topic: (*name).into() }).collect();
         if !assigned.is_empty() {
-            changes.push(Change::TopicsAssigned { assigned });
+            changes.push(Change::TopicsAssigned { assigned, grouped: None });
         }
         core.commit(changes);
         Map { core, path }
@@ -700,7 +700,7 @@ mod tests {
             let core = Core { key: Some(key.clone()), ..Core::test(journal, world) };
             let mut changes = load(sample);
             if !named.is_empty() {
-                changes.push(Change::TopicsAssigned { assigned: named.iter().map(|(id, name)| Assigned { thread_id: (*id).into(), topic: (*name).into() }).collect() });
+                changes.push(Change::TopicsAssigned { assigned: named.iter().map(|(id, name)| Assigned { thread_id: (*id).into(), topic: (*name).into() }).collect(), grouped: None });
                 let thread = json!({"id": "T9", "title": "Gym membership", "parent_id": null, "status": "open", "last_point": "", "touched_ms": 1_800_000_000_000u64});
                 changes.push(Change::ThreadAdded { thread: serde_json::from_value(thread).unwrap() });
                 let said = json!({"id": "g-1", "speaker": "you", "text": "cancel the gym", "point": "Cancel the gym membership before the 15th",
