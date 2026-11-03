@@ -92,7 +92,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const seen = useDwell(scroller, open, see, rows.length + live.length + (liveFriend ? 1 : 0));
   // Once the list has said what's in view (a frame after it shows), so the bar never flashes up on a list already there.
   const showCatchUp = unread.length > 0 && !!seen && !seen.has(firstUnread);
-  const catchUp = () => {
+  const goToMissed = () => {
     const row = scroller.current?.querySelector<HTMLElement>(`[data-turn="${firstUnread}"]`);
     row?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     // Focused, so R answers it and the keys go on from there; no ring for a move the page made.
@@ -179,7 +179,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
       <People call={call} me={me} captioning={captioning?.by ?? null} />
       <div className="talk-list">
         {/* Over the list's top, so coming and going it moves no turn; it goes once the first you missed is in view. */}
-        {showCatchUp && <button type="button" className="talk-catch-up" onClick={catchUp}>
+        {showCatchUp && <button type="button" className="talk-catch-up" onClick={goToMissed}>
           {late && before > 0 ? `Joined ${clock(meNow!.joined_ms)} · ${before} ${before === 1 ? "turn" : "turns"} before you` : `${unread.length} ${unread.length === 1 ? "turn" : "turns"} while you were away`}
           <span className="talk-catch-up-go">Catch up</span></button>}
         <div ref={scroller} className="talk-scroll">
