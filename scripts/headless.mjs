@@ -135,15 +135,23 @@ export async function openPage(url, { width = 1440, height = 900 } = {}) {
     const exited = new Promise((resolve) => (chrome.exitCode !== null ? resolve() : chrome.once("exit", resolve)));
     chrome.kill();
     await Promise.race([exited, sleep(3000)]);
+    // Let go of Chrome. Its crash handler can outlive it (12 s to over 2 minutes, with four checks running at once) and
+    // holds the other end of Chrome's stderr pipe; a pipe someone else still holds keeps this process alive after the
+    // check is done, and guide-check's old 4-minute detector then failed a finished check as "stuck" at its last step.
+    // Nothing here reads Chrome's output once it is closed, so drop our end and the child; what is left is ended with
+    // this process (endWhatIsLeft).
+    chrome.stderr.destroy();
+    chrome.unref();
     // The throwaway profile in the system's temp folder; Chrome may still be closing files in it.
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the OS clears its temp folder */ }
   };
   try {
     const devtools = await new Promise((resolve, reject) => {
       let err = "";
-      chrome.stderr.on("data", (d) => { err += d; const m = err.match(/DevTools listening on (ws:\/\/\S+)/); if (m) resolve(m[1]); });
-      chrome.on("exit", () => reject(new Error("Chrome exited")));
-      setTimeout(() => reject(new Error("Chrome did not start")), 15000);
+      // Cleared once settled: a timer left running held this process 15 s after the last page closed.
+      const timer = setTimeout(() => reject(new Error("Chrome did not start")), 15000);
+      chrome.stderr.on("data", (d) => { err += d; const m = err.match(/DevTools listening on (ws:\/\/\S+)/); if (m) { clearTimeout(timer); resolve(m[1]); } });
+      chrome.on("exit", () => { clearTimeout(timer); reject(new Error("Chrome exited")); });
     });
     const browser = new WebSocket(devtools);
     await new Promise((resolve, reject) => { browser.onopen = resolve; browser.onerror = reject; });
