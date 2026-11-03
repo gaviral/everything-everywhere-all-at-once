@@ -7,8 +7,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { BrickProps, Job } from "../contract";
-import { Counts, DemoLabel, isDemo, JobList, useFresh } from "./list";
-import { justNow } from "./jobs";
+import { Counts, DemoLabel, isDemo, JobList, useFresh, useNow } from "./list";
 import "./work-spine.css";
 
 /** The lane needs a window this wide in the new shell: the Canvas keeps at least 600 px beside it. */
@@ -36,21 +35,6 @@ function useLane(): boolean {
     return () => { media.removeEventListener("change", update); watch.disconnect(); };
   }, [shell]);
   return shell && wide && !taken;
-}
-
-/** The time, ticking once a second while a job runs (its clock) and every few seconds while "Just now" can still be
- *  true, else not at all; a new job brings it up to date at once. */
-function useNow(jobs: readonly Job[]): number {
-  const [now, setNow] = useState(() => Date.now());
-  const running = jobs.some((job) => job.status === "running");
-  const recent = justNow(jobs, now) !== null;
-  useEffect(() => {
-    setNow(Date.now());
-    if (!running && !recent) return;
-    const timer = window.setInterval(() => setNow(Date.now()), running ? 1000 : 5000);
-    return () => window.clearInterval(timer);
-  }, [jobs, running, recent]);
-  return now;
 }
 
 /** One polite line for a screen reader when a job lands, fails or asks: never each tick of a running clock. */

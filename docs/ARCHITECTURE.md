@@ -68,6 +68,7 @@ Browser, one page per window (ui/src)
     countdown.ts useShellCountdownPlacement measures camera, stage and controls to place the Countdown and size its editor through CSS properties
     shell.css    layout and styles scoped to html.shell2: fixed corners, centered stage, bottom status line, right rail and phone sheet
   talk/          the call's Talk tab, behind `?shell=2` for now; held by `scripts/call-check.mjs`
+  remote/        the Remote (`?remote`): a phone's page with the Work spine full height and the question a helper holds for you, to answer; in a room the core's jobs and holds, with no room its own demo feed (`demo.ts`, from `samples/demo-jobs.json`); `ask.ts` is what waits and what a question offers; held by `scripts/remote-check.mjs`
     call-core.ts the call store, fed by room.tsx's socket listener; pure helpers for people, states and levels; room.tsx's sendToCore sends read marks and levels back
     turns.ts     thoughts as turns (a split turn together, margin notes with their words), unread turns and where each person has read
     Talk.tsx     people, messages, "Speaking now…", read marks, Catch up, replies on picked words and the Friend's interruption level; talk.css draws them
