@@ -180,6 +180,8 @@ pub enum View {
     Pause,
     Export,
     Notices,
+    Talk,
+    Features,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's

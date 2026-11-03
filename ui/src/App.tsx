@@ -1,3 +1,5 @@
+import { switchTalk, useTalk } from "./talk-preset";
+import "./talk-preset.css";
 import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
@@ -107,6 +109,10 @@ export default function App() {
   useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+  const talk = useTalk();
+  useEffect(() => {
+    if (talk) core.showNotice("Talk is on. Say or type “all features” to go back.");
+  }, [talk]);
   const [focusMode, setFocusMode] = useState(false);
   // "map", "palace", "cards" (the shell's: the Catalog's built-in view), or the id of a view brick that's on
   // (bricks-core.ts): its name joins the Map and Palace switch.
@@ -182,6 +188,11 @@ export default function App() {
   useEffect(() => {
     if (!core.viewAsk) return;
     const asked = core.viewAsk.view;
+    if (asked === "talk" || asked === "features") {
+      switchTalk(asked === "talk");
+      core.showNotice(asked === "talk" ? "Talk is on. Say or type “all features” to go back." : "Your features are back.", core.viewAsk);
+      return;
+    }
     // The unfinished card's buttons, the mic and the notices ("what just happened?"), said aloud: handled where those live.
     if (asked === "later" || asked === "forget" || asked === "finish" || asked === "pause" || asked === "notices") return;
     if (asked === "help") { setHelpOpen(true); return; }
@@ -1027,7 +1038,7 @@ export default function App() {
   const viewBrick = viewBricks.find((brick) => brick.info.id === view);
   // A view that's gone while it's shown hands the window back to the map: a view brick switched off, or the shell's Cards
   // (the Features page's built-in view; the classic page has no such view, its map is the cards) switched off or never on.
-  const viewGone = view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick;
+  const viewGone = !talk && (view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick);
   useEffect(() => { if (viewGone) showView("map"); }, [viewGone]);
 
   const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
@@ -1116,6 +1127,7 @@ export default function App() {
     }
     if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
     if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
+    if (talk) return;
     const key = event.key.toLowerCase();
     const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
     if (tab && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
@@ -1367,13 +1379,13 @@ export default function App() {
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       <BrickSlot kind="panel" host={brickHost} />
-      <TalkRail host={brickHost} />
+      {!talk && <TalkRail host={brickHost} />}
       <BrickSlot kind="input" host={brickHost} />
       <Tips />
       <Catalog />
       {/* Another participant pointing at a part of the screen, or saying a caption (docs/guide.md). */}
       <Guide world={world} view={view} query={query} focus={focusMode} />
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1401,6 +1413,8 @@ export default function App() {
   // the cards' right-hand column, where the buttons are).
   const openView = (id: string) => { setRailTab(null); showView(id); };
   const rows: CatalogRow[] = [
+    { id: "preset-talk", kind: "panel" as const, name: "Talk", does: "Keep just what you need to talk. Turn off to bring your features back.",
+      on: talk, core: false, toggle: switchTalk },
     ...BRICKS.map(({ info }): CatalogRow => {
       const named = FEATURE_NAMES[info.id];
       return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
@@ -1461,13 +1475,13 @@ export default function App() {
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
-      {view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
+      {!talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+        : !talk && view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
           <NotesContext.Provider value={notes}><TidyProvider world={world} decide={core.tidy}><MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
             <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
-        : viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
+        : !talk && viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
         : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
@@ -1488,7 +1502,7 @@ export default function App() {
       <footer ref={dockRef} className="dock shell-dock">
       {/* Cards, notices and captions stay above the bottom bar's input row. */}
       <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
-        <div className="shell-cards">
+        <div className="shell-cards" hidden={talk}>
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
@@ -1562,7 +1576,7 @@ export default function App() {
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
 
-      {railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
+      {!talk && railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
         {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.undoId} now={now} onUndo={undoEntry} onShow={show}
@@ -1571,13 +1585,13 @@ export default function App() {
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
       </Rail>}
 
-      <TalkRail host={brickHost} />
+      {!talk && <TalkRail host={brickHost} />}
       {/* Floating features; the Notice timeline's list is History's here. */}
       {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline")
         .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
-      <Tips />
+      {!talk && <Tips />}
       <Guide world={world} view={view} query={query} focus={focusMode} />
-      <Recap view={core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
       }} />

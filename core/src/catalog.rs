@@ -29,6 +29,8 @@ use std::time::Duration;
 pub enum Act {
     Back,
     Notices,
+    Talk,
+    Features,
     Next,
     Previous,
     Search,
@@ -146,6 +148,8 @@ pub struct Def {
 pub const CATALOG: &[Def] = &[
     Def { act: Act::Help, does: "list what you can say", template: Some("what can I say"), phrases: &["What can I say?", "Help"], needs: Needs::Nothing, answers: "opens Help", undo: UndoBy::Not("your next turn, Esc or a click closes it"), external: false, button: Some("?") },
     Def { act: Act::Back, does: "go back to where you left off", template: Some("where was I"), phrases: &["Where was I?", "Take me back to where I was", "What was I thinking?", "Let me finish my thought", "Going back to what I was saying", "Going back to what you were saying", "I lost my place", "I lost my train of thought", "I don't remember what I was saying", "Where did I leave off?"], needs: Needs::Nothing, answers: "moves the map there: “Back to …”", undo: UndoBy::MoveBack, external: false, button: Some("focus") },
+    Def { act: Act::Talk, does: "keep just the features needed to talk", template: Some("talk mode"), phrases: &["Talk mode"], needs: Needs::Nothing, answers: "turns on Talk in your windows", undo: UndoBy::Not("say all features to bring your features back"), external: false, button: Some("Talk in Features") },
+    Def { act: Act::Features, does: "bring back the features from before Talk", template: Some("all features"), phrases: &["All features"], needs: Needs::Nothing, answers: "turns off Talk in your windows", undo: UndoBy::Not("say talk mode to turn Talk on again"), external: false, button: Some("Talk in Features") },
     Def { act: Act::Notices, does: "show what just happened: the notices you may have missed, newest first", template: Some("what just happened"), phrases: &["What just happened?", "What happened just now?", "Show me the notices"], needs: Needs::Nothing, answers: "opens Notification history (with it off, says where to switch it on)", undo: UndoBy::Not("Esc, × or a click outside closes it"), external: false, button: Some("the Notification history's clock") },
     Def { act: Act::Next, does: "go to the next topic", template: Some("next one"), phrases: &["Next one"], needs: Needs::Nothing, answers: "moves the map: “On to …”", undo: UndoBy::MoveBack, external: false, button: Some("j") },
     Def { act: Act::Previous, does: "go to the topic before", template: Some("last one"), phrases: &["Last one", "Go back one", "Previous one"], needs: Needs::Nothing, answers: "moves the map: “Previous: …”", undo: UndoBy::MoveBack, external: false, button: Some("k") },
@@ -247,6 +251,8 @@ pub fn of_view(view: View) -> Act {
         View::Pause => Act::Pause,
         View::Export => Act::Export,
         View::Notices => Act::Notices,
+        View::Talk => Act::Talk,
+        View::Features => Act::Features,
     }
 }
 

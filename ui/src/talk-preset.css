@@ -1,0 +1,5 @@
+/* Keep the existing geometry. The preset hides tools, never rearranges the page. */
+html[data-talk] :is([data-slot="top-left"], [data-slot="top-right"], [data-slot="bottom-left"], [data-slot="bottom-right"],
+  .shell-status-right, .shell-cards, .shell-welcome, .spine-corner, .spine-cues, .spine-cue-line, .spine-tools, .guide-arrow, .explain) {
+  display: none !important;
+}
