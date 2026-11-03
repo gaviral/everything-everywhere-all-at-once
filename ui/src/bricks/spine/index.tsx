@@ -672,7 +672,10 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     // A spine doesn't stretch after one point pulled off it: its line stays where its points are.
     const other = end === link.from ? link.to : link.from;
     const p = link.kind === "spine" && group?.has(end.key) && !group.has(other.key) ? shown.get(item.key) ?? item.box : at(item);
-    return { x: p.x + end.dx, y: p.y + end.dy };
+    // Pictures shows no words for a tangent's curve to leave from the end of: it leaves the line (the point's dot, or the
+    // topic's picture) instead.
+    const dx = shownStop === "pictures" && link.kind === "branch" && end === link.from ? G.lineX : end.dx;
+    return { x: p.x + dx, y: p.y + end.dy };
   };
 
   // The zoom stops: one place at three distances. Words is reading size at what you follow (or the middle of the view);
