@@ -88,9 +88,70 @@ try {
   const loaders = Object.fromEntries(folders.filter((f) => existsSync(join(bricksDir, f, "index.tsx"))).map((f) => [`./bricks/${f}/index.tsx`, async () => ({})]));
   const { problems: across } = discover(infos, loaders);
   for (const [folder, wrong] of Object.entries(across)) for (const w of wrong) if (/^flag ?/.test(w) && / too$/.test(w) && checked.includes(folder)) fail(folder, w);
+  if (checked.includes("live-outline")) await liveOutlineRules(server);
   if (!only) await contractRules(server);
 } finally {
   await server.close();
+}
+
+/** Live outline's pure rules, with room names supplied exactly as map.rooms supplies them to the component. */
+async function liveOutlineRules(server) {
+  const { trimFillers, layoutOutline, QUIET_MS } = await server.ssrLoadModule("/src/bricks/live-outline/outline.ts");
+  // No parent links: the levels come from the order things were said in, not from how the map nests its threads.
+  const threads = Object.freeze([
+    Object.freeze({ id: "main", title: "The main line", color: "green" }),
+    Object.freeze({ id: "side", title: "A side trip with details", color: "pink" }),
+    Object.freeze({ id: "nested", title: "A smaller detour", color: "pink" }),
+    Object.freeze({ id: "third", title: "Third", color: "teal" }),
+    Object.freeze({ id: "fourth", title: "Fourth", color: "red" }),
+    Object.freeze({ id: "fifth", title: "Fifth", color: "lime" }),
+  ]);
+  const landing = (threadId, n, at = n * 1000) => Object.freeze({ kind: "landed", thoughtId: `lo-${n}`, threadId, text: `Point ${n}`, at });
+  const points = (events, now = events.at(-1)?.at ?? 0) => layoutOutline(Object.freeze(events), threads, now).filter((row) => row.kind === "thought");
+  // 1. Main -> side trip -> main. The side's title is at most three words and its room color is carried through.
+  const first = [landing("main", 1), landing("side", 2), landing("main", 3)];
+  assert.deepEqual(points(first).map((row) => row.level), [0, 1, 0], "live-outline: return to the main line steps back out");
+  assert.deepEqual(points(first).map((row) => [row.color, row.chip]), [["green", null], ["pink", "A side trip…"], ["green", null]], "live-outline: room colors and short side-trip chips");
+  // 2. Conversation is a stack, the main line its bottom: a thought in a new thread steps in one level; one in a thread
+  //    already on the way in steps back out to that thread's level. (Main holds the most, a tie going to the first.)
+  assert.deepEqual(points([landing("main", 1), landing("side", 2), landing("nested", 3), landing("side", 4), landing("main", 5)]).map((row) => row.level),
+    [0, 1, 2, 1, 0], "live-outline: main → A → B → A → main is 0, 1, 2, 1, 0");
+  // Deeper than three shows at three, and the stack keeps its true depth: coming back out lands on the right level.
+  const deep = [landing("main", 1), landing("side", 2), landing("nested", 3), landing("third", 4), landing("fourth", 5), landing("fifth", 6),
+    landing("nested", 7), landing("main", 8), landing("main", 9)];
+  assert.deepEqual(points(deep).map((row) => row.level), [0, 1, 2, 3, 3, 3, 2, 0, 0], "live-outline: levels stop at three, and a pop lands on the thread's real level");
+  // The main line is the bottom from the start, even when the first thing said was a side trip.
+  assert.deepEqual(points([landing("side", 1), landing("main", 2), landing("main", 3)]).map((row) => [row.level, row.chip === null]), [[1, false], [0, true], [0, true]], "live-outline: a side trip before the main line is said steps in from it");
+  // 3. A tie keeps the thread that landed first; strictly more thoughts makes the other thread the main line.
+  const tied = [...first, landing("side", 4)];
+  assert.deepEqual(points(tied).map((row) => row.level), [0, 1, 0, 1], "live-outline: first thought wins a tie");
+  assert.deepEqual(points([...tied, landing("side", 5)]).map((row) => row.level), [1, 0, 1, 0, 0], "live-outline: a new main line re-indents every earlier thought");
+  assert.equal(points([...first, first[1]]).length, 3, "live-outline: a repeated event isn't another thought");
+  // 4. Trim only the listed fillers, with the remaining words in exactly their original order and case.
+  for (const [said, cleaned] of [
+    ["Um, uh, erm, the the plan is ready.", "the plan is ready."],
+    ["You know, we can try. I mean, we should.", "we can try. we should."],
+    ["We, you know, need it; I mean the budget.", "We need it; the budget."],
+    ["It is, I mean, kind of slow.", "It is kind of slow."],
+    ["Basically, it is like, a map; so yeah, let's go.", "it is a map; let's go."],
+    ["the the the plan", "the plan"],
+    ["um, so yeah.", ""],
+  ]) assert.deepEqual(trimFillers(said), { text: cleaned, trimmed: true }, `live-outline: trim ${JSON.stringify(said)}`);
+  for (const said of ["I like pizza", "kind of slow", "it's like a map", "Do you know the way?", "What I mean is this.",
+    "We basically need a map.", "Basically this works.", "We basically, need this.", "The album is ready; uh-oh.", "Spacing  stays."]) {
+    assert.deepEqual(trimFillers(said), { text: said, trimmed: false }, `live-outline: keep ${JSON.stringify(said)}`);
+  }
+  // 5. Quiet is two minutes since either words or a landing, including when no next landing arrives.
+  assert.equal(QUIET_MS, 120_000, "live-outline: two minutes");
+  assert.equal(points(first, 3000 + QUIET_MS - 1).length, 3, "live-outline: keep this talk until two quiet minutes");
+  const quiet = layoutOutline(first, threads, 3000 + QUIET_MS);
+  assert.deepEqual(quiet, [{ kind: "break", key: `talk:${3000 + QUIET_MS}`, at: 3000 + QUIET_MS }], "live-outline: clear the outline with a New talk divider at two minutes");
+  assert.deepEqual(points([...first, landing("side", 4, 3000 + QUIET_MS)]).map((row) => [row.thoughtId, row.level]), [["lo-4", 0]], "live-outline: a fresh talk has fresh counts");
+  const speaking = [landing("main", 1, 0), { kind: "words", at: 60_000 }, { kind: "words", at: 119_000 },
+    { kind: "words", at: 180_000 }, landing("side", 2, 200_000)];
+  assert.deepEqual(points(speaking).map((row) => row.level), [0, 1], "live-outline: ongoing words prevent a break between distant landings");
+  assert.equal(points(speaking, 200_000 + QUIET_MS).length, 0, "live-outline: a landing also restarts the quiet clock");
+  assert.deepEqual(points([{ kind: "opened", at: 0 }]), [], "live-outline: opening starts an empty talk");
 }
 
 /** The contract's rules, without a page (contract.ts, through Vite as the app runs them). */
@@ -306,7 +367,7 @@ try {
       await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
       if (!await until(`document.querySelectorAll(".notice-timeline-entry").length === 4 && document.activeElement === document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "the clock opens no list, or the list doesn't take focus");
       const burst = JSON.stringify(await evaluate(entries));
-      if (burst !== JSON.stringify([{ text: "Couldn't place a thought. It's saved and will retry automatically.", kind: "error" },
+      if (burst !== JSON.stringify([{ text: "Couldn't sort that thought yet. It's saved and will retry.", kind: "error" },
         { text: "Repeated notice", kind: "notice" }, { text: "Repeated notice", kind: "notice" }, { text: "First notice", kind: "notice" }])) fail(where, `a burst kept as ${burst}`);
       await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
       if (!await until(`!document.querySelector(".notice-timeline-panel") && document.activeElement === document.querySelector(".notice-timeline-clock")`, 2000)) fail(where, "Esc doesn't close the list, focus back on the clock");
@@ -556,6 +617,169 @@ try {
       await width(1280, 860);
       await go(`${base}/bricks.html`); // Fresh native clock and storage methods before putting the storage back.
       await evaluate(`${JSON.stringify(keys)}.forEach((key, i) => { const was = ${JSON.stringify(saved)}[i]; if (was === null) localStorage.removeItem(key); else localStorage.setItem(key, was); })`);
+      shown = full;
+    }
+  }
+  // Live outline: your talk as an outline while you say it (`landed`, `words`). In the playground, on a full map: no
+  // points before you talk nor from anyone else; a thought lands as a point, filler trimmed and cut at 140 characters,
+  // its original an Enter, a click or the switch away, its thread a go button or a double-click away; main → A → B → A →
+  // main steps in, in, out one, out, each bar in its thread's room color; the newest point stays in view; the live line
+  // holds until its point lands and then the point is it; two quiet minutes (the clock jumps, as it does for a tab that
+  // slept) start a new talk; under 600 px the last five, and still at Reduce Motion. In the app, full of points, it
+  // stands above the Notice timeline's clock and the Countdown's card and covers none of the page's controls.
+  if (checked.includes("live-outline")) {
+    const where = "live-outline (playground)";
+    const info = infos["./bricks/live-outline/brick.json"];
+    if (info.kind !== "panel" || info.defaultOn !== false || info.demoSafe !== false) fail("live-outline", "brick.json: a panel, off, not demo-safe (a review flips it)");
+    if (info.showsLiveWords !== true) fail("live-outline", "brick.json: showsLiveWords true, since it shows your live words itself and the dock's line leaves them to it");
+    const bullets = `document.querySelectorAll(".live-outline-bullet")`;
+    const texts = `[...document.querySelectorAll(".live-outline-text")].map((p) => p.textContent)`;
+    const press = (label) => evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+    // Said on a thread: the playground lands what's added on the thread you're on, 1.2 s later.
+    const say = async (threadId, text, count) => {
+      await evaluate(`window.brickActions.openThread(${JSON.stringify(threadId)}); window.brickActions.addThought(${JSON.stringify(text)})`);
+      return until(`${bullets}.length === ${count}`, 4000);
+    };
+    const enter = async () => {
+      await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+      await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    };
+    const opened = `[...document.querySelectorAll(".playground-log li")].filter((li) => li.textContent.startsWith("openThread ")).length`;
+    await width(1280, 860);
+    await go(`${base}/bricks.html?brick=live-outline&sample=founder-day`);
+    if (!await until(`document.querySelector(".live-outline-empty")?.textContent === "Talk, and your points line up here. Side trips step in, in their thread's color."`, 8000)) fail(where, "a full map doesn't open on an empty talk with its words");
+    await press("The Friend says one");
+    await sleep(1700);
+    if (await evaluate(`${bullets}.length !== 0`)) fail(where, "someone else's point appears in your outline");
+    const said = "Um, the the plan is kind of slow, you know, but I like pizza and it's like a map. " + "Keep these exact words. ".repeat(9).trim();
+    if (!await say("T1", said, 1)) fail(where, "your thought never became a point");
+    else {
+      await settle();
+      const compact = await evaluate(`(${texts})[0]`);
+      if (Array.from(compact).length !== 141 || !compact.endsWith("…") || compact.includes("Um") || compact.includes("the the")) fail(where, `the point isn't trimmed and cut at 140 characters: ${compact}`);
+      const shape = await evaluate(`(() => { const li = document.querySelector(".live-outline-bullet"); return { list: li.parentElement.matches("ul.live-outline-list"), tab: li.tabIndex, level: li.getAttribute("aria-level"), mark: !!li.querySelector(".live-outline-trimmed"), chip: !!li.querySelector(".live-outline-chip") }; })()`);
+      if (!shape.list || shape.tab !== 0 || shape.level !== "1" || !shape.mark || shape.chip) fail(where, `a point isn't a focusable list item with its level and a "trimmed" mark (and no chip on the main line): ${JSON.stringify(shape)}`);
+      await evaluate(`document.querySelector(".live-outline-bullet").focus()`);
+      await enter();
+      if (!await until(`(${texts})[0] === ${JSON.stringify(said)}`, 1000)) fail(where, "Enter doesn't show the original words");
+      await evaluate(`document.querySelector(".live-outline-bullet").click()`);
+      if (!await until(`(${texts})[0] === ${JSON.stringify(compact)}`, 1000)) fail(where, "a click doesn't fold the original away again");
+      await evaluate(`document.querySelector(".live-outline-original").click()`);
+      if (!await until(`(${texts})[0] === ${JSON.stringify(said)} && document.querySelector(".live-outline-original").getAttribute("aria-checked") === "true"`, 1000)) fail(where, "Original words doesn't show every point's original");
+      await evaluate(`document.querySelector(".live-outline-original").click()`);
+      const before = await evaluate(opened);
+      await evaluate(`document.querySelector(".live-outline-go").click()`);
+      if (!await until(`${opened} > ${before}`, 1000)) fail(where, "the go button doesn't open the thread");
+      const between = await evaluate(opened);
+      await evaluate(`document.querySelector(".live-outline-bullet").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+      if (!await until(`${opened} > ${between}`, 1000)) fail(where, "a double-click doesn't open the thread");
+    }
+    // Main → A → B → A → main: the stack (T1 holds the most, then ties with T3 and wins as the first), each bar in its room's color.
+    if (!await say("T3", "Oh and the checkout bug is still there", 2) || !await say("T4", "Reproduce it on staging first", 3)
+      || !await say("T3", "It fails with two items", 4) || !await say("T1", "Back to the call numbers", 5)) fail(where, "points didn't land one after another");
+    else {
+      await settle();
+      const outline = await evaluate(`(() => {
+        const color = (name) => { const probe = document.createElement("i"); probe.style.color = "var(--room-" + name + ")"; document.body.append(probe); const c = getComputedStyle(probe).color; probe.remove(); return c; };
+        const lis = [...${bullets}], left = lis.map((li) => Math.round(li.getBoundingClientRect().left));
+        return { levels: lis.map((li) => li.dataset.level).join(), bars: lis.map((li) => getComputedStyle(li).borderLeftColor), want: ["green", "teal", "teal", "teal", "green"].map(color),
+          chips: lis.map((li) => li.querySelector(".live-outline-chip")?.textContent ?? null), left };
+      })()`);
+      if (outline.levels !== "0,1,2,1,0") fail(where, `main → A → B → A → main gives levels ${outline.levels}, not 0,1,2,1,0`);
+      if (JSON.stringify(outline.bars) !== JSON.stringify(outline.want)) fail(where, `a bar isn't its thread's room color: ${JSON.stringify(outline.bars)}, not ${JSON.stringify(outline.want)}`);
+      if (JSON.stringify(outline.chips) !== JSON.stringify([null, "Checkout bug", "Bug investigation steps", "Checkout bug", null])) fail(where, `chips are ${JSON.stringify(outline.chips)}`);
+      const [l0, l1, l2, l3, l4] = outline.left;
+      if (!(l1 > l0 && l2 > l1 && l3 === l1 && l4 === l0)) fail(where, `the points don't step in and out by level: ${outline.left}`);
+    }
+    // A burst loses nothing, and the newest point stays in view even when the points fill the panel (the keys' focus on
+    // the first point, from above, let go: someone walking the points with the keys isn't yanked to the end).
+    await evaluate(`document.activeElement?.blur()`);
+    for (let i = 0; i < 6; i++) await evaluate(`window.brickActions.addThought("Next point ${i}")`);
+    if (!await until(`${bullets}.length === 11`, 4000)) fail(where, "a burst of six lost points");
+    await settle();
+    const follow = await evaluate(`(() => { const area = document.querySelector(".live-outline-scroll"), last = [...${bullets}].at(-1).getBoundingClientRect(), box = area.getBoundingClientRect();
+      return { scrolls: area.scrollHeight > area.clientHeight, inView: last.bottom <= box.bottom + 1 && last.top >= box.top - 1 }; })()`);
+    if (!follow.scrolls) fail(where, "eleven points don't fill the panel, so the check can't see whether the newest stays in view");
+    else if (!follow.inView) fail(where, "the newest point lands out of view");
+    // Under 600 px the last five (all eleven above), the panel inside the window, and nothing moves at Reduce Motion.
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+    for (const [w, h] of [[1280, 860], [599, 844], [390, 844], [320, 568]]) {
+      await width(w, h);
+      await settle();
+      const state = await evaluate(`(() => {
+        const panel = document.querySelector(".live-outline"), box = panel.getBoundingClientRect();
+        const shown = [...${bullets}].filter((li) => getComputedStyle(li).display !== "none");
+        return { visible: shown.length, first: shown[0]?.querySelector(".live-outline-text").textContent, left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+          sideways: document.documentElement.scrollWidth - innerWidth, still: shown.every((li) => getComputedStyle(li).animationName === "none" && getComputedStyle(li).transitionDuration === "0s") };
+      })()`);
+      if (state.visible !== (w < 600 ? 5 : 11) || (w < 600 && state.first !== "Next point 1")) fail(where, `the last five under 600 px (all above), at ${w} px: ${JSON.stringify(state)}`);
+      if (state.left < 0 || state.right > w || state.top < 0 || state.bottom > h || state.sideways > 1) fail(where, `the panel leaves the window at ${w} px: ${JSON.stringify(state)}`);
+      if (!state.still) fail(where, `a point moves at Reduce Motion, at ${w} px`);
+    }
+    await cdp("Emulation.setEmulatedMedia", { features: [] });
+    await width(1280, 860);
+    // Said aloud: the live line is italic; from the first word to the point, the words never go missing in between.
+    await go(`${base}/bricks.html?brick=live-outline&sample=empty`);
+    await until(`!!document.querySelector(".live-outline-empty")`, 8000);
+    await evaluate(`window.__samples = []; window.__sampler = setInterval(() => window.__samples.push([!!document.querySelector(".live-outline-live"), document.querySelectorAll(".live-outline-bullet").length]), 30)`);
+    await press("Say a thought");
+    if (!await until(`!!document.querySelector(".live-outline-live")`, 1500)) fail(where, "no live line while you speak");
+    else if (!await evaluate(`getComputedStyle(document.querySelector(".live-outline-live")).fontStyle === "italic"`)) fail(where, "the live line isn't italic");
+    if (!await until(`${bullets}.length === 1 && !document.querySelector(".live-outline-live")`, 7000)) fail(where, "the live thought didn't become a point when it landed");
+    const samples = await evaluate(`(clearInterval(window.__sampler), window.__samples)`);
+    const spoken = samples.findIndex(([live]) => live);
+    if (spoken < 0 || samples.slice(spoken).some(([live, n]) => !live && n === 0)) fail(where, "the words vanish between the end of the turn and their point landing");
+    // Two quiet minutes: this window's clock jumps (a tab that slept), and the next point starts a new talk, alone.
+    await evaluate(`(() => { const real = Date.now.bind(Date); window.__skew = 0; Date.now = () => real() + window.__skew; })()`);
+    await evaluate(`window.__skew = 125000; window.brickActions.addThought("A new talk starts here")`);
+    if (!await until(`(${texts}).join("|") === "A new talk starts here" && !!document.querySelector(".live-outline-break")`, 4000)) fail(where, "two quiet minutes don't start a new talk with only its own points");
+    if (await evaluate(`!!document.querySelector(".brick-broke") || document.querySelector(".playground").dataset.errors !== "0"`)) fail(where, "a runtime error");
+
+    // In the app, which has controls of its own, the outline full: it stands above the corner's row (the clock, the card)
+    // and covers none of what the page gives to touch: the header, the Apps panel, the map's tools, the dock.
+    const keys = ["e2a2o.bricks", "e2a2o.toured", "e2a2o.countdown"];
+    await go(`${base}/bricks.html`);
+    const saved = await evaluate(`${JSON.stringify(keys)}.map((key) => localStorage.getItem(key))`);
+    const deadlines = [{ label: "Feature freeze", at: new Date(Date.now() + 21 * 3_600_000).toISOString() }, { label: "Submission", at: new Date(Date.now() + 53 * 3_600_000).toISOString() }];
+    await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "live-outline": true, "notice-timeline": true, countdown: true })); localStorage.setItem("e2a2o.toured", "1"); localStorage.setItem("e2a2o.countdown", ${JSON.stringify(JSON.stringify(deadlines))})`);
+    shown = full;
+    const controls = `(() => {
+      scrollTo(0, 0);
+      const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+      return [...document.querySelectorAll("header, .apps-panel, .map-tools, .dock")].flatMap((part) => [...part.querySelectorAll("button, input, textarea, select, a[href]")])
+        .filter((el) => !el.closest(".live-outline") && getComputedStyle(el).visibility !== "hidden").map((el) => ({ name: (el.getAttribute("aria-label") || el.textContent || el.placeholder || el.tagName).trim().slice(0, 24), part: el.closest("header, .apps-panel, .map-tools, .dock").className || "header", box: box(el) }))
+        .filter(({ box: b }) => b.right - b.left > 1 && b.bottom - b.top > 1 && b.right > 0 && b.left < innerWidth && b.bottom > 0 && b.top < innerHeight);
+    })()`;
+    const meets = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+    const talk = ["T1", "T1", "T3", "T4", "T3", "T1", "T2", "T1"];
+    try {
+      for (const [w, h] of [[1440, 900], [1024, 768], [768, 1024], [390, 844], [360, 740], [320, 568]]) {
+        const at = `live-outline in the app at ${w} × ${h} px`;
+        await width(w, h);
+        await go(`${base}/`);
+        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no panel"); continue; }
+        core.send({ type: "notice", message: "A notice to come back to" });
+        talk.forEach((threadId, i) => core.send({ type: "change", change: { type: "thought_added", thought: thought(`lo-${w}-${i}`, `Point ${i + 1} of the talk, um, said at a length that takes a line or two of the outline`, threadId) } }));
+        if (!await until(`${bullets}.length === ${talk.length} && !!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "the points from the core never all showed, or no clock"); continue; }
+        await settle();
+        const all = await evaluate(controls);
+        if (all.length < 6) fail(at, `found only ${all.length} controls of the page to keep clear of: the check can't see its parts`);
+        const place = await evaluate(`(() => { const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+          const clock = document.querySelector(".notice-timeline-clock"), card = document.querySelector(".countdown-card");
+          return { ...box(document.querySelector(".live-outline")), dock: document.querySelector(".dock").getBoundingClientRect().top, header: document.querySelector("header").getBoundingClientRect().bottom,
+            clock: clock ? clock.getBoundingClientRect().top : null, card: card ? card.getBoundingClientRect().top : null }; })()`);
+        if (place.left < 0 || place.right > w || place.top < place.header || place.bottom > place.dock) fail(at, `the panel leaves the free part of the window: ${JSON.stringify(place)}`);
+        if (place.clock === null) fail(at, "no clock to stand above");
+        else if (place.bottom > Math.min(place.clock, place.card ?? place.clock) - 6) fail(at, `the panel doesn't stand clear (6 px) above the clock and the card: ${JSON.stringify(place)}`);
+        // A 568 px high phone keeps 63 px between the map's tools and the corner's row: there the panel keeps its 96 px
+        // floor and may cover the tools' last line, which is the one place it may; everywhere else, none.
+        for (const control of all) if (h > 600 && meets(place, control.box)) fail(at, `the panel covers "${control.name}" (${control.part})`);
+        if (await evaluate(`!!document.querySelector(".brick-broke")`)) fail(at, "it broke");
+      }
+    } finally {
+      await go(`${base}/bricks.html`);
+      await evaluate(`${JSON.stringify(keys)}.forEach((key, i) => { const was = ${JSON.stringify(saved)}[i]; if (was === null) localStorage.removeItem(key); else localStorage.setItem(key, was); })`);
+      await width(1280, 860);
       shown = full;
     }
   }

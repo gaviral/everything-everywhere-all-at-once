@@ -37,7 +37,7 @@ assert.ok(+title.match(/font-size:\s*(\d+)px/)[1] >= body + 2, "the title is at 
 assert.ok(+title.match(/font-weight:\s*(\d+)/)[1] >= 650, "the title is at least 650");
 
 // 3. Amber means "this can slip away" (left off, Finish it, due): the count of proposals to review stays quiet.
-assert.ok(rule(styles, ".chip.waiting") && !/amber/.test(rule(styles, ".chip.waiting")), "\"N to review\" isn't amber");
+assert.ok(rule(styles, ".chip.waiting") && !/amber/.test(rule(styles, ".chip.waiting")), "\"N new\" isn't amber");
 const amberChips = [...styles.matchAll(/(\.chip[.\w-]*)\s*\{[^}]*var\(--amber/g)].map(([, s]) => s);
 assert.deepEqual(amberChips, [".chip.dropped"], "the only amber chip on a card is left off");
 

@@ -134,13 +134,14 @@ try {
 
   // The away card's rule matches the code's.
   assert.match(AWAY_WHEN, new RegExp(`${AWAY_AFTER_MS / 1000} s`));
-  assert.match(AWAY_WHAT, /thoughts landed/);
+  assert.match(AWAY_WHAT, /thoughts were added/);
 
   // Every ✦ in the UI carries its tip on its own element, or sits in a control that explains it. Allowed without:
   // the ? list's legend, the tip texts themselves, a suggested tag's ✦ (its button has the tip) and "✦ fixed"
   // (its button turns into "heard … · undo" on hover and focus).
   const missing = [];
-  for (const file of readdirSync(src).filter((name) => name.endsWith(".tsx"))) {
+  // The new shell's parts too (src/shell/, behind ?shell=2).
+  for (const file of [...readdirSync(src).filter((name) => name.endsWith(".tsx")), ...readdirSync(new URL("shell/", src)).filter((name) => name.endsWith(".tsx")).map((name) => `shell/${name}`)]) {
     if (["Symbols.tsx", "Tips.tsx"].includes(file)) continue;
     const text = readFileSync(new URL(file, src), "utf8");
     const lines = text.split("\n");

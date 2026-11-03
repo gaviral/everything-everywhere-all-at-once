@@ -1,0 +1,321 @@
+/* The revamped shell (?shell=2): four corners and no header bar, the stage at the bottom center, the status line flush
+   at the bottom, the rail at the right. Solid surfaces (no blur over a panning canvas); six type sizes (11 13 15 18 24
+   32); weights 400 500 600. Every rule is scoped to html.shell2, so today's page is untouched. Tokens: styles.css. */
+
+html.shell2, html.shell2 body { background: var(--space); }
+html.shell2 body { font-size: 15px; letter-spacing: -.003em; }
+/* The canvas is the map and the only thing that pans: the page itself holds still under it. */
+html.shell2[data-view="map"], html.shell2[data-view="map"] body { overflow: hidden; height: 100%; }
+/* Cards scrolls: clear of the corners at the top and the stage at the bottom. */
+html.shell2 .app.shell > .map { padding-top: 76px; padding-bottom: 180px; }
+html.shell2 .app.shell { min-height: 100vh; }
+
+/* ── Parts ───────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+html.shell2 .keycap {
+  display: inline-block; flex: none; min-width: 16px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 4px;
+  color: var(--muted); font: 500 11px/14px -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  letter-spacing: 0; text-align: center; font-variant-numeric: tabular-nums;
+}
+html.shell2 .shell-icon { flex: none; color: var(--muted); }
+html.shell2 .stamp {
+  display: inline-block; padding: 3px 6px 2px; border: 1.5px solid currentColor; border-radius: 4px;
+  color: var(--ink-2); font-size: 11px; font-weight: 600; line-height: 1; letter-spacing: .12em; text-transform: uppercase;
+}
+html.shell2 .shell-sep { flex: none; width: 1px; height: 16px; background: var(--line-2); }
+html.shell2 .shell-amber { color: var(--amber); }
+
+html.shell2 .shell-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 20px;
+  background: var(--surface); box-shadow: var(--shadow); color: var(--ink-2); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+html.shell2 .shell-button { cursor: pointer; font-family: inherit; }
+html.shell2 .shell-button:hover { color: var(--ink); }
+html.shell2 .shell-button.shell-on { background: var(--surface-3); color: var(--ink); }
+html.shell2 .shell-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 16px;
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+html.shell2 .shell-btn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, transparent); }
+html.shell2 .shell-btn .keycap { color: inherit; opacity: .7; border-color: currentColor; }
+html.shell2 .shell-link {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--blue);
+  font: inherit; font-weight: 500; cursor: pointer;
+}
+html.shell2 .shell-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+html.shell2 :is(.shell-button, .shell-btn, .shell-link, .shell-tab, .shell-rail-close, .shell-switch, .shell-status-right, .shell-row-button, .shell-find-row, .shell-held-chip, .shell-sample):focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+
+/* ── Corners ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-items: center; gap: 8px; }
+html.shell2 .shell-tl { top: 16px; left: 16px; }
+html.shell2 .shell-tr { top: 16px; right: 16px; }
+html.shell2 .shell-bl { bottom: 36px; left: 16px; }
+html.shell2 .shell-br { right: 16px; bottom: var(--shelf-top, 36px); z-index: 41; flex-direction: column; align-items: flex-end; }
+html.shell2 .shell-identity { gap: 10px; }
+html.shell2 .shell-wordmark { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .14em; }
+html.shell2 .shell-mapname { color: var(--ink-2); }
+
+/* Find: the pill is its field, wider while you type; the topics found list under it. */
+html.shell2 .shell-find { position: relative; }
+html.shell2 .shell-find-field { width: 112px; padding-right: 10px; cursor: text; transition: width .2s ease; }
+html.shell2 .shell-find-open .shell-find-field { width: 320px; }
+html.shell2 .shell-find-field input {
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--ink);
+  font: inherit; font-size: 13px; font-weight: 500;
+}
+html.shell2 .shell-find-field input::placeholder { color: var(--ink-2); opacity: 1; }
+html.shell2 .shell-find-open .shell-find-field input::placeholder { color: var(--muted); font-weight: 400; }
+html.shell2 .shell-find-field input::-webkit-search-cancel-button { display: none; }
+html.shell2 .shell-find-field:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+html.shell2 .shell-find-results {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 320px; padding: 6px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+html.shell2 .shell-find-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 9px;
+  background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+html.shell2 .shell-find-row[aria-selected="true"] { background: var(--surface-3); }
+html.shell2 .shell-find-title { flex: 1; min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+html.shell2 .shell-find-meta { color: var(--muted); font-size: 11px; }
+html.shell2 .shell-find-none { margin: 0; padding: 8px 10px; color: var(--muted); font-size: 13px; }
+
+/* ── The stage: bottom center, at most 600 px, bottom up: the composer, captions, one notice, a card ───────────────── */
+
+html.shell2 .shell-stage {
+  position: fixed; bottom: 36px; left: 50%; z-index: 42; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); translate: -50% 0; pointer-events: none;
+}
+html.shell2 .shell-stage > * { pointer-events: auto; }
+html.shell2 .shell-cards { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+html.shell2 .shell-cards:empty, html.shell2 .shell-captions:empty { display: none; }
+html.shell2 .shell-captions { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+
+/* The one notice, above the composer: solid, ink buttons, its Undo and × at the end. */
+html.shell2 .shell-stage .notice, html.shell2 .shell-stage .map-change {
+  position: static; display: flex; align-items: center; gap: 10px; width: auto; max-width: none; margin: 0; padding: 10px 10px 10px 14px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); color: var(--ink);
+  font-size: 13px; line-height: 1.4;
+}
+html.shell2 .shell-stage .notice > span:first-child, html.shell2 .shell-stage .map-change > span:first-child { flex: 1; }
+html.shell2 .shell-stage :is(.pullback, .away, .first-hint, .brick-card, .install-hint) { margin: 0; }
+
+/* The composer: the mic, your typing, the mic's key. Voice never enters the box: your words show in the status line. */
+html.shell2 .shell-composer {
+  display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 8px 0 6px; border: 1px solid var(--line-2); border-radius: 24px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+html.shell2 .shell-composer:focus-within { border-color: color-mix(in srgb, var(--blue) 55%, var(--line-2)); }
+html.shell2 .shell-composer textarea {
+  flex: 1; min-width: 0; height: 22px; max-height: 22px; padding: 0; overflow: hidden; border: 0; outline: 0; resize: none; background: none;
+  color: var(--ink); font: inherit; font-size: 15px; line-height: 22px;
+}
+html.shell2 .shell-composer textarea::placeholder { color: var(--muted); }
+html.shell2 .shell-composer .mic {
+  display: grid; flex: none; place-items: center; width: 36px; height: 36px; margin: 0; padding: 0; border: 0; border-radius: 50%;
+  background: var(--surface-3); box-shadow: none; color: var(--ink-2);
+}
+html.shell2 .shell-composer .mic.on { background: var(--blue); color: var(--blue-ink); box-shadow: 0 0 0 calc(2px + var(--fill, 0) * 4px) color-mix(in srgb, var(--blue) 30%, transparent); }
+html.shell2 .shell-composer .mic[data-state="nokey"], html.shell2 .shell-composer .mic[data-state="refused"],
+html.shell2 .shell-composer .mic[data-state="resting"], html.shell2 .shell-composer .mic[data-state="blocked"] { color: var(--amber); }
+html.shell2 .shell-composer .mic:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+html.shell2 .shell-composer-label { flex: none; padding-right: 12px; border-right: 1px solid var(--line-2); color: var(--ink); font-size: 15px; font-weight: 600; }
+/* First open: a bigger mic with a blue ring, "Tap to talk"; the first tap shrinks it. */
+html.shell2 .shell-composer-big { height: 60px; padding: 0 12px 0 8px; border-radius: 30px; }
+html.shell2 .shell-composer-big .mic { width: 46px; height: 46px; background: transparent; box-shadow: inset 0 0 0 2px var(--blue); color: var(--ink); }
+html.shell2 .shell-composer-big .mic svg { width: 22px; height: 22px; }
+
+/* ── The status line: 24 px, flush at the very bottom; the state, live words (a feature's), what waits ─────────────── */
+
+html.shell2 .shell-status {
+  position: fixed; right: 0; bottom: 0; left: 0; z-index: 45; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 24px; grid-auto-rows: 0; align-items: center; column-gap: 14px; height: 24px; padding: 0 16px; overflow: hidden;
+  border-top: 1px solid var(--line); background: var(--status-bg); color: var(--muted); font-size: 11px; line-height: 24px; white-space: nowrap;
+}
+/* Anything a feature puts in the line (Tiny transcript's words) takes the middle, between the state and what waits. */
+html.shell2 .shell-status > * { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+html.shell2 .shell-status > .shell-status-state { grid-column: 1; display: inline-flex; align-items: center; gap: 8px; overflow: hidden; }
+html.shell2 .shell-status > .shell-status-right { grid-column: 3; }
+html.shell2 .shell-status-word { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+html.shell2 .shell-status-hint { overflow: hidden; text-overflow: ellipsis; }
+html.shell2 .shell-status-sep { display: inline-block; flex: none; width: 1px; height: 12px; background: var(--line-2); vertical-align: middle; }
+html.shell2 .shell-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; }
+html.shell2 .shell-dot-on { background: var(--blue); }
+html.shell2 .shell-dot-off { box-shadow: inset 0 0 0 1.5px var(--muted); }
+html.shell2 .shell-dot-wait { box-shadow: inset 0 0 0 1.5px var(--blue); }
+html.shell2 .shell-dot-warn { background: var(--amber); }
+html.shell2 .shell-status-right {
+  display: inline-flex; align-items: center; gap: 10px; height: 24px; padding: 0; border: 0; background: none; color: var(--muted);
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+html.shell2 .shell-status-right:hover { color: var(--ink-2); }
+html.shell2 .shell-status-wait { display: inline-flex; align-items: center; gap: 5px; }
+html.shell2 .shell-status-wait i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--blue); }
+html.shell2 .shell-status-wait.shell-amber i { box-shadow: inset 0 0 0 1.5px var(--amber); }
+
+/* ── Held questions: above the shelf, amber (they need you), main words bold ─────────────────────────────────────── */
+
+html.shell2 .shell-held {
+  width: 292px; padding: 11px 14px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow);
+}
+html.shell2 .shell-held-head { display: flex; justify-content: space-between; margin: 0; color: var(--amber); font-size: 11px; font-weight: 600; }
+html.shell2 .shell-held-when { color: var(--muted); font-weight: 500; }
+html.shell2 .shell-held-q { margin: 4px 0 10px; color: var(--ink); font-size: 15px; line-height: 21px; }
+html.shell2 .shell-held-q b { font-weight: 600; }
+html.shell2 .shell-held-by { color: var(--muted); font-size: 13px; }
+html.shell2 .shell-held-by.ai-mark { color: var(--ai); font-weight: 600; }
+html.shell2 .shell-held-acts { display: flex; gap: 8px; }
+html.shell2 .shell-held-chip-row { display: flex; justify-content: flex-end; }
+html.shell2 .shell-held-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border: 1px solid var(--line-2); border-radius: 16px;
+  background: var(--surface); color: var(--amber); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+html.shell2 .shell-count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ── The rail: right, 360 px, one tab at a time ──────────────────────────────────────────────────────────────────── */
+
+html.shell2 .shell-rail {
+  position: fixed; top: 68px; right: 16px; bottom: var(--rail-bottom, 88px); z-index: 44; display: flex; flex-direction: column; width: 360px;
+  overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface-2); box-shadow: var(--shadow);
+}
+html.shell2 .shell-tabs { display: flex; flex: none; align-items: flex-end; gap: 2px; padding: 8px 8px 0 10px; border-bottom: 1px solid var(--line); }
+html.shell2 .shell-tab {
+  display: inline-flex; align-items: center; gap: 5px; margin-bottom: -1px; padding: 7px 7px 9px; border: 0; border-bottom: 2px solid transparent;
+  background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+html.shell2 .shell-tab .shell-icon { display: none; }
+html.shell2 .shell-tab .keycap { min-width: 14px; padding: 0 3px; border-color: var(--line); color: var(--faint); }
+html.shell2 .shell-tab:hover { color: var(--ink-2); }
+html.shell2 .shell-tab.shell-on { border-bottom-color: var(--ink); color: var(--ink); }
+html.shell2 .shell-rail-close {
+  display: inline-flex; align-items: center; gap: 4px; margin: 0 0 9px auto; padding: 3px; border: 0; border-radius: 7px; background: none;
+  color: var(--muted); cursor: pointer;
+}
+html.shell2 .shell-rail-close:hover { background: var(--surface-3); color: var(--ink); }
+html.shell2 .shell-rail-close:hover .keycap { color: var(--ink); }
+/* On a laptop its key says it all; on a phone, where there are no keys, its ×. */
+html.shell2 .shell-tabs .shell-rail-close .shell-icon { display: none; }
+/* A notice's ×: the icon alone, as quiet as the rail's close. */
+html.shell2 .shell-stage .shell-rail-close { margin: 0; }
+html.shell2 .shell-tabpanel { flex: 1; min-height: 0; padding: 14px 16px 16px; overflow-y: auto; overscroll-behavior: contain; }
+html.shell2 .shell-tabpanel h3 { margin: 14px 0 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+html.shell2 .shell-tabpanel h3:first-child { margin-top: 0; }
+html.shell2 .shell-lead { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
+html.shell2 .shell-foot { margin: 14px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+html.shell2 .shell-empty-line { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+html.shell2 .shell-row-button {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; margin: 0 0 12px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
+}
+html.shell2 .shell-row-button span { flex: 1; }
+html.shell2 .shell-row-button:hover { background: var(--surface-3); }
+
+/* History: newest first; the AI's acts ✦; Undo at each line's end while it can still act. */
+html.shell2 .shell-history-list { margin: 0; padding: 0; list-style: none; }
+html.shell2 .shell-history-entry { padding: 9px 0; border-bottom: 1px solid var(--line); }
+html.shell2 .shell-history-entry:last-child { border-bottom: 0; }
+html.shell2 .shell-history-text { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+html.shell2 .shell-history-entry.shell-amber .shell-history-text { color: var(--amber); }
+html.shell2 .shell-undone .shell-history-text { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+html.shell2 .shell-history-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+html.shell2 .shell-history-meta .shell-link { font-size: 11px; }
+html.shell2 .shell-history-meta .shell-link:first-of-type { margin-left: auto; }
+
+/* Catalog: one short page; a row per feature, grouped by kind, each with its switch. */
+html.shell2 .shell-catalog-group h3 { margin: 12px 0 2px; }
+html.shell2 .shell-catalog-group ul { margin: 0; padding: 0; list-style: none; }
+html.shell2 .shell-catalog-row { display: flex; align-items: center; gap: 8px; min-height: 32px; border-radius: 8px; }
+html.shell2 .shell-catalog-row.shell-at { margin: 0 -8px; padding: 0 8px; background: var(--blue-soft); }
+html.shell2 .shell-catalog-name { display: flex; flex: 1; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+html.shell2 .shell-aka { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
+html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; }
+html.shell2 .shell-catalog-core { flex: none; width: 36px; color: var(--muted); font-size: 11px; text-align: right; }
+html.shell2 .shell-switch {
+  position: relative; flex: none; width: 36px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line-2); cursor: pointer; transition: background .15s ease;
+}
+html.shell2 .shell-switch i {
+  position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: translate .15s ease;
+}
+html.shell2 .shell-switch.shell-on { background: var(--blue); box-shadow: none; }
+html.shell2 .shell-switch.shell-on i { translate: 14px 0; background: #fff; }
+html.shell2 .shell-switch:disabled { opacity: .5; cursor: default; }
+
+/* Talk: turns as messages, oldest first. */
+html.shell2 .shell-turns { margin: 0; padding: 0; list-style: none; }
+html.shell2 .shell-turn { padding: 0 0 12px; }
+html.shell2 .shell-turn-who { margin: 0 0 2px; color: var(--muted); font-size: 11px; }
+html.shell2 .shell-turn-who b { color: var(--ink); font-size: 13px; font-weight: 600; }
+html.shell2 .shell-turn-who b.ai-mark { color: var(--ai); }
+html.shell2 .shell-turn-text { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* Settings: the keys, then what you can say. */
+html.shell2 .shell-keys { display: grid; gap: 6px; margin: 0; }
+html.shell2 .shell-keys > div { display: grid; grid-template-columns: 56px 1fr; align-items: baseline; gap: 8px; }
+html.shell2 .shell-keys dt { margin: 0; }
+html.shell2 .shell-keys dd { margin: 0; color: var(--ink-2); font-size: 13px; }
+html.shell2 .shell-say { display: grid; gap: 6px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+html.shell2 .shell-say strong { display: none; }
+
+/* ── The map's place ─────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* A view brick fills the window under the corners: no margins or padding of today's column. */
+html.shell2 .brick-view { max-width: none; margin: 0; padding: 0; }
+/* The Palace and other pages that scroll: clear of the corners at the top and the stage at the bottom. */
+html.shell2 .palace { padding-top: 76px; padding-bottom: 180px; }
+html.shell2 .palace-intro h1 { font-family: inherit; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+html.shell2 .palace-eyebrow { font-size: 11px; }
+
+/* A topic's letter, before its picture: the shell's one sans. */
+html.shell2 .picture-letter { font: 600 18px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; }
+
+/* First open: the one line, how in two, the example, the models that run here. */
+html.shell2 .shell-main { min-height: 100vh; }
+html.shell2 .shell-welcome {
+  position: fixed; top: 50%; left: 50%; z-index: 1; width: min(520px, calc(100vw - 32px)); translate: -50% -62%;
+}
+html.shell2 .shell-welcome h1 { margin: 0 0 16px; color: var(--ink); font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
+html.shell2 .shell-welcome-how { margin: 0 0 20px; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+html.shell2 .shell-welcome-models { margin: 20px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.5; }
+html.shell2 .shell-samples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+html.shell2 .shell-samples > span { color: var(--muted); font-size: 13px; }
+html.shell2 .shell-sample { cursor: pointer; }
+
+/* ── A phone: a 56 px top bar, the status line at the bottom and the composer above it; the rail is a sheet ─────── */
+
+@media (max-width: 560px) {
+  html.shell2 .shell-tl { top: 10px; left: 16px; }
+  html.shell2 .shell-tr { top: 10px; right: 16px; gap: 6px; }
+  html.shell2 .shell-pill { height: 36px; padding: 0 12px; }
+  html.shell2 .shell-button { width: 36px; padding: 0; justify-content: center; border-radius: 18px; }
+  html.shell2 .shell-button .shell-label, html.shell2 .shell-button .keycap, html.shell2 .shell-find-field .keycap { display: none; }
+  html.shell2 .shell-button .shell-icon { color: var(--ink-2); }
+  html.shell2 .shell-find-field { width: 36px; padding: 0 0 0 9px; border-radius: 18px; }
+  html.shell2 .shell-find-field input { opacity: 0; }
+  html.shell2 .shell-find-open .shell-find-field { width: calc(100vw - 32px); }
+  html.shell2 .shell-find-open .shell-find-field input { opacity: 1; }
+  html.shell2 .shell-find-open { position: fixed; top: 10px; right: 16px; left: 16px; z-index: 46; }
+  html.shell2 .shell-find-open .shell-find-results { width: 100%; }
+  html.shell2 .shell-stage { bottom: 34px; }
+  html.shell2 .shell-composer-big { height: 56px; }
+  html.shell2 .shell-composer .keycap { display: none; }
+  html.shell2 .shell-status { padding: 0 12px; column-gap: 10px; }
+  html.shell2 .shell-status-hint, html.shell2 .shell-status-state .shell-status-sep { display: none; }
+  html.shell2 .shell-rail {
+    top: auto; right: 0; bottom: 0; left: 0; z-index: 47; width: auto; height: min(78dvh, 640px); border-width: 1px 0 0; border-radius: 18px 18px 0 0;
+  }
+  html.shell2 .shell-tab .keycap, html.shell2 .shell-tabs .shell-rail-close .keycap { display: none; }
+  html.shell2 .shell-tabs .shell-rail-close .shell-icon { display: block; width: 18px; height: 18px; }
+  html.shell2 .shell-tabs .shell-rail-close { padding: 8px; }
+  html.shell2 .shell-held { width: calc(100vw - 32px); }
+  html.shell2 .shell-welcome { top: 76px; translate: -50% 0; }
+  html.shell2 .shell-welcome h1 { font-size: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.shell2 :is(.shell-find-field, .shell-switch, .shell-switch i) { transition: none; }
+}

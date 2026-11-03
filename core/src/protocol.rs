@@ -108,15 +108,21 @@ pub enum ServerMsg {
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         dropped: bool,
     },
-    /// Someone pointing at a part of the screen, or saying a line as a caption (guide.rs): to every window but the one
-    /// it came from, as it comes; never journaled. `target`: the part's name (docs/guide.md), none for a caption or to
-    /// take `by`'s point down; `text`: the point's caption, or the caption.
+    /// Someone pointing at a part of the screen, saying a line as a caption, or holding a question for the person's next
+    /// pause (guide.rs): to every window but the one it came from, as it comes; never journaled. `target`: the part's
+    /// name (docs/guide.md), none for a caption or to take `by`'s point down; for a held question, what it points at
+    /// once asked, if anything. `text`: the point's caption, the caption, or the question (none takes back `by`'s
+    /// questions still held).
     Guide {
         kind: crate::guide::Kind,
         target: Option<String>,
         text: String,
         by: String,
         at_ms: u64,
+        /// A held question that may jump the line (the Interrupt level): asked first at the next pause. Omitted when
+        /// false.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        urgent: bool,
         /// The window it came from (guide.rs `window`), which doesn't get it back; not sent.
         #[serde(skip)]
         from: u64,
@@ -266,6 +272,16 @@ pub enum ClientMsg {
     },
     /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
     Caption { text: String },
+    /// A question for the other windows to hold until the person pauses, then ask, with an arrow at `target` if given
+    /// (guide.rs): never a thought on the map. `urgent` (the Interrupt level) jumps the line of held questions. No words
+    /// take back this speaker's questions still held.
+    Hold {
+        text: String,
+        #[serde(default)]
+        target: Option<String>,
+        #[serde(default)]
+        urgent: bool,
+    },
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.

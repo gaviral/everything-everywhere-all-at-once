@@ -51,6 +51,49 @@
   }
 }
 
+/* The revamped shell (?shell=2, shell/flag.ts): Paper's warm paper in light, space in dark (the takes'), one set of
+   roles in both. Its own names first, then the app's own mapped onto them, so the map, the features and the sheets
+   take the shell's look without knowing it. Blue is you (heard, here, now); amber needs you; purple ✦ is the AI's;
+   red is the Stop level only. Thread hues are identity: green, teal, lime, rose, stone, none near the roles. */
+html.shell2 {
+  --space: #f5f1e8; --surface: #fcfaf5; --surface-2: #fcfaf5; --surface-3: #efe9dc; --raised: #fffdf8;
+  --line-2: rgba(42, 37, 30, .2); --ink-2: #3f382e; --faint: #a39886;
+  --blue: #2b4a94; --blue-ink: #fff; --blue-soft: rgba(43, 74, 148, .1);
+  --red: #a4352b; --status-bg: #efeadf; --btn: #2a251e; --btn-ink: #fcfaf5; --dots: rgba(42, 37, 30, .07);
+  --glass: rgba(255, 253, 248, .66); --glass-line: rgba(42, 37, 30, .16);
+  --bg: var(--space); --card: var(--surface); --ink: #2a251e; --muted: #645b4f; --line: rgba(42, 37, 30, .13);
+  --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fff;
+  --amber: #87570a; --amber-soft: #f7e3ad; --amber-button-ink: #fff;
+  --ai: #6a3e9e; --ai-soft: rgba(106, 62, 158, .1); --ai-button-ink: #fff;
+  --room-red: #6e665a; --room-red-soft: #ebe6dc;
+  --room-green: #2a7148; --room-green-soft: #dcefe2;
+  --room-pink: #a3366e; --room-pink-soft: #f6e1ec;
+  --room-teal: #17707a; --room-teal-soft: #d8ecec;
+  --room-lime: #5b6b10; --room-lime-soft: #e9eed2;
+  --shadow: 0 1px 2px rgba(42, 37, 30, .06), 0 8px 24px rgba(42, 37, 30, .08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html.shell2 {
+    --space: #0e1013; --surface: #181b20; --surface-2: #1d2026; --surface-3: #272b33; --raised: #20242b;
+    --line-2: rgba(255, 255, 255, .16); --ink-2: #d6d8dc; --faint: #6e727b;
+    --blue: #83b0ff; --blue-ink: #0f2244; --blue-soft: rgba(131, 176, 255, .16);
+    --red: #ff6e61; --status-bg: #0a0c0f; --btn: #f2f2f3; --btn-ink: #0e1013; --dots: rgba(255, 255, 255, .045);
+    --glass: rgba(44, 48, 57, .6); --glass-line: rgba(255, 255, 255, .2);
+    --ink: #f2f2f3; --muted: #a3a6ae; --line: rgba(255, 255, 255, .1);
+    --accent-button-ink: #0f2244;
+    --amber: #f0b65d; --amber-soft: rgba(240, 182, 93, .15); --amber-button-ink: #30200b;
+    --ai: #c4a5ff; --ai-soft: rgba(196, 165, 255, .15); --ai-button-ink: #1d1430;
+    --room-red: #c9c0b2; --room-red-soft: #2c2a26;
+    --room-green: #76d39c; --room-green-soft: #1b3125;
+    --room-pink: #f29bc4; --room-pink-soft: #3a2230;
+    --room-teal: #6fd2ca; --room-teal-soft: #17302f;
+    --room-lime: #c2da6a; --room-lime-soft: #2b3117;
+    --shadow: 0 10px 28px rgba(0, 0, 0, .36), inset 0 1px 0 rgba(255, 255, 255, .04);
+    color-scheme: dark;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

@@ -34,6 +34,37 @@ const OFFLINE = "disabled while the core is away";
 const NOT_CONNECTED = "notice: “Not connected — try again when connected.”";
 
 export const ACTIONS: Action[] = [
+  // The new shell: corners, Find, held questions and the rail.
+  { id: "catalog-corner", how: "click", at: [["App.tsx", `toggleTab("catalog")`], ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"]], pressed: PRESS,
+    done: "the rail opens at the Catalog tab, or closes; the button stays pressed while it's open" },
+  { id: "see-an-example", how: "click", at: [["App.tsx", "onClick={() => loadSample()}"]], pressed: PRESS, waits: "core",
+    done: "the example map fills the window, stamped SAMPLE", failed: OFFLINE },
+  { id: "find-type", how: "key", at: [["shell/Shell.tsx", "onChange={(event) => setQuery(event.target.value)}"], ["shell/Shell.tsx", "onKeyDown={key}"]], pressed: INSTANT,
+    done: "the topics found list under the field, best first; ↑↓ move, Enter goes, Esc clears" },
+  { id: "find-go", how: "click", at: [["shell/Shell.tsx", "onClick={() => { go(thread)"]], pressed: PRESS,
+    done: "the list closes and your place moves to the topic; the canvas follows" },
+  { id: "status-history", how: "click", at: [["shell/Shell.tsx", "onClick={openHistory}"]], pressed: PRESS,
+    done: "the rail opens at History, or closes" },
+  { id: "held-open", how: "click", at: [["shell/Shell.tsx", "onClick={() => setOpen(true)}"]], pressed: PRESS,
+    done: "the held question's card opens above the composer" },
+  { id: "held-answer", how: "click", at: [["shell/Shell.tsx", "onClick={answer}"]], pressed: PRESS,
+    done: "the question leaves the stack and the asker asks it now (else the composer takes focus)" },
+  { id: "held-later", how: "click", at: [["shell/Shell.tsx", "onClick={later}"]], pressed: PRESS,
+    done: "the question leaves the stack until the next pause" },
+  { id: "rail-tab", how: "click", at: [["shell/Shell.tsx", "onClick={() => setTab(t)}"]], pressed: INSTANT,
+    done: "the tab's panel shows and the tab is underlined" },
+  { id: "rail-close", how: "click", at: [["shell/Shell.tsx", "onClick={close}"]], pressed: PRESS, done: "the rail closes" },
+  { id: "history-recap", how: "click", at: [["shell/Shell.tsx", "onClick={recap}"]], pressed: PRESS, waits: "model",
+    working: "the sheet opens at once; “Gathering your thoughts…” after 400 ms if the answer isn't there yet",
+    done: "the Recap sheet opens with the answer", failed: "the sheet says why, with Try again" },
+  { id: "history-show", how: "click", at: [["shell/Shell.tsx", "onClick={() => onShow(entry.threadId!)}"]], pressed: PRESS,
+    done: "your place moves to the topic; the canvas follows" },
+  { id: "history-undo", how: "click", at: [["shell/Shell.tsx", "onClick={() => onUndo(entry)}"]], pressed: PRESS, waits: "core",
+    done: "the line greys and says Undone; the map takes it back and a notice answers", failed: NOT_CONNECTED, says: ["Undone"] },
+  { id: "catalog-show", how: "click", at: [["shell/Shell.tsx", "onClick={row.show}"]], pressed: PRESS, done: "the view shows in the map's place; Back to the Canvas (M) returns" },
+  { id: "catalog-switch", how: "click", at: [["shell/Shell.tsx", "onClick={() => row.toggle?.(!row.on)}"]], pressed: PRESS,
+    done: "the switch slides and the feature appears or goes at once (your apps' switches wait on the core: disabled while it's away)" },
+
   // The dock: what you say or type.
   { id: "type-a-thought", how: "form", at: [["App.tsx", `<form className="composer" onSubmit={submit}`]], pressed: INSTANT, waits: "model",
     done: "the field clears and the thought shows at once in the dock, then lands on the map with the landing highlight",
@@ -52,7 +83,17 @@ export const ACTIONS: Action[] = [
   // Someone else's pointing (Guide.tsx): a click anywhere takes it down too (a document click, which the catalog's net
   // doesn't list), except one on the way the arrow shows (a folded card's Show, Map), which moves it on to the part.
   { id: "dismiss-guide", how: "key", at: [["Guide.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT,
-    done: "Esc: the arrow, its caption and the spotlight go; a click elsewhere does the same" },
+    done: "Esc: the arrow, its ring and the words it brought go (a question asked: Drop it); ↵ and L answer a question asked; a click elsewhere takes a point down" },
+  // The Friend's question asked at your pause (Guide.tsx), and the held stack's cards: each answered in this window at once.
+  { id: "guide-go-ahead", how: "click", at: [["Guide.tsx", "onClick={() => goAhead(said.n)}"]], pressed: PRESS, done: "its buttons go; the question stays its reading time with its arrow, then goes" },
+  { id: "guide-later", how: "click", at: [["Guide.tsx", "onClick={() => later(said.n)}"], ["Guide.tsx", "onClick={() => laterHeld(item.n)}"]], pressed: PRESS,
+    done: "the question goes back to the held stack, marked “Later”: it waits for you, not your next pause", says: ["Later"] },
+  { id: "guide-drop", how: "click", at: [["Guide.tsx", "onClick={() => dropIt(said.n)}"], ["Guide.tsx", "onClick={() => dropHeld(item.n)}"]], pressed: PRESS,
+    done: "the question (or line) is gone, its arrow too", says: ["Drop it"] },
+  { id: "guide-answer", how: "click", at: [["Guide.tsx", "onClick={() => askNow(item.n)}"]], pressed: PRESS,
+    done: "the held card leaves the stack and is asked (said) at once: its caption at the stage, its arrow if it has one", says: ["Answer", "Continue"] },
+  { id: "guide-held-more", how: "click", at: [["Guide.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS, done: "the rest of the held stack opens under the next in line, or folds back to it", says: ["more held", "Just the next"] },
+  { id: "guide-held-chip", how: "click", at: [["Guide.tsx", "onClick={() => setOpen(!open)}"]], pressed: PRESS, done: "on a phone, the held cards open above the chip, or fold back into it", says: ["Held"] },
   { id: "new-landing-note", how: "click", at: [["Attention.tsx", "onClick={onGo}"]], pressed: PRESS, done: "the map scrolls to the new thought, which takes the landing highlight" },
   { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },
   { id: "later", how: "click", at: [["App.tsx", "later(pullBack)"]], pressed: PRESS, done: "the card fades out" },
@@ -197,6 +238,10 @@ export const ACTIONS: Action[] = [
 
 /** Handlers that aren't actions of their own: each says why. */
 export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] = [
+  { at: ["shell/Shell.tsx", "onBlur={() => window.setTimeout(() => setFocused(false), 120)}"], why: "the field narrows back once focus leaves" },
+  { at: ["shell/Shell.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "keeps focus in the field so a click on a topic lands" },
+  { at: ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"], why: "each corner button's use in App.tsx is its own entry" },
+  { at: ["shell/Shell.tsx", "onKeyDown={arrows}"], why: "arrow keys move focus between tabs or switches, with its ring" },
   { at: ["App.tsx", `window.addEventListener("keydown", key, true)`], why: "notes that you're moving around the map, so the map stops following landings" },
   { at: ["Palace.tsx", "onKeyDown={navigate}"], why: "arrow keys between tiles: focus moves, with its ring" },
   { at: ["Tips.tsx", `window.addEventListener("keydown", key, true)`], why: "hides a tip on Esc" },

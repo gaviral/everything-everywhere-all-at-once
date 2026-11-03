@@ -12,7 +12,10 @@ import { uiServer } from "./ui-server.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
-const srcFiles = readdirSync(new URL("ui/src/", root)).filter((f) => /\.tsx?$/.test(f) && f !== "feedback.ts" && !f.endsWith(".d.ts"));
+const srcFiles = [
+  ...readdirSync(new URL("ui/src/", root)),
+  ...readdirSync(new URL("ui/src/shell/", root)).map((f) => `shell/${f}`),
+].filter((f) => /\.tsx?$/.test(f) && f !== "feedback.ts" && !f.endsWith(".d.ts"));
 const src = Object.fromEntries(srcFiles.map((f) => [f, read(`ui/src/${f}`)]));
 const problems = [];
 
@@ -46,9 +49,11 @@ const marks = [
 ];
 const catalogued = (h) => marks.filter((m) => m.file === h.file && h.line.includes(m.marker));
 // The net catches what it says it does: an uncatalogued handler of each kind, added to a real file, fails.
-for (const added of ["onPointerUp={() => go()}", "onBlur={() => go()}", "onInput={() => go()}", "onClick={() => go()}"]) {
-  const extra = found("App.tsx", `${src["App.tsx"]}\n<button type="button" ${added}>Go</button>\n`).filter((h) => !catalogued(h).length);
-  assert.ok(extra.some((h) => h.line.includes(added)), `the check misses an uncatalogued ${added}`);
+for (const file of ["App.tsx", "shell/Shell.tsx"]) {
+  for (const added of ["onPointerUp={() => go()}", "onBlur={() => go()}", "onInput={() => go()}", "onClick={() => go()}"]) {
+    const extra = found(file, `${src[file]}\n<button type="button" ${added}>Go</button>\n`).filter((h) => !catalogued(h).length);
+    assert.ok(extra.some((h) => h.line.includes(added)), `the check misses an uncatalogued ${added} in ${file}`);
+  }
 }
 for (const h of handlers) {
   const by = catalogued(h);
