@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useBrickEvent, type BrickProps } from "../contract";
 import { layoutOutline, QUIET_MS, trimFillers, type OutlineActivity } from "./outline";
 import "./live-outline.css";
@@ -66,15 +66,29 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
   }, [latest]);
 
   const threads = useMemo(() => map.threads.map((thread) => ({
-    id: thread.id, title: thread.title, parent_id: thread.parent_id, color: map.rooms.get(thread.id) ?? null,
+    id: thread.id, title: thread.title, color: map.rooms.get(thread.id) ?? null,
   })), [map.threads, map.rooms]);
   const landings = useMemo(() => {
     const thoughts = new Map(map.thoughts.map((thought) => [thought.id, thought.text]));
-    return activity.map((entry) => entry.kind === "landed"
-      ? { ...entry, text: thoughts.get(entry.thoughtId) ?? "" } : entry);
+    // A thought that has left the map (deleted) leaves the outline, and no longer counts toward its main line.
+    return activity.flatMap((entry): OutlineActivity[] => {
+      if (entry.kind !== "landed") return [entry];
+      const text = thoughts.get(entry.thoughtId);
+      return text === undefined ? [] : [{ ...entry, text }];
+    });
   }, [activity, map.thoughts]);
   const rows = useMemo(() => layoutOutline(landings, threads, now), [landings, threads, now]);
   const bullets = rows.filter((row) => row.kind === "thought");
+
+  // The newest point stays in view as points land, unless you've scrolled up to read, or are walking the points with the
+  // keys (a click on a point leaves focus on it, but that's no reason to stop following).
+  const scroller = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const newest = bullets.at(-1)?.thoughtId;
+  useLayoutEffect(() => {
+    const area = scroller.current, focused = document.activeElement;
+    if (area && following.current && !(focused && area.contains(focused) && focused.matches(":focus-visible"))) area.scrollTop = area.scrollHeight;
+  }, [newest, bullets.length, originalWords]);
   const live = quiet ? "" : map.partial.trim() || held;
   const liveText = preview(trimFillers(live).text);
 
@@ -94,7 +108,10 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
     </div>
     <p id={helpId} className="live-outline-help">Click a point or press Enter to show its full original words; repeat to fold it.
       Double-click a point, or use its go button, to open its thread.</p>
-    <div className="live-outline-scroll">
+    <div className="live-outline-scroll" ref={scroller} onScroll={(event) => {
+      const area = event.currentTarget;
+      following.current = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
+    }}>
       <ul className="live-outline-list" aria-label="Your talk">
         {rows.map((row) => {
           if (row.kind === "break") return <li key={row.key} className="live-outline-break">New talk</li>;

@@ -1,15 +1,20 @@
-/* Upper left, below the app header. Tiny transcript owns bottom center; Notice timeline owns bottom left.
-   There is no countdown brick in this checkout. Leave room above the dock and its corner controls. */
+/* The bottom left, standing on the corner's row: the Notice timeline's clock (32 px, 16 px up from the dock) and the
+   Countdown's card (two lines, 54 px) sit on the dock, so the outline's foot is 80 px above it, 76 px on a phone where
+   they stand 16 px higher and the card is one line. The one corner where the page keeps nothing it needs: the view
+   switch, Search and the Apps button are at the top, and it grows upward from the live line, as your words do. Its
+   height stops short of them: under the header the page keeps the Apps button's row (44 to 68 px, 129 on a phone)
+   before the map's tools, so the outline leaves that room too. Tiny transcript's line (bottom center, 8 px above the
+   dock) is below it. z-index 6: the clock's list and the card's editor, which open over this corner, open over it. */
 .live-outline {
   position: fixed;
-  top: calc(var(--header-height, 64px) + 16px);
   left: max(16px, env(safe-area-inset-left));
-  z-index: 7;
+  bottom: calc(var(--dock-height, 120px) + 80px);
+  z-index: 6;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   width: min(400px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
-  max-height: max(0px, min(460px, calc(100dvh - var(--header-height, 64px) - var(--dock-height, 120px) - 104px)));
+  max-height: max(96px, min(460px, calc(100dvh - var(--header-height, 64px) - var(--tools-height, 50px) - var(--dock-height, 120px) - 80px - 94px)));
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--card);
@@ -60,6 +65,12 @@
 .live-outline-live { flex: none; max-height: 5em; overflow-y: auto; margin: 0; padding: 10px 15px 12px; border-top: 1px solid var(--line); color: var(--muted); font-style: italic; overflow-wrap: anywhere; white-space: pre-wrap; }
 @keyframes live-outline-arrive {
   from { margin-inline-start: 0; border-left-color: transparent; opacity: .6; }
+}
+@media (max-width: 575.98px) {
+  .live-outline {
+    bottom: calc(var(--dock-height, 120px) + 76px);
+    max-height: max(96px, min(460px, calc(100dvh - var(--header-height, 64px) - var(--tools-height, 50px) - var(--dock-height, 120px) - 76px - 154px)));
+  }
 }
 @media (max-width: 599.98px) {
   .live-outline-bullet[data-recent="false"] { display: none; }
