@@ -147,11 +147,17 @@ impl Core {
                 return false;
             }
             let mut journal = self.journal.lock().unwrap();
+            let mut failed = false;
             for change in &changes {
                 Arc::make_mut(&mut world).apply(change);
                 positions::settle(self, &world);
                 if let Err(e) = journal.append(change) {
-                    tracing::error!("journal write failed: {e:#}");
+                    if failed {
+                        tracing::error!("journal write failed: {e:#}");
+                    } else {
+                        self.journal_save_failed(&e);
+                        failed = true;
+                    }
                 }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
@@ -166,8 +172,16 @@ impl Core {
     /// don't change.
     pub fn record(&self, change: Change) {
         if let Err(e) = self.journal.lock().unwrap().append(&change) {
-            tracing::error!("journal write failed: {e:#}");
+            self.journal_save_failed(&e);
         }
+    }
+
+    /// Safe while holding world, journal or position locks: only logs and broadcasts, without taking any of them.
+    fn journal_save_failed(&self, e: &anyhow::Error) {
+        tracing::error!("journal write failed: {e:#}");
+        self.send(ServerMsg::Notice {
+            message: "Couldn't save. Keep this window open; recent changes may be lost when you restart.".into(),
+        });
     }
 
     /// To every window.
