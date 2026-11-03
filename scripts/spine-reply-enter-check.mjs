@@ -49,9 +49,14 @@ try {
       })()`);
       const log = () => evaluate(`[...document.querySelectorAll('.playground-log li')].map(li => li.textContent)`);
       const annotations = async () => (await log()).filter(line => line.startsWith("annotate "));
-      const camera = () => evaluate(`({ transform: document.querySelector('.react-flow__viewport').style.transform,
-        stops: [...document.querySelectorAll('.spine-stop')].map(b => b.getAttribute('aria-pressed')),
-        following: document.querySelector('.spine-follow').getAttribute('aria-pressed') })`);
+      const camera = () => evaluate(`(() => {
+        const follow = document.querySelector('.spine-follow');
+        // Corner hides the follow button on a narrow screen while following; holding shows it again.
+        if (!follow && ${width} !== 390) throw new Error('desktop follow control missing');
+        return { transform: document.querySelector('.react-flow__viewport').style.transform,
+          stops: [...document.querySelectorAll('.spine-stop')].map(b => b.getAttribute('aria-pressed')),
+          following: follow ? follow.getAttribute('aria-pressed') : 'true' };
+      })()`);
       const calm = async () => {
         let last = "", same = 0;
         for (let n = 0; n < 60; n++) {
