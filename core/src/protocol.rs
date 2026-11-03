@@ -204,6 +204,8 @@ pub enum ClientMsg {
     Listen { on: bool },
     /// Go back to a thread, e.g. from the unfinished-thought card.
     Focus { thread_id: String },
+    /// Pin this map's new thoughts to one topic; null releases it, for every speaker.
+    Stay { thread_id: Option<String> },
     /// Explain a selected phrase in the context it appears in, within its thread when it has one.
     Explain {
         id: String,

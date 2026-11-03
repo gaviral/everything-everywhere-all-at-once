@@ -5,6 +5,7 @@
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
+import { StayHere } from "../../StayHere";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -203,6 +204,7 @@ function Head({ data, now }: { data: ItemData; now: number }) {
   return <div className={cls("spine-head", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh",
     data.dim && "spine-dim", data.cut && "spine-cut", zoomedOut && "spine-head-far")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     <Tile item={item} />
+    <StayHere thread={item.thread} title={item.title} />
     <button type="button" className="spine-title" style={{ left: G.titleX, top, width: G.titleW, WebkitLineClamp: G.titleMax }}
       title={item.title} onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       aria-label={`${item.title}: ${meta}${item.dropped ? ", left off" : ""}${here ? ", where you are" : ""}`}>
@@ -331,6 +333,7 @@ function Card({ data, now }: { data: ItemData; now: number }) {
     picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim", data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}
     data-slot={data.arriving ? `slot:${data.arriving}` : undefined}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
+    <StayHere thread={item.thread} title={item.title} />
     {item.open && item.line && <span className="spine-card-line" style={{ left: item.line.x, top: item.line.y1, height: Math.max(0, item.line.y2 - item.line.y1) }} aria-hidden="true" />}
     <button type="button" className="spine-card-face" onClick={() => acts.toggle(item.thread)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       aria-expanded={!!item.open} title={item.title}
@@ -391,6 +394,7 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
     data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+    <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>

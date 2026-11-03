@@ -109,7 +109,7 @@ fn undoable(lines: &[String]) -> u64 {
 fn every_act_has_one_definition_and_its_phrases_read_as_it() {
     let acts = [
         Act::Back, Act::Notices, Act::Next, Act::Previous, Act::Search, Act::NewThread, Act::NewThreadAbout, Act::File, Act::Unfold, Act::Fold,
-        Act::Palace, Act::Map, Act::Focus, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
+        Act::Palace, Act::Map, Act::Focus, Act::StayHere, Act::LetGo, Act::All, Act::Help, Act::Recap, Act::Compose, Act::Forget, Act::Later, Act::Finish,
         Act::Pause, Act::Approve, Act::Message, Act::GitHub, Act::Note, Act::KeepApp, Act::DiscardApp, Act::Yes, Act::No, Act::Redo, Act::Undo, Act::Move, Act::Rename, Act::Export,
         Act::Delete,
     ];

@@ -31,6 +31,7 @@ mod recap;
 mod protocol;
 mod moves;
 mod spoken;
+mod stay;
 mod tidy;
 mod tls;
 mod topics;
@@ -387,7 +388,7 @@ impl Core {
             return;
         }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
-        if filler(text, asked) {
+        if filler(text, asked) && self.snapshot().stay_here.is_none() {
             if typed {
                 self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
             }
@@ -406,7 +407,7 @@ impl Core {
         if let Some(job) = first {
             self.run_command(speaker, job);
         }
-        if !filler(said, asked) {
+        if !said.trim().is_empty() && (!filler(said, asked) || self.snapshot().stay_here.is_some()) {
             let id = self.keep(speaker, said);
             catalog::kept(self, speaker, said, vec![id]);
         }
@@ -498,7 +499,7 @@ impl Core {
 
     /// Words to place: a thought in the speaker's active thread, queued for the placer.
     pub fn keep(&self, speaker: &str, text: &str) -> String {
-        let thought = Thought {
+        let mut thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
             text: text.into(),
@@ -515,9 +516,24 @@ impl Core {
             decided: false,
         };
         let id = thought.id.clone();
+        // Pin and thought arrival share the world's lock: releasing while the placer is busy never sends
+        // already-pinned words elsewhere. This path also works without a model key.
+        let pinned = loop {
+            let world = self.snapshot();
+            thought.thread_id = world.stay_here.clone().or_else(|| world.active_for(speaker).cloned());
+            let placing = stay::placement(&world, &thought);
+            let pinned = placing.is_some();
+            let changes = std::iter::once(Change::ThoughtAdded { thought: thought.clone() }).chain(placing.into_iter().flatten()).collect();
+            if self.commit_if(|w| w.stay_here == world.stay_here, changes) {
+                break pinned;
+            }
+        };
+        if pinned {
+            self.new_threads.cancel(speaker);
+            return id;
+        }
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
-        self.commit(vec![Change::ThoughtAdded { thought }]);
         let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
         id
     }
@@ -1645,6 +1661,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
+                Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }

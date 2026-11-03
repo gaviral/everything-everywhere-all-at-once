@@ -50,6 +50,19 @@ try {
   say({ type: "snapshot", world });
   await until(() => core.snapshotRevision === 1, "the map");
 
+  // The topic's Stay here and × send map-wide requests; only the core's journaled updates change the chip.
+  const stayAt = sockets.at(-1).sent.length;
+  assert.equal(core.stay("T1"), true);
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent[stayAt]), { type: "stay", thread_id: "T1" });
+  assert.equal(core.world.stay_here ?? null, null, "pin waits for the shared update");
+  say({ type: "change", change: { type: "stay_changed", thread_id: "T1" } });
+  await until(() => core.world.stay_here === "T1", "the shared pin");
+  assert.equal(core.stay(null), true);
+  assert.deepEqual(JSON.parse(sockets.at(-1).sent.at(-1)), { type: "stay", thread_id: null });
+  assert.equal(core.world.stay_here, "T1", "release waits for the shared update");
+  say({ type: "change", change: { type: "stay_changed", thread_id: null } });
+  await until(() => core.world.stay_here === null, "the shared release");
+
   // A fresh tab can receive another window's or a previous session's listening state. It stays off.
   say({ type: "status", listening: true, note: "Listening" });
   say({ type: "partial", text: "another window" });
