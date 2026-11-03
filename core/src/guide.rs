@@ -1,7 +1,8 @@
 //! Pointing, captions, held questions and tours: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
 //! the person one exact part of the screen, with an arrow and a one-line caption, says a line as a caption, or holds a
 //! question for the person's next pause, instead of adding a thought to the map. All are of the moment: relayed as
-//! they come to every window but the one that sent them, never journaled, and no model is asked. Each window keeps
+//! they come to every window but the one that sent them, never journaled, and no model is asked. Jobs also replay
+//! their latest states to joining windows; answers go only to their recipient's windows. Each window keeps
 //! its held questions and asks one when the person pauses (ui/src/guide-core.ts). The names are the window's
 //! `data-guide` names (docs/guide.md); ui/src/Guide.tsx draws them.
 
@@ -10,6 +11,7 @@ use crate::Core;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// A point's caption, in characters: one line beside the arrow, about 25 words.
@@ -63,7 +65,44 @@ pub struct Job {
     pub demo: bool,
 }
 
-/// One window's last second of guide messages, tours and jobs, for `PER_SECOND`.
+/// This core's latest jobs, ordered by first appearance and never persisted.
+#[derive(Default)]
+pub struct Runtime {
+    jobs: Mutex<VecDeque<ServerMsg>>,
+}
+
+impl Runtime {
+    /// Subscribe and capture replay under the publication lock: queued jobs are strictly after this replay.
+    pub fn subscribe(&self, core: &Core) -> (tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>, Vec<ServerMsg>) {
+        let jobs = self.jobs.lock().unwrap();
+        (core.updates.subscribe(), jobs.iter().cloned().collect())
+    }
+
+    /// Replay without abandoning a lagged receiver's buffered answers and other ephemeral messages.
+    /// Its pending jobs precede this replay; jobs published after the lock is released must still be forwarded.
+    pub fn recover(&self, updates: &tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) -> (usize, Vec<ServerMsg>) {
+        let jobs = self.jobs.lock().unwrap();
+        (updates.len(), jobs.iter().cloned().collect())
+    }
+
+    fn publish(&self, core: &Core, job: Job, speaker: &str, window: u64) {
+        let mut jobs = self.jobs.lock().unwrap();
+        let row = jobs.iter().position(|message| matches!(message, ServerMsg::Job { job: old, .. } if old.id == job.id));
+        let message = ServerMsg::Job { job, by: speaker.into(), at_ms: crate::now_ms(), from: window };
+        if let Some(row) = row {
+            jobs[row] = message.clone();
+        } else {
+            if jobs.len() == 60 {
+                jobs.pop_front();
+            }
+            jobs.push_back(message.clone());
+        }
+        // Keep the lock through broadcast so a join cannot queue an older job behind a newer replay.
+        core.send(message);
+    }
+}
+
+/// One window's last second of guide messages, tours, jobs and answers, for `PER_SECOND`.
 #[derive(Default)]
 pub struct Pace {
     sent: VecDeque<Instant>,
@@ -170,7 +209,7 @@ pub fn tour(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut steps:
     }
 }
 
-/// Relay a live job update to every other window, without retaining it or starting model work.
+/// Retain a job's latest state and relay it to every other window, without starting model work.
 pub fn job(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut job: Job) {
     job.title = one_line(&job.title);
     job.result = job.result.as_deref().map(one_line);
@@ -187,13 +226,34 @@ pub fn job(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut job: Jo
         .or_else(|| (!matches!(job.status.as_str(), "running" | "done" | "failed" | "waiting"))
             .then(|| "A job's status must be running, done, failed or waiting.".into()));
     if allowed(core, speaker, pace, refused) {
-        core.send(ServerMsg::Job { job, by: speaker.into(), at_ms: crate::now_ms(), from: window });
+        core.guide.publish(core, job, speaker, window);
     }
 }
 
 /// A job that couldn't be decoded uses the same refusal route without spending the window's budget.
 pub fn malformed_job(core: &Core, speaker: &str, pace: &mut Pace) {
     allowed(core, speaker, pace, Some("A job needs string id, title and status; result and parent must be strings when given, and demo must be a boolean.".into()));
+}
+
+/// Answer a speaker in all of their windows, using room identities rather than screen-target names.
+pub fn answer(core: &Core, speaker: &str, pace: &mut Pace, to: String, text: String) {
+    let text = one_line(&text);
+    let to = crate::normalized_speaker_name(&to);
+    let refused = if to.is_empty() {
+        Some("An answer needs a recipient.".into())
+    } else if text.is_empty() {
+        Some("An answer needs words.".into())
+    } else {
+        too_long(&text, 280, "An answer")
+    };
+    if allowed(core, speaker, pace, refused) {
+        core.send_to(&to, ServerMsg::Answer { by: speaker.into(), text, at_ms: crate::now_ms() });
+    }
+}
+
+/// An undecodable answer shares the guide refusal throttle and leaves the budget available.
+pub fn malformed_answer(core: &Core, speaker: &str, pace: &mut Pace) {
+    allowed(core, speaker, pace, Some("An answer needs string to and text.".into()));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -336,6 +396,349 @@ mod tests {
 
     fn send(json: serde_json::Value) -> Message {
         Message::Text(json.to_string().into())
+    }
+
+    /// Accepted updates from independent window budgets, for replay tests that fill the retained rows.
+    fn publish(core: &Core, id: &str, revision: usize) {
+        super::job(core, "Helper", 0, &mut Pace::default(), super::Job {
+            id: id.into(), title: format!("Revision {revision}"), status: "running".into(),
+            result: Some(revision.to_string()), parent: None, demo: false,
+        });
+    }
+
+    #[test]
+    fn concurrent_job_handoffs_and_lag_recovery_keep_only_newer_updates() {
+        use crate::protocol::ServerMsg;
+        let (core, path, _) = prepared();
+        publish(&core, "work", 0);
+        let barrier = std::sync::Barrier::new(2);
+        let handoffs = std::thread::scope(|scope| {
+            let writer = scope.spawn(|| {
+                barrier.wait();
+                for revision in 1..=256 {
+                    publish(&core, "work", revision);
+                    std::thread::yield_now();
+                }
+            });
+            barrier.wait();
+            let mut handoffs = Vec::new();
+            for _ in 0..64 {
+                handoffs.push(crate::subscribe_catch_up(&core, "you"));
+                std::thread::yield_now();
+            }
+            writer.join().unwrap();
+            handoffs
+        });
+        for (mut updates, replay) in handoffs {
+            let mut revision: usize = replay.into_iter().find_map(|message| match message {
+                ServerMsg::Job { job, .. } => job.result, _ => None,
+            }).unwrap().parse().unwrap();
+            while let Ok(outgoing) = updates.try_recv() {
+                let ServerMsg::Job { job, .. } = outgoing.message else { continue };
+                let next = job.result.unwrap().parse().unwrap();
+                assert_eq!(next, revision + 1, "no missed, repeated or older updates after replay");
+                revision = next;
+            }
+            assert_eq!(revision, 256);
+        }
+        let (mut lagged, _) = crate::subscribe_catch_up(&core, "you");
+        for revision in 257..=1400 { publish(&core, "work", revision); }
+        super::answer(&core, "Helper", &mut Pace::default(), "you".into(), "Buffered answer".into());
+        assert!(matches!(lagged.try_recv(), Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+        // Recovery marks queued jobs as superseded while preserving this receiver for non-jobs.
+        let (pending, replay) = core.guide.recover(&lagged);
+        assert!(replay.iter().any(|message| matches!(message, ServerMsg::Job { job, .. } if job.result.as_deref() == Some("1400"))));
+        lagged.try_recv().unwrap();
+        publish(&core, "work", 1401);
+        let mut answers = 0;
+        for _ in 1..pending {
+            let outgoing = lagged.try_recv().unwrap();
+            if let ServerMsg::Answer { text, .. } = outgoing.message {
+                assert_eq!(outgoing.to.as_deref(), Some("you"));
+                assert_eq!(text, "Buffered answer");
+                answers += 1;
+            }
+        }
+        assert_eq!(answers, 1, "recovery must preserve the buffered answer exactly once");
+        assert!(matches!(lagged.try_recv().unwrap().message, ServerMsg::Job { job, .. } if job.result.as_deref() == Some("1401")));
+        assert!(lagged.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn lag_recovery_preserves_buffered_answers_and_skips_superseded_jobs() {
+        let (core, path, _) = prepared();
+        // Start the real window's forwarder with a deterministically lagged subscription.
+        let routes = axum::Router::new().route("/ws", axum::routing::get(
+            |ws: axum::extract::WebSocketUpgrade, axum::extract::State(core): axum::extract::State<Arc<Core>>| async move {
+                ws.on_upgrade(move |socket| async move {
+                    let (updates, _) = crate::subscribe_catch_up(&core, "you");
+                    for revision in 0..1100 { publish(&core, "work", revision); }
+                    super::answer(&core, "Helper", &mut Pace::default(), "you".into(), "Buffered answer".into());
+                    super::answer(&core, "Helper", &mut Pace::default(), "Other".into(), "Private answer".into());
+                    super::caption(&core, "Helper", 8, &mut Pace::default(), "Buffered caption".into());
+                    super::caption(&core, "you", 7, &mut Pace::default(), "Own caption".into());
+                    core.send_to("you", crate::protocol::ServerMsg::Notice { message: "Buffered notice".into() });
+                    let (out, _incoming) = socket.split();
+                    crate::forward(out, updates, core, "you".into(), 7).await;
+                })
+            }
+        )).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes).await.unwrap() });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        let messages = drain(&mut window, 100).await;
+        let jobs: Vec<_> = messages.iter().filter(|m| m["type"] == "job").collect();
+        assert_eq!(jobs.len(), 1, "buffered older jobs must not follow the replay");
+        assert_eq!(jobs[0]["result"], "1099");
+        let ephemeral: Vec<_> = messages.iter().filter(|m| matches!(m["type"].as_str(), Some("answer" | "guide" | "notice")))
+            .map(|m| (m["type"].as_str().unwrap(), m["text"].as_str().or(m["message"].as_str()).unwrap())).collect();
+        assert_eq!(ephemeral, [("answer", "Buffered answer"), ("guide", "Buffered caption"), ("notice", "Buffered notice")]);
+        // Updates after the replay boundary still arrive once, in order.
+        publish(&core, "work", 1100);
+        super::answer(&core, "Helper", &mut Pace::default(), "you".into(), "Live answer".into());
+        let live = drain(&mut window, 100).await;
+        assert_eq!(live.len(), 2);
+        assert_eq!(live[0]["result"], "1100");
+        assert_eq!(live[1]["text"], "Live answer");
+        server.abort();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn answers_use_room_identities_and_share_the_guide_budget() {
+        use crate::protocol::ServerMsg;
+        let (core, path, mut queue) = prepared();
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let mut updates = core.updates.subscribe();
+        let mut pace = Pace::default();
+        super::answer(&core, "Helper", &mut pace, " \n\u{7}".into(), "Yes".into());
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Notice { .. }));
+        super::malformed_answer(&core, "Helper", &mut pace);
+        super::answer(&core, "Helper", &mut pace, "Asker".into(), "界".repeat(281));
+        assert!(updates.try_recv().is_err(), "invalid input shares the refusal throttle");
+        assert!(pace.sent.is_empty());
+        for recipient in ["  Sam\n界!\u{7} ".to_string(), "x".repeat(25), "you".into(), "Guest".into()] {
+            super::answer(&core, "Helper", &mut pace, recipient.clone(), format!(" \n{}\t", "界".repeat(280)));
+            let outgoing = updates.try_recv().unwrap();
+            assert_eq!(outgoing.to, Some(crate::speaker_name(&recipient, true)));
+            assert!(matches!(outgoing.message, ServerMsg::Answer { by, text, at_ms } if by == "Helper" && text == "界".repeat(280) && at_ms > 0));
+        }
+        super::caption(&core, "Helper", 0, &mut pace, "Too soon".into());
+        super::answer(&core, "Helper", &mut pace, "Asker".into(), "Too soon".into());
+        assert!(updates.try_recv().is_err(), "answers spend the shared guide budget");
+        assert!(crate::catch_up(&core, "Asker").iter().all(|m| !matches!(m, ServerMsg::Answer { .. })));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn jobs_replay_in_first_appearance_order_with_the_last_accepted_state() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut helper, mut you] = windows(address, ["Helper", ""]).await;
+        for (id, status) in [("first", "running"), ("second", "waiting"), ("first", "done"), ("third", "failed")] {
+            helper.send(send(serde_json::json!({"type": "job", "id": id, "title": id, "status": status}))).await.unwrap();
+        }
+        let live = drain(&mut you, 100).await;
+        assert_eq!(live.len(), 4);
+        // Neither an invalid update nor a valid but paced update may replace retained state.
+        helper.send(send(serde_json::json!({"type": "job", "id": "first", "title": "", "status": "running"}))).await.unwrap();
+        helper.send(send(serde_json::json!({"type": "job", "id": "first", "title": "Too soon", "status": "running"}))).await.unwrap();
+        assert_eq!(next(&mut helper, 500).await.unwrap()["type"], "notice");
+        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper")).await.unwrap();
+        let replay = drain(&mut joined, 100).await;
+        let snapshot = replay.iter().position(|m| m["type"] == "snapshot").unwrap();
+        assert!(replay.iter().enumerate().filter(|(_, m)| m["type"] == "job").all(|(i, _)| i > snapshot));
+        let jobs: Vec<_> = replay.into_iter().filter(|m| m["type"] == "job").collect();
+        assert_eq!(jobs, [live[2].clone(), live[1].clone(), live[3].clone()], "original attribution, timestamp and flat payload replay unchanged, even to the sender's identity");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        // Reopening the same journal creates a new runtime with no retained jobs.
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let reopened = Core::test(journal, world);
+        assert!(crate::catch_up(&reopened, "you").iter().all(|m| !matches!(m, crate::protocol::ServerMsg::Job { .. })));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn job_replay_caps_distinct_rows_without_moving_updates() {
+        let (core, address, path, _) = served().await;
+        let [mut observer] = windows(address, [""]).await;
+        for i in 0..60 {
+            publish(&core, &format!("job:{i}"), i);
+        }
+        publish(&core, "job:0", 100);
+        let live = drain(&mut observer, 100).await;
+        assert_eq!(live.len(), 61);
+        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        let jobs: Vec<_> = drain(&mut joined, 100).await.into_iter().filter(|m| m["type"] == "job").collect();
+        assert_eq!(jobs.len(), 60);
+        assert_eq!(jobs[0], live[60], "updating the oldest row keeps it first");
+        assert_eq!(&jobs[1..], &live[1..60]);
+        publish(&core, "job:60", 60);
+        publish(&core, "job:2", 200);
+        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        let jobs: Vec<_> = drain(&mut joined, 100).await.into_iter().filter(|m| m["type"] == "job").collect();
+        assert_eq!(jobs.len(), 60);
+        for (i, job) in jobs.iter().enumerate() {
+            assert_eq!(job["id"], format!("job:{}", i + 1), "a new 61st id evicts the oldest, even after an update");
+        }
+        assert_eq!(jobs[1]["result"], "200");
+        publish(&core, "job:0", 300);
+        let jobs: Vec<_> = crate::catch_up(&core, "you").into_iter().filter_map(|m| match m {
+            crate::protocol::ServerMsg::Job { job, .. } => Some(job.id), _ => None,
+        }).collect();
+        assert_eq!(jobs, (2..=60).map(|i| format!("job:{i}")).chain(["job:0".into()]).collect::<Vec<_>>());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn job_updates_and_join_handoff_never_miss_or_reverse_state() {
+        let (core, address, path, _) = served().await;
+        publish(&core, "work", 0);
+        // Exercise both sides of the handoff without relying on socket timing.
+        let (mut updates, replay) = crate::subscribe_catch_up(&core, "you");
+        publish(&core, "work", 1);
+        let last = replay.into_iter().find_map(|m| match m {
+            crate::protocol::ServerMsg::Job { job, .. } => job.result, _ => None,
+        });
+        assert_eq!(last.as_deref(), Some("0"));
+        assert!(matches!(updates.try_recv().unwrap().message, crate::protocol::ServerMsg::Job { job, .. } if job.result.as_deref() == Some("1")));
+        let (mut updates, replay) = crate::subscribe_catch_up(&core, "you");
+        assert!(replay.iter().any(|m| matches!(m, crate::protocol::ServerMsg::Job { job, .. } if job.result.as_deref() == Some("1"))));
+        assert!(updates.try_recv().is_err(), "pre-replay updates must not remain queued");
+
+        let writer = tokio::spawn({
+            let core = core.clone();
+            async move {
+                for i in 2..=200 {
+                    publish(&core, "work", i);
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        });
+        let mut joining = Vec::new();
+        for _ in 0..8 {
+            let (window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+            joining.push(window);
+        }
+        writer.await.unwrap();
+        for window in &mut joining {
+            let messages = drain(window, 50).await;
+            let revisions: Vec<usize> = messages.iter().filter(|m| m["type"] == "job")
+                .map(|m| m["result"].as_str().unwrap().parse().unwrap()).collect();
+            assert_eq!(revisions.last(), Some(&200), "a join must receive the final accepted state");
+            assert!(revisions.windows(2).all(|pair| pair[0] < pair[1]), "no older state or duplicate after replay: {revisions:?}");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn answers_reach_only_the_askers_windows_with_server_attribution() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut helper, mut ears, mut asker, mut asker_tab, mut unrelated, mut you] =
+            windows(address, ["Helper", "Helper", "Sam%20%E7%95%8C!", "Sam%20%E7%95%8C!", "Other", ""]).await;
+        let started = crate::now_ms();
+        helper.send(send(serde_json::json!({"type": "answer", "to": "  Sam\n 界!\u{7} ", "text": "  Yes\n this\t one\u{7} ", "by": "Spoof", "at_ms": 1}))).await.unwrap();
+        let shown = next(&mut asker, 500).await.unwrap();
+        let at = shown["at_ms"].as_u64().unwrap();
+        assert!((started..=crate::now_ms()).contains(&at));
+        assert_eq!(shown, serde_json::json!({"type": "answer", "by": "Helper", "text": "Yes this one", "at_ms": at}));
+        assert_eq!(next(&mut asker_tab, 500).await.unwrap(), shown);
+        // A name with spaces, Unicode and punctuation is a speaker identity, not a screen target.
+        helper.send(send(serde_json::json!({"type": "answer", "to": "Sam 界!", "text": "界".repeat(280)}))).await.unwrap();
+        let shown = next(&mut asker, 500).await.unwrap();
+        assert_eq!(shown["text"], "界".repeat(280), "the limit counts normalized characters, not bytes");
+        assert_eq!(next(&mut asker_tab, 500).await.unwrap(), shown);
+        for window in [&mut helper, &mut ears, &mut unrelated, &mut you] {
+            assert!(drain(window, 50).await.is_empty(), "other speakers receive no answer");
+        }
+        helper.send(send(serde_json::json!({"type": "answer", "to": "you", "text": "Host"}))).await.unwrap();
+        assert_eq!(next(&mut you, 500).await.unwrap()["text"], "Host");
+        helper.send(send(serde_json::json!({"type": "answer", "to": "Helper", "text": "Self"}))).await.unwrap();
+        let shown = next(&mut helper, 500).await.unwrap();
+        assert_eq!(shown["text"], "Self");
+        assert_eq!(next(&mut ears, 500).await.unwrap(), shown, "all recipient windows, including the origin");
+        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Sam%20%E7%95%8C!")).await.unwrap();
+        assert!(drain(&mut joined, 50).await.iter().all(|m| m["type"] != "answer"), "answers aren't retained");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn invalid_answers_and_malformed_fields_share_refusals_and_pacing() {
+        let (core, address, path, mut queue) = served().await;
+        let before = std::fs::read_to_string(&path).unwrap();
+        let world = core.snapshot();
+        let [mut ears, mut recipient, mut unrelated] = windows(address, ["Helper", "Asker", ""]).await;
+        let valid = serde_json::json!({"type": "answer", "to": "Asker", "text": "Yes"});
+        let mut invalid = vec![
+            (serde_json::json!({"type": "answer", "to": "", "text": "Yes"}), "An answer needs a recipient."),
+            (serde_json::json!({"type": "answer", "to": " \n\u{7} ", "text": "Yes"}), "An answer needs a recipient."),
+            (serde_json::json!({"type": "answer", "to": "Asker", "text": " \t\n\u{7}"}), "An answer needs words."),
+            (serde_json::json!({"type": "answer", "to": "Asker", "text": "界".repeat(281)}), "An answer is 280 characters at most."),
+        ];
+        for field in ["to", "text"] {
+            let mut missing = valid.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            invalid.push((missing, "An answer needs string to and text."));
+            for value in [serde_json::Value::Null, serde_json::json!(42), serde_json::json!(false), serde_json::json!([]), serde_json::json!({})] {
+                let mut payload = valid.clone();
+                payload[field] = value;
+                invalid.push((payload, "An answer needs string to and text."));
+            }
+        }
+        for (payload, why) in invalid {
+            let (mut origin, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper")).await.unwrap();
+            drain(&mut origin, 20).await;
+            for window in [&mut ears, &mut recipient, &mut unrelated] { drain(window, 20).await; }
+            origin.send(send(payload.clone())).await.unwrap();
+            origin.send(send(payload.clone())).await.unwrap();
+            // Invalid guides and jobs share the same notice throttle, and leave all four slots available.
+            origin.send(send(serde_json::json!({"type": "caption", "text": ""}))).await.unwrap();
+            origin.send(send(serde_json::json!({"type": "job"}))).await.unwrap();
+            for message in [
+                valid.clone(),
+                serde_json::json!({"type": "point", "target": "composer"}),
+                serde_json::json!({"type": "tour", "steps": []}),
+                serde_json::json!({"type": "job", "id": "work", "title": "Working", "status": "running"}),
+                valid.clone(),
+                serde_json::json!({"type": "job", "id": "rejected", "title": "Too soon", "status": "done"}),
+                serde_json::json!({"type": "hold", "text": "Too soon?"}),
+            ] {
+                origin.send(send(message)).await.unwrap();
+            }
+            let notice = next(&mut origin, 500).await.unwrap();
+            assert_eq!(notice, serde_json::json!({"type": "notice", "message": format!("Not shown: {why}")}), "{payload}");
+            assert!(drain(&mut origin, 20).await.is_empty(), "all refusals share one throttle");
+            let heard = drain(&mut ears, 20).await;
+            assert_eq!(heard[0], notice);
+            assert_eq!(heard.iter().skip(1).map(|m| m["type"].as_str().unwrap()).collect::<Vec<_>>(), ["guide", "tour", "job"]);
+            let heard = drain(&mut recipient, 20).await;
+            assert_eq!(heard.iter().map(|m| m["type"].as_str().unwrap()).collect::<Vec<_>>(), ["answer", "guide", "tour", "job"], "{payload}: {heard:?}");
+            assert_eq!(heard[0]["text"], "Yes");
+            let other = drain(&mut unrelated, 20).await;
+            assert_eq!(other, heard[1..], "unrelated windows get no answers or notices");
+        }
+        let retained: Vec<_> = crate::catch_up(&core, "you").into_iter().filter_map(|m| match m {
+            crate::protocol::ServerMsg::Job { job, .. } => Some(job.id), _ => None,
+        }).collect();
+        assert_eq!(retained, ["work"], "rejected jobs and answers never enter retention");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(Arc::ptr_eq(&world, &core.snapshot()));
+        assert!(queue.try_recv().is_err());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]
