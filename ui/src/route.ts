@@ -102,10 +102,42 @@ function set(next: RouteState) {
   notify();
 }
 
+// What placed each thought lately, for the bricks' `landed` (BrickSlot.tsx): the model whose answer placed it, by
+// thought id, and the thoughts whose calls went (a decided route follows each, sent once its changes are on the map).
+// The newest only: a landing asks within a moment of its route.
+const KEPT = 200;
+const models = new Map<string, string | null>();
+const weighed = new Set<string>();
+const decidedWatchers = new Set<(thoughtId: string, model: string | null) => void>();
+const keep = <T>(kept: Map<string, T> | Set<string>) => { if (kept.size > KEPT) kept.delete(kept.keys().next().value!); };
+
+/** What placed thought `id`: its model's name ("Muse Spark 1.3"; null when the core didn't say), "weighing" while its
+ *  calls run and its decided route hasn't come, or null when no route was heard (a rule placed it, or it came before
+ *  this window connected). */
+export function placedBy(id: string): { model: string | null } | "weighing" | null {
+  if (models.has(id)) return { model: models.get(id) ?? null };
+  return weighed.has(id) ? "weighing" : null;
+}
+
+/** Calls `listener` with each thought's decided route as it comes; returns the way to stop. */
+export function watchDecided(listener: (thoughtId: string, model: string | null) => void) {
+  decidedWatchers.add(listener);
+  return () => { decidedWatchers.delete(listener); };
+}
+
 /** Takes a route message from the socket; false for any other message. */
 export function receiveRoute(msg: { type: string }): boolean {
   if (msg.type !== "route") return false;
-  set(routed(state, (msg as RouteMsg).route, Date.now()));
+  const route = (msg as RouteMsg).route;
+  if (route.stage === "weighing") { weighed.add(route.thought_id); keep(weighed); }
+  else {
+    const model = route.model ? modelName(route.model) : null;
+    weighed.delete(route.thought_id);
+    models.set(route.thought_id, model);
+    keep(models);
+    for (const watcher of decidedWatchers) watcher(route.thought_id, model);
+  }
+  set(routed(state, route, Date.now()));
   return true;
 }
 

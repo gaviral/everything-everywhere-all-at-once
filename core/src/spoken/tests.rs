@@ -314,6 +314,32 @@ fn saying_you_lost_your_place_is_where_was_i_only_as_the_whole_turn() {
 }
 
 #[test]
+fn what_just_happened_opens_the_windows_notices_only_as_the_whole_turn() {
+    for said in [
+        "What just happened?", "Wait, what just happened there?", "What happened just now?", "Show me the notices", "Okay, show me what just happened.",
+        "Can you show the notices?", "What was that notice?",
+    ] {
+        assert_eq!(kind(said), Some(Act::Notices), "{said}");
+    }
+    for said in [
+        "I don't know what just happened at work", "What just happened to the stock market is wild", "What did I miss?", "What happened today?",
+        "Show me the notices from the landlord", "What happened",
+    ] {
+        assert_ne!(kind(said), Some(Act::Notices), "{said}");
+    }
+    // Only the asker's windows are told, and nothing lands on the map or moves anyone.
+    let f = Fixture::new(map(vec![thread("T1", "Garden", 1)]));
+    let mut updates = f.core.updates.subscribe();
+    let done = act(&f.core, "Sam", "What just happened?").expect("a request");
+    assert_eq!((done.act, done.missed, done.undo.is_none()), (Act::Notices, false, true));
+    let told: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
+    assert_eq!(told.len(), 1);
+    assert_eq!(told[0].to.as_deref(), Some("Sam"));
+    assert_eq!(serde_json::to_value(&told[0].message).unwrap(), serde_json::json!({ "type": "view", "view": "notices" }));
+    assert!(f.core.snapshot().thoughts.is_empty() && f.core.snapshot().active_by.is_empty());
+}
+
+#[test]
 fn stop_listening_is_only_the_whole_turn() {
     for said in ["Stop listening", "Okay, stop listening for a bit.", "Pause listening", "Mic off", "Turn off the mic, please"] {
         assert!(is_stop_listening(said), "{said}");

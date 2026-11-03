@@ -3,6 +3,7 @@
 //! With a room code, a second laptop on the same network joins the same map; with PUBLIC_URL too, a laptop
 //! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
+mod annotate;
 mod apple;
 mod apps;
 mod asr;
@@ -1378,6 +1379,9 @@ struct Join {
     name: String,
     /// The message card's Stop, pressed while this window's last connection was down (ui/src/core.ts `stopSend`).
     stop: Option<u64>,
+    /// Present (`?ai`, any value) when the window is an AI participant's, as the Friend's bridge joins: its name is
+    /// listed as an AI's (`World::ai`), so every window marks its words ✦. Not for the host's "you" or a "Guest".
+    ai: Option<String>,
 }
 
 async fn connect(
@@ -1399,7 +1403,8 @@ async fn connect(
     }
     // Bounded (protocol.rs `FRAME_MAX`): axum's default is 64 MiB a message.
     let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, seat))
+    let ai = join.ai.is_some() && speaker != "you" && speaker != GUEST;
+    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, ai, seat))
 }
 
 /// What another laptop is called when it asks for this machine's name, or for none.
@@ -1451,9 +1456,10 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
 
 /// One UI connection: sends the world, then every change and whatever is meant for its speaker;
 /// takes typed thoughts and audio as that speaker. `here`: the window is on this machine.
-/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead. `_seat`
-/// holds its name in a room until it closes.
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, _seat: Seat) {
+/// `renamed`: it asked for a name it can't have, so the reply says what it's called instead. `ai`: an AI
+/// participant's window (`Join::ai`). `_seat` holds its name in a room until it closes.
+#[allow(clippy::too_many_arguments)]
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, _seat: Seat) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the room");
@@ -1473,6 +1479,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone(), window));
     if here {
         core.hosts.lock().unwrap().insert(speaker.clone());
+    }
+    // An AI participant, listed once for every window (and the journal), so its words are marked as an AI's.
+    if ai && !core.snapshot().ai.contains(&speaker) {
+        core.commit(vec![Change::AiJoined { speaker: speaker.clone() }]);
     }
 
     let mut audio: Option<mpsc::Sender<Vec<u8>>> = None;
@@ -1596,6 +1606,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
                 Ok(ClientMsg::Point { target, caption }) => guide::point(&core, &speaker, window, &mut pace, target, caption),
                 Ok(ClientMsg::Caption { text }) => guide::caption(&core, &speaker, window, &mut pace, text),
+                // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
+                Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
+                    if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
+                        core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
+                    }
+                }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("ignoring a message I can't read: {e}"),
             },
@@ -2319,6 +2335,10 @@ mod tests {
             ("I lost my train of thought", "back"),
             ("I don't remember what I was saying", "back"),
             ("Where did I leave off?", "back"),
+            // docs/COMMANDS.md: "what just happened?" opens the notices this window showed.
+            ("What just happened?", "notices"),
+            ("What happened just now?", "notices"),
+            ("Show me the notices", "notices"),
         ];
         let leads: Vec<&str> = [""].iter().chain(&SOUNDS).chain(&ACKS).chain(&["now", "hey", "please"]).chain(&ASKING).copied().collect();
         for (phrase, does) in documented {
@@ -2354,6 +2374,10 @@ mod tests {
             "The phone rang and I lost my train of thought",
             "Going back to what I was saying about the rent, it's due Friday",
             "I don't remember the name of that restaurant",
+            "I don't know what just happened at work",
+            "What just happened to the stock market is wild",
+            // Asked of the others in a call.
+            "What did I miss?",
             // Alone, as often an answer to a question as a lost thought.
             "I don't remember",
             "Forget it, I'll just buy a new one",

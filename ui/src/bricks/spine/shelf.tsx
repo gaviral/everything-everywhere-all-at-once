@@ -73,7 +73,7 @@ export const Shelf = forwardRef<HTMLDivElement, Props>(function Shelf({ entries,
   const empty = !entries.length;
   const listed = open && !empty && !carrying;
   return <>
-    <div ref={setRef} className={cls("spine-shelf", carrying && "spine-shelf-ready", hot && "spine-shelf-hot", listed && "spine-shelf-open")}
+    <div ref={setRef} data-slot="shelf" className={cls("spine-shelf", carrying && "spine-shelf-ready", hot && "spine-shelf-hot", listed && "spine-shelf-open")}
       role="region" aria-label="Shelf: things kept at hand">
       {listed && <ul className="spine-shelf-list">
         {entries.map((entry) => <li key={entry.id} className={cls("spine-shelf-item", lifted?.entry.id === entry.id && lifted.moved && "spine-shelf-lifted")} style={roomStyle(entry.room)}

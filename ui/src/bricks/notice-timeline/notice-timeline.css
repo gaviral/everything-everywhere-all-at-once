@@ -31,3 +31,12 @@
 @media (max-width: 560px) {
   .notice-timeline-panel { width: calc(100vw - 32px); }
 }
+/* Where Tiny transcript's line (480 px at most, centered) reaches the clock's 48 px (narrower than 576 px), the clock
+   and its list sit 16 px higher, clear of it. */
+@media (max-width: 575.98px) {
+  .notice-timeline-clock { bottom: calc(var(--dock-height, 120px) + 32px); }
+  .notice-timeline-panel {
+    bottom: calc(var(--dock-height, 120px) + 72px);
+    max-height: max(120px, min(400px, 60vh, calc(100dvh - var(--dock-height, 120px) - var(--header-height, 64px) - 88px)));
+  }
+}

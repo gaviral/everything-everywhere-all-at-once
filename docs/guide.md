@@ -16,6 +16,8 @@ Every other window gets `{"type":"guide","kind":"point"|"caption","target":…,"
 - **A part not on screen:** never guessed at. The arrow shows what reveals it (Show on the card a thought is in, the Map button, Apps, search, Focus) and the caption says where it is; a click there moves the arrow on to the part itself. With no such way, there's no arrow, and the caption says it isn't on screen.
 - **A caption:** bottom-left, never on the composer, with who said it. The next replaces it; it goes once read: a slow reader's time for its words, 4 s at least, which also outlasts it being spoken, counted only while the page shows. The pointer on it holds it.
 - Both draw over an open sheet and keep still under Reduce Motion. `ui/src/Guide.tsx` draws them; the rules are in `ui/src/guide-core.ts`, held by `scripts/guide-check.mjs`.
+- **A brick's hint** (`actions.hint`, docs/bricks.md) shows the same way, with the brick's name: an arrow at a named part, or a line in the corner. It's this window's only: never sent, nor relayed.
+- **What a view hears:** bricks get `on("pointing")` with the part the arrow points at (a thought's or a thread's id with it), and null once it's down, so a view dims the rest once.
 
 ## Names
 

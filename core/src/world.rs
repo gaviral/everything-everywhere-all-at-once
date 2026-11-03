@@ -166,6 +166,14 @@ pub struct World {
     /// is laid out automatically. A place goes with its thread or thought when that leaves the map.
     #[serde(default)]
     pub positions: std::collections::HashMap<String, crate::positions::Position>,
+    /// Margin notes: each note's thread id → the words it's tied to (annotate.rs). Kept when the thread leaves the map,
+    /// so an Undo that brings it back brings its anchor; only a thread on the map is shown as a note.
+    #[serde(default)]
+    pub anchors: std::collections::HashMap<String, crate::annotate::Anchor>,
+    /// The speakers who joined as an AI participant (`?ai`, as the Friend's bridge does), in the order they first
+    /// came: every window marks their words as an AI's (✦).
+    #[serde(default)]
+    pub ai: Vec<String>,
     /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
     #[serde(default, skip_serializing)]
     pub read_ms: std::collections::HashSet<u64>,
@@ -321,6 +329,11 @@ pub enum Change {
     /// missing). Every step of a drag reaches every window; the journal keeps at most one line per item per
     /// `positions::JOURNAL_EVERY`, its latest.
     Positioned { id: String, x: Option<f64>, y: Option<f64>, by: String, at_ms: u64 },
+    /// A margin note's thread tied to words: `quote`, as picked in thought `thought_id`'s point (annotate.rs). Only for
+    /// a thread on the map; kept after it leaves, so an Undo brings the note back as a note.
+    Anchored { thread_id: String, thought_id: String, quote: String },
+    /// A window joined as an AI participant (`?ai`) under `speaker`: from now on its words are marked as an AI's.
+    AiJoined { speaker: String },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
     ExplainAnswered {
@@ -473,6 +486,16 @@ impl World {
                 // Off the map, or only one of the two: positions.rs refuses both, so only an edited journal holds one.
                 _ => {}
             },
+            Change::Anchored { thread_id, thought_id, quote } => {
+                if self.thread(thread_id).is_some() {
+                    self.anchors.insert(thread_id.clone(), crate::annotate::Anchor { thought_id: thought_id.clone(), quote: quote.clone() });
+                }
+            }
+            Change::AiJoined { speaker } => {
+                if !self.ai.contains(speaker) {
+                    self.ai.push(speaker.clone());
+                }
+            }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
             Change::ItemRefined { id, now, was, .. } => {
                 if self.set_item(id, now) {
@@ -1440,6 +1463,13 @@ mod tests {
             Change::ThreadRetitled { thread_id: "T3".into(), title: "Muse Spark questions".into(), was: "Topic T3".into() },
             Change::TitleChosen { thread_id: "T3".into(), title: "Muse Spark".into() },
             Change::ThreadAdded { thread: test_thread("T4", None) },
+            // A margin note's thread tied to words, its anchor kept through the merge and its Undo below; none for a
+            // thread off the map. An AI participant joined, once however often it says so.
+            Change::Anchored { thread_id: "T4".into(), thought_id: "a".into(), quote: "Muse Spark".into() },
+            Change::Anchored { thread_id: "T99".into(), thought_id: "a".into(), quote: "nowhere".into() },
+            Change::AiJoined { speaker: "Friend".into() },
+            Change::AiJoined { speaker: "Claude".into() },
+            Change::AiJoined { speaker: "Friend".into() },
             // A place on a thread that's merged away goes with it; its merge undone, it's back in the layout.
             Change::Positioned { id: "T4".into(), x: Some(40.0), y: Some(40.0), by: "AI".into(), at_ms: 30 },
             Change::ThreadMerged { from: "T4".into(), into: "T1".into() },
@@ -1603,6 +1633,8 @@ mod tests {
                 | Change::ThreadRemoved { .. }
                 | Change::PutBack { .. }
                 | Change::Positioned { .. }
+                | Change::Anchored { .. }
+                | Change::AiJoined { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
@@ -1616,7 +1648,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 43, "one of each kind of change");
+        assert_eq!(kinds.len(), 45, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1692,6 +1724,11 @@ mod tests {
         placed.sort_by(|a, b| a.0.cmp(b.0));
         assert_eq!(placed, [("T1", 120.5, -40.0, "Ana", 21), ("b", 300.0, 80.25, "AI", 22)]);
         assert!(w.thread("T4").is_some() && !w.positions.contains_key("T4"), "a merge undone brings the card back in the layout");
+        // A note's anchor holds through its thread's merge and the merge's Undo; one for a thread never on the map isn't
+        // kept. An AI participant is listed once, in the order it first came.
+        assert_eq!(w.anchors.len(), 1);
+        assert_eq!(w.anchors["T4"], crate::annotate::Anchor { thought_id: "a".into(), quote: "Muse Spark".into() });
+        assert_eq!(w.ai, ["Friend", "Claude"]);
     }
 
     #[test]

@@ -17,7 +17,7 @@ Browser, one page per window (ui/src)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
   Undo.tsx       Undo on a notice that answers a request you can take back
   Crash.tsx      what shows if the page throws: "Something broke" and Reload, not a white page (the map is in the core)
-  Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, drawn by `scripts/icons.mjs`)
+  Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, committed as drawn files: icon.svg and four PNGs of one icon)
   notice-rules.ts which notices stay until dismissed (they ask you to act); the rest are up for their reading time
   ux-rules.ts    when a click on a card's head opens or folds it (not on a button, field or `data-tip` mark), and when the dock shows its live line (held by `scripts/ux-check.mjs`)
   search-rules.ts what search finds, which found cards open (all up to 12, else none), and how typing stays in a frame on a big map (held by `scripts/search-check.mjs`)
@@ -30,6 +30,7 @@ Browser, one page per window (ui/src)
   Moves.tsx      a point's Move (a list of threads to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
+  annotate-core.ts margin notes as the window holds them, mirroring annotate.rs (a note is a tangent anchored to words), the note as sent, and the threads a brick is handed with their anchors
   onscreen.ts    keeps a popover anchored to a button (Room, the ? list, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
   route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
@@ -83,6 +84,7 @@ Core, one process (core/src: axum, tokio)
   spoken.rs      the command pack: "add … to X", "new thread about …", "expand …", "forget it", "stop listening"
   moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
+  annotate.rs    margin notes, a person's or an AI participant's: the first on words starts their tangent under the point's thread, tied to them; a later one answers in it; journaled, to every window; no model call
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
   clock.rs       local wall-clock time from the system's date, so timers keep their hour

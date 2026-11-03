@@ -125,7 +125,8 @@ pub enum ServerMsg {
 /// can say (Help), which opens on any map, an empty one too. Also the window's own buttons: Later on the
 /// unfinished card ("later"), setting it aside for good as a second Later does ("forget it"), its Finish it
 /// ("finish"), and the mic, off ("stop listening"). Export: the window saves the map as Markdown ("export my map"),
-/// made from the map it already holds, so nothing but the file the person saves leaves it.
+/// made from the map it already holds, so nothing but the file the person saves leaves it. Notices: the notices this
+/// window showed, newest first ("what just happened?"), which only the window keeps (the Notice timeline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -139,6 +140,7 @@ pub enum View {
     Finish,
     Pause,
     Export,
+    Notices,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
@@ -257,4 +259,8 @@ pub enum ClientMsg {
     },
     /// A line for the other windows' corner, shown as said (and spoken by whoever sent it), not a thought on the map.
     Caption { text: String },
+    /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
+    /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
+    /// participant's alike, never a model call.
+    Annotate { thought_id: String, quote: String, text: String },
 }

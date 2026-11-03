@@ -40,6 +40,8 @@
 .catalog-row > div { flex: 1; min-width: 0; }
 .catalog-row strong { font-size: 14px; font-weight: 600; }
 .catalog-row p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+/* The row a brick asked to show (`openCatalog(id)`): marked until the sheet closes. */
+.catalog-row.catalog-at { margin: 0 -10px; padding: 12px 10px; border-radius: 10px; background: var(--accent-soft); }
 .catalog .apps-switch.on { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
 .catalog-more { padding: 4px 0 0; }
 .catalog-more > summary { width: fit-content; min-height: 32px; margin: 14px 24px 0; padding: 6px 0; color: var(--muted); font-size: 12px; cursor: pointer; }

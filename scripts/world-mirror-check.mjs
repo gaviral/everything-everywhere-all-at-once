@@ -26,10 +26,12 @@ try {
   for (const name of ["every", "session"]) {
     const { changes, world, worlds } = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8"));
     let mirror = EMPTY;
-    // Every field the core sends, as the window holds it (a window without notes or places yet holds none).
+    // Every field the core sends, as the window holds it (a window without notes, places, margin notes or AI
+    // participants yet holds none).
+    const none = { notes: {}, positions: {}, anchors: {}, ai: [] };
     const agree = (core, at) => {
       for (const key of Object.keys(core)) {
-        assert.deepEqual(sorted(plain(mirror[key] ?? (key === "notes" || key === "positions" ? {} : null))), sorted(plain(core[key] ?? null)), `${name}: the window's ${key} differs from the core's ${at}`);
+        assert.deepEqual(sorted(plain(mirror[key] ?? none[key] ?? null)), sorted(plain(core[key] ?? null)), `${name}: the window's ${key} differs from the core's ${at}`);
       }
     };
     changes.forEach((change, i) => {

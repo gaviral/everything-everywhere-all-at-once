@@ -32,6 +32,11 @@
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
 //    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
+// The contract's own names (contract.ts), on a full run: its rules without a page (which brick added a thought, the
+//    threads a brick is handed with each note's anchor, a note as the window sends it, a hint as the guide shows it);
+//    in the playground, each event as a brick hears it and each action answered; in the app, the slots on today's
+//    layout, "what just happened?" opening the Notice timeline (off: a notice says where to switch it on), and its
+//    clock clear of Tiny transcript's line on a phone.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -71,8 +76,69 @@ try {
   const loaders = Object.fromEntries(folders.filter((f) => existsSync(join(bricksDir, f, "index.tsx"))).map((f) => [`./bricks/${f}/index.tsx`, async () => ({})]));
   const { problems: across } = discover(infos, loaders);
   for (const [folder, wrong] of Object.entries(across)) for (const w of wrong) if (/^flag ?/.test(w) && / too$/.test(w) && checked.includes(folder)) fail(folder, w);
+  if (!only) await contractRules(server);
 } finally {
   await server.close();
+}
+
+/** The contract's rules, without a page (contract.ts, through Vite as the app runs them). */
+async function contractRules(server) {
+  const { senders } = await server.ssrLoadModule("/src/bricks-core.ts");
+  const notes = await server.ssrLoadModule("/src/annotate-core.ts");
+  const guide = await server.ssrLoadModule("/src/guide-core.ts");
+  // `landed`'s `by`: the thought that comes back with a brick's words, yours and new, is that brick's; so is the rest of
+  // it the placer cut off; not someone else's words, nor yours long after, nor a snapshot's.
+  const template = { id: "_template", name: "Template" };
+  const yours = (id, text, at_ms = 5, speaker = "you") => ({ id, speaker, text, placed: false, thread_id: null, at_ms });
+  const sent = senders();
+  sent.see([], "you", 0, 1);
+  sent.sent("Ask Priya  about the slides", template, 1000);
+  sent.see([yours("t1", "Ask Priya about the slides")], "you", 1500, 1);
+  assert.equal(sent.by("t1"), template, "a brick's thought is that brick's");
+  sent.see([yours("t1", "Ask Priya"), yours("t2", "about the slides")], "you", 1600, 1);
+  assert.equal(sent.by("t2"), template, "and so is the rest the placer cut off");
+  sent.sent("Water the plants", template, 2000);
+  sent.see([yours("t1", "Ask Priya"), yours("t2", "about the slides"), yours("t3", "Water the plants", 9, "Sam")], "you", 2100, 1);
+  assert.equal(sent.by("t3"), undefined, "someone else's words aren't the brick's");
+  sent.see([yours("t4", "Water the plants", 10)], "you", 2000 + 61_000, 1);
+  assert.equal(sent.by("t4"), undefined, "yours a minute later aren't");
+  sent.sent("Book the room for Thursday", template, 62_000);
+  sent.see([yours("t6", "the room", 12)], "you", 62_100, 1);
+  assert.equal(sent.by("t6"), undefined, "your few words inside a brick's aren't its");
+  const long = `${"word ".repeat(1300)}end`;
+  sent.sent(long, template, 63_000);
+  sent.see([yours("t7", long.slice(0, 6000).trim(), 13), yours("t8", long.slice(6000).trim(), 14)], "you", 63_100, 1);
+  assert.deepEqual([sent.by("t7"), sent.by("t8")], [template, template], "each part of one sent in parts is the brick's");
+  sent.sent("Call mom", template, 70_000);
+  sent.see([yours("t5", "Call mom", 11)], "you", 70_100, 2);
+  assert.equal(sent.by("t5"), undefined, "a snapshot's thoughts are only learned");
+  // The threads a brick is handed: a note's with its anchor, the same array while nothing changes.
+  const threadsFor = notes.anchoredThreads();
+  const threads = [{ id: "T1" }, { id: "N3" }], anchors = { N3: { thought_id: "a", quote: "the lease" } };
+  const handed = threadsFor(threads, anchors);
+  assert.equal(threadsFor(threads, anchors), handed, "the same array while neither changes");
+  assert.deepEqual([handed[0], handed[1].anchor], [threads[0], anchors.N3]);
+  assert.equal(notes.anchoredThreads()(threads, undefined), threads, "no notes: the map's own array");
+  // A note as the window sends it, bounded as the core bounds it.
+  assert.deepEqual(JSON.parse(notes.annotateMessage("a", " the\n lease ", " Month to month? ").message), { type: "annotate", thought_id: "a", quote: "the lease", text: "Month to month?" });
+  for (const [quote, text] of [["", "x"], ["the lease", "  "], ["the lease", "x".repeat(6001)], ["y".repeat(6001), "x"]]) assert.ok("refused" in notes.annotateMessage("a", quote, text), `sent: ${quote.slice(0, 9)} ${text.slice(0, 9)}`);
+  // A hint as the guide shows it: an arrow at a part, or a caption; refused, nothing shows.
+  const points = [];
+  const stop = guide.watchPoint((point) => points.push(point && { target: point.target, text: point.text, by: point.by }));
+  assert.equal(guide.showHint("Drag  to resize", "tiny-transcript:size", "Tiny transcript"), true);
+  assert.deepEqual(points.at(-1), { target: "tiny-transcript:size", text: "Drag to resize", by: "Tiny transcript" });
+  assert.equal(guide.showHint("Said in the corner", null, "Template"), true);
+  for (const [text, target] of [["two\nlines", "composer"], ["x".repeat(141), "composer"], ["x", "not a name!"], ["   ", null], ["x", ""]]) {
+    assert.equal(guide.showHint(text, target, "Template"), false, `shown: ${JSON.stringify([text.slice(0, 9), target])}`);
+  }
+  assert.equal(points.length, 1, "a caption or a refused hint points at nothing");
+  guide.dismissPoint();
+  assert.equal(points.at(-1), null, "taken down: pointing at nothing");
+  stop();
+  // The slot names in contract.ts are the ones docs/bricks.md lists.
+  const contractSlots = [...read(join(bricksDir, "contract.ts")).match(/export const SLOTS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const listed = [...read(join(root, "docs/bricks.md")).matchAll(/^\| `([^`]+)` \| .* \| .* \|$/gm)].map((m) => m[1]).filter((name) => !name.startsWith("slot:"));
+  assert.deepEqual(listed, contractSlots, "docs/bricks.md lists contract.ts's slots, in its order");
 }
 
 // 2. Imports. 3. CSS. Per checked brick.
@@ -93,6 +159,13 @@ function sourceProblems(dir, file, text) {
   // The page has one header, the app's: the map measures every <header> to keep a landing clear of it (App.tsx
   // `mapTop`), and styles.css styles them all.
   if (/<header\b/.test(text)) out.push("draws a <header>: use a div (the app's header is the page's only one)");
+  // A part's name for a hint or the guide: the brick's own, starting with its id, or a thread's or point's (a view's).
+  const own = dir.split("/").at(-1).replace(/^_/, "");
+  for (const [, name] of text.matchAll(/data-guide=\{?\s*["'`]([^"'`$]*)/g)) {
+    if (!(name === own || name.startsWith(`${own}:`) || name.startsWith(`${own}-`) || name.startsWith("thread:") || name.startsWith("point:"))) {
+      out.push(`data-guide="${name}": a brick's own parts are named starting with "${own}" (threads and points: thread:<id>, point:<id>)`);
+    }
+  }
   return out;
 }
 
@@ -117,11 +190,13 @@ const wordsIn = (text) => new Set([...text.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'
 // The net catches what it says it does: each kind of breach, planted in a brick named "pin", is caught.
 {
   const dir = join(bricksDir, "pin");
-  for (const planted of [`import { World } from "../../core";`, `import x from "../bubbles/index";`, `import lodash from "lodash";`, `const m = import("../../App");`, `return <header>Pin</header>;`]) {
+  for (const planted of [`import { World } from "../../core";`, `import x from "../bubbles/index";`, `import lodash from "lodash";`, `const m = import("../../App");`, `return <header>Pin</header>;`,
+    `return <i data-guide="composer" />;`, `return <i data-guide={\`mic\`} />;`]) {
     assert.ok(sourceProblems(dir, "index.tsx", planted).length, `the check misses: ${planted}`);
   }
   for (const fine of [`import { useState } from "react";`, `import { useBrickEvent } from "../contract";`, `import "./pin.css";`, `import { motion } from "motion/react";`,
-    `import { ReactFlow } from "@xyflow/react";`, `import "@xyflow/react/dist/base.css";`]) {
+    `import { ReactFlow } from "@xyflow/react";`, `import "@xyflow/react/dist/base.css";`, `return <i data-guide="pin" />;`, `return <i data-guide="pin:size" />;`,
+    `return <i data-guide={\`point:\${id}\`} />;`]) {
     assert.deepEqual(sourceProblems(dir, "index.tsx", fine), [], `the check refuses: ${fine}`);
   }
   assert.deepEqual(sourceProblems(dir, "parts/more.tsx", `import { a } from "../index";`), [], "a file in a subfolder may import the brick's own files");
@@ -195,7 +270,10 @@ try {
     if (infos["./bricks/notice-timeline/brick.json"].kind !== "panel") fail("notice-timeline", "brick.json: a panel, as its spec says");
     const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
     await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "notice-timeline": true }))`);
-    const ask = (id, speaker = "you") => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "What just happened?", null), placed: false, speaker } } });
+    // "What just happened?" is the core's command: it tells only the asker's windows (a view), and lands nothing. The
+    // same words from someone else are only their thought.
+    const ask = (id, speaker = "you") => speaker === "you" ? core.send({ type: "view", view: "notices" })
+      : core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "What just happened?", null), placed: false, speaker } } });
     const entries = `[...document.querySelectorAll(".notice-timeline-entry")].map((li) => ({ text: li.querySelector(".notice-timeline-text").textContent, kind: li.dataset.kind }))`;
     for (const [label, seed] of [["empty", empty], ["full", full]]) {
       const where = `notice-timeline (${label} map)`;
@@ -317,6 +395,65 @@ try {
     await until(`!!document.querySelector(".template")`, 8000);
     await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
     if (!await until(`document.querySelector(".template")?.textContent.includes("last landed on")`, 4000)) fail("_template", "never heard the thought it added land");
+  }
+  // The contract in the playground (a full run): each event as a brick hears it ("What it heard", newest first) and
+  // each action answered as the app would, called as the shown brick would call it (`brickActions`).
+  if (!only) {
+    const where = "the contract (playground)";
+    await go(`${base}/bricks.html?brick=_template&sample=student-week`);
+    await until(`!!document.querySelector(".template")`, 8000);
+    const press = (label) => evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+    const heard = (name) => evaluate(`[...document.querySelectorAll('.playground-heard li[data-event="${name}"]')].map((li) => JSON.parse(li.textContent.slice(li.textContent.indexOf(": ") + 2)))`);
+    const logged = (words) => until(`document.querySelector(".playground-log").textContent.includes(${JSON.stringify(words)})`, 3000);
+    const call = (code) => evaluate(`window.brickActions.${code}`);
+    // landed: placed by the model its route named, in its time, by you; then one the brick added, by the brick.
+    await press("Add a thought");
+    let first = null;
+    if (!await until(`!!document.querySelector('.playground-heard li[data-event="landed"]')`, 4000)) fail(where, "no landed heard");
+    else {
+      [first] = await heard("landed");
+      if (first.model !== "Muse Spark 1.3" || first.ms !== 1200 || first.by?.kind !== "person" || first.by.name !== "you" || !first.mine) fail(where, `a thought you added landed as ${JSON.stringify(first)}`);
+    }
+    await call(`addThought("Book the room for Thursday")`);
+    if (!await until(`document.querySelector(".playground-heard")?.textContent.includes('"kind":"brick"')`, 4000)) fail(where, "a thought the brick added never landed by it");
+    else {
+      const landed = (await heard("landed")).find((l) => l.by.kind === "brick");
+      if (landed.by.id !== "_template" || landed.by.name !== "Template" || landed.model !== "Muse Spark 1.3") fail(where, `a thought the brick added landed as ${JSON.stringify(landed)}`);
+    }
+    // words: as they grow, then "" at the turn's end.
+    await press("Say a thought");
+    await sleep(700);
+    const growing = (await heard("words")).filter(Boolean);
+    if (growing.length < 2 || growing[0].length <= growing[1].length) fail(where, `words heard as ${JSON.stringify(growing)}, not growing`);
+    if (!await until(`[...document.querySelectorAll('.playground-heard li[data-event="words"]')].some((li) => li.textContent === 'words: ""')`, 5000)) fail(where, "no words \"\" at the turn's end");
+    // pointing: at a thread with its id, by who points; then null.
+    await press("Point at a thread");
+    const [pointing] = await heard("pointing");
+    if (!pointing?.target.startsWith("thread:") || pointing.threadId !== pointing.target.slice(7) || pointing.by !== "Friend") fail(where, `pointing heard as ${JSON.stringify(pointing)}`);
+    await press("Stop pointing");
+    if ((await heard("pointing"))[0] !== null) fail(where, "pointing stopped isn't heard as null");
+    // asked: "what just happened?".
+    await press("Ask what just happened");
+    if (JSON.stringify((await heard("asked"))[0]) !== '{"what":"notices"}') fail(where, "asked isn't heard as { what: \"notices\" }");
+    // annotate: a note on the words starts it, the same words again answer in it, other words start another; a point
+    // that isn't on the map is refused.
+    if (first) {
+      const notes = (n) => until(`document.querySelector(".playground-map").textContent.includes(" ${n} notes")`, 3000);
+      if (!await call(`annotate(${JSON.stringify(first.thoughtId)}, "the slides", "Which slides?")`) || !await notes(1) || !await logged("a new note on those words")) fail(where, "a note doesn't start its thread");
+      if (!await call(`annotate(${JSON.stringify(first.thoughtId)}, " the  slides ", "The deck from Monday")`) || !await logged("a reply in their note") || !await notes(1)) fail(where, "a note on the same words doesn't answer in it");
+      if (!await call(`annotate(${JSON.stringify(first.thoughtId)}, "Friday", "Which Friday?")`) || !await notes(2)) fail(where, "other words don't start a note of their own");
+      if (await call(`annotate("not-a-thought", "x", "y")`) !== false) fail(where, "a note on a point that isn't there isn't refused");
+    }
+    // openCatalog and hint, answered as the app would; a hint that isn't one line is refused.
+    await call(`openCatalog("spine")`);
+    if (!await logged("openCatalog spine → in the app: the Catalog opens at that brick's row")) fail(where, "openCatalog(id) isn't answered");
+    if (await call(`hint("Drag to resize", "template")`) !== true || !await logged("hint “Drag to resize” at template → in the app: an arrow at it, from Template")) fail(where, "a hint isn't answered");
+    if (await call(`hint("two\\nlines")`) !== false) fail(where, "a hint of two lines isn't refused");
+    // The Friend, an AI participant: listed as one, its thought landing by it.
+    await press("The Friend says one");
+    if (!await until(`document.querySelector(".playground-map").textContent.includes("AI: Friend")`, 3000)) fail(where, "the Friend isn't listed as an AI");
+    if (!await until(`document.querySelector(".playground-heard")?.textContent.includes('"name":"Friend"')`, 4000)) fail(where, "the Friend's thought never landed by it");
+    if (await evaluate(`document.querySelector(".playground").dataset.errors !== "0" || !!document.querySelector(".brick-broke")`)) fail(where, "the contract's calls caused an error");
   }
   // Bubble flight: a panel; a thought of yours on its way leaves as a bubble (the playground has no composer, so the check
   // lends one) that stays inside a phone's screen, never takes the pointer and goes once the thought is placed; with
@@ -497,8 +634,11 @@ try {
       else {
         const point = await nodeAt(`.react-flow__node[data-id="p:${id}"] .spine-point`);
         if (!slot || !point || point.x !== slot.x || Math.abs(point.y - slot.y) > 1) fail("spine", `the point didn't land in its slot (slot ${JSON.stringify(slot)}, point ${JSON.stringify(point)})`);
-        const note = await evaluate(`document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`);
-        if (note !== "Put here in 1.2 s") fail("spine", `the landing note says "${note}", not how long placing took ("Put here in 1.2 s"; the model once the contract sends it)`);
+        // The landing names its model once its route says (the playground's comes 40 ms after the change, as the core's does).
+        const landingNote = `document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`;
+        await until(`(${landingNote}) !== ""`, 2000);
+        const note = await evaluate(landingNote);
+        if (note !== "Muse Spark 1.3 put this here in 1.2 s") fail("spine", `the landing note says "${note}", not the model and how long placing took ("Muse Spark 1.3 put this here in 1.2 s")`);
       }
     }
     // A hand on the map holds the view; a landing then moves nothing, and out of view an edge chip says where.
@@ -927,13 +1067,29 @@ try {
   await go(`${base}/`);
   await until(`document.querySelectorAll(".thread").length > 0`, 8000);
   await settle();
+  // The slots today's layout has: one each, and no name the contract doesn't know. No stage yet: today's dock spans the
+  // window, so a view's corners (the Spine's) would sit under it beside one.
+  const slots = await evaluate(`[...document.querySelectorAll("[data-slot]")].map((el) => el.dataset.slot)`);
+  for (const name of ["top-left", "top-right", "status"]) if (slots.filter((s) => s === name).length !== 1) fail("the app's slots", `${slots.filter((s) => s === name).length} data-slot="${name}", not one`);
+  if (slots.includes("stage")) fail("the app's slots", "a stage on today's dock: the Spine's corners would go beside it, under the dock");
+  const named = [...read(join(bricksDir, "contract.ts")).match(/export const SLOTS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  for (const name of slots) if (!named.includes(name) && !name.startsWith("slot:")) fail("the app's slots", `data-slot="${name}" isn't a contract name`);
   const views = () => evaluate(`[...document.querySelectorAll(".palace-switch button")].map((b) => b.textContent)`);
   assert.deepEqual(await views(), ["Map", "Palace"], "at their defaults, no brick joins Map and Palace");
   await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+  // "What just happened?" with the Notice timeline off: the answer says where to switch it on, and the view stays.
+  const viewButton = (name) => `[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)})`;
+  await evaluate(`${viewButton("Palace")}.click()`);
+  core.send({ type: "view", view: "notices" });
+  if (!await until(`(document.querySelector(".notice > span")?.textContent ?? "").includes("Notice timeline is off")`, 3000)) fail("what just happened (Notice timeline off)", "no notice says where to switch it on");
+  if (await evaluate(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent`) !== "Palace") fail("what just happened", "the ask switched the view");
+  await evaluate(`${viewButton("Map")}.click()`);
+  await until(`!!document.querySelector("main.map .thread")`, 3000);
   // Tiny transcript off (its default): the dock's big line shows your words, as ever. A tab takes live words only while
   // its own mic is on, so the mic starts first, as live-page-check starts it: a stand-in microphone (a tone through a
   // real MediaStream) and a real tap.
   const tiny = appBricks.find((info) => info.id === "tiny-transcript");
+  const timeline = appBricks.find((info) => info.id === "notice-timeline");
   const tapMic = async () => {
     const at = await evaluate(`(() => { const r = document.querySelector("button.mic").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
@@ -957,7 +1113,7 @@ try {
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
-  for (const { name } of [...viewBricks, ...(tiny ? [tiny] : [])]) {
+  for (const { name } of [...viewBricks, ...(tiny ? [tiny] : []), ...(timeline ? [timeline] : [])]) {
     await evaluate(`${switchFor(name)}.click()`);
     if (await evaluate(`${switchFor(name)}.getAttribute("aria-checked")`) !== "true") fail("Catalog", `${name}'s switch didn't turn on`);
   }
@@ -981,6 +1137,19 @@ try {
       if (line.size !== "11px") fail("Tiny transcript", `its words are ${line.size}, not 11 px`);
       if (!line.clipped) fail("Tiny transcript", "the long turn fits, so its end isn't checked (make it longer)");
       if (line.end < long.length - 3) fail("Tiny transcript", `a long turn shows its start, not the words being said now (the line ends at character ${line.end} of ${long.length})`);
+      // On a phone, the Notice timeline's clock sits clear of the line (it ran 10 px into it).
+      if (timeline) {
+        core.send({ type: "notice", message: "A notice for the clock" });
+        for (const [w, h] of [[390, 844], [320, 568]]) {
+          await width(w, h);
+          if (!await until(`!!document.querySelector(".notice-timeline-clock") && !!document.querySelector(".tiny-transcript-text")`, 3000)) { fail("Notice timeline", `no clock, or no line, at ${w} px`); continue; }
+          await settle();
+          const apart = await evaluate(`(() => { const c = document.querySelector(".notice-timeline-clock").getBoundingClientRect(), t = document.querySelector(".tiny-transcript-text").getBoundingClientRect();
+            return c.bottom <= t.top || c.right <= t.left || c.left >= t.right || c.top >= t.bottom; })()`);
+          if (!apart) fail("Notice timeline", `its clock covers Tiny transcript's line at ${w} px`);
+        }
+        await width(1280, 860);
+      }
     }
     core.send({ type: "partial", text: "" });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
@@ -1012,6 +1181,13 @@ try {
       if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring, [data-brick="spine"] .spine-point.spine-cut')`, 3000)) fail("Spine", "a thought landing in the app doesn't ring its point");
       core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Claude", at_ms: Date.now() } });
       if (!await until(`(document.querySelector('.react-flow__node[data-id="p:T4-0"]')?.style.transform ?? "").includes("2400px, 1600px")`, 3000)) fail("Spine", "a point someone else placed doesn't go there");
+      // A margin note from the core (the contract's anchored tangent): its words marked on the point, the note beside them.
+      core.send({ type: "change", change: { type: "thread_added", thread: thread("N9", "Point 1", { parent_id: "T1" }) } });
+      core.send({ type: "change", change: { type: "anchored", thread_id: "N9", thought_id: "T1-0", quote: "point 1" } });
+      core.send({ type: "change", change: { type: "thought_added", thought: thought("note-1", "Due on the first?", "N9") } });
+      if (!await until(`document.querySelector('.spine-quote[data-margin="N9"]')?.textContent === "point 1" && (document.querySelector('.spine-margin[data-margin="N9"]')?.textContent ?? "").includes("Due on the first?")`, 3000)) {
+        fail("Spine", "a margin note from the core isn't tied to its words, with the note beside them");
+      }
       // Once the canvas has settled (a glide is 0.3 s, the camera's at most 0.9 s): a press lands where it's aimed.
       await sleep(1000);
       const tip = await middle(`.react-flow__node[data-id="p:T1-0"] .spine-text`);
