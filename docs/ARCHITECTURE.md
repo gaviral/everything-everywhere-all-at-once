@@ -59,7 +59,7 @@ Browser, one page per window (ui/src)
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
     bubbles/     a view: every thread as a bubble in a place of its own, sized by its points
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
-    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px above the dock, in place of the dock's big line
+    tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the composer's box (the status line once there is one), in place of the dock's big line
     _template/   the brick to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant pointing (a big arrow at a part named by its `data-guide`, its caption, a soft spotlight) and its captions in the corner; rules in guide-core.ts (docs/guide.md, held by `scripts/guide-check.mjs`)

@@ -23,8 +23,11 @@
 //    went, and a landing rings without moving. In the app: a landing from the core pulses, a place someone else gave
 //    moves the point there, and a drag reaches the core as a position.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
-//    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
-//    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
+//    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good;
+//    the hint says what it is, and its slider has a label you can see. In the app: off, the dock's line has your words;
+//    on, they show in it alone, inside the composer's box where its "Or type a thought" sits, a long turn's newest words
+//    in view; your own typing keeps the box (the words wait above it); at a turn's end its words stay until its thought
+//    comes, which takes them at once, and go by themselves when none does.
 // The contract's own names (contract.ts), on a full run: its rules without a page (which brick added a thought, the
 //    threads a brick is handed with each note's anchor, a note as the window sends it, a hint as the guide shows it);
 //    in the playground, each event as a brick hears it and each action answered; in the app, the slots on today's
@@ -375,6 +378,14 @@ try {
       // The turn ends (the playground's "Say a thought": a word every 250 ms, the end 600 ms after the last).
       if (!await until(`document.querySelector(".playground-map").textContent.includes("2 placed")`, 6000)) fail(where, "the thought said never landed");
       if (!await evaluate(`!!document.querySelector(".tiny-transcript-hint input[type=range]") && !!document.querySelector(".tiny-transcript-text")`)) fail(where, "the first-use hint left with the turn, before it was dismissed");
+      else {
+        // It says what it is (a person asked "what's it for?"), and the slider's name is on screen, not only read out.
+        const hint = await evaluate(`(() => { const hint = document.querySelector(".tiny-transcript-hint"), range = hint.querySelector("input[type=range]"), label = range.labels?.[0];
+          const words = [...hint.querySelectorAll("p")].map((p) => p.textContent.trim()).join(" ");
+          return { words, label: label ? label.innerText.trim() : "", wide: label ? label.getBoundingClientRect().width : 0, named: range.getAttribute("aria-label") ?? "" }; })()`);
+        if (hint.words !== "Your words as you speak, kept small; slide to resize") fail(where, `the first-use hint says "${hint.words}", not what it is ("Your words as you speak, kept small; slide to resize")`);
+        if (!hint.label.startsWith("Text size") || hint.wide < 100) fail(where, `the size slider has no label you can see (its label: "${hint.label}", ${hint.wide} px wide${hint.named ? `; aria-label "${hint.named}" only` : ""})`);
+      }
       await evaluate(`document.body.click()`);
       if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail(where, "keeps showing words once the turn is over and the hint dismissed");
       await press("Say a thought");
@@ -835,16 +846,44 @@ try {
     if (!await until(`document.querySelector(".tiny-transcript-text")?.textContent === ${JSON.stringify(long)}`, 3000)) fail("Tiny transcript", "switched on, it doesn't show your words as they're heard");
     else {
       if (await evaluate(`!!document.querySelector(".dock .live")`)) fail("Tiny transcript", "the dock's big line still shows: your words show twice");
+      // Inside the composer's box, over its field, on the box's color: where its "Or type a thought" sits, under them.
+      const inBox = `(() => { const words = document.querySelector(".tiny-transcript-text"), t = words.getBoundingClientRect(), composer = document.querySelector(".composer");
+        const b = composer.getBoundingClientRect(), f = composer.querySelector("textarea").getBoundingClientRect();
+        return { inside: t.left >= b.left - 0.5 && t.right <= b.right + 0.5 && t.top >= b.top - 0.5 && t.bottom <= b.bottom + 0.5,
+          overField: Math.abs(t.left - f.left) < 1 && Math.abs(t.right - f.right) < 1 && Math.abs((t.top + t.bottom) / 2 - (f.top + f.bottom) / 2) < 2,
+          covers: getComputedStyle(words).backgroundColor === getComputedStyle(composer).backgroundColor, above: t.bottom <= b.top + 0.5 }; })()`;
+      const boxed = await evaluate(inBox);
+      if (!boxed.inside || !boxed.overField) fail("Tiny transcript", `its words aren't inside the composer's box, where its "Or type a thought" sits: ${JSON.stringify(boxed)}`);
+      if (!boxed.covers) fail("Tiny transcript", "its words don't cover the box's own hint text, so both show at once");
+      // The words at the line's right end, measured letter by letter (a caret probe can't see words that let the
+      // pointer through): the newest ones, which are also the ones said stronger.
       const line = await evaluate(`(() => {
         const text = document.querySelector(".tiny-transcript-text"), box = text.getBoundingClientRect(), style = getComputedStyle(text);
-        // The words under the line's right end, just inside its padding: the newest ones.
-        const at = document.caretRangeFromPoint(box.right - parseFloat(style.paddingRight) - 2, box.top + box.height / 2);
-        return { size: style.fontSize, clipped: text.scrollWidth > text.clientWidth || text.querySelector("bdi").getBoundingClientRect().left < box.left,
-          end: at && text.contains(at.startContainer) ? at.startOffset : -1 };
+        const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT), range = document.createRange();
+        let at = 0, end = -1;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          for (let i = 0; i < node.length; i++) {
+            range.setStart(node, i); range.setEnd(node, i + 1);
+            const r = range.getBoundingClientRect();
+            if (r.width && r.left >= box.left - 0.5 && r.right <= box.right + 0.5) end = at + i + 1;
+          }
+          at += node.length;
+        }
+        return { size: style.fontSize, clipped: text.scrollWidth > text.clientWidth || text.querySelector("bdi").getBoundingClientRect().left < box.left, end,
+          stronger: [...text.querySelectorAll("bdi > span")].at(-1)?.textContent ?? "" };
       })()`);
       if (line.size !== "11px") fail("Tiny transcript", `its words are ${line.size}, not 11 px`);
       if (!line.clipped) fail("Tiny transcript", "the long turn fits, so its end isn't checked (make it longer)");
       if (line.end < long.length - 3) fail("Tiny transcript", `a long turn shows its start, not the words being said now (the line ends at character ${line.end} of ${long.length})`);
+      if (line.stronger !== long.split(" ").slice(-3).join(" ")) fail("Tiny transcript", `the words said stronger are "${line.stronger}", not the newest three`);
+      // Your own typing keeps the box: the words wait just above it, clear of what you typed; cleared, they're back.
+      const draft = (value) => evaluate(`(() => { const field = document.querySelector(".composer textarea");
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(field, ${JSON.stringify(value)});
+        field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+      await draft("Buy candles");
+      if (!await until(`(${inBox}).above`, 1500)) fail("Tiny transcript", "with something typed in the box, the words still cover it");
+      await draft("");
+      if (!await until(`(${inBox}).inside`, 1500)) fail("Tiny transcript", "the box emptied, the words don't come back into it");
       // On a phone, the Notice timeline's clock sits clear of the line (it ran 10 px into it).
       if (timeline) {
         core.send({ type: "notice", message: "A notice for the clock" });
@@ -861,6 +900,15 @@ try {
     }
     core.send({ type: "partial", text: "" });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
+    // A turn's words stay until its thought comes, and go the moment it does: they turn into it where they were.
+    core.send({ type: "partial", text: "Ask Maya to bring the folding chairs" });
+    await until(`!!document.querySelector(".tiny-transcript-text")`, 2000);
+    core.send({ type: "partial", text: "" });
+    await sleep(300);
+    if (!await evaluate(`!!document.querySelector(".tiny-transcript-text")`)) fail("Tiny transcript", "a turn's words went before its thought came");
+    core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("said-1", "Ask Maya to bring the folding chairs", null), placed: false } } });
+    if (!await until(`!document.querySelector(".tiny-transcript")`, 500)) fail("Tiny transcript", "a turn's words stay once its thought came");
+    core.send({ type: "change", change: { type: "thought_placed", thought_id: "said-1", thread_id: "T2", point: "Ask Maya to bring the folding chairs", unclear: "", complete: true, place_ms: 2000 } });
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
