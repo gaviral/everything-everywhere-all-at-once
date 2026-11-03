@@ -19,7 +19,7 @@ export type JobMsg = {
 };
 
 const STATUSES: readonly string[] = ["running", "done", "failed", "waiting"];
-/** As many as the core keeps (guide.rs): a new one past this pushes the oldest out. */
+/** As many as the core keeps (guide.rs); bound this window's store too. */
 const KEPT = 60;
 
 const ended = (status: JobStatus) => status === "done" || status === "failed";
@@ -54,7 +54,7 @@ export function receiveJob(message: { type: string }): boolean {
   const job = message as JobMsg;
   if (!text(job.id) || !job.id || !text(job.title) || !STATUSES.includes(job.status) || !text(job.by) || typeof job.demo !== "boolean"
     || !Number.isFinite(job.at_ms) || (job.result != null && !text(job.result)) || (job.parent != null && !text(job.parent))) return true;
-  const at = jobs.findIndex((old) => old.id === job.id);
+  const at = jobs.findIndex((old) => old.by === job.by && old.id === job.id);
   const next = merge(jobs[at], job);
   jobs = at < 0 ? [...jobs, next].slice(-KEPT) : jobs.map((old, i) => (i === at ? next : old));
   changed();
