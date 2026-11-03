@@ -1,0 +1,160 @@
+// The Work spine itself: the jobs as bubbles on a line, oldest at the top and the newest at the foot ("Just now"), each
+// with its state in words, side jobs folded under their parent. The lane (beside the Canvas) and the card in the dock
+// (a phone, a narrow window) both show this and differ only in what's around it.
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Job } from "../contract";
+import { below, forest, justNow, parts, stateOf, tally, type Node } from "./jobs";
+
+/** What the page says when a job's state words aren't enough. */
+const DEMO_WORDS = "Demo mode · simulated";
+/** How long a bubble that just arrived, or just changed, stays marked. */
+const FRESH_MS = 2400;
+/** A window that opens (or a connection's replay that arrives) within this of the list isn't news. */
+const SETTLE_MS = 600;
+
+const COUNT_CLASS = { running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
+const STATE_CLASS = { running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
+
+/** "2 running · 1 waiting": what isn't over, or went wrong; the quiet words when nothing is. */
+export function Counts({ jobs }: { jobs: readonly Job[] }) {
+  if (!jobs.length) return <>No jobs yet</>;
+  const shown = parts(tally(jobs));
+  if (!shown.length) return <>All done</>;
+  return <>{shown.map((part, i) => <span key={part.key}>{i > 0 && " · "}<span className={COUNT_CLASS[part.key]}>{part.text}</span></span>)}</>;
+}
+
+/** The label that heads the Work spine when any job shown is simulated. */
+export const isDemo = (jobs: readonly Job[]) => jobs.some((job) => job.demo);
+export function DemoLabel() {
+  return <span className="work-spine-demo">{DEMO_WORDS}</span>;
+}
+
+/** What's new since this opened: a job that came, or one whose state or words changed, marked for FRESH_MS (the
+ *  bubble settles in, a landed result glows). What was there when it opened, or came in its first moments (a
+ *  connection's replay), is not news. */
+export function useFresh(jobs: readonly Job[]): ReadonlyMap<string, "new" | "landed"> {
+  const seen = useRef<Map<string, string> | null>(null);
+  const opened = useRef(Date.now());
+  const timers = useRef(new Set<number>());
+  const [fresh, setFresh] = useState<ReadonlyMap<string, "new" | "landed">>(new Map());
+  useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
+  useLayoutEffect(() => {
+    const now = new Map(jobs.map((job) => [job.id, `${job.status}|${job.result ?? ""}`]));
+    const before = seen.current;
+    seen.current = now;
+    if (!before || Date.now() - opened.current < SETTLE_MS) return;
+    const news = new Map<string, "new" | "landed">();
+    for (const job of jobs) {
+      const was = before.get(job.id);
+      if (was === undefined) news.set(job.id, "new");
+      else if (was !== now.get(job.id)) news.set(job.id, "landed");
+    }
+    if (!news.size) return;
+    setFresh((was) => new Map([...was, ...news]));
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
+      setFresh((was) => { const next = new Map(was); for (const [id, kind] of news) if (next.get(id) === kind) next.delete(id); return next; });
+    }, FRESH_MS);
+    timers.current.add(timer);
+  }, [jobs]);
+  return fresh;
+}
+
+interface Shared {
+  now: number;
+  open: ReadonlySet<string>;
+  toggle: (id: string) => void;
+  fresh: ReadonlyMap<string, "new" | "landed">;
+  /** The job "Just now" marks. */
+  latest: string | null;
+  /** More than one sender: each bubble says who. */
+  many: boolean;
+  ai: (name: string) => boolean;
+  /** The list stops following the newest (a fold was opened: what's under it is what you're reading). */
+  release: () => void;
+}
+
+function Bubble({ node, shared }: { node: Node; shared: Shared }) {
+  const { job, kids } = node;
+  const state = stateOf(job, shared.now);
+  const folded = below(node);
+  const open = shared.open.has(job.id);
+  const listId = useId();
+  const item = useRef<HTMLLIElement>(null);
+  const first = useRef(true);
+  // Opening a fold brings what it opened into view, even at the foot of the list, with its parent still above it as
+  // far as they both fit.
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const box = item.current?.closest(".work-spine-scroll");
+    if (!open || !item.current || !box) return;
+    const at = item.current.getBoundingClientRect(), room = box.getBoundingClientRect();
+    const hangs = at.bottom - (room.bottom - 14), canRise = at.top - (room.top + 14);
+    if (hangs > 0) box.scrollTop += Math.min(hangs, Math.max(canRise, 0));
+  }, [open]);
+  const more = parts(tally(folded));
+  const inside = !open && shared.latest !== null && folded.some((hidden) => hidden.id === shared.latest);
+  return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-fresh={shared.fresh.get(job.id)}>
+    <article className="work-spine-bubble">
+      {shared.many && <p className="work-spine-by">{shared.ai(job.by) && <span className="ai-mark" aria-hidden="true">✦ </span>}{job.by}</p>}
+      <p className="work-spine-job-title">{job.title}</p>
+      <p className={`work-spine-state ${STATE_CLASS[job.status]}`}>
+        <span className="work-spine-mark" aria-hidden="true">{state.mark || <i className="work-spine-pulse" />}</span>
+        <span className="work-spine-word">{state.word}</span>
+        {state.clock && <>{" "}<span className="work-spine-clock">{state.clock}</span></>}
+        {shared.latest === job.id && <>{" "}<span className="work-spine-now">Just now</span></>}
+      </p>
+      {job.result && <p className={job.status === "waiting" ? "work-spine-question" : "work-spine-result"}>{job.result}</p>}
+    </article>
+    {kids.length > 0 && <>
+      <button type="button" className="work-spine-fold" aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => { shared.release(); shared.toggle(job.id); }}>
+        <span className="work-spine-fold-count">{open ? "−" : "+"}{folded.length} side {folded.length === 1 ? "job" : "jobs"}<span className="sr-only"> of {job.title}</span></span>
+        {more.map((part) => <Fragment key={part.key}>{" "}<span className={COUNT_CLASS[part.key]}>{part.text}</span></Fragment>)}
+        {inside && <>{" "}<span className="work-spine-now">Just now</span></>}
+      </button>
+      {open && <ol id={listId} className="work-spine-kids">{kids.map((kid) => <Bubble key={kid.job.id} node={kid} shared={shared} />)}</ol>}
+    </>}
+  </li>;
+}
+
+/** The list: a scroll of bubbles that follows the newest while you're at its foot and lets go once you scroll up (a
+ *  "Latest" button brings you back). */
+export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly Job[]; now: number; open: ReadonlySet<string>; toggle: (id: string) => void;
+  fresh: ReadonlyMap<string, "new" | "landed">; ai: (name: string) => boolean }) {
+  const tree = useMemo(() => forest(jobs), [jobs]);
+  const many = useMemo(() => new Set(jobs.map((job) => job.by)).size > 1, [jobs]);
+  const scroller = useRef<HTMLDivElement>(null);
+  const stuck = useRef(true);
+  const [away, setAway] = useState(false);
+  const follow = () => {
+    const box = scroller.current;
+    if (!box) return;
+    // With nothing to scroll there's nothing to hold your place in: following resumes.
+    if (box.scrollHeight <= box.clientHeight + 1) { stuck.current = true; setAway(false); }
+    if (stuck.current) box.scrollTop = box.scrollHeight;
+  };
+  useLayoutEffect(follow);
+  const empty = tree.length === 0;
+  useEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+    const watch = new ResizeObserver(follow);
+    watch.observe(box);
+    if (box.firstElementChild) watch.observe(box.firstElementChild);
+    return () => watch.disconnect();
+  }, [empty]);
+  const scrolled = () => {
+    const box = scroller.current;
+    if (!box) return;
+    stuck.current = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    setAway(!stuck.current);
+  };
+  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), many, ai, release: () => { stuck.current = false; } };
+  return <div className="work-spine-listbox">
+    <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}>
+      {empty ? <p className="work-spine-empty">When an AI helper starts work, it shows up here.</p>
+        : <ol className="work-spine-list">{tree.map((node) => <Bubble key={node.job.id} node={node} shared={shared} />)}</ol>}
+    </div>
+    {away && <button type="button" className="work-spine-latest" onClick={() => { stuck.current = true; setAway(false); follow(); }}>↓ Latest</button>}
+  </div>;
+}

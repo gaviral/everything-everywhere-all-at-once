@@ -58,8 +58,37 @@ export interface Speaker {
   readonly ai: boolean;
 }
 
+/** Where a helper's job stands: at work, finished, stopped short, or held up on a question for you. */
+export type JobStatus = "running" | "done" | "failed" | "waiting";
+
+/** One piece of work an AI helper reports (the core relays it as it comes: core/src/guide.rs `Job`). The same `id` again
+ *  is the same job in a new state, and the last state wins. It lives only as long as the core runs, never on the map. */
+export interface Job {
+  readonly id: string;
+  /** What it is, one line (80 characters at most). */
+  readonly title: string;
+  readonly status: JobStatus;
+  /** One line (160 characters at most): what a done job found, why a failed one stopped, the question a waiting one asks. */
+  readonly result?: string;
+  /** The job this is a side job of; a parent that isn't here (yet) leaves it standing alone. */
+  readonly parent?: string;
+  /** A prepared, simulated job, not real work: whatever shows it says so. */
+  readonly demo: boolean;
+  /** Who sent it, by the name their thoughts would carry (`map.speakers`). */
+  readonly by: string;
+  /** When its state last changed, as the core stamped it (ms since 1970). */
+  readonly at_ms: number;
+  /** When this window first saw it running, and first saw it end (the core's `at_ms` of each). Only what was seen: a
+   *  window that joined after a job ended has no start, so no length either; none is made up. */
+  readonly started_ms?: number;
+  readonly ended_ms?: number;
+}
+
 /** The map as it is now, read-only: a brick changes the map only through `actions`. Each change brings a new one. */
 export interface MapSnapshot {
+  /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
+   *  newest 60. The core replays them to a window that joins, so a brick switched on late still has them all. */
+  readonly jobs: readonly Job[];
   /** Every thread, oldest first; a branch names its parent (`parent_id`), a margin note its words (`anchor`). */
   readonly threads: readonly Thread[];
   /** Every thought in the order it came. A placed one sits on a thread (`thread_id`) as its `point`; the rest are on

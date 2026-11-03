@@ -280,6 +280,10 @@ html.shell2 .shell-say strong { display: none; }
 
 /* A view brick fills the window under the corners: no margins or padding of today's column. */
 html.shell2 .brick-view { max-width: none; margin: 0; padding: 0; }
+/* A feature that takes the page's right side (the Work spine's lane) says how wide in --room-right: the map, the Canvas
+   with it, ends where the lane begins instead of running under it, and the page is the rest. The corners, the stage and
+   the rail are fixed to the window, so they stay where they are. */
+html.shell2 .app.shell { margin-right: var(--room-right, 0px); }
 /* The Palace and other pages that scroll: clear of the corners at the top and the stage at the bottom. */
 html.shell2 .palace { padding-top: 76px; padding-bottom: 180px; }
 html.shell2 .palace-intro h1 { font-family: inherit; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }

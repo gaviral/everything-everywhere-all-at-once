@@ -1,0 +1,9 @@
+{
+  "id": "work-spine",
+  "name": "Work spine",
+  "does": "What your AI helpers are doing: running, done, failed, or waiting on you.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "work-spine"
+}
