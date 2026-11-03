@@ -352,10 +352,10 @@ try {
       await page("Emulation.setDeviceMetricsOverride", { width: 1100, height: 760, deviceScaleFactor: 1, mobile: false });
       await check('!!document.querySelector(".work-spine-lane")', "at 1100 px wide, the lane");
       await settle();
-      const lane = await evaluate(rect(".work-spine-lane")), stage = await evaluate(rect('[data-slot="stage"]')), scroll = await evaluate(rect(".work-spine-lane .work-spine-scroll"));
-      assert.ok(lane.left < stage.right ? scroll.bottom <= stage.top : true, `the lane's list stops above the composer where they share the window: ${JSON.stringify({ scroll, stage })}`);
+      const lane = await evaluate(rect(".work-spine-lane")), composer = await evaluate(rect('[data-guide="composer"]')), scroll = await evaluate(rect(".work-spine-lane .work-spine-scroll"));
+      assert.ok(lane.left < composer.right && lane.right > composer.left ? scroll.bottom <= composer.top : true, `the lane's list stops above the composer where they share the window: ${JSON.stringify({ scroll, composer })}`);
       const shelf = await evaluate(rect(".spine-shelf-head"));
-      assert.ok(shelf.bottom <= stage.top || shelf.right <= stage.left || shelf.left >= stage.right, `the shelf is clear of the composer: ${JSON.stringify({ shelf, stage })}`);
+      assert.ok(shelf.bottom <= composer.top || shelf.right <= composer.left || shelf.left >= composer.right, `the shelf is clear of the composer: ${JSON.stringify({ shelf, composer })}`);
       await sound("1100");
       await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     }
