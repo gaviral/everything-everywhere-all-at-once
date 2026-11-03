@@ -11,18 +11,21 @@ import { uiServer } from "./ui-server.mjs";
 
 // ---- The worklet, run as the browser runs it: one processor, 128-sample blocks.
 const workletSource = readFileSync(new URL("../ui/public/pcm-worklet.js", import.meta.url), "utf8");
-function runWorklet(rate, input) {
+function runWorklet(rate, input, beforeBlock = () => {}) {
   const frames = [];
   let Processor;
   const scope = {
     sampleRate: rate,
-    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: (buffer) => frames.push(new Int16Array(buffer)) }; } },
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: ({ frame }) => frames.push(new Int16Array(frame)) }; } },
     registerProcessor: (_name, cls) => { Processor = cls; },
     Math, Float32Array, Int16Array,
   };
   vm.runInNewContext(workletSource, scope);
   const p = new Processor();
-  for (let at = 0; at < input.length; at += 128) p.process([[input.subarray(at, at + 128)]]);
+  for (let at = 0; at < input.length; at += 128) {
+    beforeBlock(p, at);
+    p.process([[input.subarray(at, at + 128)]]);
+  }
   return frames;
 }
 const tone = (rate, hz, seconds, amp = 0.5) => Float32Array.from({ length: Math.round(rate * seconds) }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / rate));
@@ -57,6 +60,17 @@ for (const rate of [48000, 44100]) {
   assert.ok(rms(alias) < 0.02, `${rate}: 15 kHz folded back at ${rms(alias).toFixed(3)}`);
 }
 
+// Pause and resume partway through frames, including the resampling filter's tail.
+for (const rate of [24000, 48000, 44100]) {
+  const block = 128;
+  const pause = block * 2, resume = block * 4;
+  const frames = runWorklet(rate, Float32Array.from({ length: rate }, (_, i) => i < resume ? 0.5 : 0), (p, at) => {
+    if (at === pause) p.port.onmessage({ data: { muted: true, generation: 1 } });
+    if (at === resume) p.port.onmessage({ data: { muted: false, generation: 2 } });
+  });
+  assert.ok(frames.length > 0 && frames.every((f) => f.every((s) => s === 0)), `${rate}: no buffered speech or filter tail after resume`);
+}
+
 // ---- mic.ts with a fake browser.
 function browser({ chromium = true, honorsRate = true, refusesMixedRates = false, startsSuspended = false, denies = false, active = true, permission, worklet } = {}) {
   const log = [];
@@ -80,7 +94,7 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
     resume() { this.state = "running"; log.push("resume"); return Promise.resolve(); }
     close() { this.state = "closed"; return Promise.resolve(); }
   }
-  class FakeNode { constructor() { this.port = {}; } connect(next) { return next; } disconnect() {} }
+  class FakeNode { constructor() { this.port = { postMessage() {} }; } connect(next) { return next; } disconnect() {} }
   const navigator = { userActivation: { isActive: active }, ...(chromium ? { userAgentData: {} } : {}), mediaDevices: { getUserMedia: async () => {
     clickDone = true;
     log.push("getUserMedia");

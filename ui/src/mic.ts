@@ -4,7 +4,7 @@
 // Safari and Firefox run at the device's rate and the worklet resamples (ui/public/pcm-worklet.js, checked by
 // scripts/mic-check.mjs), since what their own resampling does to a mic at 24 kHz can't be checked here: Firefox
 // refuses a mic in a context at another rate, and Safari's has had bugs.
-import { pageSpeaking } from "./page-speech";
+import { pageSpeaking, watchPageSpeech } from "./page-speech";
 
 export const RATE = 24000;
 
@@ -79,9 +79,10 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
   // Before any await, so it counts as part of the click.
   let context = atRate();
   let stream: MediaStream | undefined;
+  let unwatchSpeech = () => {};
   // Abort also closes tracks while the worklet loads; getUserMedia itself cannot be cancelled, so check again
   // as soon as its promise resolves and stop any late stream before connecting it.
-  const cancel = () => { stream?.getTracks().forEach((track) => track.stop()); context.onstatechange = null; if (context.state !== "closed") void context.close(); };
+  const cancel = () => { unwatchSpeech(); stream?.getTracks().forEach((track) => track.stop()); context.onstatechange = null; if (context.state !== "closed") void context.close(); };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -104,10 +105,12 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     await context.audioWorklet.addModule("/pcm-worklet.js");
     signal?.throwIfAborted();
     const writer = new AudioWorkletNode(context, "pcm-writer");
+    let generation = 0;
+    unwatchSpeech = watchPageSpeech((muted) => writer.port.postMessage({ muted, generation: ++generation }));
     writer.port.onmessage = (event) => {
-      // Keep the connection alive with silence, so neither the speakers nor the person is transcribed.
-      const frame = event.data as ArrayBuffer;
-      if (pageSpeaking()) new Int16Array(frame).fill(0);
+      // A queued frame from before a pause/resume must stay silent even after speech ends.
+      const { frame, generation: captured } = event.data as { frame: ArrayBuffer; generation: number };
+      if (pageSpeaking() || captured !== generation) new Int16Array(frame).fill(0);
       onFrame(frame);
     };
     source.connect(writer);
@@ -122,6 +125,7 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
       if (stopped) return;
       stopped = true;
       signal?.removeEventListener("abort", cancel);
+      unwatchSpeech();
       writer.port.onmessage = null;
       context.onstatechange = null;
       source.disconnect();
