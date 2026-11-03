@@ -29,6 +29,7 @@ export const TIPS = {
   awayProposal: "A proposal the AI made while you were away. Open the row to keep or dismiss it.",
   recap: "Written by AI from your map. Off? notes an answer that misses the point.",
   build: "An app the AI is making from your words. Nothing new runs until you keep it.",
+  participant: "An AI in the call, not a person: what it says or adds is marked ✦.",
 } as const;
 
 type Shown = { text: string; el: HTMLElement };

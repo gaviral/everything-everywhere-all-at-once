@@ -69,3 +69,12 @@
   .join-card { margin-top: 48px; padding: 24px; }
   .room-menu summary { padding-inline: 8px; }
 }
+
+/* The join code and who's here now (talk/call-core.ts). */
+.room-code { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.room-code b { color: var(--ink); font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.room-copy { margin-left: auto; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.room-copy:hover { border-color: var(--muted); }
+.room-link { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 12px; user-select: all; overflow-wrap: anywhere; }
+.ai-mark { color: var(--ai); }
+.room-state { color: var(--muted); font-size: 12px; }

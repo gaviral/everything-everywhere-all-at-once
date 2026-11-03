@@ -60,6 +60,7 @@ import { Catalog } from "./Catalog";
 import { Guide } from "./Guide";
 import { showHint } from "./guide-core";
 import { Markdown } from "./md";
+import { TalkRail } from "./talk/TalkRail";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -1202,6 +1203,7 @@ export default function App() {
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       <BrickSlot kind="panel" host={brickHost} />
+      <TalkRail host={brickHost} />
       <BrickSlot kind="input" host={brickHost} />
       <Tips />
       <Catalog />
