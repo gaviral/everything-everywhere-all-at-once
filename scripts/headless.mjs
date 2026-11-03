@@ -52,8 +52,10 @@ function unframe(buffer) {
 /** A stand-in core: the built UI over HTTP, alone on this laptop, and /ws. Each window that connects gets
  *  `joinReply(query)`'s messages (the core's catch-up: the world, and whatever else a check puts first; `query` is the
  *  connection's URLSearchParams), or is refused when it returns null; `heard` collects what windows sent, parsed.
- *  `door`: what /room says (alone on a laptop unless a check opens a room, or runs as the hosted site). */
-export async function standInCore(joinReply, { door = { room: false, member: true } } = {}) {
+ *  `door`: what /room says (alone on a laptop unless a check opens a room, or runs as the hosted site). A check that
+ *  answers as the core would hears each message with the window's query (`onMessage`) and each window closing
+ *  (`onClose`). */
+export async function standInCore(joinReply, { door = { room: false, member: true }, onMessage = null, onClose = null } = {}) {
   const sockets = new Set();
   const heard = [];
   const server = createServer((req, res) => {
@@ -69,13 +71,21 @@ export async function standInCore(joinReply, { door = { room: false, member: tru
     if (!messages) { socket.destroy(); return; }
     const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+    const query = new URL(req.url, "http://x").searchParams;
     socket.on("error", () => {});
-    socket.on("close", () => sockets.delete(socket));
+    socket.on("close", () => { sockets.delete(socket); onClose?.(query); });
+    // The server keeps a socket half-open after the window's side ends; ending this side too makes it close.
+    socket.on("end", () => socket.end());
     let pending = Buffer.alloc(0);
     socket.on("data", (data) => {
       const { texts, rest } = unframe(Buffer.concat([pending, data]));
       pending = Buffer.from(rest);
-      for (const text of texts) { try { heard.push(JSON.parse(text)); } catch { /* not a message */ } }
+      for (const text of texts) {
+        let message;
+        try { message = JSON.parse(text); } catch { continue; /* not a message */ }
+        heard.push(message);
+        onMessage?.(message, query);
+      }
     });
     sockets.add(socket);
     for (const message of messages) socket.write(frame(JSON.stringify(message)));

@@ -64,6 +64,8 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
         return Err(anyhow!("{}", refused(&first)));
     }
     core.send_to(&speaker, ServerMsg::Status { listening: true, note: "Listening".into() });
+    // Their mic is on for the call's windows until this stream ends, which ends their turn too (call.rs).
+    let _mic = crate::call::mic_on(&core, &speaker);
     let step = crate::model::STEP_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     core.listen_step(&speaker, step, MODEL, false);
 
@@ -283,6 +285,10 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
             // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
             crate::messages::heard(core, speaker, &words);
+            // The call's other windows learn that they have the floor, never the words (call.rs `speaking`).
+            if !words.trim().is_empty() {
+                crate::call::speaking(core, speaker, true);
+            }
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
         Some("speechComplete") => {
@@ -293,6 +299,10 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
                 core.add_thought(speaker, &words);
+            }
+            // After the turn's thought, so the other windows see its words come as "Speaking now…" goes (call.rs).
+            crate::call::speaking(core, speaker, false);
+            if !words.is_empty() {
                 return crate::spoken::stops_listening(&words);
             }
         }
@@ -422,6 +432,41 @@ mod tests {
         handle(&core, "you", &mut state, &line.to_string());
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["Okay, rent is due Friday."]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// In a call, a turn's first words give its speaker the floor in every window, once however many words come (never
+    /// the words: those stay with the speaker's own windows), and its end gives the floor back right after its thought,
+    /// so the other windows see its words come as "Speaking now…" goes (call.rs).
+    #[test]
+    fn a_turn_takes_the_floor_once_and_gives_it_back_after_its_thought() {
+        let path = std::env::temp_dir().join(format!("e2a2o-asr-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, World::default()));
+        let (_you, _maya) = (crate::call::join(&core, "you", false), crate::call::join(&core, "Maya", false));
+        let mut updates = core.updates.subscribe();
+        let mut state = Primer::default();
+        for (at, words) in [(PRIMER_MS + 600, "Okay"), (PRIMER_MS + 900, "Okay, rent"), (PRIMER_MS + 1_200, "Okay, rent is due")] {
+            let event = serde_json::json!({"type": "transcript", "transcript": words, "final": false, "audioProcessedMs": at});
+            handle(&core, "you", &mut state, &event.to_string());
+        }
+        let end = serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 2_000, "turnId": 1, "transcript": "Okay, rent is due Friday."});
+        handle(&core, "you", &mut state, &end.to_string());
+        let told: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
+            .filter_map(|out| match out.message {
+                ServerMsg::Call { people, .. } => {
+                    assert_eq!(out.to, None, "the floor is every window's");
+                    Some(format!("floor {}", people[0].speaking))
+                }
+                ServerMsg::Change { change: crate::world::Change::ThoughtAdded { .. } } => Some("thought".into()),
+                ServerMsg::Partial { text } => {
+                    assert_eq!(out.to.as_deref(), Some("you"), "{text:?}: the words go only to the speaker's windows");
+                    None
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(told, ["floor true", "thought", "floor false"]);
         let _ = std::fs::remove_file(&path);
     }
 

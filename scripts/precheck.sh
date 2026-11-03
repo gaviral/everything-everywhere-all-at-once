@@ -111,8 +111,9 @@ fi
 grep -q '"muse-spark-1.2-contributor"' core/src/main.rs && warn "default placer model is a contributor model (may keep data for training)"
 # Placeholders the owner still has to decide on (pitch, cover, ...) must not ship unnoticed.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do warn "README still has a $marker placeholder for the owner to decide"; done
-# So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them.
-for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at"; done
+# So do numbers in the code marked "stand-in:" until the measurement their comment names replaces them. Only a warning here,
+# because every merge runs this and merges must pass while stand-ins exist; scripts/release.sh (7c) fails on them.
+for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do warn "stand-in numbers wait for a measurement at $at (scripts/release.sh blocks the release on it)"; done
 # Commit messages go public with the repo; scripts/release.sh lists each one and blocks on it.
 n=$(git log --format=%B HEAD | grep -cE '/[U]sers/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
 [ "$n" = 0 ] || warn "commit messages name local paths: scripts/release.sh lists the commits"

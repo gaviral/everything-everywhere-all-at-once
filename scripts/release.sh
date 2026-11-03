@@ -115,6 +115,11 @@ else warn "video link not checked: set VIDEO_URL"; fi
 # 7b. Placeholders the owner still has to decide (the cover, the pitch) don't go public; precheck only warns.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do fail "README still has a $marker placeholder for the owner to decide"; done
 
+# 7c. The same for numbers in the code marked "stand-in:" (a guess until the measurement their comment names replaces it).
+# precheck only warns about them, because every merge runs precheck and merges must pass while stand-ins exist; the
+# release is where they stop. Same search as precheck's.
+for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,2); do fail "stand-in marker still in the code at $at: the number waits for the measurement its comment names (replace it, or settle it and drop the marker)"; done
+
 # 8. Where the repo stands now.
 visibility=$(gh repo view "$repo" --json visibility -q .visibility 2>/dev/null || echo "unknown (gh not signed in?)")
 echo "INFO  $repo is $visibility; logged out, $url answers $(status "$url")"

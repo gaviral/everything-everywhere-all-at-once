@@ -68,6 +68,8 @@ import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
 import { CatalogTab, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
 import { useHeld, dropHeld } from "./shell/held";
 import "./shell/shell.css";
+import { TalkRail } from "./talk/TalkRail";
+import { inCall as callOn, useCall } from "./talk/call-core";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -988,7 +990,8 @@ export default function App() {
   const catalogAt = useCatalogAt();
   const heldQuestions = useHeld();
   const history = useHistory(brickHost.on, world, core.mapChange, core.undoId);
-  const inCall = me !== "you";
+  const call = useCall();
+  const inCall = me !== "you" || callOn(call);
 
   // "What just happened?": the notices this window showed are a brick's to show (the Notice timeline's list); with none
   // on to hear it, the answer says where to switch it on. In the new shell they're History's, which opens.
@@ -1002,7 +1005,8 @@ export default function App() {
   // so the next ask opens it again. A call opens Talk as it starts; "What can I say?" or ? opens Settings, its list.
   useEffect(() => { if (SHELL2 && catalogOpen) setRailTab("catalog"); }, [catalogOpen, catalogAt]);
   useEffect(() => { if (SHELL2 && catalogOpen && railTab !== "catalog") closeCatalog(); }, [railTab]);
-  useEffect(() => { if (SHELL2 && inCall) setRailTab((was) => was ?? "talk"); }, [inCall]);
+  // In a call, Talk is the call's own rail (lane L5's TalkRail, until this rail hosts it): this one leaves its tab out.
+  useEffect(() => { if (SHELL2 && callOn(call)) setRailTab((was) => (was === "talk" ? null : was)); }, [callOn(call)]);
   useEffect(() => { if (SHELL2 && helpOpen) { setRailTab("settings"); setHelpOpen(false); } }, [helpOpen]);
   const toggleTab = (tab: RailTab) => setRailTab((was) => (was === tab ? null : tab));
   // The mic's time, from when it started listening.
@@ -1048,7 +1052,7 @@ export default function App() {
       if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
       const key = event.key.toLowerCase();
       const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
-      if (tab) { event.preventDefault(); toggleTab(tab); return; }
+      if (tab && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
       if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
       if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
       if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
@@ -1289,6 +1293,7 @@ export default function App() {
       </section>
       {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       <BrickSlot kind="panel" host={brickHost} />
+      <TalkRail host={brickHost} />
       <BrickSlot kind="input" host={brickHost} />
       <Tips />
       <Catalog />
@@ -1353,7 +1358,7 @@ export default function App() {
     [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Catalog: the features, on or off"], [RAIL_KEYS.settings, "Settings"],
     ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
   ];
-  const tabs: RailTab[] = ["talk", "history", "catalog", "settings"];
+  const tabs: RailTab[] = callOn(call) ? ["history", "catalog", "settings"] : ["talk", "history", "catalog", "settings"];
   return (
     <MotionConfig reducedMotion="user">
     <AttentionProvider value={attention.value}>
@@ -1482,6 +1487,7 @@ export default function App() {
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
       </Rail>}
 
+      <TalkRail host={brickHost} />
       {/* Floating features; the Notice timeline's list is History's here. */}
       {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline")
         .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}

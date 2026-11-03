@@ -204,7 +204,8 @@ export const ACTIONS: Action[] = [
   // Tour and the room.
   { id: "tour", how: "click", at: [["Tour.tsx", "onClick={finish}"], ["Tour.tsx", "onClick={next}"]], pressed: PRESS, done: "the next tip, or the tour ends" },
   { id: "room-menu", how: "key", at: [["room.tsx", `<details className="room-menu" onKeyDown`]], pressed: INSTANT, done: "Esc closes the room menu, focus back on it" },
-  { id: "leave-room", how: "click", at: [["room.tsx", "onClick={actions.leave}"]], pressed: PRESS, done: "“You left the room. Thoughts already on the map stay there.”", says: ["You left the room."] },
+  { id: "leave-room", how: "click", at: [["room.tsx", "onClick={actions.leave}"]], pressed: PRESS, done: "“You left. Your thoughts stay.”", says: ["You left. Your thoughts stay."] },
+  { id: "copy-invite", how: "click", at: [["room.tsx", "onClick={() => void copyInvite(join)"]], pressed: PRESS, done: "the button says “Link copied”", says: ["Link copied"] },
   { id: "join-room", how: "form", at: [["room.tsx", `<form className="join-card" onSubmit={join}>`]], pressed: PRESS, waits: "network",
     working: "the button says “Joining…” and waits", done: "the map opens", failed: "“Can't reach the room. …”, or what's wrong with the code or name",
     says: ["Joining…", "Can't reach the room."] },
