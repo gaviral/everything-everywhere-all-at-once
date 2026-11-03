@@ -17,6 +17,7 @@
 //    grows a column every `perColumn` topics. Within a group, topics stand as the columns always did.
 import type { Note, Position, Speaker, Thought, Thread } from "../contract";
 import { wrap, wrapEnd, type FontKey } from "./measure";
+import { trimFillers } from "../live-outline/outline";
 
 export type Box = { x: number; y: number; w: number; h: number };
 export type Side = 1 | -1;
@@ -174,6 +175,7 @@ export interface Item {
   text?: string;
   /** Its words as shown: a point left off is quoted, unfinished. */
   shown?: string;
+  wordsOpen?: boolean;
   lines?: number[];
   look?: Look;
   decided?: boolean;
@@ -297,6 +299,8 @@ export interface LayoutInput {
   topics?: readonly string[];
   /** A phone's width: margin notes tuck under their words. */
   narrow?: boolean;
+  staying?: string | null;
+  originals?: ReadonlySet<string>;
 }
 
 /** One point: a thought, with the parts before a pause it carries on (chunks.tsx `asIdeas`: the card shows them as one,
@@ -402,7 +406,7 @@ export function layout(input: LayoutInput): Layout {
     said.set(t.thread_id, list);
   }
   const ideas = new Map<string, Idea[]>();
-  for (const [id, list] of said) ideas.set(id, ideasOf([...list].sort((a, b) => a.at_ms - b.at_ms), notes));
+  for (const [id, list] of said) ideas.set(id, id === input.staying ? ideasOf(list, {}) : ideasOf([...list].sort((a, b) => a.at_ms - b.at_ms), notes));
   const ideasIn = (id: string) => ideas.get(id) ?? [];
   const ideaOwner = new Map<string, { idea: Idea; thread: string }>();
   // A point is known by its first thought; a place given for any of its thoughts is its place.
@@ -476,20 +480,24 @@ export function layout(input: LayoutInput): Layout {
   const lone = (t: Thread) => {
     const list = ideasIn(t.id);
     const idea = list[0];
-    return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.status !== "dropped" && !idea.decided &&
+    return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided &&
       idea.parts.at(-1)!.complete && !pins.has(idea.key) && !shelved.has(idea.key) && !marginsOn.has(idea.key) && landingOn !== idea.key;
   };
 
   // Sizes, before anything is placed.
   const headLines = (t: Thread) => wrap(t.title, "title", G.titleW, G.titleMax);
   const headHeight = (lines: number[]) => Math.max(G.tile, lines.length * G.titleLine + G.headMeta);
-  const entryOf = (by: string, text: string, w: number): Entry => ({ who: who(by), text, lines: wrap(text, "small", w, G.marginMax) });
+  const entryOf = (by: string, text: string, w: number, full = false): Entry => ({ who: who(by), text, lines: wrap(text, "small", w, full ? Infinity : G.marginMax) });
+  const stayingOn = (idea: Idea) => ideaOwner.get(idea.key)?.thread === input.staying;
   const shapes = new Map<string, Shape>();
   const shapeOf = (idea: Idea, look: Look): Shape => {
     const cached = shapes.get(`${idea.key}|${look.variant}`);
     if (cached) return cached;
     const left = !idea.parts.at(-1)!.complete;
-    const shown = left ? `“${idea.text.replace(/[\s.,;:…—–-]+$/u, "")}…”` : idea.text;
+    const staying = stayingOn(idea);
+    const wordsOpen = staying && !!input.originals?.has(idea.key);
+    const words = wordsOpen ? idea.parts.map((p) => p.text).join("\n") : staying ? trimFillers(idea.text).text || idea.text : idea.text;
+    const shown = left ? `“${words.replace(/[\s.,;:…—–-]+$/u, "")}…”` : words;
     // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
     const found: { m: MarginInput; start: number; end: number }[] = [];
     for (const m of marginsOn.get(idea.key) ?? []) {
@@ -508,7 +516,7 @@ export function layout(input: LayoutInput): Layout {
     let measured = "";
     let at = 0;
     for (const { m, start, end } of found) {
-      const folded = m.question && !opened.has(m.id);
+      const folded = !staying && m.question && !opened.has(m.id);
       if (start >= 0) {
         // The "…?" goes after the stop that ends the words, never between them and it.
         const fold = folded ? end + (/^[.,;:!?…)”’"]*/u.exec(shown.slice(end))?.[0].length ?? 0) : end;
@@ -520,7 +528,7 @@ export function layout(input: LayoutInput): Layout {
       if (folded && start >= 0) continue;
       if (narrow || look.variant === "mini") {
         const w = look.textW - G.tuckIn - 26;
-        tucks.push({ margin: m.id, entries: shownEntries(m).map((e) => entryOf(e.by, e.text, w)) });
+        tucks.push({ margin: m.id, entries: shownEntries(m, staying).map((e) => entryOf(e.by, e.text, w, staying)) });
       } else {
         beside.push(m);
         ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
@@ -533,16 +541,18 @@ export function layout(input: LayoutInput): Layout {
     }
     // The ✦ after words the AI changed takes room on the line too.
     if (idea.parts.some((p) => p.fixed && p.heard && p.fixed !== p.heard)) measured += " ✦";
-    const lines = wrap(measured, look.font, look.textW, look.max);
+    const lines = wrap(measured, look.font, look.textW, wordsOpen ? Infinity : look.max);
     const chips = idea.decided || left;
     const landing = landingOn === idea.key ? input.landing!.text : undefined;
-    const h = lines.length * look.line + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
+    const h = lines.length * look.line + (staying ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
     const shape = { shown, lines, quotes, ends, tucks, beside, chips, landing, h };
     shapes.set(`${idea.key}|${look.variant}`, shape);
     return shape;
   };
   /** A note's entries as shown: the note and its latest reply. */
-  const shownEntries = (m: MarginInput) => (m.entries.length <= G.marginShown ? [...m.entries] : [m.entries[0], m.entries[m.entries.length - 1]]);
+  const shownEntries = (m: MarginInput, full = false) => (full || m.entries.length <= G.marginShown ? [...m.entries] : [m.entries[0], m.entries[m.entries.length - 1]]);
+  const marginHeight = (entries: Entry[], more = 0) => entries.reduce((sum, e) => sum + Math.max(20, e.lines.length * G.marginLine), 0)
+    + G.marginGap * (entries.length - 1) + (more > 0 ? G.marginMore : 0);
   const lookFor = (thread: string) => (byId.get(thread) && parentOf(byId.get(thread)!) ? MINI_LOOK : SPINE_LOOK);
   // While sides are decided, every card counts as closed and nothing as placed or shelved: opening, moving or shelving one
   // never sends another to the other side.
@@ -609,6 +619,7 @@ export function layout(input: LayoutInput): Layout {
     return {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
       room: rooms.get(thread), depth, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
+      wordsOpen: stayingOn(idea) ? !!input.originals?.has(idea.key) : undefined,
       thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker.me ? undefined : speaker,
       agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,
       landing: shape.landing, quotes: shape.quotes.length ? shape.quotes : undefined, tucks: shape.tucks.length ? shape.tucks : undefined,
@@ -654,7 +665,10 @@ export function layout(input: LayoutInput): Layout {
         rightLead: look.w + 8, leftLead: -8,
       });
       keys.push(item.key);
-      y = box.y + box.h + gap;
+      // A pinned conversation is rows: leave the full comment's height before the next thought.
+      const besideHeight = t.id === input.staying ? shape.beside.reduce((height, m) => height + marginHeight(shownEntries(m, true)
+        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + G.stack, 0) : 0;
+      y = box.y + Math.max(box.h, besideHeight) + gap;
     }
     const slots: string[] = [];
     for (const id of slotsFor(t)) {
@@ -688,11 +702,12 @@ export function layout(input: LayoutInput): Layout {
         const from: End = end.x < 0
           ? { key: point.key, dx: Math.min(G.textX + shape.lines[0] + 8, G.colW + 8), dy: G.dotY }
           : { key: point.key, dx: G.textX + end.x + 3, dy: end.line * G.pointLine + G.pointLine / 2 + 2 };
-        const entries = shownEntries(m).map((e) => entryOf(e.by, e.text, G.marginText));
+        const staying = t.id === input.staying;
+        const entries = shownEntries(m, staying).map((e) => entryOf(e.by, e.text, G.marginText, staying));
         const more = m.entries.length - entries.length;
-        const h = entries.reduce((sum, e) => sum + Math.max(20, e.lines.length * G.marginLine), 0) + G.marginGap * (entries.length - 1) + (more > 0 ? G.marginMore : 0);
+        const h = marginHeight(entries, more);
         const column = columnKey(owner, 1, 1);
-        const want = Math.max(point.box.y + from.dy - 10, (s.columns.get(column) ?? -Infinity) + G.stack);
+        const want = Math.max(point.box.y + (staying ? 0 : from.dy - 10), (s.columns.get(column) ?? -Infinity) + G.stack);
         const box = clear(s, { x: owner.x1 + G.gutter, y: want, w: G.marginW, h });
         const item = add(s, { key: `m:${m.id}`, id: m.id, kind: "margin", thread: t.id, box, pinned: false, up: point.key, room: rooms.get(t.id), depth: point.depth,
           topic: topicOf(t.id), margin: m.id, entries, more: more > 0 ? more : undefined });
