@@ -22,6 +22,13 @@
 //    there in 400 ms or less, and F follows again. Under Reduce Motion the camera cuts, with a ring for a second where it
 //    went, and a landing rings without moving. In the app: a landing from the core pulses, a place someone else gave
 //    moves the point there, and a drag reaches the core as a position.
+//    Margin notes: double-click a point's words, take more with a shift-click or a drag (Esc lets them go), Reply, type,
+//    Enter; the words show underlined and the note beside them, tied by a string from where they end; it stays over
+//    another landing and a reload (this browser keeps it until the host has `actions.annotate`: each line that depends on
+//    that is marked `// contract:`) and tucks under its point at 390 px; typing it moves no camera. In the app, another
+//    person's unanswered question folds to "…?" until it's opened, while yours and an answered one show.
+//    Zoom stops: 1 2 3 are Words · Titles · Pictures and 0 sees all; each changes what's drawn, the control shows the one
+//    that's on, and none fires while a field (the reply box, the app's composer) has the keyboard.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
 //    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
@@ -554,6 +561,291 @@ try {
       if (await evaluate(`[...document.querySelectorAll(".spine-ring")].some((ring) => getComputedStyle(ring).display !== "none")`)) fail("spine", "under Reduce Motion a landing still pulses");
     }
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+
+    // Round 3: margin notes and zoom stops. Words and keys go in as a hand sends them (real mouse and key events), so a press
+    // that lands on the wrong thing, or a key a field should keep, shows here.
+    {
+      const mouse = (type, x, y, extra = {}) => cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, ...extra });
+      // A click, a double-click (count 2) or a shift-click (modifiers 8).
+      const click = async ({ x, y }, count = 1, modifiers = 0) => {
+        await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+        for (let n = 1; n <= count; n++) for (const type of ["mousePressed", "mouseReleased"]) await mouse(type, x, y, { clickCount: n, modifiers });
+      };
+      const tap = async (name, { code, vk, text } = {}) => {
+        for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: name, code, windowsVirtualKeyCode: vk, text: type === "keyDown" ? text : undefined });
+      };
+      const digit = (d) => tap(d, { code: `Digit${d}`, vk: 48 + Number(d), text: d });
+      const typed = async (words) => { for (const ch of words) await tap(ch, { code: ch === " " ? "Space" : undefined, text: ch }); };
+      const lit = () => evaluate(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join()`);
+      // Calm once nothing moves (a glide is 400 ms at most): the view and every thing's place unchanged for 240 ms.
+      const calm = async () => {
+        let last = "", same = 0;
+        for (let i = 0; i < 50 && same < 3; i++) {
+          const at = await evaluate(`document.querySelector(".react-flow__viewport").style.transform + JSON.stringify(${nodesAt})`);
+          same = at === last ? same + 1 : 0;
+          last = at;
+          await sleep(80);
+        }
+      };
+
+      // 1. Margin notes (margin.tsx). The host can't keep a note yet (`actions.annotate` isn't in contract.ts), so this browser
+      // does, and says so once: each line marked `// contract:` is what the brick does today and changes once the host keeps
+      // them (the host is asked `annotate(thoughtId, quote, text)` and the note comes back in the map, an anchored thread).
+      const forgetNotes = () => evaluate(`Object.keys(localStorage).filter((k) => k.startsWith("e2a2o.spine.notes:")).forEach((k) => localStorage.removeItem(k))`);
+      // Where `words` are in point `id`, in screen px: a real range over its text, so a press or a drag lands on them.
+      const wordsAt = (id, words) => evaluate(`(() => {
+        const text = document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-text');
+        if (!text) return null;
+        const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const at = node.textContent.indexOf(${JSON.stringify(words)});
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + ${words.length});
+          const r = range.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: r.left, right: r.right };
+        }
+        return null;
+      })()`);
+      const picking = () => evaluate(`({ words: getSelection().toString(), on: !!document.querySelector(".spine-selecting"), reply: document.querySelector(".spine-reply-ask")?.getAttribute("aria-label") ?? "" })`);
+      // One note as a person makes it: a double-click on `first`, `extend` to take more, Reply, the typing, Enter.
+      const makeNote = async (what, id, first, extend, words, text) => {
+        // A failed note reloads the page, so the next one starts from a clean canvas (a key that zoomed it out, a box left open).
+        const no = async (why) => { fail("spine (notes)", `${what}: ${why}`); await spineAgain(); return false; };
+        const at = await wordsAt(id, first);
+        if (!at) return no(`the check can't find “${first}” in point ${id}`);
+        await click(at, 2);
+        if (!await until(`getSelection().toString() === ${JSON.stringify(first)} && !!document.querySelector(".spine-reply-ask")`, 2000)) return no(`a double-click on “${first}” doesn't pick it and offer Reply (${JSON.stringify(await picking())})`);
+        await extend();
+        if (!await until(`getSelection().toString() === ${JSON.stringify(words)} && document.querySelector(".spine-reply-ask")?.getAttribute("aria-label") === ${JSON.stringify(`Reply to “${words}”`)}`, 2000)) return no(`it doesn't take more than the word: wanted “${words}”, got ${JSON.stringify(await picking())}`);
+        const ask = await evaluate(`(() => { const r = document.querySelector(".spine-reply-ask").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        // The button is what's asserted. Its ↵ (Enter) isn't: with the focus still on the picked words, Enter goes to the words' own
+        // key handler (it picks the point and swallows the key), so the reply opens only once the focus has moved off them.
+        await click(ask);
+        if (!await until(`document.activeElement === document.querySelector(".spine-reply-field")`, 1500)) return no("Reply doesn't open a box with the cursor in it");
+        // Typed as a hand types it: digits and F are the canvas's keys, and a box keeps them.
+        const rested = { view: await view(), lit: await lit(), following: await following() };
+        await typed(text);
+        const value = await evaluate(`document.querySelector(".spine-reply-field")?.value`);
+        const moved = { view: await view(), lit: await lit(), following: await following() };
+        const wrong = [];
+        if (value !== text) wrong.push(`the box has ${JSON.stringify(value)}, not ${JSON.stringify(text)}`);
+        if (JSON.stringify(moved) !== JSON.stringify(rested)) wrong.push(`the camera moved (${JSON.stringify(rested)} → ${JSON.stringify(moved)})`);
+        if (wrong.length) return no(`typing the reply: ${wrong.join("; ")} (its digits and letters are the canvas's keys, and a box keeps them)`);
+        await tap("Enter", { code: "Enter", vk: 13, text: "\r" });
+        if (!await until(`!document.querySelector(".spine-reply") && [...document.querySelectorAll(".spine-quote")].some((q) => q.textContent === ${JSON.stringify(words)})`, 2000)) return no("Enter doesn't send the reply and underline its words");
+        return true;
+      };
+      // What the page shows for the note on `words`: the underlined words, the note, the strings (screen px).
+      const tied = (words) => evaluate(`(() => {
+        const quotes = [...document.querySelectorAll(".spine-quote")];
+        const quote = quotes.find((q) => q.textContent === ${JSON.stringify(words)});
+        if (!quote) return { found: false, quotes: quotes.length };
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+        const note = document.querySelector('.spine-margin[data-margin="' + quote.dataset.margin + '"]');
+        const ends = [...quote.getClientRects()];
+        return { found: true, quotes: quotes.length, underline: getComputedStyle(quote).textDecorationLine, end: ends[ends.length - 1].toJSON(), column: box(quote.closest(".spine-text")),
+          note: note && { ...box(note), text: note.textContent, role: note.getAttribute("role") },
+          dots: [...document.querySelectorAll(".spine-link-end-note")].map((c) => { const r = c.getBoundingClientRect(); return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }; }),
+          strings: [...document.querySelectorAll(".spine-link-note")].map(box) };
+      })()`);
+      // Each made note shows tied to its exact words: those words, and only those, underlined; the note in the column to the
+      // right of its point, level with them; a string from where the words end to the note.
+      const looksTied = async (stage, made) => {
+        await settle();
+        await calm();
+        for (const { words, text } of made) {
+          const t = await tied(words);
+          const bad = (why) => fail("spine (notes)", `${stage}: the note on “${words}” ${why}`);
+          if (!t.found) { bad(`has no underlined words (${t.quotes} underlined)`); continue; }
+          if (t.quotes !== made.length) fail("spine (notes)", `${stage}: ${t.quotes} stretches underlined for ${made.length} notes (only the words picked)`);
+          if (!t.underline.includes("underline")) bad(`isn't underlined (${t.underline})`);
+          if (!t.note) { bad("isn't shown beside its words"); continue; }
+          if (!t.note.text.includes(text) || t.note.role !== "note") bad(`doesn't say ${JSON.stringify(text)} as a note (${JSON.stringify(t.note)})`);
+          if (t.note.left < t.column.right || Math.abs(t.note.top - t.end.top) > 14) bad(`isn't beside its words, level with them (note ${JSON.stringify(t.note)}; the words end at ${Math.round(t.end.right)}, ${Math.round(t.end.top)})`);
+          const dot = t.dots.find((d) => Math.abs(d.x - (t.end.right + 3)) <= 3 && Math.abs(d.y - (t.end.top + t.end.bottom) / 2) <= 6);
+          if (!dot) bad(`has no string starting where its words end (they end at ${Math.round(t.end.right)}, ${Math.round((t.end.top + t.end.bottom) / 2)}; strings start at ${JSON.stringify(t.dots.map((d) => [Math.round(d.x), Math.round(d.y)]))})`);
+          else if (!t.strings.some((s) => Math.abs(s.left - dot.x) <= 3 && Math.abs(s.right - (t.note.left - 4)) <= 3)) bad("has a string that doesn't reach the note");
+        }
+      };
+
+      await forgetNotes();
+      await spineAgain();
+      const made = [];
+      // A: a shift-click takes the words up to it; the reply is started by Reply's button.
+      const A = { id: "th-2", first: "precheck", words: "precheck passes", text: "Only 2 of 3 runs pass" };
+      const shiftToPasses = async () => { const to = await wordsAt(A.id, "passes"); if (to) await click({ x: to.right - 2, y: to.y }, 1, 8); };
+      if (await makeNote("a note by double-click and shift-click", A.id, A.first, shiftToPasses, A.words, A.text)) made.push(A);
+      // B: a drag across the words takes them (the point stays: a drag moves a point only when its words aren't being picked).
+      const B = { id: "th-1", first: "Deadline", words: "need to record", text: "Check 1 first, then 0" };
+      const dragAcross = async () => {
+        const from = await wordsAt(B.id, "need"), to = await wordsAt(B.id, "record");
+        if (!from || !to) return;
+        const spot = () => evaluate(`document.querySelector('.react-flow__node[data-id="p:${B.id}"]').style.transform`);
+        const was = await spot();
+        await drag({ x: from.left + 1, y: from.y }, { x: to.right - 1, y: to.y }, 8);
+        if (await spot() !== was) fail("spine (notes)", "a drag across picked words moved the point instead of taking the words");
+      };
+      if (await makeNote("a note by double-click and drag", B.id, B.first, dragAcross, B.words, B.text)) made.push(B);
+      // Esc lets picked words go, and the Reply with them.
+      const goer = await wordsAt("th-3", "README");
+      if (goer) await click(goer, 2);
+      if (!goer || !await until(`!!document.querySelector(".spine-reply-ask")`, 2000)) fail("spine (notes)", `a double-click on “README” picks nothing (${JSON.stringify(await picking())})`);
+      else {
+        await tap("Escape", { code: "Escape", vk: 27 });
+        if (!await until(`!document.querySelector(".spine-reply-ask") && !document.querySelector(".spine-selecting") && getSelection().toString() === ""`, 1500)) fail("spine (notes)", `Esc doesn't let picked words go (${JSON.stringify(await picking())})`);
+      }
+      if (made.length) {
+        await looksTied("just made", made);
+        // contract: with no host to keep notes the brick says so once, however many are made; once `actions.annotate` exists
+        // it asks the host instead (the playground would log "annotate th-2 “precheck passes” …") and says nothing.
+        const log = await evaluate(`[...document.querySelectorAll(".playground-log li")].map((li) => li.textContent)`);
+        if (log.filter((line) => line.includes("Note kept in this browser for now")).length !== 1) fail("spine (notes)", `without a host to keep notes the brick should say so once: ${JSON.stringify(log)}`);
+        // contract: what's kept is the triple the host will be asked for (which thought, which words, what was said), in this
+        // browser's storage; then nothing is stored here.
+        const kept = await evaluate(`Object.entries(localStorage).filter(([k]) => k.startsWith("e2a2o.spine.notes:")).flatMap(([, v]) => JSON.parse(v)).map((n) => [n.thoughtId, n.quote, n.entries.map((e) => e.text).join()])`);
+        for (const { id, words, text } of made) if (!kept.some(([thoughtId, quote, said]) => thoughtId === id && quote === words && said === text)) fail("spine (notes)", `the note on “${words}” keeps (${JSON.stringify(kept)}), not ${JSON.stringify([id, words, text])}`);
+        // A new map (another thought lands): the notes stay on their words.
+        await press("Add a thought");
+        if (!await until(`!!document.querySelector('.react-flow__node[data-id^="p:pg-"]')`, 4000)) fail("spine (notes)", "the check's thought never landed");
+        else await looksTied("after another thought landed", made);
+        // contract: a reload brings the notes back from this browser; once the map keeps them, the host's snapshot does (the
+        // playground rebuilds its map from the sample, so check a reload with the app's stand-in core instead).
+        await spineAgain();
+        await looksTied("after a reload", made);
+        // A phone's width: the note tucks under its point (no column beside it, so no string), words still underlined.
+        await width(390, 844);
+        await spineAgain();
+        for (const { id, words, text } of made) {
+          const t = await evaluate(`(() => {
+            const node = document.querySelector('.react-flow__node[data-id="p:${id}"]');
+            const quote = [...(node?.querySelectorAll(".spine-quote") ?? [])].find((q) => q.textContent === ${JSON.stringify(words)});
+            const tuck = quote && node.querySelector('.spine-tuck[data-margin="' + quote.dataset.margin + '"]');
+            const under = node?.querySelector(".spine-text")?.getBoundingClientRect() ?? { left: 0, bottom: 0 }, r = tuck?.getBoundingClientRect();
+            return { underlined: !!quote && getComputedStyle(quote).textDecorationLine.includes("underline"), tuck: r && { left: r.left, right: r.right, top: r.top, text: tuck.textContent },
+              under: { left: under.left, bottom: under.bottom }, beside: document.querySelectorAll(".spine-margin").length, strings: document.querySelectorAll(".spine-link-note").length,
+              sideways: document.documentElement.scrollWidth - innerWidth, width: innerWidth };
+          })()`);
+          const bad = (why) => fail("spine (notes)", `at 390 px the note on “${words}” ${why} (${JSON.stringify(t)})`);
+          if (!t.underlined) bad("isn't on underlined words");
+          if (!t.tuck) bad("doesn't tuck under its point");
+          else if (t.tuck.top < t.under.bottom - 1 || t.tuck.left < t.under.left - 1 || t.tuck.right > t.width || !t.tuck.text.includes(text)) bad("isn't under its point's words, inside the screen, with what was said");
+          if (t.beside || t.strings) bad("still hangs beside the point (a column and a string)");
+          if (t.sideways > 1) bad("makes the page scroll sideways");
+        }
+        await width(1280, 860);
+      }
+      await forgetNotes();
+
+      // 2. Zoom stops (corner.tsx): 1 2 3 are Words · Titles · Pictures, 0 sees all. Each changes what's drawn, the control
+      // shows the one that's on, and no key fires while a field has the keyboard (the reply box above, the composer below).
+      await spineAgain();
+      const level = () => evaluate(`(() => {
+        const frame = document.querySelector(".spine-frame").getBoundingClientRect();
+        const inside = [...document.querySelectorAll(".react-flow__node")].every((node) => { const r = node.getBoundingClientRect();
+          return r.left >= frame.left - 2 && r.right <= frame.right + 2 && r.top >= frame.top - 2 && r.bottom <= frame.bottom + 2; });
+        return {
+          zoom: +(document.querySelector(".react-flow__viewport").style.transform.match(/scale\\(([-\\d.]+)\\)/)?.[1] ?? 0),
+          lit: [...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join(),
+          words: document.querySelectorAll(".spine-text").length, bars: document.querySelectorAll(".spine-point .spine-bars").length,
+          heads: [...document.querySelectorAll(".spine-head .spine-title")].map((t) => t.textContent).sort().join(" | "),
+          labels: [...document.querySelectorAll(".spine-label")].map((l) => l.textContent).sort().join(" | "),
+          pictures: document.querySelector(".spine-frame").classList.contains("spine-stop-pictures"),
+          cards: [...document.querySelectorAll(".spine-card")].map((c) => getComputedStyle(c).visibility).join(),
+          tile: Math.round(document.querySelector(".spine-tile").getBoundingClientRect().width), inside };
+      })()`);
+      const goTo = async (k, want) => {
+        await digit(k);
+        if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === ${JSON.stringify(want)}`, 2500)) {
+          fail("spine (zoom stops)", `${k} doesn't light ${want} on the control (it shows ${await lit() || "none"})`);
+          return null;
+        }
+        await calm();
+        return level();
+      };
+      const judge = (what, shows, rules) => {
+        const wrong = rules.filter(([ok]) => !ok).map(([, why]) => why);
+        if (wrong.length) fail("spine (zoom stops)", `${what}: ${wrong.join("; ")} (${JSON.stringify(shows)})`);
+      };
+      const atWords = await level();
+      const control = await evaluate(`({ stops: [...document.querySelectorAll(".spine-stop")].map((b) => b.textContent).join(), all: document.querySelector(".spine-camera-row .spine-pill")?.textContent })`);
+      if (control.stops !== "Words1,Titles2,Pictures3" || control.all !== "See all0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Words 1 · Titles 2 · Pictures 3 and See all 0`);
+      judge("it opens at Words", atWords, [[atWords.lit === "Words", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
+        [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
+      const atTitles = await goTo("2", "Titles");
+      if (atTitles) judge("2 (Titles)", atTitles, [[atTitles.zoom < atWords.zoom, "the view didn't zoom out"], [!atTitles.words && atTitles.bars > 0, "words didn't turn to bars"],
+        [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.inside, "the whole map isn't in view"]]);
+      const atPictures = await goTo("3", "Pictures");
+      if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [!!atPictures.cards && !atPictures.cards.split(",").some((v) => v !== "hidden"), "tangent cards still show"],
+        [!atTitles || atPictures.tile > atTitles.tile * 1.5, "each topic's picture isn't bigger than at Titles"], [atPictures.inside, "the whole map isn't in view"]]);
+      const atBack = await goTo("1", "Words");
+      if (atBack) judge("1 (Words)", atBack, [[atBack.zoom >= atWords.zoom, "the view isn't back at reading size"], [atBack.words > 0 && !atBack.bars, "not every word shows"], [!atBack.labels && !atBack.pictures, "a far-out look stays on"]]);
+      // Far out, with no stop asked for, the control says Titles: it tells where the view is.
+      const atAll = await goTo("0", "Titles");
+      if (atAll) judge("0 (See all)", atAll, [[atAll.zoom < atWords.zoom, "the view didn't zoom out"], [atAll.inside, "the whole map isn't in view"], [!atAll.pictures, "it has the Pictures look"]]);
+
+      // 3. In the app, where the stand-in core can send what the playground can't: notes in the map, another person's among
+      // them, and the app's own composer, which has the keyboard when the app opens.
+      {
+        const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+        await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ spine: true }))`);
+        // contract: a note in the map is an anchored thread (margin.tsx: `anchor: { thought_id, quote }`, its thoughts the note
+        // and its replies), the shape the host will send once `actions.annotate` exists. T1's one point is "Rent due Friday,
+        // point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's question on "point 1" is answered.
+        const note = (id, quote) => thread(id, "A note", { parent_id: "T1", anchor: { thought_id: "T1-0", quote } });
+        const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
+        shown = { ...full, threads: [...full.threads, note("N1", "Friday"), note("N2", "Rent due"), note("N3", "point 1")],
+          thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)] };
+        await go(`${base}/`);
+        if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) fail("spine (notes)", "the app never showed its map");
+        else {
+          await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+          await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
+          if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine (notes)", "the Spine never showed in the app");
+          else {
+            await settle();
+            const look = await evaluate(`(() => {
+              const box = (el) => { const r = el?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+              const quote = (id) => document.querySelector('.spine-quote[data-margin="' + id + '"]');
+              const fold = document.querySelector('.spine-fold[data-fold-for="N1"]');
+              return { quotes: ["N1", "N2", "N3"].map((id) => quote(id)?.textContent ?? null).join(" | "),
+                underlined: [...document.querySelectorAll(".spine-quote")].every((q) => getComputedStyle(q).textDecorationLine.includes("underline")),
+                folds: [...document.querySelectorAll(".spine-fold")].map((f) => f.dataset.foldFor + " " + f.textContent).join(),
+                fold: fold && { ...box(fold), shown: getComputedStyle(fold).visibility === "visible" }, words: box(quote("N1")),
+                notes: Object.fromEntries([...document.querySelectorAll(".spine-margin")].map((m) => [m.dataset.margin, m.textContent])),
+                tangents: [...document.querySelectorAll(".spine-card")].map((c) => c.dataset.thread).filter((id) => /^N/.test(id)).join() };
+            })()`);
+            const bad = (why) => fail("spine (notes)", `in the app: ${why} (${JSON.stringify(look)})`);
+            if (look.quotes !== "Friday | Rent due | point 1" || !look.underlined) bad("each note's own words aren't underlined");
+            if (look.tangents) bad("a note is drawn as a tangent card");
+            if (look.folds !== "N1 …?") bad("another person's unanswered question should fold to “…?”, and nothing else should");
+            else {
+              if (!look.fold.shown || look.fold.left < look.words.right - 2 || look.fold.left > look.words.right + 24 || look.fold.top > look.words.bottom || look.fold.bottom < look.words.top) bad("the “…?” isn't right after its words");
+              if ("N1" in look.notes) bad("a folded question's note shows before it's opened");
+              await evaluate(`document.querySelector('.spine-fold[data-fold-for="N1"]').click()`);
+              if (!await until(`!document.querySelector(".spine-fold") && document.querySelector('.spine-margin[data-margin="N1"]')?.textContent.includes("Which Friday?")`, 2000)) bad("the “…?” doesn't open the question");
+            }
+            if (!look.notes.N2?.includes("Is it paid?")) bad("your own question is hidden from you (it shows at once)");
+            if (!look.notes.N3?.includes("Which one?") || !look.notes.N3.includes("The first")) bad("an answered question doesn't show with its answer");
+            // The composer has the keyboard when the app opens: the camera's keys are typed into it, and move nothing.
+            await evaluate(`document.querySelector(".composer textarea")?.focus()`);
+            const rested = { view: await view(), lit: await lit(), following: await following() };
+            await typed("2 3 0 f");
+            const value = await evaluate(`document.querySelector(".composer textarea")?.value`);
+            const moved = { view: await view(), lit: await lit(), following: await following() };
+            if (value !== "2 3 0 f") fail("spine (zoom stops)", `typing in the composer left ${JSON.stringify(value)}, not "2 3 0 f"`);
+            if (JSON.stringify(moved) !== JSON.stringify(rested)) fail("spine (zoom stops)", `typing in the composer moved the camera (${JSON.stringify(rested)} → ${JSON.stringify(moved)})`);
+            // The same keys do work once the keyboard is the canvas's.
+            await evaluate(`document.activeElement?.blur()`);
+            await digit("2");
+            if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Titles"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Titles once the composer lets go of the keyboard");
+          }
+        }
+        await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+        shown = full;
+      }
+    }
   }
   // Brick chip: a panel that marks the app's points (the playground draws none), so it's checked in the app. Nothing on
   // the map that was there, nor on an empty one; a chip naming the brick on each point that lands after, anyone's,
