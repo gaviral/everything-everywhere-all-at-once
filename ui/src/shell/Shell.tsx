@@ -260,7 +260,8 @@ export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap
 
 // ── Catalog ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type CatalogRow = { id: string; kind: BrickKind | "app"; name: string; aka?: string; does: string; lives?: string; on: boolean; core: boolean; toggle?: (on: boolean) => void; disabled?: boolean };
+export type CatalogRow = { id: string; kind: BrickKind | "app"; name: string; aka?: string; does: string; lives?: string; on: boolean; core: boolean;
+  toggle?: (on: boolean) => void; disabled?: boolean; /** A view that's on: shows it. */ show?: () => void };
 
 /** One short page: a row per feature, grouped by kind, each with its switch (the core's: on, built in). Arrows move
  *  between the switches; Space switches the one focused. */
@@ -288,7 +289,8 @@ export const CatalogTab = memo(function CatalogTab({ rows, at }: { rows: Catalog
       <h3>{KIND_NAMES[kind]}</h3>
       <ul>{rows.filter((r) => r.kind === kind).map((row) => <li key={row.id} className={cls("shell-catalog-row", row.id === at && "shell-at")} data-row={row.id} title={row.does}>
         <span className="shell-catalog-name">{row.name}{row.aka && <span className="shell-aka">{row.aka}</span>}</span>
-        {row.lives && <span className="shell-catalog-lives">{row.lives}</span>}
+        {row.show ? <button type="button" className="shell-link" onClick={row.show} aria-keyshortcuts="Enter">{NAMES.show}</button>
+          : row.lives && <span className="shell-catalog-lives">{row.lives}</span>}
         {row.core ? <span className="shell-catalog-core">{NAMES.catalogTab.core}</span>
           : <button type="button" role="switch" aria-checked={row.on} aria-label={row.name} aria-describedby={`does-${row.id}`} disabled={row.disabled}
             className={cls("shell-switch", row.on && "shell-on")} onClick={() => row.toggle?.(!row.on)}><i aria-hidden="true" /></button>}

@@ -7,8 +7,9 @@ const params = typeof location === "undefined" ? new URLSearchParams() : new URL
 
 export const SHELL2 = params.get("shell") === "2";
 
-/** Features the shell is built around: on in it, with no switch (the Catalog lists them as core). The Notice timeline's
- *  list is the History tab's: every notice kept, newest first, each with what takes it back. */
+/** Features the shell is built around: on, with no switch (the Catalog lists them as built in). The Canvas (the Spine)
+ *  is the view it opens in (User, 19:1x: "spine thingy should be made as the default view"); the flight, the tiny
+ *  transcript and the Notice timeline join it (its list is the History tab's). Today's page: none yet (the card's spec). */
 export const CORE_BRICKS: readonly string[] = SHELL2 ? ["spine", "bubble-flight", "tiny-transcript", "notice-timeline"] : [];
 
 /** A scripted demo (`?demo`): the DEMO stamp says so, top left, so a take never passes for real talk. */

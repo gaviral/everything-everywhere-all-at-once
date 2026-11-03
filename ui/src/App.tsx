@@ -1019,13 +1019,16 @@ export default function App() {
   }, [world.threads.length]);
   const loadSample = (name?: string) => { core.sample(name); setSampleMap(true); writeSession(SAMPLE_KEY, true); };
   const mode: Mode | null = DEMO ? "demo" : inCall ? "call" : sampleMap ? "sample" : site.hosted ? "guest" : null;
-  // The held stack sits above the shelf (the Spine's, bottom right), and the rail ends there too.
+  // The held stack sits above the shelf (the Spine's, bottom right); the rail ends above both.
   useLayoutEffect(() => {
     if (!SHELL2) return;
-    const shelf = document.querySelector('[data-slot="shelf"]')?.getBoundingClientRect();
-    const px = `${shelf && shelf.height && shelf.top > window.innerHeight / 2 ? Math.round(window.innerHeight - shelf.top + 12) : 36}px`;
     const root = document.documentElement.style;
-    if (root.getPropertyValue("--shelf-top") !== px) root.setProperty("--shelf-top", px);
+    const set = (name: string, px: number) => { if (root.getPropertyValue(name) !== `${px}px`) root.setProperty(name, `${px}px`); };
+    const shelf = document.querySelector('[data-slot="shelf"]')?.getBoundingClientRect();
+    const shelfTop = shelf && shelf.height && shelf.top > window.innerHeight / 2 ? Math.round(window.innerHeight - shelf.top + 12) : 36;
+    set("--shelf-top", shelfTop);
+    const held = document.querySelector('[data-slot="held"]')?.getBoundingClientRect();
+    set("--rail-bottom", held && held.height ? Math.round(window.innerHeight - held.top + 12) : shelfTop);
   });
   useEffect(() => { if (SHELL2) document.documentElement.dataset.view = view; }, [view]);
   // The shell's keys, outside a field: T Talk, Y History, C Catalog, "," Settings, R Recap, L a held question's Later,
@@ -1263,7 +1266,7 @@ export default function App() {
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, wordsElsewhere, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
           <div className="pending" data-guide="pending">
             {pending.map((t) => (
-              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} />
+              <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} words={!bricksOn.has("bubble-flight")} />
             ))}
           </div>
           <div id="tour-composer" />
@@ -1319,11 +1322,14 @@ export default function App() {
     ...BRICKS.map(({ info }): CatalogRow => {
       const named = FEATURE_NAMES[info.id];
       return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
-        on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value) };
+        on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
+      show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => showView(info.id) : undefined };
     }),
     ...BUILT_INS.map((b): CatalogRow => {
       const named = FEATURE_NAMES[b.id];
-      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false, toggle: (value) => switchBuiltIn(b.id, value) };
+      const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
+      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false,
+        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view) showView("map"); }, show: shows && builtIns.has(b.id) ? () => showView(shows) : undefined };
     }),
     ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
       toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected })),
@@ -1373,6 +1379,11 @@ export default function App() {
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
       {view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+        : view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
+          <NotesContext.Provider value={notes}><TidyProvider world={world} decide={core.tidy}><MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
+            <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
+          </MovesProvider></TidyProvider></NotesContext.Provider>
+        </main>
         : viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
         : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
@@ -2019,7 +2030,8 @@ function ActionRow({ action, on }: { action: Action; on: Handlers }) {
 }
 
 /** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
-function PendingThought({ thought, placing, noKey, refused, resting, reducedMotion }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; resting: boolean; reducedMotion: boolean }) {
+/** `words`: false while a flight carries them (Bubble flight), so the pill says only where it stands, not them twice. */
+function PendingThought({ thought, placing, noKey, refused, resting, reducedMotion, words = true }: { thought: Thought; placing: Placing; noKey: boolean; refused: boolean; resting: boolean; reducedMotion: boolean; words?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (noKey || refused) return;
@@ -2032,7 +2044,7 @@ function PendingThought({ thought, placing, noKey, refused, resting, reducedMoti
   const lanes = useLanes(thought.id);
   return <motion.span layoutId={reducedMotion ? undefined : thought.id} initial={false} className="pill">
     <span className={retryAt !== undefined && placing.now !== thought.id ? "pending-label retrying" : "pending-label"}>{label}</span>
-    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} <Markdown text={thought.text} />
+    {lanes > 1 && <span className="lanes" title={`${lanes} calls race: the first good answer places it`}>{Array.from({ length: lanes }, (_, i) => <i key={i} aria-hidden="true" />)}<span className="sr-only">{lanes} calls racing</span></span>} {words && <Markdown text={thought.text} />}
   </motion.span>;
 }
 

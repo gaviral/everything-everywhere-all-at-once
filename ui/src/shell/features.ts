@@ -1,12 +1,15 @@
-// The app's built-in features with a switch, as the features in folders have (bricks-core.ts): listening, recap, import
-// and export, in the Catalog's one list. A switch acts at once and only in this browser; other windows of the browser
-// follow. Import and export start off: they aren't part of a first visit.
+// The app's built-in features with a switch, as the features in folders have (bricks-core.ts): the Cards and Pictures
+// views, listening, recap, import and export, in the Catalog's one list. A switch acts at once and only in this browser;
+// other windows of the browser follow. Cards, Pictures, import and export start off: none is part of a first visit.
 import { useSyncExternalStore } from "react";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "listening" | "recap" | "import" | "export"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  // The views beside the Canvas: off until switched on; each then has its Show.
+  { id: "cards", kind: "view", defaultOn: false },
+  { id: "pictures", kind: "view", defaultOn: false },
   { id: "listening", kind: "input", defaultOn: true },
   { id: "import", kind: "input", defaultOn: false },
   { id: "recap", kind: "panel", defaultOn: true },

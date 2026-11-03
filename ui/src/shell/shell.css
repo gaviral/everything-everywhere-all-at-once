@@ -6,6 +6,8 @@ html.shell2, html.shell2 body { background: var(--space); }
 html.shell2 body { font-size: 15px; letter-spacing: -.003em; }
 /* The canvas is the map and the only thing that pans: the page itself holds still under it. */
 html.shell2[data-view="map"], html.shell2[data-view="map"] body { overflow: hidden; height: 100%; }
+/* Cards scrolls: clear of the corners at the top and the stage at the bottom. */
+html.shell2 .app.shell > .map { padding-top: 76px; padding-bottom: 180px; }
 html.shell2 .app.shell { min-height: 100vh; }
 
 /* ── Parts ───────────────────────────────────────────────────────────────────────────────────────────────────────── */
