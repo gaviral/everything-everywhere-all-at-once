@@ -27,7 +27,8 @@ try {
   const fine = new Crash({ children: React.createElement("p", null, "the map") });
   fine.state = { broken: false };
   assert.equal(ReactDOMServer.renderToStaticMarkup(fine.render()), "<p>the map</p>");
-  assert.match(src("main.tsx"), /<Crash>\s*<Room>\s*<App \/>\s*<\/Room>\s*<\/Crash>/, "the whole app sits inside it");
+  // The map's page and the phone's Remote (?remote) are both behind the one boundary, in the room.
+  assert.match(src("main.tsx"), /<Crash>\s*<Room>[^]*<Remote \/>[^]*<App \/>[^]*<\/Room>\s*<\/Crash>/, "the whole app, and the Remote, sit inside it");
 
   // Before the first snapshot the window's world is the empty one: the map stays empty rather than greet a returning
   // person with "Think out loud." (the header already says "Connecting…").

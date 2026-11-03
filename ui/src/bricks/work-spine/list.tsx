@@ -63,6 +63,21 @@ export function useFresh(jobs: readonly Job[]): ReadonlyMap<string, "new" | "lan
   return fresh;
 }
 
+/** The time, ticking once a second while a job runs (its clock) and every few seconds while "Just now" can still be
+ *  true, else not at all; a new job brings it up to date at once. */
+export function useNow(jobs: readonly Job[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  const running = jobs.some((job) => job.status === "running");
+  const recent = justNow(jobs, now) !== null;
+  useEffect(() => {
+    setNow(Date.now());
+    if (!running && !recent) return;
+    const timer = window.setInterval(() => setNow(Date.now()), running ? 1000 : 5000);
+    return () => window.clearInterval(timer);
+  }, [jobs, running, recent]);
+  return now;
+}
+
 interface Shared {
   now: number;
   open: ReadonlySet<string>;
