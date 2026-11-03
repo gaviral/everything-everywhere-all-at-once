@@ -1,4 +1,4 @@
-// Hold the new shell (?shell=2) to its small type scale, keys on controls, one copy of each sentence and state,
+// Hold the shell (the page with no flag) to its small type scale, keys on controls, one copy of each sentence and state,
 // honest mode stamps, AI-only purple, stop-only red, and regions that fit the window. Check first opens and maps
 // on a laptop and phone, light and dark (also reduced motion on your map), so features cannot quietly break the
 // shell's shared rules. The Catalog and History must also open and close from their keys.
@@ -195,7 +195,8 @@ for (const scene of scenes) {
   try {
     for (const [width, height] of [[1440, 900], [390, 844]]) {
       let browser;
-      const url = `http://127.0.0.1:${core.port}/?shell=2${scene.query || ""}`;
+      // No flag: the shell is the page a judge opens (?shell=2, its old address, opens the same: canvas-default-check).
+      const url = `http://127.0.0.1:${core.port}/${scene.query ? `?${scene.query.slice(1)}` : ""}`;
       const base = `${scene.name} ${width}x${height}`;
       try {
         // Another worker can replace dist while we load it. Retry one fresh page after three seconds.

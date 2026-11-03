@@ -10,14 +10,13 @@ const html = read("ui/index.html");
 const styles = read("ui/src/styles.css");
 
 // 1. Safari tints its toolbar, and an iPhone its status bar, with theme-color. A light one alone left a pale bar over
-//    the dark page: there's one per theme, each the page's own --bg for that theme.
-const bg = (block) => block.match(/--bg:\s*(#[0-9a-f]{6})/i)?.[1].toLowerCase();
-const light = bg(styles.split("@media (prefers-color-scheme: dark)")[0]);
-const dark = bg(styles.split("@media (prefers-color-scheme: dark)")[1] ?? "");
+//    the dark page: there's one per theme, each the page's own paper for that theme (the shell's --space, which is its --bg).
+const light = styles.match(/\nhtml\.shell2 \{[^}]*?--space:\s*(#[0-9a-f]{6})/i)?.[1].toLowerCase();
+const dark = styles.match(/@media \(prefers-color-scheme: dark\) \{\s*html\.shell2 \{[^}]*?--space:\s*(#[0-9a-f]{6})/i)?.[1].toLowerCase();
 const theme = (scheme) => html.match(new RegExp(`<meta name="theme-color" content="(#[0-9a-f]{6})" media="\\(prefers-color-scheme: ${scheme}\\)"`, "i"))?.[1].toLowerCase();
-assert.ok(light && dark, "styles.css defines --bg for both themes");
-assert.equal(theme("light"), light, "theme-color for light is the light --bg");
-assert.equal(theme("dark"), dark, "theme-color for dark is the dark --bg");
+assert.ok(light && dark, "styles.css defines the shell's --space for both themes");
+assert.equal(theme("light"), light, "theme-color for light is the light paper");
+assert.equal(theme("dark"), dark, "theme-color for dark is the dark paper");
 assert.equal((html.match(/name="theme-color"/g) ?? []).length, 2, "no theme-color without a media query (it would win in both themes)");
 
 // 2. ✦, the mark on everything the AI made: no font in the stack has it, and Safari's fallback drew it at about half the
