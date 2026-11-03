@@ -72,7 +72,7 @@ import { useHeld, dropHeld } from "./shell/held";
 import { usePhone } from "./shell/usePhone";
 import "./shell/shell.css";
 import { TalkRail } from "./talk/TalkRail";
-import { inCall as callOn, useCall } from "./talk/call-core";
+import { inCall as callOn, peopleHere, useCall } from "./talk/call-core";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
@@ -1026,7 +1026,7 @@ export default function App() {
   const heldQuestions = useHeld();
   const history = useHistory(brickHost.on, world, core.mapChange, core.undoId);
   const call = useCall();
-  const inCall = me !== "you" || callOn(call);
+  const inCall = peopleHere(call) >= 2;
 
   // "What just happened?": the notices this window showed are a brick's to show (the Notice timeline's list); with none
   // on to hear it, the answer says where to switch it on. In the new shell they're History's, which opens.
