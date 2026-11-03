@@ -2,17 +2,27 @@
 // port shows up in a second, not after a few minutes of compiling. It answers with what the core itself will see:
 // the process environment first, then ../.env and the first .env found from core/ upward, read the way the core's
 // dotenvy 0.15 reads them (an `export ` prefix, spaces around `=`, quotes, `#` comments, $VAR), and it probes the
-// addresses the core will bind for that mode. Before any of that, it checks what the build needs on this machine (the
+// addresses the core will bind for that mode. For a source build it first checks what the build needs (the
 // Rust version, a C compiler, OpenSSL's headers on Linux). On success it prints the port; on a problem it says what to
 // do, exit 1.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { createSocket } from "node:dgram";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_PORT = 4321;
+
+/** An optional executable supplied beside run.sh, named with Node's platform and architecture. */
+export function bundledCore(root, platform = process.platform, arch = process.arch) {
+  const path = resolve(root, `e2a2o-core-${platform}-${arch}`);
+  try {
+    if (!statSync(path).isFile()) return null;
+    accessSync(path, constants.X_OK);
+    return path;
+  } catch { return null; }
+}
 
 /** dotenvy's QuotedLines: one logical line each, joined across newlines while a quote is open. */
 function* logicalLines(text) {
@@ -262,9 +272,20 @@ export function toolchainProblem({ floor, platform = process.platform, run = run
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const lacks = toolchainProblem({ floor: rustFloor(root) });
-  if (lacks) { console.error(lacks); process.exit(1); }
-  const { code, out, err } = await check(process.argv.slice(2), process.env, root);
+  const args = process.argv.slice(2);
+  // Internal selector: no credentials, toolchain or network checks, and only a path on stdout.
+  if (args[0] === "--bundled-core") {
+    const path = bundledCore(root);
+    if (path) console.log(path);
+    process.exit(0);
+  }
+  // run.sh passes its one selection (including an empty source-build selection) through preflight.
+  const selected = args[0] === "--selected-core" ? args.splice(0, 2)[1] : bundledCore(root);
+  if (!selected) {
+    const lacks = toolchainProblem({ floor: rustFloor(root) });
+    if (lacks) { console.error(lacks); process.exit(1); }
+  }
+  const { code, out, err } = await check(args, process.env, root);
   if (err) console.error(err);
   if (out) console.log(out);
   process.exit(code);
