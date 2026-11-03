@@ -53,6 +53,29 @@
   box-shadow: 0 0 0 calc(1px * var(--spine-k, 1)) color-mix(in srgb, var(--spine-room, var(--line)) 40%, transparent); color: var(--spine-room, var(--ink));
   font-size: calc(13px * var(--spine-k, 1)); font-weight: 600; line-height: calc(16px * var(--spine-k, 1)); overflow-wrap: anywhere; pointer-events: none; }
 
+/* A named topic's header: its name (24/30) over a hairline as wide as its columns, how many spines at the right. Far
+   out, the name keeps a size you can read on screen (--spine-k), up to two lines growing up from its line, never into
+   the spines under it. A spine carried over its columns: the line turns blue, "Move here". */
+.spine-group { position: relative; width: 100%; height: 100%; color: var(--ink); container-type: inline-size; }
+.spine-group::after { position: absolute; right: 0; bottom: 0; left: 0; height: 1px; background: var(--line); content: ""; }
+.spine-frame .spine-group-name { position: absolute; bottom: 9px; left: 0; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 4px; background: none;
+  color: var(--ink); font-family: inherit; font-size: 24px; font-weight: 600; line-height: 30px; letter-spacing: -.015em; text-align: left; text-overflow: ellipsis;
+  white-space: nowrap; cursor: default; }
+.spine-group-count { position: absolute; right: 0; bottom: 13px; color: var(--muted); font-size: 13px; line-height: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spine-frame .spine-group-unsorted .spine-group-name { color: var(--muted); font-weight: 500; }
+.spine-frame .spine-group-field { position: absolute; bottom: 7px; left: -7px; width: min(calc(100% + 7px), 440px); height: 34px; margin: 0; padding: 0 6px;
+  border: 1px solid var(--accent); border-radius: 6px; outline: 0; background: var(--card); color: var(--ink); font: inherit; font-size: 24px; font-weight: 600;
+  letter-spacing: -.015em; }
+.spine-group.spine-group-hot::after { height: 2px; background: var(--accent); }
+.spine-group-hot .spine-group-count { color: var(--accent); font-weight: 600; }
+/* Far out: 18 px on screen, smaller only when a word wouldn't fit across its columns (nodes.tsx `farSize`), so a name
+   wraps between words, in two lines at most. */
+.spine-frame .spine-group-far .spine-group-name { display: -webkit-box; max-width: 100%; padding: .1em 0;
+  line-height: 1.3; white-space: normal; overflow-wrap: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.spine-group-far .spine-group-count { bottom: .4em; font-size: min(calc(13px * var(--spine-k, 1)), 11cqi); line-height: 1.3; }
+.spine-group-far::after { height: calc(1px * var(--spine-k, 1)); }
+.spine-group-far.spine-group-hot::after { height: calc(2px * var(--spine-k, 1)); }
+
 /* A point: a dot on the line (or the speaker's initial), its words beside it, marks under them. */
 .spine-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--spine-room, var(--muted)); box-shadow: 0 0 0 3px var(--bg); }
 .spine-on > .spine-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--bg), 0 0 0 7px color-mix(in srgb, var(--accent) 26%, transparent); }
@@ -149,8 +172,13 @@
 .spine-frame .spine-tool { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--card);
   box-shadow: var(--shadow); color: var(--muted); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
 .spine-tool:hover { color: var(--ink); }
+/* A spine's topic: the native list over the button, so the keyboard and a phone pick it as any list. */
+.spine-frame .spine-tool-topic { position: relative; }
+.spine-frame .spine-tool-select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 50%; opacity: 0; font: inherit; font-size: 13px; cursor: pointer; }
+.spine-tool-topic:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; color: var(--ink); }
 .spine-tool.spine-tool-pin { color: var(--accent); }
 .spine-title:focus-visible, .spine-text:focus-visible, .spine-card-face:focus-visible, .spine-aside-face:focus-visible, .spine-tool:focus-visible, .spine-fold:focus-visible,
+.spine-group-name:focus-visible,
 .spine-margin-reply:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .spine-picked .spine-title, .spine-picked .spine-text, .spine-card.spine-picked, .spine-aside.spine-picked .spine-aside-face { outline: 2px solid color-mix(in srgb, var(--ink) 22%, transparent); outline-offset: 3px; }
 
@@ -189,12 +217,12 @@
 
 /* Edge chips: something new out of view, where the line from the middle toward it meets the edge. */
 .spine-cues { position: absolute; inset: 0; pointer-events: none; }
-.spine-frame .spine-cue { position: absolute; display: inline-flex; align-items: center; gap: 8px; height: 34px; max-width: 300px; padding: 0 10px 0 12px;
+.spine-frame .spine-cue { position: absolute; display: inline-flex; align-items: center; gap: 8px; height: 34px; max-width: 240px; box-sizing: border-box; min-width: 0; overflow: hidden; padding: 0 10px 0 12px;
   border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent); border-radius: 17px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit;
   font-size: 13px; white-space: nowrap; pointer-events: auto; cursor: pointer; animation: spine-in .3s ease-out; }
-.spine-cue.spine-cue-right, .spine-cue.spine-cue-left { translate: 0 -50%; }
-.spine-cue.spine-cue-top { translate: -50% 0; }
-.spine-cue.spine-cue-bottom { translate: -50% -100%; }
+.spine-cue.spine-cue-right, .spine-cue.spine-cue-left { translate: none; }
+.spine-cue.spine-cue-top { translate: none; }
+.spine-cue.spine-cue-bottom { translate: none; }
 .spine-cue-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--spine-room, var(--muted)); }
 .spine-cue-title { overflow: hidden; min-width: 0; text-overflow: ellipsis; }
 .spine-cue-new { color: var(--accent); font-size: 11px; font-weight: 600; }

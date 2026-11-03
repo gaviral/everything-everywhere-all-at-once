@@ -28,10 +28,10 @@ export function Tour({ populated, noKey, resting = false }: { populated: boolean
     "tour-composer": noKey
       ? { slot: "tour-composer", title: "Type to move around", text: keyWords(hosted, false, "tour", resting) }
       : { slot: "tour-composer", title: "Speak or type", text: "Start with whatever's on your mind. Tap the mic to talk, or type and press Enter. Lost your place? Say “where was I?”" },
-    "tour-map": { slot: "tour-map", title: "Your thread map", text: populated ? "Use Show to see a thread’s thoughts. Its branches appear below it." : "As thoughts are placed, they find a thread here. Tangents can branch off." },
+    "tour-map": { slot: "tour-map", title: "Your map", text: populated ? "Tap Show to see what was said. Related topics appear below." : "Your thoughts show up here, grouped by topic. Side topics get their own group." },
     "tour-tools": noKey
       ? { slot: "tour-tools", title: "Try these", text: "Palace shows a picture for every thread, and search finds the words you used. Press ? for everything you can say." }
-      : { slot: "tour-tools", title: "Try these", text: "Select words on the map to have them explained. Apps react to your thoughts; Recap gives you a summary. Press ? for everything you can say." },
+      : { slot: "tour-tools", title: "Try these", text: "Select words on the map to get an explanation. Recap gives you a summary. Press ? for everything you can say." },
   };
   const steps = order.map((slot) => copy[slot]);
   const [step, setStep] = useState(() => hasToured() ? -1 : 0);

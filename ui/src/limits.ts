@@ -5,6 +5,8 @@
 export const THOUGHT_MAX = 6_000;
 /** A typed title, in characters. */
 export const TITLE_MAX = 100;
+/** A topic's name as a person types it, in characters. */
+export const TOPIC_MAX = 40;
 /** One message to the core, in bytes. */
 export const FRAME_MAX = 64 << 10;
 /** How far from the canvas's origin a place may be, on either axis, in canvas pixels; past it the core refuses it. */

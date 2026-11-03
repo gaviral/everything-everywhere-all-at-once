@@ -58,9 +58,9 @@ export function composerHint(state: MicState): string {
   return state === "listening" || state === "hearing" ? "Or type a thought"
     : state === "starting" ? "Starting the microphone… or type"
     : state === "paused" ? "Paused · tap the mic to talk, or type"
-    : state === "nokey" ? "Type a thought · the mic needs an AI key"
-    : state === "refused" ? "Type a thought · the AI key was refused"
-    : state === "resting" ? "Type a thought · placed tomorrow"
+    : state === "nokey" ? "Type a thought · listening is off right now"
+    : state === "refused" ? "Type a thought · listening is unavailable"
+    : state === "resting" ? "Type a thought · saved for tomorrow"
     : state === "blocked" ? "Type a thought · the mic is blocked"
     : state === "offline" ? "Type a thought — it will send when connected"
     : "Type a thought, or tap the mic";
@@ -77,7 +77,7 @@ export function ringFill(level: number): number {
 }
 
 /** `capturing`: the browser is taking sound, so a tap stops it, even while the speech service is still starting. */
-export function MicButton({ state, capturing, disabled, onClick }: { state: MicState; capturing: boolean; disabled: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void }) {
+export function MicButton({ state, capturing, disabled, onClick, shortcut }: { state: MicState; capturing: boolean; disabled: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void; shortcut?: string }) {
   const button = useRef<HTMLButtonElement>(null);
   const on = state === "listening" || state === "hearing";
   useEffect(() => {
@@ -102,6 +102,7 @@ export function MicButton({ state, capturing, disabled, onClick }: { state: MicS
       disabled={disabled}
       aria-label={capturing && state === "starting" ? "Stop listening, starting" : words.label}
       aria-pressed={capturing}
+      aria-keyshortcuts={shortcut}
     >
       <MicGlyph state={state} />
     </button>

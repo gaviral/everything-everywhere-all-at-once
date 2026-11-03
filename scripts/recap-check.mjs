@@ -92,7 +92,7 @@ try {
   // recap's decisions by it (export-md.ts); the sheet counts from the map (review ui-recap-palace #2).
   const joined = { ...map, thoughts: [thought("I never finish my", "T1", { at_ms: 1 }), thought("sentences", "T1", { at_ms: 1 }),
     thought("rent", "T2", { at_ms: 1 }), thought("later", "T2", { at_ms: 5 })], notes: { sentences: { continues: "I never finish my" } } };
-  assert.match(sheet({ ...recap, thought_count: 3, thread_count: 2 }, false, joined), / 2 thoughts · 2 threads · /,
+  assert.match(sheet({ ...recap, thought_count: 3, thread_count: 2 }, false, joined), / 2 thoughts · 2 topics · /,
     "the joined pair is one thought; one said after the recap isn't in it");
   const { ideaCounts } = await server.ssrLoadModule("/src/chunks.tsx");
   assert.deepEqual(ideaCounts(joined, 0, 5), { thoughts: 3, threads: 2 });

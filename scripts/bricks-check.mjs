@@ -13,7 +13,7 @@
 //    brick; each view brick switched on joins Map and Palace, shows in the map's place and hands back to the map, and
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
 // Bubbles, beyond that: one bubble per thread, a landing ripples only its bubble (in the playground and from the core)
-//    and moves none, and a bubble opens its thread on the map, moving your place there.
+//    and moves none, and a bubble opens its thread on the map, moving your place there; topics tint and filter bubbles.
 // Spine, beyond that: a head per topic and a card per tangent; a landing pulses its point once and moves nothing that
 //    was there; a drag places a point where it's dropped (asked as a position, a mark left on its line) and its pin puts
 //    it back; a thread opens on the map. Your thought on its way has a dashed slot (`data-slot="slot:<id>"`) under the
@@ -30,6 +30,7 @@
 //    answered one show.
 //    Zoom stops: 1 2 3 are Words · Titles · Pictures and 0 sees all; each changes what's drawn, the control shows the one
 //    that's on, and none fires while a field (the reply box, the app's composer) has the keyboard.
+//    Themes: a header per theme over its spines; a theme renamed on its header, a spine moved by a drop or its tools.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
 //    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good;
 //    the hint says what it is, and its slider has a label you can see. In the app: off, the dock's line has your words;
@@ -50,7 +51,7 @@
 //    clock clear of Tiny transcript's line on a phone.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { uiServer } from "./ui-server.mjs";
 import { openPage, ready, sleep, standInCore } from "./headless.mjs";
@@ -366,7 +367,7 @@ try {
       await evaluate(`document.querySelector(".notice-timeline-clock").click()`);
       if (!await until(`document.querySelectorAll(".notice-timeline-entry").length === 4 && document.activeElement === document.querySelector(".notice-timeline-panel")`, 3000)) fail(where, "the clock opens no list, or the list doesn't take focus");
       const burst = JSON.stringify(await evaluate(entries));
-      if (burst !== JSON.stringify([{ text: "Couldn't place a thought. It's saved and will retry automatically.", kind: "error" },
+      if (burst !== JSON.stringify([{ text: "Couldn't sort that thought yet. It's saved and will retry.", kind: "error" },
         { text: "Repeated notice", kind: "notice" }, { text: "Repeated notice", kind: "notice" }, { text: "First notice", kind: "notice" }])) fail(where, `a burst kept as ${burst}`);
       await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
       if (!await until(`!document.querySelector(".notice-timeline-panel") && document.activeElement === document.querySelector(".notice-timeline-clock")`, 2000)) fail(where, "Esc doesn't close the list, focus back on the clock");
@@ -941,6 +942,40 @@ try {
     if (before !== after) fail("bubbles", "a landing moved bubbles (each keeps its place)");
     await evaluate(`document.querySelector(".bubbles-face").click()`);
     if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread")`, 2000)) fail("bubbles", "a bubble doesn't open its thread");
+
+    // Named topics tint every branch with its top thread and hold just that topic in view.
+    await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
+    if (!await until(`document.querySelectorAll(".bubbles-topic").length === 3`, 8000)) fail("bubbles", "the sample's three topic chips never showed");
+    await settle();
+    const chips = await evaluate(`[...document.querySelectorAll(".bubbles-topic")].map((b) => b.textContent.trim())`);
+    if (JSON.stringify(chips) !== JSON.stringify(["School and projects · 5", "Money · 2", "Family · 1"])) fail("bubbles", `topic chips: ${JSON.stringify(chips)}`);
+    if (await evaluate(`!!document.querySelector('.bubbles-topic[data-topic=""]')`)) fail("bubbles", "the sorted sample has a Not sorted yet chip");
+    const tints = await evaluate(`Object.fromEntries([...document.querySelectorAll(".bubbles-face")].map((face) => {
+      const li = face.closest("li.bubbles-bubble");
+      return [face.dataset.thread, { room: li.style.getPropertyValue("--room").trim(), sorted: li.classList.contains("bubbles-sorted"), color: getComputedStyle(face).borderTopColor }];
+    }))`);
+    for (const [index, ids] of [["T1", "T3", "T4", "T6", "T8"], ["T2", "T7"], ["T5"]].entries()) {
+      for (const id of ids) if (!tints[id]?.sorted || tints[id].room !== `var(--bubbles-topic-${index})`) fail("bubbles", `${id} doesn't have its topic's tint (${JSON.stringify(tints[id])})`);
+    }
+    if (new Set([tints.T1?.color, tints.T2?.color, tints.T5?.color]).size !== 3) fail("bubbles", "three topics don't give faces three different border colors");
+    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Money"]').click()`);
+    if (!await until(`document.querySelector('.bubbles-topic[data-topic="Money"]')?.getAttribute("aria-pressed") === "true" && document.querySelectorAll(".bubbles-faded").length === 6 && [...document.querySelectorAll('.bubbles-face[data-thread="T2"], .bubbles-face[data-thread="T7"]')].every((face) => !face.closest("li").classList.contains("bubbles-faded"))`, 2000)) fail("bubbles", "holding Money doesn't fade exactly the other six bubbles");
+    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Money"]').click()`);
+    if (!await until(`!document.querySelector(".bubbles-faded")`, 2000)) fail("bubbles", "clicking Money again doesn't release its bubbles");
+    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Family"]').click()`);
+    if (!await until(`document.querySelector('.bubbles-topic[data-topic="Family"]')?.getAttribute("aria-pressed") === "true" && document.querySelectorAll(".bubbles-faded").length === 7`, 2000)) fail("bubbles", "Family wasn't held before Escape");
+    for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    if (!await until(`!document.querySelector(".bubbles-faded")`, 2000)) fail("bubbles", "Escape doesn't release the held topic");
+    if (!await evaluate(`document.querySelector('.bubbles-face[data-thread="T2"]')?.getAttribute("aria-label").includes(", in Money")`)) fail("bubbles", "T2's accessible name doesn't include its topic");
+    await width(390, 844);
+    await settle();
+    if (!await evaluate(`[...document.querySelectorAll(".bubbles-topic")].every((b) => { const r = b.getBoundingClientRect(); return r.right <= innerWidth && r.height >= 32; })`)) fail("bubbles", "a topic chip runs off the phone or is less than 32 px tall");
+    await width(1280, 860);
+    if (await evaluate(`document.querySelector(".playground").dataset.errors`) !== "0") fail("bubbles", "topic interactions raised a playground error");
+    await go(`${base}/bricks.html?brick=bubbles&sample=debug-break`);
+    if (!await until(`!!document.querySelector(".bubbles-bubble")`, 8000)) fail("bubbles", "debug-break's bubbles never showed");
+    if (!await evaluate(`!document.querySelector(".bubbles-topics, .bubbles-sorted") && document.querySelector(".bubbles-bubble")?.style.getPropertyValue("--room").trim().startsWith("var(--room-")`)) fail("bubbles", "an unsorted map doesn't keep room colors without topic chips");
+    if (await evaluate(`document.querySelector(".playground").dataset.errors`) !== "0") fail("bubbles", "the unsorted sample raised a playground error");
   }
   // Read progress: an input, so it needs the app's cards (the playground draws none). Nothing on an empty map or one
   // where every point is yours; a tap on another's point marks it, kept over a reload, with a dot on the one after it
@@ -1091,11 +1126,28 @@ try {
       await press("Add a thought");
       if (!await until(`!!document.querySelector(".spine-cue")`, 3000)) fail("spine", "a landing out of view, while the view is held, shows no edge chip");
       else {
+        // Distinct threads crowd the same held edge; each arrival must leave the page answering.
+        const arrivalTitles = await evaluate(`[...document.querySelectorAll('.spine-head [aria-label^="Open "]')].map((b) => b.getAttribute("aria-label")).slice(1, 4)`);
+        if (arrivalTitles.length !== 3) fail("spine", "the crowded-edge fixture needs three more threads");
+        for (const title of arrivalTitles) {
+          await evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(title))} + ']').click()`);
+          assert.ok(await until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${title.slice(5, -11)}`)})`), "arrival thread becomes active");
+          await press("The Friend says one");
+          await sleep(1350);
+          const responsive = await Promise.race([evaluate(`document.querySelectorAll(".spine-cue").length`), sleep(3000).then(() => { throw new Error("Spine stopped answering after crowded arrivals"); })]);
+          if (responsive < 2) fail("spine", "multiple arrivals did not populate the held edge");
+        }
         // Longer than the old chips' 5 s: it stays until it's seen, and the view stays where the hand left it.
         await sleep(5600);
         if (await view() !== held) fail("spine", "the view moved while a hand held it");
         const stayed = await evaluate(`!!document.querySelector(".spine-cue")`);
         if (!stayed) fail("spine", "an edge chip left before it was seen");
+        const reachedLabel = await evaluate(`document.querySelector(".spine-cue").getAttribute("aria-label")`);
+        const reachedNode = await evaluate(`(() => {
+          const title = document.querySelector(".spine-cue-title").textContent;
+          const head = [...document.querySelectorAll(".spine-head")].find((n) => n.querySelector(".spine-title")?.textContent === title);
+          return [...document.querySelectorAll(".spine-point")].filter((n) => n.dataset.thread === head?.dataset.thread).at(-1)?.closest(".react-flow__node")?.dataset.id;
+        })()`);
         // Its click goes there: one glide of 400 ms or less (or, past a screen, a 200 ms cross-fade), and the chip goes.
         const took = !stayed ? 0 : await evaluate(`new Promise((resolve) => {
           const viewport = document.querySelector(".react-flow__viewport");
@@ -1109,12 +1161,67 @@ try {
           };
           requestAnimationFrame(tick);
         })`);
+        if (!reachedNode || !await evaluate(`(() => {
+          const n = [...document.querySelectorAll(".react-flow__node")].find((n) => n.dataset.id === ${JSON.stringify(reachedNode)});
+          const r = n?.getBoundingClientRect(), f = document.querySelector(".spine-frame").getBoundingClientRect();
+          return r && r.left + r.width / 2 > f.left && r.left + r.width / 2 < f.right && r.top + Math.min(r.height, 44) / 2 > f.top && r.top + Math.min(r.height, 44) / 2 < f.bottom;
+        })()`)) fail("spine", "the clicked arrival was not reached");
         if (took < 0) fail("spine", "an edge chip's click doesn't go there");
         else if (took > 450) fail("spine", `an edge chip's move took ${took} ms (a glide is 400 ms at most)`);
-        if (!await until(`!document.querySelector(".spine-cue")`, 1500)) fail("spine", "an edge chip stays once its landing is in view");
+        if (!await until(`![...document.querySelectorAll(".spine-cue")].some((b) => b.getAttribute("aria-label") === ${JSON.stringify(reachedLabel)})`, 1500)) fail("spine", "an edge chip stays once its landing is in view");
       }
       await key("f");
       if (!await until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "true"`, 1000)) fail("spine", "F doesn't follow your talk again");
+    }
+    // Four populated scenes, with actual phone device metrics rather than a scaled desktop viewport.
+    if (process.env.EDGE_CUES_SHOTS) {
+      mkdirSync(process.env.EDGE_CUES_SHOTS, { recursive: true });
+      for (const [w, h] of [[1440, 900], [390, 844]]) for (const theme of ["light", "dark"]) {
+        const scene = await openPage(`${base}/bricks.html?brick=spine&sample=student-week`, { width: w, height: h });
+        try {
+          await scene.page("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600 });
+          await scene.page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }, { name: "prefers-reduced-motion", value: "no-preference" }] });
+          if (!await scene.until(`!!document.querySelector(".spine-ready")`, 8000)) throw new Error("screenshot Spine never ready");
+          await sleep(500);
+          const from = await scene.evaluate(`(() => { const f = document.querySelector(".spine-frame").getBoundingClientRect();
+            for (let y = f.top + 80; y < f.bottom - 80; y += 16) for (let x = f.right - 20; x > f.left + 20; x -= 16)
+              if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y }; })()`);
+          assert.ok(from, "empty canvas for screenshot pan");
+          await scene.page("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+          for (let i = 0; i <= 12; i++) {
+            await scene.page("Input.dispatchMouseEvent", { type: i === 0 ? "mousePressed" : "mouseMoved", x: from.x - i * 100, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+            await sleep(20);
+          }
+          await scene.page("Input.dispatchMouseEvent", { type: "mouseReleased", x: from.x - 1200, y: from.y, button: "left", buttons: 0, clickCount: 1 });
+          assert.ok(await scene.until(`document.querySelector(".spine-follow")?.getAttribute("aria-pressed") === "false"`), "screenshot camera held");
+          await sleep(300);
+          const heldScene = await scene.evaluate(`document.querySelector(".react-flow__viewport").style.transform`);
+          const labels = await scene.evaluate(`[...document.querySelectorAll('.spine-head [aria-label^="Open "]')].map((b) => b.getAttribute("aria-label"))`);
+          assert.ok(labels.length >= 4, "four arrival threads");
+          for (const label of labels) {
+            await scene.evaluate(`document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']').click()`);
+            assert.ok(await scene.until(`document.querySelector(".playground-map").textContent.includes(${JSON.stringify(`· on ${label.slice(5, -11)}`)})`), "screenshot arrival thread becomes active");
+            await scene.evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "The Friend says one").click()`);
+            await sleep(1350);
+          }
+          const geometry = await scene.evaluate(`({ width: innerWidth, theme: matchMedia("(prefers-color-scheme: dark)").matches, overflow: document.documentElement.scrollWidth > innerWidth,
+            held: document.querySelector(".react-flow__viewport").style.transform,
+            boxes: [...document.querySelectorAll(".spine-cue")].map((b) => { const r = b.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }) })`);
+          assert.equal(geometry.width, w, "true viewport width");
+          assert.equal(geometry.theme, theme === "dark", "emulated theme");
+          assert.equal(geometry.held, heldScene, "populated camera stays held");
+          assert.ok(!geometry.overflow && geometry.boxes.length >= 2, `populated chips without sideways overflow: ${JSON.stringify(geometry)}`);
+          for (const b of geometry.boxes) assert.ok(b.left >= 0 && b.right <= w && b.top >= 0 && b.bottom <= h, "chip inside viewport");
+          for (const b of geometry.boxes) for (const c of geometry.boxes) if (b !== c) assert.ok(b.right <= c.left || c.right <= b.left || b.bottom <= c.top || c.bottom <= b.top, "chip hit areas do not overlap");
+          if (w < 600) {
+            assert.equal(geometry.boxes.length, 3, "phone keeps two chips and overflow access");
+            assert.ok(await scene.evaluate(`!!document.querySelector('.spine-cue[aria-label^="2 more new"]')`), "phone overflow counts hidden arrivals");
+          }
+          assert.equal(await scene.evaluate(`document.querySelector(".playground").dataset.errors`), "0", "no page errors");
+          const shot = await scene.page("Page.captureScreenshot", { format: "png" });
+          writeFileSync(join(process.env.EDGE_CUES_SHOTS, `spine-edge-cues-${w}-${theme}.png`), Buffer.from(shot.data, "base64"));
+        } finally { await scene.close(); }
+      }
     }
     // Reduce Motion: the camera cuts (one frame, then still) with a ring for a second where it went; a landing rings in
     // place of its pulse.
@@ -1435,6 +1542,75 @@ try {
         shown = full;
       }
     }
+
+    // Named topics span their heads; renaming, dropping and the topic tool all use the same actions.
+    await spineAgain();
+    const topicErrors = async () => {
+      if (await evaluate(`document.querySelector(".playground").dataset.errors`) !== "0") fail("spine", "topic interactions raised a playground error");
+    };
+    const groups = await evaluate(`[...document.querySelectorAll(".spine-group-name")].map((b) => ({ name: b.textContent, label: b.getAttribute("aria-label") }))`);
+    const expectedGroups = ["School and projects", "Money", "Family"];
+    if (JSON.stringify(groups.map((g) => g.name)) !== JSON.stringify(expectedGroups)) fail("spine", `topic headers: ${JSON.stringify(groups)}`);
+    for (const [i, name] of expectedGroups.entries()) {
+      const count = i === 0 ? "2 threads" : "1 thread";
+      if (groups[i]?.label !== `Theme ${name}, ${count}. Press Enter to rename it`) fail("spine", `${name}'s header doesn't name its thread count`);
+    }
+    // Canvas coordinates, independent of zoom: every head belongs to exactly its own header's span.
+    const inTopic = (id, name) => `(() => {
+      const x = (n) => { const m = n?.style.transform.match(/translate\\(([-\\d.]+)px, ([-\\d.]+)px\\)/); return m ? +m[1] : NaN; };
+      const head = document.querySelector(${JSON.stringify(`.react-flow__node[data-id="t:${id}"]`)});
+      const groups = [...document.querySelectorAll('.react-flow__node[data-id^="g:"]')];
+      return !!head && groups.some((g) => g.dataset.id === ${JSON.stringify(`g:${name}`)}) && groups.every((g) => {
+        const inside = x(g) <= x(head) && x(head) < x(g) + parseFloat(g.style.width);
+        return inside === (g.dataset.id === ${JSON.stringify(`g:${name}`)});
+      });
+    })()`;
+    for (const [id, name] of [["T1", "School and projects"], ["T3", "School and projects"], ["T2", "Money"], ["T5", "Family"]]) {
+      if (!await evaluate(inTopic(id, name))) fail("spine", `${id} isn't exclusively inside ${name}'s header span`);
+    }
+    await topicErrors();
+    const editTopic = async (from, value, key, code) => {
+      await evaluate(`document.querySelector(${JSON.stringify(`.react-flow__node[data-id="g:${from}"] .spine-group-name`)})?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+      if (!await until(`!!document.querySelector(".spine-group-field") && document.activeElement === document.querySelector(".spine-group-field")`, 2000)) {
+        fail("spine", `${from}'s rename field didn't open with focus`);
+        return;
+      }
+      await evaluate(`document.querySelector(".spine-group-field").value = ${JSON.stringify(value)}`);
+      for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key, code: key, windowsVirtualKeyCode: code });
+    };
+    await editTopic("Money", "Bills", "Enter", 13);
+    if (!await until(`document.querySelector(".playground-log").textContent.includes('renameTopic “Money” → “Bills”') && !!document.querySelector('.react-flow__node[data-id="g:Bills"]') && !document.querySelector('.react-flow__node[data-id="g:Money"]')`, 2000)) fail("spine", "Money wasn't renamed to Bills through renameTopic");
+    await topicErrors();
+    await editTopic("Family", "Kin", "Escape", 27);
+    if (!await until(`!document.querySelector(".spine-group-field") && !!document.querySelector('.react-flow__node[data-id="g:Family"]') && !document.querySelector('.react-flow__node[data-id="g:Kin"]') && !document.querySelector(".playground-log").textContent.includes('renameTopic “Family”')`, 2000)) fail("spine", "Escape didn't cancel Family's rename");
+    await topicErrors();
+
+    await key("0");
+    await settle();
+    const from = await middle('.react-flow__node[data-id="t:T2"] .spine-title');
+    const to = await evaluate(`(() => { const r = document.querySelector('.react-flow__node[data-id="g:School and projects"]')?.getBoundingClientRect(); return r && { x: r.left + r.width / 2, y: r.bottom + 60 }; })()`);
+    if (!from || !to) fail("spine", "no T2 head or School and projects header to drag between");
+    else {
+      const at = (type, x, y) => cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+      await at("mousePressed", from.x, from.y);
+      for (let i = 1; i <= 12; i++) { await at("mouseMoved", from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12); await sleep(20); }
+      if (!await until(`!!document.querySelector('.react-flow__node[data-id="g:School and projects"] .spine-group-hot')`, 1000)) fail("spine", "the target topic isn't hot while carrying T2 over its columns");
+      await at("mouseReleased", to.x, to.y);
+      if (!await until(`document.querySelector(".playground-log").textContent.includes('moveToTopic Rent is due → “School and projects”') && document.querySelector(".playground-log").textContent.includes("position T2 → back to the layout")`, 2000)) fail("spine", "dropping T2 didn't move it under the topic and return it to the layout");
+      await settle();
+      if (!await evaluate(inTopic("T2", "School and projects"))) fail("spine", "T2 isn't inside School and projects after the drop");
+      if (!await until(`!document.querySelector('.react-flow__node[data-id="g:Bills"]') && document.querySelector('.react-flow__node[data-id="g:School and projects"] .spine-group-name')?.getAttribute("aria-label") === "Theme School and projects, 3 threads. Press Enter to rename it"`, 2000)) fail("spine", "the drop didn't remove Bills and count three threads under School and projects");
+    }
+    await topicErrors();
+    await evaluate(`(() => { const select = document.querySelector('.react-flow__node[data-id="t:T5"] .spine-tool-select'); if (select) { select.value = "School and projects"; select.dispatchEvent(new Event("change", { bubbles: true })); } })()`);
+    if (!await until(`document.querySelector(".playground-log").textContent.includes("moveToTopic Mom's birthday → “School and projects”") && !document.querySelector(".spine-group")`, 2000)) fail("spine", "the topic tool didn't move T5 and remove the headers with one topic left");
+    await topicErrors();
+    await go(`${base}/bricks.html?brick=spine&sample=debug-break`);
+    if (!await until(`!!document.querySelector(".spine-frame.spine-ready")`, 8000)) fail("spine", "debug-break's canvas never showed");
+    await settle();
+    if (await evaluate(`!!document.querySelector(".spine-group")`)) fail("spine", "an unsorted map has topic headers");
+    await topicErrors();
   }
   // Brick chip: a panel that marks the app's points (the playground draws none), so it's checked in the app. Nothing on
   // the map that was there, nor on an empty one; a chip naming the brick on each point that lands after, anyone's,
@@ -1649,6 +1825,9 @@ try {
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)}).click()`);
     if (!await until(`!!document.querySelector('main.brick-view[data-brick="${id}"]')?.textContent.trim() && !document.querySelector("main.map")`, 4000)) fail(name, "doesn't show in the map's place");
     if (id === "bubbles") {
+      core.send({ type: "change", change: { type: "topics_assigned", assigned: [{ thread_id: "T1", topic: "Money" }, { thread_id: "T2", topic: "Home" }, { thread_id: "T3", topic: "Home" }] } });
+      const chips = ["Money · 1", "Home · 3", "Not sorted yet · 2"];
+      if (!await until(`JSON.stringify([...document.querySelectorAll('[data-brick="bubbles"] .bubbles-topic')].map((b) => b.textContent.trim())) === ${JSON.stringify(JSON.stringify(chips))}`, 3000)) fail("Bubbles", "topics assigned by the core don't show the ordered chips with branches and unsorted threads counted");
       const drawn = await evaluate(`document.querySelectorAll("[data-brick=bubbles] .bubbles-bubble").length`);
       if (drawn !== full.threads.length) fail("Bubbles", `${drawn} bubbles for ${full.threads.length} threads`);
       // A thought the core places reaches the brick as `landed` (the app's host, not the playground's): its bubble ripples.
@@ -1683,6 +1862,27 @@ try {
         await sleep(200);
         if (!core.heard.some((m) => m.type === "position" && m.id === "T1-0" && typeof m.x === "number" && typeof m.y === "number")) fail("Spine", "a drag doesn't reach the core as a position");
       }
+      if (!await until(`!!document.querySelector('[data-brick="spine"] .react-flow__node[data-id="g:Money"]') && !!document.querySelector('[data-brick="spine"] .react-flow__node[data-id="g:Home"]')`, 3000)) fail("Spine", "topics assigned by the core don't show Money and Home headers");
+      await evaluate(`document.querySelector('[data-brick="spine"] .react-flow__node[data-id="g:Home"] .spine-group-name')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+      // core.heard lives in Node: poll it here, rather than evaluating it in the window.
+      const heardTopic = async (message) => {
+        const wanted = JSON.stringify(message);
+        for (let waited = 0; waited < 2000; waited += 50) {
+          if (JSON.stringify(core.heard).includes(wanted)) return true;
+          await sleep(50);
+        }
+        return false;
+      };
+      if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-group-field') && document.activeElement === document.querySelector('[data-brick="spine"] .spine-group-field')`, 2000)) fail("Spine", "Home's rename field didn't open with focus in the app");
+      else {
+        await evaluate(`document.querySelector('[data-brick="spine"] .spine-group-field').value = "House"`);
+        for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+        if (!await heardTopic({ type: "topic_rename", from: "Home", to: "House" })) fail("Spine", "renaming Home to House didn't reach the core");
+      }
+      core.send({ type: "change", change: { type: "topic_renamed", from: "Home", to: "House" } });
+      if (!await until(`!!document.querySelector('[data-brick="spine"] .react-flow__node[data-id="g:House"]') && !document.querySelector('[data-brick="spine"] .react-flow__node[data-id="g:Home"]')`, 3000)) fail("Spine", "the core's rename didn't replace Home with House");
+      await evaluate(`(() => { const select = document.querySelector('[data-brick="spine"] .react-flow__node[data-id="t:T4"] .spine-tool-select'); if (select) { select.value = "Money"; select.dispatchEvent(new Event("change", { bubbles: true })); } })()`);
+      if (!await heardTopic({ type: "topic_set", thread_id: "T4", topic: "Money" })) fail("Spine", "moving T4 to Money didn't reach the core");
     }
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Map").click()`);
     if (!await until(`!!document.querySelector("main.map .thread")`, 3000)) fail(name, "Map doesn't bring the map back");

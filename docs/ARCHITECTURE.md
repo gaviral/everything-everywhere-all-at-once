@@ -31,6 +31,7 @@ Browser, one page per window (ui/src)
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two threads past)
   positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
   annotate-core.ts margin notes as the window holds them, mirroring annotate.rs (a note is a tangent anchored to words), the note as sent, and the threads a brick is handed with their anchors
+  topics-core.ts themes (named `topic` in code) as the window holds them, mirroring topics.rs (by the ids as given, only for a thread on the map), each thread's theme and the themes in order as bricks get them, and a brick's rename or move sent to the core
   onscreen.ts    keeps a popover anchored to a button (Room, the ? list, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
   ModelLine.tsx  the Meta model doing each step, in the composer: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
   route.ts       live routing: while a thought is placed, the threads the prompt names light up and the dock shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
@@ -91,6 +92,7 @@ Core, one process (core/src: axum, tokio)
   moves.rs       move a thought and rename a thread, said or clicked, each undone in one step; the refiner never merges two threads a move set apart
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   annotate.rs    margin notes, a person's or an AI participant's: the first on words starts their tangent under the point's thread, tied to them; a later one answers in it; journaled, to every window; no model call
+  topics.rs      themes (on screen; `topic` in code): the AI sorts top threads under at most 6 short names, reusing the names there (a thread keeps its theme once given); a pass at most once a minute while a thread waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
   call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the Friend's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent
   catalog.rs     the action catalog (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the composer
