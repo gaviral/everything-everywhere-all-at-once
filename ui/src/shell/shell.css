@@ -16,9 +16,24 @@ html.shell2 .countdown-editor {
 }
 /* The canvas is the map and the only thing that pans: the page itself holds still under it. */
 html.shell2[data-view="map"], html.shell2[data-view="map"] body { overflow: hidden; height: 100%; }
-/* Cards scrolls: clear of the corners at the top and the stage at the bottom. */
-html.shell2 .app.shell > .map { padding-top: 76px; padding-bottom: 180px; }
+/* Cards scrolls: clear of the corners at the top and the stage at the bottom, whatever height the stage has (a card, a
+   notice and the composer are taller than the 180 px that suited the composer and one card). */
+html.shell2 .app.shell > .map { padding-top: 76px; padding-bottom: max(180px, calc(var(--dock-height, 120px) + 28px)); }
 html.shell2 .app.shell { min-height: 100vh; }
+/* A view that scrolls (Cards, the Palace, a view brick) runs under the stage, whose cards stand 10 px apart: through that
+   gap and around the cards the page's words showed, half covered. The page's own color backs the stage's whole band and
+   fades in over the 12 px above it (the clearance the Palace and the other views keep over the stage: 48 px of padding
+   under a stage that stands 36 px up), so what scrolls under it ends at it and never shows between its cards. Above the
+   page (2 at most) and below its corners (40) and every float (6 and up). The Canvas keeps its own words clear of the
+   stage (the camera's area), so it has no band. */
+html.shell2:not([data-view="map"]) .app.shell::after {
+  content: ""; position: fixed; right: 0; bottom: 0; left: 0; z-index: 3; height: calc(var(--dock-height, 120px) + 12px); pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--space) 12px);
+}
+/* The Countdown's editor opens over the Live outline, which shares its corner and is 40 px wider: the words of the outline
+   showed past the editor's edge. It waits behind the editor, where it is, and is back when the editor shuts. The outline is
+   named by its guide mark, the name its folder gives it, as the shell holds none of that brick's classes. */
+html.shell2:has(.countdown-editor) [data-guide="live-outline"] { visibility: hidden; }
 
 /* ── Parts ───────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
