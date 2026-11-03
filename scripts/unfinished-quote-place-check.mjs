@@ -1,13 +1,22 @@
 // The built UI with an already-dropped sample thread. Moves change membership, not the last spoken turn.
 // SHOTS=dir saves the shell's incoming-move regression state at both sizes in both themes.
+// With WORKTREE OUTPUT [/?shell=2] arguments, save the same fixture and print its absolute PNG paths as JSON.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { ready, standInCore, openPage, sleep } from "./headless.mjs";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const [tree, output, ...paths] = process.argv.slice(2);
+if (tree && (!output || paths.length > 1 || (paths.length === 1 && paths[0] !== "/?shell=2"))) {
+  throw new Error("usage: unfinished-quote-place-check.mjs [WORKTREE OUTPUT [/?shell=2]]");
+}
+const { ready, standInCore, openPage, sleep } = await import(tree
+  ? pathToFileURL(join(resolve(tree), "scripts/headless.mjs")) : new URL("./headless.mjs", import.meta.url));
 
 const why = ready();
 if (why) { console.log(`SKIP unfinished-quote-place-check: ${why}`); process.exit(3); }
-const shots = process.env.SHOTS;
+const shots = output ? resolve(output) : process.env.SHOTS;
+const shotPaths = [];
 if (shots) mkdirSync(shots, { recursive: true });
 const now = Date.now() - 10_000;
 const quote = "I should choose the picnic spot before—";
@@ -147,7 +156,9 @@ try {
         const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
         const png = Buffer.from(data, "base64");
         assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [width, height]);
-        writeFileSync(join(shots, `unfinished-quote-place-${width}x${height}-${scheme}.png`), png);
+        const file = resolve(shots, `${output ? "look-1" : "unfinished-quote-place"}-${width}x${height}-${scheme}.png`);
+        writeFileSync(file, png);
+        shotPaths.push(file);
       }
       await move("p2", "T1");
       await expectQuote(older, "quoted words moved out: recompute from remaining words");
@@ -175,7 +186,8 @@ try {
     await browser.close();
     browser = null;
   }
-  console.log("unfinished-quote-place-check: ok");
+  if (shots) assert.equal(shotPaths.length, 4, "all four incoming-move shell fixtures captured");
+  console.log(output ? JSON.stringify(shotPaths) : "unfinished-quote-place-check: ok");
 } finally {
   clearTimeout(timeout);
   if (browser) await browser.close();
