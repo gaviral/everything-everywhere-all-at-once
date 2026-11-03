@@ -175,7 +175,9 @@ const { evaluate, until, page: cdp } = page;
 const settle = () => evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`).then(() => sleep(250));
 const go = async (url) => { await cdp("Page.navigate", { url }); await sleep(150); };
 const width = (w, h) => cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600 });
-let closed = false;
+// Every way out ends the page, the browser and the stand-in core: the `finally` below, and the one-brick run, which exits
+// from inside the try (process.exit skips a `finally` and would leave a headless Chrome running).
+const cleanup = async () => { try { await page.close(); } finally { core.close(); } };
 try {
   // Notice timeline: a panel fed by the app's notices (on("notice")), so it's checked in the app. On an empty map and a
   // full one: no clock before a notice; your ask opens the list (empty, it says so) and leaves focus where you typed,
@@ -616,16 +618,7 @@ try {
     }
     await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
   }
-  // One brick, as its builder runs it: done here. The browser closes first (an exit inside this try skips the finally,
-  // and left a headless Chrome running after each run).
-  if (only) {
-    closed = true;
-    await page.close();
-    core.close();
-    assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`);
-    console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`);
-    process.exit(0);
-  }
+  if (only) { assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`); await cleanup(); console.log(`bricks-check: ok (${only}: its folder's rules and the playground)`); process.exit(0); }
 
   // 6. The app with every brick at its default; then each view brick switched on in the Catalog.
   const appBricks = folders.filter((f) => !f.startsWith("_")).map((f) => infos[`./bricks/${f}/brick.json`]).filter(Boolean);
@@ -753,7 +746,7 @@ try {
     if (await evaluate(`!!document.querySelector(".level-meter")`)) fail("Level meter", "shows without ?level");
   }
 } finally {
-  if (!closed) { await page.close(); core.close(); }
+  await cleanup();
 }
 assert.deepEqual(problems, [], `\n${problems.join("\n")}\n`);
 console.log(`bricks-check: ok (${checked.length} bricks: ${kinds.join(", ")}; playground and app)`);
