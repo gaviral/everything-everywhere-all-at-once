@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
@@ -745,8 +746,7 @@ export function useCore(speaker?: string) {
   const outbox = useRef<string[] | null>(null);
   if (outbox.current === null) {
     try {
-      const saved: unknown = JSON.parse(localStorage.getItem(queueKey) ?? "[]");
-      outbox.current = Array.isArray(saved) ? saved.filter((message): message is string => typeof message === "string") : [];
+      outbox.current = readWaiting(queueKey);
     } catch { outbox.current = []; }
   }
   const [queuedCount, setQueuedCount] = useState(outbox.current.length);
@@ -798,6 +798,8 @@ export function useCore(speaker?: string) {
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
         // A send only hands bytes to the browser. Keep them saved until the core confirms the id.
+        try { outbox.current = readWaiting(queueKey); } catch { /* Keep the last readable copy. */ }
+        setQueuedCount(outbox.current!.length);
         for (const message of outbox.current!) ws.send(message);
         attention.current.resend((message) => ws.send(message));
         coreBack();
@@ -819,12 +821,9 @@ export function useCore(speaker?: string) {
         if (receiveJob(msg)) return;
         switch (msg.type) {
           case "text_received": {
-            if (!outbox.current!.some((message) => JSON.parse(message).id === msg.id)) break;
-            const waiting = outbox.current!.filter((message) => JSON.parse(message).id !== msg.id);
-            try { localStorage.setItem(queueKey, JSON.stringify(waiting)); }
+            try { receivedWaiting(queueKey, msg.id); outbox.current = readWaiting(queueKey); }
             catch { break; } // Retrying a saved entry is safe: the core remembers its id.
-            outbox.current = waiting;
-            setQueuedCount(waiting.length);
+            setQueuedCount(outbox.current!.length);
             break;
           }
           case "usage":
@@ -1002,8 +1001,15 @@ export function useCore(speaker?: string) {
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== queueKey && !event.key.startsWith(`${queueKey}.`)) return;
+      try { outbox.current = readWaiting(queueKey); } catch { return; }
+      setQueuedCount(outbox.current.length);
+    };
+    window.addEventListener("storage", storageChanged);
     open();
     return () => {
+      window.removeEventListener("storage", storageChanged);
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(handoffTimer);
@@ -1154,22 +1160,22 @@ export function useCore(speaker?: string) {
       }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
+      try { outbox.current = readWaiting(queueKey); } catch { /* A failed save below keeps the draft. */ }
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
       if (outbox.current!.length + parts.length > 50) {
         sayNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
       }
-      const messages = parts.map((part) => JSON.stringify({ type: "text", id: crypto.randomUUID(), text: part }));
+      const messages = parts.map((part) => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
       {
-        const waiting = [...outbox.current!, ...messages];
         try {
           // Save the entire batch before telling the composer it can clear the draft.
-          localStorage.setItem(queueKey, JSON.stringify(waiting));
+          saveWaiting(queueKey, messages);
         } catch {
           sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
         }
-        outbox.current = waiting;
-        setQueuedCount(waiting.length);
+        outbox.current = readWaiting(queueKey);
+        setQueuedCount(outbox.current.length);
       }
       if (online) for (const message of messages) socket.current!.send(message);
       if (parts.length > 1) { sayNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }

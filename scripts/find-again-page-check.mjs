@@ -69,7 +69,7 @@ try {
   await type('textarea[aria-label="Type a thought"]', queued);
   await enter();
   assert.ok(await until(`document.body.textContent.includes('1 to send when connected')`), 'queued count');
-  assert.ok(await evaluate(`JSON.parse(localStorage.getItem('e2a2o.waiting.you')).some(m => JSON.parse(m).text === ${JSON.stringify(queued)})`), 'saved before draft cleared');
+  assert.ok(await evaluate(`Object.keys(localStorage).filter(k => k.startsWith('e2a2o.waiting.you.')).map(k => JSON.parse(localStorage.getItem(k)).message).some(m => JSON.parse(m).text === ${JSON.stringify(queued)})`), 'saved before draft cleared');
   await page('Page.navigate', { url: 'about:blank' });
   await page('Page.navigate', { url: `http://127.0.0.1:${core.port}/` });
   assert.ok(await until(`document.body.textContent.includes('1 to send when connected')`, 10000), 'queue survives reopening');
@@ -77,7 +77,7 @@ try {
   online = true;
   for (let i = 0; i < 200 && !landed.size; i++) await sleep(50);
   assert.equal(landed.size, 1, 'first send reached the server before the socket dropped');
-  assert.ok(await evaluate(`JSON.parse(localStorage.getItem('e2a2o.waiting.you')).length === 1`), 'send without acknowledgment keeps saved entry');
+  assert.ok(await evaluate(`Object.keys(localStorage).filter(k => k.startsWith('e2a2o.waiting.you.')).length === 1`), 'send without acknowledgment keeps saved entry');
   await page('Page.navigate', { url: 'about:blank' });
   await page('Page.navigate', { url: `http://127.0.0.1:${core.port}/` });
   assert.ok(await until(`document.body.textContent.includes('1 to send when connected')`, 10000), 'lost acknowledgment survives reopening');

@@ -20,7 +20,7 @@ globalThis.dispatchEvent = () => true;
 globalThis.addEventListener ??= noop;
 globalThis.removeEventListener ??= noop;
 const saved = new Map();
-globalThis.localStorage = { getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) };
+globalThis.localStorage = { get length() { return saved.size; }, key: (i) => [...saved.keys()][i] ?? null, getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: (key) => saved.delete(key) };
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", hostname: "localhost", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
 globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
