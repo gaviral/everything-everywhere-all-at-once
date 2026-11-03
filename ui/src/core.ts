@@ -97,14 +97,14 @@ export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
 // mic off ("stop listening"), and the map saved as a file ("export my map", export-md.ts). The revision makes the same one asked twice a new ask.
 // `answers`: how many answers had been shown when it came (see showNotice).
 // "What just happened?" ("notices"): the notices this window showed, newest first, which only it keeps (the Notice timeline).
-export type ViewAsk = { view: "map" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices"; revision: number; answers: number };
+export type ViewAsk = { view: "map" | "cards" | "palace" | "focus" | "all" | "help" | "later" | "forget" | "finish" | "pause" | "export" | "notices"; revision: number; answers: number };
 
 // "Expand the garden", "collapse this", "expand everything" (thread_id null): a thread and every branch under it.
 export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: number };
 
 // Said while a search asks the model. It stays until the answer: the core takes it down with an empty notice
 // when something newer stops the search.
-export const LOOKING = "Looking through your threads…";
+export const LOOKING = "Looking through your topics…";
 /** The message card's Stop pressed with the connection down (`stopSend`). */
 export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
 

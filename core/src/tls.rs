@@ -45,11 +45,11 @@ fn identity(data: &Path, names: Vec<String>) -> anyhow::Result<Identity> {
     match std::fs::read(&path) {
         Ok(bytes) => {
             let saved: Identity = serde_json::from_slice(&bytes)
-                .context("Cannot read room TLS identity; restore it or remove tls/identity.json to issue a new certificate")?;
+                .context("Cannot read the shared map's TLS identity; restore it or remove tls/identity.json to issue a new certificate")?;
             if saved.names == names && seconds < saved.renew_at {
                 return Ok(saved);
             }
-            tracing::warn!("Room TLS address/hostname changed or certificate expires soon; issuing a new certificate (guest must accept again)");
+            tracing::warn!("The shared map's TLS address/hostname changed or its certificate expires soon; issuing a new certificate (guest must accept again)");
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
@@ -87,7 +87,7 @@ fn identity(data: &Path, names: Vec<String>) -> anyhow::Result<Identity> {
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }
-    result.context("Saving room TLS identity")?;
+    result.context("Saving the shared map's TLS identity")?;
     Ok(identity)
 }
 
@@ -106,7 +106,7 @@ fn names(address: SocketAddr) -> anyhow::Result<Vec<String>> {
             && hostname
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.'),
-        "Cannot obtain a DNS hostname for the room certificate"
+        "Cannot obtain a DNS hostname for the shared map's certificate"
     );
     let mut names = vec![
         address.ip().to_string(),
@@ -132,7 +132,7 @@ impl Listener {
     pub(super) async fn bind(address: SocketAddr, data: &Path) -> anyhow::Result<Self> {
         let tcp = TcpListener::bind(address)
             .await
-            .context("Binding room HTTPS listener")?;
+            .context("Binding the shared map's HTTPS listener")?;
         let identity = identity(data, names(address)?)?;
         Ok(Self {
             tcp,

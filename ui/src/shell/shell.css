@@ -198,7 +198,7 @@ html.shell2 .shell-rail {
 }
 html.shell2 .shell-tabs { display: flex; flex: none; align-items: flex-end; gap: 2px; padding: 8px 8px 0 10px; border-bottom: 1px solid var(--line); }
 html.shell2 .shell-tab {
-  display: inline-flex; align-items: center; gap: 5px; margin-bottom: -1px; padding: 7px 7px 9px; border: 0; border-bottom: 2px solid transparent;
+  display: inline-flex; align-items: center; gap: 5px; margin-bottom: -1px; padding: 7px 6px 9px; border: 0; border-bottom: 2px solid transparent;
   background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
 }
 html.shell2 .shell-tab .shell-icon { display: none; }
@@ -244,8 +244,8 @@ html.shell2 .shell-catalog-group h3 { margin: 12px 0 2px; }
 html.shell2 .shell-catalog-group ul { margin: 0; padding: 0; list-style: none; }
 html.shell2 .shell-catalog-row { display: flex; align-items: center; gap: 8px; min-height: 32px; border-radius: 8px; }
 html.shell2 .shell-catalog-row.shell-at { margin: 0 -8px; padding: 0 8px; background: var(--blue-soft); }
-html.shell2 .shell-catalog-name { display: flex; flex: 1; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
-html.shell2 .shell-aka { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
+html.shell2 .shell-catalog-name { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+html.shell2 .shell-aka { min-width: 0; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
 html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; }
 html.shell2 .shell-catalog-core { flex: none; width: 36px; color: var(--muted); font-size: 11px; text-align: right; }
 html.shell2 .shell-switch {

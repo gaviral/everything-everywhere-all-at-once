@@ -46,17 +46,17 @@ export const isResting = (message: string) => message.startsWith(RESTING);
 export function keyWords(hosted: boolean, refused: boolean, what: "notice" | "mic" | "tour", resting = false): string {
   if (resting && !refused) {
     if (what === "mic") return `${RESTING}, so listening is off until tomorrow. You can still type.`;
-    if (what === "tour") return `${RESTING}, so until tomorrow this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter.`;
+    if (what === "tour") return `${RESTING}, so until tomorrow this map is for exploring. Type “where was I?”, “next one” or “pictures” and press Enter.`;
     return `${RESTING} until tomorrow (midnight Pacific). You can browse the map and type; what you type is placed then.`;
   }
   if (hosted) {
     const why = refused ? "This site's AI key was refused" : "This site has no AI key right now";
     if (what === "mic") return `${why}, so listening is off. You can still type.`;
-    if (what === "tour") return `${why}, so this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter.`;
+    if (what === "tour") return `${why}, so this map is for exploring. Type “where was I?”, “next one” or “pictures” and press Enter.`;
     return `${why}: you can browse the map, but new thoughts and listening are off until its owner fixes it.`;
   }
   if (what === "mic") return refused ? "The AI key was refused: check MODEL_API_KEY in .env. You can still type." : "No AI key: listening needs MODEL_API_KEY in .env. You can still type.";
-  if (what === "tour") return "Without an AI key, this map is for exploring. Type “where was I?”, “next one” or “palace” and press Enter. To talk and add thoughts, put MODEL_API_KEY in .env.";
+  if (what === "tour") return "Without an AI key, this map is for exploring. Type “where was I?”, “next one” or “pictures” and press Enter. To talk and add thoughts, put MODEL_API_KEY in .env.";
   return refused ? "The AI key was refused. Check MODEL_API_KEY in .env, then restart." : "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example).";
 }
 
@@ -100,7 +100,7 @@ export function icsFor(action: { id: string; title: string; when: string }, now:
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   // Text values escape \ ; , and line breaks (RFC 5545 §3.3.11).
   const text = (s: string) => s.replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r?\n/g, "\\n");
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//E2A2O//Thread map//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//E2A2O//Topic map//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
     `UID:${action.id}-${date(start)}@e2a2o`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${date(start)}`, `DTEND;VALUE=DATE:${date(end)}`,
     `SUMMARY:${text(action.title)}`, "TRANSP:TRANSPARENT", "END:VEVENT", "END:VCALENDAR"];
   return lines.map(fold).join("\r\n") + "\r\n";

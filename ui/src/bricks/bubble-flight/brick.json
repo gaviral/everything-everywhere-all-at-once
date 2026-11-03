@@ -1,7 +1,7 @@
 {
   "id": "bubble-flight",
-  "name": "Bubble flight",
-  "does": "Your thought flies from the box as a glass bubble into the spot where it lands.",
+  "name": "Fly-in",
+  "does": "Your thought flies from the input box as a glass bubble into the spot where it lands.",
   "kind": "panel",
   "defaultOn": false,
   "demoSafe": true

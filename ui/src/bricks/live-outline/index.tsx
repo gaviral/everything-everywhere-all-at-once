@@ -107,7 +107,7 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
       </button>
     </div>
     <p id={helpId} className="live-outline-help">Click a point or press Enter to show its full original words; repeat to fold it.
-      Double-click a point, or use its go button, to open its thread.</p>
+      Double-click a point, or use its go button, to open its topic.</p>
     <div className="live-outline-scroll" ref={scroller} onScroll={(event) => {
       const area = event.currentTarget;
       following.current = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
@@ -141,7 +141,7 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
               <p className="live-outline-text">{original ? row.text : preview(cleaned.text)}</p>
               {!original && cleaned.trimmed && <span className="live-outline-trimmed">trimmed</span>}
             </div>
-            <button type="button" className="live-outline-go" aria-label={`Open ${row.title}`} title="Open thread"
+            <button type="button" className="live-outline-go" aria-label={`Open ${row.title}`} title="Open topic"
               onClick={(event) => { event.stopPropagation(); actions.openThread(row.threadId); }}
               onDoubleClick={(event) => event.stopPropagation()}>
               <svg className="live-outline-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none"
@@ -152,7 +152,7 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
           </li>;
         })}
       </ul>
-      {!bullets.length && !live && <p className="live-outline-empty">Talk, and your points line up here. Side trips step in, in their thread's color.</p>}
+      {!bullets.length && !live && <p className="live-outline-empty">Talk, and your points line up here. Side trips step in, in their topic's color.</p>}
     </div>
     {liveText && <p className="live-outline-live" aria-label="Your words in progress">{liveText}</p>}
   </section>;

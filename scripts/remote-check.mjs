@@ -46,6 +46,66 @@ if (shots) mkdirSync(shots, { recursive: true });
     assert.ok(asksOf([], [hold(8, "agent", "Held only?")])[0].id.endsWith("|n8"), "a hold's asking is its message");
     assert.deepEqual(asksOf([job("a", "waiting", { result: "Same words?", by: "Claude" }), job("b", "waiting", { result: "Same words?", by: "GPT" })], []).map((ask) => ask.by), ["Claude", "GPT"], "two helpers asking the same words are two questions");
     assert.equal(asksOf([job("d", "waiting", { result: "A demo question?", demo: true })], [])[0].demo, true, "a simulated job's question says so");
+
+    // The local continuation uses the feed's messages, once the card asks. Its remaining timers cannot undo an answer.
+    const { playFeed, STEPS, HELPER } = await server.ssrLoadModule("/src/remote/demo.ts");
+    const { useJobs } = await server.ssrLoadModule("/src/work-jobs.ts");
+    const { current } = await server.ssrLoadModule("/src/guide-core.ts");
+    const { createElement } = await import("../ui/node_modules/react/index.js");
+    const { renderToString } = await import("../ui/node_modules/react-dom/server.node.js");
+    const readJobs = () => {
+      let jobs;
+      renderToString(createElement(() => { jobs = useJobs(); return null; }));
+      return jobs;
+    };
+    const timers = new Map();
+    let timerId = 0;
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+      setTimeout: (run, at) => { timers.set(++timerId, { run, at }); return timerId; },
+      clearTimeout: (id) => timers.delete(id),
+    };
+    const advance = (seconds) => {
+      for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
+        if (timer.at <= seconds * 1000) { timers.delete(id); timer.run(); }
+      }
+    };
+    let feed;
+    try {
+      const card = STEPS.find(({ message: m }) => m.id === "demo-card" && m.status === "waiting").message;
+      const ask = { id: "local", by: HELPER, text: card.result, demo: true, held: [] };
+      feed = playFeed();
+      assert.equal(feed.answer(ask, "Keep it a surprise"), false, "no continuation before the card asks");
+      advance(23);
+      assert.equal(feed.answer({ ...ask, by: "someone else" }, "Keep it a surprise"), false);
+      assert.equal(feed.answer({ ...ask, text: "Another question?" }, "Keep it a surprise"), false);
+      assert.equal(feed.answer(ask, "I'll decide later"), true, "other words are acknowledged");
+      assert.equal(readJobs().find((j) => j.id === "demo-card").status, "waiting", "other words invent no result");
+      assert.equal(feed.answer(ask, "Keep it a surprise"), true);
+      const completed = readJobs().filter((j) => ["demo-card", "demo-birthday"].includes(j.id));
+      assert.equal(feed.answer(ask, "Mention the pottery class in Mom's card"), false, "a continuation is accepted only once");
+      advance(60);
+      assert.deepEqual(readJobs().filter((j) => ["demo-card", "demo-birthday"].includes(j.id)), completed, "later events cannot overwrite completion");
+      assert.equal(current().held.some((h) => h.by === HELPER), false, "the later matching hold is suppressed");
+      for (const expected of [card, STEPS[0].message]) {
+        const actual = readJobs().find((j) => j.id === expected.id);
+        for (const key of ["id", "parent", "title", "demo"]) assert.equal(actual[key], expected[key], `continuation preserves ${key}`);
+      }
+      feed.stop();
+      assert.equal(feed.answer(ask, "Keep it a surprise"), false, "a stopped feed accepts no answers");
+      feed = playFeed();
+      advance(25);
+      assert.ok(current().held.some((h) => h.by === HELPER), "an unanswered feed still holds its question");
+      feed.stop();
+      assert.equal(timers.size, 0, "cleanup cancels all remaining playback");
+      advance(60);
+      assert.deepEqual(readJobs(), [], "cleanup takes the jobs away permanently");
+      assert.equal(current().held.some((h) => h.by === HELPER), false, "cleanup withdraws the hold");
+    } finally {
+      feed?.stop();
+      if (originalWindow === undefined) delete globalThis.window;
+      else globalThis.window = originalWindow;
+    }
   } finally { await server.close(); }
 }
 
@@ -123,6 +183,31 @@ async function laidOut(s, { dock = true } = {}) {
   assert.ok(sizes.every((size) => [13, 15, 16, 18].includes(size)), `${s.width}: type on the shell's scale (13, 15, 18, and 16 for the box): ${sizes}`);
 }
 
+/** Open the completed birthday tree: the card's choice and the unsuccessful booking must both remain honest. */
+async function completedDemo(s, result) {
+  await s.check('document.querySelector(\'[data-job-id="demo-birthday"]\')?.dataset.status === "done"', "the birthday is done");
+  if (await s.evaluate('document.querySelector(\'[data-job-id="demo-birthday"] > .work-spine-fold\')?.getAttribute("aria-expanded") === "false"')) {
+    await s.click('[data-job-id="demo-birthday"] > .work-spine-fold');
+  }
+  await s.check('document.querySelector(\'[data-job-id="demo-card"]\')?.dataset.status === "done"', "the card is done");
+  assert.equal(await s.text('[data-job-id="demo-card"] .work-spine-result'), result);
+  assert.equal(await s.text('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result'), "Class found · card ready");
+  assert.equal(await s.text('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-job-title'), "Plan Mom's birthday on Saturday");
+  assert.equal(await s.text('[data-job-id="demo-card"] .work-spine-job-title'), "Draft a birthday card for Mom");
+  assert.equal(await s.evaluate('document.querySelector(\'[data-job-id="demo-card"]\').closest(".work-spine-kids").parentElement.dataset.jobId'), "demo-birthday");
+  assert.equal(await s.evaluate('document.querySelector(\'[data-job-id="demo-booking"]\')?.dataset.status'), "failed", "finishing the parent does not make the booking succeed");
+  assert.equal(await s.text('[data-job-id="demo-booking"] .work-spine-result'), "The booking site needs your sign-in, so it's left for you");
+  assert.equal(await s.text(".work-spine-counts"), "1 failed", "the waiting count is gone, the failure remains");
+  assert.equal(await s.evaluate('!document.querySelector(".remote-ask, .work-spine-question, [data-status=waiting]")'), true, "nothing asks or waits again");
+  assert.equal(await s.text(".remote-quiet"), "Nothing is waiting for you.");
+  assert.equal(await s.text(".work-spine-demo"), "Demo mode · simulated");
+  assert.equal(s.core.connected(), 0, "the local feed opens no socket");
+  assert.deepEqual(s.core.heard.filter((m) => m.type === "answer"), [], "local answers never reach a socket");
+  // The birthday tree fits in the completed view at both sizes; show it from the parent down for review.
+  await s.evaluate('document.querySelector(".work-spine-scroll").scrollTop = 0');
+  await laidOut(s);
+}
+
 try {
   // ── With no room: the page's own feed, from the start (30 times faster here), simulated, and answers that stay in the page. ──
   {
@@ -165,33 +250,55 @@ try {
     assert.equal(await s.evaluate('!document.querySelector(".remote-ask")'), true, "the question is answered: it leaves");
     assert.equal(await s.text(".remote-quiet"), "Nothing is waiting for you.");
     assert.equal(s.core.heard.filter((m) => m.type === "answer").length, 0, "simulated: nothing is sent anywhere");
+    await completedDemo(s, "Keeps the class a surprise");
     await s.shot("sent", "light");
+    await s.shot("completed-typed", "light");
     await s.scheme("dark");
     await s.shot("sent", "dark");
+    await s.shot("completed-typed", "dark");
     await s.sound("demo");
     await closeAll();
   }
 
-  // The one-tap answer, with no room too, and a window as wide as a laptop's: a column down the middle.
-  {
+  // Each one-tap answer in a fresh scene. Mention is answered early, before the hold and the final waiting parent.
+  for (const [choice, words, result] of [
+    ["mention", "Mention the pottery class in Mom's card", "Mentions the pottery class"],
+    ["surprise", "Keep it a surprise", "Keeps the class a surprise"],
+  ]) {
+    const early = choice === "mention";
+    const speed = early ? 3 : SPEED;
     const s = await scene({ width: 1440 });
-    await s.go(`?remote&speed=${SPEED}`);
+    await s.go(`?remote&speed=${speed}`);
+    await s.check('!!document.querySelector(\'[data-job-id="demo-birthday"]\')', "the feed started");
+    const finalBy = await s.evaluate(`performance.now() + ${60_000 / speed} + 500`);
     await s.check('!!document.querySelector(".remote-ask")', "its question is held for you", 40_000);
-    await s.check(`!!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result')`, "the feed has played to its end", 40_000);
+    if (!early) await s.check(`!!document.querySelector('[data-job-id="demo-birthday"] > .work-spine-bubble .work-spine-result')`, "the feed has played to its end", 40_000);
     const main = await s.rect(".remote");
     assert.ok(main.width <= 480 && Math.abs((main.left + main.right) / 2 - 720) < 1, `a laptop's window gets a column, centered: ${JSON.stringify(main)}`);
-    if (shots) await sleep(2800);
-    await laidOut(s);
-    await s.shot("ask", "light");
-    await s.scheme("dark");
-    await s.shot("ask", "dark");
-    await s.scheme("light");
-    await s.click(".remote-quick-button:last-child");
+    if (!early) {
+      if (shots) await sleep(2800);
+      await laidOut(s);
+      await s.shot("ask", "light");
+      await s.scheme("dark");
+      await s.shot("ask", "dark");
+      await s.scheme("light");
+    } else {
+      assert.equal(await s.evaluate('document.querySelector(\'[data-job-id="demo-booking"]\') === null && document.querySelector(\'[data-job-id="demo-birthday"]\').dataset.status === "running"'), true, "answer before the remaining timeline");
+    }
+    await s.click(early ? ".remote-quick-button:first-child" : ".remote-quick-button:last-child");
     await s.check('!!document.querySelector(".remote-sent")', "one tap sent it");
-    assert.equal(await s.text(".remote-sent"), "Sent to agent: “Keep it a surprise” (simulated)");
+    assert.equal(await s.text(".remote-sent"), `Sent to agent: “${words}” (simulated)`);
+    if (early) {
+      await s.check('document.querySelector(\'[data-job-id="demo-birthday"]\').dataset.status === "done"', "early answer completes the parent immediately");
+      // Completion suppresses the final event, so wait by its schedule rather than by the parent's state.
+      await s.check(`performance.now() >= ${finalBy}`, "the final event's scheduled time has passed", 40_000);
+    }
+    await completedDemo(s, result);
     await s.shot("sent", "light");
+    await s.shot(`completed-${choice}`, "light");
     await s.scheme("dark");
     await s.shot("sent", "dark");
+    await s.shot(`completed-${choice}`, "dark");
     await s.sound("demo wide");
     await closeAll();
   }
@@ -219,7 +326,7 @@ try {
     await s.type(".join input", "Maya");
     await s.click(".join-card > button");
     await s.check('!!document.querySelector(".remote")', "joined: the Remote");
-    await s.check('document.querySelector(".remote-status")?.textContent === "In the room as Maya"', "connected, under its name");
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "connected, under its name");
     assert.ok(joins.length >= 1 && joins.at(-1).name === "Maya" && joins.at(-1).room === "abcd2345", `its socket came in by name and room: ${JSON.stringify(joins)}`);
     // The replay: a waiting job is a question though no hold reached this window; the summary above it is not one.
     await s.check('!!document.querySelector(".remote-ask")', "the question waiting in the replay is held for you");
@@ -282,7 +389,7 @@ try {
     // The core replays each job as it was stamped.
     replay = [...replay, color, job("name", "waiting", { title: "Name", result: "Name the file?", at_ms: Date.now() - 5_000 })];
     away = false;
-    await s.check('document.querySelector(".remote-status")?.textContent === "In the room as Maya"', "back in the room", 30_000);
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "back on the shared map", 30_000);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Name the file?"', "the replay brings back what still waits, and not what was answered", 12_000);
     assert.equal(await s.evaluate('document.querySelector(".remote-field").value'), "report.txt", "the words typed while it was down are still there");
     await s.enter();

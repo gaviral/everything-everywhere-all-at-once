@@ -309,16 +309,16 @@ for (const scene of scenes) {
               const rail = '[data-slot="rail"]';
               const selected = (tab) => `(() => { const r = document.querySelector(${JSON.stringify(rail)}); const t = r?.querySelector('[role="tab"][aria-selected="true"]'); return !!r && r.getBoundingClientRect().height > 0 && t?.textContent.trim().startsWith(${JSON.stringify(tab)}); })()`;
               await key("c");
-              if (!await until(selected("Catalog"), 2000)) record(where, ["rail: C did not show Catalog selected"]);
-              if (!await evaluate(`!!document.querySelector('${rail} [role="switch"]')`)) record(where, ["rail: Catalog has no switch rows"]);
+              if (!await until(selected("Features"), 2000)) record(where, ["rail: C did not show Features selected"]);
+              if (!await evaluate(`!!document.querySelector('${rail} [role="switch"]')`)) record(where, ["rail: Features has no switch rows"]);
               await key("Escape");
-              if (!await until(`!document.querySelector('${rail}')`, 2000)) record(where, ["rail: Escape did not close Catalog"]);
+              if (!await until(`!document.querySelector('${rail}')`, 2000)) record(where, ["rail: Escape did not close Features"]);
               await key("y");
               if (!await until(selected("History"), 2000)) record(where, ["rail: Y did not show History selected"]);
               await key("Escape");
               if (!await until(`!document.querySelector('${rail}')`, 2000)) record(where, ["rail: Escape did not close History"]);
               await key("c");
-              if (!await until(selected("Catalog"), 2000)) record(where, ["rail: C did not reopen Catalog"]);
+              if (!await until(selected("Features"), 2000)) record(where, ["rail: C did not reopen Features"]);
               await check(`${where} rail open`, true);
               await key("Escape");
             }

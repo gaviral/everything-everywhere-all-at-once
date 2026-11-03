@@ -2,7 +2,7 @@
   "id": "/",
   "name": "E2A2O",
   "short_name": "E2A2O",
-  "description": "Talk or type; each thought lands on the right thread of a live map.",
+  "description": "Talk or type; each thought lands on the right topic of a live map.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -44,7 +44,7 @@ const cls = (...names: (string | false | undefined | null)[]) => names.filter(Bo
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
-  if (!props.map.threads.length) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its spine starts here.</p>;
+  if (!props.map.threads.length) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
 }
 
@@ -766,7 +766,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
-        aria-label="Your threads as spines: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures">
+        aria-label="Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures">
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar />
         <EdgeLabelRenderer>

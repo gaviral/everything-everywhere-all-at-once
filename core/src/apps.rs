@@ -748,7 +748,7 @@ fn why(watcher: &Watcher) -> String {
         Watcher::Time { every_secs, .. } if *every_secs > 0 => format!("its timer, every {}", span(*every_secs)),
         Watcher::Time { at_ms, .. } => crate::clock::local(*at_ms).and_then(|t| t.get(11..16).map(|hm| format!("it was set for {hm}")))
             .unwrap_or_else(|| "its set time came".into()),
-        Watcher::NewThought { min_points } if *min_points > 1 => format!("a thread reached {min_points} points"),
+        Watcher::NewThought { min_points } if *min_points > 1 => format!("a topic reached {min_points} points"),
         Watcher::NewThought { .. } => "a new thought landed".into(),
         Watcher::AppRequest {} => "you asked for it".into(),
     }

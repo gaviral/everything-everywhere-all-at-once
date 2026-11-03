@@ -19,7 +19,7 @@ const URL: &str = "https://api.meta.ai/v1/chat/completions";
 const PATIENCE: Duration = Duration::from_secs(8);
 /// Said while the model looks. It stays up until the answer (the UI doesn't time it out), so whatever stops a
 /// search takes it down.
-const LOOKING: &str = "Looking through your threads…";
+const LOOKING: &str = "Looking through your topics…";
 
 #[derive(Default)]
 pub struct Runtime {
@@ -205,7 +205,9 @@ fn query(question: &str) -> Option<(String, bool)> {
     }
     let pointed = the_one(query)
         .or_else(|| POINTERS.iter().find_map(|p| query.strip_prefix(&format!("{p} "))))
-        .or_else(|| query.strip_suffix(" thread"));
+        .or_else(|| query.strip_suffix(" thread"))
+        // "Find the rent topic", but not "go back to the topic" or "find a new topic": a name has to come before it.
+        .or_else(|| query.strip_suffix(" topic").filter(|name| names_a_topic(name)));
     // A tag ("#paris") points at the map as a pointer does.
     let saying = ask == "take me back to" && pointed.is_none() && !query.starts_with('#');
     let query = match pointed {
@@ -217,13 +219,20 @@ fn query(question: &str) -> Option<(String, bool)> {
     if query.is_empty() || query == "please" { None } else { Some((query.into(), saying)) }
 }
 
+/// Whether `name`, said before "topic", is one ("the rent") and not any ("a new", "another", "the next", or nothing).
+fn names_a_topic(name: &str) -> bool {
+    const ANY: [&str; 12] = ["new", "next", "last", "previous", "first", "other", "another", "same", "different", "current", "main", "whole"];
+    let any: Vec<String> = ANY.iter().map(|word| stem(word)).collect();
+    words(name).iter().any(|word| !any.contains(word))
+}
+
 /// Words that point a "find" or "take me to" at the map, and the topic after them: what was said on it,
 /// or a thread. Any ask may use them.
-const POINTERS: [&str; 19] = [
+const POINTERS: [&str; 21] = [
     "where i talked about", "where we talked about", "where i was talking about", "where we were talking about",
     "where i said something about", "where we said something about", "where i said", "where we said", "where i mentioned", "where we mentioned",
     "where i wrote about", "where i discussed", "where we discussed", "what i said about", "what we said about",
-    "the thread about", "the thread on", "the part about", "my thoughts on",
+    "the thread about", "the thread on", "the topic about", "the topic on", "the part about", "my thoughts on",
 ];
 
 /// "The one about the lease", or "the one" before any "where …" above ("the one where I said…"): the topic.

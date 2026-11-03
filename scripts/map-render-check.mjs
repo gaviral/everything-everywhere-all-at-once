@@ -89,7 +89,7 @@ try {
   const junk = (html) => text(html).match(/\b(undefined|NaN|null)\b|\[object Object\]|Invalid Date/)?.[0] ?? null;
   const count = (html, piece) => html.split(piece).length - 1;
   // The map alone (the ? list's legend draws a sample of every chip and mark too).
-  const mapOf = (html) => html.slice(html.indexOf('aria-label="Thread map"'), html.indexOf("</main>"));
+  const mapOf = (html) => html.slice(html.indexOf('aria-label="Cards"'), html.indexOf("</main>"));
   // The opening tag that carries `attribute`, so its other attributes are checked in any order.
   const tagWith = (html, attribute) => html.match(new RegExp(`<[a-z]+ [^>]*${attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>`))?.[0] ?? "";
   const has = (tag, ...attributes) => attributes.every((a) => tag.includes(a));

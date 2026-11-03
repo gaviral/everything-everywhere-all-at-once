@@ -135,11 +135,20 @@ fn every_act_has_one_definition_and_its_phrases_read_as_it() {
 #[test]
 fn the_safety_net_runs_only_an_act_it_may_pick_written_as_the_rules_read_it() {
     for d in CATALOG.iter().filter(|d| d.template.is_some()) {
-        let said = d.template.unwrap().replace("<thread title>", "Garden").replace("<words>", "the garden shed").replace("<does what>", "pings me about bills");
+        let said = d.template.unwrap().replace("<topic title>", "Garden").replace("<words>", "the garden shed").replace("<does what>", "pings me about bills");
         assert_eq!(checked(&Verdict { act: name(d.act), say: said.clone() }), Some((d.act, said.clone())), "{said}");
     }
     let no = |act: &str, say: &str| assert_eq!(checked(&Verdict { act: act.into(), say: say.into() }), None, "{act}: {say}");
     no("unfold", "go to the palace");
+    no("unfold", "go to the pictures");
+    // The safety net writes the new words, and the rules read either noun as the act.
+    for (act, say) in [
+        ("palace", "pictures"), ("map", "cards"), ("new_thread", "new topic"), ("new_thread_about", "new topic about the garden shed"),
+        ("file", "add the garden shed to the garden topic"), ("unfold", "expand the garden topic"), ("fold", "collapse the garden topic"),
+        ("move", "move that to the garden topic"), ("move", "move that to the garden thread"), ("rename", "rename the garden topic to Backyard"),
+    ] {
+        assert_eq!(checked(&Verdict { act: act.into(), say: say.into() }), Some((CATALOG.iter().find(|d| name(d.act) == act).unwrap().act, say.to_string())), "{say}");
+    }
     no("approve", "add it to Reminders");
     no("yes", "yes");
     no("thought", "");
@@ -154,6 +163,28 @@ fn the_safety_net_runs_only_an_act_it_may_pick_written_as_the_rules_read_it() {
     let names = body["response_format"]["json_schema"]["schema"]["properties"]["act"]["enum"].as_array().unwrap().clone();
     assert!(names.contains(&json!("unfold")) && names.contains(&json!("thought")));
     assert!(!names.contains(&json!("approve")) && !names.contains(&json!("yes")) && !names.contains(&json!("redo")));
+}
+
+/// The new words (Topic, Tangent, Pictures, Cards) are commands only as the whole turn, and only as an old word was: ordinary
+/// talk that holds them is no request, so it is kept as a thought (a map with a Garden and a Bills thread, no key).
+#[tokio::test]
+async fn ordinary_talk_with_the_new_words_stays_a_thought() {
+    for talk in [
+        "The topic of the meeting is hiring", "Let's change the topic", "Back to the topic", "Go back to the topic", "Find a new topic for the essay",
+        "Go to another topic", "Go to the other topic", "Next topic is the budget", "That topic came up in the call", "Move on to the next topic",
+        "Add a topic to the agenda", "Put the topic on the agenda", "Show me the topic list", "I want to save this topic for later",
+        "Save this topic as a note for Dana", "Find the topic we talked about yesterday", "Take me to the next topic", "Let's focus on the topic",
+        "Expand the topic", "Show all the topics we covered", "Expand every topic we covered", "Delete this topic", "I went on a tangent",
+        "That was a tangent", "Show me pictures of the trip", "Send the pictures to Dana", "Pictures of the garden", "I need to buy cards",
+        "Open cards", "Show me the cards on the table", "Business cards", "The pictures were great", "Pay the cards off", "These cards are old",
+    ] {
+        let f = Fixture::new(garden());
+        assert_eq!(f.say(talk).await, [format!("added {talk}")], "{talk}");
+    }
+    // And the old words, as before.
+    for (said, act) in [("Palace", Act::Palace), ("Map", Act::Map), ("New thread", Act::NewThread), ("Rename this thread to Backyard", Act::Rename)] {
+        assert_eq!(classify(said), Some(act), "{said}");
+    }
 }
 
 #[test]
@@ -309,15 +340,32 @@ async fn a_view_and_a_move_are_redone_and_scratched() {
     // The new view replaces the old one: it isn't undone first.
     assert_eq!(f.say("No, I meant the map").await, ["view map"]);
     // The window puts back what it showed before the map: it alone knows (Map said on Map stays Map).
-    assert_eq!(f.say("Scratch that").await, ["revert", "notice Undone: switch to the map"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "notice Undone: switch to the Cards view"]);
     let f = Fixture::new(garden());
     assert_eq!(f.say("Next one").await, ["notice On to Bills", "on T2"]);
-    assert_eq!(f.say("Scratch that").await, ["on T1", "notice Undone: go to the next thread"]);
+    assert_eq!(f.say("Scratch that").await, ["on T1", "notice Undone: go to the next topic"]);
     // Nothing to take back.
     let f = Fixture::new(garden());
     assert_eq!(f.say("Scratch that").await, ["notice Nothing to undo: nothing said just before"]);
     f.say("Help").await;
     assert_eq!(f.say("Undo").await, ["notice Can't undo that here: your next turn, Esc or a click closes it"]);
+}
+
+/// "Pictures" and "Cards" are the views' names on screen; "palace" and "map" were their names, and a correction or an
+/// undo work the same for both.
+#[tokio::test]
+async fn pictures_and_cards_are_redone_and_scratched_as_palace_and_map_are() {
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Pictures").await, ["view palace"]);
+    assert_eq!(f.say("No, I meant the cards").await, ["view cards"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "notice Undone: switch to the Cards view"]);
+    let f = Fixture::new(garden());
+    assert_eq!(f.say("Map").await, ["view map"]);
+    assert_eq!(f.say("No, I meant pictures").await, ["view palace"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "notice Undone: switch to the Pictures view"]);
+    // On an empty map the Pictures view would show nothing new, as the Palace's would: it says why.
+    let f = Fixture::new(World::default());
+    assert_eq!(f.say("Pictures").await, ["notice Nothing on the map yet: say a thought first"]);
 }
 
 #[tokio::test]
@@ -345,7 +393,7 @@ async fn oops_scratch_that_takes_the_thought_off_and_adds_none() {
 async fn scratching_a_filing_takes_its_words_and_the_thread_it_started_away() {
     let f = Fixture::new(garden());
     let filed = f.say("Add tent pegs to the packing list").await;
-    assert!(filed.contains(&"notice Added to a new thread: Packing list".to_string()), "{filed:?}");
+    assert!(filed.contains(&"notice Added to a new topic: Packing list".to_string()), "{filed:?}");
     let started = f.core.snapshot().threads.iter().find(|t| t.title == "Packing list").unwrap().id.clone();
     let undone = f.click_undo(undoable(&filed));
     assert!(undone.iter().any(|l| l.starts_with("removed th-")), "{undone:?}");
@@ -402,7 +450,13 @@ async fn focus_on_this_focuses_the_card_this_means() {
     attend(&f.core, "you", None, Some("T2".into()));
     assert_eq!(f.say("Focus").await, ["view focus"]);
     assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
-    assert_eq!(f.say("Scratch that").await, ["revert", "on T1", "notice Undone: show only one thread"]);
+    assert_eq!(f.say("Scratch that").await, ["revert", "on T1", "notice Undone: show only one topic"]);
+    // "This topic" and "that topic" point as "this thread" does.
+    for said in ["Focus on this topic", "Let's focus on that topic", "Focus on that thread"] {
+        let f = Fixture::new(garden());
+        attend(&f.core, "you", None, Some("T2".into()));
+        assert_eq!(f.say(said).await, ["on T2", "view focus"], "{said}");
+    }
     // The card the pointer left just now still counts, and "let's" leads in as it does for "let's focus".
     attend(&f.core, "you", None, None);
     assert_eq!(f.say("Let's focus on that one").await, ["on T2", "view focus"]);
@@ -423,7 +477,7 @@ async fn focus_on_this_focuses_the_card_this_means() {
         assert_eq!(f.say(said).await, ["notice Nothing on the map yet: say a thought first"], "{said}");
     }
     let f = Fixture::new(World { active: None, active_by: HashMap::new(), ..garden() });
-    assert_eq!(f.say("Focus").await, ["notice Point at a thread, then say “focus on this”"]);
+    assert_eq!(f.say("Focus").await, ["notice Point at a topic, then say “focus on this”"]);
     // Pointed at, it moves you there even from nowhere.
     attend(&f.core, "you", None, Some("T2".into()));
     assert_eq!(f.say("Focus on this").await, ["on T2", "view focus"]);
@@ -707,7 +761,7 @@ async fn the_undo_key_takes_back_the_last_turn_as_undo_that_does() {
     };
     let f = Fixture::new(garden());
     assert_eq!(f.say("Next one").await, ["notice On to Bills", "on T2"]);
-    assert_eq!(key(&f), ["on T1", "notice Undone: go to the next thread"]);
+    assert_eq!(key(&f), ["on T1", "notice Undone: go to the next topic"]);
     let f = Fixture::new(garden());
     f.say("Buy more stakes for the beans").await;
     let id = f.core.snapshot().thoughts.last().unwrap().id.clone();

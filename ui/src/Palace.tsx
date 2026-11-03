@@ -166,7 +166,7 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
       <span className="palace-title">{thread.title}</span>
       {/* Under the title, never over the picture; read as the tile's description, not its name. */}
       {thread.last_point && <span className="palace-point" id={`palace-point-${thread.id}`} aria-hidden="true"><Markdown text={capitalized(thread.last_point)} /></span>}
-      {under && <span className="palace-parent">Branch of {under.title}</span>}
+      {under && <span className="palace-parent">Tangent of {under.title}</span>}
     </button>;
   };
   // Rooms with branches come first; threads on their own share one grid under their own heading after them,
@@ -175,22 +175,22 @@ export function Palace({ threads, active, onOpen }: { threads: Thread[]; active:
   const alone = rooms.filter((room) => room.members.length === 1);
 
   return (
-    <main className="palace" ref={container} aria-label="Palace of threads" data-guide="palace">
+    <main className="palace" ref={container} aria-label="Pictures of topics" data-guide="palace">
       <div className="palace-intro">
-        <div><span className="palace-eyebrow">A picture for every thread</span><h1>Your palace</h1></div>
-        <p>Open a picture to return to its thread.</p>
+        <div><span className="palace-eyebrow">A picture for every topic</span><h1>Your pictures</h1></div>
+        <p>Open a picture to return to its topic.</p>
       </div>
       <div className="palace-rooms" ref={roomsRef} style={{ "--tile": `${columns.width}px` } as CSSProperties}>
         {branched.map(({ root, members }) => (
-          <section className="palace-room" key={root.id} aria-label={`Room: ${root.title}`} style={{ ...roomStyle(colors.get(root.id)), ...span(members.length) }}>
-            <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} threads</span></div>
+          <section className="palace-room" key={root.id} aria-label={root.title} style={{ ...roomStyle(colors.get(root.id)), ...span(members.length) }}>
+            <div className="palace-room-heading"><span>{root.title}</span><span className="palace-room-rule" /><span>{members.length} {members.length === 1 ? "topic" : "topics"}</span></div>
             <div className="palace-grid">{members.map((thread) => tile(thread, root))}</div>
           </section>
         ))}
         {alone.length > 0 && (
-          <section className="palace-room" aria-label="Threads on their own" style={span(alone.length)}>
+          <section className="palace-room" aria-label="Topics on their own" style={span(alone.length)}>
             {/* The heading sets them apart from the rooms above; with no rooms, it would say nothing. */}
-            {branched.length > 0 && <div className="palace-room-heading"><span>On their own</span><span className="palace-room-rule" /><span>{alone.length} {alone.length === 1 ? "thread" : "threads"}</span></div>}
+            {branched.length > 0 && <div className="palace-room-heading"><span>On their own</span><span className="palace-room-rule" /><span>{alone.length} {alone.length === 1 ? "topic" : "topics"}</span></div>}
             <div className="palace-grid">{alone.map(({ root }) => tile(root, root))}</div>
           </section>
         )}

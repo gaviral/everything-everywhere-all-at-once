@@ -123,7 +123,7 @@ export default function Countdown(_props: BrickProps) {
   const fullText = upcoming.length ? upcoming.map(({ label, left }) => `${label} ${remaining(left)}`).join(". ") : "No deadlines. Add";
 
   return <div ref={root} className="countdown" data-guide="countdown">
-    <button ref={trigger} type="button" className="countdown-card" aria-label={`Countdown. ${fullText}`}
+    <button ref={trigger} type="button" className="countdown-card" aria-label={`Deadlines. ${fullText}`}
       aria-expanded={open} aria-controls={open ? editorId : undefined} onClick={() => { setNow(Date.now()); setOpen(!open); }}>
       {upcoming.length ? upcoming.map(({ label, left }, i) => {
         const line = i === 0 ? "countdown-nearest" : "countdown-next";
@@ -133,8 +133,8 @@ export default function Countdown(_props: BrickProps) {
         </span>;
       }) : <span className="countdown-empty">No deadlines <span className="countdown-add-label">Add</span></span>}
     </button>
-    {open && <div ref={editor} id={editorId} className="countdown-editor" role="region" aria-label="Countdown">
-      <div className="countdown-top"><strong>Countdown</strong><button type="button" className="countdown-close" aria-label="Close Countdown" onClick={close}>×</button></div>
+    {open && <div ref={editor} id={editorId} className="countdown-editor" role="region" aria-label="Deadlines">
+      <div className="countdown-top"><strong>Deadlines</strong><button type="button" className="countdown-close" aria-label="Close Deadlines" onClick={close}>×</button></div>
       <ol className="countdown-list">
         {deadlines.map((entry, i) => <li key={i} className="countdown-row">
           <label className="countdown-field countdown-what">Label

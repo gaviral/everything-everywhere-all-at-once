@@ -127,7 +127,7 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
         }
         let world = core.snapshot();
         if can_place() && placing(&world, since, crate::now_ms()) {
-            state(&core, &speaker, period, false, "A thought is still finding its thread. Try again in a moment.", None);
+            state(&core, &speaker, period, false, "A thought is still finding its topic. Try again in a moment.", None);
             return;
         }
         let source = slice(&world, period, crate::now_ms());
@@ -547,8 +547,8 @@ fn main_threads(source: &Source) -> String {
     let named = match (titles.as_slice(), others) {
         ([one], 0) => one.to_string(),
         ([first @ .., last], 0) => format!("{} and {last}", first.join(", ")),
-        (_, 1) => format!("{} and 1 other thread", titles.join(", ")),
-        _ => format!("{} and {others} other threads", titles.join(", ")),
+        (_, 1) => format!("{} and 1 other topic", titles.join(", ")),
+        _ => format!("{} and {others} other topics", titles.join(", ")),
     };
     short(&format!("You spent time on {named}."), 280)
 }
@@ -837,7 +837,7 @@ mod tests {
             world.thoughts.extend((0..points).map(|n| thought(i as u64 * 10 + n, &id, 1000 + i as u64)));
         }
         let recap = finish(slice(&world, Period::Session, 2000), answer(), "key".into());
-        assert_eq!(recap.summary, "You spent time on Topic T1, Topic T4, Topic T3 and 2 other threads.");
+        assert_eq!(recap.summary, "You spent time on Topic T1, Topic T4, Topic T3 and 2 other topics.");
 
         // A recap saved before plans existed still loads.
         let line = serde_json::to_string(&Change::RecapSaved { recap }).unwrap().replace(r#""plans":[],"#, "");

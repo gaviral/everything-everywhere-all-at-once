@@ -13,7 +13,7 @@ export default function Template({ map, actions, on, brick }: BrickProps) {
   const placed = map.thoughts.filter((thought) => thought.placed).length;
   const active = map.threads.find((thread) => thread.id === map.active);
   return <div className="template">
-    <p><strong>{brick.name}</strong> · {map.threads.length} {map.threads.length === 1 ? "thread" : "threads"} · {placed} {placed === 1 ? "thought" : "thoughts"}{landed && ` · last landed on ${landed}`}</p>
+    <p><strong>{brick.name}</strong> · {map.threads.length} {map.threads.length === 1 ? "topic" : "topics"} · {placed} {placed === 1 ? "thought" : "thoughts"}{landed && ` · last landed on ${landed}`}</p>
     {active && <button type="button" className="template-open" onClick={() => actions.openThread(active.id)}>Open {active.title}</button>}
   </div>;
 }

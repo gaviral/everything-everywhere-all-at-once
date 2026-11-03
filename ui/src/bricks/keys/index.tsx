@@ -154,12 +154,12 @@ export default function Keys({ map, actions }: BrickProps) {
   const point = points[index];
   const note = point && map.notes[point.thought.id];
   if (!hint && !thread) return null;
-  return <aside className="keys-panel" aria-label="Map keyboard navigation">
+  return <aside className="keys-panel" aria-label="Keyboard shortcuts">
     {hint ? <div role="status">
       <strong>Move around the map</strong>
       <p><kbd>j ↓</kbd> next point · <kbd>k ↑</kbd> previous point</p>
-      <p><kbd>l →</kbd> next thread · <kbd>h ←</kbd> previous thread</p>
-      <p><kbd>Enter</kbd> details · <kbd>Esc</kbd> clear · <kbd>?</kbd> these keys</p>
+      <p><kbd>l →</kbd> next topic · <kbd>h ←</kbd> previous topic</p>
+      <p><kbd>Enter</kbd> details · <kbd>Esc</kbd> clear · <kbd>?</kbd> these shortcuts</p>
       <p><kbd>{MIC_KEY}</kbd> start or stop listening</p>
       <small>Any key or tap hides this. Typing stays yours.</small>
     </div> : <>
@@ -168,7 +168,7 @@ export default function Keys({ map, actions }: BrickProps) {
         <button type="button" onClick={clear} aria-label="Clear keyboard selection">×</button>
       </div>
       <div role="status" aria-live="polite" aria-atomic="true">
-        <small>{point ? `Point ${index + 1} of ${points.length}` : points.length ? "j / k to choose a point" : "No points in this thread"}</small>
+        <small>{point ? `Point ${index + 1} of ${points.length}` : points.length ? "j / k to choose a point" : "No points in this topic"}</small>
         {point && <p className={selected?.details ? "keys-point" : "keys-preview"}>{point.thought.point || point.thought.text}</p>}
       </div>
       {point && selected?.details && <div className="keys-details">
@@ -177,7 +177,7 @@ export default function Keys({ map, actions }: BrickProps) {
         {note?.why && <p>{note.why}</p>}
         {note?.assumed && <p>Assumed: {note.assumed}</p>}
       </div>}
-      <small>Enter for details · Esc to clear · ? for keys · {MIC_KEY} to listen</small>
+      <small>Enter for details · Esc to clear · ? for shortcuts · {MIC_KEY} to listen</small>
     </>}
   </aside>;
 }
