@@ -5,10 +5,12 @@
 //    the map shows it, two lines at a time, page by page, each up for its reading time; the pointer on it holds it.
 //    Said while you talk or type, it waits for your pause. Talk over it and it steps back at once: what you didn't get
 //    to read waits in the held stack (Continue).
-//  - A point: one arrow from the caption to the named part, a ring round the part; the part scrolled into view and
-//    followed as it moves. Esc or a click takes it down, except a click on what the arrow shows the way through (a
-//    folded card's Show, the Map button): the arrow then goes on to the part itself. A part that isn't on screen isn't
-//    guessed at: the arrow shows what reveals it, and the caption says where it is; with no such rule, no arrow.
+//  - A point: a ring round the named part and a short arrow into it, from the nearest side that has room (never across a
+//    button or a line of text: the buttons and words near the part are measured, and the arrow goes where they aren't);
+//    with no room on any side, the ring alone. The part is scrolled into view and followed as it moves. Esc or a click
+//    takes it down, except a click on what the arrow shows the way through (a folded card's Show, the Map button): the
+//    arrow then goes on to the part itself. A part that isn't on screen isn't guessed at: the arrow shows what reveals
+//    it, and the caption says where it is; with no such rule, no arrow.
 //  - A held question waits in the held stack (data-slot="held" once the page has one; till then bottom right, a chip on
 //    a phone) while you talk or type, and is asked at your next pause: its caption with Go ahead ↵ · Later L · Drop it
 //    esc and an arrow at what it's about. Talking over it before you could read it puts it back; after, answers it.
@@ -20,9 +22,9 @@ import type { BrickOn } from "./bricks/contract";
 import type { World } from "./core";
 import { Markdown } from "./md";
 import {
-  aimAt, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
-  inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, RING_PAD, route, stepBack,
-  useGuide, useWindowOn, watchGuide, type Held, type Said, type Shown, type Where,
+  aimAt, AROUND, askAtPause, askMs, askNow, busy, captionMs, captionRead, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
+  inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, overMs, pages, pauseIn, plain, pointer, RING_PAD, shape, stepBack,
+  useGuide, useWindowOn, watchGuide, type Box, type Held, type Plan, type Said, type Shown, type Where,
 } from "./guide-core";
 import { SHELL2 } from "./shell/flag";
 import { holdQuestion, dropHeld as dropShellHeld } from "./shell/held";
@@ -147,10 +149,12 @@ function useKeys() {
   }, []);
 }
 
+/** Whether `el` is drawn: it has a box and isn't hidden or faded out. */
+const drawn = (el: Element) => el.getClientRects().length > 0
+  && (typeof el.checkVisibility !== "function" || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+
 /** The visible part named `name`, if any: the first of its elements that's drawn (one leaving can linger as it fades). */
 function find(name: string): HTMLElement | null {
-  const drawn = (el: HTMLElement) => el.getClientRects().length > 0
-    && (typeof el.checkVisibility !== "function" || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
   for (const el of document.querySelectorAll<HTMLElement>(`[data-guide="${CSS.escape(name)}"]`)) if (drawn(el)) return el;
   // A thought said across a pause shows inside the point it carries on into (chunks.tsx), which lists it as a head.
   if (name.startsWith("point:")) {
@@ -176,6 +180,47 @@ const FLOATING = [...SLOTTED, "header", ".map-tools", ".notice-lane", ".dock", "
 function drawnBox(selector: string): DOMRect | null {
   const r = document.querySelector(selector)?.getBoundingClientRect();
   return r && r.width > 0 && r.height > 0 ? r : null;
+}
+
+/** What an arrow keeps clear of: controls, and cards and pills with edges of their own (a card's shadow and outline
+ *  reach a few pixels past its box, so a card is kept clear of by more). */
+const CONTROLS = 'button, a[href], input, textarea, select, summary, [role="button"], [role="tab"], [role="switch"], [role="combobox"], [role="option"]';
+const SURFACES = [".react-flow__node", ".shell-pill", ".talk-pill", ".talk-rail", '[data-slot="rail"]', ".spine-pill", ".spine-stops", ".spine-shelf-head", ".spine-cue",
+  ".pullback", ".notice", ".map-change", ".away", ".guide-caption", ".guide-held-card", ".shell-find-results", ".shell-composer", ".dock-inner", "dialog", ".explain"].join(", ");
+
+/** A card's shadow and outline, past its box. */
+const EDGE_PAD = 8;
+
+/** What is drawn within the arrow's reach of the part at `part`, as boxes on screen: each control, each card or pill, and
+ *  each line of text (a paragraph's empty corner is free). Left out: what's inside the part (the arrow never goes there),
+ *  what holds it (a card the part is in), the guide's own layer, and what's hidden. */
+function around(part: Box, target: Element): Box[] {
+  const field = { left: part.left - AROUND, top: part.top - AROUND, right: part.right + AROUND, bottom: part.bottom + AROUND };
+  const near = (r: DOMRect) => r.width >= 2 && r.height >= 2 && r.right > field.left && r.left < field.right && r.bottom > field.top && r.top < field.bottom;
+  const box = (r: DOMRect, pad = 0): Box => ({ left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad });
+  const out: Box[] = [];
+  const inside = (el: Element) => !!el.closest(".guide-layer, .sr-only") || target.contains(el);
+  for (const el of document.querySelectorAll(`${CONTROLS}, ${SURFACES}`)) {
+    const r = el.getBoundingClientRect();
+    // A card or a control that holds the part isn't something to keep clear of.
+    if (near(r) && !inside(el) && !el.contains(target) && drawn(el)) out.push(box(r, el.matches(SURFACES) ? EDGE_PAD : 2));
+  }
+  // Text, by its lines: a text node's own rectangles.
+  const words = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  const shown = new Map<Element, boolean>();
+  for (let node = words.nextNode(); node; node = words.nextNode()) {
+    const parent = node.parentElement;
+    if (!parent || !node.nodeValue?.trim()) continue;
+    range.selectNodeContents(node);
+    for (const r of range.getClientRects()) {
+      if (!near(r)) continue;
+      let ok = shown.get(parent);
+      if (ok === undefined) { ok = !inside(parent) && !parent.closest(".guide-caption") && drawn(parent); shown.set(parent, ok); }
+      if (ok) out.push(box(r));
+    }
+  }
+  return out;
 }
 
 /** Where `el` can be seen: anywhere, if it floats; else under what covers the map's top (today's header, and the map's
@@ -204,6 +249,9 @@ function bringIntoView(el: HTMLElement, instant: boolean) {
   window.scrollBy({ top: by, behavior });
 }
 
+/** How long a planned arrow stands before the room round the part is measured again. */
+const REPLAN_MS = 250;
+
 /** The arrowhead, pointing right with its tip at 0,0 (turned and moved to the arrow's end each frame). */
 const head = (size: number) => `M 0 0 L ${-size} ${-size * 0.6} L ${-size} ${size * 0.6} Z`;
 
@@ -220,6 +268,8 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
   const aimNow = useRef(aim);
   const aimed = useRef<{ el: HTMLElement | null; via: boolean }>({ el: null, via: false });
   const at = useRef<Where>(null!);
+  // The arrow as last planned, for which part, and when.
+  const arrow = useRef<{ el: HTMLElement | null; seen: boolean; at: number; plan: Plan | null }>({ el: null, seen: false, at: -Infinity, plan: null });
   at.current = {
     map: world, view, query, focus, shown: (name) => !!find(name),
     folded: (id) => !!find(`thread:${id}`)?.classList.contains("collapsed"),
@@ -259,9 +309,9 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
     return () => { cancelAnimationFrame(frame); where(""); };
   }, [shown.n]);
 
-  // The part, its ring and the arrow from the caption to it, where they are now. Returns "aimed", "past" (the part is
-  // scrolled away: the arrow points at the edge it's past), "near" (the caption is at it already: the ring alone) or
-  // "alone" (nothing to aim at, or no caption yet: neither).
+  // The part, its ring and the short arrow into it, where they are now. Returns "aimed", "past" (the part is scrolled
+  // away: the arrow points at the edge it's past), "near" (the ring alone: the caption is at the part already, or no
+  // side of it has room for an arrow) or "alone" (nothing to aim at, or no caption yet: neither).
   const position = (el: HTMLElement | null): string => {
     const from = drawnBox(".guide-caption");
     if (!el || !from || !ring.current || !line.current) return "alone";
@@ -274,7 +324,17 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
       spot.style.width = `${Math.round(part.right - part.left + 2 * RING_PAD)}px`;
       spot.style.height = `${Math.round(part.bottom - part.top + 2 * RING_PAD)}px`;
     }
-    const path = route(from, part, { width, height, ...(el.closest(FLOATING) ? {} : band) });
+    // The arrow is planned where there's room: again when the part is a new one, or a quarter second has passed (what's
+    // near it moves with a scroll, a card, a pill), and drawn at the part, as it moves, in between.
+    const kept = arrow.current;
+    const now = performance.now();
+    if (kept.el !== el || kept.seen !== seen || now - kept.at > REPLAN_MS) {
+      const screen = { width, height, ...(el.closest(FLOATING) ? {} : band) };
+      const edge = seen ? undefined : part.top <= band.top + 1 ? "top" : "bottom";
+      const same = kept.el === el && kept.seen === seen;
+      arrow.current = { el, seen, at: now, plan: pointer(part, from, screen, around(part, el), { keep: same ? kept.plan : null, edge }) };
+    }
+    const path = arrow.current.plan && shape(arrow.current.plan, part);
     if (!path) return seen ? "near" : "alone";
     const f = (n: number) => n.toFixed(1);
     const d = `M ${f(path.start.x)} ${f(path.start.y)} C ${f(path.c1.x)} ${f(path.c1.y)} ${f(path.c2.x)} ${f(path.c2.y)} ${f(path.end.x)} ${f(path.end.y)}`;
@@ -307,7 +367,7 @@ function Arrow({ shown, ink, world, view, query, focus, say, where }: Props & { 
   return createPortal(<div ref={layer} className="guide-layer" data-ai={ink || undefined} popover="manual" aria-hidden="true" data-state="">
     <div ref={ring} className="guide-ring" />
     <svg className="guide-arrow" width="100%" height="100%">
-      {/* Drawn again from the caption each time it's aimed somewhere new: the eye follows the line to the part. */}
+      {/* Drawn out again from its tail each time it's aimed somewhere new: the eye follows the line into the part. */}
       <g key={aim.name ?? ""} className="guide-arrow-move">
         <path ref={halo} className="guide-arrow-halo" pathLength={1} />
         <path ref={line} className="guide-arrow-line" pathLength={1} />

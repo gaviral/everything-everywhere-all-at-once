@@ -1,8 +1,10 @@
 // Edge chips: something new landed out of view. Each sits where the line from the middle of the view toward it crosses
 // the edge, with its thread's color and title and "new", and stays until it's seen (it comes into view, or its chip is
-// clicked), not for a guessed time. Four at most, newest first; the rest wait behind "+N". A phone has no room at its
-// edges for words: there they line up above the composer, each with the way to go.
-import { useEffect } from "react";
+// clicked), not for a guessed time. Four at most, newest first; the rest wait behind "+N". A chip never sits under
+// what floats over the canvas (the corners' controls, the Talk pill, the shelf): there it couldn't be pressed, so its
+// slot goes to the next one along the edge. A phone has no room at its edges for words: there they line up above the
+// composer, each with the way to go, as many as keep a title readable, the rest behind "+N".
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "@xyflow/react";
 import type { Area } from "./camera";
 import type { Item, Layout } from "./layout";
@@ -19,6 +21,9 @@ export interface Cue {
 /** Chips shown at once; the rest wait behind "+N". A phone's row has room for two. */
 export const CUES_SHOWN = 4;
 const CUES_SHOWN_NARROW = 2;
+/** The least a phone chip's title may be squeezed to, in px (about nine letters, its ellipsis too): narrower, and it
+ *  would read as a lone letter, so the row shows one chip fewer and counts it in "+N" instead. */
+export const MIN_LABEL = 64;
 const INSET = 16;
 const CHIP_WIDTH = 240;
 const CHIP_HEIGHT = 34;
@@ -42,8 +47,10 @@ export interface CuePlacement {
   cue: CueTarget; edge: Edge; x: number; y: number; width: number; height: number; extra: number;
 }
 
-/** Finite edge slots, newest first. Hidden arrivals remain in the aggregate, even when the area collapses. */
-export function placeCues(cues: readonly CueTarget[], area: Area): { chips: CuePlacement[]; hidden: CueTarget[] } {
+/** Finite edge slots, newest first. Hidden arrivals remain in the aggregate, even when the area collapses. `avoid` is
+ *  what floats over the area (in its pixels): a slot that would touch any of it isn't one, and an edge with none left
+ *  gives its arrivals the nearest slot on another. */
+export function placeCues(cues: readonly CueTarget[], area: Area, avoid: readonly Area[] = []): { chips: CuePlacement[]; hidden: CueTarget[] } {
   const newest = cues.map((cue, i) => ({ cue, i })).sort((a, b) => b.cue.at - a.cue.at || a.i - b.i).map(({ cue }) => cue);
   const finite = [area.x0, area.y0, area.x1, area.y1].every(Number.isFinite);
   const w = area.x1 - area.x0, h = area.y1 - area.y0;
@@ -53,17 +60,19 @@ export function placeCues(cues: readonly CueTarget[], area: Area): { chips: CueP
   const left = area.x0 + ix, top = area.y0 + iy, right = area.x1 - ix, bottom = area.y1 - iy;
   const width = Math.min(CHIP_WIDTH, right - left), height = Math.min(CHIP_HEIGHT, bottom - top);
   const mx = left + (right - left) / 2, my = top + (bottom - top) / 2;
-  const slots: Omit<CuePlacement, "cue" | "extra">[] = [];
+  const grid: Omit<CuePlacement, "cue" | "extra">[] = [];
   for (const edge of ["left", "right", "top", "bottom"] as Edge[]) {
     const vertical = edge === "left" || edge === "right";
     const span = vertical ? bottom - top : right - left, size = vertical ? height : width;
     const count = Math.min(CUES_SHOWN + 1, Math.floor((span + GAP) / (size + GAP)));
     for (let i = 0; i < count; i++) {
       const along = count === 1 ? (span - size) / 2 : i * (span - size) / (count - 1);
-      slots.push({ edge, x: vertical ? (edge === "left" ? left : right - width) : left + along,
+      grid.push({ edge, x: vertical ? (edge === "left" ? left : right - width) : left + along,
         y: vertical ? top + along : edge === "top" ? top : bottom - height, width, height });
     }
   }
+  // A slot under a control can't be pressed (the control is over the chip): it's no slot.
+  const slots = grid.filter((slot) => !avoid.some((o) => slot.x < o.x1 + GAP && o.x0 < slot.x + slot.width + GAP && slot.y < o.y1 + GAP && o.y0 < slot.y + slot.height + GAP));
   const target = (cue: CueTarget) => {
     const dx = Number.isFinite(cue.cx) ? cue.cx - mx : 0, dy = Number.isFinite(cue.cy) ? cue.cy - my : 0;
     const tx = dx ? (right - left) / 2 / Math.abs(dx) : Infinity;
@@ -75,9 +84,11 @@ export function placeCues(cues: readonly CueTarget[], area: Area): { chips: CueP
   const chips: CuePlacement[] = [], hidden: CueTarget[] = [];
   const overlaps = (a: typeof slots[number], b: typeof slots[number]) =>
     a.x < b.x + b.width + GAP && b.x < a.x + a.width + GAP && a.y < b.y + b.height + GAP && b.y < a.y + a.height + GAP;
+  /** The slots on `edge`, or, when the page covers all of them, every slot: the nearest to where the arrival lies. */
+  const onEdge = (edge: Edge) => { const own = slots.filter((slot) => slot.edge === edge); return own.length ? own : slots; };
   const pick = (cue: CueTarget) => {
     const aim = target(cue);
-    return slots.filter((slot) => slot.edge === aim.edge && !chips.some((p) => overlaps(p, slot)))
+    return onEdge(aim.edge).filter((slot) => !chips.some((p) => overlaps(p, slot)))
       .sort((a, b) => Math.hypot(a.x + width / 2 - aim.x, a.y + height / 2 - aim.y) - Math.hypot(b.x + width / 2 - aim.x, b.y + height / 2 - aim.y))[0];
   };
   for (const cue of newest) {
@@ -95,7 +106,7 @@ export function placeCues(cues: readonly CueTarget[], area: Area): { chips: CueP
       // Reserve an aggregate on its own edge, preferring to hide older chips.
       const aim = target(next);
       const cost = (s: typeof slots[number]) => chips.reduce((sum, p, i) => sum + (overlaps(s, p) ? 2 ** (CUES_SHOWN - i) : 0), 0);
-      slot = slots.filter((s) => s.edge === aim.edge).sort((a, b) => cost(a) - cost(b))[0];
+      slot = onEdge(aim.edge).sort((a, b) => cost(a) - cost(b))[0];
       if (slot) for (let i = chips.length - 1; i >= 0; i--) {
         if (overlaps(slot, chips[i])) hidden.push(chips.splice(i, 1)[0].cue);
       }
@@ -108,8 +119,11 @@ export function placeCues(cues: readonly CueTarget[], area: Area): { chips: CueP
   return { chips, hidden };
 }
 
-export function Cues({ cues, layout, area, narrow, go, seen }: {
-  cues: Cue[]; layout: Layout; area: () => Area; width: number; narrow: boolean;
+export function Cues({ cues, layout, area, avoid, width, narrow, go, seen }: {
+  cues: Cue[]; layout: Layout; area: () => Area;
+  /** What floats over the canvas, in its pixels: no chip sits under it. */
+  avoid: () => Area[];
+  width: number; narrow: boolean;
   go(cue: Cue): void;
   /** These came into view: their chips go. */
   seen(keys: string[]): void;
@@ -122,9 +136,20 @@ export function Cues({ cues, layout, area, narrow, go, seen }: {
   });
   const gone = cues.filter((cue) => !visible.includes(cue)).map((cue) => cue.key);
   useEffect(() => { if (gone.length) seen(gone); }, [gone.join("|")]);
+  // A phone's row: two chips if each title keeps MIN_LABEL px, else one and the count. Tried afresh whenever the row's
+  // width or what's in it changes, and settled before it's drawn (a layout effect), so a squeezed row is never seen.
+  const row = useRef<HTMLDivElement>(null);
+  const sig = `${width}|${visible.map((cue) => cue.key).join("|")}`;
+  const [fit, setFit] = useState({ sig, room: CUES_SHOWN_NARROW });
+  if (fit.sig !== sig) setFit({ sig, room: CUES_SHOWN_NARROW });
+  useLayoutEffect(() => {
+    if (!narrow || fit.room <= 1 || fit.sig !== sig) return;
+    const squeezed = [...(row.current?.querySelectorAll<HTMLElement>(".spine-cue-title") ?? [])].some((t) => t.scrollWidth > t.clientWidth && t.clientWidth < MIN_LABEL);
+    if (squeezed) setFit({ sig, room: fit.room - 1 });
+  });
   if (!visible.length) return null;
   const newest = [...visible].sort((p, q) => q.at - p.at);
-  const room = narrow ? CUES_SHOWN_NARROW : CUES_SHOWN;
+  const room = narrow ? fit.room : CUES_SHOWN;
   const shown = newest.slice(0, room);
   const waiting = newest.slice(room);
   const mx = (a.x0 + a.x1) / 2, my = (a.y0 + a.y1) / 2;
@@ -159,8 +184,8 @@ export function Cues({ cues, layout, area, narrow, go, seen }: {
   const chips = narrow ? shown.map((cue, i) => chip(cue, cue.title, i === 0)) : placeCues(visible.map((cue) => {
     const { cx, cy } = onScreen(layout.byKey.get(cue.key)!, transform, a);
     return { ...cue, cx, cy };
-  }), a).chips.map((p) => chip(p.cue, p.extra ? `+${p.extra}` : p.cue.title, p.cue.key === newest[0].key, p.extra, p));
+  }), a, avoid()).chips.map((p) => chip(p.cue, p.extra ? `+${p.extra}` : p.cue.title, p.cue.key === newest[0].key, p.extra, p));
   if (narrow && waiting.length) chips.push(chip(waiting[waiting.length - 1], `+${waiting.length}`, false, waiting.length));
-  return narrow ? <div className="spine-cue-line" role="group" aria-label="New out of view">{chips}</div>
+  return narrow ? <div ref={row} className="spine-cue-line" role="group" aria-label="New out of view">{chips}</div>
     : <div className="spine-cues" role="group" aria-label="New out of view">{chips}</div>;
 }

@@ -160,6 +160,10 @@ export function landingNote(model: string | undefined, ms: number | null | undef
   return time ? `Put here in ${time}` : "";
 }
 
+/** What floats over the canvas at its edges: the shell's four corners (their slots), the Talk pill under Find and
+ *  Catalog, the guide's held questions, and the canvas's own corners. */
+const COVERS = '[data-slot="top-left"], [data-slot="top-right"], [data-slot="bottom-left"], [data-slot="bottom-right"], [data-slot="held"], .talk-pill, .guide-held, .spine-corner';
+
 /** The page's slots (contract.ts `SlotName`), measured: where the stage starts, how tall the status line is. */
 function chromeOf(frameBox: DOMRect | undefined) {
   const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
@@ -279,6 +283,20 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
     return { x0: 0, y0: 0, x1: Math.max(160, x1), y1: Math.max(120, y1) };
   }, [dock]);
+
+  /** What floats over the canvas, in its pixels: the shell's corners (Find, Catalog, the people in a call), the Talk
+   *  pill, the held questions, and this canvas's own corners (Follow, the views, the shelf). An edge chip under any of
+   *  them couldn't be pressed, so the chips keep clear (cues.tsx). */
+  const avoid = useCallback((): Area[] => {
+    const f = frame.current?.getBoundingClientRect();
+    if (!f) return [];
+    const out: Area[] = [];
+    for (const el of document.querySelectorAll(COVERS)) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ x0: r.left - f.left, y0: r.top - f.top, x1: r.right - f.left, y1: r.bottom - f.top });
+    }
+    return out;
+  }, []);
 
   // What's placed: the map's, with this window's last moves until the map has them (no jump back while it answers).
   const dragging = drag ? grip.current : null;
@@ -757,7 +775,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
           </svg>
         </EdgeLabelRenderer>
       </ReactFlow>
-      {!narrow && <Cues cues={cues} layout={layout} area={area} width={width} narrow={false} go={goTo} seen={seenCues} />}
+      {!narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow={false} go={goTo} seen={seenCues} />}
       </NowContext.Provider>
       </ActsContext.Provider>
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
@@ -768,7 +786,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
         <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottom }}>
-        {narrow && <Cues cues={cues} layout={layout} area={area} width={width} narrow go={goTo} seen={seenCues} />}
+        {narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
         {(narrow || !corner.shell) && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}

@@ -1,5 +1,5 @@
-/* Guide.tsx, the Friend's face: its caption at the stage (bottom center), one arrow from the caption to a part with a
-   ring round the part, and the held stack. The caption and the arrow are manual popovers (the top layer, over an open
+/* Guide.tsx, the Friend's face: its caption at the stage (bottom center), a ring round the part it points at with a short
+   arrow into it, and the held stack. The caption and the arrow are manual popovers (the top layer, over an open
    sheet too); a popover's own display is the browser's (hidden until shown), so nothing here sets one on them.
    Colors are roles (ux-revamp §3): purple is the AI's (its name, arrow and ring), amber needs you (the held count, a
    question waiting for you), buttons are ink. */
@@ -38,15 +38,15 @@
 }
 .guide-layer:not([data-state="aimed"]):not([data-state="near"]) .guide-ring { display: none; }
 
-/* The arrow, from the caption to the part, on a halo of the page's color so it reads over a card, a picture or a
-   line of text. */
+/* The arrow: short, at the part, from the nearest side with room (guide-core.ts `pointer`), on a halo of the page's color
+   so it reads beside a card, a picture or a line of text. Its tail has a dot. */
 .guide-arrow { position: absolute; inset: 0; overflow: visible; }
 .guide-layer[data-state="alone"] .guide-arrow, .guide-layer[data-state="near"] .guide-arrow { display: none; }
 .guide-arrow-halo { fill: none; stroke: var(--bg); stroke-width: 7; stroke-linecap: round; opacity: .85; }
 .guide-arrow-line { fill: none; stroke: var(--guide-ink); stroke-width: 2.75; stroke-linecap: round; }
 .guide-arrow-head { fill: var(--guide-ink); stroke: var(--guide-ink); stroke-width: 1.2; stroke-linejoin: round; }
 .guide-arrow-dot { fill: var(--guide-ink); }
-/* Drawn out from the caption to the part each time it's aimed somewhere new (300 ms, a landing ring's), then its head. */
+/* Drawn out from its tail to the part each time it's aimed somewhere new (300 ms, a landing ring's), then its head. */
 .guide-arrow-halo, .guide-arrow-line { stroke-dasharray: 1; animation: guide-draw .3s cubic-bezier(.2, .7, .3, 1) backwards; }
 .guide-arrow-head { animation: guide-in .12s ease-out .22s backwards; }
 

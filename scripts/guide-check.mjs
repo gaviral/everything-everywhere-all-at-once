@@ -2,16 +2,18 @@
 // Another participant shows you a part of the screen, says a line, or holds a question for your pause (docs/guide.md:
 // the core relays `point`, `caption` and `hold`, core/src/guide.rs; ui/src/Guide.tsx draws them). Held here:
 //  1. The rules (ui/src/guide-core.ts, through Vite): docs/guide.md lists exactly the names the code knows, and each
-//     fixed name is on an element; the arrow's path from the caption to a part; how long a caption, a page of it and a
-//     question stay; pages of two lines; a question's main words; the mic hearing the caption's own voice; one point
-//     at a time; held questions asked, gone ahead, put off, dropped and talked over; where a part not on screen is.
+//     fixed name is on an element; the arrow's place at a part (short, from the nearest side with room, kept clear of
+//     what is near the part); how long a caption, a page of it and a question stay; pages of two lines; a question's main
+//     words; the mic hearing the caption's own voice; one point at a time; held questions asked, gone ahead, put off,
+//     dropped and talked over; where a part not on screen is.
 //  2. On the built UI in headless Chrome over a stand-in core (exit 3, precheck's WARN, without Chrome or ui/dist): the
-//     caption bottom center above where you type, its Markdown, its pages; the arrow from it lands on the named part,
-//     scrolled into view, and follows it; Esc and a click take it down; Show on the card a thought is in and the Map
-//     button lead it on to the part; a part not on screen is said, not guessed; the caption over an open sheet, gone
-//     once read, held under the pointer and while the page is hidden; talking over it steps it back at once (not its
-//     own voice), what you didn't read held; a held question waits while you talk or type and is asked at your pause,
-//     with ink buttons and keys: Go ahead, Later, Drop it; a phone keeps both on screen; Reduce Motion moves nothing.
+//     caption bottom center above where you type, its Markdown, its pages; the arrow at the named part (short, its tip
+//     clear of the ring; scripts/arrow-clear-check.mjs holds that it crosses no button or text), scrolled into view, and
+//     followed as it moves; Esc and a click take it down; Show on the card a thought is in and the Map button lead it on
+//     to the part; a part not on screen is said, not guessed; the caption over an open sheet, gone once read, held under
+//     the pointer and while the page is hidden; talking over it steps it back at once (not its own voice), what you
+//     didn't read held; a held question waits while you talk or type and is asked at your pause, with ink buttons and
+//     keys: Go ahead, Later, Drop it; a phone keeps both on screen; Reduce Motion moves nothing.
 // GUIDE_SHOTS=<folder> also saves a screenshot of each step there.
 import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,7 +30,7 @@ const server = await uiServer();
 let rules;
 try { rules = await server.ssrLoadModule("/src/guide-core.ts"); } finally { await server.close(); }
 const {
-  NAMES, route, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, inLine, asked, wentAhead,
+  NAMES, pointer, shape, RUNS, aimAt, captionMs, CAPTION_SHORTEST_MS, askMs, overMs, pages, mainWords, echoOf, guided, NOTHING, nextAsk, inLine, asked, wentAhead,
   putOff, dropped, talkedOver, heldLater, heldDropped, instead, label, GUTTER, TIP_GAP, RING_PAD, NEAR, HELD_MAX, NATURAL_PAUSE_MS,
 } = rules;
 
@@ -39,34 +41,72 @@ const src = readdirSync(new URL("ui/src/", root)).filter((f) => f.endsWith(".tsx
 for (const name of Object.keys(NAMES)) assert.ok(src.includes(`data-guide="${name}"`), `no element in ui/src has data-guide="${name}"`);
 for (const made of ["thread:${thread.id}", "point:${thought.id}", "view:${brick.info.id}"]) assert.ok(src.includes(`data-guide={\`${made}\`}`), `no element is named ${made}`);
 
-// The arrow, from the caption at the stage to the part, never across the part's words.
+// The arrow: short, at the part, from the nearest side that has room (the side facing the caption first), never across
+// what's drawn near the part (`avoid`: its buttons, lines of text and cards, as the page measures them).
 const laptop = { width: 1440, height: 900 };
-const within = (r, screen) => [r.c1, r.c2].every((p) => p.x >= 8 && p.x <= screen.width - 8 && p.y >= 8 && p.y <= screen.height - 8);
+const within = (r, screen) => [r.start, r.c1, r.c2, r.end].every((p) => p.x >= 8 && p.x <= screen.width - 8 && p.y >= 8 && p.y <= screen.height - 8);
 const caption = { left: 420, top: 718, right: 1020, bottom: 770 };
-// A line of text up the map: from its right, at its middle; out of the caption's top, as near the line as it reaches.
-let r = route(caption, { left: 586, top: 392, right: 834, bottom: 422 }, laptop);
-assert.equal(r.side, "right");
-assert.deepEqual(r.end, { x: 834 + TIP_GAP, y: 407 });
-assert.deepEqual(r.start, { x: 834 + TIP_GAP, y: 718 - 8 });
-assert.ok(r.c2.x > r.end.x && Math.abs(r.c2.y - r.end.y) < 0.5, "it arrives along the line, from the right");
-assert.ok(within(r, laptop), "its bends stay on screen");
-// A tall card: at its head, where its title is.
-assert.equal(route(caption, { left: 130, top: 190, right: 714, bottom: 595 }, laptop).end.y, 190 + 28);
-// A button at the top: from under it, at its middle.
-r = route(caption, { left: 1200, top: 14, right: 1280, bottom: 50 }, laptop);
-assert.deepEqual([r.side, r.end], ["below", { x: 1240, y: 50 + TIP_GAP }]);
-// A card against the right edge: from its left.
-assert.equal(route(caption, { left: 800, top: 300, right: 1420, bottom: 500 }, laptop).side, "left");
-// The composer just under the caption: no arrow, its ring says which (the caption is at it already).
-assert.equal(route(caption, { left: 340, top: 770 + NEAR - 4, right: 1100, bottom: 840 }, laptop), null);
-// The mic, level with the caption and left of it: from its right.
-assert.equal(route(caption, { left: 350, top: 784, right: 390, bottom: 824 }, laptop).side, "right");
-// A phone: a line as wide as the card that holds it, no room beside it: from under it, near its right end, where a
-// line of text ends first.
+const arrow = (to, from, screen, avoid = [], opts) => { const plan = pointer(to, from, screen, avoid, opts); return plan && { plan, route: shape(plan, to) }; };
+// A line of text up the map, nothing near: from under it, the way the caption is, near its right end, where a line of
+// text ends first; the longest run, straight, its tip TIP_GAP clear of the part.
+const line = { left: 586, top: 392, right: 834, bottom: 422 };
+let pt = arrow(line, caption, laptop);
+assert.deepEqual([pt.plan.side, pt.plan.run, pt.plan.sway], ["below", RUNS[0], 0]);
+assert.deepEqual(pt.route.end, { x: 834 - 40, y: 422 + TIP_GAP });
+assert.deepEqual(pt.route.start, { x: 834 - 40, y: 422 + TIP_GAP + RUNS[0] });
+assert.ok(pt.route.c2.x === pt.route.end.x && pt.route.c2.y > pt.route.end.y, "it arrives along the line, from under the part");
+assert.ok(within(pt.route, laptop), "its bends stay on screen");
+// Words under it: not across them: from its right, at its middle, where the line leaves room.
+pt = arrow(line, caption, laptop, [{ left: 560, top: 440, right: 900, bottom: 520 }]);
+assert.equal(pt.plan.side, "right");
+assert.deepEqual(pt.route.end, { x: 834 + TIP_GAP, y: 407 });
+// Words on every side that faces the caption: the next side, and a shorter run where the room is short.
+pt = arrow(line, caption, laptop, [{ left: 560, top: 440, right: 900, bottom: 520 }, { left: 860, top: 380, right: 1100, bottom: 440 }]);
+assert.equal(pt.plan.side, "left");
+pt = arrow(line, caption, laptop, [{ left: 560, top: 505, right: 900, bottom: 560 }]);
+assert.deepEqual([pt.plan.side, pt.plan.run], ["below", RUNS[1]], "a shorter arrow beats another side");
+// A tall card: at its head, where its title is, when the arrow comes in from a side.
+const card = { left: 130, top: 190, right: 714, bottom: 595 };
+assert.equal(arrow(card, caption, laptop).plan.side, "below");
+pt = arrow(card, caption, laptop, [{ left: 100, top: 640, right: 800, bottom: 700 }]);
+assert.deepEqual([pt.plan.side, pt.route.end.y], ["right", 190 + 28]);
+// A button at the top, a neighbour under its right half (the Talk pill under Catalog): the tip moves to the left of
+// it, a fifth in from the end, so the arrow still comes up from under it.
+const catalog = { left: 1297, top: 17, right: 1423, bottom: 55 };
+assert.deepEqual(arrow(catalog, caption, laptop).route.end, { x: 1360, y: 55 + TIP_GAP }, "a control, at its middle");
+pt = arrow(catalog, caption, laptop, [{ left: 1370, top: 72, right: 1423, bottom: 108 }]);
+assert.deepEqual([pt.plan.side, pt.route.end.x < 1370 - 12, pt.route.start.x === pt.route.end.x], ["below", true, true]);
+// Boxed in (a phone's corner: Find to its left, the Talk pill under it, the screen's edges): no arrow, the ring alone.
 const phone = { width: 390, height: 844 };
-r = route({ left: 16, top: 600, right: 374, bottom: 700 }, { left: 23, top: 470, right: 367, bottom: 520 }, phone);
-assert.deepEqual([r.side, r.end], ["below", { x: 327, y: 520 + TIP_GAP }]);
-assert.ok(within(r, phone));
+const corner = { left: 339, top: 10, right: 374, bottom: 46 };
+const crowd = [{ left: 296, top: 10, right: 331, bottom: 46 }, { left: 257, top: 73, right: 372, bottom: 103 }];
+const low = { left: 16, top: 770, right: 374, bottom: 800 };
+assert.equal(arrow(corner, low, phone, crowd), null, "no room on any side: no arrow");
+assert.equal(arrow(corner, low, phone, crowd.slice(0, 1)).plan.side, "below", "the Talk pill gone, it's from under");
+assert.equal(arrow({ left: 296, top: 10, right: 331, bottom: 46 }, low, phone, [crowd[1]]).plan.side, "left", "Find, its left clear: from the left");
+// The composer just under the caption: no arrow, its ring says which (the caption is at it already).
+assert.equal(arrow({ left: 340, top: 770 + NEAR - 4, right: 1100, bottom: 840 }, caption, laptop), null);
+// A card just over the caption (the unfinished card): from a side, the caption kept clear of.
+pt = arrow({ left: 420, top: 718 - NEAR + 4 - 80, right: 1020, bottom: 718 - NEAR + 4 }, caption, laptop, [caption]);
+assert.equal(pt.plan.side, "right");
+// The mic, level with the caption and left of it: from its right, toward the caption.
+pt = arrow({ left: 350, top: 784, right: 390, bottom: 824 }, caption, laptop);
+assert.equal(pt.plan.side, "right");
+// A phone: a line as wide as the card that holds it, the caption (kept clear of) under it: from under it, near its
+// right end, shorter to stop short of the caption.
+pt = arrow({ left: 23, top: 470, right: 367, bottom: 520 }, { left: 16, top: 600, right: 374, bottom: 700 }, phone, [{ left: 16, top: 600, right: 374, bottom: 700 }]);
+assert.deepEqual([pt.plan.side, pt.plan.run, pt.route.end], ["below", RUNS[1], { x: 327, y: 520 + TIP_GAP }]);
+assert.ok(within(pt.route, phone));
+// It stays as it was while it's still clear, and moves with the part (the same plan, the part's new place).
+const kept = arrow(line, caption, laptop, [{ left: 560, top: 440, right: 900, bottom: 520 }]).plan;
+assert.equal(pointer(line, caption, laptop, [], { keep: kept }), kept, "the arrow drawn before stays while it is clear");
+assert.notEqual(pointer(line, caption, laptop, [{ left: 800, top: 395, right: 900, bottom: 420 }], { keep: kept }), kept, "and gives way when it isn't");
+assert.equal(shape(kept, { ...line, top: line.top + 100, bottom: line.bottom + 100 }).end.y, shape(kept, line).end.y + 100, "at the part, wherever it is");
+// A part scrolled out of the room (a sliver at the edge it's past): from inside the room, pointing out toward it.
+pt = arrow({ left: 400, top: 120, right: 1000, bottom: 120 }, caption, { ...laptop, top: 120, bottom: 718 }, [], { edge: "top" });
+assert.deepEqual([pt.plan.side, pt.route.end.y], ["below", 120 + TIP_GAP]);
+pt = arrow({ left: 400, top: 718, right: 1000, bottom: 718 }, caption, { ...laptop, top: 120, bottom: 718 }, [], { edge: "bottom" });
+assert.equal(pt.plan.side, "above");
 // What it aims at: the part as seen between the header and the dock; past the band, a sliver at the edge it's past.
 const band = { top: 120, bottom: 760, width: 1440 };
 assert.deepEqual(aimAt({ left: 400, top: 100, right: 1000, bottom: 300 }, band), { box: { left: 400, top: 120, right: 1000, bottom: 300 }, seen: true });
@@ -286,18 +326,19 @@ try {
   const box = (selector) => evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
   const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   const inside = (a, w, h, gutter = GUTTER) => a.left >= gutter - 0.5 && a.top >= gutter - 0.5 && a.right <= w - gutter + 0.5 && a.bottom <= h - gutter + 0.5;
-  /** The arrowhead touches the part's facing edge (TIP_GAP out), within its span, and the arrow starts at the caption. */
+  /** The arrowhead touches the part's facing edge (TIP_GAP out), within its span, and the arrow is a short one at the part
+   *  (its run, a little over for the tail's sway), not a line out from the caption. */
   const lands = async (name, why) => {
-    const [part, t, from] = [await seen(name), await tip(), await box(".guide-caption")];
-    assert.ok(part && t && from, `${why}: an arrow, its part and its caption (${JSON.stringify({ part, t, from })})`);
+    const [part, t] = [await seen(name), await tip()];
+    assert.ok(part && t, `${why}: an arrow and its part (${JSON.stringify({ part, t })})`);
     const near = (a, b) => Math.abs(a - b) <= 1.5;
     const ok = t.side === "above" ? near(t.y, part.top - TIP_GAP) && t.x >= part.left && t.x <= part.right
       : t.side === "below" ? near(t.y, part.bottom + TIP_GAP) && t.x >= part.left && t.x <= part.right
       : t.side === "left" ? near(t.x, part.left - TIP_GAP) && t.y >= part.top && t.y <= part.bottom
       : near(t.x, part.right + TIP_GAP) && t.y >= part.top && t.y <= part.bottom;
     assert.ok(ok, `${why}: the arrow lands on ${name} (tip ${JSON.stringify(t)}, part ${JSON.stringify(part)})`);
-    const edge = (n, low, high) => n >= low - 9.5 && n <= high + 9.5;
-    assert.ok(edge(t.from.x, from.left, from.right) && edge(t.from.y, from.top, from.bottom), `${why}: the arrow starts at the caption (${JSON.stringify({ start: t.from, from })})`);
+    const run = Math.hypot(t.from.x - t.x, t.from.y - t.y);
+    assert.ok(run >= RUNS.at(-1) - 1 && run <= RUNS[0] * 1.1, `${why}: a short arrow at the part, not a line out from the caption (${run.toFixed(0)} px)`);
     return { part, t };
   };
   /** The ring round the part, RING_PAD out. */
@@ -831,4 +872,4 @@ try {
   core.close();
 }
 if (failed) { console.error(`guide-check failed at “${doing}”:`, failed.stack ?? failed.message); process.exit(1); }
-console.log("guide-check: the names, the rules, and on the page: the caption at the stage, its Markdown and pages; the arrow from it on the named part, followed, taken down, led on to a hidden part, said when nowhere; over a sheet, gone once read, held by the pointer and a hidden page; talked over at once, not by its own voice; a held question asked at your pause with Go ahead, Later, Drop it; a phone; Reduce Motion");
+console.log("guide-check: the names, the rules, and on the page: the caption at the stage, its Markdown and pages; the arrow at the named part, followed, taken down, led on to a hidden part, said when nowhere; over a sheet, gone once read, held by the pointer and a hidden page; talked over at once, not by its own voice; a held question asked at your pause with Go ahead, Later, Drop it; a phone; Reduce Motion");

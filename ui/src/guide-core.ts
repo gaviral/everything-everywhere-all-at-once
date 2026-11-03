@@ -1,9 +1,10 @@
 // The guide's rules: another participant (an AI joined with a name, e.g. the Friend over its bridge, over the core's
 // `point`, `caption` and `hold` messages: core/src/guide.rs) shows you a part of the screen, says a line, or holds a
 // question for your pause. What each `data-guide` name is, where a part that isn't on screen is instead, the arrow's
-// path from the caption to the part, how a long caption pages and how long each page stays, and the held questions:
-// when one is asked and what Go ahead, Later, Drop it and talking over do. Pure, so scripts/guide-check.mjs runs it
-// without a browser; Guide.tsx draws it. docs/guide.md lists the names (the check holds the two to each other).
+// place at the part (short, from the nearest side with room), how a long caption pages and how long each page stays, and
+// the held questions: when one is asked and what Go ahead, Later, Drop it and talking over do. Pure, so
+// scripts/guide-check.mjs runs it without a browser; Guide.tsx draws it. docs/guide.md lists the names (the check holds
+// the two to each other).
 import { useSyncExternalStore } from "react";
 import type { BrickOn } from "./bricks/contract";
 import type { Thread, Thought, World } from "./core";
@@ -158,15 +159,18 @@ export function instead(name: string, at: Where): Instead {
   return { via: null, line: `Nothing called “${name}” is on this screen.` };
 }
 
-// ---- The arrow: from the caption, bottom center, to the part.
+// ---- The arrow: a short one at the part, from the nearest side that is clear.
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 export type Point2 = { x: number; y: number };
-/** The side of the part the arrow comes in from. */
+/** The side of the part the arrow comes in from: its tail is on that side, its tip at the part. */
 export type Side = "above" | "below" | "left" | "right";
-/** The arrow as a curve: from `start` on the caption's edge, leaving along `c1`, arriving along `c2` at `end`, its
- *  tip, clear of the part's ring on its `side`. */
+/** The arrow as a curve: from `start` (its tail) along `c1`, arriving along `c2` at `end` (its tip, clear of the part's
+ *  ring on its `side`). */
 export type Route = { side: Side; start: Point2; c1: Point2; c2: Point2; end: Point2 };
+/** Which arrow, relative to the part (so it keeps its place as the part moves): the side, how far along that side's edge
+ *  the tip is (px from the part's left or top), how long it runs, and how far its tail sways sideways. */
+export type Plan = { side: Side; along: number; run: number; sway: number };
 
 /** The gutter every popover keeps from the screen's edge (onscreen.ts). */
 export const GUTTER = 16;
@@ -174,64 +178,108 @@ export const GUTTER = 16;
 export const RING_PAD = 6;
 /** Between the arrowhead's tip and the part: clear of its ring (`RING_PAD` out, 2 px wide). */
 export const TIP_GAP = RING_PAD + 8;
-/** The shortest run of an arrow that reads as one. */
-const RUN = 24;
-/** Between the caption and where the arrow leaves it (its first dot). */
-export const START_GAP = 8;
-/** Room an arrow needs beside a part to come in from that side: the tip's gap, the head and a little more (the curve
- *  can run in the screen's gutter, as on a phone, where a line leaves only its margin). */
-export const SIDE_ROOM = TIP_GAP + 16 + 8;
-/** A part this small is a control (a button, a chip): the arrow comes up under it, where nothing else is. */
+/** How far the arrow runs from its tail to its tip, longest first: it is drawn as long as the room round the part
+ *  allows. Never a sweep across the screen: it stays at the part, where what it crosses is known. */
+export const RUNS = [72, 52, 36] as const;
+/** The tail may sway sideways by this share of the run (an S, never a bow), toward the caption first. */
+const SWAY = 0.3;
+/** The room worth measuring round the part: as far as the arrow can reach, and a little more. */
+export const AROUND = TIP_GAP + RUNS[0] + Math.ceil(SWAY * RUNS[0]) + 16;
+/** A part nearer the caption than this needs no arrow: the caption is at it already, and its ring shows which. */
+export const NEAR = 46;
+/** Room an arrow keeps from what's drawn near it: the halo's half width and a little more. */
+const CLEARANCE = 6;
+/** The arrowhead's length (Guide.tsx draws 16, 13 on a phone): its footprint takes the larger. */
+const HEAD = 16;
+/** Where the tip may land along an edge: this far in from either end (a corner's curve isn't the part). */
+const END_ROOM = 24;
+/** A part this small is a control (a button, a chip): its tip may land at its middle or a fifth in from an end. */
 const SMALL = { width: 200, height: 56 };
-/** A part nearer the caption than this needs no arrow (it would be shorter than a run between its two gaps): the
- *  caption is at it already, and its ring shows which. */
-export const NEAR = START_GAP + TIP_GAP + RUN;
+/** The arrow keeps this far from the screen's edges, and from the room's. */
+const EDGE = 8;
 
 const clamp = (n: number, low: number, high: number) => Math.min(Math.max(n, low), Math.max(low, high));
+const NORMAL: Record<Side, Point2> = { above: { x: 0, y: -1 }, below: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+/** The order sides win a tie in: under the part first, where an arrow from the caption would come from. */
+const ORDER: Side[] = ["below", "right", "left", "above"];
 
-/** The arrow from the caption at `from` to the part at `to` (both as drawn on screen), within `screen` (`top` and
- *  `bottom` bound the room the page's parts are seen in). It never crosses the part's words: a line of text or a card
- *  is reached from its right, where a line leaves room (else its left, else from under it), at its head when it's
- *  tall; a small control from under it; a part level with the caption or under it (the composer, the mic) from the
- *  caption's side. Null when the part touches the caption already. */
-export function route(from: Box, to: Box, screen: { width: number; height: number; top?: number; bottom?: number }): Route | null {
-  const [high, low] = [screen.top ?? 0, screen.bottom ?? screen.height];
-  const mid = (from.left + from.right) / 2;
-  const width = to.right - to.left, height = to.bottom - to.top;
-  const headY = to.top + Math.min(height / 2, 28);
-  // From under or over it: a control at its middle; a wide part (a line of text, a card) near its right end, where a
-  // line of text ends first, so the arrow crosses the fewest words on its way.
-  const facing = width <= SMALL.width ? (to.left + to.right) / 2 : clamp(Math.max(mid, to.right - 40), to.left + 24, to.right - 24);
-  let side: Side;
-  if (to.bottom > from.top) {
-    // Level with the caption or under it: from the side it's on, or onto its top when it's under the caption; at the
-    // caption or touching it from under, the caption is at it already.
-    const across = to.right > from.left && to.left < from.right;
-    if (across && to.top - from.bottom < NEAR) return null;
-    side = across ? "above" : to.right <= from.left ? "right" : "left";
-  } else if (width <= SMALL.width && height <= SMALL.height && from.top - to.bottom >= NEAR + SIDE_ROOM) side = "below";
-  else if (screen.width - to.right >= SIDE_ROOM) side = "right";
-  else if (to.left >= SIDE_ROOM) side = "left";
-  else if (from.top - to.bottom >= NEAR) side = "below";
-  else return null;
-  const end = side === "right" ? { x: to.right + TIP_GAP, y: headY } : side === "left" ? { x: to.left - TIP_GAP, y: headY }
-    : side === "below" ? { x: facing, y: to.bottom + TIP_GAP } : { x: facing, y: to.top - TIP_GAP };
-  // It leaves the caption from the edge facing where it's going, as near the part as the caption reaches.
-  const along = clamp(end.x, from.left + 18, from.right - 18);
-  const [start, out] = end.y < from.top ? [{ x: along, y: from.top - START_GAP }, { x: side === "right" ? 0.35 : side === "left" ? -0.35 : 0, y: -1 }]
-    : end.y > from.bottom ? [{ x: along, y: from.bottom + START_GAP }, { x: 0, y: 1 }]
-    : end.x < from.left ? [{ x: from.left - START_GAP, y: (from.top + from.bottom) / 2 }, { x: -1, y: 0 }]
-    : [{ x: from.right + START_GAP, y: (from.top + from.bottom) / 2 }, { x: 1, y: 0 }];
-  const into = { above: { x: 0, y: -1 }, below: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }[side];
-  const reach = Math.hypot(end.x - start.x, end.y - start.y);
-  const k = clamp(reach * 0.42, RUN, 240), k2 = clamp(reach * 0.3, RUN, 170);
-  const norm = Math.hypot(out.x, out.y);
-  const inside = (p: Point2) => ({ x: clamp(p.x, 8, screen.width - 8), y: clamp(p.y, high + 8, low - 8) });
-  return {
-    side, start, end,
-    c1: inside({ x: start.x + (out.x / norm) * k, y: start.y + (out.y / norm) * k }),
-    c2: inside({ x: end.x + into.x * k2, y: end.y + into.y * k2 }),
-  };
+/** The arrow for `plan` at the part drawn at `to`: its tip `TIP_GAP` out from the facing edge, its tail `run` out and
+ *  `sway` sideways, the curve leaving and arriving along the side's normal (a straight line when `sway` is 0). */
+export function shape(plan: Plan, to: Box): Route {
+  const across = plan.side === "above" || plan.side === "below";
+  const n = NORMAL[plan.side];
+  const span = across ? to.right - to.left : to.bottom - to.top;
+  const along = clamp(plan.along, Math.min(END_ROOM, span / 2), span - Math.min(END_ROOM, span / 2));
+  const end: Point2 = across
+    ? { x: to.left + along, y: plan.side === "below" ? to.bottom + TIP_GAP : to.top - TIP_GAP }
+    : { x: plan.side === "right" ? to.right + TIP_GAP : to.left - TIP_GAP, y: to.top + along };
+  const start: Point2 = across ? { x: end.x + plan.sway, y: end.y + n.y * plan.run } : { x: end.x + n.x * plan.run, y: end.y + plan.sway };
+  const k = plan.run * 0.45;
+  return { side: plan.side, start, end, c1: { x: start.x - n.x * k, y: start.y - n.y * k }, c2: { x: end.x + n.x * k, y: end.y + n.y * k } };
+}
+
+/** Where the arrow is drawn, as points: along its curve, and the arrowhead's corners and middle behind the tip. */
+function footprint(route: Route): Point2[] {
+  const { start: a, c1, c2, end: d } = route;
+  const out: Point2[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, u = 1 - t;
+    out.push({ x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * d.x, y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * d.y });
+  }
+  // The head, behind the tip (`c2` is out from the tip on its side's normal): its base's corners and middle, and its middle.
+  const away = { x: c2.x - d.x, y: c2.y - d.y }, size = Math.hypot(away.x, away.y) || 1;
+  const back = { x: away.x / size, y: away.y / size }, wing = { x: -back.y, y: back.x };
+  for (const [length, width] of [[HEAD, -0.6], [HEAD, 0], [HEAD, 0.6], [HEAD / 2, 0]]) {
+    out.push({ x: d.x + back.x * length + wing.x * HEAD * width, y: d.y + back.y * length + wing.y * HEAD * width });
+  }
+  return out;
+}
+
+/** Where along `side`'s edge the tip may land, best first: a control at its middle, then a fifth in from either end
+ *  (so a neighbour beside it doesn't rule the side out); a card or a line of text near its head, where its title is, or
+ *  (under or over it) near its right end, where a line of text ends first. */
+function alongs(to: Box, side: Side): number[] {
+  const across = side === "above" || side === "below";
+  const w = to.right - to.left, h = to.bottom - to.top, span = across ? w : h;
+  const small = w <= SMALL.width && h <= SMALL.height;
+  const list = small ? [span / 2, span / 5, (span * 4) / 5] : across ? [span - 40, span / 2, 40] : [Math.min(span / 2, 28), span / 2, span - 28];
+  const room = Math.min(END_ROOM, span / 2);
+  return [...new Set(list.map((n) => Math.round(clamp(n, room, span - room))))];
+}
+
+export type Screen = { width: number; height: number; top?: number; bottom?: number };
+
+/** The arrow at the part drawn at `to`, as the caption `from` is placed: short, on the side that faces the caption
+ *  where that side is clear and else the next, the longest run that's clear, the tip's place along the edge, then
+ *  the tail's sway, each tried in turn. Clear means nothing in `avoid` (the controls, lines of text and cards near the
+ *  part, as drawn) is within reach of its line, its head or its tail, and all of it is on screen (`screen.top` and
+ *  `bottom` bound the room the page's parts are seen in). `keep`, the arrow drawn before, stays while it's still clear,
+ *  so it never flips between equal ones. Null when no side has room, or the part is level with the caption or under it,
+ *  within NEAR (the composer: the caption is at it already): the ring alone says which. `edge` is a part scrolled out of the
+ *  room (`to` is a sliver at the edge it's past): an arrow from inside the room, pointing out toward it. */
+export function pointer(to: Box, from: Box, screen: Screen, avoid: readonly Box[], opts: { keep?: Plan | null; edge?: "top" | "bottom" } = {}): Plan | null {
+  const high = screen.top ?? 0, low = screen.bottom ?? screen.height;
+  // Level with the caption or under it, right there (the composer): the caption is at it already.
+  if (!opts.edge && to.bottom > from.top && to.right > from.left && to.left < from.right && to.top - from.bottom < NEAR) return null;
+  const onScreen = (p: Point2) => p.x >= EDGE && p.x <= screen.width - EDGE && p.y >= high + EDGE && p.y <= low - EDGE;
+  const clear = (p: Point2) => !avoid.some((r) => p.x > r.left - CLEARANCE && p.x < r.right + CLEARANCE && p.y > r.top - CLEARANCE && p.y < r.bottom + CLEARANCE);
+  const fits = (plan: Plan) => footprint(shape(plan, to)).every((p) => onScreen(p) && clear(p));
+  if (opts.keep && fits(opts.keep)) return opts.keep;
+  // Toward the caption: the sides facing it first.
+  const dx = (from.left + from.right) / 2 - (to.left + to.right) / 2, dy = (from.top + from.bottom) / 2 - (to.top + to.bottom) / 2;
+  const reach = Math.hypot(dx, dy) || 1;
+  const facing = (side: Side) => -(NORMAL[side].x * dx + NORMAL[side].y * dy) / reach;
+  const sides = opts.edge ? [opts.edge === "top" ? "below" : "above"] as Side[]
+    : [...ORDER].sort((p, q) => facing(p) - facing(q) || ORDER.indexOf(p) - ORDER.indexOf(q));
+  for (const side of sides) {
+    const across = side === "above" || side === "below";
+    const toward = Math.sign(across ? dx : dy) || 1;
+    for (const run of RUNS) for (const along of alongs(to, side)) for (const sway of [0, toward * SWAY * run, -toward * SWAY * run]) {
+      const plan: Plan = { side, along, run, sway };
+      if (fits(plan)) return plan;
+    }
+  }
+  return null;
 }
 
 /** What the arrow aims at for a part drawn at `rect` within `band` (the room not covered by what floats over the map):
