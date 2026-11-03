@@ -468,6 +468,9 @@ mod tests {
             // A fresh origin gives each malformed payload its own refusal throttle and budget.
             let (mut origin, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
             drain(&mut origin, 20).await;
+            // Its arrival (and the last origin's departure) reaches the other windows as a presence update first.
+            drain(&mut ears, 50).await;
+            drain(&mut you, 50).await;
             origin.send(send(payload.clone())).await.unwrap();
             origin.send(send(payload.clone())).await.unwrap();
             origin.send(send(serde_json::json!({"type": "caption", "text": ""}))).await.unwrap();
