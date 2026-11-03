@@ -148,7 +148,9 @@ pub enum ServerMsg {
     Answer { by: String, text: String, at_ms: u64 },
     /// The call (call.rs): who is on the map now and since when, who has the floor (never their words), how far each
     /// person has read the turns, and how far the Friend may interrupt. To every window once two are here at once,
-    /// whenever any of it changes, and first in a window's catch-up from then on; never journaled.
+    /// whenever any of it changes, and first in a window's catch-up from then on; never journaled. A Remote (a phone's
+    /// page for the AI helpers' work) is listed among the people, marked `remote`, and is never one of the two: once one
+    /// has joined this is told too, with `started_ms` 0 until a call starts.
     Call { started_ms: u64, people: Vec<crate::call::Person>, level: crate::call::Level, level_by: String },
 }
 

@@ -23,11 +23,15 @@ export interface Person {
   speaking: boolean;
   /** The newest turn they've read, a thought's id. */
   read: string | null;
+  /** A Remote (core/src/call.rs): a phone's page for the AI helpers' work, joined with `?remote`. A window, not a
+   *  person: it is listed (`remotesHere`) and left out of everything that counts or names people. Absent from a core
+   *  that doesn't know Remotes, which is false. */
+  remote?: boolean;
 }
 
 /** The call (protocol.rs `ServerMsg::Call`). */
 export interface Call {
-  /** When two were first here at once. */
+  /** When two were first here at once; 0 until then, while a Remote is the only reason there is a message at all. */
   started_ms: number;
   /** In the order they first joined. */
   people: Person[];
@@ -136,20 +140,30 @@ export function hereNow(c: Call | null, me: string): Person[] {
   return ordered(c, me).filter((p) => p.here);
 }
 
+/** The people and AI participants in the call: a Remote is a window of the room, not one of them. */
+function persons(c: Call | null): Person[] {
+  return (c?.people ?? []).filter((p) => !p.remote);
+}
+
 /** Everyone in the call, here or gone, in the order the people row shows them. */
 export function ordered(c: Call | null, me: string): Person[] {
-  const people = c?.people ?? [];
+  const people = persons(c);
   return [...people.filter((p) => p.name === me), ...people.filter((p) => p.name !== me && !p.ai), ...people.filter((p) => p.name !== me && p.ai)];
 }
 
-/** A call is on while two are here at once (a person and an AI participant count). */
+/** A call is on while two are here at once (a person and an AI participant count; a Remote doesn't). */
 export function inCall(c: Call | null): boolean {
-  return (c?.people.filter((p) => p.here).length ?? 0) >= 2;
+  return persons(c).filter((p) => p.here).length >= 2;
 }
 
-/** How many people (not AI participants) are here. */
+/** How many people (not AI participants, not Remotes) are here. */
 export function peopleHere(c: Call | null): number {
-  return c?.people.filter((p) => p.here && !p.ai).length ?? 0;
+  return persons(c).filter((p) => p.here && !p.ai).length;
+}
+
+/** The Remotes open now, in the order they joined: the room menu lists them, as devices, and nothing else does. */
+export function remotesHere(c: Call | null): Person[] {
+  return (c?.people ?? []).filter((p) => p.remote && p.here);
 }
 
 /** The letter on someone's avatar: their name's first, as a capital; ✦ for an AI participant. */

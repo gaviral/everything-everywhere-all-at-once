@@ -47,7 +47,7 @@
 .room-menu[open] summary { border-color: var(--accent); }
 .room-panel {
   position: absolute; z-index: 12; top: calc(100% + 8px); right: 0;
-  width: min(290px, calc(100vw - 32px)); padding: 18px;
+  width: min(320px, calc(100vw - 32px)); padding: 18px;
   border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow);
   color: var(--ink); font-size: 14px; overflow-wrap: anywhere;
   /* onscreen.ts shifts it into view and sets the room it has; past that it scrolls. */
@@ -60,7 +60,7 @@
 .room-person-mark { display: inline-block; width: 18px; color: var(--muted); font-size: 10px; }
 .other-mark { color: var(--accent); }
 .room-panel-label { margin: 16px 0 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.room-panel ul { display: grid; gap: 6px; padding: 0; list-style: none; }
+.room-panel ul { display: grid; gap: 6px; margin-bottom: 16px; padding: 0; list-style: none; }
 .room-panel-hint { margin: 12px 0 16px; color: var(--muted); font-size: 12px; }
 .room-leave { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; text-align: center; cursor: pointer; }
 .room-leave:hover { border-color: var(--muted); }
@@ -71,7 +71,7 @@
 }
 
 /* The join code and who's here now (talk/call-core.ts). */
-.room-code { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.room-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
 .room-code b { color: var(--ink); font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 .room-copy { margin-left: auto; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
 .room-copy:hover { border-color: var(--muted); }

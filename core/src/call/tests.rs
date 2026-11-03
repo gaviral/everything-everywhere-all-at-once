@@ -1,7 +1,8 @@
 //! Tests for the call (call.rs): alone nothing is sent; once two are here, every window hears who is here, who has the
 //! floor (once at a turn's start, once at its end, never the words), how far each has read and how far the Friend may
-//! interrupt; who left stays listed with when; and over real sockets, two windows in one call: the late one's catch-up
-//! starts with the call, a read mark and a level reach the other, and a margin note reaches both.
+//! interrupt; who left stays listed with when; a Remote is listed as one and never starts a call or counts toward it;
+//! and over real sockets, two windows in one call: the late one's catch-up starts with the call, a read mark and a
+//! level reach the other, and a margin note reaches both.
 
 use super::*;
 use crate::protocol::Outgoing;
@@ -198,4 +199,121 @@ async fn two_windows_in_one_call_hear_each_other() {
     let gone = drain(&mut sam, 500).await;
     let last = gone.iter().rev().find(|m| m["type"] == "call").expect("Sam's window hears Maya leave");
     assert_eq!(people(last)[1].1, false);
+}
+
+/// Who each window is in a call message, in a line: name, and whether it's a Remote, here, and an AI participant.
+fn kinds(call: &Value) -> Vec<(String, bool, bool, bool)> {
+    call["people"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap().into(), p["remote"].as_bool().unwrap(), p["here"].as_bool().unwrap(), p["ai"].as_bool().unwrap()))
+        .collect()
+}
+
+#[test]
+fn a_remote_is_listed_as_one_and_is_never_another_person() {
+    let f = Fixture::new();
+    let mut updates = f.core.updates.subscribe();
+    let sam = join(&f.core, "Sam", false);
+    assert_eq!(calls(&mut updates), Vec::<Value>::new(), "one person is alone");
+    // Their phone's Remote joins under a name of its own: the room is told it's there, as a Remote, and no call starts.
+    let phone = join_remote(&f.core, "Sam's phone");
+    let told = calls(&mut updates);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(told[0]["started_ms"], 0, "no call has started: a Remote is no one to talk with");
+    assert_eq!(kinds(&told[0]), [("Sam".into(), false, true, false), ("Sam's phone".into(), true, true, false)]);
+    let again = message(&f.core).map(|m| json!(m)).expect("a window that connects now hears the Remote too");
+    assert_eq!(kinds(&again), kinds(&told[0]));
+    // More Remotes, still no call.
+    let other = join_remote(&f.core, "Ana's phone");
+    assert_eq!(calls(&mut updates).last().map(|c| c["started_ms"].clone()), Some(json!(0)));
+    // An AI participant beside the person is a call, as it was; the Remotes are listed in it and aren't counted.
+    let agent = join(&f.core, "agent", true);
+    let started = calls(&mut updates);
+    assert_eq!(started.len(), 1, "{started:?}");
+    assert!(started[0]["started_ms"].as_u64().is_some_and(|at| at > 0), "the call starts with the AI participant");
+    assert_eq!(kinds(&started[0]), [("Sam".into(), false, true, false), ("Sam's phone".into(), true, true, false), ("Ana's phone".into(), true, true, false), ("agent".into(), false, true, true)]);
+    // A Remote leaving is told like anyone leaving, and stays a Remote (never "someone who left").
+    drop(phone);
+    let left = calls(&mut updates);
+    assert_eq!(kinds(left.last().unwrap())[1], ("Sam's phone".into(), true, false, false));
+    assert!(left.last().unwrap()["people"][1]["left_ms"].as_u64().is_some());
+    drop((other, agent, sam));
+}
+
+#[test]
+fn a_remote_with_a_person_of_its_name_is_only_what_stays_open() {
+    let f = Fixture::new();
+    let mut updates = f.core.updates.subscribe();
+    let (_sam, _friend) = (join(&f.core, "Sam", false), join(&f.core, "Friend", true));
+    let _ = calls(&mut updates);
+    // Two windows of one name, one a Remote: the name is a person while their other window is open.
+    let laptop = join(&f.core, "Maya", false);
+    let phone = join_remote(&f.core, "Maya");
+    assert_eq!(kinds(calls(&mut updates).last().unwrap())[2], ("Maya".into(), false, true, false), "a person with a Remote is a person");
+    // The Remote closing changes nothing about them: nothing to tell for a window of someone who stays.
+    drop(phone);
+    assert_eq!(calls(&mut updates), Vec::<Value>::new());
+    let phone = join_remote(&f.core, "Maya");
+    let _ = calls(&mut updates);
+    // The laptop closing leaves only the Remote: no longer a person, and listed as here.
+    drop(laptop);
+    let left = calls(&mut updates);
+    assert_eq!(kinds(left.last().unwrap())[2], ("Maya".into(), true, true, false));
+    // Coming back as a person makes them one again.
+    let _laptop = join(&f.core, "Maya", false);
+    assert_eq!(kinds(calls(&mut updates).last().unwrap())[2], ("Maya".into(), false, true, false));
+    drop(phone);
+}
+
+/// A Remote's window over a real socket, as the phone's page connects (`?remote`): in with a name of its own, listed to
+/// the other windows as a Remote with no call started, heard in its own catch-up before the world, and counted for
+/// nothing; an AI participant that asks to be a Remote stays an AI participant.
+#[tokio::test]
+async fn a_remote_window_joins_as_any_window_and_starts_no_call() {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+    let f = Fixture::new();
+    let routes = axum::Router::new()
+        .route("/ws", axum::routing::get(crate::connect))
+        .layer(axum::middleware::from_fn_with_state(f.core.clone(), crate::gate))
+        .with_state(f.core.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await });
+    let open = |query: &'static str| async move { tokio_tungstenite::connect_async(format!("ws://{address}/ws?{query}")).await.unwrap().0 };
+    async fn drain(window: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, ms: u64) -> Vec<Value> {
+        let mut got = Vec::new();
+        while let Ok(Some(Ok(frame))) = tokio::time::timeout(std::time::Duration::from_millis(ms), window.next()).await {
+            if let Message::Text(text) = frame {
+                got.push(serde_json::from_str(text.as_str()).unwrap());
+            }
+        }
+        got
+    }
+    let kinds_of = |got: &[Value]| got.iter().map(|m| m["type"].as_str().unwrap_or_default().to_string()).collect::<Vec<_>>();
+
+    let mut sam = open("name=Sam").await;
+    assert!(!kinds_of(&drain(&mut sam, 300).await).contains(&"call".to_string()), "alone, no call");
+    let mut phone = open("name=Sam%27s+phone&remote=1").await;
+    let first = drain(&mut phone, 300).await;
+    assert_eq!(&kinds_of(&first)[..2], ["call", "snapshot"], "the Remote's catch-up starts with who is here, as any window's");
+    assert_eq!(first[0]["started_ms"], 0, "{first:?}");
+    assert_eq!(kinds(&first[0]), [("Sam".into(), false, true, false), ("Sam's phone".into(), true, true, false)]);
+    let told = drain(&mut sam, 300).await;
+    assert_eq!(kinds_of(&told), ["call"], "Sam's window hears the Remote is there");
+    assert_eq!((told[0]["started_ms"].clone(), kinds(&told[0])[1].clone()), (json!(0), ("Sam's phone".into(), true, true, false)));
+    // Asking to be both: an AI participant (listed as one, a call with Sam) and not a Remote.
+    let mut agent = open("name=agent&ai=true&remote=1").await;
+    let joined = drain(&mut agent, 300).await;
+    assert!(joined[0]["started_ms"].as_u64().is_some_and(|at| at > 0), "an AI participant and a person are a call, as before: {joined:?}");
+    assert_eq!(kinds(&joined[0])[2], ("agent".into(), false, true, true));
+    let _ = drain(&mut sam, 300).await;
+    // The Remote closing is heard, and the call goes on for those who stay.
+    phone.close(None).await.unwrap();
+    let gone = drain(&mut sam, 500).await;
+    let last = gone.iter().rev().find(|m| m["type"] == "call").expect("Sam's window hears the Remote leave");
+    assert_eq!(kinds(last)[1], ("Sam's phone".into(), true, false, false));
+    assert!(last["started_ms"].as_u64().is_some_and(|at| at > 0));
 }
