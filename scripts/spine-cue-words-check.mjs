@@ -7,8 +7,7 @@ import { openPage, ready, sleep, standInCore } from "./headless.mjs";
 const why = ready();
 if (why) { console.log(`SKIP spine-cue-words-check: ${why}`); process.exit(3); }
 const shots = process.env.SHOTS;
-assert.ok(shots, "SHOTS supplies the screenshot output directory");
-mkdirSync(shots, { recursive: true });
+if (shots) mkdirSync(shots, { recursive: true });
 const core = await standInCore(() => []);
 try {
   for (const [width, height] of [[1440, 900], [390, 844]]) for (const theme of ["light", "dark"]) {
@@ -107,8 +106,10 @@ try {
         if (!open) closed = geometry;
       }
       assert.equal(await scene.evaluate(`document.querySelector(".playground").dataset.errors`), "0", "no playground errors");
-      const shot = await scene.page("Page.captureScreenshot", { format: "png" });
-      writeFileSync(join(shots, `spine-cue-words-${width}-${theme}.png`), Buffer.from(shot.data, "base64"));
+      if (shots) {
+        const shot = await scene.page("Page.captureScreenshot", { format: "png" });
+        writeFileSync(join(shots, `spine-cue-words-${width}-${theme}.png`), Buffer.from(shot.data, "base64"));
+      }
       // Exercise both a direct arrival and, when present, overflow navigation.
       for (const aggregate of [true, false]) {
         const target = await scene.evaluate(`(() => {
