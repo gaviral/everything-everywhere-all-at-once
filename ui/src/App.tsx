@@ -874,7 +874,7 @@ export default function App() {
     if (asked === "finish") {
       const card = dropped ?? mine[0];
       if (!card) { core.showNotice("Nothing unfinished to finish.", core.viewAsk); return; }
-      goBack(card);
+      finishThread(card);
       core.showNotice(`Back to ${card.title}`, core.viewAsk);
       return;
     }
@@ -921,7 +921,7 @@ export default function App() {
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
 
-  const goBack = (thread: Thread) => {
+  const goBack = (thread: Thread, focus: "thread" | "composer" = "thread") => {
     setView((was) => viewAfterJump(was, home));
     const latest = [...world.thoughts].reverse().find((thought) => thought.thread_id === thread.id && thought.placed);
     setDestination((was) => ({ threadId: thread.id, thoughtId: latest?.id ?? null, revision: (was?.revision ?? 0) + 1 }));
@@ -943,12 +943,28 @@ export default function App() {
     requestAnimationFrame(() => {
       const target = document.getElementById(`thread-${thread.id}`);
       if (target) scrollCardToTop(target, !!reducedMotion);
-      target?.querySelector<HTMLButtonElement>(".thread-toggle")?.focus({ preventScroll: true });
+      const field = focus === "composer" ? composerRef.current : target?.querySelector<HTMLButtonElement>(".thread-toggle");
+      field?.focus({ preventScroll: true });
       // Look here: where you left off, the thread's last point (else its head).
       const spot = target?.querySelector<HTMLElement>(":scope > div > .points > li:last-child") ?? target?.querySelector<HTMLElement>(":scope > .thread-head");
       if (spot) look(spot, `${thread.title} ${spot.matches("li") ? wordsIn(spot) : ""}`);
     });
   };
+  // Finish it reveals the same destination, but the next words belong in the composer. Choose focus in goBack's
+  // one post-render callback so a queued thread-toggle focus cannot take it back. The existing draft stays intact.
+  const finishThread = (thread: Thread) => goBack(thread, "composer");
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey
+        || event.repeat || event.isComposing || hasAway || !pullBack || document.querySelector("dialog[open]")) return;
+      // Fields and focused controls keep their own Enter (including a native click on Finish it or Later).
+      if (event.target !== document.body && event.target !== document.documentElement) return;
+      event.preventDefault();
+      finishThread(pullBack);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pullBack, hasAway]);
 
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
   // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does, listen is the mic
@@ -1271,7 +1287,8 @@ export default function App() {
                   {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
                 </div>
                 <div className="pullback-actions">
-                  <button onClick={() => goBack(pullBack)}>Finish it</button>
+                  <button onClick={() => finishThread(pullBack)}>Finish it</button>
+                  {/* Feedback catalog: goBack(pullBack)'s navigation, with composer focus for the next words. */}
                   <button className="quiet" onClick={() => later(pullBack)}>
                     Later
                   </button>
@@ -1450,7 +1467,8 @@ export default function App() {
               {lastWords && <div className="pullback-quote">“<Markdown text={lastWords} />”</div>}
             </div>
             <div className="pullback-actions">
-              <button onClick={() => goBack(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
+              <button onClick={() => finishThread(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
+              {/* Feedback catalog: goBack(pullBack)'s navigation, with composer focus for the next words. */}
               <button className="quiet" onClick={() => later(pullBack)} aria-keyshortcuts="L">Later</button>
             </div>
           </div>}
