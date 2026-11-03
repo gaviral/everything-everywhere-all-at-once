@@ -1,4 +1,39 @@
-.tiny-transcript {
+/* The words: one line that runs from its end, so what you're saying now stays in view and a long turn's start goes
+   behind a "…" at the left (right to left, the start is the right edge, so the words overflow and the ellipsis falls
+   leftward). The newest few a shade stronger; a still caret after them while you talk (no blinking, WCAG 2.2.2). */
+.tiny-transcript-text {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.tiny-transcript-now { color: var(--ink); font-weight: 500; }
+.tiny-transcript-live::after {
+  content: "";
+  display: inline-block;
+  width: 1.5px;
+  height: 1.15em;
+  margin-left: 1px;
+  vertical-align: -.22em;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+/* In the composer's box, over its field and on the box's own color, so its "Or type a thought" is under the words.
+   Nothing here takes the pointer: a click still reaches the box and its mic. */
+.tiny-transcript-in-box { position: fixed; z-index: 7; pointer-events: none; }
+.tiny-transcript-in-box .tiny-transcript-text { position: absolute; background: var(--card); }
+
+/* In the status line, it takes the room its neighbors leave. */
+.tiny-transcript-in-status { position: relative; flex: 1 1 auto; align-self: center; min-width: 0; }
+
+/* No box to go in (the playground), or your own typing in it: just above it, centered. */
+.tiny-transcript-floating {
   position: fixed;
   bottom: calc(var(--dock-height, 120px) + 8px);
   left: 50%;
@@ -7,52 +42,46 @@
   width: max-content;
   max-width: min(480px, calc(100vw - 16px));
 }
+.tiny-transcript-floating .tiny-transcript-text { padding: 2px 8px; border-radius: 8px; background: color-mix(in srgb, var(--bg) 90%, transparent); }
 
-/* One line that runs from its end: what you're saying now stays in view, and a long turn's start goes behind a "…"
-   at the left (right to left, the start is the right edge, so the words overflow and the ellipsis falls leftward). */
-.tiny-transcript-text {
-  box-sizing: border-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
+/* The first-use hint, glass as hints are (≤ 312 px, 13 px), its tail at the words' start, above where they show. */
 .tiny-transcript-hint {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: calc(100% + 10px);
+  left: 0;
   box-sizing: border-box;
   width: 300px;
-  max-width: calc(100vw - 16px);
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
   box-shadow: var(--shadow);
   color: var(--ink);
-  font-size: 12px;
-  line-height: 1.3;
+  direction: ltr;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: auto;
 }
-
+.tiny-transcript-hint-center { left: 50%; transform: translateX(-50%); }
 .tiny-transcript-hint::after {
   content: "";
   position: absolute;
   top: 100%;
-  left: 50%;
+  left: 22px;
   margin-left: -6px;
   border: 6px solid transparent;
-  border-top-color: var(--card);
+  border-top-color: color-mix(in srgb, var(--card) 86%, transparent);
 }
+.tiny-transcript-hint-center::after { left: 50%; }
 
-.tiny-transcript-help { margin: 0 0 6px; }
-.tiny-transcript-size { display: block; width: 100%; margin: 0; accent-color: var(--accent); }
+.tiny-transcript-help { margin: 0 0 8px; text-wrap: balance; }
+.tiny-transcript-size-row { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.tiny-transcript-size-label { flex: none; }
+.tiny-transcript-size { flex: 1; min-width: 0; margin: 0; accent-color: var(--accent); }
 .tiny-transcript-size:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tiny-transcript-size-value { flex: none; min-width: 3.2em; font-variant-numeric: tabular-nums; text-align: right; }
