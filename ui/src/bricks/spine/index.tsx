@@ -642,7 +642,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
-    id: item.key, type: "item", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
+    id: item.key, type: "item", className: "spine-node", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
     draggable: item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin" && item.kind !== "group", selectable: false, focusable: false, connectable: false,
     // Heads over points: far out, a topic's title covers the top of its own spine (in reach of a point, never at it).
     zIndex: (item.kind === "notch" || item.kind === "slot" || item.kind === "group" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)

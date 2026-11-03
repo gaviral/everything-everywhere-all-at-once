@@ -168,6 +168,14 @@
 .spine-bars > span { position: absolute; height: 7px; margin-top: -3.5px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 16%, transparent); }
 .spine-bars.spine-bars-thick > span { height: 10px; margin-top: -5px; background: color-mix(in srgb, var(--ink) 30%, transparent); }
 
+/* On touch the page makes every control a 40 px target (styles.css). A node's own controls are drawn at the size the layout
+   measured, so grown they cover what's beside them: a title slid down over its meta line, the tool that keeps a point on
+   the shelf covered the end of its words. They keep their size; the canvas's corners and chips stand outside its nodes
+   and keep 40 px. */
+@media (hover: none) {
+  .spine-frame .spine-node :is(button, summary, a, input, select) { min-width: 0; min-height: 0; }
+}
+
 /* Pointed at or focused: open on the map, shelve, unpin. */
 .spine-tools { position: absolute; top: -12px; right: -8px; display: none; gap: 4px; }
 .spine-head:hover .spine-tools, .spine-point:hover .spine-tools, .spine-card:hover .spine-tools, .spine-aside:hover .spine-tools,
