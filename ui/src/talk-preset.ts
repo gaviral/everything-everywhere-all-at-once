@@ -12,20 +12,20 @@ export const talkOn = () => talk;
 export const watchTalk = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 export const useTalk = () => useSyncExternalStore(watchTalk, talkOn, () => false);
 function changed() {
-  if (browser) document.documentElement.toggleAttribute("data-talk", talk);
-  for (const watcher of watchers) watcher();
-}
-export function switchTalk(value: boolean) {
-  talk = value;
-  try { localStorage.setItem(STORE, value ? "talk" : ""); } catch { /* this visit still works */ }
   // Leaving a link-opened preset must also survive reload at that address.
-  if (browser && !value) {
+  if (browser && !talk) {
     const url = new URL(location.href);
     if (url.searchParams.get("preset") === "talk") {
       url.searchParams.delete("preset");
       history.replaceState(history.state, "", url);
     }
   }
+  if (browser) document.documentElement.toggleAttribute("data-talk", talk);
+  for (const watcher of watchers) watcher();
+}
+export function switchTalk(value: boolean) {
+  talk = value;
+  try { localStorage.setItem(STORE, value ? "talk" : ""); } catch { /* this visit still works */ }
   changed();
 }
 if (browser) {
