@@ -1144,6 +1144,12 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
+  const talkExit = talk && <button type="button" className="talk-exit" onClick={() => {
+    switchTalk(false);
+    composerRef.current?.focus({ preventScroll: true });
+  }}>All features</button>;
+
   // The classic page (`?shell=1`, kept for one release; `?cards` too), and the shell after it.
   if (!SHELL2) return (
     <MotionConfig reducedMotion="user">
@@ -1156,6 +1162,7 @@ export default function App() {
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
       {/* The page's first stop: Tab, then Enter, and you're typing (it took 46 Tabs past the header and the map). */}
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
+      {talkExit}
       <header ref={headerRef}>
         <div className="brand" data-slot="top-left">
           E2A2O
@@ -1208,7 +1215,7 @@ export default function App() {
       </header>
 
       <div id="tour-tools" />
-      <Apps core={core} />
+      {!talk && <Apps core={core} />}
       <div id="tour-map" />
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
@@ -1238,9 +1245,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {!talk && <>
       <SendCard card={core.sendCard} onStop={core.stopSend} onGone={core.sendCardGone} />
       <PullsCard card={core.pullsCard} onGone={core.pullsCardGone} />
       <NoteCard card={core.noteCard} onOpen={core.openNote} onGone={core.noteCardGone} />
+      </>}
 
       {core.mapChange && (
         <div className="map-change">
@@ -1254,7 +1263,7 @@ export default function App() {
 
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
-      {world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
+      {!talk && world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
           <div className="palace-switch" role="group" aria-label="View" data-guide="views">
             <button aria-pressed={view === "map"} onClick={() => showView("map")} data-guide="view:map">Cards</button>
@@ -1270,7 +1279,8 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "topic" : "topics"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+      {talk && spine ? <BrickMount brick={spine} host={brickHost} />
+        : view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
         : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
@@ -1305,6 +1315,7 @@ export default function App() {
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "Since you left. Your thoughts are ready to explore above the input box." : ""}</div>
+          {!talk && <>
           <NotesContext.Provider value={notes}>
           <Away items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
             jumps.jumped(world, item.threadId);
@@ -1352,6 +1363,7 @@ export default function App() {
           <AttentionNote onGo={attention.go} />
           <BrickSlot kind="card" host={brickHost} />
           {install && <InstallHint hint={install} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />}
+          </>}
           {/* One span: the live line rolls up as one block (legible.css), with "· this: …" running on after the words. */}
           {showsLiveLine({ words: !!(core.partial || core.handoff), pending: pending.length, listening: core.listening, starting: startingMic, wordsElsewhere, view }) && <div className={core.partial || core.handoff ? "live words" : "live"}><span><Markdown text={liveLine(core.partial || core.handoff, startingMic)} /><ThisEcho /></span></div>}
           <div className="pending" data-guide="pending">
@@ -1377,12 +1389,12 @@ export default function App() {
           </form>
         </div>
       </section>
-      {core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
+      {!talk && core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       <BrickSlot kind="panel" host={brickHost} />
       {!talk && <TalkRail host={brickHost} />}
       <BrickSlot kind="input" host={brickHost} />
-      <Tips />
-      <Catalog />
+      {!talk && <Tips />}
+      {!talk && <Catalog />}
       {/* Another participant pointing at a part of the screen, or saying a caption (docs/guide.md). */}
       <Guide world={world} view={view} query={query} focus={focusMode} />
       <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
@@ -1402,7 +1414,6 @@ export default function App() {
 
   // The shell (the default, shell/): four corners, the stage, the status line, the rail.
   const empty = world.threads.length === 0;
-  const spine = BRICKS.find((brick) => brick.info.id === "spine" && bricksOn.has("spine"));
   // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
   const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
   const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
@@ -1460,6 +1471,7 @@ export default function App() {
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
+      {talkExit}
       <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
       <TopRight>
         {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={(thread) => goBack(thread)} />}
@@ -1535,7 +1547,7 @@ export default function App() {
         </div>
         {/* With History open, a notice is its newest line there, with its Undo: not said twice. */}
         <AnimatePresence>
-          {core.notice && railTab !== "history" && !aboutKey(core.notice) && (
+          {core.notice && (talk || railTab !== "history") && !aboutKey(core.notice) && (
             <motion.div ref={noticeRef} className="notice" data-guide="notice" role="status"
               onFocus={() => setNoticeFocused(true)} onBlur={() => setNoticeFocused(false)}
               onMouseEnter={() => setNoticeHeld(true)} onMouseLeave={() => setNoticeHeld(false)}
@@ -1546,7 +1558,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        {core.mapChange && !core.notice && railTab !== "history" && <div className="map-change" role="status">
+        {core.mapChange && !core.notice && (talk || railTab !== "history") && <div className="map-change" role="status">
           <span>{core.mapChange.ai && <span aria-hidden="true" className="ai-mark" data-tip={core.mapChange.refined ? TIPS.mapRefined : TIPS.mapChange}>✦ </span>}{core.mapChange.text}</span>
           {(core.mapChange.undo || core.mapChange.restore) && <button className="undo" disabled={!core.connected} aria-keyshortcuts={modAria("Z")}
             onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
