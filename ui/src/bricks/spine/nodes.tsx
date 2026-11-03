@@ -2,9 +2,11 @@
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
 // line, the Friend's with ✦; what was agreed carries both marks.
-import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
+import { SpeechFixesContext, type Thought } from "../contract";
+import { StayHere } from "../../StayHere";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -32,6 +34,7 @@ export type ItemNode = Node<ItemData, "item">;
 export interface Acts {
   toggle(thread: string): void;
   pick(item: Item): void;
+  words(item: Item): void;
   focus(item: Item): void;
   openOnMap(thread: string): void;
   shelve(item: Item): void;
@@ -203,6 +206,7 @@ function Head({ data, now }: { data: ItemData; now: number }) {
   return <div className={cls("spine-head", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh",
     data.dim && "spine-dim", data.cut && "spine-cut", zoomedOut && "spine-head-far")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     <Tile item={item} />
+    <StayHere thread={item.thread} title={item.title} />
     <button type="button" className="spine-title" style={{ left: G.titleX, top, width: G.titleW, WebkitLineClamp: G.titleMax }}
       title={item.title} onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       aria-label={`${item.title}: ${meta}${item.dropped ? ", left off" : ""}${here ? ", where you are" : ""}`}>
@@ -221,26 +225,63 @@ function Words({ item }: { item: Item }) {
   const shown = item.shown ?? item.text ?? "";
   const quotes = (item.quotes ?? []).filter((q) => q.start >= 0);
   const parts: ReactNode[] = [];
+  const fixes = useContext(SpeechFixesContext);
+  // Split only the text runs, so a margin note can still underline the same uncertain words.
+  const marked = (start: number, end: number) => {
+    const runs: ReactNode[] = [];
+    let at = start;
+    for (const f of item.fixes ?? []) {
+      const left = Math.max(at, f.start), right = Math.min(end, f.start + f.thought.unclear.length);
+      if (left >= right) continue;
+      runs.push(shown.slice(at, left));
+      runs.push(<SpeechCheck key={f.thought.id} thought={f.thought} controls={fixes?.(f.thought)}>{shown.slice(left, right)}</SpeechCheck>);
+      at = right;
+    }
+    runs.push(shown.slice(at, end));
+    return runs;
+  };
   let at = 0;
   for (const q of quotes) {
     if (q.start < at) continue;
-    parts.push(shown.slice(at, q.start));
-    parts.push(<span key={q.margin} className="spine-quote" data-margin={q.margin}>{shown.slice(q.start, q.end)}</span>);
+    parts.push(...marked(at, q.start));
+    parts.push(<span key={q.margin} className="spine-quote" data-margin={q.margin}>{marked(q.start, q.end)}</span>);
     at = q.end;
     if (q.folded) {
-      parts.push(shown.slice(at, q.fold));
+      parts.push(...marked(at, q.fold));
       parts.push(<span key={`${q.margin}-room`} className="spine-fold-room" data-fold={q.margin} aria-hidden="true">{" …?"}</span>);
       at = q.fold;
     }
   }
-  parts.push(shown.slice(at));
+  parts.push(...marked(at, shown.length));
   const fixed = item.marks?.find((m) => m.kind === "fixed");
   return <span className="spine-words">{parts.map((part, i) => <Fragment key={i}>{part}</Fragment>)}{fixed && <span className="spine-mark-ai" title={fixed.text} aria-hidden="true">{" ✦"}</span>}</span>;
 }
 
+/** The uncertain words open the same controls as Cards, on the top layer so they stay clear of the canvas. */
+function SpeechCheck({ thought, controls, children }: { thought: Thought; controls: ReactNode; children: ReactNode }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  return <>
+    <button ref={button} type="button" className="spine-uncertain nodrag nopan" popoverTarget={id}
+      aria-label={`Check possibly misheard words: ${thought.unclear}`} title="Might be misheard · check words"
+      onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}>{children}</button>
+    <span ref={panel} id={id} popover="auto" className="spine-fixes nodrag nopan" role="group" aria-label="Check words"
+      onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}
+      onToggle={() => {
+        const el = panel.current, anchor = button.current;
+        if (!el?.matches(":popover-open") || !anchor) return;
+        const r = anchor.getBoundingClientRect(), box = el.getBoundingClientRect();
+        el.style.left = `${Math.max(G.pad, Math.min(r.left, innerWidth - box.width - G.pad))}px`;
+        el.style.top = `${Math.max(G.pad, Math.min(r.bottom, innerHeight - box.height - G.pad))}px`;
+      }}>{controls}</span>
+  </>;
+}
+
 /** Under a point: ✓ Decided (or ✓ Agreed with who agreed), Left off. */
-function Chips({ item }: { item: Item }) {
-  return <span className="spine-chips" style={{ left: item.look!.textX, top: item.lines!.length * item.look!.line + 5 }}>
+function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
+  return <span className="spine-chips" style={{ left: item.look!.textX, top: item.lines!.length * item.look!.line + offset + 5 }}>
     {item.decided && (item.agreed ? <span className="spine-chip spine-agreed">✓ Agreed{item.agreed.map((who) => <Initial key={who.name} who={who} small />)}</span>
       : <span className="spine-chip">✓ Decided</span>)}
     {item.left && <span className="spine-chip spine-chip-left">Left off</span>}
@@ -251,7 +292,7 @@ function Chips({ item }: { item: Item }) {
 function Entries({ entries }: { entries: Entry[] }) {
   return <>{entries.map((entry, i) => <span key={i} className="spine-entry">
     {entry.who.me ? <span className="spine-entry-mine" aria-hidden="true" /> : <Initial who={entry.who} small />}
-    <span className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}>{entry.text}</span>
+    <span className="spine-entry-text" style={{ WebkitLineClamp: entry.lines.length }}>{entry.text}</span>
   </span>)}</>;
 }
 
@@ -262,6 +303,7 @@ function Point({ data }: { data: ItemData }) {
   const look = item.look!;
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
+  const wordsH = item.wordsOpen === undefined ? 0 : G.pointLine + G.pointGap;
   const label = `${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
     // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
@@ -283,9 +325,12 @@ function Point({ data }: { data: ItemData }) {
         <Words item={item} />
       </span>}
     {!zoomedOut && item.quotes?.filter((q) => q.folded && q.start >= 0).map((q) => <Fold key={q.margin} margin={q.margin} />)}
-    {!zoomedOut && item.chips && <Chips item={item} />}
-    {!zoomedOut && item.landing && <span className="spine-landing" style={{ left: look.textX, top: textH + (item.chips ? G.chips : 0) + 2 }}>{item.landing}</span>}
-    {!zoomedOut && item.tucks && <span className="spine-tucks" style={{ left: look.textX, width: look.textW, top: textH + (item.chips ? G.chips : 0) + (item.landing ? G.landLine : 0) }}>
+    {!zoomedOut && item.wordsOpen !== undefined && <button type="button" className="spine-original nodrag nopan"
+      style={{ left: look.textX, top: textH, height: wordsH }} aria-expanded={item.wordsOpen}
+      onClick={() => acts.words(item)}>{item.wordsOpen ? "Show less" : "Words said"}</button>}
+    {!zoomedOut && item.chips && <Chips item={item} offset={wordsH} />}
+    {!zoomedOut && item.landing && <span className="spine-landing" style={{ left: look.textX, top: textH + wordsH + (item.chips ? G.chips : 0) + 2 }}>{item.landing}</span>}
+    {!zoomedOut && item.tucks && <span className="spine-tucks" style={{ left: look.textX, width: look.textW, top: textH + wordsH + (item.chips ? G.chips : 0) + (item.landing ? G.landLine : 0) }}>
       {item.tucks.map((tuck) => tuck.thread
         ? <button key={tuck.margin} type="button" className="spine-tuck spine-tuck-tangent nodrag" data-thread={tuck.thread} onClick={() => acts.toggle(tuck.thread!)}
           aria-label={`${tuck.title}, a tangent: ${tuck.entries[0]?.text ?? "nothing yet"}. Open it`}>
@@ -331,6 +376,7 @@ function Card({ data, now }: { data: ItemData; now: number }) {
     picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim", data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}
     data-slot={data.arriving ? `slot:${data.arriving}` : undefined}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
+    <StayHere thread={item.thread} title={item.title} />
     {item.open && item.line && <span className="spine-card-line" style={{ left: item.line.x, top: item.line.y1, height: Math.max(0, item.line.y2 - item.line.y1) }} aria-hidden="true" />}
     <button type="button" className="spine-card-face" onClick={() => acts.toggle(item.thread)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       aria-expanded={!!item.open} title={item.title}
@@ -391,6 +437,7 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
     data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+    <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>

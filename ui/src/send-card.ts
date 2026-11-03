@@ -90,5 +90,5 @@ export function comesFirst(card: { state: SendState } | null): boolean {
 
 /** How long an ended card stays up: its line's reading time (notice-rules.ts `upFor`), as any answer gets. */
 export function lingerMs(card: Card): number {
-  return card.state === "counting" ? 0 : upFor(cardWords(card, card.until).status);
+  return card.state === "counting" ? 0 : upFor(`${cardWords(card, card.until).heading} ${card.text} ${cardWords(card, card.until).status}`);
 }

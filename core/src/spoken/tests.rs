@@ -458,3 +458,20 @@ fn undoing_a_filing_reopens_only_a_thread_the_filing_dropped() {
         assert_eq!((world.active_for("you").map(String::as_str), world.thread("T1").unwrap().status), (Some("T1"), want), "trailed {trailed}");
     }
 }
+
+#[test]
+fn talk_preset_is_a_private_whole_turn_request() {
+    for (words, expected) in [("Talk mode", "talk"), ("All features", "features")] {
+        let f = Fixture::new(map(vec![thread("T1", "Garden", 1)]));
+        let mut updates = f.core.updates.subscribe();
+        assert!(act(&f.core, "Sam", words).is_some());
+        let told: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
+        assert_eq!(told.len(), 1);
+        assert_eq!(told[0].to.as_deref(), Some("Sam"));
+        assert_eq!(serde_json::to_value(&told[0].message).unwrap(), serde_json::json!({ "type": "view", "view": expected }));
+        assert!(f.core.snapshot().thoughts.is_empty());
+    }
+    for words in ["We should try talk mode tomorrow", "All features are useful"] {
+        assert!(!matches!(kind(words), Some(Act::Talk | Act::Features)));
+    }
+}

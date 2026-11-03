@@ -55,7 +55,7 @@ function unframe(buffer) {
  *  `door`: what /room says (alone on a laptop unless a check opens a room, or runs as the hosted site). A check that
  *  answers as the core would hears each message with the window's query (`onMessage`) and each window closing
  *  (`onClose`). */
-export async function standInCore(joinReply, { door = { room: false, member: true }, onMessage = null, onClose = null } = {}) {
+export async function standInCore(joinReply, { door = { room: false, member: true }, onMessage = null, onClose = null, port = 0 } = {}) {
   const sockets = new Set();
   const heard = [];
   const server = createServer((req, res) => {
@@ -90,7 +90,7 @@ export async function standInCore(joinReply, { door = { room: false, member: tru
     sockets.add(socket);
     for (const message of messages) socket.write(frame(JSON.stringify(message)));
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
   return {
     port: server.address().port,
     heard,
@@ -124,9 +124,9 @@ function watchExit() {
 }
 
 /** Headless Chrome with one page at `url`, `width` × `height`, light, the app's own motion. */
-export async function openPage(url, { width = 1440, height = 900 } = {}) {
+export async function openPage(url, { width = 1440, height = 900, debugPort = 0 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "page-check-"));
-  const chrome = spawn(chromePath, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
+  const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, "--no-first-run",
     "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   running.set(chrome, profile);
   chrome.once("exit", () => running.delete(chrome));

@@ -92,6 +92,8 @@
 .spine-words { background: var(--bg); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .spine-frame .spine-on .spine-text { background: color-mix(in srgb, var(--accent) 9%, var(--bg)); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 9%, var(--bg)); }
 .spine-on .spine-words { background: none; }
+.spine-frame .spine-original { position: absolute; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.spine-original:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .spine-frame .spine-point-left .spine-text { color: color-mix(in srgb, var(--ink) 80%, var(--muted)); font-style: italic; }
 .spine-frame .spine-point-mini .spine-text { font-size: 13px; }
 .spine-point-mini .spine-words, .spine-point.spine-pinned .spine-words { background: var(--card); }
@@ -178,6 +180,9 @@
 
 /* Pointed at or focused: open on the map, shelve, unpin. */
 .spine-tools { position: absolute; top: -12px; right: -8px; display: none; gap: 4px; }
+/* Stay here sits above the measured topic box, clear of the title and hover tools, even while folded. */
+.spine-head > .stay-control, .spine-card > .stay-control, .spine-aside > .stay-control,
+.spine-head > .staying-here, .spine-card > .staying-here, .spine-aside > .staying-here { position: absolute; bottom: 100%; left: 0; margin-bottom: 14px; z-index: 5; }
 .spine-head:hover .spine-tools, .spine-point:hover .spine-tools, .spine-card:hover .spine-tools, .spine-aside:hover .spine-tools,
 .spine-head:focus-within .spine-tools, .spine-point:focus-within .spine-tools, .spine-card:focus-within .spine-tools, .spine-aside:focus-within .spine-tools { display: flex; }
 .spine-frame .spine-tool { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--card);
@@ -323,3 +328,11 @@
   .spine-ring, .spine-card-ring { display: none; }
 }
 @keyframes spine-fade { from { opacity: 0; } }
+
+/* A speech check keeps its place in the words; the existing controls open beside it. */
+.spine-frame .spine-uncertain { display: inline; margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--amber-soft); color: inherit;
+  font: inherit; line-height: inherit; text-align: inherit; text-decoration: underline wavy var(--amber); text-underline-offset: 3px; cursor: pointer; }
+.spine-frame .spine-uncertain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.spine-fixes { position: fixed; inset: auto; margin: 0; padding: 0; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+.spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }

@@ -53,7 +53,7 @@ try {
   assert.deepEqual(cardWords(stopped, t0 + 3000), { heading: "Message to Mia · dry run", status: "Stopped: not sent", stop: false });
   assert.equal(stopped.total, 5000, "keeps the count's length");
   assert.equal(stopsOnKey(stopped, "Escape", t0 + 3000), false, "nothing left to stop");
-  assert.equal(lingerMs(stopped), upFor("Stopped: not sent"), "up for its reading time, as any answer");
+  assert.equal(lingerMs(stopped), upFor(`${cardWords(stopped, stopped.until).heading} ${stopped.text} Stopped: not sent`), "up for its reading time, as any answer");
   const newer = received(card, { ...msg("counting", { in_ms: 5000 }), id: 2, to: "Sam" }, t0 + 100);
   assert.equal(received(newer, msg("dry_run"), t0 + 5000), newer, "an older card's end leaves the newer up");
   // The core repeats the speaker's last end on every (re)connection (core/src/messages.rs `card_for`): a fresh window
@@ -62,7 +62,7 @@ try {
   const late = received(card, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 9000);
   assert.equal(late.state, "sent");
   assert.equal(cardWords(late, t0).status, "Sent to Mia");
-  assert.equal(lingerMs(late), upFor("Sent to Mia"));
+  assert.equal(lingerMs(late), upFor(`${cardWords(late, late.until).heading} ${late.text} Sent to Mia`));
   assert.equal(received(late, msg("sent", { live: true, message: "Sent to Mia" }), t0 + 9500), late, "the same end again: its time up doesn't start over");
   // Back mid-count, the core says the time left: the bar keeps the count's length, so it runs on from where it was.
   const back = received(card, msg("counting", { in_ms: 3000 }), t0 + 2000);

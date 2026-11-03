@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { uiServer } from "./ui-server.mjs";
 
 const [tree, output, ...paths] = process.argv.slice(2);
 if (tree && (!output || paths.length > 1 || (paths.length === 1 && paths[0] !== "/?shell=2"))) {
@@ -15,6 +16,9 @@ const { ready, standInCore, openPage, sleep } = await import(tree
 
 const why = ready();
 if (why) { console.log(`SKIP unfinished-quote-place-check: ${why}`); process.exit(3); }
+const modules = await uiServer();
+const { lingerMs } = await modules.ssrLoadModule("/src/unfinished.ts");
+await modules.close();
 const shots = output ? resolve(output) : process.env.SHOTS;
 const shotPaths = [];
 if (shots) mkdirSync(shots, { recursive: true });
@@ -53,7 +57,7 @@ const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
   },
 });
 let browser;
-const timeout = setTimeout(() => { console.error("unfinished-quote-place-check: timed out"); process.exit(1); }, 180_000);
+const timeout = setTimeout(() => { console.error("unfinished-quote-place-check: timed out"); process.exit(1); }, 240_000);
 try {
   for (const [width, height] of [[1440, 900], [390, 844]]) for (const scheme of ["light", "dark"]) {
     browser = await openPage("about:blank", { width, height });
@@ -104,7 +108,7 @@ try {
         assert.equal(await evaluate('document.querySelector(".pullback-quote")?.textContent ?? null'), expected, `${label}: ${reason}: settled quote`);
         assert.equal(await evaluate(`document.querySelector('.pullback').checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) &&
           (!document.querySelector('.pullback-quote') || document.querySelector('.pullback-quote').checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))`), true, `${label}: card and quote displayed`);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".pullback-actions button")].map(el => el.textContent)'), ["Finish it", "Later"]);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".pullback-actions button")].map(el => el.textContent)'), ["Finish it", "Later", "Forget it"]);
       };
       const relay = (change) => core.send({ type: "change", change });
       const move = async (id, to, undo = false) => {
@@ -139,6 +143,15 @@ try {
       }
       // The actual pause/card condition, with no changes to clocks or product timing.
       await expectQuote(quote, "initial dropped thread ignores another speaker and appended older imports");
+      const cardAt = await evaluate(`(() => {
+        const r = document.querySelector('.pullback').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + 8 };
+      })()`);
+      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...cardAt });
+      if (width === 1440 && scheme === "light") {
+        await sleep(lingerMs("Riverside picnic", quote) + 500);
+        await expectQuote(quote, "hover holds the card beyond its reading time");
+      }
       await move("p1", "T2");
       await expectQuote(quote, "newer incoming move does not change the last spoken turn");
       if (shell && shots) {
@@ -175,14 +188,49 @@ try {
       await move("future", "T1");
       await expectQuote(null, "no eligible words: omit quote despite incoming thought and other speaker");
 
-      // A genuinely new spoken turn opens the thread, and trailing off offers its new words after the real pause.
+      // Speech cannot take away a card being read, even when the new words reopen its thread.
+      await evaluate(`navigator.mediaDevices.getUserMedia = async () => {
+        const ctx = new AudioContext(), tone = ctx.createOscillator(), out = ctx.createMediaStreamDestination();
+        tone.connect(out); tone.start(); return out.stream;
+      }`);
+      await tap(await evaluate(`(() => {
+        const r = document.querySelector('button.mic').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`));
+      await check('document.querySelector("button.mic")?.getAttribute("aria-pressed") === "true"', "local microphone starts");
+      core.send({ type: "status", listening: true });
+      core.send({ type: "partial", text: "I am still explaining the picnic" });
+      await check('document.body.textContent.includes("I am still explaining the picnic")', "live speech reached the page");
+      await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+      await expectQuote(null, "live speech leaves the card up after the pointer leaves");
+      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...cardAt });
       const spoken = thought("spoken", "Choose a shady picnic spot before—", "T2", { at_ms: Date.now(), complete: false });
       relay({ type: "thought_added", thought: spoken });
       relay({ type: "thread_touched", thread_id: "T2", last_point: spoken.point, at_ms: spoken.at_ms });
-      await check('!document.querySelector(".pullback")', "new spoken turn opens thread and removes card");
+      await expectQuote(null, "new spoken turn keeps the card being read");
+      core.send({ type: "partial", text: "" });
+      // An explicit Later still dismisses at once, despite the pointer holding the card.
+      await evaluate('document.querySelector(".pullback-actions button:nth-child(2)").click()');
+      await check('!document.querySelector(".pullback")', "Later dismisses the hovered card");
       relay({ type: "thread_status", thread_id: "T2", status: "dropped", speaker: "you" });
       assert.equal(await evaluate('!!document.querySelector(".pullback-quote")'), false, `${label}: no offer during fresh-word pause`);
       await expectQuote(spoken.text, "newly dropped spoken turn quotes its own words");
+      if (width === 1440 && scheme === "light") {
+        await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+        const lifetime = lingerMs("Riverside picnic", spoken.text);
+        const started = Date.now();
+        core.send({ type: "partial", text: "Talking during the reading time" });
+        await sleep(1000);
+        assert.equal(await evaluate('!!document.querySelector(".pullback")'), true, `${label}: speech does not dismiss the card`);
+        await check('!document.querySelector(".pullback")', "card expires after reading time", lifetime + 2000);
+        assert.ok(Date.now() - started >= lifetime - 1200, `${label}: card gets its full reading time`);
+        core.send({ type: "partial", text: "" });
+        await sleep(3000);
+        assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, `${label}: read card stays dismissed after the next pause`);
+      } else {
+        await evaluate('document.querySelector(".pullback-actions button:last-child").click()');
+        await check('!document.querySelector(".pullback")', "Forget it dismisses immediately");
+      }
       await healthy();
     }
     await browser.close();

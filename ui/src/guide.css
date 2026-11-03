@@ -169,7 +169,8 @@
 .guide-held { display: flex; flex-direction: column; gap: 8px; }
 .guide-held[data-place="floating"] { position: fixed; right: 16px; bottom: 16px; z-index: 7; width: 292px; }
 .guide-held[data-place="floating"][data-narrow] { left: 16px; width: auto; align-items: flex-end; }
-.guide-held-cards { display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.guide-held-cards { display: flex; flex-direction: column; gap: 8px; align-self: stretch; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.guide-held-cards > *, .guide-held-chip { flex-shrink: 0; }
 .guide-held-card {
   padding: 11px 14px;
   border: 1px solid var(--line);

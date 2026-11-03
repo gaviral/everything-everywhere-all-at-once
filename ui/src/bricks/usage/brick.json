@@ -1,0 +1,8 @@
+{
+  "id": "usage",
+  "name": "Usage",
+  "does": "Shows your remaining AI allowances and this core's hourly API calls.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": false
+}

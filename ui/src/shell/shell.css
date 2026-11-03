@@ -77,13 +77,8 @@ html.shell2 :is(.shell-button, .shell-btn, .shell-link, .shell-tab, .shell-rail-
 html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-items: center; gap: var(--shell-corner-gap); }
 html.shell2 .shell-tl { top: 16px; left: 16px; }
 html.shell2 .shell-tr { top: 16px; right: 16px; }
-html.shell2 .shell-bl { bottom: 36px; left: 16px; }
-html.shell2 .shell-br { right: 16px; bottom: var(--shelf-top, 36px); z-index: 41; flex-direction: column; align-items: flex-end; }
-/* Under about 1060 px the stage (600 px, centered) starts inside the way back's 215 px, and on a phone its mic sat on the
-   way back, which took the taps: the corner rides above the stage, whatever height it has. */
-@media (max-width: 1060px) {
-  html.shell2 .shell-bl { bottom: calc(var(--dock-height, 120px) + var(--shell-corner-gap)); }
-}
+html.shell2 .shell-bl { bottom: calc(var(--dock-height, 120px) + var(--shell-corner-gap)); left: 16px; }
+html.shell2 .shell-br { right: 16px; bottom: max(var(--shelf-top, 36px), calc(var(--dock-height, 120px) + var(--shell-corner-gap))); z-index: 41; flex-direction: column; align-items: flex-end; }
 html.shell2 .shell-identity { gap: 10px; }
 html.shell2 .shell-wordmark { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .14em; }
 html.shell2 .shell-mapname { color: var(--ink-2); }
@@ -113,11 +108,15 @@ html.shell2 .shell-find-title { flex: 1; min-width: 0; overflow: hidden; font-we
 html.shell2 .shell-find-meta { color: var(--muted); font-size: 11px; }
 html.shell2 .shell-find-none { margin: 0; padding: 8px 10px; color: var(--muted); font-size: 13px; }
 
-/* ── The stage: bottom center, at most 600 px, bottom up: the composer, captions, one notice, a card ───────────────── */
+/* ── The dock: input and status, with captions, notices and cards above ───────────────── */
 
+html.shell2 .shell-dock {
+  display: flex; flex-direction: column; gap: 10px; padding: 0; max-height: calc(100dvh - 120px);
+  overflow: visible; background: none; z-index: 42; pointer-events: none;
+}
 html.shell2 .shell-stage {
-  position: fixed; bottom: 36px; left: 50%; z-index: 42; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
-  width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); translate: -50% 0; pointer-events: none;
+  position: relative; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  width: min(600px, calc(100vw - 32px)); pointer-events: none;
 }
 html.shell2 .shell-stage > * { pointer-events: auto; }
 html.shell2 .shell-cards { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -158,17 +157,22 @@ html.shell2 .shell-composer-big { height: 60px; padding: 0 12px 0 8px; border-ra
 html.shell2 .shell-composer-big .mic { width: 46px; height: 46px; background: transparent; box-shadow: inset 0 0 0 2px var(--blue); color: var(--ink); }
 html.shell2 .shell-composer-big .mic svg { width: 22px; height: 22px; }
 
-/* ── The status line: 24 px, flush at the very bottom; the state, live words (a feature's), what waits ─────────────── */
+/* ── The bottom bar: the status line and one input row ─────────────── */
 
 html.shell2 .shell-status {
-  position: fixed; right: 0; bottom: 0; left: 0; z-index: 45; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: 24px; grid-auto-rows: 0; align-items: center; column-gap: 14px; height: 24px; padding: 0 16px; overflow: hidden;
+  position: relative; z-index: 45; display: grid; flex: none; pointer-events: auto; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 24px auto; grid-auto-rows: 0; align-items: center; gap: 6px 14px; padding: 0 16px max(8px, env(safe-area-inset-bottom)); overflow: hidden;
   border-top: 1px solid var(--line); background: var(--status-bg); color: var(--muted); font-size: 11px; line-height: 24px; white-space: nowrap;
 }
 /* Anything a feature puts in the line (Tiny transcript's words) takes the middle, between the state and what waits. */
-html.shell2 .shell-status > * { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+html.shell2 .shell-status > * { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
 html.shell2 .shell-status > .shell-status-state { grid-column: 1; display: inline-flex; align-items: center; gap: 8px; overflow: hidden; }
 html.shell2 .shell-status > .shell-status-right { grid-column: 3; }
+/* Input and mic share one row inside the bar; status and live words keep their own unobstructed line. */
+html.shell2 .shell-status > .shell-composer {
+  grid-column: 1 / -1; grid-row: 2; justify-self: center; width: min(600px, 100%); min-width: 0; overflow: visible;
+  font-size: 15px; white-space: normal; box-shadow: none;
+}
 html.shell2 .shell-status-word { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 html.shell2 .shell-status-hint { overflow: hidden; text-overflow: ellipsis; }
 html.shell2 .shell-status-sep { display: inline-block; flex: none; width: 1px; height: 12px; background: var(--line-2); vertical-align: middle; }
@@ -319,7 +323,7 @@ html.shell2 .shell-samples { display: flex; flex-wrap: wrap; align-items: center
 html.shell2 .shell-samples > span { color: var(--muted); font-size: 13px; }
 html.shell2 .shell-sample { cursor: pointer; }
 
-/* ── A phone: a 56 px top bar, the status line at the bottom and the composer above it; the rail is a sheet ─────── */
+/* ── A phone: a 56 px top bar, the input inside the bottom bar; the rail is a sheet ─────── */
 
 @media (max-width: 560px) {
   html.shell2 .shell-tl { top: 10px; left: 16px; }
@@ -337,10 +341,9 @@ html.shell2 .shell-sample { cursor: pointer; }
   html.shell2 .shell-find-open .shell-find-field input { opacity: 1; }
   html.shell2 .shell-find-open { position: fixed; top: 10px; right: 16px; left: 16px; z-index: 46; }
   html.shell2 .shell-find-open .shell-find-results { width: 100%; }
-  html.shell2 .shell-stage { bottom: 34px; }
   html.shell2 .shell-composer-big { height: 56px; }
   html.shell2 .shell-composer .keycap { display: none; }
-  html.shell2 .shell-status { padding: 0 12px; column-gap: 10px; }
+  html.shell2 .shell-status { padding-right: 12px; padding-left: 12px; column-gap: 10px; }
   html.shell2 .shell-status-hint, html.shell2 .shell-status-state .shell-status-sep { display: none; }
   html.shell2 .shell-rail {
     top: auto; right: 0; bottom: 0; left: 0; z-index: 47; width: auto; height: min(78dvh, 640px); border-width: 1px 0 0; border-radius: 18px 18px 0 0;

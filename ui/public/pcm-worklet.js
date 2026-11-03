@@ -29,6 +29,16 @@ class PcmWriter extends AudioWorkletProcessor {
     super();
     this.frame = new Int16Array(FRAME);
     this.filled = 0;
+    this.muted = false;
+    this.generation = 0;
+    this.port.onmessage = ({ data }) => {
+      this.muted = data.muted;
+      this.generation = data.generation;
+      // Clear the partial frame and resampling tail at both edges of playback, keeping the frame cadence.
+      this.frame.fill(0);
+      this.history?.fill(0);
+      this.last = 0;
+    };
     // `sampleRate` is the context's rate, a global in the worklet's scope.
     this.step = sampleRate / RATE;
     if (this.step !== 1) {
@@ -41,10 +51,11 @@ class PcmWriter extends AudioWorkletProcessor {
   }
 
   write(s) {
+    if (this.muted) s = 0;
     const c = Math.max(-1, Math.min(1, s));
     this.frame[this.filled++] = c < 0 ? c * 0x8000 : c * 0x7fff;
     if (this.filled === FRAME) {
-      this.port.postMessage(this.frame.buffer, [this.frame.buffer]);
+      this.port.postMessage({ frame: this.frame.buffer, generation: this.generation }, [this.frame.buffer]);
       this.frame = new Int16Array(FRAME);
       this.filled = 0;
     }

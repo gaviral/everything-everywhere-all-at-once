@@ -10,8 +10,16 @@
    1440 (≈ 40% of real turns run past 20 s). */
 .live { display: flex; flex-direction: column; justify-content: flex-end; max-height: 2lh; overflow: hidden; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; }
 
-/* The unfinished card's half-sentence is the card's whole job: it shows all of it. It was cut at ≈ 88 characters. */
+/* Keep enough of the unfinished words to recognize the thought; Show more opens the rest. Three lines give the
+   phone's actions their own row instead of squeezing a long quote beside them for 310 px. */
 .pullback-title, .pullback-quote { overflow: visible; white-space: normal; text-overflow: clip; }
+.pullback-quote:not([data-expanded="true"]) { max-height: 3lh; overflow: hidden; }
+.pullback-more { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+@media (max-width: 560px) {
+  .pullback { flex-direction: column; align-items: stretch; }
+  .pullback-text { flex: none; }
+  .pullback-actions { align-self: flex-end; }
+}
 
 /* An app's name and purpose, or the request it was asked for, wrap rather than lose their end. */
 .dock-build-title { overflow: visible; white-space: normal; text-overflow: clip; }

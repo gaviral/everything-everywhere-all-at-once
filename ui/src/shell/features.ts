@@ -2,6 +2,7 @@
 // views, listening, recap, import and export, in the Catalog's one list. A switch acts at once and only in this browser;
 // other windows of the browser follow. Cards, Pictures, import and export start off: none is part of a first visit.
 import { useSyncExternalStore } from "react";
+import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
 export type BuiltIn = { id: "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
@@ -34,7 +35,10 @@ const watchers = new Set<() => void>();
 const changed = () => { on = onOf(switches); for (const watcher of watchers) watcher(); };
 if (browser) window.addEventListener("storage", (event) => { if (event.key === STORE) { switches = read(); changed(); } });
 
+watchTalk(changed);
+
 function onOf(kept: Switches): ReadonlySet<BuiltIn["id"]> {
+  if (talkOn()) return new Set(["listening"]);
   return new Set(BUILT_INS.filter((b) => kept[b.id] ?? b.defaultOn).map((b) => b.id));
 }
 

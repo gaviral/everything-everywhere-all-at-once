@@ -31,10 +31,12 @@ mod recap;
 mod protocol;
 mod moves;
 mod spoken;
+mod stay;
 mod tidy;
 mod tls;
 mod topics;
 mod tunnel;
+mod usage;
 mod whyhere;
 mod world;
 #[cfg(test)]
@@ -100,6 +102,8 @@ pub struct Core {
     pub imports: import::Imports,
     /// Whether the model service refused the key or is busy (model.rs).
     service: model::Service,
+    /// Allowances read from USAGE_FILE, outside the saved map (usage.rs).
+    usage: usage::Runtime,
     /// Speakers whose windows run on this machine: in a room, only they may add to its Reminders or Calendar.
     hosts: Mutex<std::collections::HashSet<String>>,
     /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
@@ -373,6 +377,11 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool) {
         self.touch();
+        // These are window preferences, never thoughts or requests for the model.
+        if let Some(show) = notice_control(text) {
+            self.send_to(speaker, ServerMsg::NoticeControl { show });
+            return;
+        }
         // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
         if messages::said(self, speaker, text) {
             return;
@@ -395,7 +404,7 @@ impl Core {
             return;
         }
         // "Hmm" while a search is still looking adds nothing, so the search goes on; anything else is newer than it.
-        if filler(text, asked) {
+        if filler(text, asked) && self.snapshot().stay_here.is_none() {
             if typed {
                 self.send_to(speaker, ServerMsg::Notice { message: "Not kept: that reads as filler. Add a few words to keep it.".into() });
             }
@@ -414,7 +423,7 @@ impl Core {
         if let Some(job) = first {
             self.run_command(speaker, job);
         }
-        if !filler(said, asked) {
+        if !said.trim().is_empty() && (!filler(said, asked) || self.snapshot().stay_here.is_some()) {
             let id = self.keep_speaking(speaker, said, speak);
             catalog::kept(self, speaker, said, vec![id]);
         }
@@ -510,7 +519,7 @@ impl Core {
     }
 
     fn keep_speaking(&self, speaker: &str, text: &str, speak: bool) -> String {
-        let thought = Thought {
+        let mut thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
             text: text.into(),
@@ -527,9 +536,24 @@ impl Core {
             decided: false,
         };
         let id = thought.id.clone();
+        // Pin and thought arrival share the world's lock: releasing while the placer is busy never sends
+        // already-pinned words elsewhere. This path also works without a model key.
+        let pinned = loop {
+            let world = self.snapshot();
+            thought.thread_id = world.stay_here.clone().or_else(|| world.active_for(speaker).cloned());
+            let placing = stay::placement(&world, &thought);
+            let pinned = placing.is_some();
+            let changes = std::iter::once(Change::ThoughtAdded { thought: thought.clone() }).chain(placing.into_iter().flatten()).collect();
+            if self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
+                break pinned;
+            }
+        };
+        if pinned {
+            self.new_threads.cancel(speaker);
+            return id;
+        }
         // Before it's queued, so the placer knows when it's the first after "new thread".
         self.new_threads.said(speaker, &id);
-        self.commit_speaking(|_| true, vec![Change::ThoughtAdded { thought }], speak);
         let _ = self.placer_queue.send(placer::Job::Place(id.clone()));
         id
     }
@@ -863,6 +887,13 @@ fn is_new_thread(text: &str) -> bool {
     )
 }
 
+/// Whole-turn notice commands share the typed and final speech path.
+fn notice_control(text: &str) -> Option<bool> {
+    if is_command(text, &["stop showing this"], &[]) { Some(false) }
+    else if is_command(text, &["show those again"], &[]) { Some(true) }
+    else { None }
+}
+
 /// A view asked for by voice, as its button sets it: "pictures" or "palace", "show the cards" or "show the map", "let's
 /// focus", "show all"; or the "?" list of what you can say ("What can I say?", "help"). Only the whole turn, so "let's
 /// go to the palace of Versailles", "these cards are old", "I can't focus today" and "help me move the couch on
@@ -1061,6 +1092,7 @@ async fn main() -> anyhow::Result<()> {
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
         service: model::Service::from_env(),
+        usage: usage::Runtime::from_env().await,
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
         github: github::Runtime::from_env(),
@@ -1084,6 +1116,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(refiner::run(core.clone()));
     tokio::spawn(recap::keep(core.clone()));
     tokio::spawn(topics::run(core.clone()));
+    tokio::spawn(usage::run(core.clone()));
     let images = Path::new(&data).join("images");
     tokio::spawn(pictures::run(core.clone(), images.clone()));
     for id in pending {
@@ -1562,6 +1595,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
+    messages.push(usage::message(core));
     messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1660,6 +1694,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
+                Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
                 Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
                     tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
                 }
@@ -1746,8 +1781,13 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
                 Ok(ClientMsg::Answer { to, text }) => guide::answer(&core, &speaker, &mut pace, to, text),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
-                Ok(ClientMsg::Annotate { thought_id, quote, text }) => {
-                    if let Err(why) = annotate::note(&core, &speaker, &thought_id, &quote, &text) {
+                Ok(ClientMsg::Annotate { thought_id, quote, text, speak }) => {
+                    let result = if speak && ai {
+                        annotate::note_speaking(&core, &speaker, &thought_id, &quote, &text, true)
+                    } else {
+                        annotate::note(&core, &speaker, &thought_id, &quote, &text)
+                    };
+                    if let Err(why) = result {
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
                 }
@@ -1912,6 +1952,7 @@ impl Core {
             wake: Default::default(),
             imports: Default::default(),
             service: Default::default(),
+            usage: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
             github: Default::default(),
@@ -3749,6 +3790,40 @@ mod tests {
             for now in [1, u64::MAX / 2] {
                 assert_eq!(way_back(&world, "you", now), card, "{sample} at {now}");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod notice_control_tests {
+    use super::*;
+    #[test]
+    fn notice_control_reaches_the_window_without_keeping_a_thought() {
+        let path = std::env::temp_dir().join(format!("e2a2o-notices-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let mut updates = core.updates.subscribe();
+        for typed in [false, true] {
+            for (words, show) in [("Stop showing this", false), ("Show those again", true)] {
+                if typed { core.add_typed("User", words); }
+                else { core.add_turn("User", words, true); }
+                let message = updates.try_recv().unwrap();
+                assert_eq!(message.to.as_deref(), Some("User"));
+                assert!(matches!(message.message, ServerMsg::NoticeControl { show: actual } if actual == show));
+                assert!(updates.try_recv().is_err());
+                assert!(core.snapshot().thoughts.is_empty());
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn notice_control_uses_the_same_path_for_speech_and_typing() {
+        for (words, show) in [("Stop showing this", false), ("Can you stop showing this, please?", false), ("Show those again.", true)] {
+            assert_eq!(notice_control(words), Some(show));
+        }
+        for words in ["I said stop showing this yesterday", "Show those again to Dana"] {
+            assert_eq!(notice_control(words), None);
         }
     }
 }

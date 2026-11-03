@@ -49,6 +49,35 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn never_split_while_pinned_and_comments_can_attach_immediately() {
+    let mut f = Fixture::new();
+    assert!(crate::stay::set(&f.core, "you", Some("T1")));
+    let text = "Um, keep the wall blue, and rent is due Friday.";
+    let mut ids = Vec::new();
+    for n in 0..12 {
+        let id = f.core.keep(if n % 2 == 0 { "you" } else { "Sam" }, text);
+        // No placer tick or model response between arrival and the bridge's comment.
+        if [0, 2, 5, 8, 11].contains(&n) {
+            let thread = note(&f.core, "Helper", &id, text, "Which shade of blue?").unwrap();
+            assert_eq!(f.core.snapshot().anchors[&thread].thought_id, id);
+        }
+        ids.push(id);
+    }
+    let world = f.core.snapshot();
+    let kept = world.thoughts.iter().filter(|t| ids.contains(&t.id)).collect::<Vec<_>>();
+    assert_eq!(kept.iter().map(|t| &t.id).collect::<Vec<_>>(), ids.iter().collect::<Vec<_>>());
+    for thought in kept {
+        assert!(thought.placed);
+        assert_eq!(thought.thread_id.as_deref(), Some("T1"));
+        assert_eq!(thought.text, text);
+        assert_eq!(thought.point, text);
+    }
+    assert_eq!(world.anchors.len(), 5);
+    assert!(f.queue.try_recv().is_err(), "neither thoughts nor comments need the model");
+    assert!(!f.journaled().contains("\"type\":\"thought_split\""));
+}
+
 /// What the windows were sent since `updates` began, as JSON with whom each was for (none: every window).
 fn told(updates: &mut tokio::sync::broadcast::Receiver<Outgoing>) -> Vec<Value> {
     let mut out = Vec::new();
@@ -149,5 +178,26 @@ async fn a_note_follows_its_point_through_a_merge_and_its_anchor_comes_back_with
 #[test]
 fn the_window_sends_it_as_annotate() {
     let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "Month to month?" })).unwrap();
-    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
+    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text, speak: false } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
+}
+
+#[test]
+fn only_the_live_comment_carries_speech_and_the_journal_never_does() {
+    let f = Fixture::new();
+    note(&f.core, "Claude", "a", "the lease", "An older comment.").unwrap();
+    let mut updates = f.core.updates.subscribe();
+    let thread = note_speaking(&f.core, "Claude", "a", "the lease", "The new reply.", true).unwrap();
+    let mut spoken = Vec::new();
+    while let Ok(out) = updates.try_recv() {
+        if out.speak {
+            if let ServerMsg::Change { change: Change::ThoughtAdded { thought } } = out.message {
+                spoken.push(thought.text);
+            }
+        }
+    }
+    assert_eq!(spoken, ["The new reply."]);
+    assert_eq!(notes(&f.replayed(), &thread).len(), 2);
+    assert!(!f.journaled().contains("\"speak\""), "speech is live delivery, never saved for replay");
+    let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "The new reply.", "speak": true })).unwrap();
+    assert!(matches!(msg, ClientMsg::Annotate { speak: true, .. }));
 }

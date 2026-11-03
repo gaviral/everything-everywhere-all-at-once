@@ -36,6 +36,8 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    /// The window owns which kinds of notices this person wants to see.
+    NoticeControl { show: bool },
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
     AppsBuild { build: crate::apps::Build },
     /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
@@ -44,6 +46,8 @@ pub enum ServerMsg {
     /// Approving an action didn't add it; it is offered again, and the window shows `message` on its row.
     ActionFailed { id: String, message: String },
     Snapshot { world: std::sync::Arc<World> },
+    /// USAGE_FILE's allowances and this core's hourly calls, or no data. Replayed on joining, refreshed every minute.
+    Usage { data: Option<crate::usage::Snapshot> },
     Change { change: Change },
     /// The ready-to-send message card (messages.rs), to the asker's windows: `counting` with `in_ms` left (it sends
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
@@ -178,6 +182,8 @@ pub enum View {
     Pause,
     Export,
     Notices,
+    Talk,
+    Features,
 }
 
 /// A message on its way out: to every window, or only to one speaker's (in a room, each person's
@@ -209,6 +215,8 @@ pub enum ClientMsg {
     Listen { on: bool },
     /// Go back to a thread, e.g. from the unfinished-thought card.
     Focus { thread_id: String },
+    /// Pin this map's new thoughts to one topic; null releases it, for every speaker.
+    Stay { thread_id: Option<String> },
     /// Explain a selected phrase in the context it appears in, within its thread when it has one.
     Explain {
         id: String,
@@ -320,7 +328,7 @@ pub enum ClientMsg {
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.
-    Annotate { thought_id: String, quote: String, text: String },
+    Annotate { thought_id: String, quote: String, text: String, #[serde(default)] speak: bool },
     /// A topic's new name, typed on its header (topics.rs `rename`): a name already there makes the two one.
     TopicRename { from: String, to: String },
     /// A thread moved under a topic, dragged there (topics.rs `set`): its top thread's, with its branches.
