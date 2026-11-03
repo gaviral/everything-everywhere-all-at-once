@@ -31,8 +31,15 @@
 //    Zoom stops: 1 2 3 are Words · Titles · Pictures and 0 sees all; each changes what's drawn, the control shows the one
 //    that's on, and none fires while a field (the reply box, the app's composer) has the keyboard.
 // Tiny transcript, beyond that: it takes the live words from the dock (`showsLiveWords`); nothing for a typed thought;
-//    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good.
-//    In the app: off, the dock's line has your words; on, they show in it alone, a long turn's newest words in view.
+//    words said show as they come, and stay with the first-use hint after the turn until a click, which is for good;
+//    the hint says what it is, and its slider has a label you can see. In the app: off, the dock's line has your words;
+//    on, they show in it alone, inside the composer's box where its "Or type a thought" sits, a long turn's newest words
+//    in view; your own typing keeps the box (the words wait above it); at a turn's end its words stay until its thought
+//    comes, which takes them at once, and go by themselves when none does.
+// Bubble flight, in the app: your thought lifts above the composer and drifts toward the Spine's slot; placed, it
+//    glides into the slot in at most 400 ms, settles its words there and hands the ring to the Spine. Under Reduce
+//    Motion there's no bubble until you ask: a hint comes once at a quiet pause, its switch keeps Show the flight,
+//    Escape dismisses it for good, and the flight you asked for moves frame by frame even with CSS animations off.
 // Countdown, beyond that: its deadlines kept in this browser (a store that throws changes nothing), the nearer first as
 //    "<label> in 21 h 14 m" with past ones off, amber under three hours, a phone's one line with the label cut and the
 //    time kept, the editor by keyboard; in the app the card and its editor cover no control of the page.
@@ -803,6 +810,14 @@ try {
       // The turn ends (the playground's "Say a thought": a word every 250 ms, the end 600 ms after the last).
       if (!await until(`document.querySelector(".playground-map").textContent.includes("2 placed")`, 6000)) fail(where, "the thought said never landed");
       if (!await evaluate(`!!document.querySelector(".tiny-transcript-hint input[type=range]") && !!document.querySelector(".tiny-transcript-text")`)) fail(where, "the first-use hint left with the turn, before it was dismissed");
+      else {
+        // It says what it's for, and the slider's name is on screen, not only read out.
+        const hint = await evaluate(`(() => { const hint = document.querySelector(".tiny-transcript-hint"), range = hint.querySelector("input[type=range]"), label = range.labels?.[0];
+          const words = [...hint.querySelectorAll("p")].map((p) => p.textContent.trim()).join(" ");
+          return { words, label: label ? label.innerText.trim() : "", wide: label ? label.getBoundingClientRect().width : 0, named: range.getAttribute("aria-label") ?? "" }; })()`);
+        if (hint.words !== "Your words as you speak, kept small; slide to resize") fail(where, `the first-use hint says "${hint.words}", not what it is ("Your words as you speak, kept small; slide to resize")`);
+        if (!hint.label.startsWith("Text size") || hint.wide < 100) fail(where, `the size slider has no label you can see (its label: "${hint.label}", ${hint.wide} px wide${hint.named ? `; aria-label "${hint.named}" only` : ""})`);
+      }
       await evaluate(`document.body.click()`);
       if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail(where, "keeps showing words once the turn is over and the hint dismissed");
       await press("Say a thought");
@@ -1561,16 +1576,44 @@ try {
     if (!await until(`document.querySelector(".tiny-transcript-text")?.textContent === ${JSON.stringify(long)}`, 3000)) fail("Tiny transcript", "switched on, it doesn't show your words as they're heard");
     else {
       if (await evaluate(`!!document.querySelector(".dock .live")`)) fail("Tiny transcript", "the dock's big line still shows: your words show twice");
+      // Inside the composer's box, over its field, on the box's color: where its "Or type a thought" sits, under them.
+      const inBox = `(() => { const words = document.querySelector(".tiny-transcript-text"), t = words.getBoundingClientRect(), composer = document.querySelector(".composer");
+        const b = composer.getBoundingClientRect(), f = composer.querySelector("textarea").getBoundingClientRect();
+        return { inside: t.left >= b.left - 0.5 && t.right <= b.right + 0.5 && t.top >= b.top - 0.5 && t.bottom <= b.bottom + 0.5,
+          overField: Math.abs(t.left - f.left) < 1 && Math.abs(t.right - f.right) < 1 && Math.abs((t.top + t.bottom) / 2 - (f.top + f.bottom) / 2) < 2,
+          covers: getComputedStyle(words).backgroundColor === getComputedStyle(composer).backgroundColor, above: t.bottom <= b.top + 0.5 }; })()`;
+      const boxed = await evaluate(inBox);
+      if (!boxed.inside || !boxed.overField) fail("Tiny transcript", `its words aren't inside the composer's box, where its "Or type a thought" sits: ${JSON.stringify(boxed)}`);
+      if (!boxed.covers) fail("Tiny transcript", "its words don't cover the box's own hint text, so both show at once");
+      // The words at the line's right end, measured letter by letter (a caret probe can't see words that let the
+      // pointer through): the newest ones, which are also the ones said stronger.
       const line = await evaluate(`(() => {
         const text = document.querySelector(".tiny-transcript-text"), box = text.getBoundingClientRect(), style = getComputedStyle(text);
-        // The words under the line's right end, just inside its padding: the newest ones.
-        const at = document.caretRangeFromPoint(box.right - parseFloat(style.paddingRight) - 2, box.top + box.height / 2);
-        return { size: style.fontSize, clipped: text.scrollWidth > text.clientWidth || text.querySelector("bdi").getBoundingClientRect().left < box.left,
-          end: at && text.contains(at.startContainer) ? at.startOffset : -1 };
+        const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT), range = document.createRange();
+        let at = 0, end = -1;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          for (let i = 0; i < node.length; i++) {
+            range.setStart(node, i); range.setEnd(node, i + 1);
+            const r = range.getBoundingClientRect();
+            if (r.width && r.left >= box.left - 0.5 && r.right <= box.right + 0.5) end = at + i + 1;
+          }
+          at += node.length;
+        }
+        return { size: style.fontSize, clipped: text.scrollWidth > text.clientWidth || text.querySelector("bdi").getBoundingClientRect().left < box.left, end,
+          stronger: [...text.querySelectorAll("bdi > span")].at(-1)?.textContent ?? "" };
       })()`);
       if (line.size !== "11px") fail("Tiny transcript", `its words are ${line.size}, not 11 px`);
       if (!line.clipped) fail("Tiny transcript", "the long turn fits, so its end isn't checked (make it longer)");
       if (line.end < long.length - 3) fail("Tiny transcript", `a long turn shows its start, not the words being said now (the line ends at character ${line.end} of ${long.length})`);
+      if (line.stronger !== long.split(" ").slice(-3).join(" ")) fail("Tiny transcript", `the words said stronger are "${line.stronger}", not the newest three`);
+      // Your own typing keeps the box: the words wait just above it, clear of what you typed; cleared, they're back.
+      const draft = (value) => evaluate(`(() => { const field = document.querySelector(".composer textarea");
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(field, ${JSON.stringify(value)});
+        field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+      await draft("Buy candles");
+      if (!await until(`(${inBox}).above`, 1500)) fail("Tiny transcript", "with something typed in the box, the words still cover it");
+      await draft("");
+      if (!await until(`(${inBox}).inside`, 1500)) fail("Tiny transcript", "the box emptied, the words don't come back into it");
       // On a phone, the Notice timeline's clock sits clear of the line (it ran 10 px into it).
       if (timeline) {
         core.send({ type: "notice", message: "A notice for the clock" });
@@ -1587,6 +1630,15 @@ try {
     }
     core.send({ type: "partial", text: "" });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
+    // A turn's words stay until its thought comes, and go the moment it does: they turn into it where they were.
+    core.send({ type: "partial", text: "Ask Maya to bring the folding chairs" });
+    await until(`!!document.querySelector(".tiny-transcript-text")`, 2000);
+    core.send({ type: "partial", text: "" });
+    await sleep(300);
+    if (!await evaluate(`!!document.querySelector(".tiny-transcript-text")`)) fail("Tiny transcript", "a turn's words went before its thought came");
+    core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("said-1", "Ask Maya to bring the folding chairs", null), placed: false } } });
+    if (!await until(`!document.querySelector(".tiny-transcript")`, 500)) fail("Tiny transcript", "a turn's words stay once its thought came");
+    core.send({ type: "change", change: { type: "thought_placed", thought_id: "said-1", thread_id: "T2", point: "Ask Maya to bring the folding chairs", unclear: "", complete: true, place_ms: 2000 } });
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
@@ -1646,6 +1698,160 @@ try {
     await until(`document.querySelectorAll(".thread").length > 0`, 8000);
     await settle();
     if (await evaluate(`!!document.querySelector(".level-meter")`)) fail("Level meter", "shows without ?level");
+  }
+  // Bubble flight in the app: the real composer, the Spine's slot, and the once-only Reduce Motion hint.
+  {
+    const where = "Bubble flight (app, Spine)";
+    const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
+    const clearFlightSettings = `localStorage.removeItem("e2a2o.brick.bubble-flight.show"); localStorage.removeItem("e2a2o.brick.bubble-flight.hinted")`;
+    const openSpine = async () => {
+      shown = full;
+      await go(`${base}/`);
+      const switchReady = await until(`[...document.querySelectorAll(".palace-switch button")].some((b) => b.textContent === "Spine")`, 8000);
+      await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()`);
+      await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === "Spine")?.click()`);
+      const ready = await until(`!!document.querySelector(".spine-frame.spine-ready")`, 4000);
+      if (!switchReady || !ready) fail(where, `The Spine did not become ready: switch available ${switchReady}, frame ready ${ready}.`);
+      await sleep(1200);
+      await settle();
+      return switchReady && ready;
+    };
+    const add = (id) => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "Ask Maya to bring the folding chairs", null), placed: false } } });
+    const place = (id) => core.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: "T1", point: "Ask Maya to bring the folding chairs", unclear: "", complete: true, place_ms: 2600 } });
+    try {
+      await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "spine": true, "bubble-flight": true })); ${clearFlightSettings}`);
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+      await width(1280, 860);
+      if (await openSpine()) {
+        const sent = Date.now();
+        add("fly-1");
+        const appeared = await until(`!!document.querySelector('.bubble-flight-bubble[data-flight="fly-1"]') && !!document.querySelector('[data-slot="slot:fly-1"]')`, 1000);
+        if (!appeared) {
+          const found = await evaluate(`({ bubble: !!document.querySelector('.bubble-flight-bubble[data-flight="fly-1"]'), slot: !!document.querySelector('[data-slot="slot:fly-1"]') })`);
+          fail(where, `The bubble and slot did not both appear within 1000 ms: ${JSON.stringify(found)}.`);
+        }
+        const position = `(() => {
+          const bubble = document.querySelector('.bubble-flight-bubble[data-flight="fly-1"]')?.getBoundingClientRect();
+          const slot = document.querySelector('[data-slot="slot:fly-1"]')?.getBoundingClientRect();
+          const composer = document.querySelector(".composer")?.getBoundingClientRect();
+          if (!bubble || !slot || !composer) return null;
+          const x = bubble.left + bubble.width / 2, y = bubble.top + bubble.height / 2;
+          return { x, y, bottom: bubble.bottom, composerTop: composer.top,
+            distance: Math.hypot(x - slot.left - slot.width / 2, y - slot.top - slot.height / 2) };
+        })()`;
+        await sleep(Math.max(0, 300 - (Date.now() - sent)));
+        const early = await evaluate(position);
+        await sleep(Math.max(0, 1500 - (Date.now() - sent)));
+        const drifted = await evaluate(position);
+        if (!drifted || drifted.bottom >= drifted.composerTop) fail(where, `At 1500 ms the bubble was not above the composer: ${JSON.stringify(drifted)}.`);
+        if (!early || !drifted || !(early.distance > 0) || drifted.distance > early.distance * 0.85) fail(where, `The distance to the slot did not shrink by at least 15% from 300 to 1500 ms: early ${JSON.stringify(early)}, later ${JSON.stringify(drifted)}.`);
+
+        // Start observing before the core places it; each last-frame comparison uses that frame's slot too.
+        const measuring = evaluate(`new Promise((resolve) => {
+          const start = performance.now();
+          const initial = document.querySelector('.bubble-flight-bubble[data-flight="fly-1"]');
+          const presentAtStart = !!initial;
+          // The glide counts from the frame its point is on the map (it was drifting before that, which isn't the glide).
+          let transform = initial?.style.transform, placedAt = null, lastChange = null, last = null;
+          const frame = (now) => {
+            const bubble = document.querySelector('.bubble-flight-bubble[data-flight="fly-1"]');
+            if (placedAt === null && document.querySelector('[data-thought="fly-1"]')) placedAt = now;
+            if (!bubble || now - start >= 2000) {
+              resolve({ presentAtStart, gone: !bubble, elapsed: now - start,
+                movingMs: placedAt === null || lastChange === null ? null : Math.round(lastChange - placedAt), last });
+              return;
+            }
+            if (bubble.style.transform !== transform) {
+              if (placedAt !== null) lastChange = now;
+              transform = bubble.style.transform;
+            }
+            const words = bubble.querySelector(".bubble-flight-words")?.getBoundingClientRect();
+            const slot = document.querySelector('[data-slot="slot:fly-1"]');
+            const box = slot?.getBoundingClientRect();
+            const text = slot && [...slot.querySelectorAll("*")].find((el) => (el.textContent ?? "").trim().startsWith("Ask Maya"));
+            const line = text?.getBoundingClientRect();
+            last = words && box ? { wordsY: words.top + words.height / 2, slotY: line ? line.top + line.height / 2 : box.top + box.height / 2,
+              wordsLeft: words.left, textLeft: line ? line.left : box.left + 44 } : null;
+            requestAnimationFrame(frame);
+          };
+          requestAnimationFrame(frame);
+        })`);
+        place("fly-1");
+        const landing = await measuring;
+        if (!landing.presentAtStart || !landing.gone || landing.elapsed > 900) fail(where, `The placed bubble did not leave the air within 900 ms: ${JSON.stringify(landing)}.`);
+        if (landing.movingMs === null || landing.movingMs > 450) fail(where, `Placed, the bubble glided for ${landing.movingMs} ms, not 400 ms at most (a frame's slack: 450).`);
+        if (!landing.last || Math.abs(landing.last.wordsY - landing.last.slotY) > 6 || Math.abs(landing.last.wordsLeft - landing.last.textLeft) > 12) fail(where, `The bubble's words didn't settle onto the point's in its slot (6 px up or down, 12 px across): ${JSON.stringify(landing.last)}.`);
+        const ring = await until(`!!document.querySelector('[data-brick="spine"] .spine-ring, [data-brick="spine"] .spine-point.spine-cut')`, 1500);
+        if (!ring) fail(where, `The Spine showed no landing ring within 1500 ms after the bubble left: ring ${ring}.`);
+      }
+
+      await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+      await evaluate(clearFlightSettings);
+      if (await openSpine()) {
+        add("fly-2");
+        const quietBubbles = await evaluate(`new Promise((resolve) => {
+          const start = performance.now(); let most = 0;
+          const frame = (now) => {
+            most = Math.max(most, document.querySelectorAll(".bubble-flight-bubble").length);
+            if (now - start >= 500) resolve(most); else requestAnimationFrame(frame);
+          }; requestAnimationFrame(frame);
+        })`);
+        if (quietBubbles) fail(where, `Reduce Motion with Show the flight off showed ${quietBubbles} bubbles during 500 ms on the way.`);
+        place("fly-2");
+        const hint = await evaluate(`new Promise((resolve) => {
+          const start = performance.now(); let most = 0;
+          const frame = (now) => {
+            most = Math.max(most, document.querySelectorAll(".bubble-flight-bubble").length);
+            const hint = document.querySelector(".bubble-flight-hint");
+            if (hint || now - start >= 4500) resolve({ bubbles: most, elapsed: now - start,
+              text: hint?.textContent ?? null, checked: hint?.querySelector('button[role="switch"]')?.getAttribute("aria-checked") ?? null });
+            else requestAnimationFrame(frame);
+          }; requestAnimationFrame(frame);
+        })`);
+        if (hint.bubbles) fail(where, `Reduce Motion with Show the flight off showed ${hint.bubbles} bubbles after placement.`);
+        if (!hint.text?.includes("Show the flight") || hint.checked !== "false" || hint.elapsed > 4500) fail(where, `The Reduce Motion hint did not offer an unchecked Show the flight switch within 4500 ms: ${JSON.stringify(hint)}.`);
+        await evaluate(`document.querySelector('.bubble-flight-hint button[role="switch"]')?.click()`);
+        await settle();
+        const switched = await evaluate(`({ checked: document.querySelector('.bubble-flight-hint [role="switch"]')?.getAttribute("aria-checked") ?? null, show: localStorage.getItem("e2a2o.brick.bubble-flight.show") })`);
+        if (switched.checked !== "true" || switched.show !== "true") fail(where, `The hint's switch did not enable and save Show the flight: ${JSON.stringify(switched)}.`);
+        await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        const dismissed = await until(`!document.querySelector(".bubble-flight-hint") && localStorage.getItem("e2a2o.brick.bubble-flight.hinted") !== null`, 1000);
+        if (!dismissed) {
+          const state = await evaluate(`({ hint: !!document.querySelector(".bubble-flight-hint"), hinted: localStorage.getItem("e2a2o.brick.bubble-flight.hinted") })`);
+          fail(where, `Escape did not dismiss and remember the hint within 1000 ms: ${JSON.stringify(state)}.`);
+        }
+
+        add("fly-3");
+        const flying = await until(`!!document.querySelector('.bubble-flight-bubble[data-flight="fly-3"]')`, 1000);
+        if (!flying) fail(where, `Reduce Motion with Show the flight on showed no bubble within 1000 ms: bubble ${flying}.`);
+        const transforms = await evaluate(`new Promise((resolve) => {
+          const start = performance.now(), values = new Set();
+          const frame = (now) => {
+            const bubble = document.querySelector('.bubble-flight-bubble[data-flight="fly-3"]');
+            if (bubble?.style.transform) values.add(bubble.style.transform);
+            if (now - start >= 1000) resolve(values.size); else requestAnimationFrame(frame);
+          }; requestAnimationFrame(frame);
+        })`);
+        if (transforms < 5) fail(where, `The requested flight under Reduce Motion had ${transforms} distinct inline transforms in 1000 ms instead of at least 5.`);
+        place("fly-3");
+        const gone = await until(`!document.querySelector('[data-flight="fly-3"]')`, 1500);
+        if (!gone) fail(where, `The requested flight under Reduce Motion stayed in the air past 1500 ms: gone ${gone}.`);
+        const repeated = await evaluate(`new Promise((resolve) => {
+          const start = performance.now(); let seen = false;
+          const frame = (now) => {
+            seen ||= !!document.querySelector(".bubble-flight-hint");
+            if (now - start >= 4000) resolve(seen); else requestAnimationFrame(frame);
+          }; requestAnimationFrame(frame);
+        })`);
+        if (repeated) fail(where, `The dismissed hint returned during 4000 ms of quiet: hint seen ${repeated}.`);
+      }
+    } finally {
+      await cdp("Emulation.setEmulatedMedia", { features: [] });
+      await evaluate(clearFlightSettings);
+      await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
+      await width(1280, 860);
+    }
   }
 } finally {
   await cleanup();

@@ -1,7 +1,7 @@
 {
   "id": "tiny-transcript",
   "name": "Tiny transcript",
-  "does": "Your words as you say them, very small above the dock, instead of its big line.",
+  "does": "Your words as you speak, kept small, in the box where you type.",
   "kind": "panel",
   "defaultOn": false,
   "demoSafe": true,

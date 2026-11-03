@@ -1,3 +1,5 @@
+/* Over the page, taking no pointer: what flies here never stands in a click's way. Every move is set from script, a
+   frame at a time (index.tsx): nothing here animates, so the app's no-motion rule changes nothing in it. */
 .bubble-flight {
   position: fixed;
   inset: 0;
@@ -5,54 +7,99 @@
   overflow: hidden;
   pointer-events: none;
 }
+.bubble-flight-sky { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 
+/* The bubble: glass you see the map through, your blue dot, the words at a point's own size (15 px), so
+   they settle onto the point's words without a jump. Unseen until its first frame places it. */
 .bubble-flight-bubble {
   position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   box-sizing: border-box;
   width: max-content;
-  max-width: min(240px, calc(100vw - 16px));
-  border-radius: 16px;
-  padding: 6px 14px;
-  font-size: 13px;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 7px 14px 7px 12px;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 15px;
+  line-height: 20px;
   white-space: nowrap;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 60%, var(--card)), var(--card));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+  opacity: 0;
 }
+.bubble-flight-short { max-width: min(220px, calc(100vw - 32px)); }
+.bubble-flight-glass {
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 74%, transparent), color-mix(in srgb, var(--card) 52%, transparent));
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
+  box-shadow: 0 10px 28px rgb(0 0 0 / .14), inset 0 1px 0 rgb(255 255 255 / .35);
+}
+.bubble-flight-dot { position: relative; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.bubble-flight-words { position: relative; overflow: hidden; text-overflow: ellipsis; }
 
-/* The contract tells the destination only once placed: a quiet lift for the placing time, then a 400 ms hand-off to
-   the real card, never a made-up destination; a thought not placed by the lift's end fades where it is.
-   No reduced-motion rules: with reduced motion the brick draws nothing (index.tsx). */
-.bubble-flight-full { animation: bubble-flight-depart 2.7s cubic-bezier(.4, 0, .2, 1) both; }
-.bubble-flight-compact {
-  max-width: min(120px, calc(100vw - 16px));
-  animation: bubble-flight-quick 600ms ease-out both;
-}
-.bubble-flight-flying {
-  animation: bubble-flight-fly 400ms cubic-bezier(.4, 0, .2, 1) both,
-    bubble-flight-settle 200ms ease-in-out 200ms both,
-    bubble-flight-fade-out 150ms linear 250ms both;
-}
-.bubble-flight-fading {
-  translate: var(--bubble-flight-from-x, 0px) var(--bubble-flight-from-y, 0px);
-  animation: bubble-flight-fade-out 150ms linear both;
-}
+/* The comet tail: the way it came, fading toward where it began, thicker near the bubble. */
+.bubble-flight-tail { fill: none; stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; }
+.bubble-flight-tail-head { stroke-width: 3.5px; }
+.bubble-flight-shade-tail { stop-color: var(--accent); stop-opacity: 0; }
+.bubble-flight-shade-head { stop-color: var(--accent); stop-opacity: .75; }
+/* The way ahead, while it drifts: dots to the slot it's heading for. */
+.bubble-flight-ahead { fill: none; stroke: var(--accent); stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 0 7; opacity: .5; }
 
-@keyframes bubble-flight-depart { from { translate: 0 0; } to { translate: 0 -12px; } }
-@keyframes bubble-flight-fly {
-  from { translate: var(--bubble-flight-from-x, 0px) var(--bubble-flight-from-y, 0px); }
-  to { translate: var(--bubble-flight-to-x, 0px) var(--bubble-flight-to-y, 0px); }
+/* Where it landed, on the Map (a view with slots rings its own). */
+.bubble-flight-ring { position: absolute; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 10px; }
+
+/* "Show the flight", under Reduce Motion: a glass hint above the box, its tail at your words. */
+.bubble-flight-hint {
+  position: fixed;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  pointer-events: auto;
 }
-@keyframes bubble-flight-settle { 0%, 100% { scale: 1; } 50% { scale: 0.96; } }
-@keyframes bubble-flight-fade-out { from { opacity: 1; } to { opacity: 0; } }
-@keyframes bubble-flight-quick {
-  0% { translate: 0 0; opacity: 1; }
-  75% { opacity: 1; }
-  100% { translate: 0 -8px; opacity: 0; }
+.bubble-flight-hint-center { bottom: calc(var(--dock-height, 120px) + 10px); left: 50%; transform: translateX(-50%); }
+.bubble-flight-hint::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 22px;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: color-mix(in srgb, var(--card) 86%, transparent);
 }
+.bubble-flight-hint-center::after { left: 50%; }
+.bubble-flight-help { margin: 0 0 8px; text-wrap: balance; }
+.bubble-flight-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.bubble-flight-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.bubble-flight-track { position: relative; flex: none; width: 30px; height: 18px; border-radius: 9px; background: color-mix(in srgb, var(--ink) 22%, transparent); }
+.bubble-flight-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .25); }
+.bubble-flight-switch[aria-checked="true"] .bubble-flight-track { background: var(--accent); }
+.bubble-flight-switch[aria-checked="true"] .bubble-flight-knob { left: 14px; }
