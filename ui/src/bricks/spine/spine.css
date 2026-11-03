@@ -92,6 +92,8 @@
 .spine-words { background: var(--bg); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .spine-frame .spine-on .spine-text { background: color-mix(in srgb, var(--accent) 9%, var(--bg)); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 9%, var(--bg)); }
 .spine-on .spine-words { background: none; }
+.spine-frame .spine-original { position: absolute; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.spine-original:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .spine-frame .spine-point-left .spine-text { color: color-mix(in srgb, var(--ink) 80%, var(--muted)); font-style: italic; }
 .spine-frame .spine-point-mini .spine-text { font-size: 13px; }
 .spine-point-mini .spine-words, .spine-point.spine-pinned .spine-words { background: var(--card); }

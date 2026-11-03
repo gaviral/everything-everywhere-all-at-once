@@ -33,6 +33,7 @@ export type ItemNode = Node<ItemData, "item">;
 export interface Acts {
   toggle(thread: string): void;
   pick(item: Item): void;
+  words(item: Item): void;
   focus(item: Item): void;
   openOnMap(thread: string): void;
   shelve(item: Item): void;
@@ -241,8 +242,8 @@ function Words({ item }: { item: Item }) {
 }
 
 /** Under a point: ✓ Decided (or ✓ Agreed with who agreed), Left off. */
-function Chips({ item }: { item: Item }) {
-  return <span className="spine-chips" style={{ left: item.look!.textX, top: item.lines!.length * item.look!.line + 5 }}>
+function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
+  return <span className="spine-chips" style={{ left: item.look!.textX, top: item.lines!.length * item.look!.line + offset + 5 }}>
     {item.decided && (item.agreed ? <span className="spine-chip spine-agreed">✓ Agreed{item.agreed.map((who) => <Initial key={who.name} who={who} small />)}</span>
       : <span className="spine-chip">✓ Decided</span>)}
     {item.left && <span className="spine-chip spine-chip-left">Left off</span>}
@@ -253,7 +254,7 @@ function Chips({ item }: { item: Item }) {
 function Entries({ entries }: { entries: Entry[] }) {
   return <>{entries.map((entry, i) => <span key={i} className="spine-entry">
     {entry.who.me ? <span className="spine-entry-mine" aria-hidden="true" /> : <Initial who={entry.who} small />}
-    <span className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}>{entry.text}</span>
+    <span className="spine-entry-text" style={{ WebkitLineClamp: entry.lines.length }}>{entry.text}</span>
   </span>)}</>;
 }
 
@@ -264,6 +265,7 @@ function Point({ data }: { data: ItemData }) {
   const look = item.look!;
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
+  const wordsH = item.wordsOpen === undefined ? 0 : G.pointLine + G.pointGap;
   const label = `${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
     // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
@@ -285,9 +287,12 @@ function Point({ data }: { data: ItemData }) {
         <Words item={item} />
       </span>}
     {!zoomedOut && item.quotes?.filter((q) => q.folded && q.start >= 0).map((q) => <Fold key={q.margin} margin={q.margin} />)}
-    {!zoomedOut && item.chips && <Chips item={item} />}
-    {!zoomedOut && item.landing && <span className="spine-landing" style={{ left: look.textX, top: textH + (item.chips ? G.chips : 0) + 2 }}>{item.landing}</span>}
-    {!zoomedOut && item.tucks && <span className="spine-tucks" style={{ left: look.textX, width: look.textW, top: textH + (item.chips ? G.chips : 0) + (item.landing ? G.landLine : 0) }}>
+    {!zoomedOut && item.wordsOpen !== undefined && <button type="button" className="spine-original nodrag nopan"
+      style={{ left: look.textX, top: textH, height: wordsH }} aria-expanded={item.wordsOpen}
+      onClick={() => acts.words(item)}>{item.wordsOpen ? "Show less" : "Words said"}</button>}
+    {!zoomedOut && item.chips && <Chips item={item} offset={wordsH} />}
+    {!zoomedOut && item.landing && <span className="spine-landing" style={{ left: look.textX, top: textH + wordsH + (item.chips ? G.chips : 0) + 2 }}>{item.landing}</span>}
+    {!zoomedOut && item.tucks && <span className="spine-tucks" style={{ left: look.textX, width: look.textW, top: textH + wordsH + (item.chips ? G.chips : 0) + (item.landing ? G.landLine : 0) }}>
       {item.tucks.map((tuck) => tuck.thread
         ? <button key={tuck.margin} type="button" className="spine-tuck spine-tuck-tangent nodrag" data-thread={tuck.thread} onClick={() => acts.toggle(tuck.thread!)}
           aria-label={`${tuck.title}, a tangent: ${tuck.entries[0]?.text ?? "nothing yet"}. Open it`}>

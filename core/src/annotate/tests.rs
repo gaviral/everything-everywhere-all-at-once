@@ -49,6 +49,35 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn never_split_while_pinned_and_comments_can_attach_immediately() {
+    let mut f = Fixture::new();
+    assert!(crate::stay::set(&f.core, "you", Some("T1")));
+    let text = "Um, keep the wall blue, and rent is due Friday.";
+    let mut ids = Vec::new();
+    for n in 0..12 {
+        let id = f.core.keep(if n % 2 == 0 { "you" } else { "Sam" }, text);
+        // No placer tick or model response between arrival and the bridge's comment.
+        if [0, 2, 5, 8, 11].contains(&n) {
+            let thread = note(&f.core, "Helper", &id, text, "Which shade of blue?").unwrap();
+            assert_eq!(f.core.snapshot().anchors[&thread].thought_id, id);
+        }
+        ids.push(id);
+    }
+    let world = f.core.snapshot();
+    let kept = world.thoughts.iter().filter(|t| ids.contains(&t.id)).collect::<Vec<_>>();
+    assert_eq!(kept.iter().map(|t| &t.id).collect::<Vec<_>>(), ids.iter().collect::<Vec<_>>());
+    for thought in kept {
+        assert!(thought.placed);
+        assert_eq!(thought.thread_id.as_deref(), Some("T1"));
+        assert_eq!(thought.text, text);
+        assert_eq!(thought.point, text);
+    }
+    assert_eq!(world.anchors.len(), 5);
+    assert!(f.queue.try_recv().is_err(), "neither thoughts nor comments need the model");
+    assert!(!f.journaled().contains("\"type\":\"thought_split\""));
+}
+
 /// What the windows were sent since `updates` began, as JSON with whom each was for (none: every window).
 fn told(updates: &mut tokio::sync::broadcast::Receiver<Outgoing>) -> Vec<Value> {
     let mut out = Vec::new();

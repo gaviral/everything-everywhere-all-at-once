@@ -10,13 +10,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import { useBrickEvent, type BrickEvents, type BrickProps, type Position } from "../contract";
-import { SPACING_MS, useCamera, type Area } from "./camera";
+import { useCamera, type Area } from "./camera";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
 import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
 import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
+import { useStayingHere } from "../../StayHere";
 import "./spine.css";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
@@ -177,6 +178,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
 
 function Canvas({ map, actions, on, destination }: BrickProps) {
   const flow = useReactFlow<ItemNode>();
+  const staying = useStayingHere();
   const reduced = useReducedMotion();
   const shelf = useShelf(map);
   const notes = useMargins(map, actions);
@@ -187,6 +189,9 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const [corner, setCorner] = useState({ bottom: 12, bottomRight: 12, row: 12, shell: false });
   const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
   const [following, setFollowing] = useState(true);
+  const [originals, setOriginals] = useState<ReadonlySet<string>>(new Set());
+  const [handMoving, setHandMoving] = useState(false);
+  const [heldAt, setHeldAt] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, Position | null>>({});
   const [drag, setDrag] = useState<{ key: string; dx: number; dy: number } | null>(null);
@@ -332,8 +337,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   }, [map.threads, notes.anchored, moving]);
   const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
   const layout = useMemo(() => place({ threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, speakers: map.speakers, active: map.active, slots, landing, margins: notes.margins, opened, narrow, topics: topicNames }),
-  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames]);
+    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
+  [threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -343,7 +348,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const timer = window.setTimeout(() => setMoving({}), 4000);
     return () => window.clearTimeout(timer);
   }, [map.threads, moving]);
-  const hereKey = map.active ? layout.tips.get(map.active) : undefined;
+  const hereKey = staying || map.active ? layout.tips.get((staying ?? map.active)!) : undefined;
   const here = hereKey ? layout.byKey.get(hereKey) : undefined;
   const slotsHere = map.active ? layout.slots.get(map.active) ?? [] : [];
 
@@ -361,7 +366,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   }, [layout]);
 
   // The tangent you're in opens while the view follows you; leaving it closes it again, unless you opened it.
-  const activeThread = map.threads.find((t) => t.id === map.active);
+  const activeThread = map.threads.find((t) => t.id === (staying ?? map.active));
   useEffect(() => {
     if (!following || !activeThread) return;
     if (activeThread.parent_id && map.threads.some((t) => t.id === activeThread.parent_id)) setOpen((was) => was?.by === "you" && was.id !== activeThread.id ? was : { id: activeThread.id, by: "follow" });
@@ -409,11 +414,13 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const goal = () => {
     if (!here) return null;
     const boxes = [here.box, ...slotsHere.map((key) => layout.byKey.get(key)?.box).filter((b): b is Box => !!b)];
+    if (staying) boxes.push(...layout.items.filter((item) => item.kind === "margin" && item.up === here.key).map((item) => item.box));
     return { box: bounds(boxes), ring: here.key };
   };
   const goalNow = useRef(goal);
   // Words being picked or answered keep the view where it is.
   goalNow.current = () => (following && !drag && !selecting && !picking ? goal() : null);
+  const followBox = goal()?.box;
 
   // Opening: your latest point at reading size, or the whole map when you're nowhere yet; shown once it's there.
   useEffect(() => {
@@ -428,7 +435,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   // look again: what you're on may no longer be in the comfortable middle.
   useEffect(() => {
     if (ready && following && here && !drag) camera.follow(() => goalNow.current());
-  }, [ready, following, here?.key, here?.box.x, here?.box.y, here?.box.h, slotsHere.join("|"), box?.left, box?.right]);
+  }, [ready, following, here?.key, followBox?.x, followBox?.y, followBox?.w, followBox?.h, slotsHere.join("|"), box?.left, box?.right]);
 
   // A tangent you opened comes into view if it's out of it (on a phone, a tucked one opens beside its topic).
   useEffect(() => {
@@ -455,7 +462,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     camera.aim(item.box, { ring: item.key });
   }, [ready, destination, layout, map.threads, open?.id, camera.aim]);
 
-  const stopFollowing = () => { touched.current = Date.now(); setFollowing(false); camera.hold(); };
+  const touch = () => { touched.current = Date.now(); setHeldAt(touched.current); };
+  const stopFollowing = () => { touch(); setFollowing(false); camera.hold(); };
   const startFollowing = () => {
     setFollowing(true);
     const g = goal();
@@ -473,10 +481,23 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
     return best;
   };
-  /** A quiet moment: long enough since a hand last moved the canvas to have read what's in the middle of it, and never
-   *  less than a pause in talk (the camera's spacing). */
-  const quietFor = () => { const best = middle(); return Math.max(SPACING_MS, readMs(`${best?.title ?? ""} ${best?.text ?? ""} ${best?.latest ?? ""}`)); };
+  /** A quiet moment: enough still time to read the visible thoughts and their comments. */
+  const quietFor = () => {
+    const a = area(), v = flow.getViewport();
+    const visible = layout.items.filter(({ box: b }) => b.x * v.zoom + v.x < a.x1 && (b.x + b.w) * v.zoom + v.x > a.x0
+      && b.y * v.zoom + v.y < a.y1 && (b.y + b.h) * v.zoom + v.y > a.y0);
+    return readMs(visible.map((item) => [item.title, item.shown ?? item.text, item.latest,
+      ...(item.entries ?? []).map((entry) => entry.text), ...(item.tucks ?? []).flatMap((tuck) => tuck.entries.map((entry) => entry.text))].filter(Boolean).join(" ")).join(" "));
+  };
   const transform = (): [number, number, number] => { const v = flow.getViewport(); return [v.x, v.y, v.zoom]; };
+
+  // Stillness starts when the hand lets go, and lasts long enough to read what is actually in view.
+  // Keep a pending follow even if no further thought arrives after that pause.
+  useEffect(() => {
+    if (!staying || following || handMoving || drag || selecting || picking) return;
+    const timer = window.setTimeout(() => setFollowing(true), Math.max(0, heldAt + quietFor() - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [staying, following, handMoving, drag, selecting, picking, heldAt, layout]);
 
   // A thought landing: its slot fills once its flight is in (a ring), the newest landing says what put it there, and
   // out of view an edge chip says where.
@@ -512,7 +533,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       else ring(item.key);
     }
     const quiet = Date.now() - touched.current > quietFor();
-    if (mine && !following && quiet) setFollowing(true);
+    if (mine && !staying && !following && !handMoving && quiet) setFollowing(true);
     else if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
       const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
@@ -579,6 +600,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const acts = useMemo<Acts>(() => ({
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
     pick: (item) => { touched.current = Date.now(); setPicked(item.key); actions.select(item.thread); },
+    words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
     openOnMap: (thread) => actions.openThread(thread),
@@ -775,7 +797,9 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
             acts.moveToTopic(item.thread, to);
           } else put(item.id, node.position.x, node.position.y);
         }}
-        onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}
+        onMoveStart={(event) => { if (event) { setHandMoving(true); stopFollowing(); if (!picking?.typing) unpick(); } }}
+        onMove={(event) => { if (event) touched.current = Date.now(); }}
+        onMoveEnd={(event) => { if (event) { setHandMoving(false); touch(); } }}
         onPaneClick={() => { setPicked(null); if (!picking?.typing) unpick(); }}
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}

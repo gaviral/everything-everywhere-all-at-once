@@ -4,6 +4,8 @@ import "./stay-here.css";
 type Stay = { thread: string | null; connected: boolean; stay: (thread: string | null) => void };
 const StayContext = createContext<Stay | null>(null);
 
+export const useStayingHere = () => useContext(StayContext)?.thread ?? null;
+
 export function StayProvider({ thread, connected, stay, children }: Stay & { children: ReactNode }) {
   const value = useMemo(() => ({ thread, connected, stay }), [thread, connected, stay]);
   return <StayContext.Provider value={value}>{children}</StayContext.Provider>;
