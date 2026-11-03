@@ -33,6 +33,19 @@ export const NAMES = {
     core: "Built in",
     missing: "Missing one? Say “make an app that…” and it's made for you to keep or not.",
   },
+  /** The status line's one line of help after a state that needs something (the AI key, the mic's permission). */
+  stateHelp: {
+    nokey: "Listening and placing need MODEL_API_KEY in .env; you can still type.",
+    nokeyHosted: "You can still type; what you type is placed once it's back.",
+    refused: "Check MODEL_API_KEY in .env, then restart; you can still type.",
+    refusedHosted: "You can still type.",
+    resting: "Placed after midnight Pacific; you can still type.",
+    blocked: "Allow the microphone for this page in the address bar, or type.",
+  },
+  tips: {
+    ai: "Done by the AI. Undo takes it back where it still can.",
+    friend: "An AI on this map. It holds its questions for your pause.",
+  },
   settings: {
     say: "What you can say",
     keys: "Keys",

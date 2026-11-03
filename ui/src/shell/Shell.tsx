@@ -136,6 +136,12 @@ const DOTS = { on: "shell-dot shell-dot-on", off: "shell-dot shell-dot-off", wai
 function micHint(s: StatusState): string {
   const on = s.mic === "listening" || s.mic === "hearing";
   if (on && s.hearers.length) return `${andList(s.hearers)} ${s.hearers.length === 1 ? "hears" : "hear"} you`;
+  if (s.typingOnly) return "";
+  const help = NAMES.stateHelp;
+  if (s.mic === "nokey") return s.hosted ? help.nokeyHosted : help.nokey;
+  if (s.mic === "refused") return s.hosted ? help.refusedHosted : help.refused;
+  if (s.mic === "resting") return help.resting;
+  if (s.mic === "blocked") return help.blocked;
   if (s.first && (s.mic === "off" || s.mic === "paused")) return `Nothing is heard until you tap the mic or press ${mod("D")}.`;
   return "";
 }
@@ -186,7 +192,7 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
   </div>;
   return <section className="shell-held" data-slot="held" aria-label={NAMES.held.label}>
     <p className="shell-held-head"><span>{NAMES.held.label}{held.length > 1 ? ` · ${held.length}` : ""}</span><span className="shell-held-when">{NAMES.held.asks}</span></p>
-    <p className="shell-held-q"><span className="shell-held-by">{top.by}</span> <b>{top.main}</b>{top.rest ? ` ${top.rest}` : ""}</p>
+    <p className="shell-held-q">{top.ai ? <span className="ai-mark shell-held-by" data-tip={NAMES.tips.friend}>✦ {top.by}</span> : <span className="shell-held-by">{top.by}</span>} <b>{top.main}</b>{top.rest ? ` ${top.rest}` : ""}</p>
     <div className="shell-held-acts" data-held-keys="">
       <button type="button" className="shell-btn" onClick={answer} aria-keyshortcuts="Enter">{NAMES.held.answer}<Keycap>↵</Keycap></button>
       <button type="button" className="shell-btn" onClick={later} aria-keyshortcuts="L">{NAMES.held.later}<Keycap>L</Keycap></button>
@@ -244,7 +250,7 @@ export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap
     </button>}
     {entries.length ? <ol className="shell-history-list">
       {entries.map((entry) => <li key={entry.n} className={cls("shell-history-entry", entry.kind === "error" && "shell-amber", entry.undone && "shell-undone")}>
-        <p className="shell-history-text">{entry.ai && <span className="ai-mark" aria-label="by the AI">✦ </span>}{entry.text}</p>
+        <p className="shell-history-text">{entry.ai && <span className="ai-mark" aria-label="by the AI" data-tip={NAMES.tips.ai}>✦ </span>}{entry.text}</p>
         <p className="shell-history-meta">
           <time dateTime={new Date(entry.at).toISOString()} title={new Date(entry.at).toLocaleTimeString()}>{ago(entry.at, now)}</time>
           {entry.detail && <><span aria-hidden="true">·</span><span>{entry.detail}</span></>}
@@ -310,7 +316,8 @@ export const TalkTurns = memo(function TalkTurns({ thoughts, me, ai }: { thought
   if (!turns.length) return <p className="shell-empty-line">What's said shows here as turns, oldest first: yours, and in a call everyone's.</p>;
   return <ol className="shell-turns">
     {turns.map((t, i) => <li key={t.id} ref={i === turns.length - 1 ? end : undefined} className="shell-turn">
-      <p className="shell-turn-who"><b className={ai.has(t.speaker) ? "ai-mark" : undefined}>{ai.has(t.speaker) ? `✦ ${t.speaker}` : t.speaker === me || t.speaker === "you" ? "You" : t.speaker}</b> <span>{time(t.at_ms)}</span></p>
+      <p className="shell-turn-who">{ai.has(t.speaker) ? <b className="ai-mark" data-tip={NAMES.tips.friend}>✦ {t.speaker}</b>
+        : <b>{t.speaker === me || t.speaker === "you" ? "You" : t.speaker}</b>} <span>{time(t.at_ms)}</span></p>
       <p className="shell-turn-text">{t.text}</p>
     </li>)}
   </ol>;

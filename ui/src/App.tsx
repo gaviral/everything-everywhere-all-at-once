@@ -1047,6 +1047,8 @@ export default function App() {
       if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
       if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
       if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
+      if (key === "e" && !world.threads.length && !world.thoughts.length && site.sample && core.connected) { event.preventDefault(); loadSample(); }
+      if (key === "e" && builtIns.has("export") && (world.threads.length || world.thoughts.length)) { event.preventDefault(); exportMap(); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -1093,7 +1095,7 @@ export default function App() {
     const keys: [string, string][] = [
       ["/", "Find a topic or words"], [mod("D"), "Start or stop listening"], [RAIL_KEYS.talk, "Talk: what's said, as turns"],
       [RAIL_KEYS.history, "History: what happened, with Undo"], [RAIL_KEYS.catalog, "Catalog: the features, on or off"], [RAIL_KEYS.settings, "Settings"],
-      ["R", "Recap this session"], [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
+      ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
     ];
     const tabs: RailTab[] = ["talk", "history", "catalog", "settings"];
     return (
@@ -1127,7 +1129,7 @@ export default function App() {
             {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
             {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening && !pending.length && !world.thoughts.length
               ? <p className="shell-samples">
-                <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected}>See an example</button>
+                <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
                 <span>A student's week. Add your own thoughts.</span>
               </p> : null} />}
             {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
@@ -1172,7 +1174,7 @@ export default function App() {
           </div>
           {/* With History open, a notice is its newest line there, with its Undo: not said twice. */}
           <AnimatePresence>
-            {core.notice && railTab !== "history" && (
+            {core.notice && railTab !== "history" && !aboutKey(core.notice) && (
               <motion.div ref={noticeRef} className="notice" data-guide="notice" role="status"
                 onFocus={() => setNoticeFocused(true)} onBlur={() => setNoticeFocused(false)}
                 onMouseEnter={() => setNoticeHeld(true)} onMouseLeave={() => setNoticeHeld(false)}
@@ -1191,7 +1193,7 @@ export default function App() {
           </div>}
           <div className="shell-captions" id="shell-caption" />
           <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-            {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />}
+            {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} shortcut={modAria("D")} />}
             {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
             <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
               onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
@@ -1204,7 +1206,7 @@ export default function App() {
           <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
         </div>
         <StatusLine openHistory={() => toggleTab("history")} state={{
-          mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, hearers: hearers.map((name) => (aiNames.has(name) ? `✦ ${name}` : name)),
+          mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, hearers,
           first: !world.thoughts.length, waiting: pending.length,
           stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
           queued: core.queuedCount, connected: core.connected, here: inCall ? hearers.length + 1 : 0,

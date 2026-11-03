@@ -6,8 +6,10 @@ import { useSyncExternalStore } from "react";
 export type HeldQuestion = {
   /** One per question: holding the same id again replaces it. */
   id: string;
-  /** Who asks: an AI participant's name ("Friend") shows ✦ before it. */
+  /** Who asks: a name ("Friend"). */
   by: string;
+  /** An AI asks (its name in purple, with ✦). */
+  ai?: boolean;
   /** The words that catch the eye, bold: "Which Saturday?" */
   main: string;
   /** The rest of it, plain: "Lena leaves on the 14th." */

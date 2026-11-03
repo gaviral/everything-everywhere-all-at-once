@@ -164,6 +164,7 @@ html.shell2 .shell-held-when { color: var(--muted); font-weight: 500; }
 html.shell2 .shell-held-q { margin: 4px 0 10px; color: var(--ink); font-size: 15px; line-height: 21px; }
 html.shell2 .shell-held-q b { font-weight: 600; }
 html.shell2 .shell-held-by { color: var(--muted); font-size: 13px; }
+html.shell2 .shell-held-by.ai-mark { color: var(--ai); font-weight: 600; }
 html.shell2 .shell-held-acts { display: flex; gap: 8px; }
 html.shell2 .shell-held-chip-row { display: flex; justify-content: flex-end; }
 html.shell2 .shell-held-chip {
@@ -188,7 +189,7 @@ html.shell2 .shell-tab .keycap { min-width: 14px; padding: 0 3px; border-color: 
 html.shell2 .shell-tab:hover { color: var(--ink-2); }
 html.shell2 .shell-tab.shell-on { border-bottom-color: var(--ink); color: var(--ink); }
 html.shell2 .shell-rail-close {
-  display: inline-flex; align-items: center; gap: 4px; margin: 0 0 7px auto; padding: 3px; border: 0; border-radius: 7px; background: none;
+  display: inline-flex; align-items: center; gap: 4px; margin: 0 0 9px auto; padding: 3px; border: 0; border-radius: 7px; background: none;
   color: var(--muted); cursor: pointer;
 }
 html.shell2 .shell-rail-close:hover { background: var(--surface-3); color: var(--ink); }
