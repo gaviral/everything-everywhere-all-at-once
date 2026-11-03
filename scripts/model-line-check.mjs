@@ -23,7 +23,7 @@ try {
   const steps = [["placer", "muse-spark-1.2-contributor"], ["refiner", "muse-spark-1.3"], ["picture", "muse-image-1.0"],
     ["recap", "muse-spark-1.3"], ["app", "muse-spark-1.3"], ["find", "muse-spark-1.3"], ["explain", "muse-spark-1.2"],
     ["safety net", "muse-spark-1.2"], ["import-chatgpt", "muse-spark-1.2"], ["app search", "muse-spark-1.3"],
-    ["app run", "muse-spark-1.3"], ["something-new", "muse-spark-1.3"]];
+    ["app run", "muse-spark-1.3"], ["topics", "muse-spark-1.3"], ["something-new", "muse-spark-1.3"]];
   for (const [step, model] of steps) {
     const msg = start(step, model);
     let state = stepped(EMPTY_LINE, msg, 0);

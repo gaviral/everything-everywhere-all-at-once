@@ -174,6 +174,11 @@ pub struct World {
     /// came: every window marks their words as an AI's (✦).
     #[serde(default)]
     pub ai: Vec<String>,
+    /// Top thread id → the topic it's under, by name (topics.rs): the AI's, or a person's rename or move. A branch goes
+    /// with its top thread. Kept when the thread leaves the map, as `anchors` are, so an Undo that brings it back brings
+    /// its topic; only a thread on the map counts.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub topics: std::collections::HashMap<String, String>,
     /// Legacy import times: keep skipping these when replaying timestamp-only journal records.
     #[serde(default, skip_serializing)]
     pub read_ms: std::collections::HashSet<u64>,
@@ -334,6 +339,12 @@ pub enum Change {
     Anchored { thread_id: String, thought_id: String, quote: String },
     /// A window joined as an AI participant (`?ai`) under `speaker`: from now on its words are marked as an AI's.
     AiJoined { speaker: String },
+    /// The AI's pass put these top threads under these topics (topics.rs): only threads on the map, a name each.
+    TopicsAssigned { assigned: Vec<crate::topics::Assigned> },
+    /// A person moved a top thread under a topic (topics.rs `set`): theirs, whatever the AI said.
+    TopicSet { thread_id: String, topic: String },
+    /// A person renamed a topic: every thread under `from` is under `to` now (an existing name: the two are one).
+    TopicRenamed { from: String, to: String },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
     ExplainAnswered {
@@ -494,6 +505,24 @@ impl World {
             Change::AiJoined { speaker } => {
                 if !self.ai.contains(speaker) {
                     self.ai.push(speaker.clone());
+                }
+            }
+            // By the ids as given (topics.rs never names a thread merged away), and never an empty name.
+            Change::TopicsAssigned { assigned } => {
+                for a in assigned {
+                    if !a.topic.trim().is_empty() && self.thread(&a.thread_id).is_some() {
+                        self.topics.insert(a.thread_id.clone(), a.topic.clone());
+                    }
+                }
+            }
+            Change::TopicSet { thread_id, topic } => {
+                if !topic.trim().is_empty() && self.thread(thread_id).is_some() {
+                    self.topics.insert(thread_id.clone(), topic.clone());
+                }
+            }
+            Change::TopicRenamed { from, to } => {
+                if !to.trim().is_empty() {
+                    self.topics.values_mut().filter(|name| *name == from).for_each(|name| *name = to.clone());
                 }
             }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
@@ -1572,6 +1601,8 @@ mod tests {
             Change::ThreadAdded { thread: test_thread("T6", None) },
             Change::ThreadAdded { thread: test_thread("T7", Some("T6")) },
             Change::ThreadAdded { thread: test_thread("T8", None) },
+            // A topic goes nowhere when its thread leaves the map: the merge's Undo below brings it back with it.
+            Change::TopicSet { thread_id: "T7".into(), topic: "Kept through a merge".into() },
             Change::ThreadMerged { from: "T7".into(), into: "T8".into() },
             Change::ThreadMerged { from: "T6".into(), into: "T1".into() },
             Change::ThreadUnmerged {
@@ -1589,6 +1620,22 @@ mod tests {
                     last_point: None,
                 },
             },
+            // Topics: the AI's pass (none for a thread off the map, T2 merged away, nor an empty name), a person's
+            // moves, a rename onto a name already there (the two are one), another rename, and one with no new name.
+            Change::TopicsAssigned {
+                assigned: vec![
+                    crate::topics::Assigned { thread_id: "T1".into(), topic: "Muse models".into() },
+                    crate::topics::Assigned { thread_id: "T3".into(), topic: "Demo day".into() },
+                    crate::topics::Assigned { thread_id: "T2".into(), topic: "Gone".into() },
+                    crate::topics::Assigned { thread_id: "T8".into(), topic: " ".into() },
+                ],
+            },
+            Change::TopicSet { thread_id: "T4".into(), topic: "Demo day".into() },
+            Change::TopicSet { thread_id: "T8".into(), topic: "Muse models".into() },
+            Change::TopicSet { thread_id: "T99".into(), topic: "Nowhere".into() },
+            Change::TopicRenamed { from: "Demo day".into(), to: "Muse models".into() },
+            Change::TopicRenamed { from: "Muse models".into(), to: "Muse Spark".into() },
+            Change::TopicRenamed { from: "Muse Spark".into(), to: "".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
@@ -1635,6 +1682,9 @@ mod tests {
                 | Change::Positioned { .. }
                 | Change::Anchored { .. }
                 | Change::AiJoined { .. }
+                | Change::TopicsAssigned { .. }
+                | Change::TopicSet { .. }
+                | Change::TopicRenamed { .. }
                 | Change::MessagesRead { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
@@ -1648,7 +1698,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 45, "one of each kind of change");
+        assert_eq!(kinds.len(), 48, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -1696,6 +1746,9 @@ mod tests {
         let w = &replayed;
         assert_eq!(w.threads.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["T7", "T1", "T3", "T4", "T8"], "a merge undone puts its thread back");
         assert_eq!(w.thread("T7").unwrap().parent_id.as_deref(), Some("T1"), "under the thread its parent went into");
+        let topics: std::collections::BTreeMap<&str, &str> = w.topics.iter().map(|(id, name)| (id.as_str(), name.as_str())).collect();
+        assert_eq!(topics, [("T1", "Muse Spark"), ("T3", "Muse Spark"), ("T4", "Muse Spark"), ("T7", "Kept through a merge"), ("T8", "Muse Spark")].into(),
+            "only threads on the map, renames joined, a topic back with its thread");
         let e = w.thoughts.iter().find(|t| t.id == "e").unwrap();
         assert_eq!((e.text.as_str(), e.unclear.as_str()), ("ask Muse Spark about e", ""), "a yes on the joined point fixes the part that said it");
         let h = w.thoughts.iter().find(|t| t.id == "h").unwrap();
