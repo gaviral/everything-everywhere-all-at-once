@@ -919,7 +919,8 @@ export default function App() {
     if (grew) keepClear();
   });
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
-  const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
+  // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
+  const lastWords = pullBack ? lastWordsOn(world.thoughts.filter((t) => (t.at_ms > now ? 0 : t.at_ms) <= pullBack.touched_ms), pullBack, me, now) : "";
 
   const goBack = (thread: Thread, focus: "thread" | "composer" = "thread") => {
     setView((was) => viewAfterJump(was, home));
