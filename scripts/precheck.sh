@@ -22,13 +22,25 @@ if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent bu
 # Every demo beat has an offline check (scripts/*-check.mjs); a broken beat fails here, so it can't merge.
 # composer-check needs a live core and real model calls, so it isn't one of them.
 if [ -d ui/node_modules ]; then
+  check_logs=$(mktemp -d) || { fail "UI checks could not create log directory"; exit "$failed"; }
+  for c in scripts/*-check.mjs; do
+    case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
+    printf '%s\0' "$c"
+  done | xargs -0 -n 1 -P "${PRECHECK_JOBS:-4}" sh -c '
+    check_logs=$1
+    c=$2
+    name=$(basename "$c" .mjs)
+    node "$c" > "$check_logs/$name.log" 2>&1
+    printf "%s\n" "$?" > "$check_logs/$name.status"
+  ' sh "$check_logs"
   for c in scripts/*-check.mjs; do
     case "$c" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs) continue ;; esac
     # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
     name=$(basename "$c" .mjs)
-    node "$c" > /dev/null 2>&1; rc=$?
-    if [ $rc = 3 ]; then warn "$name skipped: no Chrome found (set CHROME)"; continue; fi
-    if [ $rc = 0 ]; then pass "$name passes"; else fail "$name passes"; fi
+    rc=$(cat "$check_logs/$name.status" 2>/dev/null)
+    if [ "$rc" = 3 ]; then warn "$name skipped: no Chrome found (set CHROME)"; continue; fi
+    if [ "$rc" = 0 ]; then pass "$name passes"
+    else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
   done
 else warn "UI checks skipped: run ./run.sh once to install"; fi
 # links-check and dates-check need only node, so a fresh clone runs them too.
