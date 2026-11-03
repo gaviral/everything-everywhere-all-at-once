@@ -52,7 +52,17 @@ export const ACTIONS: Action[] = [
   // Someone else's pointing (Guide.tsx): a click anywhere takes it down too (a document click, which the catalog's net
   // doesn't list), except one on the way the arrow shows (a folded card's Show, Map), which moves it on to the part.
   { id: "dismiss-guide", how: "key", at: [["Guide.tsx", `window.addEventListener("keydown", key, true)`]], pressed: INSTANT,
-    done: "Esc: the arrow, its caption and the spotlight go; a click elsewhere does the same" },
+    done: "Esc: the arrow, its ring and the words it brought go (a question asked: Drop it); ↵ and L answer a question asked; a click elsewhere takes a point down" },
+  // The Friend's question asked at your pause (Guide.tsx), and the held stack's cards: each answered in this window at once.
+  { id: "guide-go-ahead", how: "click", at: [["Guide.tsx", "onClick={() => goAhead(said.n)}"]], pressed: PRESS, done: "its buttons go; the question stays its reading time with its arrow, then goes" },
+  { id: "guide-later", how: "click", at: [["Guide.tsx", "onClick={() => later(said.n)}"], ["Guide.tsx", "onClick={() => laterHeld(item.n)}"]], pressed: PRESS,
+    done: "the question goes back to the held stack, marked “Later”: it waits for you, not your next pause", says: ["Later"] },
+  { id: "guide-drop", how: "click", at: [["Guide.tsx", "onClick={() => dropIt(said.n)}"], ["Guide.tsx", "onClick={() => dropHeld(item.n)}"]], pressed: PRESS,
+    done: "the question (or line) is gone, its arrow too", says: ["Drop it"] },
+  { id: "guide-answer", how: "click", at: [["Guide.tsx", "onClick={() => askNow(item.n)}"]], pressed: PRESS,
+    done: "the held card leaves the stack and is asked (said) at once: its caption at the stage, its arrow if it has one", says: ["Answer", "Continue"] },
+  { id: "guide-held-more", how: "click", at: [["Guide.tsx", "onClick={() => setAll(!all)}"]], pressed: PRESS, done: "the rest of the held stack opens under the next in line, or folds back to it", says: ["more held", "Just the next"] },
+  { id: "guide-held-chip", how: "click", at: [["Guide.tsx", "onClick={() => setOpen(!open)}"]], pressed: PRESS, done: "on a phone, the held cards open above the chip, or fold back into it", says: ["Held"] },
   { id: "new-landing-note", how: "click", at: [["Attention.tsx", "onClick={onGo}"]], pressed: PRESS, done: "the map scrolls to the new thought, which takes the landing highlight" },
   { id: "finish-it", how: "click", at: [["App.tsx", "goBack(pullBack)"]], pressed: PRESS, waits: "core", done: "the card goes and the map moves there: “Back to …”", failed: NOT_CONNECTED },
   { id: "later", how: "click", at: [["App.tsx", "later(pullBack)"]], pressed: PRESS, done: "the card fades out" },
