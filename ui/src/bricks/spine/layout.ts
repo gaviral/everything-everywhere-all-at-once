@@ -483,7 +483,7 @@ export function layout(input: LayoutInput): Layout {
     const list = ideasIn(t.id);
     const idea = list[0];
     return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided && !idea.parts.some((p) => p.unclear) &&
-      idea.parts.at(-1)!.complete && !pins.has(idea.key) && !shelved.has(idea.key) && !marginsOn.has(idea.key) && landingOn !== idea.key;
+      idea.parts.at(-1)!.complete && !input.originals?.has(idea.key) && !pins.has(idea.key) && !shelved.has(idea.key) && !marginsOn.has(idea.key) && landingOn !== idea.key;
   };
 
   // Sizes, before anything is placed.
@@ -497,10 +497,10 @@ export function layout(input: LayoutInput): Layout {
     if (cached) return cached;
     const left = !idea.parts.at(-1)!.complete;
     const staying = stayingOn(idea);
-    const wordsOpen = staying && !!input.originals?.has(idea.key);
+    const wordsOpen = !!input.originals?.has(idea.key);
     const pending = idea.parts.some((p) => p.unclear);
-    const words = pending ? idea.parts.map((p) => p.text).join(" ") : wordsOpen ? idea.parts.map((p) => p.text).join("\n") : staying ? trimFillers(idea.text).text || idea.text : idea.text;
-    const shown = left ? `“${words.replace(/[\s.,;:…—–-]+$/u, "")}…”` : words;
+    const words = wordsOpen ? idea.parts.map((p) => p.text).join("\n") : pending ? idea.parts.map((p) => p.text).join(" ") : staying ? trimFillers(idea.text).text || idea.text : idea.text;
+    const shown = left && !wordsOpen ? `“${words.replace(/[\s.,;:…—–-]+$/u, "")}…”` : words;
     // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
     const found: { m: MarginInput; start: number; end: number }[] = [];
     for (const m of marginsOn.get(idea.key) ?? []) {
@@ -547,7 +547,7 @@ export function layout(input: LayoutInput): Layout {
     const lines = wrap(measured, look.font, look.textW, (wordsOpen || pending) ? Infinity : look.max);
     const chips = idea.decided || left;
     const landing = landingOn === idea.key ? input.landing!.text : undefined;
-    const h = lines.length * look.line + (staying ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
+    const h = lines.length * look.line + (staying || wordsOpen ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
     const shape = { shown, lines, quotes, ends, tucks, beside, chips, landing, h };
     shapes.set(`${idea.key}|${look.variant}`, shape);
     return shape;
@@ -619,7 +619,7 @@ export function layout(input: LayoutInput): Layout {
     // Who agreed, once the core says (`agreed_by`); until then a decision is "✓ Decided".
     const agreedBy = idea.parts.flatMap((p) => p.agreed_by ?? []);
     const agreed = [...new Map(agreedBy.map((name) => who(name)).map((w) => [w.name, w])).values()].sort((a, b) => Number(b.me) - Number(a.me));
-    let offset = idea.parts.at(-1)!.complete ? 0 : 1; // The opening quote on a thought left off.
+    let offset = idea.parts.at(-1)!.complete || input.originals?.has(idea.key) ? 0 : 1; // Only a shortened thought has an opening quote.
     const fixes = idea.parts.flatMap((thought) => {
       const within = thought.unclear ? thought.text.toLocaleLowerCase().indexOf(thought.unclear.toLocaleLowerCase()) : -1;
       const found = within >= 0 ? [{ thought, start: offset + within }] : [];
@@ -629,7 +629,7 @@ export function layout(input: LayoutInput): Layout {
     return {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
       room: rooms.get(thread), depth, fixes, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
-      wordsOpen: stayingOn(idea) ? !!input.originals?.has(idea.key) : undefined,
+      wordsOpen: stayingOn(idea) || input.originals?.has(idea.key) ? !!input.originals?.has(idea.key) : undefined,
       thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker.me ? undefined : speaker,
       agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,
       landing: shape.landing, quotes: shape.quotes.length ? shape.quotes : undefined, tucks: shape.tucks.length ? shape.tucks : undefined,

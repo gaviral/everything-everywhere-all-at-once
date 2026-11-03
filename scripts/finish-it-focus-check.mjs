@@ -25,8 +25,16 @@ const world = {
   positions: { p2: { x: 2200, y: 1800, by: "you", at_ms: now } },
 };
 let shown = world;
+const receipts = new Set();
 const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
   onMessage: (message) => {
+    if (message.type === "text") {
+      assert.match(message.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      assert.ok(!receipts.has(message.id), "each explicit submission has its own id");
+      receipts.add(message.id);
+      core.send({ type: "text_received", id: message.id });
+      return;
+    }
     if (message.type !== "focus") return;
     shown = { ...shown, active: message.thread_id, active_by: { you: message.thread_id } };
     core.send({ type: "change", change: { type: "active_changed", thread_id: message.thread_id, speaker: "you" } });
@@ -80,7 +88,7 @@ try {
       const at = await evaluate(locate);
       for (const type of ["mousePressed", "mouseReleased"]) await page("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
     };
-    const texts = () => core.heard.filter((m) => m.type === "text");
+    const texts = () => core.heard.filter((m) => m.type === "text").map(({ id, ...message }) => message);
     const focus = async () => {
       await check(`document.activeElement === document.querySelector('${composer}')`, "composer has DOM focus");
       // Wait beyond the navigation/camera animation: focus must survive the view settling.

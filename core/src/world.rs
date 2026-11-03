@@ -137,6 +137,9 @@ pub struct Action {
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    /// Saved receipts survive a restart even if the thought is later moved or deleted.
+    #[serde(default, skip_serializing)]
+    pub received_text: std::collections::HashSet<(String, String)>,
     /// Where the talk is now: the thread whoever moved last is on.
     pub active: Option<String>,
     /// Each speaker's own active thread, so in a room placement and "where was I?" follow the person.
@@ -227,6 +230,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    TextReceived { speaker: String, id: String },
     RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
     AppEnabled { id: String, enabled: bool },
@@ -429,6 +433,7 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
                 self.recaps.push(recap.clone());
@@ -1837,6 +1842,7 @@ mod tests {
             Change::TopicRenamed { from: "Muse Spark".into(), to: "".into() },
             Change::StayChanged { thread_id: Some("T4".into()) },
             Change::StayChanged { thread_id: None },
+            Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
@@ -1849,6 +1855,7 @@ mod tests {
                 | Change::AppOutput { .. }
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
+                | Change::TextReceived { .. }
                 | Change::ThreadAdded { .. }
                 | Change::ThoughtPlaced { .. }
                 | Change::ThreadTouched { .. }
@@ -1900,7 +1907,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 49, "one of each kind of change");
+        assert_eq!(kinds.len(), 50, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

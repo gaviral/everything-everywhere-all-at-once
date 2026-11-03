@@ -1,5 +1,6 @@
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
@@ -237,6 +238,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "text_received"; id: string }
   | JobMsg
   | StepMsg
   | RecapServerMsg
@@ -755,7 +757,14 @@ export function useCore(speaker?: string) {
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
-  const [queuedCount, setQueuedCount] = useState(0);
+  const queueKey = `e2a2o.waiting.${speaker ?? "you"}`;
+  const outbox = useRef<string[] | null>(null);
+  if (outbox.current === null) {
+    try {
+      outbox.current = readWaiting(queueKey);
+    } catch { outbox.current = []; }
+  }
+  const [queuedCount, setQueuedCount] = useState(outbox.current.length);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
@@ -780,7 +789,6 @@ export function useCore(speaker?: string) {
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
   const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
-  const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
   const stopWaiting = useRef<number | null>(null);
 
@@ -818,11 +826,12 @@ export function useCore(speaker?: string) {
         stopWaiting.current = null;
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
-        for (const message of outbox.current.splice(0)) ws.send(message);
+        // A send only hands bytes to the browser. Keep them saved until the core confirms the id.
+        try { outbox.current = readWaiting(queueKey); } catch { /* Keep the last readable copy. */ }
+        setQueuedCount(outbox.current!.length);
+        for (const message of outbox.current!) ws.send(message);
         attention.current.resend((message) => ws.send(message));
         coreBack();
-        setQueuedCount(0);
-        // The new connection may belong to a restarted core whose note ids start again at 1.
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data as string) as ServerMsg;
@@ -837,6 +846,12 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "text_received": {
+            try { receivedWaiting(queueKey, msg.id); outbox.current = readWaiting(queueKey); }
+            catch { break; } // Retrying a saved entry is safe: the core remembers its id.
+            setQueuedCount(outbox.current!.length);
+            break;
+          }
           case "usage":
             setUsage(msg.data);
             break;
@@ -1017,8 +1032,15 @@ export function useCore(speaker?: string) {
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== queueKey && !event.key.startsWith(`${queueKey}.`)) return;
+      try { outbox.current = readWaiting(queueKey); } catch { return; }
+      setQueuedCount(outbox.current.length);
+    };
+    window.addEventListener("storage", storageChanged);
     open();
     return () => {
+      window.removeEventListener("storage", storageChanged);
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(handoffTimer);
@@ -1174,17 +1196,24 @@ export function useCore(speaker?: string) {
       if (control !== null) { noticeQueue.control(control); return true; }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
+      try { outbox.current = readWaiting(queueKey); } catch { /* A failed save below keeps the draft. */ }
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
-      if (!online && outbox.current.length + parts.length > 50) {
+      if (outbox.current!.length + parts.length > 50) {
         sayNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
       }
-      for (const part of parts) {
-        const message = JSON.stringify({ type: "text", text: part });
-        if (online) socket.current!.send(message);
-        else outbox.current.push(message);
+      const messages = parts.map((part) => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
+      {
+        try {
+          // Save the entire batch before telling the composer it can clear the draft.
+          saveWaiting(queueKey, messages);
+        } catch {
+          sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
+        }
+        outbox.current = readWaiting(queueKey);
+        setQueuedCount(outbox.current.length);
       }
-      if (!online) setQueuedCount(outbox.current.length);
+      if (online) for (const message of messages) socket.current!.send(message);
       if (parts.length > 1) { sayNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
       return true;
     },

@@ -124,10 +124,10 @@ function watchExit() {
 }
 
 /** Headless Chrome with one page at `url`, `width` × `height`, light, the app's own motion. */
-export async function openPage(url, { width = 1440, height = 900, debugPort = 0 } = {}) {
+export async function openPage(url, { width = 1440, height = 900, debugPort = 0, chromeArgs = [] } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "page-check-"));
   const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, "--no-first-run",
-    "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+    "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, ...chromeArgs, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   running.set(chrome, profile);
   chrome.once("exit", () => running.delete(chrome));
   watchExit();

@@ -1433,6 +1433,14 @@ export default function App() {
   const aiNames = new Set(world.ai ?? []);
   const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
     .map((thread) => ({ thread, points: thoughtsByThread.get(thread.id)?.length ?? 0 })) : [];
+  const goToMatch = (thread: Thread) => {
+    const thoughts = thoughtsByThread.get(thread.id) ?? [];
+    const found = searchMatches(thoughts.map((thought) => ({ id: thought.id, fields: [thought.text.toLocaleLowerCase(), thought.point.toLocaleLowerCase()] })), search);
+    const thoughtId = found.values().next().value ?? null;
+    jumps.jumped(world, thread.id);
+    reveal(thread.id, thoughtId);
+    core.focus(thread.id);
+  };
   // A view's Show: takes you to it, and the rail gets out of its way (a sheet over it on a phone; on a laptop it covers
   // the cards' right-hand column, where the buttons are).
   const openView = (id: string) => { setRailTab(null); showView(id); };
@@ -1488,7 +1496,7 @@ export default function App() {
       {talkExit}
       <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
       <TopRight>
-        {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={(thread) => goBack(thread)} />}
+        {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={goToMatch} />}
         {builtIns.has("export") && (world.threads.length > 0 || world.thoughts.length > 0) &&
           <CornerButton icon="export" label={NAMES.export} keyName="E" keyAria="E" onClick={() => exportMap()} guide="export" />}
         {builtIns.has("import") && <ImportChats core={core} />}

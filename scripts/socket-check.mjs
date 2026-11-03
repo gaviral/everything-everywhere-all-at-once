@@ -19,11 +19,13 @@ globalThis.HTMLIFrameElement = class {};
 globalThis.dispatchEvent = () => true;
 globalThis.addEventListener ??= noop;
 globalThis.removeEventListener ??= noop;
+const saved = new Map();
+globalThis.localStorage = { get length() { return saved.size; }, key: (i) => [...saved.keys()][i] ?? null, getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: (key) => saved.delete(key) };
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", hostname: "localhost", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
 globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
   constructor() { sockets.push(this); queueMicrotask(() => this.onopen?.()); }
-  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); }
+  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); const m = JSON.parse(data); if (m.type === "text" && m.id) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "text_received", id: m.id }) })); }
   close() {} addEventListener() {} removeEventListener() {} };
 const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;
