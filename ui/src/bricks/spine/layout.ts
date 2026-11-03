@@ -173,6 +173,8 @@ export interface Item {
   line?: { x: number; y1: number; y2: number };
   // A point (an aside carries its one point's words and thoughts too).
   text?: string;
+  /** Pending speech checks, each keeping its own correction controls. */
+  fixes?: { thought: Thought; start: number }[];
   /** Its words as shown: a point left off is quoted, unfinished. */
   shown?: string;
   wordsOpen?: boolean;
@@ -480,7 +482,7 @@ export function layout(input: LayoutInput): Layout {
   const lone = (t: Thread) => {
     const list = ideasIn(t.id);
     const idea = list[0];
-    return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided &&
+    return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided && !idea.parts.some((p) => p.unclear) &&
       idea.parts.at(-1)!.complete && !pins.has(idea.key) && !shelved.has(idea.key) && !marginsOn.has(idea.key) && landingOn !== idea.key;
   };
 
@@ -496,7 +498,8 @@ export function layout(input: LayoutInput): Layout {
     const left = !idea.parts.at(-1)!.complete;
     const staying = stayingOn(idea);
     const wordsOpen = staying && !!input.originals?.has(idea.key);
-    const words = wordsOpen ? idea.parts.map((p) => p.text).join("\n") : staying ? trimFillers(idea.text).text || idea.text : idea.text;
+    const pending = idea.parts.some((p) => p.unclear);
+    const words = pending ? idea.parts.map((p) => p.text).join(" ") : wordsOpen ? idea.parts.map((p) => p.text).join("\n") : staying ? trimFillers(idea.text).text || idea.text : idea.text;
     const shown = left ? `“${words.replace(/[\s.,;:…—–-]+$/u, "")}…”` : words;
     // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
     const found: { m: MarginInput; start: number; end: number }[] = [];
@@ -541,7 +544,7 @@ export function layout(input: LayoutInput): Layout {
     }
     // The ✦ after words the AI changed takes room on the line too.
     if (idea.parts.some((p) => p.fixed && p.heard && p.fixed !== p.heard)) measured += " ✦";
-    const lines = wrap(measured, look.font, look.textW, wordsOpen ? Infinity : look.max);
+    const lines = wrap(measured, look.font, look.textW, (wordsOpen || pending) ? Infinity : look.max);
     const chips = idea.decided || left;
     const landing = landingOn === idea.key ? input.landing!.text : undefined;
     const h = lines.length * look.line + (staying ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
@@ -616,9 +619,16 @@ export function layout(input: LayoutInput): Layout {
     // Who agreed, once the core says (`agreed_by`); until then a decision is "✓ Decided".
     const agreedBy = idea.parts.flatMap((p) => p.agreed_by ?? []);
     const agreed = [...new Map(agreedBy.map((name) => who(name)).map((w) => [w.name, w])).values()].sort((a, b) => Number(b.me) - Number(a.me));
+    let offset = idea.parts.at(-1)!.complete ? 0 : 1; // The opening quote on a thought left off.
+    const fixes = idea.parts.flatMap((thought) => {
+      const within = thought.unclear ? thought.text.toLocaleLowerCase().indexOf(thought.unclear.toLocaleLowerCase()) : -1;
+      const found = within >= 0 ? [{ thought, start: offset + within }] : [];
+      offset += thought.text.length + 1; // Parts shown together have one space between them.
+      return found;
+    });
     return {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
-      room: rooms.get(thread), depth, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
+      room: rooms.get(thread), depth, fixes, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
       wordsOpen: stayingOn(idea) ? !!input.originals?.has(idea.key) : undefined,
       thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker.me ? undefined : speaker,
       agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,

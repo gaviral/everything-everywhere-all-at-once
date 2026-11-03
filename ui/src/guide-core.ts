@@ -411,8 +411,6 @@ export type Held = { n: number; text: string; target: string | null; by: string;
 export type Said = { text: string; by: string; n: number; ask?: Held; typing?: boolean };
 export type GuideState = { point: Shown | null; caption: Said | null; held: readonly Held[] };
 export const NOTHING: GuideState = { point: null, caption: null, held: [] };
-/** At most this many held at once: the oldest go first (a sender stuck in a loop can't bury the screen). */
-export const HELD_MAX = 12;
 
 /** The question being asked, back to the held stack, first in line, as `state` (a newer caption, or another question
  *  opened, came first: `waiting`; you said Later or left it: `later`; you talked over it: `over`), its arrow down. */
@@ -435,7 +433,7 @@ function unsaid(state: GuideState): GuideState {
 export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false): GuideState {
   if (msg.kind === "caption") {
     if (!msg.text) return state;
-    if (busy) return { ...state, held: [...state.held, { n, text: msg.text, target: null, by: msg.by, kind: "line" as const, state: "waiting" as const, urgent: false }].slice(-HELD_MAX) };
+    if (busy) return { ...state, held: [...state.held, { n, text: msg.text, target: null, by: msg.by, kind: "line" as const, state: "waiting" as const, urgent: false }] };
     // A newer caption replaces the one up (and its arrow); a question being asked goes back to wait for your pause.
     return { ...unsaid(returned(state, "waiting")), caption: { text: msg.text, by: msg.by, n } };
   }
@@ -448,7 +446,7 @@ export function guided(state: GuideState, msg: GuideMsg, n: number, busy = false
     // The same question again is the one held, not a second (its arrow as sent last).
     if (state.caption?.ask?.by === msg.by && state.caption.ask.text === msg.text) return state;
     const held = state.held.filter((h) => !(h.by === msg.by && h.text === msg.text));
-    return { ...state, held: [...held, { n, text: msg.text, target: msg.target, by: msg.by, kind: "question" as const, state: "waiting" as const, urgent: !!msg.urgent }].slice(-HELD_MAX) };
+    return { ...state, held: [...held, { n, text: msg.text, target: msg.target, by: msg.by, kind: "question" as const, state: "waiting" as const, urgent: !!msg.urgent }] };
   }
   // A point with words says them now: they take the caption's place (a question being asked keeps it).
   if (msg.target) {
@@ -529,7 +527,7 @@ export function talkedOver(state: GuideState, { rest = "", early = false }: { re
   const gone = unsaid(state);
   if (!rest.trim()) return gone;
   const held: Held = { n: caption.n, text: rest.trim(), target: null, by: caption.by, kind: "line", state: "over", urgent: false };
-  return { ...gone, held: [held, ...gone.held].slice(0, HELD_MAX) };
+  return { ...gone, held: [held, ...gone.held] };
 }
 
 /** A held card's Later: it waits for you, not your next pause. */
