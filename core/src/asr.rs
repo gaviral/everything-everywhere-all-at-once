@@ -88,9 +88,9 @@ where
     S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     let mut primer = Primer::default();
-    loop {
+    let result = loop {
         let Ok(next) = tokio::time::timeout(QUIET_MAX, stream.next()).await else {
-            return Err(anyhow!("Voice Transcribe stopped answering"));
+            break Err(anyhow!("Voice Transcribe stopped answering"));
         };
         match next {
             // A sign of life only (`QUIET_MAX`).
@@ -98,14 +98,16 @@ where
             // "Stop listening": nothing after it is heard, kept or sent on, even words the service still had.
             Some(Ok(Message::Text(t))) => {
                 if handle(core, speaker, &mut primer, t.as_str(), window) {
-                    return Ok(());
+                    break Ok(());
                 }
             }
-            Some(Ok(Message::Close(_))) | None => return Ok(()),
+            Some(Ok(Message::Close(_))) | None => break Ok(()),
             Some(Ok(_)) => {}
-            Some(Err(e)) => return Err(e.into()),
+            Some(Err(e)) => break Err(e.into()),
         }
-    }
+    };
+    primer.recover(core);
+    result
 }
 
 /// The service's audio: 16-bit mono PCM at 24 kHz, as the handshake says.
@@ -202,6 +204,7 @@ fn handshake(key: &str) -> Value {
 /// What the service made of the primer, so none of it is ever shown or kept.
 #[derive(Default)]
 struct Primer {
+    drafts: std::collections::HashMap<u64, crate::world::SpeechDraft>,
     /// The primer's turn, from its speechStart (in the primer's stretch of the stream).
     turn: Option<u64>,
     /// Its turn has not ended yet: the service may run the primer and the first line together into one turn.
@@ -211,6 +214,24 @@ struct Primer {
 }
 
 impl Primer {
+    fn draft(&mut self, speaker: &str, turn: Option<u64>, text: &str, fresh: bool, core: &Core) -> String {
+        let key = turn.unwrap_or(u64::MAX);
+        if turn.is_none() && self.drafts.get(&key).is_some_and(|d| core.snapshot().speech_resolved.contains(&d.id) && (fresh || d.text != text)) {
+            self.drafts.remove(&key);
+        }
+        let draft = self.drafts.entry(key).or_insert_with(|| crate::world::SpeechDraft {
+            id: uuid::Uuid::new_v4().to_string(), speaker: speaker.into(), text: String::new(),
+        });
+        if !text.trim().is_empty() { draft.text = text.into(); }
+        draft.id.clone()
+    }
+
+    fn recover(&self, core: &Core) {
+        for draft in self.drafts.values().filter(|draft| !draft.text.trim().is_empty()) {
+            core.remember_speech(draft.clone());
+        }
+    }
+
     /// `text` without the primer's words at its front, compared without case or punctuation.
     fn strip<'a>(&self, text: &'a str) -> &'a str {
         let key = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
@@ -283,6 +304,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
         Some("transcript") => {
             core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
+            if !words.trim().is_empty() { primer.draft(speaker, turn, &words, true, core); }
             // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
             crate::messages::heard(core, speaker, &words);
             // The call's other windows learn that they have the floor, never the words (call.rs `speaking`).
@@ -298,7 +320,8 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
-                core.take_turn(speaker, &words, true, false, false, window);
+                let id = primer.draft(speaker, turn, &words, false, core);
+                core.finish_speech(speaker, &id, &words, window);
             }
             // After the turn's thought, so the other windows see its words come as "Speaking now…" goes (call.rs).
             crate::call::speaking(core, speaker, false);
@@ -307,6 +330,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             }
         }
         Some("error") => {
+            primer.recover(core);
             if let Some(status) = event["errorType"].as_str().and_then(crate::model::status_of) {
                 let _ = core.check(status);
             }
@@ -532,7 +556,7 @@ mod tests {
     /// Only the primer's own word comes off: "Uhh" or "Uhuh" are someone's own, and an empty primer takes nothing.
     #[test]
     fn only_the_primers_own_words_come_off() {
-        let uh = Primer { turn: Some(0), open: true, words: "Uh".into() };
+        let uh = Primer { turn: Some(0), open: true, words: "Uh".into(), ..Primer::default() };
         assert_eq!(uh.strip("Uh, okay"), "okay");
         assert_eq!(uh.strip("uh okay"), "okay");
         assert_eq!(uh.strip("Uh."), "");

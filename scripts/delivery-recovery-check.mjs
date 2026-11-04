@@ -1,5 +1,12 @@
 // Delivery recovery through the real useCore hook and a scripted transport. No external service.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+const rust = spawnSync("cargo", ["test", "--quiet", "--manifest-path", "core/Cargo.toml", "delivery_", "--", "--test-threads=1"], {
+  cwd: new URL("..", import.meta.url), encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
+});
+if (rust.error) throw rust.error;
+if (rust.status !== 0) { process.stderr.write(rust.stdout + rust.stderr); process.exit(rust.status ?? 1); }
+assert.match(rust.stdout, /[1-9]\d* passed; 0 failed/, "delivery regression tests ran");
 import { uiServer } from "./ui-server.mjs";
 // Just enough of a browser for react-dom to mount a component that draws nothing (as in notice-check).
 const noop = () => {};
@@ -80,6 +87,13 @@ try {
   await until(() => sockets.at(-1).map === null, "connection with missing identity");
   assert.equal(second.sendText("Do not send without identity"), false);
   assert.equal([...accepted.values()].includes("Do not send without identity"), false);
+  const first = sockets.find(socket => socket.map === "A" && socket.readyState === 1);
+  first.tell({ type: "recoverable_speech", id: "speech-recovery", text: "Unfinished words" });
+  await until(() => core.recovery.entries.some(entry => entry.id === "speech-recovery"), "unfinished words offered");
+  assert.equal(core.recover("speech-recovery"), true);
+  assert.deepEqual(JSON.parse(first.sent.at(-1)), { type: "recover_speech", id: "speech-recovery", keep: true });
+  first.tell({ type: "recoverable_speech", id: "speech-recovery", text: "" });
+  await until(() => !core.recovery.entries.some(entry => entry.id === "speech-recovery"), "late final retires the draft");
   console.log("delivery-recovery-check: identity isolation, restart, two tabs and explicit legacy recovery pass");
 } finally {
   for (const root of roots) root.unmount();

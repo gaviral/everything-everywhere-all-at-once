@@ -384,6 +384,45 @@ impl Core {
         self.take_turn(speaker, text, true, true, false, None);
     }
 
+    // Recovery records are private to the speaker; they never broadcast as shared map changes.
+    fn recovery_change(&self, change: Change) -> bool {
+        let mut world = self.world.lock().unwrap();
+        if let Err(error) = self.journal.lock().unwrap().append(&change) {
+            self.journal_save_failed(&error);
+            return false;
+        }
+        Arc::make_mut(&mut world).apply(&change);
+        true
+    }
+
+    fn remember_speech(&self, draft: world::SpeechDraft) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        if self.snapshot().speech_resolved.contains(&draft.id) { return; }
+        if self.recovery_change(Change::SpeechRecovered { draft: draft.clone() }) {
+            self.send_to(&draft.speaker, ServerMsg::RecoverableSpeech { id: draft.id, text: draft.text });
+        }
+    }
+
+    fn resolve_speech(&self, speaker: &str, id: &str) {
+        if self.recovery_change(Change::SpeechResolved { id: id.into() }) {
+            self.send_to(speaker, ServerMsg::RecoverableSpeech { id: id.into(), text: String::new() });
+        }
+    }
+
+    fn finish_speech(self: &Arc<Self>, speaker: &str, id: &str, text: &str, window: Option<u64>) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        if self.snapshot().speech_resolved.contains(id) { return; }
+        if !text.is_empty() { self.take_turn(speaker, text, true, false, false, window); }
+        self.resolve_speech(speaker, id);
+    }
+
+    fn recover_speech(self: &Arc<Self>, speaker: &str, id: &str, keep: bool) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        let Some(draft) = self.snapshot().speech_drafts.get(id).filter(|draft| draft.speaker == speaker).cloned() else { return };
+        if keep { self.keep_complete(speaker, &draft.text, false, false); }
+        self.resolve_speech(speaker, id);
+    }
+
     fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool, window: Option<u64>) {
         if uuid::Uuid::parse_str(id).is_err() { return; }
         // Two reconnecting windows can retry the same entry at once.
@@ -549,6 +588,10 @@ impl Core {
     }
 
     fn keep_speaking(&self, speaker: &str, text: &str, speak: bool) -> String {
+        self.keep_complete(speaker, text, speak, true)
+    }
+
+    fn keep_complete(&self, speaker: &str, text: &str, speak: bool, complete: bool) -> String {
         let mut thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
@@ -560,7 +603,7 @@ impl Core {
             guess: String::new(),
             heard: String::new(),
             fixed: String::new(),
-            complete: true,
+            complete,
             at_ms: now_ms(),
             place_ms: None,
             decided: false,
@@ -1635,6 +1678,8 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     messages.extend(call::message(core));
     messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
     messages.push(usage::message(core));
+    messages.extend(core.snapshot().speech_drafts.values().filter(|draft| draft.speaker == speaker)
+        .map(|draft| ServerMsg::RecoverableSpeech { id: draft.id.clone(), text: draft.text.clone() }));
     messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1710,6 +1755,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::RecoverSpeech { id, keep }) => core.recover_speech(&speaker, &id, keep),
                 Ok(ClientMsg::Partner { on }) if !ai && !remote => {
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
                     else if !on { partner = None; }

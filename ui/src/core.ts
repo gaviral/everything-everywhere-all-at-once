@@ -240,6 +240,7 @@ type Change =
 
 type ServerMsg =
   | { type: "map_identity"; id: string }
+  | { type: "recoverable_speech"; id: string; text: string }
   | { type: "command_reply"; text: string; speak?: boolean }
   | { type: "partner_state"; state: string; message: string }
   | { type: "text_received"; id: string }
@@ -770,7 +771,7 @@ export function useCore(speaker?: string) {
   const outbox = useRef<string[]>([]);
   const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
   const refreshRecovery = () => {
-    try { setRecovery((state) => ({ ...state, entries: quarantined(speaker ?? "you", mapId.current) })); }
+    try { setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...quarantined(speaker ?? "you", mapId.current)] })); }
     catch { setRecovery((state) => ({ ...state, storageUnavailable: true })); }
   };
   const [queuedCount, setQueuedCount] = useState(0);
@@ -855,6 +856,7 @@ export function useCore(speaker?: string) {
         switch (msg.type) {
           case "map_identity": {
             if (!msg.id) break;
+            if (mapId.current !== msg.id) setRecovery(state => ({ ...state, entries: state.entries.filter(entry => entry.kind !== "speech") }));
             mapId.current = msg.id;
             identityReady.current = true;
             queueKey.current = waitingKey(speaker ?? "you", msg.id);
@@ -863,6 +865,11 @@ export function useCore(speaker?: string) {
             setQueuedCount(outbox.current.length);
             refreshRecovery();
             for (const message of outbox.current) ws.send(message);
+            break;
+          }
+          case "recoverable_speech": {
+            setRecovery(state => ({ ...state, entries: [...state.entries.filter(entry => entry.id !== msg.id),
+              ...(msg.text ? [{ id: msg.id, text: msg.text, kind: "speech" as const }] : [])] }));
             break;
           }
           case "text_received": {
@@ -1138,6 +1145,7 @@ export function useCore(speaker?: string) {
     deliveryMapId: mapId.current,
     recover: (id: string) => {
       const entry = recovery.entries.find((entry) => entry.id === id);
+      if (entry?.kind === "speech") return identityReady.current && send(JSON.stringify({ type: "recover_speech", id, keep: true }));
       if (!entry?.message || !queueKey.current || !identityReady.current) return false;
       try {
         const parsed = JSON.parse(entry.message);
@@ -1153,6 +1161,7 @@ export function useCore(speaker?: string) {
     },
     discardRecovery: (id: string) => {
       const entry = recovery.entries.find((entry) => entry.id === id);
+      if (entry?.kind === "speech") { if (identityReady.current) send(JSON.stringify({ type: "recover_speech", id, keep: false })); return; }
       if (entry) { try { discardQuarantined(entry); refreshRecovery(); } catch { /* Retain it if storage fails. */ } }
     },
     recap,

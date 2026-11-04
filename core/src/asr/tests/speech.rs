@@ -261,3 +261,22 @@ fn recognized_notice_commands_reach_the_window() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn delivery_late_final_reconciles_the_same_recovery_once() {
+    for choice in [None, Some(true), Some(false)] {
+        let (core, _updates, path) = listening();
+        let mut primer = Primer::default();
+        let draft = serde_json::json!({"type":"transcript", "transcript":"Keep these unfinished", "turnId":71, "audioProcessedMs":PRIMER_MS + 700});
+        handle(&core, "you", &mut primer, &draft.to_string(), None);
+        primer.recover(&core);
+        let id = core.snapshot().speech_drafts.values().next().unwrap().id.clone();
+        if let Some(keep) = choice { core.recover_speech("you", &id, keep); }
+        let final_words = serde_json::json!({"type":"speechComplete", "transcript":"Keep these unfinished words.", "turnId":71, "audioProcessedMs":PRIMER_MS + 900});
+        for _ in 0..2 { handle(&core, "you", &mut primer, &final_words.to_string(), None); }
+        assert!(core.snapshot().speech_drafts.is_empty());
+        assert_eq!(core.snapshot().thoughts.len(), if choice == Some(false) { 0 } else { 1 });
+        if choice == Some(true) { assert_eq!(core.snapshot().thoughts[0].text, "Keep these unfinished"); }
+        std::fs::remove_file(path).unwrap();
+    }
+}

@@ -133,8 +133,19 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpeechDraft {
+    pub id: String,
+    pub speaker: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default, skip_serializing)]
+    pub speech_drafts: std::collections::HashMap<String, SpeechDraft>,
+    #[serde(default, skip_serializing)]
+    pub speech_resolved: std::collections::HashSet<String>,
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
     /// Saved receipts survive a restart even if the thought is later moved or deleted.
@@ -230,6 +241,8 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    SpeechRecovered { draft: SpeechDraft },
+    SpeechResolved { id: String },
     TextReceived { speaker: String, id: String },
     RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
@@ -433,6 +446,8 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::SpeechRecovered { draft } => { if !self.speech_resolved.contains(&draft.id) { self.speech_drafts.insert(draft.id.clone(), draft.clone()); } }
+            Change::SpeechResolved { id } => { self.speech_drafts.remove(id); self.speech_resolved.insert(id.clone()); }
             Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
@@ -1864,6 +1879,8 @@ mod tests {
             Change::StayChanged { thread_id: Some("T4".into()) },
             Change::StayChanged { thread_id: None },
             Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
+            Change::SpeechRecovered { draft: super::SpeechDraft { id: "speech-once".into(), speaker: "you".into(), text: "Unfinished words".into() } },
+            Change::SpeechResolved { id: "speech-once".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
@@ -1877,6 +1894,8 @@ mod tests {
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
                 | Change::TextReceived { .. }
+                | Change::SpeechRecovered { .. }
+                | Change::SpeechResolved { .. }
                 | Change::ThreadAdded { .. }
                 | Change::ThoughtPlaced { .. }
                 | Change::ThreadTouched { .. }

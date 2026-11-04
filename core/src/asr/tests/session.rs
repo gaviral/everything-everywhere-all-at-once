@@ -108,3 +108,28 @@ async fn a_refused_session_never_listens_and_says_why_in_words() {
         let _ = std::fs::remove_file(&p);
     }
 }
+
+#[tokio::test]
+async fn delivery_provider_close_retains_unfinished_words_across_restart() {
+    let (url, served) = stand_in(
+        serde_json::json!({"type":"sessionStarted", "sessionId":"recovery"}),
+        vec![serde_json::json!({"type":"transcript", "transcript":"Please keep the unfinished", "audioProcessedMs":PRIMER_MS + 700, "turnId":9})],
+    ).await;
+    let (core, path) = keyed("test-key");
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    drop(tx);
+    run_at(&url, core.clone(), "you".into(), rx, None).await.unwrap();
+    served.await.unwrap();
+    assert!(core.snapshot().thoughts.is_empty(), "a partial is not an accepted thought");
+    let draft = core.snapshot().speech_drafts.values().next().unwrap().clone();
+    assert_eq!(draft.text, "Please keep the unfinished");
+    let (_, restored) = Journal::open(&path).unwrap();
+    assert_eq!(restored.speech_drafts[&draft.id].text, draft.text);
+    core.recover_speech("someone else", &draft.id, true);
+    assert!(core.snapshot().thoughts.is_empty(), "another speaker cannot accept the draft");
+    core.recover_speech("you", &draft.id, true);
+    core.recover_speech("you", &draft.id, true);
+    assert_eq!(core.snapshot().thoughts.len(), 1);
+    assert!(!core.snapshot().thoughts[0].complete, "kept explicitly unfinished");
+    std::fs::remove_file(path).unwrap();
+}
