@@ -1,0 +1,33 @@
+.clarification-look-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 0; margin: 16px 0; padding: 0; }
+.clarification-look-switch legend { float: left; margin-right: 8px; padding: 8px 0; font-weight: 700; }
+.clarification-example .clarification-look-switch button { border: 1px solid #8a949a; border-radius: 999px; padding: 5px 18px; background: transparent; color: inherit; cursor: pointer; }
+.clarification-example .clarification-look-switch button[aria-pressed="true"] { background: #f4d95b; color: #202c3b; border-color: #f4d95b; }
+.clarification-look:not(.clarification-look--original) { --note-ink: #735a18; --paper: #fffdf5; --ink: #23303b; --accent: #e3b92f; }
+.clarification-look:not(.clarification-look--original) .clarification { background: var(--paper); color: var(--ink); border: 0; border-radius: 22px; padding: 26px 34px; }
+.clarification-look:not(.clarification-look--original) .clarification-source { font-size: clamp(26px, 2vw, 38px); line-height: 1.55; margin: 22px 0 0; }
+.clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) .clarification-source { padding-bottom: 90px; }
+.clarification-look:not(.clarification-look--original) .clarification mark { position: relative; background: transparent; color: inherit; text-decoration: none; }
+.clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) mark { text-decoration: underline dotted var(--accent) 4px; text-underline-offset: 8px; }
+.clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) mark::before { content: ""; position: absolute; left: 35%; top: 100%; width: 60px; height: 55px; background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 55'%3E%3Cpath d='M4 2 C3 25 22 34 51 38 M43 30 L52 38 L41 43' fill='none' stroke='%23b28b24' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); pointer-events: none; animation: clarification-draw .5s ease-out both; }
+.clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) mark::after { content: "What does this mean?"; position: absolute; z-index: 1; left: calc(35% + 55px); top: calc(100% + 27px); width: max-content; max-width: 230px; color: var(--note-ink); font: 600 24px/1.2 "Bradley Hand", "Segoe Print", cursive; transform: rotate(-3deg); pointer-events: none; animation: clarification-note .4s .25s both; }
+.clarification-look:not(.clarification-look--original) .clarification-cue { display: none; }
+.clarification-look:not(.clarification-look--original) .clarification-question { border: 0; margin-top: 10px; padding: 18px 22px; border-radius: 18px; background: var(--well); }
+.clarification-look:not(.clarification-look--original) .clarification-spine h3 { font-size: 1.2em; }
+.clarification-look:not(.clarification-look--original) .clarification-notice:empty { display: none; }
+.clarification-look.clarification-look--margin { --well: #f4f0e4; }
+.clarification-look.clarification-look--paper { --paper: #f7edcf; --well: #fffaf0; --note-ink: #8b4b2d; --accent: #c89000; }
+.clarification-look--paper .clarification { box-shadow: inset 0 0 0 2px #e5d5ac; }
+.clarification-look--paper .clarification-source { font-family: Georgia, serif; }
+.clarification-look--paper .clarification-question { transform: rotate(-.25deg); box-shadow: 0 5px 18px #57442619; }
+.clarification-look.clarification-look--night { --paper: #202c35; --well: #2b3a43; --ink: #f9f5e8; --note-ink: #f6dc80; --accent: #f3d457; }
+.clarification-look--night .clarification { box-shadow: inset 0 0 0 1px #68777b; }
+.clarification-look--night .clarification small { color: #d0d9d6; }
+.clarification-look--night .clarification button[aria-checked="true"], .clarification-look--night .clarification-actions button:first-child { background: #f4d95b; color: #202c3b; border-color: #f4d95b; }
+@keyframes clarification-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes clarification-note { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .clarification-look mark::before, .clarification-look mark::after { animation: none !important; } }
+@media (max-width: 600px) { .clarification-look:not(.clarification-look--original) .clarification { padding: 20px; } .clarification-look:not(.clarification-look--original) .clarification-source { font-size: 25px; } .clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) mark::after { left: 10px; top: calc(100% + 55px); font-size: 20px; } .clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) .clarification-source { padding-bottom: 105px; } }
+.clarification-example:has(.clarification-look:not(.clarification-look--original)) > p { margin: 4px 0; }
+.clarification-example:has(.clarification-look:not(.clarification-look--original)) textarea { min-height: 58px; height: 58px; }
+.clarification-example:has(.clarification-look:not(.clarification-look--original)) > div:first-child { margin-bottom: 4px; }
+@media (max-width: 600px) { .clarification-look:not(.clarification-look--original) .clarification:has(.clarification-spine) mark::after { left: auto; right: 0; } }
