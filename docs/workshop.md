@@ -1,6 +1,6 @@
 # Workshop
 
-Open Workshop in Features or add `?workshop` to the address. It reads the core’s current model configuration and the saved Flow library. Bring a model or saved box to the desk, enter text, choose a mode, and Run. Take away returns it to the shelf. Results stay in this visit; the desk clears when the map or participant changes.
+Open Workshop in Features or add `?workshop` to the address. It reads the core’s current model configuration and the saved Flow library. Bring a model or saved box to the desk, enter text, choose a mode, and Run. Take away returns it to the shelf. Trial results clear when Workshop closes or a part leaves the desk. The desk clears when the map or participant changes.
 
 “Bring Spark here” selects the first configured Spark version. Use the full displayed name to choose another version. “Take this away” removes the most recently brought or focused desk part. Commands also work through the app’s existing speech connection when the person chooses to start listening. Workshop never starts a microphone. Transcription observes live words; its transcript span measures first live words to the end of a turn, not service latency.
 

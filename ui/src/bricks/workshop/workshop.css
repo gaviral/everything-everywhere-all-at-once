@@ -49,4 +49,4 @@
 
 .workshop-flow .workshop-shelf{display:flex;flex-wrap:wrap}.workshop-flow .workshop-shelf-part,.workshop-flow .workshop-shelf-place{flex:0 1 14em}
 
-@media(max-width:700px){.workshop-top{flex-wrap:wrap;gap:.5em}.workshop-tools{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));font-size:.65em}.workshop-tools button{padding:.55em .2em;overflow-wrap:anywhere}}
+@media(max-width:700px){.workshop-top{flex-wrap:wrap;gap:.5em}.workshop-tools{width:100%;display:grid;grid-template-columns:1fr 1.3fr 1fr 1fr;font-size:.65em}.workshop-tools button{padding:.55em .2em;overflow-wrap:anywhere}}
