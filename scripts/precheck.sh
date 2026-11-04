@@ -15,6 +15,7 @@ tracked() { git ls-files -z | xargs -0 grep -IlE "$1" -- 2>/dev/null | grep -v '
 
 # Browser checks import headless.mjs (some dynamically); Node-only checks, including the README, stay in the gate.
 # PRECHECK_PAGES=0 defers those browser checks; =only runs just them against an already-built UI.
+# PRECHECK_STRICT=1 makes unavailable UI dependencies or browser checks failures (required by release.sh).
 # composer-check needs a live core and real model calls; links, dates and names have their own checks below.
 ui_check() {
   case "$1" in *composer-check.mjs|*links-check.mjs|*dates-check.mjs|*names-check.mjs) return 1 ;; esac
@@ -26,8 +27,16 @@ ui_check() {
 }
 ui_checks() {
   if [ -d ui/node_modules ]; then
+    # overnight/merge.sh reads <check>.log and <check>.status directly here.
     check_logs=${PRECHECK_LOGS:-$(mktemp -d)}
     [ -n "$check_logs" ] && mkdir -p "$check_logs" || { fail "UI checks could not create log directory"; exit "$failed"; }
+    # Clear selected statuses before any workers start: an interrupted worker must
+    # never inherit a previous run's success in a caller-supplied log directory.
+    for c in scripts/*-check.mjs; do
+      ui_check "$c" || continue
+      name=$(basename "$c" .mjs)
+      rm -f "$check_logs/$name.status" || { fail "UI checks could not clear stale status"; exit "$failed"; }
+    done
     for c in scripts/*-check.mjs; do
       ui_check "$c" || continue
       printf '%s\0' "$c"
@@ -40,23 +49,31 @@ ui_checks() {
     ' sh "$check_logs"
     for c in scripts/*-check.mjs; do
       ui_check "$c" || continue
-      # A check that drives headless Chrome (scripts/headless.mjs) exits 3 on a machine without one: a WARN, not a pass.
+      # Browser checks exit 3 when unavailable: a warning normally, a failure for release.
       name=$(basename "$c" .mjs)
       rc=$(cat "$check_logs/$name.status" 2>/dev/null)
-      if [ "$rc" = 3 ]; then warn "$name: $(tail -n 1 "$check_logs/$name.log")"; continue; fi
+      if [ "$rc" = 3 ]; then
+        if [ "${PRECHECK_STRICT:-0}" = 1 ]; then fail "$name could not run (Chrome and a built UI are required)"
+        else warn "$name: $(tail -n 1 "$check_logs/$name.log")"; fi
+        continue
+      fi
       if [ "$rc" = 0 ]; then pass "$name passes"
       else fail "$name passes"; tail -n 8 "$check_logs/$name.log" | sed 's/^/        /'; fi
     done
+  elif [ "${PRECHECK_STRICT:-0}" = 1 ]; then fail "UI checks unavailable: install ui/node_modules"
   else warn "UI checks skipped: run ./run.sh once to install"; fi
 }
 if [ "${PRECHECK_PAGES:-}" = only ]; then ui_checks; exit "$failed"; fi
 
 check ".gitignore covers .env and data/" "grep -qx '.env' .gitignore && grep -qx 'data/' .gitignore"
-check "no .env, journal or data files tracked" "! git ls-files | grep -qE '(^|/)\.env$|journal|^data/'"
-check "no key-like strings tracked" "[ -z \"\$(tracked '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}')\" ]"
-check "no key-like strings anywhere in git history" "! git log --all -p 2>/dev/null | grep -qE '(sk|pk|key)-[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9._-]{20,}|MODEL_API_KEY=[A-Za-z0-9_-]{16,}'"
+check "no journal or data files tracked" "! git ls-files | grep -qE 'journal|^data/'"
+check "release safety regression tests pass" "PYTHONDONTWRITEBYTECODE=1 python3 scripts/release-safety-test.py > /dev/null 2>&1"
+if secrets=$(python3 scripts/secret-scan.py 2>&1); then pass "no credentials or private .env files in tracked files or reachable git objects"
+else fail "secret scan blocks release (values redacted):"; printf '%s\n' "$secrets" | sed 's/^/        /'; fi
 check "run.sh parses" "sh -n run.sh"
-if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"; else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
+if [ -d ui/node_modules ]; then check "UI builds" "(cd ui && npm run --silent build > /dev/null 2>&1)"
+elif [ "${PRECHECK_STRICT:-0}" = 1 ]; then fail "UI build unavailable: install ui/node_modules"
+else warn "UI build skipped: run ./run.sh once to install, then precheck builds it"; fi
 ui_checks
 # links-check and dates-check need only node, so a fresh clone runs them too.
 check "links-check passes" "node scripts/links-check.mjs > /dev/null 2>&1"

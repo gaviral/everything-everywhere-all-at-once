@@ -223,7 +223,8 @@ async fn retracting_a_pending_question_cancels_its_reply_for_typed_and_spoken_tu
 
 #[tokio::test]
 async fn unrelated_retractions_leave_pending_replies_alone_and_delete_cancels_only_its_question() {
-    let f = Fixture::new(200, "A brief answer.", 120, true).await;
+    // Exceed the former 160 ms sleep so this exercises waiting for the reply.
+    let f = Fixture::new(200, "A brief answer.", 240, true).await;
     let _you = enable(&f.core, "you", 1);
     let _guest = enable(&f.core, "guest", 2);
     let mut updates = f.core.updates.subscribe();
@@ -269,14 +270,24 @@ async fn unrelated_retractions_leave_pending_replies_alone_and_delete_cancels_on
         "Undo never revives cancelled work"
     );
     // Wait for publication: saving the retained reply may outlast a fixed 160 ms under load.
-    let reply = tokio::time::timeout(Duration::from_secs(3), async {
+    let mut replies = Vec::new();
+    tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            let outgoing = updates.recv().await.unwrap();
-            if matches!(outgoing.message, ServerMsg::Guide { .. }) { break outgoing; }
+            let reply = updates.recv().await.unwrap();
+            if matches!(reply.message, ServerMsg::Guide { .. }) {
+                let guest = reply.to.as_deref() == Some("guest");
+                replies.push(reply);
+                if guest {
+                    break;
+                }
+            }
         }
-    }).await.unwrap();
-    assert_eq!(reply.to.as_deref(), Some("guest"));
-    assert!(captions(&mut updates).is_empty());
+    })
+    .await
+    .expect("guest reply should arrive while the other speaker's reply stays cancelled");
+    replies.extend(captions(&mut updates));
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].to.as_deref(), Some("guest"));
     let speakers = f.core.conversation.speakers.lock().unwrap();
     assert!(speakers["you"].history.is_empty());
     assert_eq!(speakers["guest"].history.len(), 1);

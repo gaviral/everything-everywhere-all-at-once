@@ -797,8 +797,12 @@ try {
         const at = `live-outline in the app at ${w} × ${h} px`;
         await width(w, h);
         await go(`${base}/?cards`);
-        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no panel"); continue; }
+        // Panels mount before /ws opens. Wait for this page's snapshot, then
+        // acknowledge a notice before sending landings: neither a mounted panel
+        // nor the server's socket count proves the page is ready to hear them.
+        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock") && ${JSON.stringify(full.threads.map((t) => t.id))}.every((id) => !!document.getElementById("thread-" + id))`, 8000)) { fail(at, "panels or core snapshot never became ready"); continue; }
         core.send({ type: "notice", message: "A notice to come back to" });
+        if (!await until(`!!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "core notice was not received before sending points"); continue; }
         talk.forEach((threadId, i) => core.send({ type: "change", change: { type: "thought_added", thought: thought(`lo-${w}-${i}`, `Point ${i + 1} of the talk, um, said at a length that takes a line or two of the outline`, threadId) } }));
         if (!await until(`${bullets}.length === ${talk.length} && !!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "the points from the core never all showed, or no clock"); continue; }
         await settle();
