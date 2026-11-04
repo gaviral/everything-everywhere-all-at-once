@@ -14,6 +14,7 @@ Browser, one page per window (ui/src)
   dev-build.ts   defers optional development-build reloads while the page is speaking, typing or sending
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
+  topic-images.ts shares the browser-local switch for topic visuals
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
   MicButton.tsx  the mic's states (off, starting, listening, hearing you, paused, no key, refused, connecting)
   Tips.tsx       one shared tip for every element with `data-tip` (each ✦ says what the AI did and its undo)
@@ -119,6 +120,8 @@ Core, one process (core/src: axum, tokio)
   system_view.rs passive local projection of core messages, without prompts, identities or saved words
   code_canvas.rs local source-map metadata and inspectable part relationships, without source bodies or machine paths
   dev_build.rs   optional local build status and per-window activity receipts
+  clarify.rs     Meta questions about ambiguous terms, without saving the answers
+  draw.rs        explicit Meta sketch interpretation and image replies, held in the window
   flow.rs        validates and runs saved serial Meta prompt pipelines
   workshop.rs    model trial list, saved Flow parts and optional configured event data
   storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
