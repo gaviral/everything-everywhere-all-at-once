@@ -278,14 +278,22 @@ async fn serve(core: Arc<Core>, mut queue: mpsc::UnboundedReceiver<Job>, url: &s
                 None => return,
             },
         };
-        let Some(speaker) = core.snapshot().thoughts.iter().find(|t| t.id == thought_id && !t.placed).map(|t| t.speaker.clone())
+        let Some((speaker, room)) = core.snapshot().thoughts.iter().find(|t| t.id == thought_id && !t.placed).map(|t| (t.speaker.clone(), room_for(&t.text)))
         else {
             continue;
         };
         let failed = tries.get(&thought_id).copied().unwrap_or(0);
         core.placing.start(&core, &thought_id);
         let limit = if failed == 0 { patience.first } else { patience.later };
-        match place(&core, &thought_id, url, limit).await {
+        let attempt = place(&core, &thought_id, url, limit);
+        // One first-attempt budget includes every lane, a model fallback and a larger-room retry after a
+        // cut-off answer. Dropping the whole attempt ends its in-flight calls through their existing guards.
+        let result = if failed == 0 {
+            tokio::time::timeout(limit(room), attempt).await.context("first placement attempt timed out").and_then(|result| result)
+        } else {
+            attempt.await
+        };
+        match result {
             Ok(next) => {
                 tries.remove(&thought_id);
                 core.placing.placed(&core, &thought_id, next.as_deref());
@@ -808,12 +816,11 @@ fn patience(room: u32) -> Duration {
     Duration::from_millis(4_000 + 8 * u64::from(room))
 }
 
-/// How long a first try may take: 1.2 times what filling its whole room takes (9.7 s for 2,000 tokens, so 6 ms a
-/// token): 12 s for a short turn. Well above every placement measured on this code: 62 placements from the
-/// talks in `scripts/` replayed with demo.mjs (2026-11-01, scripts/trace-summary.mjs), median 2.5 s, slowest 4.4 s.
-/// One that runs out goes back in line with `patience`, so a slow answer costs one wasted try, not the thought.
-fn first_try(room: u32) -> Duration {
-    Duration::from_millis(6 * u64::from(room))
+/// One first attempt gets five seconds, independent of input size: an engineering queue budget, not a service SLA.
+/// Token room stays intact. A timeout goes back in line with `patience`, so later words can land while the slow
+/// thought waits for its longer retry.
+fn first_try(_room: u32) -> Duration {
+    Duration::from_secs(5)
 }
 
 /// The placement in a model answer, or None when the answer was cut off at its room: finish_reason "length", or
@@ -1639,6 +1646,7 @@ mod tests {
             assert_eq!(room_for(&turn_of(chars)), ROOM, "{chars}");
         }
         assert_eq!(patience(ROOM), Duration::from_secs(20));
+        assert_eq!([ROOM, 4000, MAX_ROOM].map(super::first_try), [Duration::from_secs(5); 3]);
         assert_eq!(request(&map(), &turn("Pay rent"), "m", ROOM, false)["max_tokens"], 2000);
         // Past that, two tokens a character: 3,344 for the 1,672 characters that ran out of 2,000; never past the most.
         assert_eq!([1001, 1672, 1934].map(|chars| room_for(&turn_of(chars))), [2002, 3344, 3868]);
@@ -1646,7 +1654,123 @@ mod tests {
         assert_eq!(request(&map(), &turn(&turn_of(1672)), "m", 3344, false)["max_tokens"], 3344);
         // Room to fill takes time, though not as much as twice the time: 36 s for 4,000, not 40.
         assert_eq!(patience(4000), Duration::from_secs(36));
+        assert_eq!(patience(MAX_ROOM), Duration::from_secs(100), "a long retry keeps time to use its room");
         assert!(patience(MAX_ROOM) < Duration::from_secs(120), "still sooner than the shared client's limit");
+    }
+
+    /// Two silent lanes must release the queue within five seconds, even for a paste. A cut-off answer's
+    /// second round shares that deadline. The retry keeps the words and their order, but never steals focus.
+    async fn placement_stall_case(label: &str, text: String, cut_off: bool) {
+        let requests = Arc::new(Mutex::new(Vec::<(String, u64, String)>::new()));
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let (seen, gate, slow) = (requests.clone(), release.clone(), text.clone());
+        let first_calls = if cut_off { 4 } else { 2 };
+        let service = move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let prompt = request["messages"][1]["content"].as_str().unwrap().to_string();
+            let said = prompt.rsplit("NEW THOUGHT: \"").next().unwrap().trim_end_matches('"').to_string();
+            let delayed = said == slow;
+            let call = {
+                let mut requests = seen.lock().unwrap();
+                requests.push((said.clone(), request["max_tokens"].as_u64().unwrap(), request["model"].as_str().unwrap().into()));
+                requests.iter().filter(|(text, _, _)| text == &said).count()
+            };
+            let gate = gate.clone();
+            async move {
+                if delayed && cut_off && call <= 2 {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    return axum::Json(body(json!("length"), json!("")));
+                }
+                if delayed && call <= first_calls {
+                    std::future::pending::<()>().await;
+                }
+                if delayed {
+                    let _permit = gate.acquire().await.unwrap();
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                axum::Json(body(json!("stop"), json!(json!({
+                    "action": "return", "thread_id": "T1", "point": if delayed { "Delayed reminder" } else { "Healthy reminder" }
+                }).to_string())))
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, axum::Router::new().route("/v1/chat/completions", axum::routing::post(service))).await.unwrap();
+        });
+        let path = std::env::temp_dir().join(format!("e2a2o-placement-stall-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::world::Journal::open(&path).unwrap();
+        let mut world = World { threads: vec![thread("T1"), thread("T2")], ..World::default() };
+        world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() });
+        let (placer_queue, queue) = tokio::sync::mpsc::unbounded_channel();
+        let core = Arc::new(Core { placer_queue, key: Some("good".into()), placer_race: 2, placer_lanes: default_lanes(), ..Core::test(journal, world) });
+        let mut updates = core.updates.subscribe();
+        let placer = core.clone();
+        let worker = tokio::spawn(async move { super::serve(placer, queue, &url, super::PATIENCE).await });
+        let start = std::time::Instant::now();
+        core.add_thought("you", &text);
+        let id = id_of(&core, &text);
+        let original = core.snapshot().thoughts[0].clone();
+        until(Duration::from_secs(1), || requests.lock().unwrap().len() == 2).await;
+        core.add_thought("you", "Healthy reminder after the stall");
+        let healthy_id = id_of(&core, "Healthy reminder after the stall");
+        until(Duration::from_secs(6).saturating_sub(start.elapsed()), || landed(&core, "Healthy reminder after the stall")).await;
+        let healthy_ms = start.elapsed().as_millis();
+        assert!(healthy_ms <= 6_000, "{label}: healthy thought held for {healthy_ms} ms");
+        assert!(core.placing.failed(&id), "the slow thought is queued for retry");
+        let (_, saved) = crate::world::Journal::open(&path).unwrap();
+        let pending = saved.thoughts.iter().find(|t| t.id == id).unwrap();
+        assert!(!pending.placed && pending.text == text && pending.at_ms == original.at_ms, "saved unchanged while retrying");
+        until(Duration::from_secs(2), || requests.lock().unwrap().iter().filter(|(t, _, _)| t == &text).count() == first_calls + 2).await;
+        core.focus("you", "T2");
+        release.add_permits(2);
+        until(Duration::from_secs(2), || landed(&core, &text)).await;
+        let retry_ms = start.elapsed().as_millis();
+        let world = core.snapshot();
+        assert_eq!(world.active_for("you").map(String::as_str), Some("T2"), "retry leaves the moved focus alone");
+        assert_eq!(world.thoughts.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), [id.as_str(), healthy_id.as_str()], "arrival order stays intact");
+        assert_eq!((world.thoughts[0].text.as_str(), world.thoughts[0].at_ms), (text.as_str(), original.at_ms));
+        assert!(world.thoughts.iter().all(|t| t.placed), "both thoughts placed");
+        assert!(!core.placing.failed(&id), "successful retry clears its pending state");
+        let (_, saved) = crate::world::Journal::open(&path).unwrap();
+        assert!(saved.thoughts.iter().all(|t| t.placed), "placements are durable");
+        let mut placed = Vec::new();
+        let (mut began, mut ended) = (Vec::new(), Vec::new());
+        while let Ok(out) = updates.try_recv() {
+            match out.message {
+                ServerMsg::Change { change: Change::ThoughtPlaced { thought_id, .. } } => placed.push(thought_id),
+                ServerMsg::Step { id, done, .. } => if done { ended.push(id) } else { began.push(id) },
+                _ => {}
+            }
+        }
+        assert_eq!(placed, [healthy_id, id], "each thought lands exactly once, healthy first");
+        began.sort_unstable();
+        ended.sort_unstable();
+        assert_eq!(began, ended, "every racing call has exactly one end, including canceled lanes");
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), first_calls + 4, "two lanes per attempt");
+        assert_eq!(requests[0].1, u64::from(room_for(&text)), "full token room retained");
+        assert!(requests.iter().filter(|(said, _, _)| said == &text).all(|(_, room, _)| *room >= u64::from(room_for(&text))), "no attempt cuts the token room");
+        assert_ne!(requests[0].2, requests[1].2, "the initial race uses both models");
+        println!("placement-stall-metrics: {}", json!({"case": label, "chars": text.chars().count(), "bound_ms": 5000,
+            "healthy_ms": healthy_ms, "retry_ms": retry_ms, "requests": requests.len(), "room": requests[0].1}));
+        worker.abort();
+        server.abort();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn placement_stall_short() {
+        placement_stall_case("short", "Keep the delayed reminder for the garden".into(), false).await;
+    }
+
+    #[tokio::test]
+    async fn placement_stall_long_paste() {
+        placement_stall_case("6000-character paste", "x".repeat(6000), false).await;
+    }
+
+    #[tokio::test]
+    async fn placement_stall_after_cut_off() {
+        placement_stall_case("cut-off then stall", "Keep the delayed reminder after a cut-off answer".into(), true).await;
     }
 
     fn body(reason: serde_json::Value, content: serde_json::Value) -> serde_json::Value {
@@ -1853,7 +1977,7 @@ mod tests {
         url
     }
 
-    /// A keyed core on an empty map whose placer asks a burst stand-in, with a 400 ms first try (12 s for real) and
+    /// A keyed core on an empty map whose placer asks a burst stand-in, with a 400 ms first try (5 s for real) and
     /// 3 s later; its journal's path, and every message it sends from the start.
     async fn burst_core() -> (Arc<Core>, std::path::PathBuf, tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) {
         let url = burst_stand_in().await;
