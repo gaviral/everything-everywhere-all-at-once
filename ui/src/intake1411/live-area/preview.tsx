@@ -23,7 +23,7 @@ function useSyntheticScenario() {
     const next = sequence + 1;
     activity.emit({ identity: selected, agentId: "agent-a", agentName: "Agent North", task: "Check navigation", state: next > 1 ? "done" : "running", observedAt: Date.now(), sequence: next });
     activity.emit({ identity: other, agentId: "agent-b", agentName: "Agent South", task: "Review layout", state: "waiting", observedAt: Date.now(), sequence: next });
-    setSequence(next); setReceipt("Synthetic activity sent to two branches."); inspect();
+    setSequence(next); setReceipt("Synthetic activity sent to two Git branches."); inspect();
   };
   const sendStatuses = () => {
     const next = sequence + 1;
@@ -38,7 +38,7 @@ function useSyntheticScenario() {
   const sendOlder = () => {
     activity.emit({ identity: selected, agentId: "agent-a", agentName: "Agent North", task: "Obsolete task", state: "failed", sequence: 0, observedAt: Date.now() - 60_000 });
     build.emit({ identity: selected, sequence: 0, observedAt: Date.now() - 60_000, state: "failed", label: "Obsolete build" });
-    version.emit({ identity: selected, sequence: 0, observedAt: Date.now() - 60_000, branchLabel: "Obsolete branch", worktreeLabel: "Obsolete workspace", revision: "old" });
+    version.emit({ identity: selected, sequence: 0, observedAt: Date.now() - 60_000, branchLabel: "Obsolete Git branch", worktreeLabel: "Obsolete workspace", revision: "old" });
     setReceipt("Older synthetic updates sent; accepted rows should stay unchanged."); inspect();
   };
   return { enabled, setEnabled, missing, setMissing, receipt, subscriptions, inspect, sendActivity, sendStatuses, connection, sendOlder };

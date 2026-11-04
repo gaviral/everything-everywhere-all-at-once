@@ -9,7 +9,7 @@ export function SelectedStatus({ snapshot, selected }: { snapshot: LiveAreaSnaps
   if (!selected || snapshot.rows.some(row => identityKey(row.activity.event.identity) === identityKey(selected))) return null;
   const reference = snapshot.references.find(record => identityKey(record.identity) === identityKey(selected));
   return <section className="la-row la-selected" aria-label="Selected build status">
-    <h3>Selected build</h3><p className="la-identity">Run {selected.runId} · Branch {selected.branchId} · Build {selected.buildId}</p>
+    <h3>Selected build</h3><p className="la-identity">Run {selected.runId} · Git branch {selected.branchId} · Build {selected.buildId}</p>
     <div className="la-slots"><div className="la-slot"><h4>Activity</h4><p>Unavailable · no matching agent activity</p></div>
       <BuildStatusSlot record={reference?.build} source={snapshot.sources.build} />
       <VersionStatusSlot record={reference?.version} source={snapshot.sources.version} /></div>
