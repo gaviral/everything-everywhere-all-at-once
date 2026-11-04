@@ -90,8 +90,8 @@ film tool; it adds no app runtime dependency.
 ## Incremental cut
 
 `cut.mjs` is the working-film entrypoint. By default its shots, `cuts/`, and
-`renders/` live in `~/code/e2a2o-media/film-1104/`. Use `--cuts-dir` and `--out`
-for another media root. Preview is 960×540 at 15 fps; final is 1920×1080 at
+`renders/` live in the external film media folder. Use `--cuts-dir` and
+`--out` to select another media root. Preview is 960×540 at 15 fps; final is 1920×1080 at
 30 fps. Three independent shots render at a time, directly into encoders.
 
 Each cut is named by SHA-256 of the shot, rendering code, logo, profile, and
