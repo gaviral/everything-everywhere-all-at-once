@@ -250,6 +250,10 @@ fn parse(file: &str, source: &str) -> Vec<Parsed> {
         if !identifier(word(name_at)) {
             continue;
         }
+        // JSX prose such as “function or file” is not a declaration.
+        if declaration && !matches!(word(name_at + 1), "(" | "<") {
+            continue;
+        }
         let mut at = name_at + 1;
         let mut arrow_seen = false;
         while at < t.len() {
@@ -682,6 +686,13 @@ mod tests {
             ["ui/src/Thing.tsx:2:Leaf"]
         );
         assert!(graph.iter().any(|f| f.name == "one"));
+        let jsx = parse("ui/src/Words.tsx", "function Words() { return <p>function already open above. Find a function or file.</p>; }");
+        assert_eq!(
+            jsx.iter()
+                .map(|p| p.function.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Words"]
+        );
         assert_eq!(parse("core/src/new.rs", "fn added() {}\n").len(), 1);
     }
     #[test]
