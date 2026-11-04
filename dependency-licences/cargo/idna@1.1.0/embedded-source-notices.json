@@ -1,0 +1,44 @@
+[
+  {
+    "source_file": "src/deprecated.rs",
+    "source_sha256": "1f1954f0314a3ccb631422947a258f42fad7e6939df6ba25057464e2bdd8ae18",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "13d06c4bcb530498b5414d948e0b08c987000eb7a0a8c441f5c25b116298633e",
+    "line": 1,
+    "text": "// Copyright 2016 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/punycode.rs",
+    "source_sha256": "0cc6fa84989898ccf6de0a665a287d7488a6eba4b178bea065d311ecabd81604",
+    "line": 1,
+    "text": "// Copyright 2013 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/uts46.rs",
+    "source_sha256": "9726647c01f315215eca25b7cb706929ff829269d4143de06b4f4718538b6640",
+    "line": 1,
+    "text": "// Copyright The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "tests/deprecated.rs",
+    "source_sha256": "98296b0b421bec106042c5c6697c4fa6aa72bf88b6adec29156d88f967046da2",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "tests/punycode.rs",
+    "source_sha256": "75fa73b6429ccacaeb5d72fab0b927cdf9f2173a9fc5fb366697bf7002b73921",
+    "line": 1,
+    "text": "// Copyright 2013 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "tests/uts46.rs",
+    "source_sha256": "52438bea2dcf086718d7a78cd48d603e83a89d38f696e6b29baca5f9b7673e03",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

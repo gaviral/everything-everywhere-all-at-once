@@ -1,0 +1,44 @@
+[
+  {
+    "source_file": "src/builder.rs",
+    "source_sha256": "d332dbf9380bd6275f8c416758a8971db875ce2a661440c8e476cc6f827736c9",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/external/serde_support.rs",
+    "source_sha256": "f5bf58b1ff7d5ed6a5b067c218b8d9e69d05e559a27de93b2dac4f7f1b25ca4b",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/external/slog_support.rs",
+    "source_sha256": "8ba03d4b6c8b37dd8e3d08f47b254ca68ffa6f4a29a2c98dd277dbafdcb810dc",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/fmt.rs",
+    "source_sha256": "59160088a7ef7df7fd6d622d888db2a73d5a93940121ef14daf957f0d2cef68f",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "d865dc56af193a410f6cebaed38da838af1fb818c896f24baa05b3861db58b8a",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/parser.rs",
+    "source_sha256": "e38573547b03d88764270ee5bd5347af380c4a331d7eb9175dcd0037a51af922",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers.\n// Copyright 2018 The Uuid Project Developers.\n//\n// See the COPYRIGHT file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rng.rs",
+    "source_sha256": "0025abde1ac4171b96fff8d137bb4cdc56b41387d426ab23797c30c97eb10444",
+    "line": 212,
+    "text": "/*\n        This module preserves the stabilized behavior of `uuid` that requires the\n        `js` feature to enable rng on `wasm32-unknown-unknown`, which it inherited\n        from `getrandom` `0.2`.\n\n        Vendored from `getrandom`: https://github.com/rust-random/getrandom/blob/ce3b017fdee0233c6ecd61e68b96a84bf6f911bf/src/backends/wasm_js.rs\n\n        Copyright (c) 2018-2024 The rust-random Project Developers\n        Copyright (c) 2014 The Rust Project Developers\n\n        Permission is hereby granted, free of charge, to any\n        person obtaining a copy of this software and associated\n        documentation files (the \"Software\"), to deal in the\n        Software without restriction, including without\n        limitation the rights to use, copy, modify, merge,\n        publish, distribute, sublicense, and/or sell copies of\n        the Software, and to permit persons to whom the Software\n        is furnished to do so, subject to the following\n        conditions:\n\n        The above copyright notice and this permission notice\n        shall be included in all copies or substantial portions\n        of the Software.\n\n        THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\n        ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\n        TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\n        PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\n        SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\n        CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\n        OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\n        IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\n        DEALINGS IN THE SOFTWARE.\n        */"
+  }
+]

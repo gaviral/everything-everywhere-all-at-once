@@ -1,0 +1,26 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "f3782bc62e5a17e25e8868c55a14fa1da89f564bd0db9ad234dff429094386e1",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/socket.rs",
+    "source_sha256": "14d718fc14286e1a0c35d785d1ece2096c5af12188c248a7493851d0d87f824d",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/sys/unix.rs",
+    "source_sha256": "5193fd8c91103f8c73c03c0237c2a493aba911a2995c3750ffb13b054f5c9433",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/sys/windows.rs",
+    "source_sha256": "ea941638399a4e3f7cf0ac2f21d5eaf44d62d26c760d97b1660ba653853101dd",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

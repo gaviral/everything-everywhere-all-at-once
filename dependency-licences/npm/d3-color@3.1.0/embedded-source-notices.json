@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-color.js",
+    "source_sha256": "3794cf61e3540fcd2c7fd38c99021fa7e72d8bcd42cad4d7c34e27cb4098d81a",
+    "line": 1,
+    "text": "// https://d3js.org/d3-color/ v3.1.0 Copyright 2010-2022 Mike Bostock\n"
+  },
+  {
+    "source_file": "dist/d3-color.min.js",
+    "source_sha256": "a12639010163230b8c130fbeb92a3a49bb5f6989a566d3664d759522db458489",
+    "line": 1,
+    "text": "// https://d3js.org/d3-color/ v3.1.0 Copyright 2010-2022 Mike Bostock\n"
+  }
+]

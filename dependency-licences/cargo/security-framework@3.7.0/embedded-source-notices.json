@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "src/authorization.rs",
+    "source_sha256": "677e49c9f04b5e7697fb25579384c6ca9a7988400d52db4f0b98574e165e99dc",
+    "line": 3,
+    "text": "/// # Potential improvements\n///\n/// * When generic specialization stabilizes prevent copying from `CString` arguments.\n/// * `AuthorizationCopyRightsAsync`\n/// * Provide constants for well known item names\n"
+  }
+]

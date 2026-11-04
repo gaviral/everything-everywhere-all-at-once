@@ -1,0 +1,74 @@
+[
+  {
+    "source_file": "src/condvar.rs",
+    "source_sha256": "182e5a2f6c06cf665bb7723c2780580647a73d9de5ff319f26c0fbbf5e7280ea",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/elision.rs",
+    "source_sha256": "7070a29080f4c7d3b2c9b6e51a0d8230ebc8e56e4790aaeda1747b6c073a7438",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/fair_mutex.rs",
+    "source_sha256": "2d0c5c2b779492653cad99825180628af95ce5f4bdbcfed57e7a5f2138a55fc0",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "0ad0d7a416c12f99db0033f22c98baf201878ab40b3cd34fe74e7bd0e5b87cca",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/mutex.rs",
+    "source_sha256": "b7ee456958a3b0dc208dd39be195641ce3998f7906d101ccf284fa0f84c58d14",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/once.rs",
+    "source_sha256": "58c78dba952e217c17bd8d5cf3dce32bb78e3e1c38a86860c8edc8c308caeca7",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/raw_fair_mutex.rs",
+    "source_sha256": "316f954d9673ac5b8d6bf4c19f2444800f63daf801c224d986e2d6dac810643c",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/raw_mutex.rs",
+    "source_sha256": "4a79255673f47e167ce28d331c3b51f245017c7023e36c1c9b09baf00cc121c6",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/raw_rwlock.rs",
+    "source_sha256": "bdbb06e1433ea2bc1dbbfd69e66755bcad588f48c6552c0fe125d98419035791",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/remutex.rs",
+    "source_sha256": "f0c0711ed46be67f7736a8500689e37a301ccf0dacb7706e1087513d3e87a432",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rwlock.rs",
+    "source_sha256": "7edd9dd320858a628388c1ebca1ed89cc2984abc30157c4b0c03194ebba7eade",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/util.rs",
+    "source_sha256": "37a2c8b5c9254df83e8f3a5cd831558c1045061a76c2571bdc4d78eb86e467f2",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  }
+]
