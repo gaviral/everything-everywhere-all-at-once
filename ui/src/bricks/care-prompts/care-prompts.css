@@ -57,3 +57,8 @@
   .care-prompts-prompt strong { font-size: 27px; }
   .care-prompts-hours input { max-width: 125px; }
 }
+@media (min-width: 1200px) {
+  .care-prompts-settings { width: 600px; }
+  .care-prompts-settings :is(.care-prompts-intro, .care-prompts-example button, .care-prompts-frequency, .care-prompts-toggle, .care-prompts-hours label, .care-prompts-fine, .care-prompts-water h3, .care-prompts-water-top p, .care-prompts-water-button, .care-prompts-source) { font-size: 20px !important; }
+  .care-prompts-opener { font-size: 20px !important; }
+}

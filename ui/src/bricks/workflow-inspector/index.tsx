@@ -13,8 +13,10 @@ export default function WorkflowExample({ actions }: BrickProps) {
     return { adapter, inspector };
   });
   useEffect(() => { example.inspector.setEnabled(true); return () => example.inspector.dispose(); }, [example]);
-  return <section className="workflow-inspector-example" aria-label="Workflow inspector example" data-guide="workflow-inspector">
-    <div><strong>Workflow inspector · local example</strong><button onClick={() => actions.openCatalog("workflow-inspector")}>Features</button></div>
+  const [open, setOpen] = useState(true);
+return <>{!open && <button className="workflow-inspector-reopen" type="button" onClick={() => setOpen(true)}>Open Workflow inspector</button>}
+<section hidden={!open} className="workflow-inspector-example" aria-label="Workflow inspector example" data-guide="workflow-inspector">
+    <div><strong>Workflow inspector · local example</strong><span><button type="button" onClick={() => actions.openCatalog("workflow-inspector")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
     <WorkflowInspector definition={exampleDefinition} inspector={example.inspector} source={example.adapter.source} />
-  </section>;
+  </section></>;
 }

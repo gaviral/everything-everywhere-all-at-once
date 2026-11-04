@@ -32,13 +32,15 @@ export default function ClarificationExample({ actions }: BrickProps) {
   const { editor, example } = useExampleSource();
   const [text, setText] = useState(example.text);
   const [look, setLook] = useState<Look>("original");
-  return <section className="clarification-example" aria-label="Clarification example" data-guide="clarification">
-    <div><strong>Clarification · local example</strong><button onClick={() => actions.openCatalog("clarification")}>Features</button></div>
+  const [open, setOpen] = useState(true);
+return <>{!open && <button className="clarification-reopen" type="button" onClick={() => setOpen(true)}>Open Clarification</button>}
+<section hidden={!open} className="clarification-example" aria-label="Clarification example" data-guide="clarification">
+    <div><strong>Clarification · local example</strong><span><button type="button" onClick={() => actions.openCatalog("clarification")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
     <p>The example selects “handoff”. Select any other words to ask about them.</p>
     <label>Example thought<textarea ref={editor} value={text} onChange={event => {
       setText(event.target.value); example.publish({ source: { id: "example-thought", revision: event.target.value, text: event.target.value }, selection: null });
     }} onSelect={event => { const field = event.currentTarget; example.publish({ source: { id: "example-thought", revision: text === example.text ? "1" : text, text }, selection: field.selectionEnd > field.selectionStart ? { start: field.selectionStart, end: field.selectionEnd, quote: text.slice(field.selectionStart, field.selectionEnd) } : null }); }} /></label>
     <LookSwitch look={look} onChange={setLook} />
     <div className={`clarification-look clarification-look--${look}`}><ClarificationView controller={example.controller} /></div>
-  </section>;
+  </section></>;
 }

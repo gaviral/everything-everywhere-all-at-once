@@ -6,8 +6,10 @@ import "./example.css";
 
 export default function DictationExample({ actions }: BrickProps) {
   const [enabled, setEnabled] = useState(true);
-  return <section className="dictation-breakdown-example" aria-label="Dictation breakdown example" data-guide="dictation-breakdown">
-    <div><strong>Dictation breakdown · local example</strong><button onClick={() => actions.openCatalog("dictation-breakdown")}>Features</button></div>
+  const [open, setOpen] = useState(true);
+return <>{!open && <button className="dictation-breakdown-reopen" type="button" onClick={() => setOpen(true)}>Open Dictation breakdown</button>}
+<section hidden={!open} className="dictation-breakdown-example" aria-label="Dictation breakdown example" data-guide="dictation-breakdown">
+    <div><strong>Dictation breakdown · local example</strong><span><button type="button" onClick={() => actions.openCatalog("dictation-breakdown")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
     <DictationBreakdown enabled={enabled} onEnabledChange={setEnabled} initialSource={syntheticDictation} queueHomes={syntheticHomes} />
-  </section>;
+  </section></>;
 }

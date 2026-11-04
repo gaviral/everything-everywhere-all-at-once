@@ -21,10 +21,12 @@ const snapshot = useSyncExternalStore(workspace.subscribe, workspace.read, works
 const [recovery, setRecovery] = useState(() => workspace.recovery.state.get());
 useEffect(() => workspace.recovery.state.subscribe(setRecovery), [workspace]);
 useEffect(() => { workspace.recovery.setEnabled(true); return () => workspace.recovery.setEnabled(false); }, [workspace]);
-return <section className="reload-session-example" aria-label="Reload recovery example" data-guide="reload-session">
-<div><strong>Reload recovery · local example</strong><button onClick={() => actions.openCatalog("reload-session")}>Features</button></div>
+const [open, setOpen] = useState(true);
+return <>{!open && <button className="reload-session-reopen" type="button" onClick={() => setOpen(true)}>Open Reload recovery</button>}
+<section hidden={!open} className="reload-session-example" aria-label="Reload recovery example" data-guide="reload-session">
+<div><strong>Reload recovery · local example</strong><span><button type="button" onClick={() => actions.openCatalog("reload-session")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
 <p>Edit this local draft, move its place, then simulate a rebuild. Reloading this page restores the example checkpoint while this feature is enabled.</p>
 <label>Example draft<textarea value={snapshot.draft.text} onChange={event => { const field = event.currentTarget; workspace.edit({ text: field.value, selectionStart: field.selectionStart, selectionEnd: field.selectionEnd, selectionDirection: field.selectionDirection }); }} onSelect={event => { const field = event.currentTarget; workspace.edit({ ...snapshot.draft, selectionStart: field.selectionStart, selectionEnd: field.selectionEnd, selectionDirection: field.selectionDirection }); }} /></label>
 <p>Garden place: {snapshot.view.camera.x}</p><div><button onClick={workspace.pan}>Move garden right</button> <button onClick={() => workspace.signal("start")}>Simulate rebuild</button> <button onClick={() => workspace.signal("finish")}>Deliver rebuilt view</button></div><p role="status">{describeReloadState(recovery)} · Checkpoint: {recovery.checkpoint}</p>
-</section>;
+</section></>;
 }

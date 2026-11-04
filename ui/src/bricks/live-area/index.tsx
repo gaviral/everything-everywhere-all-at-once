@@ -24,10 +24,12 @@ const [look, setLook] = useState<Look>("current");
 const [example] = useState(createFeed);
 const [enabled, setEnabled] = useState(true);
 useEffect(() => { if (enabled) example.publish(); }, [example, enabled]);
-return <section data-look={look} className="live-area-example" aria-label="Development activity example" data-guide="live-area">
-<div><strong>Development activity · local example</strong><button onClick={() => actions.openCatalog("live-area")}>Features</button></div>
+const [open, setOpen] = useState(true);
+return <>{!open && <button className="live-area-reopen" type="button" onClick={() => setOpen(true)}>Open Development activity</button>}
+<section hidden={!open} data-look={look} className="live-area-example" aria-label="Development activity example" data-guide="live-area">
+<div><strong>Development activity · local example</strong><span><button type="button" onClick={() => actions.openCatalog("live-area")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
 <LookSwitch value={look} onChange={setLook} />
 <div><button onClick={example.publish}>Send newer example status</button> <button onClick={() => example.connect(false)}>Disconnect example feed</button> <button onClick={() => { example.connect(true); example.publish(); }}>Reconnect with new status</button></div>
 <LiveArea enabled={enabled} onEnabledChange={setEnabled} adapters={example.adapters} selected={selected} />
-</section>;
+</section></>;
 }

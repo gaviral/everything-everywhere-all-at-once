@@ -15,9 +15,11 @@ const choices: readonly VariantReference[] = [
 ];
 export default function DemoChoicesExample({ actions }: BrickProps) {
   const [session] = useState(() => { const session = createVariantSession(choices); session.setEnabled(true); return session; });
-  return <section className="demo-variants-example" aria-label="Demo choices example" data-guide="demo-variants">
-    <div><strong>Demo choices · local example</strong><button onClick={() => actions.openCatalog("demo-variants")}>Features</button></div>
+  const [open, setOpen] = useState(true);
+return <>{!open && <button className="demo-variants-reopen" type="button" onClick={() => setOpen(true)}>Open Demo choices</button>}
+<section hidden={!open} className="demo-variants-example" aria-label="Demo choices example" data-guide="demo-variants">
+    <div><strong>Demo choices · local example</strong><span><button type="button" onClick={() => actions.openCatalog("demo-variants")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
     <p>Compare sample feature lists. Your choice stays in this example; repository merging is unavailable.</p>
     <DemoVariants session={session} />
-  </section>;
+  </section></>;
 }

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { BrickProps } from '../contract';
 import { usePluginState } from '../contract';
 import { resolvePart } from '../../msg1351/part-dimensions/PartReference';
 import { exampleTree } from './example';
@@ -20,7 +21,7 @@ export function PartLenses({ data }: { data: PartTree }) {
   return <section className="part-lenses" aria-label="Part lenses" data-guide="part-lenses">
     <div className="part-lenses-heading">
       <div><p className="part-lenses-eyebrow">Part lenses <span aria-hidden="true">✳</span></p>
-        <h1>Make it click.</h1><p className="part-lenses-subtitle">One part. In the words they need.</p></div>
+        <h1>Make it click.</h1><p className="part-lenses-subtitle">Explore one part in language for different audiences.</p></div>
       <LensSwitch lens={lens} change={change} />
     </div>
     <p className="part-lenses-example">{data.label}</p>
@@ -38,8 +39,8 @@ export function PartLenses({ data }: { data: PartTree }) {
   </section>;
 }
 
-export default function PartLensesBrick() {
-  return <PartLenses data={exampleTree} />;
+export default function PartLensesBrick({ actions }: BrickProps) {
+  return <><button className="part-lenses-back" type="button" onClick={actions.closeView}>Back to map</button><PartLenses data={exampleTree} /></>;
 }
 
 export const styles = style;
