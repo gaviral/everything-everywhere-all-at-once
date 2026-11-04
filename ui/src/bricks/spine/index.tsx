@@ -1,3 +1,4 @@
+import { codePointOffset } from "../contract";
 // The Spine: the map as one canvas you can pan and zoom without end. Each topic is a spine of its points, oldest at
 // the top; each tangent hangs beside the point it came from (layout.ts). The camera follows what you're talking about
 // and lets go the moment a hand moves the map (camera.ts). Your thought on its way has a dashed slot where it's
@@ -771,19 +772,28 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     if (!selecting) return;
     const changed = () => {
       const selection = getSelection();
-      const text = frame.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(selecting.key)}"] .spine-text`);
+      const text = frame.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(selecting.key)}"] .spine-words`);
       if (!selection || !selection.rangeCount || selection.isCollapsed || !text || !text.contains(selection.anchorNode) || !text.contains(selection.focusNode)) {
         setPicking((was) => (was?.typing ? was : null));
         return;
       }
-      const quote = selection.toString().replace(/\s+/g, " ").trim();
+      const range = selection.getRangeAt(0);
+      const before = range.cloneRange();
+      before.selectNodeContents(text);
+      before.setEnd(range.startContainer, range.startOffset);
+      const source = text.textContent ?? "";
+      const quote = selection.toString();
+      const thought = map.thoughts.find(t => t.id === selecting.thoughtId);
+      if (!thought) return;
+      const start = codePointOffset(source, before.toString().length);
+      const context = { source_text: source, source_speaker: thought.speaker, start, end: start + [...quote].length };
       const rect = selection.getRangeAt(0).getBoundingClientRect();
       const frameBox = frame.current!.getBoundingClientRect();
-      if (quote) setPicking((was) => (was?.typing ? was : { key: selecting.key, thoughtId: selecting.thoughtId, quote, x: rect.right - frameBox.left - 40, y: rect.bottom - frameBox.top, typing: false }));
+      if (quote) setPicking((was) => (was?.typing ? was : { key: selecting.key, thoughtId: selecting.thoughtId, quote, context, x: rect.right - frameBox.left - 40, y: rect.bottom - frameBox.top, typing: false }));
     };
     document.addEventListener("selectionchange", changed);
     return () => document.removeEventListener("selectionchange", changed);
-  }, [selecting]);
+  }, [selecting, map.thoughts]);
 
   const visitAfterLens = useRef<string | null>(null);
   useEffect(() => {
@@ -847,7 +857,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         const note = notes.margins.find((m) => m.id === item.margin);
         if (!note) return;
         setSelecting(null);
-        setPicking({ key: item.key, thoughtId: note.thoughtId, quote: note.quote, x: element.left - frameBox.left, y: element.bottom - frameBox.top, typing: true });
+        setPicking({ key: item.key, thoughtId: note.thoughtId, quote: note.quote, context: note.context ?? undefined, x: element.left - frameBox.left, y: element.bottom - frameBox.top, typing: true });
         return;
       }
       const thoughtId = item.thoughts?.at(-1);
@@ -1089,7 +1099,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       </ActsContext.Provider>
       {!compare && rotationControl}
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
-        send={(text) => { notes.add(picking.thoughtId, picking.quote, text); unpick(); getSelection()?.removeAllRanges(); }} />}
+        send={(text) => { if (notes.add(picking.thoughtId, picking.quote, text, picking.context)) { unpick(); getSelection()?.removeAllRanges(); } }} />}
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
           shelf at the right, where the left is the notice timeline's. */}
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>

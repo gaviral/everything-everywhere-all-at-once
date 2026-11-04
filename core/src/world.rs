@@ -456,7 +456,7 @@ pub enum Change {
     Positioned { id: String, x: Option<f64>, y: Option<f64>, by: String, at_ms: u64 },
     /// A margin note's thread tied to words: `quote`, as picked in thought `thought_id`'s point (annotate.rs). Only for
     /// a thread on the map; kept after it leaves, so an Undo brings the note back as a note.
-    Anchored { thread_id: String, thought_id: String, quote: String },
+    Anchored { thread_id: String, thought_id: String, quote: String, #[serde(default)] context: Option<crate::annotate::AnchorContext> },
     /// A window joined as an AI participant (`?ai`) under `speaker`: from now on its words are marked as an AI's.
     AiJoined { speaker: String },
     /// The AI's pass put these top threads under these topics (topics.rs): only threads on the map, a name each.
@@ -704,9 +704,14 @@ impl World {
                 // Off the map, or only one of the two: positions.rs refuses both, so only an edited journal holds one.
                 _ => {}
             },
-            Change::Anchored { thread_id, thought_id, quote } => {
+            Change::Anchored { thread_id, thought_id, quote, context } => {
                 if self.thread(thread_id).is_some() {
-                    self.anchors.insert(thread_id.clone(), crate::annotate::Anchor { thought_id: thought_id.clone(), quote: quote.clone() });
+                    // Replay old journals at their original source revision; ambiguous entries remain unresolved.
+                    let context = context.clone().or_else(|| match self.anchors.get(thread_id) {
+                        Some(existing) => existing.context.clone(),
+                        None => self.thoughts.iter().find(|t| t.id == *thought_id).and_then(|t| crate::annotate::resolve(t, quote, None).ok()),
+                    });
+                    self.anchors.insert(thread_id.clone(), crate::annotate::Anchor { thought_id: thought_id.clone(), quote: quote.clone(), context });
                 }
             }
             Change::AiJoined { speaker } => {
@@ -1952,8 +1957,8 @@ mod tests {
             Change::ThreadAdded { thread: test_thread("T4", None) },
             // A margin note's thread tied to words, its anchor kept through the merge and its Undo below; none for a
             // thread off the map. An AI participant joined, once however often it says so.
-            Change::Anchored { thread_id: "T4".into(), thought_id: "a".into(), quote: "Muse Spark".into() },
-            Change::Anchored { thread_id: "T99".into(), thought_id: "a".into(), quote: "nowhere".into() },
+            Change::Anchored { thread_id: "T4".into(), thought_id: "a".into(), quote: "Muse Spark".into(), context: None },
+            Change::Anchored { thread_id: "T99".into(), thought_id: "a".into(), quote: "nowhere".into(), context: None },
             Change::AiJoined { speaker: "Friend".into() },
             Change::AiJoined { speaker: "Claude".into() },
             Change::AiJoined { speaker: "Friend".into() },
@@ -2258,7 +2263,7 @@ mod tests {
         // A note's anchor holds through its thread's merge and the merge's Undo; one for a thread never on the map isn't
         // kept. An AI participant is listed once, in the order it first came.
         assert_eq!(w.anchors.len(), 1);
-        assert_eq!(w.anchors["T4"], crate::annotate::Anchor { thought_id: "a".into(), quote: "Muse Spark".into() });
+        assert_eq!(w.anchors["T4"], crate::annotate::Anchor { thought_id: "a".into(), quote: "Muse Spark".into(), context: Some(crate::annotate::AnchorContext { source_text: "Ask Muse Spark about a".into(), source_speaker: "Ana".into(), start: 4, end: 14 }) });
         assert_eq!(w.ai, ["Friend", "Claude"]);
     }
 

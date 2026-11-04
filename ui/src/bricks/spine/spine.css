@@ -426,3 +426,6 @@
 
 /* Rotation stays inside the measured phone controls band. */
 .spine-phone-compare .spine-rotation { position: static; transform: none; width: auto; max-width: none; margin-top: 4px; }
+
+.spine-anchor-status { display: block; font-size: 12px; line-height: 18px; margin-bottom: 8px; }
+.spine-anchor-status details { user-select: text; }

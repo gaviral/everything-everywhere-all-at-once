@@ -27,7 +27,7 @@ import { whysAfter } from "./whyhere";
 import { isResting } from "./site";
 import { applyTidy, settle, tidyNote, type Proposal, type TidyChange, type TidyUndo } from "./tidy-core";
 import { applyPosition, keepPlaced, placeSender, type Position, type PositionChange } from "./positions-core";
-import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
+import { annotateMessage, applyAnchored, type Anchor, type AnchorContext, type AnchoredChange } from "./annotate-core";
 import { applyTopic, isTopicChange, sendTopicsWith, type TopicChange } from "./topics-core";
 
 // Application liveness: matching replies every 5 s; 15 s silent plus the initial 1 s reconnect backoff.
@@ -1426,8 +1426,8 @@ export function useCore(speaker?: string) {
     position: placeAt,
     // A brick's `annotate`: a margin note on words of a point, for every window (core annotate.rs); one the core would
     // refuse for its words is said here and never sent.
-    annotate: useCallback((thoughtId: string, quote: string, text: string) => {
-      const made = annotateMessage(thoughtId, quote, text);
+    annotate: useCallback((thoughtId: string, quote: string, text: string, context?: AnchorContext) => {
+      const made = annotateMessage(thoughtId, quote, text, context);
       if ("refused" in made) { sayNotice(made.refused); setUndoId(null); answered(); return false; }
       return sendOrWarn(made.message);
     }, [sendOrWarn]),

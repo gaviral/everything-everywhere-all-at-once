@@ -101,7 +101,7 @@ async fn a_note_starts_a_tangent_tied_to_its_words_for_every_window_and_a_restar
     let tangent = world.thread(&id).expect("its thread is on the map");
     assert_eq!(tangent.parent_id.as_deref(), Some("T1"), "under the point's thread");
     assert_eq!(tangent.title, "The lease ends in March");
-    assert_eq!(world.anchors[&id], Anchor { thought_id: "a".into(), quote: "the lease ends in March".into() }, "tied to the words, as one line");
+    assert_eq!(world.anchors[&id], Anchor { thought_id: "a".into(), quote: "the lease ends in March".into(), context: Some(resolve(world.thoughts.iter().find(|t| t.id == "a").unwrap(), "the lease ends in March", None).unwrap()) }, "tied to the words, as one line");
     assert_eq!(notes(&world, &id), [("you".to_string(), "Is it month to month after that?".to_string())]);
     let placed = world.thoughts.iter().find(|t| t.thread_id.as_deref() == Some(id.as_str())).unwrap();
     assert!(placed.placed && placed.complete && placed.place_ms == Some(0), "placed as said, by rule");
@@ -115,7 +115,7 @@ async fn a_note_starts_a_tangent_tied_to_its_words_for_every_window_and_a_restar
     // A restart opens it, and a window's snapshot carries the anchor.
     assert_eq!(serde_json::to_value(&f.replayed().anchors).unwrap(), serde_json::to_value(&world.anchors).unwrap());
     let snapshot = serde_json::to_value(ServerMsg::Snapshot { world: f.core.snapshot() }).unwrap();
-    assert_eq!(snapshot["world"]["anchors"][&id], json!({ "thought_id": "a", "quote": "the lease ends in March" }));
+    assert_eq!(snapshot["world"]["anchors"][&id], serde_json::to_value(&world.anchors[&id]).unwrap());
     assert!(f.queue.try_recv().is_err(), "no model is asked");
 }
 
@@ -135,6 +135,7 @@ async fn a_later_note_on_the_same_words_answers_in_it_and_other_words_start_thei
     // Ids apart from the placer's and the spoken pack's.
     assert!(first.starts_with('N') && other.starts_with('N'), "{first} {other}");
     // A long quote titles its thread with its first words.
+    f.core.commit(vec![Change::ThoughtRepointed { thought_id: "c".into(), point: "Plant the beans before the frost comes in late October".into() }]);
     let long = note(&f.core, "you", "c", "Plant the beans before the frost comes in late October", "Too late?").unwrap();
     assert_eq!(f.core.snapshot().thread(&long).unwrap().title, "Plant the beans before the frost…");
 }
@@ -178,7 +179,7 @@ async fn a_note_follows_its_point_through_a_merge_and_its_anchor_comes_back_with
 #[test]
 fn the_window_sends_it_as_annotate() {
     let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "Month to month?" })).unwrap();
-    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text, speak: false } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
+    assert!(matches!(msg, ClientMsg::Annotate { thought_id, quote, text, speak: false, context: None } if thought_id == "a" && quote == "the lease" && text == "Month to month?"));
 }
 
 #[test]
@@ -200,4 +201,60 @@ fn only_the_live_comment_carries_speech_and_the_journal_never_does() {
     assert!(!f.journaled().contains("\"speak\""), "speech is live delivery, never saved for replay");
     let msg: ClientMsg = serde_json::from_value(json!({ "type": "annotate", "thought_id": "a", "quote": "the lease", "text": "The new reply.", "speak": true })).unwrap();
     assert!(matches!(msg, ClientMsg::Annotate { speak: true, .. }));
+}
+
+
+#[test]
+fn exact_occurrence_and_source_revision_survive_restart() {
+    let mut f = Fixture::new();
+    let source = "At the paper bridge, turn left; near the wooden gate, turn left.";
+    let mut original = thought("repeat", "T1", source, 10);
+    original.speaker = "speaker-b".into();
+    f.core.commit(vec![Change::ThoughtAdded { thought: original }]);
+    assert_eq!(note(&f.core, "speaker-a", "repeat", "turn left", "Use the wider path."), Err(AMBIGUOUS));
+    let context = AnchorContext { source_text: source.into(), source_speaker: "speaker-b".into(), start: 54, end: 63 };
+    let request: ClientMsg = serde_json::from_value(json!({"type":"annotate", "thought_id":"repeat", "quote":"turn left", "text":"Use the wider path.", "context": context})).unwrap();
+    let ClientMsg::Annotate { context: Some(request_context), .. } = request else { panic!("context missing") };
+    let id = note_with_context(&f.core, "speaker-a", "repeat", "turn left", "Use the wider path.", false, Some(&request_context)).unwrap();
+    assert_eq!(f.replayed().anchors[&id].context, Some(context.clone()));
+    assert_eq!(notes(&f.replayed(), &id), [("speaker-a".into(), "Use the wider path.".into())]);
+    assert_eq!(f.replayed().thoughts.iter().find(|t| t.id == "repeat").unwrap().speaker, "speaker-b");
+    // A different occurrence starts a separate thread.
+    let first = AnchorContext { start: 21, end: 30, ..context.clone() };
+    assert_ne!(note_with_context(&f.core, "speaker-a", "repeat", "turn left", "First.", false, Some(&first)).unwrap(), id);
+    f.core.commit(vec![Change::ThoughtRepointed { thought_id: "repeat".into(), point: "At the paper bridge, turn left.".into() }]);
+    assert_eq!(f.replayed().anchors[&id].context, Some(context));
+    assert!(f.queue.try_recv().is_err());
+}
+
+#[test]
+fn unicode_offsets_are_code_points_and_invalid_ranges_are_refused() {
+    let f = Fixture::new();
+    let source = "🧭 café turn left; 路 turn left.";
+    let original = thought("unicode", "T1", source, 10);
+    let speaker = original.speaker.clone();
+    f.core.commit(vec![Change::ThoughtAdded { thought: original }]);
+    let start = source.chars().collect::<String>().rfind("turn left").map(|byte| source[..byte].chars().count()).unwrap();
+    let c = AnchorContext { source_text: source.into(), source_speaker: speaker, start, end: start + 9 };
+    assert!(note_with_context(&f.core, "speaker-a", "unicode", "turn left", "Here.", false, Some(&c)).is_ok());
+    let wrong = AnchorContext { start: start + 1, ..c.clone() };
+    assert_eq!(note_with_context(&f.core, "speaker-a", "unicode", "turn left", "No.", false, Some(&wrong)), Err(UNRESOLVED));
+    let wrong = AnchorContext { source_text: "changed".into(), ..c };
+    assert_eq!(note_with_context(&f.core, "speaker-a", "unicode", "turn left", "No.", false, Some(&wrong)), Err(UNRESOLVED));
+}
+
+#[test]
+fn legacy_journal_defaults_do_not_invent_an_ambiguous_occurrence() {
+    let f = Fixture::new();
+    let mut w = f.replayed();
+    w.apply(&Change::ThoughtAdded { thought: thought("legacy", "T1", "turn left then turn left", 20) });
+    let old: Change = serde_json::from_value(json!({"type":"anchored", "thread_id":"T2", "thought_id":"legacy", "quote":"turn left"})).unwrap();
+    w.apply(&old);
+    assert!(w.anchors["T2"].context.is_none());
+    w.apply(&Change::ThoughtRepointed { thought_id: "legacy".into(), point: "turn left".into() });
+    w.apply(&old);
+    assert!(w.anchors["T2"].context.is_none());
+    let mut unique = f.replayed();
+    unique.apply(&serde_json::from_value(json!({"type":"anchored", "thread_id":"T2", "thought_id":"a", "quote":"the lease"})).unwrap());
+    assert!(unique.anchors["T2"].context.is_some());
 }

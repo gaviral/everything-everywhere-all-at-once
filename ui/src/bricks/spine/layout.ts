@@ -1,3 +1,4 @@
+import { anchorRange, type AnchorContext } from "../contract";
 // Where everything goes on the Spine (index.tsx draws it), from the map alone. Pure: the same map, placements and
 // choices give the same places, and what a new thought adds goes below or beside what's there.
 //  - A topic (a thread with no parent) is a spine: its head (picture, title, a line of who and when), then its points
@@ -114,6 +115,8 @@ export interface Quote {
 /** What's tucked under a point's words on a narrow screen: a margin note's entries, or a short tangent (its title and
  *  latest point), so a phone needn't pan sideways for either. */
 export interface Tuck {
+  anchorWarning?: string;
+  sourceRevision?: string;
   margin: string;
   entries: Entry[];
   /** A tangent's: its thread and title. */
@@ -213,6 +216,8 @@ export interface Item {
   margin?: string;
   entries?: Entry[];
   more?: number;
+  anchorWarning?: string;
+  sourceRevision?: string;
   /** A named topic's header: the topic ("" for the ones not sorted yet), with `count` its spines and `title` its name. */
   group?: string;
 }
@@ -271,6 +276,8 @@ export interface Layout {
 
 /** A margin note as the layout takes it (index.tsx gathers them from the map). */
 export interface MarginInput {
+  context?: AnchorContext | null;
+  anchorWarning?: string;
   id: string;
   /** The point's thought its words are in. */
   thoughtId: string;
@@ -412,7 +419,7 @@ interface Shape {
 
 /** What's under a point's words, in px: the marks row, the landing note, tucked notes. */
 const tuckHeight = (tucks: Tuck[]) =>
-  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
+  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.anchorWarning ? 72 : 0) + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
     + 4 * Math.max(0, tuck.entries.length - 1), 0);
 
 const globalSpineLook = SPINE_LOOK, globalMiniLook = MINI_LOOK;
@@ -539,11 +546,10 @@ export function layout(input: LayoutInput): Layout {
     // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
     const found: { m: MarginInput; start: number; end: number }[] = [];
     for (const m of marginsOn.get(idea.key) ?? []) {
-      const quote = m.quote.trim();
-      let start = quote ? shown.indexOf(quote) : -1;
-      if (start < 0 && quote) start = shown.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase());
-      if (start >= 0 && !found.some((f) => start < f.end && f.start < start + quote.length)) found.push({ m, start, end: start + quote.length });
-      else if (start < 0) found.push({ m, start: -1, end: -1 });
+      const range = anchorRange(m.quote, m.context, shown);
+      const start = range?.start ?? -1, end = range?.end ?? -1;
+      const warning = range ? undefined : m.context ? "Anchor unresolved: source revision changed." : "Anchor unresolved: legacy occurrence is unknown or ambiguous.";
+      found.push({ m: { ...m, anchorWarning: warning }, start, end });
     }
     found.sort((a, b) => a.start - b.start);
     const quotes: Quote[] = [];
@@ -566,7 +572,7 @@ export function layout(input: LayoutInput): Layout {
       if (folded && start >= 0) continue;
       if (narrow || look.variant === "mini") {
         const w = look.textW - G.tuckIn - 26;
-        tucks.push({ margin: m.id, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
+        tucks.push({ margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
       } else {
         beside.push(m);
         ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
@@ -752,12 +758,12 @@ export function layout(input: LayoutInput): Layout {
         const staying = t.id === input.staying;
         const entries = shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, G.marginText, staying), thoughtId: e.thoughtId }));
         const more = m.entries.length - entries.length;
-        const h = marginHeight(entries, more);
+        const h = marginHeight(entries, more) + (m.anchorWarning ? 72 : 0);
         const column = columnKey(owner, 1, 1);
         const want = Math.max(point.box.y + (staying ? 0 : from.dy - 10), (s.columns.get(column) ?? -Infinity) + G.stack);
         const box = clear(s, { x: owner.x1 + G.gutter, y: want, w: G.marginW, h });
         const item = add(s, { key: `m:${m.id}`, id: m.id, kind: "margin", thread: t.id, box, pinned: false, up: point.key, room: rooms.get(t.id), depth: point.depth,
-          topic: topicOf(t.id), margin: m.id, entries, more: more > 0 ? more : undefined });
+          topic: topicOf(t.id), margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries, more: more > 0 ? more : undefined });
         s.columns.set(column, box.y + box.h);
         s.links.push({ key: `q:${m.id}`, kind: "note", from, to: { key: item.key, dx: -4, dy: 10 }, room: rooms.get(t.id), topic: topicOf(t.id) });
       }

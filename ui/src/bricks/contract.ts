@@ -5,7 +5,8 @@
 // app and in the playground (bricks.html), which hands it a sample map instead.
 import { createElement, createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
-import type { Anchor } from "../annotate-core";
+import type { Anchor, AnchorContext } from "../annotate-core";
+export { anchorRange, codePointOffset } from "../annotate-core";
 import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
@@ -49,7 +50,7 @@ export const ShapesContext = createContext<Shapes | null>(null);
 /** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, AnchorContext, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -69,7 +70,7 @@ export interface Turn {
   at: number;
   parts: Part[];
   /** A margin note: the point's thought and the words it's tied to (a later note on the same words answers it). */
-  note?: { threadId: string; thoughtId: string; quote: string };
+  note?: { threadId: string; thoughtId: string; quote: string; context?: AnchorContext | null };
 }
 
 /** The turns, in the order they were said: each thought with words, a split turn's parts together, a margin note as a
@@ -93,7 +94,7 @@ export function turnsOf(thoughts: readonly Thought[], threads: readonly { id: st
     }
     turns.push({
       key: thought.id, speaker: thought.speaker, at: thought.at_ms, parts: [part],
-      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote } } : {}),
+      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote, context: anchor.context } } : {}),
     });
   }
   return turns;
@@ -275,7 +276,7 @@ export interface BrickActions {
    *  words), a later one answers in it; each comes back in `map.threads` and `map.thoughts`, as any thought does,
    *  placed as written (no model reads it). False when it couldn't go (no words, more than 6,000 characters, or the
    *  core away); the window says why, and so does the core if the point has left the map. */
-  annotate(thoughtId: string, quote: string, text: string): boolean;
+  annotate(thoughtId: string, quote: string, text: string, context?: AnchorContext): boolean;
   /** Opens the Catalog (the app's list of features, each with its switch), at brick `id`'s row when given: shown and
    *  marked, its switch focused. As its button in Apps does. */
   openCatalog(id?: string): void;

@@ -15,6 +15,42 @@ use std::sync::Arc;
 pub struct Anchor {
     pub thought_id: String,
     pub quote: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<AnchorContext>,
+}
+
+/// Immutable source revision and a half-open Unicode code-point range, never byte offsets.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AnchorContext {
+    pub source_text: String,
+    pub source_speaker: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+pub const AMBIGUOUS: &str = "Those words occur more than once. Select the exact occurrence to reply.";
+pub const UNRESOLVED: &str = "The selected source revision is unavailable. Select the words again.";
+
+/// Resolve legacy requests only when unique; freeze the source before any later edits.
+pub fn resolve(thought: &Thought, quote: &str, context: Option<&AnchorContext>) -> Result<AnchorContext, &'static str> {
+    if let Some(c) = context {
+        if c.source_speaker != thought.speaker || (c.source_text != thought.point && c.source_text != thought.text)
+            || c.start >= c.end || c.end > c.source_text.chars().count()
+            || c.source_text.chars().skip(c.start).take(c.end - c.start).collect::<String>() != quote {
+            return Err(UNRESOLVED);
+        }
+        return Ok(c.clone());
+    }
+    let source = if thought.point.is_empty() { &thought.text } else { &thought.point };
+    let hits: Vec<_> = source.char_indices().filter(|(i, _)| source[*i..].starts_with(quote)).map(|(i, _)| i).collect();
+    match hits.as_slice() {
+        [at] => {
+            let start = source[..*at].chars().count();
+            Ok(AnchorContext { source_text: source.clone(), source_speaker: thought.speaker.clone(), start, end: start + quote.chars().count() })
+        }
+        [] => Err(UNRESOLVED),
+        _ => Err(AMBIGUOUS),
+    }
 }
 
 /// What the window that asked hears when a note is refused.
@@ -33,7 +69,11 @@ pub fn note(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text
 }
 
 pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text: &str, speak: bool) -> Result<String, &'static str> {
-    let quote = one_line(quote);
+    note_with_context(core, speaker, thought_id, quote, text, speak, None)
+}
+
+pub fn note_with_context(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &str, text: &str, speak: bool, context: Option<&AnchorContext>) -> Result<String, &'static str> {
+    let quote = if context.is_some() { quote.to_owned() } else { one_line(quote) };
     let text = text.trim();
     if quote.is_empty() || text.is_empty() {
         return Err(NO_WORDS);
@@ -46,7 +86,10 @@ pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &
     for _ in 0..4 {
         let world = core.snapshot();
         let Some(parent) = home(&world, thought_id) else { return Err(GONE) };
-        let found = tangent(&world, thought_id, &quote);
+        let source = world.thoughts.iter().find(|t| t.id == thought_id).ok_or(GONE)?;
+        let context = resolve(source, &quote, context)?;
+        let anchor = Anchor { thought_id: thought_id.into(), quote: quote.clone(), context: Some(context.clone()) };
+        let found = tangent(&world, &anchor);
         let now = crate::now_ms();
         let mut changes = Vec::new();
         let thread_id = match &found {
@@ -66,7 +109,7 @@ pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &
                         dropped_by: String::new(),
                     },
                 });
-                changes.push(Change::Anchored { thread_id: id.clone(), thought_id: thought_id.into(), quote: quote.clone() });
+                changes.push(Change::Anchored { thread_id: id.clone(), thought_id: thought_id.into(), quote: quote.clone(), context: Some(context.clone()) });
                 id
             }
         };
@@ -105,7 +148,8 @@ pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &
         drop(world);
         let still = |w: &World| {
             home(w, thought_id).is_some()
-                && tangent(w, thought_id, &quote) == found
+                && w.thoughts.iter().find(|t| t.id == thought_id).is_some_and(|t| resolve(t, &quote, Some(&context)).is_ok())
+                && tangent(w, &anchor) == found
                 && match &found {
                     Some(id) => w.thread(id).is_some(),
                     None => w.thread(&thread_id).is_none() && !w.merged.contains_key(&thread_id),
@@ -126,11 +170,11 @@ fn home(world: &World, thought_id: &str) -> Option<String> {
 }
 
 /// The note already on these words, if one is on the map: the first, in the map's order.
-fn tangent(world: &World, thought_id: &str, quote: &str) -> Option<String> {
+fn tangent(world: &World, anchor: &Anchor) -> Option<String> {
     world
         .threads
         .iter()
-        .find(|t| world.anchors.get(&t.id).is_some_and(|a| a.thought_id == thought_id && a.quote == quote))
+        .find(|t| world.anchors.get(&t.id).is_some_and(|a| a == anchor))
         .map(|t| t.id.clone())
 }
 
