@@ -1,0 +1,9 @@
+{
+  "id": "i-compact",
+  "name": "Faithful reading",
+  "does": "Read concise points, edit a source-bound synthesis, and keep originals one step away.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "i-compact"
+}

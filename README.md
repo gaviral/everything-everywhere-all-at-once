@@ -1,7 +1,7 @@
 # E2A2O
 
 <!-- pitch: draft, owner to approve -->
-**Think out loud. Keep your place.** E2A2O files spoken thoughts by topic on a map. Change topics mid-sentence, then ask “where was I?” to return to the unfinished thought.
+**Think out loud. Keep your place.** E2A2O files spoken thoughts by topic on a map. Change topics mid-sentence, then ask “where was I?” to return to the unfinished thought. Say or sketch what should happen: boxes run on Muse Spark while you keep talking, and a real question waits for your pause.
 
 ## Try it
 
@@ -25,6 +25,9 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 | say “make an app that…” | Muse Spark 1.3 | builds it from blocks | [composer](docs/trace.md#composer) |
 | ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | [recap](docs/trace.md#recap) |
 | let a topic settle | Muse Image 1.0 | draws its picture | [pictures](docs/trace.md#pictures) |
+| say “run that through three boxes” | Muse Spark 1.3 | plans and runs each box | [Flow](docs/flow.md) |
+| draw on the sheet | Muse Spark 1.3 | reads the sketch at each pause | [Draw](docs/FEATURES.md#draw) |
+| say “draw it back” | Muse Image 1.0 | draws it cleanly, with your labels | [Draw](docs/FEATURES.md#draw) |
 | say “where was I?” | no model | rules: the jump back | [rules](docs/trace.md#rules) |
 
 Historical synthetic measurements: [sample counts, dates and input type](#measured); not current human results.

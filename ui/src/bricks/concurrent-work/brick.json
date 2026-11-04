@@ -1,0 +1,8 @@
+{
+  "id": "concurrent-work",
+  "name": "Thought & work",
+  "does": "Inspect helper output beside your original thought, then return to its exact words.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
