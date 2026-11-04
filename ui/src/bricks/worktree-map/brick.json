@@ -1,0 +1,8 @@
+{
+  "id": "worktree-map",
+  "name": "Worktree map",
+  "does": "Inspect example Git branches, workspaces and build identities.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

@@ -1,0 +1,8 @@
+{
+  "id": "demo-parts",
+  "name": "Demo candidates",
+  "does": "Inspect two example demonstrations and retain your choices.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
