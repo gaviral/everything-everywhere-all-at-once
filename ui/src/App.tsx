@@ -1,7 +1,8 @@
+import { createPortal } from "react-dom";
 import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
-import { SpeechFixesContext, SemanticZoomContext, ShapesContext } from "./bricks/contract";
+import { CanvasToolsContext, type CanvasToolId, SpeechFixesContext, SemanticZoomContext, ShapesContext } from "./bricks/contract";
 import { useShapes } from "./shapes-core";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
@@ -74,11 +75,11 @@ import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
 import { BringHere } from "./BringHere";
-import { BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { BUILT_INS, builtInOn, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
-import { CatalogTab, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
+import { ToolSlot, CatalogTab, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
 import { useHeld, dropHeld } from "./shell/held";
 import { usePhone } from "./shell/usePhone";
 import "./shell/shell.css";
@@ -160,6 +161,8 @@ export default function App() {
   const restoreMap = useRef(false);
   // Leaving the map keeps its place; coming back to it, from the Palace or a view brick, puts it back.
   const showView = (next: string) => {
+    // The comparison lives on the Canvas; choosing an existing alternate view restores its ordinary shell.
+    if (next !== "map" && next !== "spine" && builtInOn("canvas-tools")) switchBuiltIn("canvas-tools", false);
     if (next === view) return;
     if (view === "decisions" && next === "map" && isOn("decisions")) requestAnimationFrame(() => {
       document.querySelector<HTMLElement>('[data-guide="catalog"]')?.focus({ preventScroll: true });
@@ -1165,6 +1168,15 @@ export default function App() {
     setInspection(null);
     if (inspection?.invoker.isConnected) inspection.invoker.focus({ preventScroll: true });
   };
+  const canvasTools = SHELL2 && !talk && builtIns.has("canvas-tools");
+  const [toolSlots] = useState(() => {
+    const host = () => { const el = document.createElement("div"); el.className = "shell-tool-body"; return el; };
+    return { composer: host(), features: host(), history: host() };
+  });
+  const [toolRequest, setToolRequest] = useState<{ id: CanvasToolId | null; revision: number }>({ id: "composer", revision: 0 });
+  const focusTool = (id: CanvasToolId | null) => setToolRequest(was => ({ id, revision: was.revision + 1 }));
+  const toolsWereOn = useRef(false);
+
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -1211,6 +1223,21 @@ export default function App() {
   const listeningOn = !SHELL2 || builtIns.has("listening");
   const catalogOpen = useCatalogOpen();
   const catalogAt = useCatalogAt();
+  // The rail that enabled the treatment gives way to typing; later panel requests focus their canvas node.
+  useEffect(() => {
+    if (canvasTools && toolsWereOn.current && (railTab === "catalog" || railTab === "history")) {
+      focusTool(railTab === "catalog" ? "features" : "history");
+      setRailTab(null);
+    }
+  }, [canvasTools, railTab, catalogAt]);
+  useEffect(() => {
+    if (canvasTools) { setRailTab(null); focusTool("composer"); }
+    if (canvasTools || toolsWereOn.current) {
+      const frame = requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }));
+      toolsWereOn.current = canvasTools;
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [canvasTools]);
   const heldQuestions = useHeld();
   const history = useHistory(brickHost.on, world, core.mapChange, core.latestUndoId);
   const call = useCall();
@@ -1275,6 +1302,7 @@ export default function App() {
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
+    if (canvasTools && event.key === "Escape" && !railTab) { event.preventDefault(); focusTool(null); return; }
     if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
     if (talk) return;
     const key = event.key.toLowerCase();
@@ -1643,12 +1671,26 @@ export default function App() {
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <ShapesContext.Provider value={shapes}>
+    <CanvasToolsContext.Provider value={canvasTools ? { slots: toolSlots, request: toolRequest, focus: focusTool, exit: () => switchBuiltIn("canvas-tools", false) } : null}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
-    <div className="app shell" onClickCapture={(event) => {
+    <div className={`app shell${canvasTools ? " canvas-tools-on" : ""}`} onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
-      <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
+      <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); if (canvasTools) focusTool("composer"); else composerRef.current?.focus(); }}>Skip to Type a thought</a>
+      {createPortal(<form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
+          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}
+          {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
+          <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
+            onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
+            placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
+          {listeningOn && <Keycap>{mod("D")}</Keycap>}
+        </form>, toolSlots.composer)}
+      {createPortal(<HistoryTab entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
+          inspectAction={bringHereOn ? (id) => world.threads.some((thread) => thread.id === id) && <button type="button" className="shell-link"
+            onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspectHere(id, event.currentTarget)}>{NAMES.inspectHere}</button> : undefined}
+          recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />, toolSlots.history)}
+      {createPortal(<CatalogTab rows={rows} at={catalogAt?.id ?? null} />, toolSlots.features)}
       {talkExit}
       <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
       <TopRight>
@@ -1670,7 +1712,7 @@ export default function App() {
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
 
-      {!talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+      {canvasTools && spine ? <BrickMount brick={spine} host={brickHost} /> : !talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
         : !talk && view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
           <NotesContext.Provider value={notes}><TidyProvider world={world} decide={core.tidy}><MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
             <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
@@ -1689,7 +1731,7 @@ export default function App() {
             </p> : null} />}
           {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
         </main>}
-      {view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
+      {!canvasTools && view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
         <button type="button" className="shell-pill shell-button" onClick={() => showView("map")} aria-keyshortcuts="M">
           <Icon name="back" /><span className="shell-label">{view === "decisions" ? "Close Decisions" : NAMES.backToMap}</span><Keycap>M</Keycap>
         </button>
@@ -1776,14 +1818,7 @@ export default function App() {
         stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
         queued: core.queuedCount, connected: core.connected, saved: !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
       }}>
-        <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}
-          {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
-          <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
-            onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
-            placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-          {listeningOn && <Keycap>{mod("D")}</Keycap>}
-        </form>
+        {!canvasTools && <ToolSlot host={toolSlots.composer} />}
       </StatusLine>
       </footer>
 
@@ -1791,14 +1826,11 @@ export default function App() {
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
 
-      {!talk && railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
+      {!talk && railTab && (!canvasTools || (railTab !== "history" && railTab !== "catalog")) && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
-        {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
-          inspectAction={bringHereOn ? (id) => world.threads.some((thread) => thread.id === id) && <button type="button" className="shell-link"
-            onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspectHere(id, event.currentTarget)}>{NAMES.inspectHere}</button> : undefined}
-          recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
-        {railTab === "catalog" && <CatalogTab rows={rows} at={catalogAt?.id ?? null} />}
+        {railTab === "history" && <ToolSlot host={toolSlots.history} />}
+        {railTab === "catalog" && <ToolSlot host={toolSlots.features} />}
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
       </Rail>}
 
@@ -1814,6 +1846,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </CanvasToolsContext.Provider>
     </ShapesContext.Provider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>

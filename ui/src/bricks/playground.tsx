@@ -4,7 +4,8 @@
 // here as the app would and logged: a thought added lands on the thread you're on a moment later, placed by a model
 // as the core's route says, and a margin note comes back as the core's changes would. What the brick hears is listed
 // too. `window.brickActions` is the shown brick's own actions, to try one from the console (scripts/bricks-check.mjs does).
-import { StrictMode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { StrictMode, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { noteChanges } from "../annotate-core";
 import { received } from "../apps-audio";
@@ -15,8 +16,7 @@ import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
 import { receiveJob, type JobMsg } from "../work-jobs";
-import type { BrickActions, BrickEvents, ViewDestination } from "./contract";
-import { ShapesContext } from "./contract";
+import { CanvasToolsContext, ShapesContext, type CanvasToolId, type BrickActions, type BrickEvents, type ViewDestination } from "./contract";
 import { useShapes } from "../shapes-core";
 import { resolveMerged } from "../merges";
 import "../styles.css";
@@ -286,12 +286,14 @@ function Playground() {
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>
       : <p className="playground-about playground-wrong">{found.problems[id] ? `“${id}” can't load: ${found.problems[id].join("; ")}.` : `No feature “${id}” here. Pick one above.`}</p>}
     <ShapesContext.Provider value={shapes}>
+    <SyntheticTools enabled={params.has("canvas-tools") && id === "spine"} add={add}>
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
       {id === "shapes" && shapeCanvas && <BrickMount brick={shapeCanvas} host={host} />}
       {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} /></div>
         : brick && <BrickMount key={id} brick={brick} host={host} />}
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>
+    </SyntheticTools>
     </ShapesContext.Provider>
     <aside className="playground-log" aria-label="What the feature asked for">
       <strong>What it asked for</strong>
@@ -302,6 +304,21 @@ function Playground() {
     </aside>
     {notice && <div className="playground-notice" role="status">{notice}</div>}
   </div>;
+}
+
+/** Optional synthetic slot fixture: no mic, network, accounts or extra app mutation owners. */
+function SyntheticTools({ enabled, add, children }: { enabled: boolean; add: (text: string) => boolean; children: ReactNode }) {
+  const [on, setOn] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [request, setRequest] = useState<{ id: CanvasToolId | null; revision: number }>({ id: "composer", revision: 0 });
+  const [slots] = useState(() => ({ composer: document.createElement("div"), features: document.createElement("div"), history: document.createElement("div") }));
+  const active = enabled && on;
+  return <CanvasToolsContext.Provider value={active ? { slots, request, focus: id => setRequest(was => ({ id, revision: was.revision + 1 })), exit: () => setOn(false) } : null}>
+    {active && createPortal(<form onSubmit={e => { e.preventDefault(); if (add(draft)) setDraft(""); }}><label>Synthetic thought<textarea value={draft} onChange={e => setDraft(e.target.value)} /></label><button>Add thought</button></form>, slots.composer)}
+    {active && createPortal(<button onClick={() => setOn(false)}>Exit canvas tools</button>, slots.features)}
+    {active && createPortal(<p>Synthetic History · Actions appear in the playground log.</p>, slots.history)}
+    {children}
+  </CanvasToolsContext.Provider>;
 }
 
 createRoot(document.getElementById("root")!).render(<StrictMode><Playground /></StrictMode>);

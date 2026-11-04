@@ -9,7 +9,17 @@ import type { Anchor } from "../annotate-core";
 import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
-/** The app's existing speech-correction controls, attached to a thought by a view. */
+export type CanvasToolId = "composer" | "features" | "history";
+/** Browser presentation only: existing shell bodies, never a second connection or mutation owner. */
+export type CanvasToolSlots = Record<CanvasToolId, HTMLElement>;
+export type CanvasTools = {
+  slots: CanvasToolSlots;
+  request: { id: CanvasToolId | null; revision: number };
+  focus: (id: CanvasToolId | null) => void;
+  exit: () => void;
+};
+export const CanvasToolsContext = createContext<CanvasTools | null>(null);
+
 /** This browser's optional readable Canvas overview; the playground keeps the default. */
 export const SemanticZoomContext = createContext(false);
 
@@ -32,6 +42,7 @@ export interface Shapes {
 }
 export const ShapesContext = createContext<Shapes | null>(null);
 
+/** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
 export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };

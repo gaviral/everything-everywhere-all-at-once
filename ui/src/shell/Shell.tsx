@@ -15,6 +15,17 @@ import { KIND_NAMES, NAMES } from "./names";
 import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 
+/** Move the same portal target between shell and canvas; its React tree and draft stay mounted. */
+export function ToolSlot({ host }: { host: HTMLElement }) {
+  const place = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = place.current!;
+    target.append(host);
+    return () => { if (host.parentNode === target) host.remove(); };
+  }, [host]);
+  return <div ref={place} className="shell-tool-slot" />;
+}
+
 const cls = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(" ");
 
 // ── Top left ─────────────────────────────────────────────────────────────────────────────────────────────────────────

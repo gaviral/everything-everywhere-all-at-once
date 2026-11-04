@@ -9,7 +9,7 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { useBrickEvent, SemanticZoomContext, ShapesContext, type BrickEvents, type BrickProps, type Position } from "../contract";
+import { useBrickEvent, CanvasToolsContext, SemanticZoomContext, ShapesContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
 import { Terse } from "./terse";
 import { FILM, filmHeld } from "./film";
@@ -23,6 +23,7 @@ import { useStayingHere } from "../../StayHere";
 import { C, CONVERSATION } from "./conversation";
 import { lensLayout, shiftLayout, type Lens } from "./lenses";
 import "./spine.css";
+import { CanvasToolNode, CanvasToolControls, useCanvasToolNodes, type CanvasNode } from "./canvas-tools";
 import { semanticBlend } from "./semantic-zoom";
 import { CanvasShapes } from "./shapes";
 
@@ -48,9 +49,11 @@ const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", br
 
 export default function Spine(props: BrickProps) {
   const shapes = useContext(ShapesContext);
-  if (props.map.terse && !FILM) return <Terse {...props} />;
+  const tools = useContext(CanvasToolsContext);
+  // Canvas tools need the flow surface; the selected Terse view returns when tools exit.
+  if (props.map.terse && !FILM && !tools) return <Terse {...props} />;
   const conversation = !!props.map.conversationSpine;
-  if (!props.map.threads.length && !(conversation && props.map.thoughts.length) && !shapes?.enabled) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
+  if (!tools && !props.map.threads.length && !(conversation && props.map.thoughts.length) && !shapes?.enabled) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
   return <ReactFlowProvider key={String(conversation)}><Canvas {...props} conversation={conversation} /></ReactFlowProvider>;
 }
 
@@ -741,6 +744,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       : item.kind === "card" && !item.open && item.thread === map.active && slots.length ? slots[0] : null,
     cut: camera.cut === item.key, selecting: selecting?.key === item.key,
   }])), [pauses, layout, thoughtCounts, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
+  const toolNodes = useCanvasToolNodes();
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
@@ -752,7 +756,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   }));
 
   // A drag: the thing follows the hand (with what's laid out from it), and every window sees each step.
-  const onNodesChange = useCallback((changes: NodeChange<ItemNode>[]) => {
+  const onNodesChange = useCallback((changes: NodeChange<CanvasNode>[]) => {
     for (const change of changes) {
       if (change.type !== "position" || !change.position || !change.dragging) continue;
       const item = layout.byKey.get(change.id);
@@ -849,8 +853,8 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     <div ref={frame} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
-      <ReactFlow<ItemNode>
-        className={cls("spine-flow", semantic && "spine-semantic")} nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
+      <ReactFlow<CanvasNode>
+        className={cls("spine-flow", semantic && "spine-semantic")} nodes={[...nodes, ...toolNodes.nodes]} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={(changes) => { toolNodes.change(changes); onNodesChange(changes); }}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event, node) => {
           const shelfHot = overShelfAt(event);
@@ -887,6 +891,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar semantic={semantic} />
         <CanvasShapes />
+        <CanvasToolControls hold={stopFollowing} />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             {layout.links.map((link) => {
@@ -929,7 +934,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   </div>;
 }
 
-const NODE_TYPES = { item: ItemView };
+const NODE_TYPES = { item: ItemView, canvasTool: CanvasToolNode };
 
 /** The zoom, as `--spine-k` (1 / zoom), for what keeps its size on screen however far out you are (a topic's title). */
 function ZoomVar({ semantic }: { semantic: boolean }) {
