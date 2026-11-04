@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, validateFixture, connectionURL, nextDelay, schedulePlayback, startFeed } from "./demo-jobs.mjs";
 
 const cli = fileURLToPath(new URL("./demo-jobs.mjs", import.meta.url));
-// Allow cold CLI startup during parallel builds; pacing assertions still check actual wire times.
+// Keep the cold-start allowance and explicit spawn-error checks; pacing is verified separately.
 const cliTimeout = 60_000;
 const fixture = JSON.parse(readFileSync(new URL("../samples/demo-jobs.json", import.meta.url), "utf8"));
 const copy = (value) => structuredClone(value);
@@ -109,9 +109,11 @@ function checkFixtureAndArguments() {
   assert.equal(constructions, 0);
   // Each invocation exits without a server, including help; import above also had no side effects.
   const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", timeout: cliTimeout });
+  assert.ifError(help.error);
   assert.equal(help.status, 0); assert.match(help.stdout, /Usage:/); assert.match(help.stdout, /simulated/); assert.match(help.stdout, /Ctrl\+C/);
   for (const args of badArgs) {
     const child = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: cliTimeout });
+    assert.ifError(child.error);
     assert.equal(child.status, 1, `${JSON.stringify(args)}: ${child.error?.message ?? child.stderr}`);
     assert.ok(child.stderr.trim());
     assert.doesNotMatch(child.stdout + child.stderr, /Connection failed|Connected as/);

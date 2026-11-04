@@ -73,3 +73,14 @@ Active send countdowns now interrupt the reading queue. The latest count stays i
 Removed both waits that hid the overlap from live-page-check. The original overlap is asserted directly, with extra checks that the old completion is still present before the new count arrives and that Stop receives input. The completed-card expiry regression is tested separately, after the overlap cases. Queue, notice-page, lane, and phone checks require active-count priority while retaining ordinary-card order, geometry, reading, focus, and preference coverage.
 
 Targeted validation for this correction: the original unmodified overlap replay first failed at Import closing, then passed with countdown priority. The strengthened whole live-page check, notice priority rules, notices-page, lane, and phone checks passed. After concurrent main advanced to `2c66c1e` (i-partner), the UI build, whole live-page check, notice rules, and unchanged find-page recheck passed again. The broader gate began at `f670282` and encountered one Chrome-startup failure before find-page assertions; its unchanged recheck passed. The gate was still building the concurrently updated core when this correction was committed, so it is not recorded as a clean single-snapshot gate here. Other workers' changes were preserved.
+
+
+## Conversation-spine gate repair
+
+Integrated main at `6b0dbc5` without conflicts, preserving the conversation projection and main's notice and view changes. The merge is left uncommitted.
+
+The first gate reproduced `demo-jobs-check` receiving a null child exit status under its three-second CLI deadline. Allow 30 seconds for process startup and report child-process errors explicitly; keep every exit-code, validation, no-connection, payload, pacing and shutdown assertion. No runtime behavior changed.
+
+Validation: 670 Rust tests passed (13 ignored); the reported core failure did not reproduce. Both UI build modes, the projection invariants, and the whole projection, conversation-spine and all-threads Chrome checks passed. Brick contract rules passed. Live model calls were not exercised.
+
+Final `PRECHECK_PAGES=0 sh scripts/precheck.sh` passed: all 54 enabled Node checks, core tests, builds and static guards. Browser phases ran separately as listed above. Existing release-content warnings remain; no running app was available for live probes. No commit or push.
