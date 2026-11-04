@@ -21,7 +21,7 @@ assert.equal(types.status, 0, `Scoped TypeScript failed: ${types.stdout}${types.
 await build({ configFile: false, root: directory, plugins: [react()], logLevel: 'warn', build: { outDir: join(artifacts, 'built'), emptyOutDir: false, rolldownOptions: { input: join(directory, 'preview.html') } } });
 const built = join(artifacts, 'built');
 const server = createServer((request, response) => {
-  const pathname = new URL(request.url, 'http://check.invalid').pathname;
+  const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
   const file = resolve(built, pathname === '/' ? 'preview.html' : `.${pathname}`);
   if (!file.startsWith(built + '/')) { response.writeHead(404).end(); return; }
   try {
