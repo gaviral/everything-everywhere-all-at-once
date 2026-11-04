@@ -15,6 +15,7 @@ spec = importlib.util.spec_from_file_location('secret_rules', Path(__file__).wit
 secrets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(secrets)
 MANIFEST = 'scripts/fixture-provenance.json'
+DEPENDENCY_INVENTORY = 'dependency-licences/inventory.json'
 # Split spellings keep executable negative patterns from being literal leak examples.
 OLD = '(?:o[56]|dev[.]' + 'canvas[.]meta-api|o[5]-memory|cursor' + '_worker)'
 RULES = {
@@ -55,7 +56,33 @@ def fixture(path, data):
             (p.endswith(('.json', '.txt', '.md')) and bool(re.search(rb'"(?:mapping|messages|user_profile|thought_added)"\s*:', data))))
 
 
-def content_findings(data):
+def dependency_contacts(files):
+    """Allow contact text only in exact, archive-verified upstream evidence."""
+    if DEPENDENCY_INVENTORY not in files:
+        return set()
+    inventory = json.loads(files[DEPENDENCY_INVENTORY])
+    if inventory.get('schema') != 1:
+        raise ValueError('invalid dependency inventory')
+    allowed = set()
+    for package in inventory['packages']:
+        if package.get('archive_verified') is not True:
+            continue
+        ecosystem = package['ecosystem']
+        if ecosystem not in {'cargo', 'npm'}:
+            raise ValueError('invalid dependency ecosystem')
+        name = package['name'].replace('/', '__')
+        prefix = f"dependency-licences/{ecosystem}/{name}@{package['version']}/"
+        for evidence in package['evidence']:
+            path = evidence['path']
+            if (not path.startswith(prefix) or '..' in Path(path).parts or
+                    path not in files):
+                continue
+            if hashlib.sha256(files[path]).hexdigest() == evidence['sha256']:
+                allowed.add(path)
+    return allowed
+
+
+def content_findings(data, upstream_contacts=False):
     found = set(secrets.findings(data))
     try:
         text = data.decode('utf-8')
@@ -71,11 +98,11 @@ def content_findings(data):
             # Public account identity; fictional examples; upstream copyright
             # attribution only. These never suppress any other rule on the line.
             legal = bool(re.match(r'^\s*(?:\*|//|#)?\s*Copyright\s+(?:\(c\)\s*)?\d{4}', line, re.I))
-            if not (email.endswith('@example.com') or email in {PUBLIC_EMAIL, 'fixture@users.noreply.github.com'} or legal or line[max(0, m.start()-3):m.start()] == '://'):
+            if not (upstream_contacts or email.endswith('@example.com') or email in {PUBLIC_EMAIL, 'fixture@users.noreply.github.com'} or legal or line[max(0, m.start()-3):m.start()] == '://'):
                 found.add(('contact-email', number))
         for m in PHONE.finditer(line):
             digits = re.sub(r'\D', '', m.group())
-            if 10 <= len(digits) <= 15 and not re.fullmatch(r'1?\d{3}555\d{4}|1555\d{7}', digits):
+            if not upstream_contacts and 10 <= len(digits) <= 15 and not re.fullmatch(r'1?\d{3}555\d{4}|1555\d{7}', digits):
                 # Require phone punctuation; plain timestamps/IDs are not contacts.
                 if re.search(r'[+() -]', m.group()):
                     found.add(('contact-phone', number))
@@ -120,6 +147,7 @@ def scan(root):
         locator = hashlib.sha256(os.fsencode(path)).hexdigest()[:12]
         print(f'FAIL tree-guard {rule}: {source} path-id={locator} line={line} (redacted)')
     for source, files in [('index', entries), ('worktree', work)]:
+        contacts = dependency_contacts(files)
         records = {}
         if MANIFEST in files:
             manifest = json.loads(files[MANIFEST])
@@ -131,7 +159,7 @@ def scan(root):
                 report('private-path', source, path)
             if Path(path).name.lower() == '.env.example' and data.strip():
                 report('nonblank-env-example', source, path)
-            for rule, line in content_findings(os.fsencode(path)) + content_findings(data):
+            for rule, line in content_findings(os.fsencode(path)) + content_findings(data, path in contacts):
                 report(rule, source, path, line)
             if path != MANIFEST and fixture(path, data):
                 record = records.get(path, {})

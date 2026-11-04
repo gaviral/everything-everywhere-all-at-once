@@ -79,7 +79,7 @@ class Boundary(unittest.TestCase):
         self.run_guard(False)
 
     def test_predecessors_and_paths(self):
-        for value in ['o'+'5', 'o'+'6', 'dev.'+'canvas.meta-api', 'o'+'5-memory', 'cursor'+'_worker', 'earlier '+'Can'+'vas project', 'cd projects/'+'can'+'vas', '/Users/'+'synthetic/code/project', 'security find-generic-password -a '+'can'+'vas']:
+        for value in ['o'+'5', 'o'+'6', 'dev.'+'canvas.meta-api', 'o'+'5-memory', 'cursor'+'_worker', 'earlier '+'Can'+'vas project', 'cd projects/'+'can'+'vas', '/'+'Users/'+'synthetic/code/project', 'security find-generic-password -a '+'can'+'vas']:
             self.stage('safe.txt', value)
             self.run_guard(False)
 
@@ -115,6 +115,37 @@ fixture@users.noreply.github.com
             self.stage(path, notice+'\nsk-'+ 'R'*30)
             self.run_guard(False)
             self.stage(path, notice)
+
+    def test_verified_dependency_contacts_are_narrow(self):
+        path = 'dependency-licences/cargo/synthetic@1.0.0/Cargo.toml'
+        notice = 'authors = ["Upstream <author@' + 'upstream.invalid>"]\nSupport: +1604' + '1234567\n'
+        self.stage(path, notice)
+        inventory = {'schema': 1, 'packages': [{
+            'ecosystem': 'cargo', 'name': 'synthetic', 'version': '1.0.0',
+            'archive_verified': True, 'evidence': [{
+                'path': path, 'sha256': hashlib.sha256(notice.encode()).hexdigest()}]}]}
+        def record(value):
+            self.stage('dependency-licences/inventory.json', json.dumps(value))
+        record(inventory)
+        self.run_guard(True)
+        # Unreviewed edits, even in this exact path, regain all contact checks.
+        self.write(path, notice + 'Other <other@' + 'private.invalid>\n')
+        self.assertIn('contact-email', self.run_guard(False))
+        self.write(path, notice)
+        self.stage('docs/note.md', notice)
+        self.assertIn('contact-email', self.run_guard(False))
+        self.stage('docs/note.md', 'safe')
+        inventory['packages'][0]['archive_verified'] = False
+        record(inventory)
+        self.assertIn('contact-email', self.run_guard(False))
+        inventory['packages'][0]['archive_verified'] = True
+        # Matching evidence never suppresses credentials or personal paths.
+        for value in ['sk-' + 'R'*30, '/'+'Users/'+'synthetic/private', 'name='+'a'+'vi']:
+            data = notice + value
+            self.stage(path, data)
+            inventory['packages'][0]['evidence'][0]['sha256'] = hashlib.sha256(data.encode()).hexdigest()
+            record(inventory)
+            self.run_guard(False)
 
     def test_staged_deletion_and_private_filename(self):
         self.git('rm', '--cached', 'safe.txt')

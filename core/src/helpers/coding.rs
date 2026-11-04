@@ -337,7 +337,7 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
             "-c",
             "user.name=E2A2O Helper",
             "-c",
-            "user.email=helper@example.invalid",
+            "user.email=helper@example.com",
             "commit",
             "--allow-empty",
             "--no-gpg-sign",
