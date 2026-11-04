@@ -5,6 +5,7 @@ import { NATURAL_PAUSE_MS } from "./legible";
 
 type SpeechMessage = {
   type: string;
+  state?: string;
   speak?: boolean;
   kind?: string;
   text?: string;
@@ -47,6 +48,7 @@ export function hearPageSpeech(data: unknown) {
   if (typeof data !== "string" || typeof window === "undefined" || !window.speechSynthesis) return;
   let msg: SpeechMessage;
   try { msg = JSON.parse(data) as SpeechMessage; } catch { return; }
+  if (msg.type === "partner_state" && ["thinking", "cancelled", "error"].includes(msg.state ?? "")) { stopPageSpeech(); return; }
   if ((msg.type === "call" && msg.people?.some((p) => p.speaking && !p.ai && !p.remote))
       || (msg.type === "partial" && msg.text?.trim())) {
     stopPageSpeech();

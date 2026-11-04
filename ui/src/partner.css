@@ -1,0 +1,6 @@
+.partner-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .4rem .65rem; font-size: .85rem; line-height: 1.4; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: .6rem; }
+.partner-status span { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
+.partner-status button { flex-shrink: 0; margin-left: auto; min-height: 44px; padding: .4rem .7rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.partner-status button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.partner-status button:hover { border-color: var(--accent); }

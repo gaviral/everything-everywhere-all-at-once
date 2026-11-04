@@ -1,3 +1,4 @@
+import { PartnerStatus } from "./PartnerStatus";
 import { SpeechFixesContext } from "./bricks/contract";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
@@ -1383,6 +1384,7 @@ export default function App() {
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} words={!bricksOn.has("bubble-flight")} />
             ))}
           </div>
+          <PartnerStatus />
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit} data-guide="composer">
             <textarea
@@ -1586,6 +1588,7 @@ export default function App() {
             onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
         </div>}
+        <PartnerStatus />
         <div className="shell-captions" id="shell-caption" />
       </section>
 

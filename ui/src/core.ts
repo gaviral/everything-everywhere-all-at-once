@@ -1,3 +1,4 @@
+import { ignorePartner } from "./partner";
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
@@ -238,6 +239,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "partner_state"; state: string; message: string }
   | { type: "text_received"; id: string }
   | JobMsg
   | StepMsg
@@ -834,6 +836,7 @@ export function useCore(speaker?: string) {
         coreBack();
       };
       ws.onmessage = (event) => {
+        if (ignorePartner(event.data)) return;
         const msg = JSON.parse(event.data as string) as ServerMsg;
         // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
         if (asked(currentWorld, msg)) closeRecap();

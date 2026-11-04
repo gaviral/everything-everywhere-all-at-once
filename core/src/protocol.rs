@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    PartnerState { state: String, message: String },
     /// The window owns which kinds of notices this person wants to see.
     NoticeControl { show: bool },
     TextReceived { id: String },
@@ -203,6 +204,8 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    Partner { on: bool },
+    PartnerCancel,
     Recap { #[serde(default)] period: crate::recap::Period },
     ComposeApp { request: String },
     DecideApp { build_id: String, keep: bool },

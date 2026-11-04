@@ -70,7 +70,7 @@ fn place(core: &Core, text: &str, thread: &str, complete: bool) {
 async fn the_videos_script_as_the_transcriber_sends_it_does_every_beats_job() {
     let (core, mut updates, path) = listening();
     let mut primer = Primer::default();
-    let mut send = |event: serde_json::Value| handle(&core, "you", &mut primer, &event.to_string());
+    let mut send = |event: serde_json::Value| handle(&core, "you", &mut primer, &event.to_string(), None);
     for event in [
         serde_json::json!({"type": "speechStart", "audioProcessedMs": 0, "turnId": 0}),
         serde_json::json!({"type": "transcript", "transcript": "Uh", "final": false, "audioProcessedMs": 960}),
@@ -140,7 +140,7 @@ async fn after_stop_listening_nothing_more_is_read_or_kept() {
     ];
     let mut stream = Box::pin(futures_util::stream::iter(said).chain(futures_util::stream::pending()));
     let started = tokio::time::Instant::now();
-    assert!(hear(&core, "you", &mut stream).await.is_ok());
+    assert!(hear(&core, "you", &mut stream, None).await.is_ok());
     assert_eq!(started.elapsed(), std::time::Duration::ZERO, "it ends at the stop, not at a timeout");
     assert!(matches!(stream.next().await, Some(Ok(_))), "the turn after it is never read");
     assert_eq!(texts(&core), ["Rent is due Friday."]);
@@ -153,7 +153,7 @@ async fn after_stop_listening_nothing_more_is_read_or_kept() {
         event(serde_json::json!({"type": "speechComplete", "transcript": "Call the landlord.", "audioProcessedMs": PRIMER_MS + 1_400, "turnId": 1})),
         Ok(Message::Close(None)),
     ];
-    assert!(hear(&core, "you", &mut Box::pin(futures_util::stream::iter(said))).await.is_ok());
+    assert!(hear(&core, "you", &mut Box::pin(futures_util::stream::iter(said)), None).await.is_ok());
     assert_eq!(texts(&core), ["Call the landlord."]);
     for p in [path, path2] {
         let _ = std::fs::remove_file(&p);
@@ -175,7 +175,7 @@ fn every_stop_phrase_ends_the_stream_and_pauses_the_window() {
             ] {
                 let (core, mut updates, path) = listening();
                 let turn = serde_json::json!({"type": "speechComplete", "transcript": said}).to_string();
-                assert!(handle(&core, "you", &mut Primer::default(), &turn), "{said}: the stream goes on");
+                assert!(handle(&core, "you", &mut Primer::default(), &turn, None), "{said}: the stream goes on");
                 assert_eq!(told(&mut updates).1, ["pause"], "{said}");
                 assert_eq!(texts(&core), kept, "{said}");
                 let _ = std::fs::remove_file(&path);
@@ -199,7 +199,7 @@ fn a_voice_error_reaches_the_window_with_the_words_it_stops_on() {
         (serde_json::json!({"type": "error", "errorType": "authentication_error", "message": "Invalid key"}), true),
     ] {
         let (core, mut updates, path) = listening();
-        assert!(!handle(&core, "you", &mut Primer::default(), &event.to_string()));
+        assert!(!handle(&core, "you", &mut Primer::default(), &event.to_string(), None));
         let errors: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message { ServerMsg::Error { message } => Some((out.to, message)), _ => None })
             .collect();
@@ -218,10 +218,10 @@ async fn a_draft_counts_as_talk_and_progress_does_not() {
         Ok(Message::Text(serde_json::json!({"type": "audioProgress", "audioProcessedMs": PRIMER_MS + 80}).to_string().into())),
         Ok(Message::Close(None)),
     ]);
-    assert!(hear(&core, "you", &mut Box::pin(quiet_room)).await.is_ok());
+    assert!(hear(&core, "you", &mut Box::pin(quiet_room), None).await.is_ok());
     assert!(core.quiet_ms() > 60_000, "progress isn't talk");
     let draft = serde_json::json!({"type": "transcript", "transcript": "My biggest problem", "audioProcessedMs": PRIMER_MS + 900});
-    handle(&core, "you", &mut Primer::default(), &draft.to_string());
+    handle(&core, "you", &mut Primer::default(), &draft.to_string(), None);
     assert!(core.quiet_ms() < 1_000, "a draft is talk");
     let _ = std::fs::remove_file(&path);
 }
@@ -240,7 +240,7 @@ fn a_later_turns_end_closes_the_primers_too() {
     let (core, mut updates, path) = listening();
     let mut state = Primer::default();
     for event in &events {
-        handle(&core, "you", &mut state, &event.to_string());
+        handle(&core, "you", &mut state, &event.to_string(), None);
     }
     assert!(!state.open);
     assert_eq!(told(&mut updates).0, ["Uh, oh and rent"], "the draft shows as it will be kept");
@@ -254,7 +254,7 @@ fn recognized_notice_commands_reach_the_window() {
     for (turn, words, expected) in [(1, "Stop showing this.", false), (2, "Show those again.", true)] {
         let event = serde_json::json!({"type":"speechComplete", "transcript":words,
             "audioProcessedMs": PRIMER_MS + turn * 4000, "turnId":turn});
-        assert!(!handle(&core, "you", &mut Primer::default(), &event.to_string()));
+        assert!(!handle(&core, "you", &mut Primer::default(), &event.to_string(), None));
         assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out|
             matches!(out.message, ServerMsg::NoticeControl { show } if show == expected)));
         assert!(core.snapshot().thoughts.is_empty());
