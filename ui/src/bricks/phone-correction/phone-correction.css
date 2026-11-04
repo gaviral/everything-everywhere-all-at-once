@@ -1,0 +1,26 @@
+.phone-correction { position: fixed; z-index: 65; right: 18px; top: 80px; font-family: inherit; color: #183c36; }
+.phone-correction button, .phone-correction select { font: inherit; font-size: 16px; min-height: 48px; border-radius: 16px; cursor: pointer; }
+.phone-correction button { border: 1px solid #bfd2c7; padding: 10px 16px; background: #f9fcf5; color: #183c36; }
+.phone-correction button:disabled { opacity: .5; cursor: default; }
+.phone-correction button:focus-visible, .phone-correction select:focus-visible { outline: 3px solid #246b51; outline-offset: 3px; }
+.phone-correction .correction-launch { box-shadow: 0 5px 20px #17382c18; border-radius: 30px; font-weight: 650; }
+.correction-sheet { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 150px); overflow-y: auto; padding: 24px; margin-top: 12px; box-sizing: border-box; border: 1px solid #d5dfc9; border-radius: 30px; background: radial-gradient(ellipse at top right, #dbe9c6, transparent 58%), #fcfcf4; box-shadow: 0 18px 65px #16352930; }
+.correction-sheet header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.correction-sheet small { font-size: 11px; font-weight: 750; letter-spacing: .09em; }
+.correction-sheet h2 { margin: 12px 0 24px; font-size: 34px; line-height: 1.08; letter-spacing: -.04em; }
+.correction-sheet label { display: grid; gap: 8px; font-size: 15px; font-weight: 600; margin: 16px 0; }
+.correction-sheet select { width: 100%; min-width: 0; background: #fffef8; border: 1px solid #aebfaf; padding: 10px; color: #183c36; }
+.correction-sheet blockquote { margin: 16px 0; padding: 22px; border-radius: 8px 25px 25px 25px; background: #e9eedc; overflow-wrap: anywhere; }
+.correction-sheet blockquote p { font-size: 24px; line-height: 1.3; margin: 12px 0 0; }
+.phone-correction .correction-primary { width: 100%; background: #215a45; color: #fffef4; font-weight: 650; }
+.correction-status, .correction-retry p, .correction-example > p { font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
+.correction-undo { width: 100%; }
+.correction-retry { display: flex; flex-wrap: wrap; gap: 8px; }
+.correction-retry p { width: 100%; }
+.correction-example-destination { text-align: right; font-weight: 750; }
+@media (max-width: 600px) {
+  .phone-correction { top: 72px; right: 12px; }
+  .correction-sheet { padding: 20px; max-height: calc(100dvh - 144px); }
+}
+
+.correction-receipt p { font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
