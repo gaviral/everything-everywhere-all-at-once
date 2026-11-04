@@ -75,3 +75,33 @@
 .flow-canvas-pair .flow-canvas-output{font-size:.8em;max-height:38vh;overflow:auto}
 .flow-canvas-pair .flow-canvas-run-state{flex-wrap:wrap;min-height:2.2em}
 @media(max-width:600px){.flow-canvas-pair{grid-template-columns:1fr}.flow-canvas-pair .flow-canvas-result+.flow-canvas-result{border-left:0}.flow-canvas-pair .flow-canvas-output{max-height:none}}
+
+/* The wall keeps the map beside the boxes; recovery and Stop stay above both. */
+.flow-canvas{inset:92px 18px 136px auto;width:59vw;border:1px solid #506158;border-radius:20px;z-index:40;font-size:clamp(18px,1.15vw,42px)}
+body:has(.flow-canvas) .spine-frame{width:39vw}
+.flow-canvas-top{padding:.65em 1em}
+.flow-canvas-tools{font-size:.65em}
+.flow-canvas-body{padding:1em}
+.flow-canvas-title h1{font-size:clamp(28px,1.8vw,68px)}
+.flow-canvas-title>p:first-child{font-size:.65em}
+.flow-canvas-status{margin:.3em 0 .8em;font-size:.85em}
+.flow-canvas-source{grid-template-columns:1fr;margin-bottom:1em;padding:.7em}
+.flow-canvas-source label{font-size:.75em}
+.flow-canvas-source textarea{font-size:1em;max-height:12vh}
+.flow-canvas-source>div{display:none}
+.flow-canvas-grid{gap:.8em}
+.flow-canvas-output{font-size:1em;max-height:27vh;overflow:auto}
+.flow-canvas-run-state{font-size:.8em}
+.flow-canvas-box:has(.flow-canvas-run-state):has(.flow-canvas-result) {min-width:0}
+.flow-canvas-box:has(.flow-canvas-run-state:not(.flow-canvas-running)) {transition:border-color .2s}
+.flow-canvas-box:has(.flow-canvas-result .flow-canvas-run-state) {scroll-margin-top:1em}
+.flow-canvas-bottom{padding:.7em 1em}
+.flow-question{margin:.7em 1em 0;padding:.8em 1em;background:#3c3015;border:2px solid #e9bb62;border-radius:14px;color:#ffe5ae;flex-shrink:0}
+.flow-question span,.flow-question small{font-size:.8em}
+.flow-question p{font-size:1.45em;line-height:1.3;margin:.4em 0}
+.flow-canvas-box:has(.flow-canvas-run-state span):has(+ .flow-canvas-box){min-width:0}
+@media(max-width:1100px){.flow-canvas{inset:70px 12px 140px auto;width:65vw}.flow-canvas-grid{grid-template-columns:1fr}.flow-canvas-brand span{display:none}.flow-canvas-tools button:not(:last-child){display:none}}
+@media(max-width:600px){.flow-canvas{inset:70px 8px 110px;width:calc(100% - 16px);font-size:18px}body:has(.flow-canvas) .spine-frame{width:100%}.flow-canvas-tools{font-size:12px}.flow-question p{font-size:24px}}
+
+.flow-canvas-held{border-color:#e9bb62!important;background:#342c1c!important}
+.flow-canvas-held .flow-canvas-run-state{color:#ffe0a0}

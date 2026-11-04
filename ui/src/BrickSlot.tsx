@@ -76,6 +76,9 @@ export function useBrickHost(world: World, revision: number, me: string, connect
       reviewPoint: (ids, focus) => { if (builtInOn("review-text-edits")) latest.current.reviewPoint(ids, focus); },
       voiceShortcut: request => latest.current.voiceShortcut(request),
       readThought: (id) => read.current(id),
+      holdFlowQuestion: (id, ask) => latest.current.holdFlowQuestion?.(id, ask),
+      dropFlowQuestion: id => latest.current.dropFlowQuestion?.(id),
+      flowPause: () => latest.current.flowPause?.() ?? Infinity,
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
         const sent = latest.current.addThought(text);

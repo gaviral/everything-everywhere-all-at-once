@@ -1,5 +1,5 @@
 // Explicit live-service smoke test. Leaves its temporary browser profile and screenshots for inspection.
-// Start the core on an isolated map first, then FLOW_URL=http://localhost:4457 node scripts/flow-happy-check.mjs.
+// Start the core on an isolated map first, then FLOW_URL=http://localhost:4457 node scripts/flow-happy-live.mjs.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';

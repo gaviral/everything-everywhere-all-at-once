@@ -81,7 +81,7 @@ import type { ViewDestination } from "./bricks/contract";
 import { Catalog } from "./Catalog";
 import { AppParts, type AppPartsState } from "./AppParts";
 import { Guide } from "./Guide";
-import { showHint } from "./guide-core";
+import { showHint, pauseIn } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
@@ -95,7 +95,7 @@ import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
 import { AISetup } from "./shell/AISetup";
 import { ToolSlot, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
-import { useHeld, dropHeld } from "./shell/held";
+import { useHeld, dropHeld, holdQuestion } from "./shell/held";
 import { usePhone } from "./shell/usePhone";
 import "./shell/shell.css";
 import { TalkRail } from "./talk/TalkRail";
@@ -1216,6 +1216,9 @@ export default function App() {
     exportRecipe: core.exportRecipe,
     saveRecipe: core.saveRecipe,
     addThought: core.sendText,
+    holdFlowQuestion: (id, ask) => holdQuestion({ id, by: "Flow", ai: true, main: "Waiting for your pause", answer: ask }),
+    dropFlowQuestion: dropHeld,
+    flowPause: () => core.partial || document.querySelector<HTMLTextAreaElement>('[data-guide="composer"] textarea')?.value.trim() ? Infinity : pauseIn(),
     resume: (id,keyboard) => finishPause(id,keyboard),
     openPoint: (threadId, thoughtId) => {
       if (!builtInOn("compare-phone-reading")) return;
