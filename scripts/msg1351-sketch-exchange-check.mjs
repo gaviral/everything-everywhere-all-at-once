@@ -1,15 +1,11 @@
 // Synthetic browser and routing proof. No shared application, microphone or model calls.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 import { openPage } from './headless.mjs';
-const cacheDir = mkdtempSync(join(tmpdir(), 'sketch-exchange-vite-'));
-const server = await createServer({ configFile:false, root:new URL('../ui',import.meta.url).pathname,
-  plugins:[react()], cacheDir, server:{host:'127.0.0.1',port:0,hmr:false,ws:false,watch:null},
-});
+const server = await uiServer({ configFile: false, appType: 'spa', plugins: [react()] }, { port: 0 });
 let browser;
 try {
   const { SketchTransport } = await server.ssrLoadModule('/src/msg1351/sketch-exchange/SketchTransport.ts');

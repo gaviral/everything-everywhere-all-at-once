@@ -1,16 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 import { openPage } from './headless.mjs';
 
 // Scoped Vite preview: loads only the lane component and synthetic references.
-const server = await createServer({
-  configFile: false, root: resolve(new URL('../ui', import.meta.url).pathname),
-  cacheDir: mkdtempSync(resolve(tmpdir(), 'part-dimensions-vite-')),
-  server: { host: '127.0.0.1', port: 0, strictPort: true },
-});
+const server = await uiServer({ configFile: false, appType: 'spa' }, { port: 0 });
 await server.listen();
 const address = server.httpServer.address();
 const url = `http://127.0.0.1:${address.port}/src/msg1351/part-dimensions/preview.html`;

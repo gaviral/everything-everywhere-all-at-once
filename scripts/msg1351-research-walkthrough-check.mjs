@@ -1,23 +1,19 @@
 // Scoped browser acceptance. Synthetic host only; retained artifacts and owned process cleanup.
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer as createVite } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 
-const cache = mkdtempSync(join(tmpdir(), 'research-walkthrough-vite-'));
-const root = new URL('../ui/', import.meta.url).pathname;
-const vite = await createVite({ root, cacheDir: cache, configFile: false, plugins: [react()], server: { middlewareMode: true, hmr: false } });
-const server = createServer(vite.middlewares);
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const port = server.address().port;
+const server = await uiServer({ configFile: false, appType: 'spa', plugins: [react()] }, { port: 0 });
+await server.listen();
+const port = server.httpServer.address().port;
 assert.ok(![4360, 4399].includes(port));
 const origin = `http://127.0.0.1:${port}`;
 const url = `${origin}/src/msg1351/research-walkthrough/preview.html`;
-const stopServer = async () => { await vite.close(); await new Promise(resolve => server.close(resolve)); };
+const stopServer = () => server.close();
 if (process.argv.includes('--serve')) {
   console.log(`Scoped synthetic preview: ${url}`);
   const stop = async () => { await stopServer(); process.exitCode = 0; };

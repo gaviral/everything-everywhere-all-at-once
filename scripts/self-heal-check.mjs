@@ -1,13 +1,11 @@
 // One focused browser check. Fixture modules are outside bricks/ and never ship in the app.
 import assert from "node:assert/strict";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import { openPage } from "./headless.mjs";
 
 let lateRequests = 0;
-const server = await createServer({
-  root: new URL("../ui", import.meta.url).pathname,
-  cacheDir: "node_modules/.self-heal-check",
-  server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false, ws: false, watch: null },
+const server = await uiServer({
+  appType: "spa",
   plugins: [{ name: "self-heal-fixture", configureServer(vite) {
     vite.middlewares.use((req, res, next) => {
       if (req.url?.includes("/checks/self-heal/missing-feature.tsx") || (req.url?.includes("/checks/self-heal/late-feature.tsx") && ++lateRequests === 1)) {
@@ -16,7 +14,7 @@ const server = await createServer({
       next();
     });
   } }],
-});
+}, { port: 0 });
 let browser;
 const deadline = setTimeout(() => { console.error("REAL: self-heal check exceeded its deadline"); process.exitCode = 1; void browser?.close(); void server.close(); }, 90_000);
 try {

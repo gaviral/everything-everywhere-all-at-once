@@ -1,8 +1,8 @@
 // Isolated browser acceptance. No app shell, core, model, microphone or runtime service.
 // Run: node scripts/intake1417-populated-variants-check.mjs
-// Temporary cache/profile/screenshots are retained; only the Chrome PID started here is stopped.
+// Temporary profile/screenshots are retained; only the Chrome PID started here is stopped.
 import assert from 'node:assert/strict';
-import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -16,9 +16,7 @@ assert.ok(chromePath, 'Chrome required for visible acceptance');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let child, socket, server;
 async function startPreview() {
-  server = await createServer({ configFile: false, root: new URL('../ui', import.meta.url).pathname,
-    plugins: [react()], cacheDir: join(artifacts, 'vite-cache'),
-    server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false, ws: false, watch: null } });
+  server = await uiServer({ configFile: false, appType: 'spa', plugins: [react()] }, { port: 0 });
   await server.listen();
   return `http://127.0.0.1:${server.httpServer.address().port}/src/intake1417/populated-variants/preview.html`;
 }
