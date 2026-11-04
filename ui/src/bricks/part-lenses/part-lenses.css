@@ -1,0 +1,100 @@
+.part-lenses {
+  --part-lenses-ink: #243d37;
+  --part-lenses-muted: #57675e;
+  --part-lenses-paper: #fffdf5;
+  --part-lenses-line: #c4cbbb;
+  box-sizing: border-box;
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 56px);
+  background: radial-gradient(#d3d6c7 .8px, transparent .8px) 0 0 / 22px 22px, #f3f3e9;
+  color: var(--part-lenses-ink);
+  font: 18px/1.5 'Trebuchet MS', system-ui, sans-serif;
+  border: 1px solid #d8dbcc;
+  border-radius: 28px 22px 30px 20px;
+}
+.part-lenses * { box-sizing: border-box; }
+.part-lenses button { font: inherit; color: inherit; cursor: pointer; min-height: 44px; }
+.part-lenses button:focus-visible, .part-lenses summary:focus-visible { outline: 3px solid #b84629; outline-offset: 4px; }
+.part-lenses button:hover { filter: brightness(.96); }
+.part-lenses p { margin: 0; }
+.part-lenses-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
+.part-lenses-eyebrow { font: 700 12px/1.5 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--part-lenses-muted); }
+.part-lenses-heading .part-lenses-eyebrow { letter-spacing: .16em; }
+.part-lenses-heading .part-lenses-eyebrow span { color: #b54c2c; font-size: 24px; margin-left: 10px; vertical-align: middle; }
+.part-lenses-heading h1 { font: 500 clamp(38px, 4.2vw, 66px)/1.06 Georgia, serif; letter-spacing: -.045em; margin: 6px 0 12px; }
+.part-lenses-subtitle { color: var(--part-lenses-muted); font-size: 20px; }
+.part-lenses-switch { display: flex; padding: 5px; gap: 4px; background: #e4e7da; border-radius: 16px 18px 14px 20px; border: 1px solid #b7c0b0; }
+.part-lenses-switch button { padding: 12px 16px; background: transparent; border: 1px solid transparent; border-radius: 12px 9px 13px 10px; font-size: 16px; white-space: nowrap; }
+.part-lenses-switch small { display: block; font: 11px/1.4 ui-monospace, monospace; opacity: .75; }
+.part-lenses-switch button[aria-pressed='true'] { background: var(--part-lenses-ink); color: #fffdf5; box-shadow: 2px 3px 0 #b5bfac; transform: rotate(-1deg); }
+.part-lenses-example { display: inline-block; background: #fff0ce; border: 1px solid #dfc991; border-radius: 5px 9px 4px 7px; padding: 5px 12px; margin: 28px 0 24px !important; font-size: 14px; color: #715422; }
+.part-lenses-workbench { display: grid; grid-template-columns: minmax(220px, 290px) minmax(0, 1fr); gap: 30px; align-items: start; }
+.part-lenses-picker { padding-top: 24px; min-width: 0; }
+.part-lenses-tree { list-style: none; margin: 18px 0 0; padding: 0; }
+.part-lenses-tree li { margin: 8px 0 8px calc(var(--part-lenses-depth) * 12px); }
+.part-lenses-tree button { width: 100%; display: flex; align-items: center; gap: 9px; text-align: left; background: #f3f3e9; border: 1px solid transparent; border-radius: 10px 8px 12px 7px; padding: 10px 11px; font-size: 17px; overflow-wrap: anywhere; }
+.part-lenses-tree button[aria-current='true'] { border-color: #869f8b; background: #dce8d7; box-shadow: 2px 2px 0 #bdcbbb; transform: rotate(-1deg); font-weight: 700; }
+.part-lenses-tree button > span:nth-child(2) { flex: 1; }
+.part-lenses-tree small { display: block; font-size: 12px; }
+.part-lenses-node-mark { color: #788777; }
+.part-lenses-picker-note { color: var(--part-lenses-muted); font: italic 17px/1.6 Georgia, serif; margin-top: 28px !important; padding: 10px; }
+.part-lenses-paper { position: relative; min-width: 0; min-height: 530px; background: var(--part-lenses-paper); border: 1.5px solid #a9b8a4; border-radius: 11px 22px 15px 24px / 20px 13px 25px 16px; padding: clamp(22px, 3vw, 46px); box-shadow: 5px 7px 0 #e0e3d5; }
+.part-lenses-paper::before { content: ''; position: absolute; width: 80px; height: 22px; background: #e2c58670; border-left: 1px solid #d3bd8580; border-right: 1px solid #d3bd8580; top: -12px; right: 14%; transform: rotate(4deg); }
+.part-lenses-breadcrumbs { color: var(--part-lenses-muted); font-size: 13px; overflow-wrap: anywhere; }
+.part-lenses-breadcrumbs button { border: 0; background: transparent; padding: 0 4px 0 0; text-decoration: underline; text-underline-offset: 4px; min-height: 30px; }
+.part-lenses-paper h2 { font-size: 22px; margin: 8px 0 30px; font-weight: 500; }
+.part-lenses-big-line { max-width: 850px; font: 500 clamp(30px, 3.3vw, 48px)/1.17 Georgia, serif; letter-spacing: -.025em; margin: 16px 0 24px; text-wrap: pretty; }
+.part-lenses-detail { max-width: 720px; font-size: clamp(18px, 1.7vw, 23px); line-height: 1.6; }
+.part-lenses-composition { margin-top: 38px; padding-top: 22px; border-top: 1.5px dashed var(--part-lenses-line); }
+.part-lenses-pieces { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+.part-lenses-pieces button { display: flex; justify-content: space-between; align-items: center; gap: 24px; background: #edf1e3; border: 1.5px solid #9aaa90; padding: 15px 20px; border-radius: 6px 12px 8px 10px; box-shadow: 2px 3px 0 #dde3d1; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
+.part-lenses-pieces button:nth-child(even) { transform: rotate(1deg); background: #faedcf; border-color: #cdb984; box-shadow: 2px 3px 0 #eaddb9; }
+.part-lenses-leaf { margin-top: 12px !important; color: var(--part-lenses-muted); }
+.part-lenses-model-note { font-size: 14px; color: var(--part-lenses-muted); margin-bottom: 22px !important; }
+.part-lenses-inheritance-chain { display: flex; flex-direction: column; align-items: center; }
+.part-lenses-class { display: flex; flex-direction: column; gap: 4px; border: 1.5px solid #95a28c; border-radius: 6px 10px 5px 11px; padding: 10px 24px; text-align: center; background: #f4f3e8; max-width: 100%; }
+.part-lenses-class strong { font: 500 clamp(17px, 1.6vw, 23px)/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
+.part-lenses-class-selected { background: #dce9d6; border-color: #5b7c5b; box-shadow: 3px 3px 0 #c5d6ba; transform: rotate(-1deg); }
+.part-lenses-inheritance { display: flex; align-items: center; gap: 12px; margin: 4px 0; color: #627c62; }
+.part-lenses-inheritance > span { line-height: .75; font-size: 22px; text-align: center; }
+.part-lenses-inheritance small { font-size: 12px; }
+.part-lenses-composition-diagram { border-color: #789479; margin-top: 24px; }
+.part-lenses-founder { position: relative; }
+.part-lenses-quote { display: block; font: 100px/.6 Georgia, serif; color: #ba5938; margin-top: 30px; }
+.part-lenses-founder .part-lenses-big-line { margin-top: 0; }
+.part-lenses-value { display: grid; grid-template-columns: 1fr 1.4fr; gap: 28px; border-top: 1.5px dashed #d2bd91; padding-top: 26px; margin-top: 35px; }
+.part-lenses-value .part-lenses-eyebrow { color: #895630; margin-bottom: 10px; }
+.part-lenses-value p { font-size: 19px; }
+.part-lenses-paper[data-lens='founder'] { background: #fff9eb; }
+.part-lenses-source { color: var(--part-lenses-muted); font: 12px/1.6 ui-monospace, monospace; margin-top: 32px; overflow-wrap: anywhere; }
+.part-lenses-source summary { cursor: pointer; padding: 8px 0; min-height: 36px; }
+.part-lenses-footnote { font: italic 17px/1.5 Georgia, serif; text-align: right; color: var(--part-lenses-muted); margin-top: 28px !important; }
+.part-lenses-footnote span { margin-left: 10px; color: #b45631; }
+.part-lenses-empty { padding: 36px; background: var(--part-lenses-paper); border-radius: 16px; }
+@media (min-width: 1800px) {
+  .part-lenses { max-width: 1700px; font-size: 21px; }
+  .part-lenses-tree button, .part-lenses-switch button { font-size: 20px; }
+  .part-lenses-eyebrow { font-size: 14px; }
+  .part-lenses-workbench { grid-template-columns: 320px minmax(0, 1fr); gap: 48px; }
+}
+@media (max-width: 760px) {
+  .part-lenses { padding: 22px 16px; border-radius: 18px; }
+  .part-lenses-heading { gap: 20px; }
+  .part-lenses-switch { width: 100%; }
+  .part-lenses-switch button { flex: 1; padding: 10px 6px; font-size: 14px; white-space: normal; }
+  .part-lenses-workbench { grid-template-columns: 1fr; gap: 22px; }
+  .part-lenses-picker { padding-top: 0; }
+  .part-lenses-tree { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+  .part-lenses-tree li { margin: 0; max-width: 100%; }
+  .part-lenses-tree button { font-size: 14px; padding: 7px 10px; }
+  .part-lenses-picker-note { display: none; }
+  .part-lenses-paper { padding: 24px 20px; min-height: 0; }
+  .part-lenses-paper h2 { margin-bottom: 24px; }
+  .part-lenses-value { grid-template-columns: 1fr; gap: 20px; }
+  .part-lenses-example { margin: 20px 0 !important; }
+  .part-lenses-pieces button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .part-lenses button { scroll-behavior: auto; }
+}
