@@ -58,6 +58,7 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  terse: { name: "Terse", does: "Read short nested lines; tap any line for its complete original.", lives: "The Canvas" },
   // Built in: switched here, as the features are.
   email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },

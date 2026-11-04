@@ -11,7 +11,8 @@ import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowP
 import "@xyflow/react/dist/base.css";
 import { useBrickEvent, SemanticZoomContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
-import { filmHeld } from "./film";
+import { Terse } from "./terse";
+import { FILM, filmHeld } from "./film";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
 import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
@@ -45,6 +46,7 @@ const cls = (...names: (string | false | undefined | null)[]) => names.filter(Bo
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
+  if (props.map.terse && !FILM) return <Terse {...props} />;
   const conversation = !!props.map.conversationSpine;
   if (!props.map.threads.length && !(conversation && props.map.thoughts.length)) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
   return <ReactFlowProvider key={String(conversation)}><Canvas {...props} conversation={conversation} /></ReactFlowProvider>;

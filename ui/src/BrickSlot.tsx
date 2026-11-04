@@ -38,10 +38,12 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const conversationSpine = useBuiltInsOn().has("conversation-spine");
+  const builtIns = useBuiltInsOn();
+  const conversationSpine = builtIns.has("conversation-spine");
+  const terse = builtIns.has("terse");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, terse, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
