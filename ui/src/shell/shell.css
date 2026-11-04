@@ -78,7 +78,7 @@ html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-i
 html.shell2 .shell-tl { top: 16px; left: 16px; }
 html.shell2 .shell-tr { top: 16px; right: 16px; }
 html.shell2 .shell-bl { bottom: calc(var(--dock-height, 120px) + var(--shell-corner-gap)); left: 16px; }
-html.shell2 .shell-br { right: 16px; bottom: max(var(--shelf-top, 36px), calc(var(--dock-height, 120px) + var(--shell-corner-gap))); z-index: 41; flex-direction: column; align-items: flex-end; }
+html.shell2 .shell-br { right: 16px; bottom: var(--work-spine-held-bottom, max(var(--shelf-top, 36px), calc(var(--dock-height, 120px) + var(--shell-corner-gap)))); z-index: 41; flex-direction: column; align-items: flex-end; }
 html.shell2 .shell-identity { gap: 10px; }
 html.shell2 .shell-wordmark { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .14em; }
 html.shell2 .shell-mapname { color: var(--ink-2); }
@@ -264,6 +264,8 @@ html.shell2 .shell-catalog-group ul { margin: 0; padding: 0; list-style: none; }
 html.shell2 .shell-catalog-row { display: flex; align-items: center; gap: 8px; min-height: 32px; border-radius: 8px; }
 html.shell2 .shell-catalog-row.shell-at { margin: 0 -8px; padding: 0 8px; background: var(--blue-soft); }
 html.shell2 .shell-catalog-name { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+/* Keep the read action's full label visible on a phone, including with enlarged text. */
+html.shell2 .shell-catalog-row[data-row="read-progress"] .shell-catalog-name { white-space: normal; line-height: 1.3; }
 html.shell2 .shell-aka { min-width: 0; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
 html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; }
 html.shell2 .shell-catalog-core { flex: none; width: 36px; color: var(--muted); font-size: 11px; text-align: right; }
@@ -326,6 +328,13 @@ html.shell2 .shell-sample { cursor: pointer; }
 /* ── A phone: a 56 px top bar, the input inside the bottom bar; the rail is a sheet ─────── */
 
 @media (max-width: 560px) {
+  /* The phone's cards share one surface; map words must not show through their gaps. */
+  html.shell2 .spine-corner-row { z-index: 1; }
+  html.shell2 .spine-corner-row::before { content: ""; position: absolute; inset: -8px -16px; z-index: -1; background: var(--space); pointer-events: none; }
+  html.shell2[data-view="map"] .shell-stage { isolation: isolate; }
+  html.shell2[data-view="map"] .shell-stage::before {
+    content: ""; position: absolute; inset: 0 -16px -12px; z-index: -1; background: var(--space); pointer-events: none;
+  }
   html.shell2 .shell-tl { top: 10px; left: 16px; }
   html.shell2 .shell-tr { top: 10px; right: 16px; gap: 6px; }
   html.shell2 .shell-pill { height: 36px; padding: 0 12px; }

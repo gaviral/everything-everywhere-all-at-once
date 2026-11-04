@@ -20,6 +20,13 @@ globalThis.HTMLIFrameElement = class {};
 globalThis.dispatchEvent = () => true;
 globalThis.addEventListener ??= noop;
 globalThis.removeEventListener ??= noop;
+// Storage can be denied in a browser too: recovery must report that without
+// crashing a later render or preventing any of the notices below.
+const deniedStorage = () => { throw new Error("Storage unavailable"); };
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+  get length() { return deniedStorage(); }, key: deniedStorage,
+  getItem: deniedStorage, setItem: deniedStorage, removeItem: deniedStorage,
+} });
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
 globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
@@ -157,6 +164,7 @@ try {
   say({ type: "notice", message: "Moved to Kitchen" });
   say({ type: "undoable", id: 2 });
   await until(() => core.notice !== "");
+  assert.equal(core.recovery.storageUnavailable, true, "storage denial leaves recovery and notices usable");
   assert.equal(core.notice, "Moved to Garden");
   assert.equal(core.undoId, null, "a newer answer invalidates the old Undo even while queued");
   assert.equal(core.latestUndoId, 2, "History knows the latest queued turn without lending its Undo to the visible one");

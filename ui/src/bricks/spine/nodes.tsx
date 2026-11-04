@@ -7,6 +7,7 @@ import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
 import { SpeechFixesContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
+import { C } from "./conversation";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -33,6 +34,8 @@ export type ItemNode = Node<ItemData, "item">;
 
 /** What a thing on the canvas can ask of the view. */
 export interface Acts {
+  /** Jump along a projection link on this canvas. */
+  visit(key: string): void;
   resume(id:string,keyboard:boolean): void;
   toggle(thread: string): void;
   pick(item: Item): void;
@@ -96,7 +99,7 @@ function Bars({ lines, line, x, y = 0, thick }: { lines: number[]; line: number;
 
 /** An initial on the line: another person's, or ✦ for the Friend. */
 export function Initial({ who, small, style }: { who: Who; small?: boolean; style?: CSSProperties }) {
-  return <span className={cls("spine-who", small && "spine-who-small", who.ai && "spine-who-ai", who.me && "spine-who-me")} style={style} title={who.ai ? "The AI helper" : who.name} aria-hidden="true">{who.initial}</span>;
+  return <span className={cls("spine-who", small && "spine-who-small", who.ai && "spine-who-ai", who.me && "spine-who-me")} style={style} title={who.name} aria-hidden="true">{who.initial}</span>;
 }
 
 /** The small controls a thing shows while pointed at or focused: open its thread on the map, keep it on the shelf, and
@@ -291,10 +294,10 @@ function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
 }
 
 /** A margin note's entries, as a note beside the words or tucked under them. */
-function Entries({ entries }: { entries: Entry[] }) {
-  return <>{entries.map((entry, i) => <span key={i} className="spine-entry">
+function Entries({ entries, thread }: { entries: Entry[]; thread?: string }) {
+  return <>{entries.map((entry, i) => <span key={i} className="spine-entry" data-thought={entry.thoughtId} data-thread={thread}>
     {entry.who.me ? <span className="spine-entry-mine" aria-hidden="true" /> : <Initial who={entry.who} small />}
-    <span className="spine-entry-text" style={{ WebkitLineClamp: entry.lines.length }}>{entry.text}</span>
+    <span className="spine-entry-text" style={{ WebkitLineClamp: entry.lines.length }}><span className="spine-speaker">{entry.who.name}</span>{entry.text}</span>
   </span>)}</>;
 }
 
@@ -306,7 +309,7 @@ function Point({ data }: { data: ItemData }) {
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
   const wordsH = item.wordsOpen === undefined ? 0 : G.pointLine + G.pointGap;
-  const label = `${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
+  const label = `${item.who ? `${item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
     // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
     if (event.key === "Enter" && data.selecting) return;
@@ -315,7 +318,8 @@ function Point({ data }: { data: ItemData }) {
   };
   return <div className={cls("spine-point", look.variant === "mini" && "spine-point-mini", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked",
     data.fresh && "spine-fresh", data.dim && "spine-dim", item.left && "spine-point-left", arriving && "spine-arriving", data.cut && "spine-cut", data.selecting && "spine-selecting")}
-    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
+    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-heads={item.thoughts?.join(" ")}
+    data-readable={!zoomedOut && !arriving ? "true" : undefined} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
     {item.who ? <Initial who={item.who} small={look.variant === "mini"} style={{ left: look.lineX, top: look.line / 2 }} />
       : <span className={cls("spine-dot", item.decided && "spine-dot-decided")} style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
     {pulse > 0 && !arriving && <span key={pulse} className="spine-ring" style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
@@ -324,7 +328,7 @@ function Point({ data }: { data: ItemData }) {
       : <span role="button" tabIndex={0} className={cls("spine-text", data.selecting && "nodrag nopan")} style={{ left: look.textX, width: look.textW, WebkitLineClamp: lines.length, lineHeight: `${look.line}px` }}
         title={item.text} aria-label={label} onClick={(event) => { if (!data.selecting && !(event.target as Element).closest(".spine-fold")) acts.pick(item); }}
         onKeyDown={keys} onFocus={() => acts.focus(item)} onDoubleClick={(event: MouseEvent) => { if (!data.selecting) acts.select(item, event.clientX, event.clientY); }}>
-        <Words item={item} />
+        <span className="spine-speaker">{item.who?.name ?? "you"}</span><Words item={item} />
       </span>}
     {!zoomedOut && item.quotes?.filter((q) => q.folded && q.start >= 0).map((q) => <Fold key={q.margin} margin={q.margin} />)}
     {!zoomedOut && item.wordsOpen !== undefined && <button type="button" className="spine-original nodrag nopan"
@@ -337,15 +341,69 @@ function Point({ data }: { data: ItemData }) {
         ? <button key={tuck.margin} type="button" className="spine-tuck spine-tuck-tangent nodrag" data-thread={tuck.thread} onClick={() => acts.toggle(tuck.thread!)}
           aria-label={`${tuck.title}, a tangent: ${tuck.entries[0]?.text ?? "nothing yet"}. Open it`}>
           <span className="spine-tuck-title">{`${tuck.title} · tangent`}</span>
-          {tuck.entries.map((entry, i) => <span key={i} className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}>{entry.text}</span>)}
+          {tuck.entries.map((entry, i) => <span key={i} className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}><span className="spine-speaker">{entry.who.name}: </span>{entry.text}</span>)}
         </button>
-        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} /></span>)}
+        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
     </span>}
-    {(data.pauses??[]).map((pause,i)=><button key={pause.id} type="button" className="spine-paused-mark nodrag nopan"
-      data-paused-source={pause.id} data-source-thought={pause.thought_id} title={pause.excerpt} aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`}
-      style={{left:look.textX,top:item.box.h-(data.pauses!.length-i)*44,height:44}}
-      onClick={event=>{event.stopPropagation();acts.resume(pause.id,event.detail===0);}}>Paused here</button>)}
+    <PausedSources data={data} />
     <Tools item={item} />
+  </div>;
+}
+
+function PausedSources({ data }: { data: ItemData }) {
+  const acts = useContext(ActsContext)!;
+  const pauses = data.pauses ?? [];
+  return <>{pauses.map((pause, i) => <button key={pause.id} type="button" className="spine-paused-mark nodrag nopan"
+    data-paused-source={pause.id} data-source-thought={pause.thought_id} title={pause.excerpt} aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`}
+    style={{ left: data.item.look?.textX ?? G.textX, top: data.item.box.h - (pauses.length - i) * 44, height: 44 }}
+    onClick={event => { event.stopPropagation(); acts.resume(pause.id, event.detail === 0); }}>Paused here</button>)}</>;
+}
+
+function ConversationPoint({ data }: { data: ItemData }) {
+  const { item } = data;
+  const acts = useContext(ActsContext)!;
+  const who = item.who!;
+  const textH = item.lines!.length * G.pointLine;
+  return <div className={cls("spine-point", "spine-conversation-turn", data.picked && "spine-picked", data.cut && "spine-cut")}
+    data-thread={item.thread || undefined} data-thought={item.id} data-guide={`point:${item.id}`}>
+    <Initial who={who} style={{ left: G.lineX, top: C.speaker + G.dotY }} />
+    <span className="spine-turn-speaker" style={{ left: G.textX }}>{who.ai ? `✦ ${who.name}` : who.name}</span>
+    <span className="spine-text" data-spine-target tabIndex={0} role="button" style={{ left: G.textX, top: C.speaker, width: G.textW, WebkitLineClamp: item.lines!.length }}
+      aria-label={`${who.name}: ${item.text}`} onFocus={() => acts.focus(item)} onClick={() => acts.pick(item)}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); } }}>
+      <Words item={item} />
+    </span>
+    <span className="spine-turn-status" style={{ left: G.textX, top: C.speaker + textH }}>
+      {item.decided ? "✓ Decided" : item.left ? "Left off" : ""}
+    </span>
+    <span className="spine-turn-topics" style={{ left: G.textX, top: C.speaker + textH + C.status, width: G.textW }}>
+      {item.replyTo && <button type="button" className="nodrag nopan" aria-label="Back to the turn these words answer" onClick={() => acts.visit(item.replyTo!)}>↖ Reply to</button>}
+      {item.memberships?.map((topic) => <button key={topic.thread} type="button" className="nodrag nopan" title={topic.title}
+        aria-label={`Topic: ${topic.title}`} onClick={() => acts.visit(`t:${topic.thread}`)}>↗ {topic.title}</button>)}
+      {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
+    </span>
+    <PausedSources data={data} />
+  </div>;
+}
+
+function ConversationHead({ item }: { item: Item }) {
+  return <div className="spine-conversation-head"><strong>Conversation</strong><span>{item.count} turns · topics linked beside your words</span></div>;
+}
+
+function TopicProjection({ data }: { data: ItemData }) {
+  const { item } = data;
+  const acts = useContext(ActsContext)!;
+  return <div className={cls("spine-topic", data.picked && "spine-picked")} data-thread={item.thread} style={roomStyle(item.room)}>
+    <span className="spine-topic-count">{item.count} {item.count === 1 ? "turn" : "turns"} · topic</span>
+    <button type="button" data-spine-target className="spine-topic-title nodrag nopan" title={item.title} aria-expanded={!!item.open}
+      aria-label={`${item.title}: ${item.count} turns. ${item.open ? "Fold" : "Show linked turns"}`}
+      onFocus={() => acts.focus(item)} onClick={() => acts.toggle(item.thread)}>{item.title}<span aria-hidden="true">{item.open ? " −" : " +"}</span></button>
+    {item.parentTopic && <button type="button" className="spine-topic-parent nodrag nopan" title={item.parentTopic.title}
+      onClick={() => acts.visit(`t:${item.parentTopic!.thread}`)}>Tangent of {item.parentTopic.title}</button>}
+    {item.open && <div className="spine-topic-members">{item.members?.map((member) => <button key={member.key} type="button" className="spine-topic-member nodrag nopan"
+      aria-label={`Back to ${member.speaker}: ${member.text}`} onClick={() => acts.visit(member.key)}>
+      <span>{member.speaker}</span><span>{member.text}</span>
+    </button>)}</div>}
   </div>;
 }
 
@@ -442,13 +500,14 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const bubble = useRef<HTMLDivElement>(null);
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
-    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread}
+    data-thought={item.thoughts?.[0]} data-heads={item.thoughts?.join(" ")} data-readable={!zoomedOut && whole ? "true" : undefined} data-guide={`thread:${item.thread}`}>
     <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
-      title={item.title} aria-label={`${item.who ? `${item.who.ai ? "The AI helper" : item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
+      title={item.title} aria-label={`${item.who ? `${item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
       {zoomedOut ? <Bars lines={item.lines ?? [0]} line={G.asideLine} x={G.asideIn} y={G.asidePad} />
-        : <span className="spine-aside-text" style={{ WebkitLineClamp: 2 }}>{item.who && <Initial who={item.who} small />}{item.text}</span>}
+        : <span className="spine-aside-text" style={{ WebkitLineClamp: 3 }}>{item.who && <Initial who={item.who} small />}<span className="spine-speaker">{item.who?.name ?? "you"}</span>{item.text}</span>}
     </button>
     <Tools item={item} />
   </div>;
@@ -462,7 +521,7 @@ function Margin({ data }: { data: ItemData }) {
   if (zoomedOut) return <div className={cls("spine-margin", data.dim && "spine-dim")} aria-hidden="true"><Bars lines={(item.entries ?? []).flatMap((e) => e.lines)} line={G.marginLine} x={26} /></div>;
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
     aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
-    <Entries entries={item.entries ?? []} />
+    <Entries entries={item.entries ?? []} thread={item.margin} />
     {item.more && <span className="spine-margin-more">{`${item.more} more`}</span>}
     <button type="button" className="spine-margin-reply nodrag" onClick={() => acts.reply(item)}>Reply</button>
   </div>;
@@ -479,9 +538,11 @@ export const NowContext = createContext(Date.now());
 export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<ItemNode>) {
   const now = useContext(NowContext);
   switch (data.item.kind) {
+    case "conversation": return <ConversationHead item={data.item} />;
+    case "topic": return <TopicProjection data={data} />;
     case "head": return <Head data={data} now={now} />;
     case "card": return <Card data={data} now={now} />;
-    case "point": return <Point data={data} />;
+    case "point": return data.item.conversation ? <ConversationPoint data={data} /> : <Point data={data} />;
     case "slot": return <Slot data={data} />;
     case "aside": return <Aside data={data} dragging={dragging} />;
     case "margin": return <Margin data={data} />;

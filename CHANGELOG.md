@@ -2,6 +2,10 @@
 
 Everything here was written during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Before it, only the idea and design notes existed.
 
+## 2026-11-03: merge gate checks
+
+- Updated the feedback catalog for keyboard-aware Finish it and paused-source handlers, plus closing return details. The focus regression check now requires both explicit focus preservation and the existing typing guard. Runtime behavior is unchanged.
+
 ## 2026-10-31: first version
 
 ### The map

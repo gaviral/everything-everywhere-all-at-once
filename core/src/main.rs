@@ -1778,7 +1778,11 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // The call comes before the world too: a window that hears the world with no call before it knows the call it
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
-    messages.extend([ServerMsg::Snapshot { world: core.snapshot() }, core.placing.message()]);
+    let mut world = core.snapshot();
+    if world.captions.iter().any(|c| c.to.as_deref().is_some_and(|to| to != speaker)) {
+        Arc::make_mut(&mut world).captions.retain(|c| c.to.as_deref().is_none_or(|to| to == speaker));
+    }
+    messages.extend([ServerMsg::Snapshot { world }, core.placing.message()]);
     messages.push(usage::message(core));
     messages.extend(core.snapshot().speech_drafts.values().filter(|draft| draft.speaker == speaker)
         .map(|draft| ServerMsg::RecoverableSpeech { id: draft.id.clone(), text: draft.text.clone() }));
@@ -1983,7 +1987,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 // Imports run on the host only (their key, their chats), so only the host stops one.
                 Ok(ClientMsg::ImportCancel) if here => import::cancel(&core, &speaker),
                 Ok(ClientMsg::Point { target, caption }) => guide::point(&core, &speaker, window, &mut pace, target, caption),
-                Ok(ClientMsg::Caption { text, speak }) => guide::caption_speaking(&core, &speaker, window, &mut pace, text, speak),
+                Ok(ClientMsg::Caption { text, speak, id }) => guide::caption_with_id(&core, &speaker, window, &mut pace, text, speak, id),
                 Ok(ClientMsg::Hold { text, target, urgent }) => guide::hold(&core, &speaker, window, &mut pace, text, target, urgent),
                 Ok(ClientMsg::Tour { steps }) => guide::tour(&core, &speaker, window, &mut pace, steps),
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),

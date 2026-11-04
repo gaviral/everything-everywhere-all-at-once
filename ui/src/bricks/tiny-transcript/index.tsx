@@ -8,6 +8,7 @@
 // they turn into the thought where they were (the bubble flight lifts it from the same box). The first time, a hint
 // says what this is, with a labelled size slider.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useBuiltInsOn } from "../../shell/features";
 import { createPortal } from "react-dom";
 import type { BrickProps } from "../contract";
 import "./tiny-transcript.css";
@@ -130,7 +131,9 @@ export default function TinyTranscript({ map }: BrickProps) {
   }, [text]);
   useEffect(() => { if (mine > turn.current.mine) setEnding(""); }, [mine]);
 
-  const showHint = !hinted && !!(text || held);
+  // Keep the optional size hint clear of the conversation's stop controls.
+  const partnerOn = useBuiltInsOn().has("partner");
+  const showHint = !partnerOn && !hinted && !!(text || held);
   const shown = text || ending || (showHint ? held : "");
   const place = usePlace(!!shown);
 

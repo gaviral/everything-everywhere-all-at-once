@@ -14,6 +14,54 @@ export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode
 
 export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
+/** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
+export interface Part {
+  thoughtId: string;
+  /** The words as said (the map shows the point made of them). */
+  text: string;
+  /** On a thread: a margin note can be tied to its words. */
+  placed: boolean;
+}
+
+/** Something said, as Talk lists it. */
+export interface Turn {
+  /** Its first thought's id: the turn's key, and what a read mark names. */
+  key: string;
+  speaker: string;
+  /** When it was said (ms since 1970, the core's clock). */
+  at: number;
+  parts: Part[];
+  /** A margin note: the point's thought and the words it's tied to (a later note on the same words answers it). */
+  note?: { threadId: string; thoughtId: string; quote: string };
+}
+
+/** The turns, in the order they were said: each thought with words, a split turn's parts together, a margin note as a
+ *  turn of its own with the words it's on. `threads` with each note's `anchor`, as a brick's map holds them. */
+export function turnsOf(thoughts: readonly Thought[], threads: readonly { id: string; anchor?: Anchor }[]): Turn[] {
+  const anchors = new Map<string, Anchor>();
+  for (const thread of threads) if (thread.anchor) anchors.set(thread.id, thread.anchor);
+  const said = thoughts
+    .map((thought, i) => ({ thought, i }))
+    .filter(({ thought }) => (thought.text || thought.point).trim())
+    .sort((a, b) => a.thought.at_ms - b.thought.at_ms || a.i - b.i);
+  const turns: Turn[] = [];
+  for (const { thought } of said) {
+    const anchor = thought.thread_id ? anchors.get(thought.thread_id) : undefined;
+    const part = { thoughtId: thought.id, text: (thought.text || thought.point).trim(), placed: thought.placed && !!thought.thread_id };
+    const last = turns.at(-1);
+    // The placer's cut keeps the turn's moment: the same speaker, said at the same time.
+    if (!anchor && last && !last.note && last.speaker === thought.speaker && last.at === thought.at_ms) {
+      last.parts.push(part);
+      continue;
+    }
+    turns.push({
+      key: thought.id, speaker: thought.speaker, at: thought.at_ms, parts: [part],
+      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote } } : {}),
+    });
+  }
+  return turns;
+}
+
 /** A thread. A margin note (`actions.annotate`) is one too, a tangent anchored to words: under the point's thread, its
  *  thoughts the note and its replies, and `anchor` the words it's tied to. A view shows it beside those words; the
  *  map shows it as a branch. `topic`: the theme it's under, by name (`MapSnapshot.topics`), a branch its top thread's;
@@ -90,6 +138,8 @@ export interface Job {
 
 /** The map as it is now, read-only: a brick changes the map only through `actions`. Each change brings a new one. */
 export interface MapSnapshot {
+  /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
+  readonly conversationSpine?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -129,6 +179,8 @@ export interface MapSnapshot {
   readonly speakers: ReadonlyMap<string, Speaker>;
   /** Who is at this window: "you" alone, or the name they joined a room with. A thought's `speaker` is the same. */
   readonly me: string;
+  /** The newest turn you've read, shared by Talk and canvas views; absent until one has been read. */
+  readonly readThrough?: string | null;
   /** Your words as they're heard, not yet final: what the dock's live line shows while you talk, growing as you go,
    *  "" once the turn ends (it then comes as a thought) or while you're quiet. Only yours, and only in the tab whose
    *  mic is on: in a room the other person's words never reach this window, nor do your other tabs'. */
@@ -141,6 +193,8 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
+  readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;

@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { uiServer } from "./ui-server.mjs";
 import { openPage, ready } from "./headless.mjs";
 
+if (process.argv.includes("--real-service")) {
+  console.log("UNAVAILABLE voice-events real-service: no live audio/service trace is configured; fixture evidence does not certify live conversation");
+  process.exit(3);
+}
 if (ready()) { console.log(`SKIP page-speech-check: ${ready()}`); process.exit(3); }
 const server = await uiServer({
   plugins: [{ name: "speech-check", configureServer(server) {
@@ -12,7 +16,7 @@ const server = await uiServer({
       res.end('<!doctype html><button class="guide-caption"><span>Partner says</span></button><button id="elsewhere">Elsewhere</button><textarea></textarea>');
     });
   } }],
-}, { port: Number(process.env.SPEECH_CHECK_PORT ?? 4620) });
+}, { port: Number(process.env.SPEECH_CHECK_PORT ?? 0) });
 let browser;
 try {
   await server.listen();
@@ -44,6 +48,12 @@ try {
     window.caption = { type: "guide", kind: "caption", text: "This is a reply.", speak: true };
     window.check = (ok, why) => { if (!ok) throw Error(why); };
 
+    // A local stop invalidates a service answer even before playback exists.
+    send({ type: "partner_state", state: "thinking", reply_id: "cancel-before-audio" });
+    speech.cancelPageReply();
+    send({ ...caption, reply_id: "cancel-before-audio" });
+    check(spoken.length === 0, "late stopped service answer never enters the browser queue");
+
     // Exercise the real capture callback, with an identifiable non-silent PCM frame.
     window.NativeWorkletNode = window.AudioWorkletNode;
     class Node { constructor() { this.port = { postMessage: state => { this.capture = state; }, close() {} }; } connect(next) { return next; } disconnect() {} }
@@ -71,6 +81,9 @@ try {
     send({ ...caption, kind: "hold" });
     send({ type: "snapshot", world: { thoughts: [{ text: "Old reply", speak: true }] } });
     check(spoken.length === 0, "unflagged, held and replayed words stay silent");
+    send({ type: "snapshot", world: { captions: [{ id: "old-caption", by: "Helper" }] } });
+    send({ ...caption, caption: { id: "old-caption", by: "Helper" } });
+    check(spoken.length === 0, "caption already restored by a snapshot cannot speak from a queued live relay");
     send(caption);
     check(spoken.length === 0 && logs.length === 0, "empty asynchronous list never uses an unspecified voice");
     check(frameIs("0,0"), "waiting for voices keeps capture paused");
@@ -115,6 +128,11 @@ try {
     const count = cancelled;
     speech.stopPageSpeech();
     check(cancelled === count && frameIs("123,-456"), "disconnect cancels once and releases mic");
+    const countBeforeIdentified = spoken.length;
+    send({ ...caption, caption: { id: "new-caption", by: "Helper" } });
+    send({ ...caption, caption: { id: "new-caption", by: "Helper" } });
+    check(spoken.length === countBeforeIdentified + 1, "duplicate live caption identity speaks once");
+    speech.stopPageSpeech();
     window.throwSpeech = true; send(caption); window.throwSpeech = false;
     check(!speech.pageSpeaking() && frameIs("123,-456"), "synchronous speech failure releases mic");
     check(logs.length === 1 && logs[0].includes("English Premium"), "chosen voice is logged once");
@@ -331,4 +349,11 @@ try {
 } finally {
   await browser?.close();
   await server.close();
+}
+
+await import("./voice-events-page-check.mjs");
+
+if (!process.argv.includes("--fixture")) {
+  console.log("UNAVAILABLE voice-events real-service: fixture passed; live utterance, stopped reply and captured prefix/echo trace remain unverified");
+  process.exitCode = 3;
 }

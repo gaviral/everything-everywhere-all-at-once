@@ -41,6 +41,8 @@
 }
 .work-spine-scroll:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
 .work-spine-empty { margin: 0; padding: 4px 4px 0; color: var(--muted); font-size: 13px; }
+.work-spine-empty code { overflow-wrap: anywhere; }
+.work-spine-empty > code:first-of-type { display: block; margin: 8px 0; color: var(--ink); user-select: all; }
 .work-spine-list, .work-spine-kids { margin: 0; padding: 0; list-style: none; }
 .work-spine-list { padding-left: 24px; }
 
@@ -97,7 +99,7 @@
 .work-spine-job[data-fresh="new"] > .work-spine-bubble { animation: work-spine-in .3s ease-out; }
 .work-spine-job[data-fresh="landed"] > .work-spine-bubble { animation: work-spine-land 2.4s ease-out; }
 .work-spine-latest {
-  position: absolute; bottom: 10px; left: 50%; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; translate: -50% 0;
+  align-self: center; flex: none; display: inline-flex; align-items: center; height: 32px; margin: 6px 0 10px; padding: 0 12px;
   border: 1px solid var(--line-2, var(--line)); border-radius: 16px; background: var(--card); box-shadow: var(--shadow); color: var(--ink-2, var(--ink));
   font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
 }

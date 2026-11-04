@@ -166,6 +166,7 @@ export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
+  captions?: import("./talk/call-core").Caption[];
   /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
   active_by: Record<string, string>;
@@ -189,6 +190,7 @@ export interface World extends AppsWorld {
 }
 
 type Change =
+  | { type: "caption_added"; caption: import("./talk/call-core").Caption }
   | {type:"paused";pause:Pause}
   | {type:"pause_resolved";id:string;by_thought:string}
   | {type:"pause_choice";id:string;later_count:number;offer_after_ms:number;hidden:boolean}
@@ -391,7 +393,7 @@ export function jumpTracker() {
   };
 }
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
+const EMPTY: World = { captions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
 // when lowercasing keeps the length, so the cut lines up.
@@ -449,6 +451,9 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "caption_added":
+      return world.captions?.some((old) => old.id === c.caption.id && old.by === c.caption.by) ? world
+        : { ...world, captions: [...(world.captions ?? []), c.caption] };
     case "paused": return { ...world, pauses: [...(world.pauses ?? []).filter(p=>p.id!==c.pause.id), c.pause] };
     case "pause_resolved": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,resolved:true}:p) };
     case "pause_choice": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,later_count:c.later_count,offer_after_ms:c.offer_after_ms,hidden:c.hidden}:p) };
@@ -725,6 +730,7 @@ export function useCore(speaker?: string) {
   const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
   const mapChange = currentNotice?.kind === "map" ? currentNotice.value : null;
   const [partial, setPartial] = useState("");
+  const [voiceDraft, setVoiceDraft] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
   // The words of the last voice error, so the window can say why the mic stopped (notice-rules.ts `micStopped`).
@@ -804,7 +810,11 @@ export function useCore(speaker?: string) {
   const onlineSend = useRef<{ map: string; text: string; messages: string[]; awaiting: Set<string>; received: () => void } | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
   const refreshRecovery = () => {
-    try { setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...quarantined(speaker ?? "you", mapId.current)] })); }
+    try {
+      // Read storage while this catch is active, not in React's deferred updater.
+      const entries = quarantined(speaker ?? "you", mapId.current);
+      setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...entries] }));
+    }
     catch { setRecovery((state) => ({ ...state, storageUnavailable: true })); }
   };
   const [queuedCount, setQueuedCount] = useState(0);
@@ -993,7 +1003,8 @@ export function useCore(speaker?: string) {
               notices.current.push({ text: note.text, kind: "map-change", time: Date.now() });
               noticeQueue.push("map", String(id), { ...note, id });
             }
-            if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
+            if (change.type === "thought_added" && change.thought.speaker === speaker && (awaitingThought || (!!lastPartial && change.thought.text.trim() === lastPartial.trim()))) {
+              setVoiceDraft("");
               window.clearTimeout(handoffTimer);
               lastPartial = "";
               awaitingThought = false;
@@ -1022,6 +1033,7 @@ export function useCore(speaker?: string) {
             window.clearTimeout(handoffTimer);
             if (msg.text) {
               lastPartial = msg.text;
+              setVoiceDraft(msg.text);
               awaitingThought = false;
               setHandoff("");
             } else if (lastPartial) {
@@ -1314,6 +1326,8 @@ export function useCore(speaker?: string) {
     snapshotRevision,
     mapChange,
     partial,
+    voiceDraft,
+    clearVoiceDraft: () => setVoiceDraft(""),
     handoff,
     voiceErrorRevision,
     voiceError,

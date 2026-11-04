@@ -7,7 +7,7 @@ let dismissedInMemory = false;
 
 export function hasToured() {
   // `?recording` in the address skips the tour, so a fresh browser profile can record straight away.
-  try { return dismissedInMemory || new URLSearchParams(location.search).has("recording") || localStorage.getItem(TOURED_KEY) === "1"; }
+  try { return dismissedInMemory || (new URLSearchParams(location.search).has("recording") || new URLSearchParams(location.search).has("film")) || localStorage.getItem(TOURED_KEY) === "1"; }
   catch { return dismissedInMemory; }
 }
 

@@ -1,7 +1,7 @@
-//! Opt-in, question-led conversation. Captions are live only; history is bounded and private to a speaker.
+//! Opt-in, question-led conversation. Completed captions are journaled; history is bounded and private to a speaker.
 use crate::{
     call, guide, model,
-    protocol::{Outgoing, ServerMsg},
+    protocol::ServerMsg,
     Core,
 };
 use serde_json::json;
@@ -101,6 +101,7 @@ fn tell(core: &Core, speaker: &str, state: &str, message: &str) {
         ServerMsg::PartnerState {
             state: state.into(),
             message: message.into(),
+            reply_id: None,
         },
     );
 }
@@ -199,7 +200,11 @@ pub fn request(core: &Arc<Core>, speaker: &str, window: u64, text: &str) -> bool
     let question: String = text.chars().take(QUESTION_MAX).collect();
     let history = state.history.clone();
     let id = thought;
-    tell(core, speaker, "thinking", "Thinking…");
+    core.send_to(speaker, ServerMsg::PartnerState {
+        state: "thinking".into(),
+        message: "Thinking…".into(),
+        reply_id: Some(id.clone()),
+    });
     let (task_core, task_speaker, task_id) = (core.clone(), speaker.to_string(), id.clone());
     let task = tokio::spawn(async move {
         let answer = ask(&task_core, &history, &recent, &question).await;
@@ -218,20 +223,12 @@ pub fn request(core: &Arc<Core>, speaker: &str, window: u64, text: &str) -> bool
                 while state.history.len() > HISTORY_PAIRS {
                     state.history.pop_front();
                 }
-                let message = ServerMsg::Guide {
-                    kind: guide::Kind::Caption,
-                    target: None,
-                    text,
-                    by: NAME.into(),
-                    at_ms: crate::now_ms(),
-                    urgent: false,
-                    from: 0,
-                };
-                let _ = task_core.updates.send(Outgoing {
-                    to: Some(task_speaker.clone()),
-                    message,
-                    speak: true,
-                });
+                // Keep the reply on the map as well as in the durable caption record.
+                if !task_core.snapshot().ai.iter().any(|name| name == NAME) {
+                    task_core.commit(vec![crate::world::Change::AiJoined { speaker: NAME.into() }]);
+                }
+                task_core.keep(NAME, &text);
+                guide::completed(&task_core, NAME, 0, text, true, Some(format!("reply-{task_id}")), Some(task_speaker.clone()), Some(task_id.clone()));
                 tell(
                     &task_core,
                     &task_speaker,

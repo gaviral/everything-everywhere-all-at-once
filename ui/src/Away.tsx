@@ -109,7 +109,7 @@ type Return = Absence & { through: World };
 
 /** Hidden and blurred are one continuous absence; duplicate focus events cannot restart it. */
 // `?recording` in the address: a screen recording driven from a terminal isn't someone walking away.
-const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
+const RECORDING = typeof location !== "undefined" && (new URLSearchParams(location.search).has("recording") || new URLSearchParams(location.search).has("film"));
 
 export function useAway(world: World, me: string, ready: boolean) {
   const current = useRef(world);

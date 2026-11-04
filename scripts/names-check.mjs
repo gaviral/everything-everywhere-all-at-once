@@ -37,7 +37,7 @@ const WORDS = [
   { old: "Catalog", re: W("catalog"), now: "Features page", ok: [] },
   { old: "Apps bar", re: W("apps bar"), now: "Features", ok: [] },
   { old: "Notice timeline", re: W("notice timeline"), now: "Notification history", ok: [] },
-  { old: "Read progress", re: W("read progress"), now: "Read marker", ok: [] },
+  { old: "Read progress", re: W("read progress"), now: "Mark replies as read", ok: [] },
   { old: "Brick chip", re: W("brick chip"), now: "Source attribution", ok: [] },
   { old: "Friend", re: W("Friend", "g"), now: "AI helper", ok: [] },
   { old: "Glance", re: W("Glance", "g"), now: "Mark", ok: [] },

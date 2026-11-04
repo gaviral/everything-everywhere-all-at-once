@@ -6,6 +6,29 @@
 
 .spine-empty { margin: 48px auto; color: var(--muted); text-align: center; }
 
+/* Optional conversation projection. Its word column never moves when topics are classified or expanded. */
+.spine-conversation-turn, .spine-topic { pointer-events: auto; }
+.spine-conversation-head { padding-left: 44px; color: var(--ink); }
+.spine-conversation-head strong { display: block; font-size: 18px; line-height: 26px; }
+.spine-conversation-head > span { display: block; max-width: 256px; color: var(--muted); font-size: 13px; line-height: 18px; }
+.spine-turn-speaker, .spine-turn-status { position: absolute; color: var(--muted); font-size: 11px; line-height: 22px; }
+.spine-turn-speaker { top: 0; max-width: 256px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spine-turn-topics { position: absolute; display: flex; gap: 6px; height: 44px; align-items: stretch; }
+.spine-frame .spine-turn-topics button { flex: 0 1 auto; min-width: 0; overflow: hidden; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.spine-turn-sorting { color: var(--muted); font-size: 13px; line-height: 44px; }
+.spine-topic { width: 100%; height: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); }
+.spine-topic-count { display: block; height: 18px; color: var(--muted); font-size: 11px; line-height: 18px; }
+.spine-frame .spine-topic button { width: 100%; margin: 0; border: 0; border-radius: 5px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; }
+.spine-frame .spine-topic-title { display: -webkit-box; height: 44px; overflow: hidden; padding: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 15px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; }
+.spine-frame .spine-topic-parent { display: block; height: 44px; overflow: hidden; padding: 0; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.spine-topic-members { margin-top: 12px; }
+.spine-frame .spine-topic-member { display: block; height: 60px; box-sizing: border-box; padding: 5px 0; font-size: 13px; line-height: 18px; }
+.spine-topic-member > span:first-child { display: block; color: var(--muted); font-size: 11px; line-height: 14px; }
+.spine-topic-member > span:last-child { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.spine-frame .spine-topic button:hover, .spine-frame .spine-turn-topics button:hover { background: var(--card); }
+.spine-frame .spine-topic button:focus-visible, .spine-frame .spine-turn-topics button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* The canvas fills the window under what's pinned; the dock or stage floats over its foot. A faint dot grid moves with
    it: the map is what pans. */
 .spine { position: relative; }
@@ -336,3 +359,5 @@
 .spine-fixes { position: fixed; inset: auto; margin: 0; padding: 0; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }
+
+.spine-speaker { display: block; font-size: .8em; font-weight: 600; opacity: .8; }

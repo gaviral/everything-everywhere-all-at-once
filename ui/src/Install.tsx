@@ -44,7 +44,7 @@ export function temporaryAddress(hostname: string): boolean {
 export function eligible(page: { search: string; hostname: string; standalone: boolean; toured: boolean; shownBefore: boolean }) {
   // The demo's takes (`?recording`) never show it; nor does the installed app, a temporary address, a browser
   // still on its first tour, or one that has seen the hint.
-  return !new URLSearchParams(page.search).has("recording") && !page.standalone && page.toured
+  return !new URLSearchParams(page.search).has("recording") && !new URLSearchParams(page.search).has("film") && !page.standalone && page.toured
     && !temporaryAddress(page.hostname) && !page.shownBefore;
 }
 

@@ -26,7 +26,7 @@ export function useMargins(map: MapSnapshot, actions: BrickActions) {
       const anchor = anchorOf(thread);
       if (!anchor) continue;
       anchored.add(thread.id);
-      const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ by: t.speaker || "you", text: (t.point || t.text).trim() }));
+      const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ thoughtId: t.id, by: t.speaker || "you", text: (t.point || t.text).trim() }));
       // An unanswered question from someone else folds to "…?" until it's opened; yours never hides from you.
       const theirs = entries[0] && entries[0].by !== map.me && entries[0].by !== "you";
       margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });

@@ -133,6 +133,19 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+/// A completed conversational caption. Playback flags belong only to its live relay.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Caption {
+    pub id: String,
+    pub by: String,
+    pub text: String,
+    pub at_ms: u64,
+    pub order: u64,
+    pub ai: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+}
+
 /// An exact unfinished source at a committed departure. Later edits never rewrite its excerpt.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Pause {
@@ -184,6 +197,8 @@ pub struct World {
     pub speech_resolved: std::collections::HashSet<String>,
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    #[serde(default)]
+    pub captions: Vec<Caption>,
     /// Saved receipts survive a restart even if the thought is later moved or deleted.
     #[serde(default, skip_serializing)]
     pub received_text: std::collections::HashSet<(String, String)>,
@@ -277,6 +292,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    CaptionAdded { caption: Caption },
     Paused { pause: Pause },
     PauseResolved { id: String, by_thought: String },
     PauseChoice { id: String, later_count: u32, offer_after_ms: u64, hidden: bool },
@@ -545,6 +561,11 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::CaptionAdded { caption } => {
+                if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
+                    self.captions.push(caption.clone());
+                }
+            }
             Change::Paused { pause } => { self.returning.remove(&pause.speaker); if !self.pauses.iter().any(|p|p.id == pause.id) { self.pauses.push(pause.clone()); } }
             Change::PauseResolved { id, .. } => { if let Some(pause)=self.pauses.iter_mut().find(|p| &p.id==id) { pause.resolved=true; } self.returning.retain(|_,(value,_)|value!=id); }
             Change::PauseChoice { id, later_count, offer_after_ms, hidden } => { if let Some(pause)=self.pauses.iter_mut().find(|p| &p.id==id) { pause.later_count=*later_count;pause.offer_after_ms=*offer_after_ms;pause.hidden=*hidden; } }
@@ -2036,13 +2057,15 @@ mod tests {
             Change::PauseChoice { id: "pause-a-1".into(), later_count: 1, offer_after_ms: 300001, hidden: false },
             Change::PauseResolved { id: "pause-a-1".into(), by_thought: "b".into() },
             Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
+            Change::CaptionAdded { caption: super::Caption { id: "caption-1".into(), by: "Helper".into(), text: "A completed answer.".into(), at_ms: 200, order: 1, ai: true, to: Some("you".into()) } },
             Change::SpeechRecovered { draft: super::SpeechDraft { id: "speech-once".into(), speaker: "you".into(), text: "Unfinished words".into() } },
             Change::SpeechResolved { id: "speech-once".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
             match change {
-                Change::RecapSaved { .. }
+                Change::CaptionAdded { .. }
+                | Change::RecapSaved { .. }
                 | Change::AppRegistered { .. }
                 | Change::AppEnabled { .. }
                 | Change::AppRemoved { .. }
@@ -2105,7 +2128,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 56, "one of each kind of change");
+        assert_eq!(kinds.len(), 57, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

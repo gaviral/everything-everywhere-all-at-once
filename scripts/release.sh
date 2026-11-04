@@ -3,7 +3,7 @@
 # clones in the first minute stays out there. So every check runs on exactly what GitHub has, and the script changes
 # nothing unless it's run with --publish and the repo's name, the same retype GitHub's own dialog asks for.
 #   sh scripts/release.sh                                  check only; safe any time
-#   VIDEO_FILE=demo.mp4 VIDEO_URL=https://... sh scripts/release.sh     also the demo video (3:00 at most, opens logged out)
+#   VIDEO_FILE=demo.mp4 VIDEO_URL=https://... sh scripts/release.sh     required demo video (3:00 at most, opens logged out)
 #   ACCEPT_COMMITS="355cc7d" sh scripts/release.sh         commits the owner chose to keep as they are (message paths, wording)
 #   sh scripts/release.sh --publish OWNER/REPO             check, make public, confirm it opens logged out
 # FAIL lines block --publish; WARN lines are for the owner to read first.
@@ -39,9 +39,9 @@ else fail "can't fetch origin's main (network or sign-in)"; fi
 [ -z "$(git status --porcelain)" ] && pass "nothing uncommitted" || fail "uncommitted changes: commit or stash them; the checks must match what's pushed"
 
 # 2. Everything precheck holds (keys, paths, Meta-only models, tests, claims, links inside the repo).
-# Without ui/node_modules precheck only warns that it skipped the UI build and checks; here that blocks.
+# Release always runs every precheck, regardless of the caller's fast-check settings. Missing UI checks block it.
 [ -d ui/node_modules ] && pass "UI dependencies installed, so precheck builds and checks the UI" || fail "no ui/node_modules: precheck would skip the UI build and checks; run (cd ui && npm ci), then this again"
-pre=$(sh scripts/precheck.sh 2>&1); pre_status=$?
+pre=$(PRECHECK_PAGES=all PRECHECK_STRICT=1 sh scripts/precheck.sh 2>&1); pre_status=$?
 if [ $pre_status = 0 ]; then pass "precheck passes"; else fail "precheck fails:"; echo "$pre" | grep '^FAIL' | indent; fi
 echo "$pre" | grep '^WARN' | indent
 
@@ -102,7 +102,7 @@ if [ -n "${VIDEO_FILE:-}" ]; then
   if [ -z "$seconds" ]; then fail "can't read $VIDEO_FILE's length (ffprobe)"
   elif awk -v s="$seconds" 'BEGIN { exit !(s <= 180) }'; then pass "video is ${seconds%.*} s (180 at most)"
   else fail "video is ${seconds%.*} s; the rule is 3:00 at most"; fi
-else warn "video length not checked: set VIDEO_FILE"; fi
+else fail "video length not checked: set VIDEO_FILE"; fi
 if [ -n "${VIDEO_URL:-}" ]; then
   case "$VIDEO_URL" in
     # YouTube answers 200 even for a private video; its oEmbed answers 200 only for public and unlisted ones.
@@ -110,7 +110,7 @@ if [ -n "${VIDEO_URL:-}" ]; then
     *) code=$(status "$VIDEO_URL") ;;
   esac
   [ "$code" = 200 ] && pass "video opens logged out" || fail "video answers $code logged out (private, or a wrong link?)"
-else warn "video link not checked: set VIDEO_URL"; fi
+else fail "video link not checked: set VIDEO_URL"; fi
 
 # 7b. Placeholders the owner still has to decide (the cover, the pitch) don't go public; precheck only warns.
 for marker in $(grep -oE '<!-- [a-z]+: (draft|stand-in)' README.md | awk '{print $2}' | tr -d ':'); do fail "README still has a $marker placeholder for the owner to decide"; done

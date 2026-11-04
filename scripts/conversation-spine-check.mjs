@@ -32,6 +32,9 @@ try {
   assert.ok(await until(`!!document.querySelector('.spine-ready .spine-original')`, 10000), "pinned spine opens");
   const camera = () => evaluate(`document.querySelector('.react-flow__viewport').style.transform`);
   const newestVisible = (n) => evaluate(`(() => { const r=document.querySelector('[data-thought="p${n}"] .spine-text').getBoundingClientRect(); return r.top>=0 && r.bottom<innerHeight && r.left>=0 && r.right<=innerWidth; })()`);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.spine-point .spine-speaker')].map(e=>e.textContent)`), Array.from({length:11},(_,i)=>i%2 ? "Sam" : "you"), "actual speaker names, no inferred assistant");
+  assert.equal(await evaluate(`document.querySelector('[data-thought="p2"] .spine-who').textContent`), "S", "stable human initial");
+  assert.equal(await evaluate(`document.querySelector('[data-thought="p2"] .spine-who').classList.contains('spine-who-ai')`), false, "second speaker is human");
   assert.ok(await newestVisible(11), "newest thought opens in view");
   assert.equal(await evaluate(`document.querySelector('[data-thought="p11"] .spine-words').textContent`), "thought 11: keep the wall blue, and rent is due Friday.");
   const click = async (selector) => {
@@ -98,7 +101,7 @@ try {
   await sleep(3000);
   assert.ok(await newestVisible(12), 'newest thought remains visible after resize');
   assert.ok(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), 'no sideways page overflow');
-  assert.equal(await evaluate(`document.querySelector('[data-thought="p12"] .spine-tuck .spine-entry-text').textContent`), c.note.text);
+  assert.equal(await evaluate(`document.querySelector('[data-thought="p12"] .spine-tuck .spine-entry-text').textContent`), `Helper${c.note.text}`);
   await evaluate(`document.querySelector('[data-thought="p12"] .spine-original').focus()`);
   for (const type of ['keyDown','keyUp']) await page('Input.dispatchKeyEvent', {type,key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:type==='keyDown'?'\r':undefined});
   assert.ok(await until(`document.querySelector('[data-thought="p12"] .spine-original').getAttribute('aria-expanded')==='true'`), 'original words open by keyboard');

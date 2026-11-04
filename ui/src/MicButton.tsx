@@ -13,17 +13,19 @@ import "./micbutton.css";
 // - no key, refused, resting (the hosted site's daily limit) and blocked (the browser or the computer keeps the mic
 //   from this page): an amber mic struck through (amber is what needs you); each says why on a tap
 // - connecting: faded, and it can't be pressed
-export type MicState = "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused" | "resting" | "blocked";
+export type MicState = "capturing" | "reply-paused" | "failed" | "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused" | "resting" | "blocked";
 
 export function micState(s: { connected: boolean; capturing: boolean; starting: boolean; serviceOn: boolean;
-  words: boolean; paused: boolean; noKey: boolean; refused: boolean; resting?: boolean; blocked?: boolean }): MicState {
+  playbackPaused?: boolean; failed?: boolean; words: boolean; paused: boolean; noKey: boolean; refused: boolean; resting?: boolean; blocked?: boolean }): MicState {
   // Capturing comes first: the button never reads off while the browser is taking sound.
-  if (s.capturing) return !s.serviceOn ? "starting" : s.words ? "hearing" : "listening";
+  if (s.capturing && s.playbackPaused) return "reply-paused";
+  if (s.capturing) return !s.serviceOn ? "capturing" : s.words ? "hearing" : "listening";
   if (s.starting) return "starting";
   if (!s.connected) return "offline";
   // Without the AI, allowing the mic wouldn't help yet: the key's state comes first.
   if (s.noKey) return s.refused ? "refused" : s.resting ? "resting" : "nokey";
   if (s.blocked) return "blocked";
+  if (s.failed) return "failed";
   return s.paused ? "paused" : "off";
 }
 
@@ -41,9 +43,12 @@ export function micEnds(s: { connected: boolean; listening: boolean; failed: boo
 
 /** What the state is and what a tap does, for the tip and the button's name. */
 export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
+  capturing: { tip: "Microphone open, connecting speech… Tap to stop.", label: "Stop listening, connecting speech" },
+  "reply-paused": { tip: "Capture paused during reply. The microphone is open. Tap to stop capture.", label: "Stop listening, capture paused during reply" },
+  failed: { tip: "The mic stopped. Tap to retry, or type below.", label: "Retry microphone" },
   offline: { tip: "Connecting… The mic works once the app is connected.", label: "Microphone, connecting" },
   off: { tip: "Mic off. Tap to talk.", label: "Start listening" },
-  starting: { tip: "Starting the microphone…", label: "Starting the microphone" },
+  starting: { tip: "Starting the microphone… Tap to cancel.", label: "Cancel microphone start" },
   listening: { tip: "Listening. The ring swells as it hears you. Tap to stop.", label: "Stop listening" },
   hearing: { tip: "Hearing you. Tap to stop.", label: "Stop listening, hearing you" },
   paused: { tip: "Paused by “stop listening”: nothing is heard. Tap to talk again.", label: "Start listening, paused" },
@@ -55,7 +60,9 @@ export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
 
 /** The composer's placeholder, which sits where your eyes are while you talk. */
 export function composerHint(state: MicState): string {
-  return state === "listening" || state === "hearing" ? "Or type a thought"
+  return state === "reply-paused" ? "Capture paused during reply · or type"
+    : state === "failed" ? "Tap the mic to retry, or type"
+    : state === "listening" || state === "hearing" ? "Or type a thought"
     : state === "starting" ? "Starting the microphone… or type"
     : state === "paused" ? "Paused · tap the mic to talk, or type"
     : state === "nokey" ? "Type a thought · listening is off right now"
@@ -117,6 +124,6 @@ export function MicGlyph({ state }: { state: MicState }) {
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
       {(state === "nokey" || state === "refused" || state === "resting" || state === "blocked") && <path d="M4 3l16 18" />}
     </svg>
-    {state === "paused" && <span className="mic-badge" aria-hidden="true"><i /><i /></span>}
+    {(state === "paused" || state === "reply-paused") && <span className="mic-badge" aria-hidden="true"><i /><i /></span>}
   </>;
 }

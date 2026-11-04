@@ -797,8 +797,12 @@ try {
         const at = `live-outline in the app at ${w} × ${h} px`;
         await width(w, h);
         await go(`${base}/?cards`);
-        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no panel"); continue; }
+        // Panels mount before /ws opens. Wait for this page's snapshot, then
+        // acknowledge a notice before sending landings: neither a mounted panel
+        // nor the server's socket count proves the page is ready to hear them.
+        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock") && ${JSON.stringify(full.threads.map((t) => t.id))}.every((id) => !!document.getElementById("thread-" + id))`, 8000)) { fail(at, "panels or core snapshot never became ready"); continue; }
         core.send({ type: "notice", message: "A notice to come back to" });
+        if (!await until(`!!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "core notice was not received before sending points"); continue; }
         talk.forEach((threadId, i) => core.send({ type: "change", change: { type: "thought_added", thought: thought(`lo-${w}-${i}`, `Point ${i + 1} of the talk, um, said at a length that takes a line or two of the outline`, threadId) } }));
         if (!await until(`${bullets}.length === ${talk.length} && !!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "the points from the core never all showed, or no clock"); continue; }
         await settle();
@@ -993,12 +997,13 @@ try {
     shown = world([thread("read-progress-check", "Read here")]);
     shown.thoughts = [friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
     const key = "e2a2o.brick.read-progress.read-progress-check";
-    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)}); localStorage.removeItem("e2a2o.talk.read.you")`);
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
     await go(`${base}/?cards`);
     const firstPoint = `document.getElementById("point-read-progress-0")`;
     if (!await until(`${firstPoint}?.classList.contains("read-progress-point")`, 8000)) fail("read-progress", "doesn't attach to another participant's point");
     else {
+      await settle(); // Let the initial visibility entries arrive before the explicit bookmark cancels their dwell.
       await evaluate(`${firstPoint}.click()`);
       if (!await until(`${firstPoint}.classList.contains("read-progress-mark") && localStorage.getItem(${JSON.stringify(key)}) === "read-progress-0"`, 2000)) fail("read-progress", "a tap doesn't mark and save the thought");
       await go(`${base}/?cards`);
@@ -1008,7 +1013,7 @@ try {
       if (!state.dot || state.broke || state.sideways > 1) fail("read-progress", "unread dot missing, brick broke, or overflows on a dark phone with reduced motion");
     }
     // Under the dock: a long card, your points first, then another's two, scrolled to sit behind the dock.
-    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)}); localStorage.removeItem("e2a2o.talk.read.you")`);
     shown = world([thread("read-progress-check", "Read here")]);
     shown.thoughts = [...Array.from({ length: 9 }, (_, n) => ({ ...thought(`mine-${n}`, `My point ${n + 1}`, "read-progress-check"), at_ms: now - 9000 + n })),
       friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];

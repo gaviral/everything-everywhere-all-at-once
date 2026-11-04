@@ -114,6 +114,16 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
 const server = await uiServer();
 try {
   const { startMic } = await server.ssrLoadModule("/src/mic.ts");
+  const { micState, MIC_WORDS } = await server.ssrLoadModule("/src/MicButton.tsx");
+  const { micWords } = await server.ssrLoadModule("/src/shell/Shell.tsx");
+  const base = { connected: true, capturing: false, starting: false, serviceOn: true, words: false, paused: false, noKey: false, refused: false };
+  assert.equal(micState({ ...base, starting: true }), "starting", "permission request never says Listening");
+  const paused = micState({ ...base, capturing: true, playbackPaused: true });
+  assert.equal(paused, "reply-paused");
+  assert.match(MIC_WORDS[paused].label, /^Stop listening/, "mic tap always stops capture");
+  assert.match(micWords({ mic: paused }).text, /Mic open.*paused/, "placement cannot conceal open mic");
+  assert.equal(micState({ ...base, capturing: true }), "listening");
+  assert.equal(micState({ ...base, failed: true }), "failed");
 
   // A granted permission alone is not a gesture; no device or audio context is opened.
   {
@@ -298,7 +308,7 @@ try {
   // gesture check above; and nothing but that path calls startMic.
   {
     const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
-    assert.match(app, /const toggleMic = async \(event\?: \{ isTrusted: boolean \}\) => \{\s*if \(\(event && !event\.isTrusted\)/, "a script's click on the mic never starts it");
+    assert.match(app, /const toggleMic = async \(event\?: \{ isTrusted: boolean \}\) => \{\s*if \(event && !event\.isTrusted\)/, "a script's click on the mic never starts it");
     assert.equal(app.match(/\bstartMic\(/g)?.length, 1, "startMic is called from toggleMic alone");
   }
 

@@ -193,11 +193,12 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
     stuck.current = atFoot(box);
     setAway(!stuck.current);
   };
-  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => { stuck.current = false; } };
+  // Reserve Latest's row in the same render that opens a fold, before its contents are brought into view.
+  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => { stuck.current = false; setAway(true); } };
   return <div className="work-spine-listbox">
     <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}
       onWheel={byHand} onTouchMove={byHand} onKeyDown={byHand} onPointerDown={byHand}>
-      {empty ? <p className="work-spine-empty">When an AI helper starts work, it shows up here.</p>
+      {empty ? <p className="work-spine-empty">When an AI helper starts work, it shows up here. Try the simulated feed from a terminal in the app folder:<code>node scripts/demo-jobs.mjs</code>Use <code>--port PORT</code> if the app is on another port. No AI key needed.</p>
         : <ol className="work-spine-list">{tree.map((node) => <Bubble key={node.job.id} node={node} shared={shared} />)}</ol>}
     </div>
     {away && <button type="button" className="work-spine-latest" onClick={toFoot}>↓ Latest</button>}

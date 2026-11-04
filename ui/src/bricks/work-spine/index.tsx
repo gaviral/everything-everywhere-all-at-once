@@ -82,6 +82,14 @@ function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
       set(root, "--room-right", Math.round(box.width));
       const over = (el: Element) => { const at = el.getBoundingClientRect(); return at.width > 0 && at.height > 0 && at.right > box.left && at.left < box.right ? at : null; };
       let top = 68, foot = 36;
+      // A held question belongs at the lane's foot. The Canvas's shelf may rise with its stage; it must not
+      // pull the question halfway up this separate column. Clear the stage only when it crosses the question.
+      let heldBottom = 36;
+      for (const el of document.querySelectorAll('[data-slot="stage"], [data-slot="status"]')) {
+        const at = el.getBoundingClientRect();
+        if (at.height > 0 && at.right > innerWidth - 308) heldBottom = Math.max(heldBottom, innerHeight - at.top + 12);
+      }
+      set(root, "--work-spine-held-bottom", Math.round(heldBottom));
       for (const el of document.querySelectorAll('[data-slot="top-right"], .talk-pill')) { const at = over(el); if (at) top = Math.max(top, at.bottom + 12); }
       for (const el of document.querySelectorAll('[data-slot="stage"], [data-slot="status"], [data-slot="bottom-right"]')) { const at = over(el); if (at) foot = Math.max(foot, innerHeight - at.top + 12); }
       set(element!.style, "--work-spine-top", Math.round(top));
@@ -97,7 +105,7 @@ function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
     const look = new MutationObserver(measure);
     look.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", measure);
-    return () => { watch.disconnect(); look.disconnect(); window.removeEventListener("resize", measure); root.removeProperty("--room-right"); };
+    return () => { watch.disconnect(); look.disconnect(); window.removeEventListener("resize", measure); root.removeProperty("--room-right"); root.removeProperty("--work-spine-held-bottom"); };
   }, []);
   return createPortal(<aside ref={pane} className="work-spine-lane" aria-label="Work spine" data-guide="work-spine">
     <Announce jobs={jobs} />

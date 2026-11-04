@@ -11,6 +11,7 @@ import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowP
 import "@xyflow/react/dist/base.css";
 import { useBrickEvent, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
+import { filmHeld } from "./film";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
 import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
@@ -18,6 +19,7 @@ import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
 import { useStayingHere } from "../../StayHere";
+import { CONVERSATION, conversationLayout } from "./conversation";
 import "./spine.css";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
@@ -41,8 +43,9 @@ const cls = (...names: (string | false | undefined | null)[]) => names.filter(Bo
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
-  if (!props.map.threads.length) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
-  return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
+  const conversation = !!props.map.conversationSpine;
+  if (!props.map.threads.length && !(conversation && props.map.thoughts.length)) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
+  return <ReactFlowProvider key={String(conversation)}><Canvas {...props} conversation={conversation} /></ReactFlowProvider>;
 }
 
 function useReducedMotion() {
@@ -172,7 +175,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
   return { stage: stage && stage.width ? stage : null, status: status?.height ?? 0, frame: frameBox };
 }
 
-function Canvas({ map, actions, on, destination }: BrickProps) {
+function Canvas({ map, actions, on, destination, conversation }: BrickProps & { conversation: boolean }) {
   const flow = useReactFlow<ItemNode>();
   const staying = useStayingHere();
   const reduced = useReducedMotion();
@@ -335,9 +338,9 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
-  const layout = useMemo(() => place({ threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
+  const layout = useMemo(() => (conversation ? conversationLayout : place)({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
     me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
-  [pauseCounts, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+  [pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -347,7 +350,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const timer = window.setTimeout(() => setMoving({}), 4000);
     return () => window.clearTimeout(timer);
   }, [map.threads, moving]);
-  const hereKey = staying || map.active ? layout.tips.get((staying ?? map.active)!) : undefined;
+  const hereKey = conversation ? layout.tips.get(CONVERSATION) : staying || map.active ? layout.tips.get((staying ?? map.active)!) : undefined;
   const here = hereKey ? layout.byKey.get(hereKey) : undefined;
   const slotsHere = map.active ? layout.slots.get(map.active) ?? [] : [];
 
@@ -402,7 +405,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced, pane);
+  const camera = useCamera(flow, area, reduced, pane, (key) => layout.byKey.get(key)?.box);
   const all = () => bounds(layout.items.map((item) => item.box));
   const minZoom = useMemo(() => {
     const everything = all();
@@ -436,6 +439,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     if (!box) return;
     const previous = previousSize.current;
     previousSize.current = { width, height: box.tall };
+    if (filmHeld()) return;
     if (!ready) return;
     if (!following && previous) {
       const view = flow.getViewport();
@@ -600,9 +604,17 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   }, [selecting]);
 
   const acts = useMemo<Acts>(() => ({
+    visit: (key) => {
+      const item = layout.byKey.get(key);
+      if (!item) return;
+      stopFollowing();
+      setPicked(key);
+      camera.aim(item.box, { ring: key, zoom: 1, instant: true });
+      requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"] [data-spine-target]`)?.focus({ preventScroll: true }));
+    },
     resume: (id,keyboard) => { actions.resume?.(id,keyboard); },
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
-    pick: (item) => { setPicked(item.key); actions.select(item.thread); },
+    pick: (item) => { setPicked(item.key); if (item.thread) actions.select(item.thread); },
     words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
@@ -670,7 +682,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
     id: item.key, type: "item", className: "spine-node", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
-    draggable: item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin" && item.kind !== "group", selectable: false, focusable: false, connectable: false,
+    draggable: !conversation && item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin" && item.kind !== "group", selectable: false, focusable: false, connectable: false,
     // Heads over points: far out, a topic's title covers the top of its own spine (in reach of a point, never at it).
     zIndex: (item.kind === "notch" || item.kind === "slot" || item.kind === "group" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)
       + (item.pinned ? 5 : 0) + (group?.has(item.key) ? 20 : 0),
@@ -808,7 +820,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
-        aria-label="Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures">
+        aria-label={conversation ? "Your conversation in time order, with linked topics beside it. Drag the canvas to look around; follow a topic link to explore and a turn link to return." : "Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures"}>
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar />
         <EdgeLabelRenderer>
@@ -836,11 +848,11 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
           shelf at the right, where the left is the notice timeline's. */}
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
-        <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
+        <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottomRight }}>
         {narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
-        {(narrow || !corner.shell) && <Corner following={following} title={activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
+        {(narrow || !corner.shell) && <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}
           place={(id, x, y) => {

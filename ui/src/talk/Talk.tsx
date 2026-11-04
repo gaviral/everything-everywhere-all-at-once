@@ -1,4 +1,3 @@
-import { PartnerStatus } from "../PartnerStatus";
 // The Talk tab: who's in the call and what each is doing, what was said as messages ("as if people are sending messages
 // to each other"), "Speaking now…" for whoever has the floor (never their words: those come with the turn), how far
 // each person has read, a catch-up for what you missed, replies tied to the words they answer (margin notes, through
@@ -10,8 +9,8 @@ import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
 import { TIPS } from "../Tips";
-import { clock, initialOf, LEVELS, named, ordered, shown, stateWord, useCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
-import { newerMark, readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
+import { clock, initialOf, LEVELS, named, ordered, shown, stateWord, useTalkCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
+import { readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
 import "./talk.css";
 
 /** Who Talk acts as when it asks the map for something (a reply it sends is yours; this names it in a hint). */
@@ -21,18 +20,10 @@ export const TALK: BrickInfo = { id: "talk", name: "Talk", does: "Who's in the c
 type Row = { kind: "turn"; turn: Turn; i: number } | { kind: "said"; said: Said };
 
 const HEAD_GAP_MS = 3 * 60_000;
-const READ_KEY = "e2a2o.talk.read.";
-
-function stored(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function store(key: string, value: string) {
-  try { localStorage.setItem(key, value); } catch { /* kept for this visit only */ }
-}
 
 /** The tab's body: people, turns, the meter. `open`: it's on screen (a closed rail reads nothing). */
 export function Talk({ map, actions, open = true }: { map: MapSnapshot; actions: BrickActions; open?: boolean }) {
-  const call = useCall();
+  const call = useTalkCall();
   return call ? <TalkBody map={map} actions={actions} open={open} call={call} /> : null;
 }
 
@@ -45,33 +36,22 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const guide = useGuide();
   const captioning = guide.caption && ai(guide.caption.by) ? guide.caption : null;
   const said = useMemo(() => {
-    const theirs = saidAll.filter((s) => ai(s.by));
+    const theirs = saidAll.filter((s) => s.id || ai(s.by));
     let live = -1;
     if (captioning) for (let i = theirs.length - 1; i >= 0 && live < 0; i--) if (theirs[i].level === "Speak" && theirs[i].by === captioning.by && theirs[i].text === captioning.text) live = i;
     return theirs.filter((_, i) => i !== live);
   }, [saidAll, captioning, map.speakers, call.people]);
 
-  // How far you've read: the newer of this browser's mark and the core's (another window of yours), told to the core
-  // as it moves and again on each connection, so the others see it and a restarted core learns it again.
-  const readKey = READ_KEY + me;
-  const coreMark = call?.people.find((p) => p.name === me)?.read ?? null;
-  const [mark, setMark] = useState<string | null>(() => stored(readKey));
-  const markIndex = turnIndex(turns, newerMark(turns, mark, coreMark));
-  const markNow = markIndex >= 0 ? turns[markIndex].key : null;
-  const markSent = useRef(markNow);
-  markSent.current = markNow;
-  useEffect(() => { if (map.connected && markSent.current) sendToCore({ type: "read", thought_id: markSent.current }); }, [map.connected]);
+  // Reading here and reading on the canvas advance the same position, owned by the page's brick host.
+  const markIndex = turnIndex(turns, map.readThrough);
   const see = (i: number) => {
     if (i <= markIndex || !turns[i]) return;
-    const key = turns[i].key;
-    setMark(key);
-    store(readKey, key);
-    sendToCore({ type: "read", thought_id: key });
+    actions.readThought(turns[i].key);
   };
 
   const from = call?.started_ms ?? 0;
   const firstInCall = turns.findIndex((turn) => turn.at >= from);
-  const earlier = firstInCall < 0 ? turns.length : firstInCall;
+  const earlier = (firstInCall < 0 ? turns.length : firstInCall) + said.filter((s) => s.at < from).length;
   const unread = unreadOf(turns, markIndex, me, from);
   const firstUnread = unread.length ? turns.indexOf(unread[0]) : -1;
   const meNow = call?.people.find((p) => p.name === me);
@@ -80,7 +60,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
 
   const [showEarlier, setShowEarlier] = useState(false);
   const rows = useMemo(() => {
-    const out: Row[] = turns.map((turn, i) => ({ kind: "turn" as const, turn, i })).filter((row) => showEarlier || row.i >= earlier);
+    const out: Row[] = turns.map((turn, i) => ({ kind: "turn" as const, turn, i })).filter((row) => showEarlier || row.turn.at >= from);
     for (const s of said) if (showEarlier || s.at >= from) out.push({ kind: "said", said: s });
     return out.sort((a, b) => at(a) - at(b));
   }, [turns, said, showEarlier, earlier, from]);
@@ -122,8 +102,8 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
       || (row.kind === "turn" && !!row.turn.note) || (previous.kind === "turn" && !!previous.turn.note);
     previous = row;
     if (row.kind === "said") {
-      items.push(<li key={`said-${row.said.at}-${row.said.by}`} className="talk-turn">
-        <TurnHead name={row.said.by} me={me} ai at={row.said.at} level={row.said.level} />
+      items.push(<li key={JSON.stringify(["said", row.said.by, row.said.id ?? row.said.at])} data-caption={row.said.id} className="talk-turn">
+        <TurnHead name={row.said.by} me={me} ai={row.said.ai ?? ai(row.said.by)} at={row.said.at} level={row.said.level} />
         <div className="talk-words">{row.said.text}</div>
       </li>);
       continue;
@@ -177,7 +157,6 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const friend = call.people.find((p) => p.ai && p.here);
   return (
     <section className="talk" aria-label="Talk">
-      <PartnerStatus />
       <People call={call} me={me} captioning={captioning?.by ?? null} />
       <div className="talk-list">
         {/* Over the list's top, so coming and going it moves no turn; it goes once the first you missed is in view. */}
@@ -187,7 +166,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
         <div ref={scroller} className="talk-scroll">
         <ol className="talk-turns">
           <li className="talk-start">
-            <span>Call started {clock(call.started_ms)}{earlier > 0 && <> · {earlier} earlier {earlier === 1 ? "turn" : "turns"} · </>}</span>
+            <span>{call.started_ms ? `Call started ${clock(call.started_ms)}` : "Conversation"}{earlier > 0 && <> · {earlier} earlier {earlier === 1 ? "turn" : "turns"} · </>}</span>
             {earlier > 0 && <button type="button" className="talk-link" onClick={() => setShowEarlier((shown) => !shown)}>{showEarlier ? "Hide" : "Show"}</button>}
           </li>
           {items}

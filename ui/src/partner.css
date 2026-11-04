@@ -4,3 +4,9 @@
 .partner-status button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
 .partner-status button:hover { border-color: var(--accent); }
+
+.voice-draft { padding: .4rem .65rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--card); color: var(--ink); font-size: .85rem; }
+.voice-draft summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.voice-draft p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8rem; overflow: auto; }
+.voice-draft button { min-height: 44px; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: .4rem; }
+.voice-draft :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

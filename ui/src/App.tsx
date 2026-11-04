@@ -1,3 +1,4 @@
+import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
 import { SpeechFixesContext } from "./bricks/contract";
@@ -216,6 +217,8 @@ export default function App() {
     }
   }, [core.viewAsk]);
   const [startingMic, setStartingMic] = useState(false);
+  const [micFailed, setMicFailed] = useState(false);
+  const playback = usePlayback();
   // The browser ("site") or the computer ("mac") keeps the mic from this page: it looks blocked until that changes
   // (mic.ts `micFailure`, `watchMicPermission`); a tap still tries, and says how to allow it.
   const [micBlocked, setMicBlocked] = useState<"" | "site" | "mac">("");
@@ -505,6 +508,7 @@ export default function App() {
       statusNew: core.voiceStatusRevision > voiceStartedAt.current, listenedNew: core.listenedRevision > voiceListenedAt.current });
     if (liveStop.current && ends) {
       releaseMic();
+      setMicFailed(ends === "failed" || ends === "ended");
       core.listen(false);
       core.showNotice(ends === "offline" ? MIC_OFFLINE : core.noKey ? core.keyNotice : micStopped(ends === "failed" ? core.voiceError : ""));
     }
@@ -532,7 +536,9 @@ export default function App() {
   // still meets mic.ts's check that a click or key press is under way in this tab.
   const [keyHelp, setKeyHelp] = useState(false);
   const toggleMic = async (event?: { isTrusted: boolean }) => {
-    if ((event && !event.isTrusted) || micStart.current || (!core.connected && !liveStop.current)) return;
+    if (event && !event.isTrusted) return;
+    if (micStart.current) { micStart.current.abort(); core.listen(false); return; }
+    if (!core.connected && !liveStop.current) return;
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
     setPaused(false);
     if (liveStop.current) {
@@ -551,6 +557,7 @@ export default function App() {
     const sameConnection = core.micConnection();
     setStartingMic(true);
     if (micNotice(core.notice)) core.clearNotice();
+    setMicFailed(false);
     try {
       let stopped = false;
       // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
@@ -581,6 +588,7 @@ export default function App() {
       core.listen(false);
       // The browser's own words go to the console; the window says where to fix it (mic.ts).
       console.warn("The mic didn't start:", err);
+      setMicFailed(true);
       const failed = micFailure(err, micPlace());
       if (failed.blocked) setMicBlocked(failed.blocked);
       core.showNotice(failed.words);
@@ -1130,7 +1138,24 @@ export default function App() {
   const viewGone = !talk && (view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick);
   useEffect(() => { if (viewGone) showView("map"); }, [viewGone]);
 
-  const mic = micState({ connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
+  const recognizedDraft = core.voiceDraft && <details className="voice-draft">
+    <summary>Draft · recognized words</summary>
+    <p>{core.voiceDraft}</p>
+    <button type="button" onClick={() => {
+      setDraft(text => text ? `${text}\n${core.voiceDraft}` : core.voiceDraft);
+      core.clearVoiceDraft();
+      composerRef.current?.focus();
+    }}>Copy to editor</button>
+  </details>;
+  const stopConversation = () => {
+    cancelPageReply();
+    micStart.current?.abort();
+    releaseMic();
+    core.listen(false);
+    switchBuiltIn("partner", false);
+    setPaused(true);
+  };
+  const mic = micState({ playbackPaused: playback.phase === "queued" || playback.phase === "playing", failed: micFailed, connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
   const status = statusLine({ connected: core.connected, listening: !!stopMic, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
@@ -1466,7 +1491,8 @@ export default function App() {
               <PendingThought key={t.id} thought={t} placing={core.placing} noKey={core.noKey} refused={core.keyRefused} resting={core.resting} reducedMotion={!!reducedMotion} words={!bricksOn.has("bubble-flight")} />
             ))}
           </div>
-          <PartnerStatus />
+          {recognizedDraft}
+          <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit} data-guide="composer">
             <textarea
@@ -1481,7 +1507,7 @@ export default function App() {
               aria-label="Type a thought"
             />
             <ModelLine hearing={!!core.partial} hidden={!!draft} />
-            <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} />
+            <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} />
           </form>
         </div>
       </section>
@@ -1689,7 +1715,8 @@ export default function App() {
             onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
         </div>}
-        <PartnerStatus />
+        {recognizedDraft}
+          <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />
         <div className="shell-captions" id="shell-caption" />
       </section>
 
@@ -1700,7 +1727,7 @@ export default function App() {
         queued: core.queuedCount, connected: core.connected, saved: !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
       }}>
         <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={startingMic || (!core.connected && !stopMic)} onClick={toggleMic} shortcut={modAria("D")} />}
+          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}
           {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
           <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}

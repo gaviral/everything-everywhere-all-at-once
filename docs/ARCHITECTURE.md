@@ -16,6 +16,7 @@ Browser, one page per window (ui/src)
   Symbols.tsx    Help's legend, drawn with the map's own classes
   Attention.tsx  the one "look here" highlight, the "latest" bar, "New in X ↓", unseen dots, "this" (rules in attention-core.ts)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
+  RecoveryPanel.tsx  words the core never confirmed: keep them in this map, send online when device storage is unavailable, or discard them
   Undo.tsx       Undo on a notice that answers a request you can take back
   Crash.tsx      what shows if the page throws: "Something broke" and Reload, not a white page (the map is in the core)
   Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, committed as drawn files: icon.svg and four PNGs of one icon)
@@ -46,6 +47,7 @@ Browser, one page per window (ui/src)
   md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
   whyhere.tsx    "Why here" on demand: a point's reason, a Since you left row's Why?, asked of the core when none is kept
   legible.ts     the talking state (what the map quiets), two map columns, which points open their words (legible.css)
+  film.ts        opt-in filming overlay: pointer, click ripple and captions, with camera control delegated to bricks/spine/film.ts (film.css)
   keys.ts        keys the README, tour and Help promise: ? opens Help, Enter or Space on a point, the skip link's target (held by `scripts/a11y-check.mjs`)
   unfinished.ts  the Unfinished thought card: which topic you left last, your last words there, Later and forget it
   Tidy.tsx       the refiner's renames and merges on a card: a sure rename's note with Undo, a proposal's Rename or Merge and ×

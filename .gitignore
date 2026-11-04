@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
 data/
 core/target/
 ui/node_modules/

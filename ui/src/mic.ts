@@ -107,10 +107,14 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     context.onstatechange = wake;
     await context.audioWorklet.addModule("/pcm-worklet.js");
     signal?.throwIfAborted();
+    if (context.state !== "running") await context.resume();
+    signal?.throwIfAborted();
+    if (context.state !== "running") throw new MicUnavailable("Audio capture did not start. Tap the mic to retry, or type below.");
     const writer = new AudioWorkletNode(context, "pcm-writer");
     let generation = 0;
     let muted = false, started = false, bargeIn = false;
     let resumeBarge: number | undefined;
+    let accepting = true;
     // If the browser explicitly refused echo cancellation, keep the original hard mute.
     const echoProtected = stream.getTracks().every((track) => track.getSettings?.().echoCancellation !== false);
     const captureState = () => {
@@ -121,8 +125,9 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     unwatchSetting = watchBuiltIns(() => {
       if (bargeIn !== (muted && started && echoProtected && builtInOn("partner"))) captureState();
     });
-    detachWriter = () => { writer.port.onmessage = null; writer.port.close(); };
+    detachWriter = () => { accepting = false; generation++; writer.port.onmessage = null; writer.port.close(); };
     writer.port.onmessage = (event) => {
+      if (!accepting) return;
       const message = event.data as { type: "barge"; generation: number }
         | { type?: undefined; frame: ArrayBuffer; generation: number };
       if (message.type === "barge") {
