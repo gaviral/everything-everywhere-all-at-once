@@ -13,6 +13,8 @@ data.branches.splice(1, 0, branch('staging', 'main', 'staging'), branch('dev', '
 data.parts = [root, leaf].map(f => ({ id: f.id, name: f.name, file: f.file, line: f.line, tags: ['function', 'mechanism'], version: 3, version_scope: 'file history' }));
 data.parts.push({ id: 'core/src/prompt.rs', name: 'prompt.rs', file: 'core/src/prompt.rs', line: 1, tags: ['prompt', 'data'], version: 2, version_scope: 'file history' });
 data.agents = { available: true, updated_at: new Date().toISOString(), lanes: [{ id: 'dev/pieces', branch: 'dev/pieces', who: 'Worker', now: 'Checking the new parts view', finished: ['Built the source reader', 'Added the branch columns'], state: 'Working', updated_at: new Date().toISOString() }], needs_you: [{ id: 'ask-route', title: 'Choose the next route', detail: 'Should the agent build search or tags next?', lane: 'dev/pieces' }], summary: ['Two lanes are ready for review.'], notice: '' };
+const idleWork = { available: true, observed_ms: Date.now(), counts: { running_now: 0, built_on_tv: 2, written_only: 23, waiting_on_you: 1 }, live_jobs: 0, top_written: ['Find a saved thought', 'Explain the result', 'Connect the sketch'], idle_warning: true };
+data.agents.work_status = idleWork;
 let fail = false, failAnswer = false;
 const answers = [];
 async function screenshot(name) {
@@ -43,6 +45,9 @@ let page;
 try {
   page = await openPage(`http://127.0.0.1:${server.address().port}/?canvas=code`, { width: 1920, height: 1080 });
   assert.ok(await page.until(`document.querySelector('.cc-live')?.textContent.includes('2 functions')`), 'source counts render');
+  assert.ok(await page.until(`document.querySelector('.cc-idle-warning')?.textContent.includes('23 ideas written down,') && document.querySelector('.cc-idle-warning')?.textContent.includes('nobody working on them')`), 'notes with no live job have a plain warning');
+  assert.ok(await page.evaluate(`document.querySelector('.cc-idle-warning').textContent.includes('Find a saved thought') && document.querySelectorAll('.cc-work-counts dd').length === 4`), 'top ideas and four distinct state counts are visible');
+  assert.deepEqual(await page.evaluate(`[...document.querySelectorAll('.cc-work-counts dd')].map(n=>n.textContent)`), ['0', '2', '23', '1']);
   assert.equal(await page.evaluate(`getComputedStyle(document.querySelector('.cc-header')).backgroundColor`), 'rgba(0, 0, 0, 0)', 'dark canvas header stays legible under the light app theme');
   assert.ok(await page.evaluate(`(() => { const names=['main','staging','dev','dev/pieces']; const boxes=names.map(name=>[...document.querySelectorAll('[data-branch]')].find(n=>n.dataset.branch===name).getBoundingClientRect()); return boxes.every((b,i)=>!i||b.left>boxes[i-1].left); })()`), 'main, staging, dev, lanes appear left to right');
   assert.ok(await page.until(`document.querySelector('.cc-branches').textContent.includes('Worker') && document.querySelector('.cc-agent').textContent.includes('Checking the new parts view')`), 'agent identity and current task are visible');
@@ -53,9 +58,21 @@ try {
   await page.page('Emulation.setDeviceMetricsOverride', { width: 3840, height: 2160, deviceScaleFactor: 1, mobile: false });
   await page.evaluate(`document.querySelector('.cc-header-actions button').click()`);
   assert.ok(await page.until(`document.querySelector('.code-canvas').classList.contains('cc-tv')`), 'TV size is explicitly available');
+  assert.ok(await page.evaluate(`parseFloat(getComputedStyle(document.querySelector('.cc-idle-warning h2')).fontSize)>=64 && document.querySelector('.cc-idle-warning').getBoundingClientRect().bottom<innerHeight`), 'red warning and names fit the TV view with a large headline');
+  assert.equal(await page.evaluate(`getComputedStyle(document.querySelector('.cc-idle-warning')).backgroundColor`), 'rgb(89, 27, 35)', 'idle warning is visibly red');
   await screenshot('tv-synthetic');
+  await page.page('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: 2, mobile: false });
+  assert.ok(await page.until(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.cc-idle-warning').getBoundingClientRect().right<=innerWidth`), 'enlarged desktop view keeps the warning within the viewport');
+  await screenshot('enlarged-synthetic');
+  await page.page('Emulation.setDeviceMetricsOverride', { width: 3840, height: 2160, deviceScaleFactor: 1, mobile: false });
+  data.agents.work_status = { ...idleWork, live_jobs: 1, idle_warning: false, counts: { ...idleWork.counts, running_now: 1, written_only: 22 } };
+  await page.evaluate(`document.querySelector('.cc-live button').click()`);
+  assert.ok(await page.until(`!document.querySelector('.cc-idle-warning') && document.querySelector('.cc-work-counts dd')?.textContent==='1'`), 'a live worker quiets the red warning and updates counts');
   await page.evaluate(`document.querySelector('.cc-header-actions button').click()`);
   await page.page('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  assert.ok(await page.until(`!matchMedia('(max-width:1100px)').matches && !document.querySelector('.cc-needs-sheet')`), 'desktop request rail has returned after enlarged view');
+  await page.evaluate(`if (document.querySelector('.cc-needs-toggle').getAttribute('aria-expanded')==='false') document.querySelector('.cc-needs-toggle').click()`);
+  assert.ok(await page.until(`document.querySelector('.cc-needs').textContent.includes('Choose the next route')`), 'reopen the minimized request rail through its control');
   await page.evaluate(`document.querySelector('.cc-piece > summary').click(); document.querySelector('.cc-piece .cc-piece > summary').click();`);
   assert.ok(await page.until(`document.querySelector('.cc-function-head')?.textContent.includes('orchestrate')`), 'open folder and file to functions');
   await page.evaluate(`document.querySelector('.cc-function-head').click()`);
@@ -88,6 +105,7 @@ try {
   fail = true;
   await page.evaluate(`document.querySelector('.cc-live button').click()`);
   assert.ok(await page.until(`document.querySelector('.cc-live')?.textContent.includes('Showing last read')`), 'failed read identifies retained data');
+  assert.ok(await page.evaluate(`document.querySelector('.cc-work-unknown')?.textContent.includes('can’t confirm') && !document.querySelector('.cc-idle-warning')`), 'stale state never claims current idleness or work');
   fail = false;
   await page.evaluate(`document.querySelector('.cc-live button').click()`);
   assert.ok(await page.until(`!document.querySelector('.cc-live').classList.contains('cc-stale')`), 'read recovers');
@@ -103,6 +121,10 @@ try {
   await page.page('Page.reload');
   assert.ok(await page.until(`document.querySelector('.cc-needs').textContent.includes('Nothing waiting')`), 'answered card stays gone after reload');
   await page.page('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  data.agents.work_status = idleWork;
+  await page.evaluate(`document.querySelector('.cc-live button').click()`);
+  assert.ok(await page.until(`document.querySelector('.cc-idle-warning')?.textContent.includes('Connect the sketch')`), 'idle details remain reachable on phone');
+  assert.ok(await page.evaluate(`document.querySelector('.cc-idle-warning').getBoundingClientRect().right<=innerWidth && document.documentElement.scrollWidth<=innerWidth`), 'warning and names fit the narrow view');
   assert.ok(await page.until(`document.querySelector('.cc-needs-toggle').getAttribute('aria-expanded') === 'false'`), 'phone starts with a compact persistent request bar');
   await screenshot('phone-synthetic');
   await page.evaluate(`document.querySelector('.cc-needs-toggle').click()`);

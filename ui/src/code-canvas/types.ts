@@ -4,7 +4,8 @@ export type CodePart = { id: string; name: string; file: string; line: number; t
 export type CodeBranch = { name: string; tip: string; parent: string | null; fork: string | null; state: string; current: boolean; ahead: number; behind: number; merged_into?: string | null; joined_at?: string | null };
 export type AgentLane = { id: string; branch: string; who: string; now: string; finished: string[]; state: string; updated_at: string };
 export type Need = { id: string; title: string; detail: string; lane: string };
-export type AgentState = { available: boolean; updated_at: string; lanes: AgentLane[]; needs_you: Need[]; summary: string[]; notice: string };
+export type WorkStatus = { available: boolean; observed_ms: number; counts: { running_now: number; built_on_tv: number; written_only: number; waiting_on_you: number }; live_jobs: number; top_written: string[]; idle_warning: boolean };
+export type AgentState = { available: boolean; updated_at: string; lanes: AgentLane[]; needs_you: Need[]; summary: string[]; notice: string; work_status?: WorkStatus };
 export type Snapshot = { functions: CodeFunction[]; branches: CodeBranch[]; files: number; warnings: string[]; parts?: CodePart[]; agents?: AgentState };
 export type Piece = { id: string; name: string; children: Piece[]; functions: CodeFunction[]; count: number };
 export function pieces(functions: CodeFunction[]): Piece[] {

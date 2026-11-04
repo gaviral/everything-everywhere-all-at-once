@@ -19,6 +19,19 @@ pub struct Lane {
 pub struct Need { pub id: String, title: String, detail: String, lane: String }
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default)]
+pub struct WorkCounts { running_now: usize, built_on_tv: usize, written_only: usize, waiting_on_you: usize }
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct WorkStatus {
+    available: bool,
+    observed_ms: u64,
+    counts: WorkCounts,
+    live_jobs: usize,
+    top_written: Vec<String>,
+    idle_warning: bool,
+}
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct AgentState {
     pub updated_at: String,
     pub lanes: Vec<Lane>,
@@ -26,6 +39,7 @@ pub struct AgentState {
     pub summary: Vec<String>,
     pub notice: String,
     pub available: bool,
+    pub work_status: Option<WorkStatus>,
 }
 
 fn configured_path() -> Option<PathBuf> { std::env::var_os("E2A2O_AGENT_STATE").filter(|p| !p.is_empty()).map(PathBuf::from) }
@@ -39,6 +53,13 @@ fn read_path(path: &Path) -> AgentState {
     match load(path) {
         Ok(mut state) => {
             state.available = true;
+            if let Some(work) = &mut state.work_status {
+                let now = crate::now_ms();
+                if work.observed_ms > now || now.saturating_sub(work.observed_ms) > 15_000 {
+                    work.available = false;
+                    for lane in &mut state.lanes { lane.state = "Not confirmed running".into(); }
+                }
+            }
             state.needs_you.retain(|need| valid_id(&need.id) && !answer_directory(path).join(format!("{}.json", need.id)).is_file());
             state
         }
@@ -78,6 +99,24 @@ pub async fn answer(ConnectInfo(link): ConnectInfo<crate::Link>, Json(answer): J
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn work_counts_survive_read_and_dead_exporters_do_not_claim_live_work() {
+        let root = std::env::temp_dir().join(format!("work-counts-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("state.json");
+        let mut value = serde_json::json!({"work_status": {"available": true, "observed_ms": crate::now_ms(),
+            "counts": {"running_now": 0, "built_on_tv": 2, "written_only": 23, "waiting_on_you": 1},
+            "live_jobs": 0, "top_written": ["Find a saved thought"], "idle_warning": true}});
+        fs::write(&path, value.to_string()).unwrap();
+        let state = read_path(&path);
+        let work = state.work_status.unwrap();
+        assert!(work.available && work.idle_warning);
+        assert_eq!(work.counts.written_only, 23);
+        assert_eq!(work.counts.built_on_tv, 2);
+        value["work_status"]["observed_ms"] = serde_json::json!(1);
+        fs::write(&path, value.to_string()).unwrap();
+        assert!(!read_path(&path).work_status.unwrap().available);
+    }
     #[test]
     fn durable_answers_survive_feed_refresh_and_reject_unknown_requests() {
         let root = std::env::temp_dir().join(format!("agent-state-{}", uuid::Uuid::new_v4()));
