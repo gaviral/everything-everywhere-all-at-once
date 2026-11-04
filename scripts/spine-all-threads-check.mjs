@@ -1,15 +1,15 @@
-// Overview (key 3) and Fit map (0) show every thread of the map, its tangents (side trips) too: each as its own small
+// Pictures (key 3) and See all (0) show every thread of the map, its tangents (side trips) too: each as its own small
 // picture and name beside the topic it hangs from, its curve tying it to the point it came from. They used to drop out
 // there (4 of the student week sample's 8 threads were left). The map is that sample as its journal replays it, with its
 // pictures, plus three threads it lacks: a tangent of a tangent, one with a long name and no picture (its first letter
 // shows), and a tangent off a topic that had none. Held, at laptop and phone sizes, light and dark (the shell, and once
 // the classic page, ?shell=1):
-//  - Overview, and Fit map while Overview is the stop: every thread has its picture or letter, on screen; each tangent's
+//  - Pictures, and See all while Pictures is the stop: every thread has its picture or letter, on screen; each tangent's
 //    curve starts on its parent (a topic's point or picture, a tangent's picture or name) and ends at its picture; from
 //    the zoom where a name fits beside its card, the name too, whole at 13 px; on a laptop, no name or picture under a
 //    control or on another's; a pointer on a tangent's picture or name reaches its button, and a click opens it (the
 //    camera reads it at size) and its title folds it again.
-//  - Topics and Read look as they did: tangents are cards of bars in Topics, and no tangent picture stands in either.
+//  - Titles and Words look as they did: tangents are cards of bars in Titles, and no tangent picture stands in either.
 // Exits 3 without Chrome or ui/dist. SHOTS=<folder> saves a screenshot of each stop.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -119,6 +119,7 @@ try {
       await page("Page.enable");
       await page("Page.addScriptToEvaluateOnNewDocument", { source: `
         localStorage.setItem("e2a2o.toured", "1");
+        localStorage.setItem("e2a2o.bricks", JSON.stringify({"topic-images": true}));
         window.checkErrors = [];
         // Chrome reports a size observer whose change lands a frame later as a window error: not one.
         addEventListener("error", (e) => { if (!/^ResizeObserver loop/.test(e.message)) window.checkErrors.push(e.message); });
@@ -161,8 +162,8 @@ try {
       const key = async (digit) => { for (const type of ["keyDown", "keyUp"]) await page("Input.dispatchKeyEvent", { type, key: String(digit), code: `Digit${digit}`, windowsVirtualKeyCode: KEYS[digit] }); };
       /** A zoom stop: the desktop's buttons by pointer; a phone has none, so its number keys. */
       const stop = async (name) => {
-        const digit = { Read: 1, Topics: 2, Overview: 3, "Fit map": 0 }[name];
-        if (!phone) await click(name === "Fit map" ? `[data-camera-fit]` : `[data-zoom-stop="${({Read:"words",Topics:"titles",Overview:"pictures"})[name]}"]`);
+        const digit = { Words: 1, Titles: 2, Pictures: 3, "See all": 0 }[name];
+        if (!phone) await click(name === "See all" ? `[data-camera-fit]` : `[data-zoom-stop="${({Words:"words",Titles:"titles",Pictures:"pictures"})[name]}"]`);
         else { await emptyCanvas(); await key(digit); }
         await settle(name);
       };
@@ -174,7 +175,7 @@ try {
         writeFileSync(join(shots, `${name}-${query === "?shell=1" ? "plain" : "shell"}-${width}x${height}-${scheme}.png`), png);
       };
 
-      /** Overview (or Fit map while Overview is the stop): every thread there, and where it should be. */
+      /** Pictures (or See all while Pictures is the stop): every thread there, and where it should be. */
       const pictures = async (what) => {
         step(`${label}: ${what}`);
         // A tangent's picture mounts only far out: wait for every picture to have decoded, not for a pause.
@@ -188,8 +189,8 @@ try {
           const t = thread(row.id), detail = `${where}: ${t.title} (${t.parent_id ? "a tangent" : "a topic"}) ${JSON.stringify(row)}`;
           assert.equal(row.kind, t.parent_id ? "card" : "head", detail);
           assert.ok(row.tile && row.tile.right - row.tile.left >= 6, `every topic keeps its picture landmark: ${detail}`);
-          if (!phone || what.includes("Fit map")) assert.ok(inside(row.tile, seen.width, seen.height), `Fit map keeps every landmark on screen: ${detail}`);
-          else assert.ok(seen.zoom >= 0.38 && seen.rows.some(r => r.tile && inside(r.tile, seen.width, seen.height)), `phone Overview keeps readable landmarks and permits panning: ${detail}`);
+          if (!phone || what.includes("See all")) assert.ok(inside(row.tile, seen.width, seen.height), `See all keeps every landmark on screen: ${detail}`);
+          else assert.ok(seen.zoom >= 0.38 && seen.rows.some(r => r.tile && inside(r.tile, seen.width, seen.height)), `phone Pictures keeps readable landmarks and permits panning: ${detail}`);
           if (t.picture) assert.ok(row.image, `its picture shows: ${detail}`); else assert.equal(row.letter, t.title[0].toUpperCase(), `its first letter stands in: ${detail}`);
           assert.ok(row.named?.startsWith(t.title), `its button names it: ${detail}`);
           // A tangent's name from the zoom where it fits beside its card (nodes.tsx NAMED); a topic's always.
@@ -229,34 +230,34 @@ try {
 
       // The page fades in and the camera takes its first view: nothing is pressed until both have stopped.
       await settle("the Canvas opening");
-      // Overview, then Fit map (the stop stays Overview), then the other stops.
-      await stop("Overview");
-      await pictures("Overview");
+      // Pictures, then See all (the stop stays Pictures), then the other stops.
+      await stop("Pictures");
+      await pictures("Pictures");
       await shot("pictures");
-      await stop("Fit map");
-      await pictures("Fit map after Overview");
+      await stop("See all");
+      await pictures("See all after Pictures");
       await shot("see-all");
 
-      step(`${label}: Topics`);
-      await stop("Topics");
+      step(`${label}: Titles`);
+      await stop("Titles");
       const titles = await evaluate(`(${scan})(${JSON.stringify(ids)})`);
-      assert.equal(titles.pics, 0, `${label}: Topics shows no tangent picture`);
-      assert.ok(titles.bars >= tangents.length, `${label}: Topics shows each tangent as a card of bars (${titles.bars})`);
-      for (const row of titles.rows) assert.ok(row.kind === (thread(row.id).parent_id ? "card" : "head"), `${label}: Topics has ${thread(row.id).title}`);
-      for (const row of titles.rows.filter((r) => !thread(r.id).parent_id)) assert.ok(row.label && row.name === thread(row.id).title, `${label}: Topics names the topic ${row.id}`);
+      assert.equal(titles.pics, 0, `${label}: Titles shows no tangent picture`);
+      assert.ok(titles.bars >= tangents.length, `${label}: Titles shows each tangent as a card of bars (${titles.bars})`);
+      for (const row of titles.rows) assert.ok(row.kind === (thread(row.id).parent_id ? "card" : "head"), `${label}: Titles has ${thread(row.id).title}`);
+      for (const row of titles.rows.filter((r) => !thread(r.id).parent_id)) assert.ok(row.label && row.name === thread(row.id).title, `${label}: Titles names the topic ${row.id}`);
       await shot("titles");
 
-      step(`${label}: Read`);
-      await stop("Read");
+      step(`${label}: Words`);
+      await stop("Words");
       const words = await evaluate(`(${scan})(${JSON.stringify(ids)})`);
-      assert.equal(words.pics, 0, `${label}: Read shows no tangent picture`);
-      assert.ok(words.zoom >= 0.75, `${label}: Read reads at size (${words.zoom})`);
-      if (!phone) assert.ok(words.titles >= 1, `${label}: a tangent's title reads in Read (${words.titles})`);
+      assert.equal(words.pics, 0, `${label}: Words shows no tangent picture`);
+      assert.ok(words.zoom >= 0.75, `${label}: Words reads at size (${words.zoom})`);
+      if (!phone) assert.ok(words.titles >= 1, `${label}: a tangent's title reads in Words (${words.titles})`);
 
-      // A tangent's picture can be clicked, as its card in Topics can: it opens and the camera reads it at size; its title folds it.
+      // A tangent's picture can be clicked, as its card in Titles can: it opens and the camera reads it at size; its title folds it.
       if (!phone) {
-        step(`${label}: opening a tangent from Overview`);
-        await stop("Overview");
+        step(`${label}: opening a tangent from Pictures`);
+        await stop("Pictures");
         const card = `.react-flow__node[data-id="t:T4"] .spine-card-face`;
         await click(`${card} .spine-tile`);
         assert.ok(await until(`document.querySelector(${JSON.stringify(card)}).getAttribute("aria-expanded") === "true"`, 3000), `${label}: a click on a tangent's picture opens it`);
@@ -280,4 +281,4 @@ try {
   clearTimeout(stuck);
 }
 if (failed) { console.error(`spine-all-threads-check failed at “${doing}”:`, failed.stack ?? failed.message); process.exit(1); }
-console.log("spine-all-threads-check: Overview and Fit map show every thread, tangents beside their topic; Topics and Read as they were");
+console.log("spine-all-threads-check: Pictures and See all show every thread, tangents beside their topic; Titles and Words as they were");
