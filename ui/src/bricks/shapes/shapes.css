@@ -1,0 +1,20 @@
+.shapes-palette { position: fixed; top: 76px; right: 18px; z-index: 6; width: min(248px, calc(100vw - 24px)); max-height: calc(100dvh - 240px); overflow: auto; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); font: inherit; font-size: 13px; }
+.shapes-title { font-size: 15px; }
+.shapes-note { margin: 6px 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.shapes-definition { margin: 12px 0; }
+.shapes-preview { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.shapes-preview-svg { display: block; width: 100%; height: 64px; margin-bottom: 4px; }
+.shapes-preview-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.shapes-button, .shapes-select { min-height: 36px; max-width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.shapes-button:disabled { opacity: .6; cursor: default; }
+.shapes-button:focus-visible, .shapes-select:focus-visible, .shapes-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.shapes-controls { margin: 10px 0; padding: 0; border: 0; min-width: 0; }
+.shapes-controls legend { padding: 0; color: var(--muted); font-size: 12px; }
+.shapes-field { display: block; margin-top: 8px; }
+.shapes-field span { display: flex; justify-content: space-between; gap: 8px; }
+.shapes-field output { color: var(--muted); }
+.shapes-range { display: block; width: 100%; min-height: 28px; accent-color: var(--accent); }
+.shapes-status { display: block; min-height: 1em; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) {
+  .shapes-palette { top: 66px; right: 12px; width: 200px; max-height: 46dvh; padding: 10px; }
+}

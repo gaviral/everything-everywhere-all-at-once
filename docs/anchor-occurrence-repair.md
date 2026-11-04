@@ -28,4 +28,4 @@ Selection offsets count only source words, excluding the hidden speaker label. D
 
 ## Missing task infrastructure
 
-This checkout does not contain `tools/overnight/git-evidence.py`, `tools/overnight/runs/codex-review/acceptance.json`, `fixtures.json`, `ui-observed.json`, the supplied screenshots, review adapter, lane records, or `ctest.sh`. The required two o2 instruction reads returned `read_route_hold` / `Native read failed exit1; no fallback`. No alternate private location was accessed. The committed main inventory and exact base/tree were inspected with Git; the neutral repeated sentence in the brief supplies the local regression. The supplied review adapter and lane ownership could not be verified, so this is not a claim of passing that absent acceptance harness or clearance to land.
+The local regression checks repeated-source occurrence handling. External acceptance fixtures and rendered-screen clearance were not verified in this checkout.

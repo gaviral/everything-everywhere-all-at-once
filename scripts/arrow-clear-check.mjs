@@ -109,6 +109,10 @@ try {
         assert.ok(await until(`!!document.querySelector(".spine-ready")`, 10000), `${scene}: the canvas opens`);
         // The QA's scene: the unfinished card rises over the stage after a pause; a call has the Talk pill under Catalog.
         assert.ok(await until(`!!document.querySelector('[data-guide="unfinished"]')`, 8000), `${scene}: the unfinished card is up`);
+        // This scene inspects the card after several other targets. Hold it by its normal
+        // focus rule so driver scheduling cannot spend its reading time before that look.
+        await evaluate(`document.querySelector('[data-guide="unfinished"] button:not(:disabled)').focus({ preventScroll: true })`);
+        assert.ok(await until(`!!document.activeElement?.closest('[data-guide="unfinished"]')`), `${scene}: the unfinished card is held by focus`);
         if (inCall) assert.ok(await until(`!!document.querySelector(".talk-pill")`, 3000), `${scene}: the Talk pill is up`);
         await evaluate(`document.fonts.ready.then(() => true)`);
         await sleep(400);
@@ -132,6 +136,7 @@ try {
           await sleep(260);
           const second = await evaluate(measure);
           assert.equal(second.d, first.d, `${scene}: ${target}: the arrow is the same on a second look`);
+          assert.ok(await evaluate(`document.activeElement?.matches('[data-guide="unfinished"] button:not(:disabled)')`), `${scene}: ${target}: focus still holds the unfinished card`);
           return first;
         };
 

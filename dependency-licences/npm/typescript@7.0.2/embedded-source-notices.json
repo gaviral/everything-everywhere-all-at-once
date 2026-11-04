@@ -1,0 +1,122 @@
+[
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/browser/main.js",
+    "source_sha256": "3d8217c2dde5d7602a722ad015eff7a02ce3ae46d42e32b6c5e22a7175e46a8f",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/browser/ril.js",
+    "source_sha256": "0005e065b0500c85e7cf3c4dc856b9a1282084d4405c7c17fafa9ee3f2143aab",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/api.js",
+    "source_sha256": "0d8ccd38514f3994256d0c271b9b6e288174e13847ed2c8561abd5f005bdeb76",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/cancellation.js",
+    "source_sha256": "b851c4246fa5a644bcebe56b1fb74048948eab0886d706e59e2090fa7e41550b",
+    "line": 2,
+    "text": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/connection.js",
+    "source_sha256": "0a3a46fad254b78fc2ee371d8438037c860b9bc73124fddb038bf3bb5a3c94f4",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/disposable.js",
+    "source_sha256": "ad43f37a324cf41af376ea66004063ac5867a2e3dfce81b47ab617b9105a0a7d",
+    "line": 2,
+    "text": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/encoding.js",
+    "source_sha256": "812de3b9b71e07f4c042de286e44a3acc070d4639257e39a9de20548b1f3262b",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/events.js",
+    "source_sha256": "d521b1fc2887c04a2d3f4d4403b5bd9fa734ef83e6f53e99bcc781d791db1508",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/is.js",
+    "source_sha256": "db07129f8322e52c81034004a1a1eb9b1be743c9ec55f5f6a5b33da48cb8a2a8",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/linkedMap.js",
+    "source_sha256": "9c2041c8828be66893ba5f97933cc7d3698a1bad2f34b742761e6f2a3e615346",
+    "line": 2,
+    "text": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/messageBuffer.js",
+    "source_sha256": "27beae232413871d20551178d3342ee0bc927e8b05862883c75ce021291f11cc",
+    "line": 2,
+    "text": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/messageReader.js",
+    "source_sha256": "5f912919f4b2584a38812535e7894c851a13b8f51a7ad6b769f2b5e35beffaef",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/messageWriter.js",
+    "source_sha256": "cd9cd263bdd57b32eac86a0dd83ac7241aa95ffb7a43af1e680b65449799afbc",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/messages.js",
+    "source_sha256": "7a06cfd7456c2f2471dc6aab3fb69683a62245d2a91859b337e03e0e66fa0b26",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/ral.js",
+    "source_sha256": "9b4736fe0168adf1dff8a1f41cf76dc8e9f380684cbb39056403e81a05a51cb3",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/semaphore.js",
+    "source_sha256": "9a7afb92b0ae8d9c341373fdecfb0133b4ba7414455110408809c2f4a05af1d1",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/common/sharedArrayCancellation.js",
+    "source_sha256": "91a1128bc09e21d95be67dd441e13a0373af7c97d6ccf912b7b4168d11190efa",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/node/main.js",
+    "source_sha256": "bcbe8e0f8693a2e3effb4a890a70c331153b616a4a2f88406dcffd842364a2e6",
+    "line": 49,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ----------------------------------------------------------------------------------------- */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/lib/node/ril.js",
+    "source_sha256": "b05099278ce67ce95c1b87ff3297c670d178969553b6b49e0e97083e0805ac94",
+    "line": 2,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  },
+  {
+    "source_file": "vendor/vscode-jsonrpc/typings/thenable.d.ts",
+    "source_sha256": "65b9243c80068ec9696b1fbdd23c9acf80d51df02f97b2d7a0514312b0a9fe7d",
+    "line": 1,
+    "text": "/* --------------------------------------------------------------------------------------------\n * Copyright (c) Microsoft Corporation. All rights reserved.\n * Licensed under the MIT License. See License.txt in the project root for license information.\n * ------------------------------------------------------------------------------------------ */"
+  }
+]

@@ -1,3 +1,5 @@
+import { builtInOn, watchBuiltIns, setHelpersAvailable, featureAvailable } from "./shell/features";
+import { switchBrick } from "./bricks-core";
 import { ignorePartner } from "./partner";
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -259,6 +261,7 @@ export type Capture = { id: string; text: string; thought_ids: string[]; saved: 
 type ServerMsg =
   | { type: "returned"; request_id: string | null; anchor: ReturnAnchor | null; message: string }
   | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
+  | { type: "helpers_available" }
   | { type: "map_identity"; id: string }
   | { type: "heartbeat"; id: string }
   | { type: "recoverable_speech"; id: string; text: string }
@@ -857,6 +860,11 @@ export function useCore(speaker?: string) {
     let handoffTimer: number | undefined;
     // The message card the core last sent about since this connection opened or its last snapshot, if any.
     let cardTold: number | null = null;
+    const helpersPreference = () => {
+      if (featureAvailable("helpers") && socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "helpers_switch", on: builtInOn("helpers") }));
+    };
+    const unwatchHelpers = watchBuiltIns(helpersPreference);
+    const shownSwarms = new Set<string>();
     const asked = movesAsked(speaker);
 
     const open = () => {
@@ -875,6 +883,7 @@ export function useCore(speaker?: string) {
         resetApps();
         resetSteps();
         resetRoute();
+        setHelpersAvailable(false);
         setConnected(true);
         retry = 500;
         cardTold = null;
@@ -911,6 +920,10 @@ export function useCore(speaker?: string) {
         if (receiveRoute(msg)) return;
         // Someone pointing at a part of the screen, or a caption (Guide.tsx): never the map.
         if (receiveGuide(msg)) return;
+        if (msg.type === "job" && msg.id.startsWith("helpers:") && !msg.parent && msg.status === "running" && !shownSwarms.has(msg.id)) {
+          shownSwarms.add(msg.id);
+          switchBrick("work-spine", true);
+        }
         if (receiveJob(msg)) return;
         switch (msg.type) {
           case "returned": {
@@ -921,6 +934,10 @@ export function useCore(speaker?: string) {
             }
             break;
           }
+          case "helpers_available":
+            setHelpersAvailable(true);
+            helpersPreference();
+            break;
           case "heartbeat":
             if (msg.id === heartbeatId) lastReply = Date.now();
             break;
@@ -1109,6 +1126,7 @@ export function useCore(speaker?: string) {
             setImportStatus(msg.status);
             break;
           case "send_card": {
+            if (msg.purpose === "helpers" && msg.state === "counting") switchBrick("work-spine", true);
             cardTold = msg.id;
             const at = Date.now();
             setSendCard((shown) => cardReceived(shown, msg, at));
@@ -1173,6 +1191,7 @@ export function useCore(speaker?: string) {
     open();
     return () => {
       window.removeEventListener("storage", storageChanged);
+      unwatchHelpers();
       closed = true;
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);

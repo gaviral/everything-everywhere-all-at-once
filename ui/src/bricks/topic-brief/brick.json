@@ -1,0 +1,8 @@
+{
+  "id": "topic-brief",
+  "name": "Topic brief",
+  "does": "Preview and download a source-labeled brief of your active topic.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

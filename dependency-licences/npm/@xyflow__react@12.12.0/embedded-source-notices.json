@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "dist/umd/index.js",
+    "source_sha256": "c418896c3d0cc63498e724df7ed9698532c58523c04d30ebcd3ff7fa0bf3ecff",
+    "line": 2,
+    "text": "/**\n   * @license React\n   * use-sync-external-store-shim/with-selector.production.js\n   *\n   * Copyright (c) Meta Platforms, Inc. and affiliates.\n   *\n   * This source code is licensed under the MIT license found in the\n   * LICENSE file in the root directory of this source tree.\n   */"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "source_file": "index.d.ts",
+    "source_sha256": "9500090533aafe039c41d8d368a44959f04482bb75636d96bc843c06f3d6a348",
+    "line": 1,
+    "text": "// Copyright 2017 Lovell Fuller and others.\n// SPDX-License-Identifier: Apache-2.0\n"
+  },
+  {
+    "source_file": "lib/detect-libc.js",
+    "source_sha256": "5de6a1c1abec8bba5ea1261cf819d83a73c92ebe72b879ae48c59ca12320a462",
+    "line": 1,
+    "text": "// Copyright 2017 Lovell Fuller and others.\n// SPDX-License-Identifier: Apache-2.0\n"
+  },
+  {
+    "source_file": "lib/elf.js",
+    "source_sha256": "0e8820f00ee11d179d94894d4f97a6e87c34ab59e5dd4d3a571dfabcecf043af",
+    "line": 1,
+    "text": "// Copyright 2017 Lovell Fuller and others.\n// SPDX-License-Identifier: Apache-2.0\n"
+  },
+  {
+    "source_file": "lib/filesystem.js",
+    "source_sha256": "5c98fb66b559d0b4fa82c7a3e39d9ab6840f022c4c73e6b1a73ac6d16ec13fd7",
+    "line": 1,
+    "text": "// Copyright 2017 Lovell Fuller and others.\n// SPDX-License-Identifier: Apache-2.0\n"
+  },
+  {
+    "source_file": "lib/process.js",
+    "source_sha256": "f37dd0ead9f70b50c6f5529c600e1cdf076e3c3bc8e6b4a0a9820a8d65244628",
+    "line": 1,
+    "text": "// Copyright 2017 Lovell Fuller and others.\n// SPDX-License-Identifier: Apache-2.0\n"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "src/dir/mod.rs",
+    "source_sha256": "d144325a6528a9a6e7c78a42e0eec42ee401c3b834ef5851376323725756f219",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "tests/tempdir.rs",
+    "source_sha256": "b52cbe9937525075c83091da520734ef0c4eac35cd13c9c121000e2dcef87cc5",
+    "line": 1,
+    "text": "// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

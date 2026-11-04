@@ -1,0 +1,242 @@
+[
+  {
+    "source_file": "src/array.rs",
+    "source_sha256": "4d469ca3f6aceb42dfaf7b26aa9ef14a8ebce05e02d0beda985fa32f2ec48963",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/attributed_string.rs",
+    "source_sha256": "7042f3fbf6904efecb15f01ce2e96eecf84973e0fef9be4c10d14944b0f90a24",
+    "line": 1,
+    "text": "// Copyright 2013 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/bag.rs",
+    "source_sha256": "dec9ff467ac713526c3be8148ae41b21ab8840f393733bb53c77224ef089787c",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/base.rs",
+    "source_sha256": "5d0dee358519712e881e2edbea0ca6d3539958ed1ff3d70aa136af7e25292f22",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/binary_heap.rs",
+    "source_sha256": "0565125dbdb1fa578888e00f5b195ab91f0bf65881eabcd39de99ca811d756de",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/bit_vector.rs",
+    "source_sha256": "dcdaa573d90b25bdc6b98f2330110e8591b7c329601643dcc6aa23b1b9ec7210",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/bundle.rs",
+    "source_sha256": "83ac9d7c45f06161767588c465eed086a773714734da0614d98d000326df3603",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/calendar.rs",
+    "source_sha256": "b73796956e50d92f0479479e84246712804537d694e4cdd01d5440e5fbcbd333",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/characterset.rs",
+    "source_sha256": "ba60f78884cd860e151df35c1953bcd6eae46d9f27c36584b66e508e2301a7a8",
+    "line": 1,
+    "text": "// Copyright 2019 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/data.rs",
+    "source_sha256": "fe4e2effbfd9348575507d06aa53cd583808c908f9e03ac1a076b077230c9c01",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/date.rs",
+    "source_sha256": "971d681f6eeefa3764d8a43e53cbf7c937c419331207c7bb003a25c9b0b0722f",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/date_formatter.rs",
+    "source_sha256": "05e84ac3cf4c0daae2e939a9bedddfd10dd5309ea1536bf8241de41971d11f8a",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/dictionary.rs",
+    "source_sha256": "ac23d99208131049c82c13b37a99b4fd129224d1dafcd65ff2f9de200d73e9d1",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/error.rs",
+    "source_sha256": "b523faa8c498e1115c72e71a10e7a3bf8bcc01588cb02e70dc9fd45cbdaa35f6",
+    "line": 1,
+    "text": "// Copyright 2016 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/file_security.rs",
+    "source_sha256": "542c5d8eef22424479abcb448601611d85c9cc96e41cd6cd6de5ea3efe1213a6",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/filedescriptor.rs",
+    "source_sha256": "706eebde408713cc49bbab078e86fe51e95fe29b167420bbcbb573847dcf29e2",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "5c14390b7b45c769ea53664621c1a9f5fa39fda509288d9e13018170213bbe4b",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/locale.rs",
+    "source_sha256": "372190a9cb5659fba0b92598c5dcbdaa3f90b29b3440ddcfe77931e85c1f96d9",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/mach_port.rs",
+    "source_sha256": "e52c2ce794e82ebeeb0cba170902409f18626b7d9e29d6dcd333e9c13411408a",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/messageport.rs",
+    "source_sha256": "d8e342f0eabe47f6f4746fdbf996bf9008b4b5f1fa24e0bc4ecd73b2de81b234",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/notification_center.rs",
+    "source_sha256": "0ab30523bc4ac799016970c9c59594cbb3afeda054705c15d0979eb07abb7c7d",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/number.rs",
+    "source_sha256": "28b10c9d2361cac18549ef66839f595e98490096e756e9a7f25536b6ceb1f687",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/number_formatter.rs",
+    "source_sha256": "024fbd3b2ecaecf19cfdb463e0f0096d1fa28bc4ce636659e53459d1b01af658",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/plugin.rs",
+    "source_sha256": "0904b1b4b882e626d5d63ac91c540dfdf65f5f4428cf38c9def6acfc7ed84cd3",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/preferences.rs",
+    "source_sha256": "49d8ac0c669a01678fa0dc26d6cb13bc72004c8422e525bf3e26f01feb5a3693",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/propertylist.rs",
+    "source_sha256": "f7f12cb8c67098e5b96cb8a63b4a947549a2cbf7a6523ce314141b4f8cc202c4",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/runloop.rs",
+    "source_sha256": "8fa6e5e74a013f8101d5a4f6616818573adc7ed197e28b799dca4c3a1cedaac9",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/set.rs",
+    "source_sha256": "0e619ec75a6b975be6b6d59ed3b01c803dd635020288b178db949b1c45442d17",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/socket.rs",
+    "source_sha256": "b67737b8c04142fa4d198c19f0867fd653837e529bf2665e78750c94f469a793",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/stream.rs",
+    "source_sha256": "f9b1099191010a96ce0aadcc22385732710dfc1521873096a9db67ad80472e36",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/string.rs",
+    "source_sha256": "fa46e7b7865709494bb05c9c7c6006f165fafa956ab41f053af0e4b41904efa4",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/string_tokenizer.rs",
+    "source_sha256": "0da4ae1a841591871602f21cc1c9b51289a0514a255b269e4b61afdeb0097c10",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/timezone.rs",
+    "source_sha256": "f584ea76627f12f33eba25d7ea054c2d2c10a2d96474fce12858ccb4bdf688c1",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/tree.rs",
+    "source_sha256": "50d513ea1801797c549218c51f5ebf77be4cf80901b12ce3ba0a223c602995d4",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/url.rs",
+    "source_sha256": "cb08b0bd24708e6572711f4f82b88370e811aabf4f58f22c34f0f873a44c7486",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/url_enumerator.rs",
+    "source_sha256": "bd531f31f6c62b2849d5ccbc82bfc3ae3866c4cdd6768b6c2fe380f24c290540",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/user_notification.rs",
+    "source_sha256": "e86b052817028847e62121752e7d58f8ed6f8ad15f5ef947c1fa93bbd0fcbf26",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/uuid.rs",
+    "source_sha256": "48af493dc6c8b00d804d6ae92a2fd71eabdae8a2be0500baaa55ce56345c350a",
+    "line": 1,
+    "text": "// Copyright 2013-2015 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/xml_node.rs",
+    "source_sha256": "c7894a4d08f695ba75d539b3c8d6cc3a90544000786fe3f9cd9c02ad7541213b",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/xml_parser.rs",
+    "source_sha256": "ac8a3d2c71ec8ec80603ce5ef214147c0e93bed211c1559a47f14fc31cb0bbaf",
+    "line": 1,
+    "text": "// Copyright 2023 The Servo Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

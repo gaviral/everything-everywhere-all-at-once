@@ -1,0 +1,23 @@
+.spine-terse { position: absolute; inset: 0; overflow: auto; padding: 84px 24px 240px; background: var(--bg, #faf9f6); color: var(--ink, #272822); }
+.spine-terse-toolbar, .spine-terse-outline { max-width: 860px; margin: 0 auto; }
+.spine-terse-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.spine-terse-toolbar p { font-size: 12px; opacity: .65; }
+.spine-terse-toolbar button { min-height: 44px; padding: 8px 14px; border: 0; border-radius: 8px; background: transparent; color: inherit; }
+.spine-terse-toolbar button[aria-pressed=true] { background: #ddd9ce; }
+.spine-terse-group { margin: 10px 0 20px; }
+.spine-terse-parent { display: flex; gap: 10px; align-items: center; min-height: 44px; background: none; border: 0; color: inherit; text-align: left; font-size: 16px; }
+.spine-terse-parent small { opacity: .5; font-size: 11px; }
+.spine-terse-group ul { list-style: none; margin: 0 0 0 12px; padding-left: 20px; border-left: 1px solid #d3d1c8; }
+.spine-terse-line { display: flex; align-items: baseline; width: 100%; gap: 14px; min-height: 44px; padding: 10px 4px; text-align: left; color: inherit; background: transparent; border: 0; font-size: 15px; line-height: 1.5; }
+.spine-terse-line:hover, .spine-terse-parent:hover { background: #eae7df; border-radius: 5px; }
+.spine-terse-speaker { flex: 0 0 70px; font-size: 11px; opacity: .6; }
+.spine-terse-words { flex: 1; }
+.spine-terse-branch .spine-terse-branch { margin-left: 24px; border-left: 1px solid #d3d1c8; padding-left: 12px; }
+.spine-terse-theme { font-size: 12px; opacity: .65; margin-top: 28px; }
+.spine-terse-original { width: min(600px, calc(100% - 40px)); max-height: 75dvh; overflow: auto; padding: 24px; border: 1px solid #ccc8bb; border-radius: 12px; color: #272822; background: #faf9f6; }
+.spine-terse-original::backdrop { background: #0006; }
+.spine-terse-original p { white-space: pre-wrap; line-height: 1.7; }
+.spine-terse-original h2 { font-size: 14px; }
+.spine-terse-close { float: right; min-height: 44px; }
+.spine-terse button:focus-visible { outline: 2px solid #5c7150; outline-offset: 2px; }
+@media(max-width: 560px) { .spine-terse { padding: 78px 12px 250px; } .spine-terse-toolbar { gap: 8px; margin-bottom: 12px; } .spine-terse-speaker { flex-basis: 36px; } .spine-terse-line { gap: 8px; font-size: 14px; } .spine-terse-group ul { padding-left: 12px; } }

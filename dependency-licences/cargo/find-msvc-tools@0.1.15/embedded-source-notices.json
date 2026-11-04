@@ -1,0 +1,32 @@
+[
+  {
+    "source_file": "src/com.rs",
+    "source_sha256": "6706eb2a4d8d1920b66759776a78ab054b493a81dca99a90f96f9e53c0cd1852",
+    "line": 1,
+    "text": "// Copyright © 2017 winapi-rs developers\n// Licensed under the Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// All files in the project carrying such notice may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/find_tools.rs",
+    "source_sha256": "62862c642802e52167a1d916538cfd165e088bda9bce851522da4405af3b2d4b",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/registry.rs",
+    "source_sha256": "2c8f7ed919377df32ab5e55c1af438c542da8d1f6a4f7c9ebf337839d3fd96f5",
+    "line": 1,
+    "text": "// Copyright 2015 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/setup_config.rs",
+    "source_sha256": "397bd3c353a22edc4dfa8651b97cdf20e36f70526fda78d9bbf5dced3048f6d1",
+    "line": 1,
+    "text": "// Copyright © 2017 winapi-rs developers\n// Licensed under the Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// All files in the project carrying such notice may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/winapi.rs",
+    "source_sha256": "b2c1db5806205215536dc520a57934418fef6707b39e69996b3f3a9ced7dda7e",
+    "line": 1,
+    "text": "// Copyright © 2015-2017 winapi-rs developers\n// Licensed under the Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// All files in the project carrying such notice may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

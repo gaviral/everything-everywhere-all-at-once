@@ -125,7 +125,9 @@ function Bubble({ node, shared }: { node: Node; shared: Shared }) {
         {state.clock && <>{" "}<span className="work-spine-clock">{state.clock}</span></>}
         {shared.latest === job.id && <>{" "}<span className="work-spine-now">Just now</span></>}
       </p>
-      {job.result && <p className={shared.asks.has(job.id) ? "work-spine-question" : "work-spine-result"}>{job.result}</p>}
+      {job.result && (job.id.startsWith("helpers:") && job.parent && !job.title.startsWith("Coding helper") && job.status === "done"
+        ? <details className="work-spine-result"><summary>Read answer</summary><p>{job.result}</p></details>
+        : <p className={shared.asks.has(job.id) ? "work-spine-question" : "work-spine-result"}>{job.result}</p>)}
     </article>
     {kids.length > 0 && <>
       <button type="button" className="work-spine-fold" aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => { shared.release(); shared.toggle(job.id); }}>
