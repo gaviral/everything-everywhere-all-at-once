@@ -131,7 +131,7 @@
     {
       "id": "repository",
       "label": "Public GitHub Repository",
-      "answer": "https://github.com/gaviral/e2a2o-app — proposed repository; public access and final release verification are pending."
+      "answer": "Pending: verified public repository URL. Proposed repository: gaviral/e2a2o-app; public access and final release verification are still required."
     },
     {
       "id": "video",
