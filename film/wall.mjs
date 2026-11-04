@@ -39,7 +39,12 @@ export function wallFrame(count, local, duration = 8) {
     visible: mix(a[1], b[1], t), opacity: 1 - ease(Math.max(0, Math.min(1, (progress - .91) / .075))) };
 }
 
+import { createField, drawField, paintField } from './wall-field.mjs';
+export function paintWall(shot,local,tiles) {
+  if(shot.layout==='field')paintField(shot,local,tiles);
+}
 export async function createWall(shot, camera, videos, bounded) {
+  if (shot.layout === 'field') return createField(shot,camera,videos,bounded);
   const tiles = [];
   for (let i = 0; i < shot.tiles.length; i++) {
     const spec = shot.tiles[i];
@@ -69,6 +74,7 @@ export async function createWall(shot, camera, videos, bounded) {
 }
 
 export function drawWall(shot, local, camera, tiles) {
+  if (shot.layout === 'field') return drawField(shot,local,camera,tiles);
   const frame = wallFrame(tiles.length, local, shot.duration);
   camera.style.transform = `translate(${960 - frame.x * frame.scale}px, ${540 - frame.y * frame.scale}px) scale(${frame.scale})`;
   camera.style.transformOrigin = '0 0';
