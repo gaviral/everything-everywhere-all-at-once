@@ -132,7 +132,7 @@ The first source build takes about 4 minutes with nothing cached (10-core Apple-
 
 The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The earlier classic page (a header across the top and a bottom bar) stays at `http://localhost:4321/?shell=1`.
 
-**Work spine and Remote (simulated helper work, no key needed).** In **Features** (`C`), switch on **Work spine**. It shows jobs beside the Canvas on a laptop; on a phone, tap its bar above the composer. With the local app running, open a second terminal in the repository and run `node scripts/demo-jobs.mjs` (add `--port PORT` for a different app port, or `--room CODE` for a room). The feed labels its jobs **Demo mode · simulated**; it makes no bookings or payments. Leave it running to answer its held question. Open `/?remote` on the same app for the phone Remote: in a room it joins as a guest and relays your answer; without a room it plays a simulated feed in the page.
+**Work spine and Remote (simulated helper work, no key needed).** In **Features** (`C`), switch on **Work spine**. It shows jobs beside the Canvas on a laptop; on a phone, tap its bar above the Input box. With the local app running, open a second terminal in the repository and run `node scripts/demo-jobs.mjs` (add `--port PORT` for a different app port, or `--room CODE` for a Shared map). The feed labels its jobs **Demo mode · simulated**; it makes no bookings or payments. Leave it running to answer its held question. Open `/?remote` on the same app for the phone Remote: in a Shared map it joins as a guest and relays your answer; without a Shared map it plays a simulated feed in the page.
 
 **With a key: watch the story build itself.**
 

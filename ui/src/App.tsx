@@ -553,8 +553,8 @@ export default function App() {
     micStart.current = attempt;
     const sameConnection = core.micConnection();
     setStartingMic(true);
-    setMicFailed(false);
     if (micNotice(core.notice)) core.clearNotice();
+    setMicFailed(false);
     try {
       let stopped = false;
       // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than

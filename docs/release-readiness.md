@@ -6,7 +6,7 @@ Integrated `exp` through `cf7acd4` on `r-release`; no changes were made to `exp`
 
 - Secret scanning still covers every tracked working/index file and all reachable objects. Generic key/token assignments require 16 characters; passwords and secrets retain the shorter threshold. Provider-specific patterns are unchanged. This removes all 17 historical fixture matches without excluding `scripts/start-check.mjs`.
 - Seven release-safety tests pass. A temporary repository stages harmless `scripts/start-check.mjs` fixtures, then a working-tree edit plants a synthetic 32-character key at that same path: the scanner rejects it, redacts it, and passes after the temporary file is removed. The fixture repository is cleaned up.
-- The full-history scan reports zero findings. Full `bricks-check` passes all 14 bricks, including playground and app; the isolated Spine playground check also passes. Brick code and its check match the integrated `exp`. No remaining bricks product failure was reproduced; an interrupted run exited 143 without assertion output, which is not a product diagnosis. No brick assertions were relaxed.
+- The full-history scan reports zero findings. Full `bricks-check` passes all 14 bricks, including playground and app; the isolated Spine playground check also passes. Brick code and its check match the integrated `exp`. No remaining bricks product failure was reproduced; an interrupted run exited 143 without assertion output, which does not establish a product failure. No brick assertions were relaxed.
 
 The complete strict precheck results are recorded below. Its UI build preceded the final integration of `cf7acd4`; page failures therefore also need confirmation with that commit's rebuilt UI before attributing them to the final product.
 
