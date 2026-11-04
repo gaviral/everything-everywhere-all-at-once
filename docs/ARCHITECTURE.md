@@ -10,6 +10,7 @@ Browser, one page per window (ui/src)
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
+  dev-build.ts   defers optional development-build reloads while the page is speaking, typing or sending
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
@@ -119,6 +120,10 @@ Core, one process (core/src: axum, tokio)
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
+  dev_build.rs   optional build-file notifications and connected-page activity for idle reloads
+  code_canvas.rs optional local-only source and branch map; delegates part summaries and agent state to code_canvas/
+  flow.rs        Meta-powered text boxes, streamed transformations and publishing results back to their source topic
+  workshop.rs    configured Meta model trials, optional event data and explicit Workshop commands
   conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
   replies.rs       deterministic, bounded anchors and command speech: no model calls, no saved replies
   guide.rs       validates point, caption, hold, tour, job and answer; journals completed captions, relays transient guidance, retains latest jobs in memory for replay, addresses answers to a speaker's windows; no model (below)

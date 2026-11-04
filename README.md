@@ -113,6 +113,10 @@ Full preset connectors (Demo remains the default):
 
 Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
+Build tooling: npm runs TypeScript's type check and Vite's production build for the React UI; Cargo builds the Rust core. The first source build can take several minutes at “Checking map storage”; leave the terminal running until the core prints its address.
+
+`./run.sh sample` skips the macOS Keychain lookup. No `.env` or account setup is needed for the sample.
+
 If you supply an executable regular file named exactly `e2a2o-core-PLATFORM-ARCH` beside `run.sh`, it uses that core without Rust or native build tools. Replace `PLATFORM` and `ARCH` with Node's `process.platform` and `process.arch` (see `node -p 'process.platform + "-" + process.arch'`); for example, `e2a2o-core-darwin-arm64` on an Apple-silicon Mac. These instructions do not promise a published binary release. Node and the UI build are still required.
 
 If a release containing your machine's `e2a2o-core-PLATFORM-ARCH` binary and `SHA256SUMS` has been published, you can optionally install it with the commands below from the repository root, replacing `TAG` with that release's actual tag. The installer checks SHA-256 and installs beside `run.sh`; an existing destination is refused rather than replaced.
@@ -135,7 +139,7 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 
 Build time depends on the machine and cache. The launcher prints the UI and core stages. When the terminal says `E2A2O core on`, open the sample URL printed by the launcher: `http://localhost:4321/?sample` by default. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample` prints `http://localhost:4400/?sample`.
 
-**No key: a sample map, labelled SAMPLE.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. These are public fixtures dated for the week of Nov 3, 2026; their deadlines are examples. Type “where was I?” to return to the unfinished topic, then “pictures” to open its saved pictures. You can also try `j`/`k` and Enter, `/` to search, and the “Did you mean BC Hydro?” question written into the sample. Cards and Pictures start off: switch one on in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”; new text needs a working key for automatic placement. `./run.sh sample founder` opens a founder's day, also labelled SAMPLE. Each sample start restores its fixture.
+**No key: a sample map, labelled SAMPLE.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. These are public fixtures dated for the week of Nov 3, 2026; their deadlines are examples. Type “where was I?” to return to the unfinished topic. Open the **SAMPLE** menu at the top left and choose **Pictures** to see the saved images; **Back to the Canvas** returns to the map. You can also try `j`/`k` and Enter, or `/` to search. For the optional Cards view, switch on Cards in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”; new text needs a working key for automatic placement. `./run.sh sample founder` opens a founder's day, also labelled SAMPLE. Each sample start restores its fixture.
 
 The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The earlier classic page (a header across the top and a bottom bar) stays at `http://localhost:4321/?shell=1`.
 
