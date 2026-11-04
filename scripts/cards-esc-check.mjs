@@ -56,7 +56,7 @@ const DEMO = [
   // The Canvas remains mounted behind Cards; inspect the correction in the shown view.
   ["Did you mean …? Yes", 'main[aria-label="Cards"] .did-you-mean button:not(.quiet)'],
 ];
-const KEYS = { c: ["c", "KeyC", 67, "c"], y: ["y", "KeyY", 89, "y"], m: ["m", "KeyM", 77, "m"], Escape: ["Escape", "Escape", 27] };
+const KEYS = { c: ["c", "KeyC", 67, "c"], y: ["y", "KeyY", 89, "y"], m: ["m", "KeyM", 77, "m"], Escape: ["Escape", "Escape", 27], Backspace: ["Backspace", "Backspace", 8] };
 let browser = null;
 let runs = 0;
 
@@ -170,6 +170,48 @@ try {
       await sleep(400);
       await settles({ view: "cards", cards: true, canvas: false }, "Cards stays open");
       await healthy("with Cards open");
+      const entry = await evaluate(`(() => {
+        const head = document.querySelector('main[aria-label="Cards"] .thread-head');
+        const r = head?.getBoundingClientRect(), dock = document.querySelector('.dock')?.getBoundingClientRect();
+        return { scroll: scrollY, top: r?.top, bottom: r?.bottom, height: innerHeight, dock: dock?.top,
+          visible: !!r && r.height > 0 && r.top >= 0 && r.bottom <= (dock?.top ?? innerHeight)
+            && head.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) };
+      })()`);
+      await shoot("cards-entry");
+      if (shots) writeFileSync(join(shots, `cards-entry-${width}-${scheme}.json`), JSON.stringify(entry, null, 2));
+      assert.ok(entry.visible, `${label}: opening Cards shows its first topic without scrolling (${JSON.stringify(entry)})`);
+
+      // A reading position belongs to Cards, while an unsent draft and its selection survive the trip.
+      await tap("#type-a-thought", "the composer");
+      const draft = "Keep this drafted thought";
+      await page("Input.insertText", { text: draft });
+      await evaluate(`(() => { const input = document.querySelector('#type-a-thought'); input.setSelectionRange(5, 13); input.blur(); })()`);
+      await press("c");
+      await settles({ rail: true, tab: "catalog" }, "Catalog opens with a draft selection");
+      await tap('[data-row="cards"] .shell-link', "Cards' Show with a draft");
+      await settles({ view: "cards", rail: false }, "Cards keeps the draft");
+      await evaluate("document.activeElement?.blur()");
+      const readingScroll = await evaluate(`new Promise(resolve => {
+        const top = Math.min(64, Math.max(0, document.documentElement.scrollHeight - innerHeight));
+        if (scrollY === top) { resolve(scrollY); return; }
+        addEventListener('scroll', () => resolve(scrollY), { once: true });
+        scrollTo({ top, behavior: 'instant' });
+      })`);
+      if (width < 600) assert.ok(readingScroll > 0, `${label}: the phone fixture has a real reading position to retain`);
+      await press("m");
+      await settles({ view: "map", cards: false, canvas: true }, "M returns to the Canvas with a draft");
+      await press("c");
+      await settles({ rail: true, tab: "catalog" }, "Catalog opens for the return to Cards");
+      await tap('[data-row="cards"] .shell-link', "Cards' Show restores reading");
+      await settles({ view: "cards", rail: false }, "Cards reopens at its reading position");
+      const restored = await until(`Math.abs(scrollY - ${readingScroll}) < 1`, 3000);
+      assert.ok(restored, `${label}: Cards restores its prior scroll (wanted ${readingScroll}, got ${await evaluate('scrollY')})`);
+      assert.deepEqual(await evaluate(`(() => { const input = document.querySelector('#type-a-thought'); return [input.value, input.selectionStart, input.selectionEnd]; })()`), [draft, 5, 13], `${label}: draft and selection survive view switching`);
+      await shoot("cards-reading-restored");
+      await evaluate("document.querySelector('#type-a-thought').select()");
+      await press("Backspace");
+      assert.ok(await until(`document.querySelector('#type-a-thought').value === ''`), `${label}: the draft can still be edited`);
+      await evaluate("document.activeElement?.blur()");
 
       // What the demo shows on a card, within reach, and a tap on Add to Reminders reaching the core.
       await evaluate("window.scrollTo(0, 0)");

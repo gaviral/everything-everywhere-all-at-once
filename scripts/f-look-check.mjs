@@ -125,7 +125,17 @@ for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]].filt
     }
   }
   await clean();await shot('map');
-  await click('.shell-find input');await shot('find');await key('Escape','Escape',27);
+  await check(`(()=>{const input=document.querySelector('.shell-find input'),field=input.closest('label'),features=document.querySelector('[data-guide="catalog"]');return field.getBoundingClientRect().width<=44 && features.querySelector('.learned-action-word')?.getBoundingClientRect().width>0 && features.querySelector('kbd')?.getBoundingClientRect().width>0 && input.labels[0].textContent.includes('Find topics or words') && input.getAttribute('aria-keyshortcuts')==='/' && features.getAttribute('aria-label')==='Features' && features.getAttribute('aria-keyshortcuts')==='C';})()`, 'Find icon and initial Features word retain their names and visible keys');
+  await evaluate(`document.querySelector('[data-guide="catalog"]').focus()`);
+  await check(`document.querySelector('[role="tooltip"]')?.textContent==='Turn features on or off. Press C for Features.'`, 'Features explains its purpose on keyboard focus');
+  await shot('icons-tip');await key('Escape','Escape',27);
+  await click('.shell-find input');
+  await check(`document.activeElement===document.querySelector('.shell-find input') && document.querySelector('.shell-find-field').getBoundingClientRect().width>200`, 'Find icon opens a visible search field');
+  await shot('find');await key('Escape','Escape',27);
+  await check(`document.querySelector('.shell-find-field').getBoundingClientRect().width<=44 && document.querySelector('.shell-find input').value===''`, 'Escape clears Find and returns its compact icon');
+  await key('/','Slash',191);
+  await check(`document.activeElement===document.querySelector('.shell-find input')`, 'slash still opens Find directly');
+  await key('Escape','Escape',27);
   await key('y','KeyY',89);await check(`!!document.querySelector('.shell-history')`,'History opens');
   await check(`document.querySelector('.shell-history').innerText.includes('This copy has no AI key') && !(/MODEL_API_KEY|\\.env/.test(document.querySelector('.shell-history').innerText))`,'History has plain explanation');
   await shot('history');
@@ -133,6 +143,7 @@ for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]].filt
   await key('Escape','Escape',27);
   await key('t','KeyT',84);await check(`!!document.querySelector('.shell-turns')`,'Talk opens');await shot('talk');await key('Escape','Escape',27);
   await key('c','KeyC',67);await check(`!!document.querySelector('.shell-catalog')`,'Features opens');
+  await check(`!document.querySelector('[data-guide="catalog"] .learned-action-word') && document.querySelector('[data-guide="catalog"] kbd').getBoundingClientRect().width>0`, 'successful C learns Features while its key stays visible');
   await evaluate(`(()=>{const r=[...document.querySelectorAll('.shell-catalog-row')].find(e=>e.innerText.includes('Source attribution'));r?.scrollIntoView({block:'center'});})()`);
   await check(`document.querySelector('.shell-catalog').innerText.includes('Shows who added a point')`,'complete attribution phrase');
   await shot('features');await key('Escape','Escape',27);

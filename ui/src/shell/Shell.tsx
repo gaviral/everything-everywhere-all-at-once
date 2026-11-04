@@ -15,6 +15,8 @@ import { KIND_NAMES, NAMES } from "./names";
 import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 import { SampleTools, type SampleToolsProps } from "./SampleTools";
+import { LearnedAction } from "./LearnedAction";
+import { useBuiltInsOn } from "./features";
 
 export { ToolSlot } from "../bricks/contract";
 
@@ -55,9 +57,9 @@ export function Find({ inputRef, query, setQuery, results, go, inspect, inspecti
   };
   return <div className={cls("shell-find", (focused || query) && "shell-find-open")} data-guide="search"
     onFocusCapture={() => setFocused(true)} onBlurCapture={() => window.setTimeout(() => setFocused(!!inputRef.current?.closest(".shell-find")?.contains(document.activeElement)), 120)}>
-    <label className="shell-pill shell-find-field">
+    <label className="shell-pill shell-find-field" data-tip={!focused && !query ? NAMES.tips.find : undefined}>
       <Icon name="find" />
-      <span className="sr-only">{NAMES.find}</span>
+      <span className="sr-only">{NAMES.findLabel}</span>
       <input ref={inputRef} type="search" value={query} placeholder={focused ? NAMES.findPlaceholder : NAMES.find} aria-keyshortcuts="/"
         onChange={(event) => setQuery(event.target.value)} onKeyDown={key} onFocus={() => setFocused(true)}
         role={inspect ? "searchbox" : "combobox"} aria-expanded={!!shown} aria-controls="shell-find-results" aria-autocomplete={inspect ? undefined : "list"} />
@@ -83,10 +85,13 @@ export function TopRight({ children }: { children: ReactNode }) {
   return <div className="shell-corner shell-tr" data-slot="top-right">{children}</div>;
 }
 
-/** A corner's button: an icon, its name (gone on a phone, where the icon stays), its key. */
+/** A corner's button keeps its name and shortcut; Features can earn a compact presentation. */
 export function CornerButton({ icon, label, keyName, keyAria, pressed, onClick, guide, controls }: {
   icon: Parameters<typeof Icon>[0]["name"]; label: string; keyName: string; keyAria: string; pressed?: boolean; onClick: () => void; guide?: string; controls?: string;
 }) {
+  const learnedLabels = useBuiltInsOn().has("learned-action-labels");
+  if (guide === "catalog") return <LearnedAction id="features" label={label} icon={<Icon name={icon} />} shortcut={keyName}
+    active={!!pressed} onClick={onClick} guide={guide} controls={controls} tip={NAMES.tips.features} learningEnabled={learnedLabels} />;
   return <button type="button" className={cls("shell-pill", "shell-button", pressed && "shell-on")} aria-pressed={pressed} aria-keyshortcuts={keyAria}
     aria-controls={controls} onClick={onClick} data-guide={guide} title={`${label} (${keyName})`}>
     <Icon name={icon} /><span className="shell-label">{label}</span><Keycap>{keyName}</Keycap>

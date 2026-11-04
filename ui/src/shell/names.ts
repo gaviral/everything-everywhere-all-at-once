@@ -12,6 +12,7 @@ export const NAMES = {
     demo: "A scripted demo: the talk comes from a script, not live.",
   },
   find: "Find",
+  findLabel: "Find topics or words",
   findPlaceholder: "Find a topic or words",
   findNone: "Nothing found. Try different words.",
   catalog: "Features",
@@ -47,6 +48,8 @@ export const NAMES = {
     blocked: "Allow the microphone for this page in the address bar, or type.",
   },
   tips: {
+    find: "Find topics or words. Press / to search.",
+    features: "Turn features on or off. Press C for Features.",
     ai: "Done by the AI. Undo takes it back where it still can.",
     friend: "An AI on this map. It holds its questions for your pause.",
   },
@@ -62,6 +65,7 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  "learned-action-labels": { name: "Learned control icons", does: "Replace familiar control labels with icons after use; off keeps words and shortcut hints.", lives: "The shell" },
   "discussion-status": { name: "Discussion status", does: "Resolve or reopen an anchored exchange. Replies and quoted words stay together.", lives: "Comments and Talk" },
   "reply-format": { name: "Reply format", does: "Check new Conversation partner replies against word, line and preamble rules; repair once if needed.", lives: "Features · for this conversation" },
   "saved-answers": { name: "Saved answers", does: "Deliberately keep an Explain answer. Reopen its exact words and historical source without asking again.", lives: "Features · Show" },

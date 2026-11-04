@@ -1,0 +1,6 @@
+/* The retained Canvas keeps its full-height anchor. Cards starts at the top of
+   its own page instead of following that invisible space, and keeps page scrolling. */
+html.shell2[data-view="cards"] .app.shell > main.map[aria-label="Cards"] {
+  position: absolute;
+  inset: 0 0 auto;
+}
