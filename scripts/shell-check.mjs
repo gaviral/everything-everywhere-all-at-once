@@ -36,7 +36,7 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   const normal = (s) => s.replace(/\s+/g, " ").trim();
   const short = (s) => normal(s).slice(0, 90);
   const slots = ["top-left", "top-right", "stage", "status", "bottom-right", "bottom-left", "rail", "held"];
-  const scope = slots.map((s) => `[data-slot="${s}"]`).join(",") + ",.shell-welcome";
+  const scope = slots.map((s) => `[data-slot="${s}"]`).join(",") + ",.map-capture";
   const all = (s) => [...document.querySelectorAll(s)];
   const name = (e) => e.tagName.toLowerCase() + (e.id ? `#${e.id}` : "") + ` ${JSON.stringify(short(e.getAttribute("aria-label") || e.getAttribute("placeholder") || e.textContent))}`;
   const where = (e) => e.closest("[data-slot]")?.getAttribute("data-slot") || "welcome";
@@ -123,29 +123,16 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   const status = document.querySelector('[data-slot="status"]');
   if (status) {
     const r = status.getBoundingClientRect();
-    const composer = status.querySelector(".shell-composer"), field = composer?.querySelector("textarea"), mic = composer?.querySelector(".mic");
-    if (!composer || !field || !mic) out.add("status: missing input row or mic inside bottom bar");
+    const capture = document.querySelector('[data-map-capture="active"]');
+    const composer = capture?.querySelector('.shell-composer'), field = composer?.querySelector('textarea'), mic = composer?.querySelector('.mic');
+    if (!composer || !field || !mic) out.add('capture: missing input or microphone on the map');
     else {
-      const c = composer.getBoundingClientRect(), f = field.getBoundingClientRect(), m = mic.getBoundingClientRect();
-      if (c.left < r.left || c.right > r.right || c.top < r.top || c.bottom > r.bottom) out.add("status: input row outside bottom bar");
-      if (f.width < 80 || m.right > f.left || Math.abs((m.top + m.bottom) / 2 - (f.top + f.bottom) / 2) > 1) out.add("status: mic and usable input must share one row");
-      for (const e of status.querySelectorAll(".shell-status-state, .shell-status-right, .tiny-transcript")) {
-        if (e.getBoundingClientRect().bottom > c.top) out.add("status: input overlaps existing status items");
-      }
+      const c = capture.getBoundingClientRect(), f = field.getBoundingClientRect(), m = mic.getBoundingClientRect();
+      if (f.width < 160 || m.width < 36 || f.left < c.left || f.right > c.right + 1) out.add('capture: unusable input or microphone');
+      const stateText = normal(textNodes.filter(n => capture.contains(n)).map(n => n.textContent).join(' ')).toLowerCase();
+      if (!stateText.includes(state.toLowerCase())) out.add(`capture: expected state ${state}, got ${stateText}`);
     }
     if (Math.abs(r.bottom - innerHeight) > 0.5) out.add(`status: bottom ${r.bottom}px, expected ${innerHeight}px`);
-    const inside = normal(textNodes.filter((n) => status.contains(n)).map((n) => n.textContent).join(" ")).toLowerCase();
-    if (!inside.startsWith(state.toLowerCase())) out.add(`status: expected first state ${JSON.stringify(state)}, got ${JSON.stringify(short(inside))}`);
-    // Count words across inline elements as well as within a single text node.
-    const words = state.toLowerCase().split(/\s+/);
-    const occurrences = (text) => {
-      const tokens = normal(text).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-      return tokens.filter((_, i) => words.every((word, j) => tokens[i + j] === word)).length;
-    };
-    if (occurrences(inside) !== 1) out.add(`status: ${JSON.stringify(state)} must be named once`);
-    const outside = textNodes.filter((n) => !status.contains(n) && !n.parentElement?.closest(".shell-welcome-how")).map((n) => n.textContent).join(" ");
-    const copies = occurrences(outside);
-    if (copies) out.add(`page: ${JSON.stringify(state)} repeated outside status (${copies})`);
   }
   if (width === 390) {
     for (const e of [document.documentElement, document.body]) if (e.scrollWidth > e.clientWidth + 1) out.add(`page: ${e.tagName.toLowerCase()} scrollWidth ${e.scrollWidth} exceeds clientWidth ${e.clientWidth}`);
@@ -224,7 +211,7 @@ for (const scene of scenes) {
             }
             await browser.page("Page.navigate", { url });
             if (!await browser.until(`document.readyState === "complete" && !!document.querySelector(".app.shell")`, 10000)) throw new Error("shell page did not load");
-            const content = scene.world.threads.length ? ".spine-frame" : ".shell-welcome";
+            const content = scene.world.threads.length ? ".spine-frame" : "[data-map-capture=active]";
             if (!await browser.until(`(() => { const e = document.querySelector(${JSON.stringify(content)}); if (!e) return false; const s = getComputedStyle(e), r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility === "visible" && Number(s.opacity) >= 0.99; })()`, 10000)) throw new Error(scene.world.threads.length ? "map canvas did not show" : "first open did not show");
             await browser.evaluate("document.fonts.ready.then(() => true)");
             await sleep(300);

@@ -45,10 +45,10 @@ async function geometry(browser, width, height) {
   const g = await browser.evaluate(`(() => {
     const r=document.querySelector('${css}').getBoundingClientRect(), c=document.querySelector('#type-a-thought').getBoundingClientRect();
     const body=document.querySelector('.thinking-starters-body');
-    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,composer:c.top,composerBottom:c.bottom,overflow:document.documentElement.scrollWidth>innerWidth+1,
+    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,composer:c.top,composerBottom:c.bottom,clear:r.right<=c.left||r.left>=c.right||r.bottom<=c.top||r.top>=c.bottom,overflow:document.documentElement.scrollWidth>innerWidth+1,
       scrollable:body.scrollHeight>body.clientHeight, horizontal:body.scrollWidth>body.clientWidth+1};
   })()`);
-  assert.ok(g.left >= 0 && g.right <= width + 1 && g.top >= 0 && g.bottom <= g.composer && g.composerBottom <= height, `card and input fit ${width}: ${q(g)}`);
+  assert.ok(g.left >= 0 && g.right <= width + 1 && g.top >= 0 && g.clear && g.composerBottom <= height, `card and input fit ${width}: ${q(g)}`);
   assert.equal(g.overflow || g.horizontal, false, 'no horizontal crop');
 }
 async function focusedControlVisible(browser) {
@@ -216,9 +216,9 @@ try {
   const beforeSend = core.heard.filter(m => m.type === 'text').length;
   await evaluate(`{const b=[...document.querySelectorAll('${css} button')].find(b=>b.textContent==='Send as thought');b.click();b.click();}`);
   assert.ok(await until(`document.querySelector('.thinking-starters-status')?.textContent==='Submitted to E2A2O'`));
-  assert.ok(await until(`!!document.querySelector('.capture-item')`));
+  assert.ok(await until(`!!document.querySelector('.map-capture-waiting')`));
   assert.ok(await until(`document.querySelector('.shell-status-wait')?.textContent==='Needs the AI key'`), 'existing keyless state, no model claim');
-  assert.ok(await until(`document.querySelector('.capture-state')?.textContent==='Saved · placing needs an AI key'`), 'saved capture stays distinct from AI placement');
+  assert.ok(await until(`document.querySelector('.map-capture-state')?.textContent==='Saved · placing needs an AI key'`), 'saved capture stays distinct from AI placement');
   assert.deepEqual(core.heard.filter(m => m.type === 'text').slice(beforeSend).map(m => m.text), [expected], 'real app sends exact preview once');
   const afterSend = JSON.stringify(core.state.world);
   // Remove unsent state by disabling through Features; the sent record remains.
@@ -238,7 +238,7 @@ try {
   assert.ok(await until(`!!document.querySelector('#type-a-thought')`));
   assert.equal(await evaluate(`document.querySelector('${css}')`), null, 'disabled switch persists');
   await typeCapture(browser, 'A separate synthetic baseline thought');
-  assert.ok(await until(`Array.from(document.querySelectorAll('.capture-item')).some(e=>e.textContent.includes('A separate synthetic baseline thought'))`), 'baseline composer still works');
+  assert.ok(await until(`Array.from(document.querySelectorAll('.map-capture-waiting')).some(e=>e.textContent.includes('A separate synthetic baseline thought'))`), 'baseline composer still works');
   assert.equal(core.state.world.threads.length, 0, 'keyless fixture invented no placed result');
   assert.deepEqual(errors, [], 'no browser exceptions');
   assert.ok(requests.every(url => new URL(url).hostname === '127.0.0.1' || url.startsWith('data:')), 'all page requests remain local');

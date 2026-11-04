@@ -42,11 +42,8 @@ try {
     await tapMic();
     assert.ok(await until("document.querySelector('button.mic')?.getAttribute('aria-pressed') === 'true'"), "mic starts capture");
     core.send({ type: "partial", text: "Plant tomatoes by the fence" });
-    assert.ok(await until("document.querySelector('.tiny-transcript-text')?.textContent === 'Plant tomatoes by the fence' && !!document.querySelector('.tiny-transcript-hint input[type=range]')"), "live words mount the real first-use hint and slider");
-    assert.ok(await until(`(() => {
-      const hint = document.querySelector('.tiny-transcript-hint'), slider = hint.querySelector('input[type=range]');
-      return ${filming ? "getComputedStyle(hint).display === 'none' && slider.getClientRects().length === 0" : "getComputedStyle(hint).display !== 'none' && getComputedStyle(hint).visibility === 'visible' && slider.getBoundingClientRect().width > 0"};
-    })()`), filming ? "film hides the transcript hint and slider" : "outside film the transcript hint and slider remain visible");
+    assert.ok(await until("document.querySelector('.map-capture-live p')?.textContent === 'Plant tomatoes by the fence'"), "live words stay in the map during filming");
+    assert.equal(await evaluate("document.querySelectorAll('.tiny-transcript,.tiny-transcript-hint').length"), 0, "default capture needs no separate transcript or size hint");
     await shot(name);
     core.send({ type: "partial", text: "" });
     await tapMic();

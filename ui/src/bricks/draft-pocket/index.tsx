@@ -22,22 +22,33 @@ function Pocket({ person, actions }: { person: string; actions: BrickProps["acti
   useEffect(() => {
     // The host has no input-state action. Use its labeled native field, without accessing React internals
     // or changing submission: the input's normal onChange receives the restored value.
-    const input = document.querySelector<HTMLTextAreaElement>('[data-guide="composer"] textarea');
-    if (!input) return; // The standalone playground has no main input.
-    const saved = takeInput(person);
-    if (saved !== undefined && !input.value) {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, saved);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    let input: HTMLTextAreaElement | null = null;
     const checkpoint = () => {
+      if (!input) return;
       const before = warning();
       keepInput(person, input.value);
       if (before !== warning()) redraw(n => n + 1);
     };
-    checkpoint();
-    input.addEventListener("input", checkpoint);
-    window.addEventListener("pagehide", checkpoint); // Also sees host-driven clearing after submission.
+    const observer = new MutationObserver(() => attach());
+    function attach() {
+      input = document.querySelector<HTMLTextAreaElement>('[data-guide="composer"] textarea');
+      if (!input) return false;
+      observer.disconnect();
+      const saved = takeInput(person);
+      if (saved !== undefined && !input.value) {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, saved);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      checkpoint();
+      input.addEventListener("input", checkpoint);
+      window.addEventListener("pagehide", checkpoint);
+      return true;
+    }
+    // The map's editor can arrive after this feature. Its mounted field is the readiness signal.
+    if (!attach()) observer.observe(document.body, { childList: true, subtree: true });
     return () => {
+      observer.disconnect();
+      if (!input) return;
       input.removeEventListener("input", checkpoint);
       window.removeEventListener("pagehide", checkpoint);
       keepInput(person, ""); // Off restores baseline behavior; the pocket's entries remain.

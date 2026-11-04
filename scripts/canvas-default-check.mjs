@@ -218,7 +218,7 @@ try {
       }
       // The shell's first open on an empty map, with no flag and with the old address.
       shown = empty;
-      for (const query of ["", "?shell=2"]) await navigate(query, ".shell-welcome");
+      for (const query of ["", "?shell=2"]) await navigate(query, "[data-map-capture=active] textarea");
       // A saved switch for the removed view is inert. Preserve other choices on the next reload.
       await page("Page.removeScriptToEvaluateOnNewDocument", { identifier: storageSeed });
       await page("Page.addScriptToEvaluateOnNewDocument", { source: captureErrors });

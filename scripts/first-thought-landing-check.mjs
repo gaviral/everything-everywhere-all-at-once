@@ -54,16 +54,15 @@ async function record(browser,name){
     return sampled;
   };
 }
-for(const [width,height] of [[1440,900],[390,844]])for(const scheme of ['light','dark'])for(const reduced of [false,true]){
+for(const [width,height] of (process.env.CAPTURE_FAULT ? [] : [[1440,900],[390,844]]))for(const scheme of ['light','dark'])for(const reduced of [false,true]){
   const core=await captureCore({delay:1800});let browser;
   try{
     browser=await capturePage(core,{width,height,scheme,reduced});const {evaluate,until,page}=browser;
     const finish=await record(browser,`${width}-${scheme}-${reduced?'reduced':'normal'}`);
     await typeCapture(browser,'A: book the cooking class');await typeCapture(browser,'B: bring the notebook');
-    assert.ok(await until('document.querySelectorAll(".capture-item").length===2',1000),'A and B retained immediately');
+    assert.ok(await until('document.querySelectorAll(".map-capture-waiting").length===2',1000),'A and B retained immediately');
     const ids=[...core.state.accepted.keys()];assert.equal(ids.length,2);
-    if(reduced)assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'reduced motion defaults to no flight');
-    else assert.ok(await until('!!document.querySelector("[data-flight]")',1000),'ordinary capture lifts');
+    assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'capture starts on the map without a separate flight');
     assert.ok(await until('document.querySelectorAll(".spine-point[data-thought]").length===2',6000),`${width} ${scheme} reduced=${reduced}: both captures visibly land`);
     assert.ok(await until('!document.querySelector("[data-flight]")',3500),'visuals release');
     assert.ok(await until('!!document.querySelector(".spine-landing")'),'late-mounted Canvas gets landing note');
@@ -76,7 +75,7 @@ for(const [width,height] of [[1440,900],[390,844]])for(const scheme of ['light',
     console.log(`captures ${width} ${scheme} reduced=${reduced}: ok`);
   }finally{await browser?.close();core.close();}
 }
-for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','live-reduce','offscreen-resize']){
+for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','live-reduce','offscreen-resize'].filter(fault=>!process.env.CAPTURE_FAULT||process.env.CAPTURE_FAULT===fault)){
   const seed=empty();
   if(fault==='offscreen-resize') {
     seed.threads=['T1','T2'].map(id=>({id,title:id,parent_id:null,status:'open',last_point:'Existing words',touched_ms:1,tags:[],picture:null,dropped_by:''}));
@@ -93,7 +92,7 @@ for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','
     const text=`Original words for ${fault}`;await typeCapture(browser,text);
     if(fault==='local-storage'){
       assert.equal(await evaluate('document.querySelector("textarea").value'),text,'failed local save retains editable draft');
-      assert.equal(core.state.accepted.size,0);assert.equal(await evaluate('!!document.querySelector(".capture-item[data-saved=true]")'),false,'no false Saved');
+      assert.equal(core.state.accepted.size,0);assert.equal(await evaluate('!!document.querySelector(".map-capture-waiting[data-saved=true]")'),false,'no false Saved');
       assert.ok(await until('!!document.querySelector(".recovery-panel")'),'B1 recovery panel mounted');
       core.state.loseReceipt=true;core.state.omitCaptureReceipt=true;
       await evaluate(`[...document.querySelectorAll('.recovery-panel button')].find(b=>b.textContent==='Send online').click()`);
@@ -102,23 +101,23 @@ for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','
       assert.equal(await evaluate('document.querySelector("textarea").value'),text,'online send retains draft before its durable receipt');
       const accepted=[...core.state.accepted.values()][0];
       core.send({type:'text_received',id:accepted.id});
-      assert.ok(await until(`document.querySelector('textarea').value===''&&!!document.querySelector('.capture-item[data-capture="${accepted.id}"][data-saved=true]')`),'receipt clears only the accepted draft and keeps its canonical words visible');
+      assert.ok(await until(`document.querySelector('textarea').value===''&&!!document.querySelector('.map-capture-waiting[data-capture="${accepted.id}"][data-saved=true]')`),'receipt clears only the accepted draft and keeps its canonical words visible');
     }else{
-      assert.ok(await until('!!document.querySelector(".capture-item")',1000),'canonical source remains reachable');
-      const id=await evaluate('document.querySelector(".capture-item").dataset.capture');
+      assert.ok(await until('!!document.querySelector(".map-capture-waiting")',1000),'canonical source remains reachable');
+      const id=await evaluate('document.querySelector(".map-capture-waiting").dataset.capture');
       if(fault==='journal'){
-        assert.equal(await evaluate('document.querySelector(".capture-item").dataset.saved'),'false','core journal failure cannot say Saved');
+        assert.equal(await evaluate('document.querySelector(".map-capture-waiting").dataset.saved'),'false','core journal failure cannot say Saved');
         core.state.failSave=false;await page('Page.reload');
-        assert.ok(await until(`!!document.querySelector('.capture-item[data-capture="${id}"][data-saved=true]')`),'same source retried after reload');
+        assert.ok(await until(`!!document.querySelector('.map-capture-waiting[data-capture="${id}"][data-saved=true]')`),'same source retried after reload');
       }else if(fault==='lost-receipt'){
         core.state.loseReceipt=false;await page('Page.reload');
-        assert.ok(await until(`!!document.querySelector('.capture-item[data-capture="${id}"]')`),'lost receipt retains the same source ID');
+        assert.ok(await until(`!!document.querySelector('.map-capture-waiting[data-capture="${id}"]')`),'lost receipt retains the same source ID');
       }else if(fault==='slow'){
         await sleep(5600);assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'five-second wait releases flight');
-        assert.ok(await evaluate(`!!document.querySelector('.capture-item[data-capture="${id}"]')`),'timeout leaves original reachable');
+        assert.ok(await evaluate(`!!document.querySelector('.map-capture-waiting[data-capture="${id}"]')`),'timeout leaves original reachable');
       }else if(fault==='rejected'){
-        assert.ok(await until('document.querySelector(".capture-state")?.textContent.includes("placement failed")'),'actionable placement failure');
-        await evaluate('document.querySelector(".capture-item button").click()');
+        assert.ok(await until('document.querySelector(".map-capture-state")?.textContent.includes("placement failed")'),'actionable placement failure');
+        await evaluate('document.querySelector(".map-capture-waiting button").click()');
       }else if(fault==='live-reduce'){
         await page('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
         assert.ok(await until('!document.querySelector("[data-flight]")'),'live preference change safely settles');
@@ -140,8 +139,11 @@ for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','
       assert.ok(await until(`![...document.querySelectorAll('.spine-text')].some(e=>getComputedStyle(e).visibility==='hidden')`,1000),`${fault}: no hidden destination left behind`);
       assert.ok(await until('!!document.querySelector(".capture-placed button")'),'named placement receipt remains reachable');
       if(fault==='offscreen-resize') {
-        const outside = await evaluate(`(()=>{const r=document.querySelector('.spine-point[data-thought="${thoughtId}"]').getBoundingClientRect();return r.right<0||r.left>innerWidth||r.bottom<0||r.top>innerHeight})()`);
+        const outside = await until(`(()=>{const r=document.querySelector('.spine-point[data-thought="${thoughtId}"]').getBoundingClientRect();return r.right<0||r.left>innerWidth||r.bottom<0||r.top>innerHeight})()`);
         assert.ok(outside,'the fixture really places the target offscreen; no edge-clamped false landing');
+        assert.ok(await until('!!document.querySelector(".capture-return button")'),'offscreen capture has a named route back');
+        await evaluate('document.querySelector(".capture-return button").click()');
+        assert.ok(await until(`(()=>{const r=document.querySelector('textarea').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<innerHeight})()`),'return restores the real input');
         await evaluate('document.querySelector(".capture-placed button").click()');
         assert.ok(await until(`(()=>{const r=document.querySelector('.spine-point[data-thought="${thoughtId}"]').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<innerHeight})()`),'explicit Show reveals the actual destination');
       }
