@@ -32,8 +32,9 @@ globalThis.addEventListener = globalThis.removeEventListener = () => {};
 const store = new Map();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
   getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) } });
-// The tour finds its slots by id; here every slot exists, so its step renders in place.
-globalThis.document = { getElementById: (id) => (id.startsWith("tour-") ? {} : null), querySelector: () => null, body: {} };
+// The tour finds its slots by id; detached tool hosts only need a writable className here.
+// Effects never attach the hosts, and the portal stand-in below renders their children in place.
+globalThis.document = { getElementById: (id) => (id.startsWith("tour-") ? {} : null), querySelector: () => null, createElement: () => ({}), body: {} };
 
 const ui = createRequire(new URL("../ui/package.json", import.meta.url));
 const React = ui("react");

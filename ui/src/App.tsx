@@ -1226,7 +1226,7 @@ export default function App() {
   const listeningOn = !SHELL2 || builtIns.has("listening");
   const catalogOpen = useCatalogOpen();
   const catalogAt = useCatalogAt();
-  // The rail that enabled the treatment gives way to typing; later panel requests focus their canvas node.
+  // The rail that enabled canvas tools gives way to typing; later panel requests focus their canvas node.
   useEffect(() => {
     if (canvasTools && toolsWereOn.current && (railTab === "catalog" || railTab === "history")) {
       focusTool(railTab === "catalog" ? "features" : "history");

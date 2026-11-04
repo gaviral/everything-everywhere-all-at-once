@@ -34,6 +34,18 @@ const OFFLINE = "disabled while the core is away";
 const NOT_CONNECTED = "notice: “Not connected — try again when connected.”";
 
 export const ACTIONS: Action[] = [
+  { id: "inspection-close", how: "click", at: [["BringHere.tsx", "onClick={close}"]], pressed: PRESS,
+    done: "the temporary inspection closes and focus returns to its invoking control" },
+  { id: "inspection-escape", how: "key", at: [["BringHere.tsx", 'document.addEventListener("keydown", escape, true)']], pressed: INSTANT,
+    done: "Escape closes the temporary inspection and returns focus to its invoking control" },
+  { id: "inspection-original", how: "click", at: [["BringHere.tsx", "onClick={openOriginal}"]], pressed: PRESS,
+    done: "the inspection closes and the source topic is revealed; disabled if its source has gone" },
+  { id: "full-content-close", how: "click", at: [["FullContent.tsx", "onClick={close}"]], pressed: PRESS,
+    done: "the inspector closes, focus returns to Inspect and the original camera is restored" },
+  { id: "full-content-wrap", how: "click", at: [["FullContent.tsx", "onClick={() => { setWrap(!wrap)"]], pressed: PRESS,
+    done: "the full words toggle wrapping, Wrap reflects its pressed state and the inspector returns to its starting view" },
+  { id: "full-content-keys", how: "key", at: [["FullContent.tsx", "onKeyDown={(event) => {"]], pressed: INSTANT,
+    done: "arrow keys pan the inspector immediately; Tab keeps focus between Close and Wrap" },
   { id: "partner-cancel", how: "click", at: [["PartnerStatus.tsx", "onClick={() => {"]], pressed: PRESS, waits: "core",
     done: "browser speech stops immediately, the thinking state clears and Reply stopped appears; the core cancels a pending answer", failed: "local speech stops and the thinking state clears even while disconnected" },
   { id: "partner-retry-audio", how: "click", at: [["PartnerStatus.tsx", "onClick={retryPageReply}"]], pressed: PRESS,
@@ -294,8 +306,10 @@ export const ACTIONS: Action[] = [
 
 /** Handlers that aren't actions of their own: each says why. */
 export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] = [
+  { at: ["BringHere.tsx", "onKeyDown={(event) => event.stopPropagation()}"], why: "keeps inspection keystrokes from controlling the map beneath it" },
+  { at: ["BringHere.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "inspection buttons preserve the current input focus until their click action runs" },
   { at: ["SendCard.tsx", "onBlur={(e) =>"], why: "moving focus within the card keeps its reading time paused; leaving resumes it" },
-  { at: ["shell/Shell.tsx", "onBlur={() => window.setTimeout(() => setFocused(false), 120)}"], why: "the field narrows back once focus leaves" },
+  { at: ["shell/Shell.tsx", 'onBlurCapture={() => window.setTimeout(() => setFocused(!!inputRef.current?.closest(".shell-find")?.contains(document.activeElement)), 120)}'], why: "the field stays open while focus moves within Find and narrows after focus leaves" },
   { at: ["shell/Shell.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "keeps focus in the field so a click on a topic lands" },
   { at: ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"], why: "each corner button's use in App.tsx is its own entry" },
   { at: ["shell/Shell.tsx", "onKeyDown={arrows}"], why: "arrow keys move focus between tabs or switches, with its ring" },

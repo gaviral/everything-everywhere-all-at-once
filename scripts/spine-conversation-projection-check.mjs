@@ -1,6 +1,7 @@
 // Conversation first, topic membership second: pure layout invariants and the actual Features comparison in Chrome.
 import assert from 'node:assert/strict';
 import { uiServer } from './ui-server.mjs';
+import { ready } from './headless.mjs';
 
 const at = Date.UTC(2026, 10, 3, 12);
 const topic = (id, title, parent_id = null) => ({ id, title, parent_id, status: 'open', last_point: '', touched_ms: at, tags: [], picture: null, dropped_by: '' });
@@ -51,4 +52,6 @@ try {
 
 // The session lenses supersede the single-column projection UI. Keep the projection's
 // pure invariants above; exercise the shared cards and Features comparison in its successor.
+const unavailable = ready();
+if (unavailable) { console.log(`SKIP spine-conversation-projection-check: ${unavailable}`); process.exit(3); }
 await import('./sessions-check.mjs');

@@ -193,7 +193,7 @@ const executable = (path, text) => { writeFileSync(path, text); chmodSync(path, 
 const fixture = () => {
   const dir = repo("PORT=0\nMODEL_API_KEY=file-key\n");
   for (const sub of ["scripts", "ui", "bin", "samples/images/student-week"]) mkdirSync(join(dir, sub), { recursive: true });
-  for (const file of ["run.sh", "scripts/start.mjs"]) copyFileSync(join(root, file), join(dir, file));
+  for (const file of ["run.sh", "scripts/start.mjs", "scripts/sample-seed.mjs"]) copyFileSync(join(root, file), join(dir, file));
   chmodSync(join(dir, "run.sh"), 0o755);
   symlinkSync(process.execPath, join(dir, "bin/node"));
   for (const cmd of ["dirname", "mkdir", "cp"]) {
