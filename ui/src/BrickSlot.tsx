@@ -158,14 +158,21 @@ function componentOf(brick: Brick) {
 /** One brick in its kind's place: a view in the map's (padded clear of the dock, as the Palace is), a card in the
  *  dock (its height counted with the dock's cards, so a thought just shown moves clear of it), a panel or an input
  *  wherever it places itself. Only a new map, a switch or a new action re-renders it, not the page's clock. */
-export const BrickMount = memo(function BrickMount({ brick, host }: { brick: Brick; host: BrickHost }) {
+export const BrickMount = memo(function BrickMount({ brick, host, onReady }: { brick: Brick; host: BrickHost; onReady?(id: string): void }) {
   const Shown = componentOf(brick);
   const { info } = brick;
-  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} /></Suspense></BrickBoundary>;
+  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} />{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></BrickBoundary>;
   if (info.kind === "view") return <main className="brick-view" aria-label={info.name} data-brick={info.id}>{inner}</main>;
   if (info.kind === "card") return <div className="brick-card" data-brick={info.id} data-dock-card>{inner}</div>;
   return <div className="brick-float" data-brick={info.id}>{inner}</div>;
 });
+
+/** Commit notification lives inside Suspense; a loading fallback cannot emit it.
+ *  It renders no DOM, so an empty component cannot satisfy a content assertion. */
+function BrickCommitted({ id, onReady }: { id: string; onReady(id: string): void }) {
+  useLayoutEffect(() => { onReady(id); }, [id, onReady]);
+  return null;
+}
 
 /** Every brick of `kind` that's on, in the Catalog's order. With none on, nothing at all. */
 export const BrickSlot = memo(function BrickSlot({ kind, host }: { kind: BrickKind; host: BrickHost }) {

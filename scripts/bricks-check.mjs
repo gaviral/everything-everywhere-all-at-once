@@ -49,6 +49,7 @@
 //    clock clear of Tiny transcript's line on a phone.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
+import { playgroundReady, playgroundState } from "./playground-probe.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { uiServer } from "./ui-server.mjs";
@@ -421,14 +422,9 @@ try {
       const where = `${folder} in the playground (${sample}, ${w} px)`;
       await width(w, w < 600 ? 844 : 860);
       await go(`${base}/bricks.html?brick=${folder}&sample=${sample}`);
-      if (!await until(`document.querySelector(".playground")?.dataset.brickShown === ${JSON.stringify(folder)}`, 8000)) { fail(where, "the playground never showed it"); continue; }
+      if (!await until(playgroundReady(folder), 8000)) { fail(where, "the playground never showed it"); continue; }
       await settle();
-      const state = await evaluate(`(() => {
-        const mount = document.querySelector('[data-brick="${folder}"]');
-        return { broke: document.querySelector(".brick-broke")?.textContent ?? "", errors: document.querySelector(".playground").dataset.errors,
-          mounted: !!mount, shows: !!mount && (mount.textContent.trim().length > 0 || mount.querySelector("svg, canvas, img, video") !== null),
-          sideways: document.documentElement.scrollWidth - innerWidth };
-      })()`);
+      const state = await evaluate(playgroundState(folder));
       if (state.broke) fail(where, `it broke: "${state.broke}"`);
       if (state.errors !== "0") fail(where, `${state.errors} errors (the playground's log says which)`);
       if (!state.mounted) fail(where, "not mounted");

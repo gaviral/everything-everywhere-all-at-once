@@ -78,6 +78,7 @@ function Playground() {
   const builtIns = useBuiltInsOn();
   const params = new URLSearchParams(location.search);
   const [id, setId] = useState(params.get("brick") ?? found.bricks[0]?.info.id ?? "");
+  const [brickReady, setBrickReady] = useState("");
   const [sample, setSample] = useState(params.get("sample") ?? (SAMPLES["student-week"] ? "student-week" : "empty"));
   const [world, setWorld] = useState(() => sampleWorld(sample));
   const estimateWorld = useRef(world);
@@ -281,11 +282,11 @@ function Playground() {
     }
   };
 
-  return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
+  return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
       <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
-      <label>Feature <select value={id} onChange={(event) => setId(event.target.value)}>
+      <label>Feature <select value={id} onChange={(event) => { setBrickReady(""); setId(event.target.value); }}>
         {!brick && <option value={id}>{id || "none"}</option>}
         {found.bricks.map(({ info }) => <option key={info.id} value={info.id}>{info.name} ({info.id})</option>)}
       </select></label>
@@ -318,8 +319,8 @@ function Playground() {
     <SyntheticTools enabled={params.has("canvas-tools") && id === "spine"} add={add}>
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
       {id === "shapes" && shapeCanvas && <BrickMount brick={shapeCanvas} host={host} />}
-      {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} /></div>
-        : brick && <BrickMount key={id} brick={brick} host={host} />}
+      {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} onReady={setBrickReady} /></div>
+        : brick && <BrickMount key={id} brick={brick} host={host} onReady={setBrickReady} />}
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>
     </SyntheticTools>
