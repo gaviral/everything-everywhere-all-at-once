@@ -5,14 +5,20 @@
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
-import { SpeechFixesContext, type Thought } from "../contract";
+import { SpeechFixesContext, SemanticZoomContext, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
+/** Semantic zoom keeps the real words mounted while CSS blends them into an overview. */
+function useFar() {
+  const semantic = useContext(SemanticZoomContext);
+  return useStore((s) => !semantic && far(s.transform[2]));
+}
 
 export type ItemData = {
   item: Item;
+  overview?: { thread: string; title: string; count: number }[];
   here: boolean;
   pulse: number;
   fresh: boolean;
@@ -37,6 +43,7 @@ export interface Acts {
   words(item: Item): void;
   focus(item: Item): void;
   openOnMap(thread: string): void;
+  read(item: Item): void;
   shelve(item: Item): void;
   unpin(item: Item): void;
   /** Starts picking words in a point (a double click), from where it was clicked. */
@@ -140,7 +147,7 @@ const farSize = (name: string) => {
 function Group({ data }: { data: ItemData }) {
   const { item } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const zoomedOut = useFar();
   const name = item.group ?? "";
   const [editing, setEditing] = useState(false);
   // Shown at once while the core makes it so (the header comes back under its new name); a refused one lets go.
@@ -198,8 +205,9 @@ const LABEL_PAD = 6;
 function Head({ data, now }: { data: ItemData; now: number }) {
   const { item, here, picked } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
-  const labelLines = useStore((s) => Math.max(1, Math.min(3, Math.floor(((item.reach ?? Infinity) * s.transform[2] - LABEL_PAD) / LABEL_LINE))));
+  const zoomedOut = useFar();
+  const semantic = useContext(SemanticZoomContext);
+  const labelLines = useStore((s) => semantic ? 3 : Math.max(1, Math.min(3, Math.floor(((item.reach ?? Infinity) * s.transform[2] - LABEL_PAD) / LABEL_LINE))));
   const lines = item.titleLines?.length ?? 1;
   const top = Math.max(0, (G.tile - lines * G.titleLine - G.headMeta) / 2);
   const meta = headMeta(item, now);
@@ -299,7 +307,7 @@ function Entries({ entries }: { entries: Entry[] }) {
 function Point({ data }: { data: ItemData }) {
   const { item, here, pulse, picked, arriving } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const zoomedOut = useFar();
   const look = item.look!;
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
@@ -368,7 +376,7 @@ const NAMED = 0.35;
 function Card({ data, now }: { data: ItemData; now: number }) {
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const zoomedOut = useFar();
   const named = useStore((s) => s.transform[2] >= NAMED);
   const titleLines = item.titleLines ?? [0];
   const inner = G.cardW - 2 * G.pad;
@@ -432,7 +440,7 @@ function useWhole(ref: RefObject<HTMLElement | null>): boolean {
 function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const zoomedOut = useFar();
   const bubble = useRef<HTMLDivElement>(null);
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
@@ -452,7 +460,7 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
 function Margin({ data }: { data: ItemData }) {
   const { item } = data;
   const acts = useContext(ActsContext)!;
-  const zoomedOut = useStore((s) => far(s.transform[2]));
+  const zoomedOut = useFar();
   if (zoomedOut) return <div className={cls("spine-margin", data.dim && "spine-dim")} aria-hidden="true"><Bars lines={(item.entries ?? []).flatMap((e) => e.lines)} line={G.marginLine} x={26} /></div>;
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
     aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
@@ -470,7 +478,7 @@ function Notch({ data }: { data: ItemData }) {
 /** The clock for "12 min ago", from the view (a minute's tick), so a card's recap stays true without a new map. */
 export const NowContext = createContext(Date.now());
 
-export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<ItemNode>) {
+function Detail({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const now = useContext(NowContext);
   switch (data.item.kind) {
     case "head": return <Head data={data} now={now} />;
@@ -482,4 +490,23 @@ export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<Ite
     case "group": return <Group data={data} />;
     default: return <Notch data={data} />;
   }
+}
+
+export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<ItemNode>) {
+  const semantic = useContext(SemanticZoomContext);
+  const acts = useContext(ActsContext)!;
+  const { item } = data;
+  if (!semantic) return <Detail data={data} dragging={dragging} />;
+  if (item.kind === "group") return <Detail data={data} dragging={dragging} />;
+  const small = item.kind === "card" || item.kind === "aside" || item.kind === "margin" || item.look?.font === "small";
+  const tuckedTop = item.kind === "point" ? (item.lines?.length ?? 1) * (item.look?.line ?? G.pointLine) + (item.chips ? G.chips : 0) : 0;
+  return <div className={cls("spine-semantic-item", small && "spine-semantic-small")} style={roomStyle(item.room)}>
+    <div className="spine-semantic-detail"><Detail data={data} dragging={dragging} /></div>
+    {data.overview?.map(({ thread, title, count }, index) => <button key={thread} type="button" style={{ top: `calc(${tuckedTop}px + ${index * 96}px * var(--spine-k, 1))` }} className={cls("spine-semantic-summary", "nodrag", "nopan", item.kind === "point" && "spine-semantic-small", data.here && "spine-semantic-here")}
+      data-thread={thread} data-semantic-order={tuckedTop + index * 96} aria-label={`${title}, ${count} ${count === 1 ? "thought" : "thoughts"}. Zoom in to read`}
+      onClick={() => acts.read(item)}>
+      <span className="spine-semantic-title">{title}</span>
+      <span className="spine-semantic-count">{count} {count === 1 ? "thought" : "thoughts"}</span>
+    </button>)}
+  </div>;
 });

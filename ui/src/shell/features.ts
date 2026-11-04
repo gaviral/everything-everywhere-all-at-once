@@ -5,13 +5,14 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
   { id: "partner", kind: "input", defaultOn: false },
   // The views beside the Canvas: off until switched on; each then has its Show.
   { id: "cards", kind: "view", defaultOn: false },
   { id: "pictures", kind: "view", defaultOn: false },
+  { id: "semantic-zoom", kind: "panel", defaultOn: false },
   { id: "listening", kind: "input", defaultOn: true },
   { id: "import", kind: "input", defaultOn: false },
   { id: "recap", kind: "panel", defaultOn: true },

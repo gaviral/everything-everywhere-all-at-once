@@ -6,10 +6,10 @@
 // can be answered in a margin note (margin.tsx). Anything can be dragged where you want it and stays there
 // (map.positions), and the shelf keeps things at hand while the canvas moves. A view brick (docs/bricks.md): its name
 // joins Map and Palace.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { useBrickEvent, type BrickEvents, type BrickProps, type Position } from "../contract";
+import { useBrickEvent, SemanticZoomContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
@@ -19,6 +19,7 @@ import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type
 import { Shelf } from "./shelf";
 import { useStayingHere } from "../../StayHere";
 import "./spine.css";
+import { semanticBlend } from "./semantic-zoom";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
 const DRAG = 4;
@@ -178,6 +179,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
 
 function Canvas({ map, actions, on, destination }: BrickProps) {
   const flow = useReactFlow<ItemNode>();
+  const semantic = useContext(SemanticZoomContext);
   const staying = useStayingHere();
   const reduced = useReducedMotion();
   const shelf = useShelf(map);
@@ -630,6 +632,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
     openOnMap: (thread) => actions.openThread(thread),
+    read: (item) => { stopFollowing(); camera.aim(item.box, { zoom: 1, ring: item.key }); },
     shelve: (item) => keep(item.id),
     unpin: (item) => { put(item.id, null, null); },
     select: (item, x, y) => {
@@ -679,8 +682,17 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
 
   // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
   const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
+  const thoughtCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const thought of map.thoughts) if (thought.placed && thought.thread_id) counts.set(thought.thread_id, (counts.get(thought.thread_id) ?? 0) + 1);
+    return counts;
+  }, [map.thoughts]);
   const datas = useMemo(() => new Map(layout.items.map((item): [string, ItemData] => [item.key, {
-    item, here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
+    item,
+    overview: item.kind === "head" || item.kind === "card" || item.kind === "aside"
+      ? [{ thread: item.thread, title: item.title ?? "", count: thoughtCounts.get(item.thread) ?? 0 }]
+      : (item.tucks ?? []).filter((tuck) => tuck.thread).map((tuck) => ({ thread: tuck.thread!, title: tuck.title ?? "", count: thoughtCounts.get(tuck.thread!) ?? 0 })),
+    here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
     // A topic's header is where things are, never dimmed.
     dim: item.kind === "group" ? false : pointing ? item.thread !== pointing.thread : !!focusTopic && item.topic !== focusTopic,
     hot: item.kind === "group" && !!dropTo && item.group === dropTo,
@@ -688,7 +700,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     arriving: arriving && item.thoughts?.includes(arriving) ? arriving
       : item.kind === "card" && !item.open && item.thread === map.active && slots.length ? slots[0] : null,
     cut: camera.cut === item.key, selecting: selecting?.key === item.key,
-  }])), [layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
+  }])), [layout, thoughtCounts, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
@@ -794,11 +806,11 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const rowStyle = { bottom: corner.row };
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
+    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
       <ReactFlow<ItemNode>
-        className="spine-flow" nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
+        className={cls("spine-flow", semantic && "spine-semantic")} nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event, node) => {
           const shelfHot = overShelfAt(event);
@@ -835,7 +847,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
         aria-label="Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures">
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
-        <ZoomVar />
+        <ZoomVar semantic={semantic} />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             {layout.links.map((link) => {
@@ -881,17 +893,72 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
 const NODE_TYPES = { item: ItemView };
 
 /** The zoom, as `--spine-k` (1 / zoom), for what keeps its size on screen however far out you are (a topic's title). */
-function ZoomVar() {
+function ZoomVar({ semantic }: { semantic: boolean }) {
   const store = useStoreApi();
+  const refresh = useRef<(() => void) | null>(null);
+  // New summaries and gliding/dragged nodes also need room at the current zoom.
+  useLayoutEffect(() => { refresh.current?.(); });
   useEffect(() => {
     let last = 0;
+    let frame = 0;
+    const element = store.getState().domNode;
+    if (!element) return;
+    const space = () => {
+      if (!semantic) return;
+      const state = store.getState(), zoom = state.transform[2];
+      // Read all sizes before writing transforms. Fixed screen widths keep wrapping stable as zoom changes.
+      const summaries = [...element.querySelectorAll<HTMLElement>('.spine-semantic-summary')].map((label) => {
+        const id = label.closest<HTMLElement>('.react-flow__node')?.dataset.id;
+        const position = id && state.nodeLookup.get(id)?.internals.positionAbsolute;
+        return { label, x: (position ? position.x : 0) * zoom, y: ((position ? position.y : 0) + label.offsetTop) * zoom,
+          order: (position ? position.y : 0) + Number(label.dataset.semanticOrder ?? 0),
+          w: label.offsetWidth, h: label.offsetHeight };
+      }).sort((a, b) => a.order - b.order || a.x - b.x || (a.label.dataset.thread ?? '').localeCompare(b.label.dataset.thread ?? ''));
+      const placed: { x: number; y: number; w: number; h: number }[] = [];
+      const shifts: { label: HTMLElement; shift: number }[] = [];
+      for (const summary of summaries) {
+        let y = summary.y;
+        // Start making room 32 screen px before columns meet, reaching full clearance at an 8 px gap.
+        // Stable world order and continuous offsets avoid a sudden row swap while pinching either way.
+        for (const p of placed) {
+          const gap = Math.max(p.x - summary.x - summary.w, summary.x - p.x - p.w);
+          const t = Math.max(0, Math.min(1, (40 - gap) / 32));
+          y = Math.max(y, summary.y + Math.max(0, p.y + p.h + 8 - summary.y) * t * t * (3 - 2 * t));
+        }
+        placed.push({ ...summary, y });
+        shifts.push({ label: summary.label, shift: y - summary.y });
+      }
+      for (const { label, shift } of shifts) label.style.setProperty('--semantic-shift', `${shift}px`);
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(space);
+    };
+    refresh.current = schedule;
     const set = (zoom: number) => {
       if (zoom === last) return;
       last = zoom;
-      store.getState().domNode?.style.setProperty("--spine-k", String(1 / zoom));
+      element.style.setProperty("--spine-k", String(1 / zoom));
+      element.style.setProperty("--spine-z", String(zoom));
+      if (semantic) for (const [suffix, size] of [["", 15], ["-small", 13]] as const) {
+        const detail = semanticBlend(zoom, size);
+        element.style.setProperty(`--semantic-detail${suffix}`, String(detail));
+        element.style.setProperty(`--semantic-overview${suffix}`, String(1 - detail));
+        element.style.setProperty(`--semantic-detail-visible${suffix}`, detail === 0 ? "hidden" : "visible");
+        element.style.setProperty(`--semantic-overview-visible${suffix}`, detail === 1 ? "hidden" : "visible");
+      }
+      space();
     };
     set(store.getState().transform[2]);
-    return store.subscribe((state) => set(state.transform[2]));
-  }, [store]);
+    const unsubscribe = store.subscribe((state) => set(state.transform[2]));
+    const resize = new ResizeObserver(schedule);
+    const watch = () => {
+      element.querySelectorAll('.spine-semantic-summary').forEach((label) => resize.observe(label));
+      schedule();
+    };
+    const added = new MutationObserver(watch);
+    if (semantic) { added.observe(element, { childList: true, subtree: true }); watch(); }
+    return () => { unsubscribe(); resize.disconnect(); added.disconnect(); cancelAnimationFrame(frame); refresh.current = null; };
+  }, [store, semantic]);
   return null;
 }

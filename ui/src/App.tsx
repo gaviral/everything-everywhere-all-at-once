@@ -1,5 +1,5 @@
 import { PartnerStatus } from "./PartnerStatus";
-import { SpeechFixesContext } from "./bricks/contract";
+import { SpeechFixesContext, SemanticZoomContext } from "./bricks/contract";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
 import { useCardNotice } from "./notice-queue";
@@ -1169,6 +1169,7 @@ export default function App() {
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
+    <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1423,6 +1424,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
@@ -1491,6 +1493,7 @@ export default function App() {
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
+    <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1636,6 +1639,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
