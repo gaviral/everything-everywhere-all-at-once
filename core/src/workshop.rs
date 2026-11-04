@@ -67,6 +67,28 @@ pub async fn run(State(core): State<Arc<Core>>, Json(trial): Json<Trial>) -> Jso
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn commands_are_scoped_and_unconfigured_models_never_run() {
+        let path = std::env::temp_dir().join(format!("workshop-test-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::world::Journal::open(&path).unwrap();
+        let core = std::sync::Arc::new(crate::Core::test(journal, world));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        super::LISTENERS.lock().unwrap().insert("workshop-test".into(), vec![tx]);
+        assert!(!super::take_turn("another-person", "Bring Spark here"));
+        assert!(!super::take_turn("workshop-test", "Bring groceries home"));
+        assert!(!super::take_turn("workshop-test", "Turn off the mic"));
+        assert!(super::take_turn("workshop-test", "Bring Spark here"));
+        assert!(rx.try_recv().unwrap().contains("Bring Spark here"));
+        assert!(super::take_turn("workshop-test", "take this away"));
+        drop(rx);
+        assert!(!super::take_turn("workshop-test", "Bring Spark here"));
+        let request = super::Trial { model: "unconfigured".into(), mode: "tidies".into(), input: "hello".into() };
+        assert!(!super::allowed(&core, &request));
+        let response = super::run(axum::extract::State(core), axum::Json(request)).await.0;
+        assert!(response["error"].is_string());
+        assert!(response["ms"].is_number());
+    }
+
     #[test]
     fn modes_have_distinct_tasks() {
         assert_ne!(super::instruction("tidies"), super::instruction("recaps"));
@@ -95,7 +117,7 @@ pub async fn turns(axum::extract::Query(query): axum::extract::Query<TurnQuery>)
 }
 fn is_command(text: &str) -> bool {
     let text = text.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
-    (text.starts_with("bring ") && [" here", " to the desk", " to workshop", " to the workshop"].iter().any(|s| text.ends_with(s)))
+    (text.starts_with("bring ") && [" here", " to desk", " to the desk", " to workshop", " to the workshop"].iter().any(|s| text.ends_with(s)))
         || ((text.starts_with("take ") || text.starts_with("send ")) && [" away", " back"].iter().any(|s| text.ends_with(s)))
 }
 pub fn take_turn(speaker: &str, text: &str) -> bool {

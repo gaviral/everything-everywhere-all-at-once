@@ -24,7 +24,7 @@
 .workshop-desk{border-top:2px solid #798d7f;padding-top:1em;margin-top:1.4em}
 .workshop-empty{min-height:8em;border:1px dashed #9bab9e;border-radius:.7em;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:.5em;font-size:1.2em;text-align:center;padding:1em}
 .workshop-empty span{font-size:.65em;color:#4e645b}
-.workshop-desk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20em),1fr));gap:1em;align-items:start}
+.workshop-desk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,20em),1fr));gap:1em;align-items:start}
 .workshop-part{background:#fffef8;border:1px solid #9cae9d;border-radius:.8em;padding:1em;min-width:0;box-shadow:0 .2em .8em #183b2010;overflow-wrap:anywhere}
 .workshop-part-head{display:flex;justify-content:space-between;align-items:start;gap:.8em}
 .workshop-part-head button{font-size:.65em;white-space:nowrap}
@@ -46,3 +46,7 @@
 .workshop-launch{position:fixed;right:20px;top:80px;z-index:70;background:#255c44;color:#fff;border:1px solid #668979;border-radius:12px;padding:12px 20px;font:600 20px system-ui;cursor:pointer}
 @media(max-width:700px){.workshop-top{padding:.8em 1em;align-items:start}.workshop-tools{flex-direction:column}.workshop-body{padding:1em}.workshop-bottom{padding:.7em 1em}.workshop-section-head{flex-direction:column;gap:.3em}.workshop-canvas{grid-template-columns:1fr}.workshop-command{flex-wrap:wrap}.workshop-command label{flex-basis:100%}.workshop-shelf{grid-template-columns:repeat(auto-fit,minmax(min(100%,9em),1fr))}}
 @media(prefers-reduced-motion:reduce){.workshop *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.workshop-flow .workshop-shelf{display:flex;flex-wrap:wrap}.workshop-flow .workshop-shelf-part,.workshop-flow .workshop-shelf-place{flex:0 1 14em}
+
+@media(max-width:700px){.workshop-top{flex-wrap:wrap;gap:.5em}.workshop-tools{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));font-size:.65em}.workshop-tools button{padding:.55em .2em;overflow-wrap:anywhere}}

@@ -19,7 +19,7 @@ export function modelParts(rows: ModelRow[]): Part[] {
   const parts = new Map<string, Part>();
   for (const row of rows) {
     if (!row.model.startsWith("muse-")) continue;
-    const part = parts.get(row.model) ?? { id: row.model, name: row.model.replace(/^muse-/, "Muse ").replaceAll("-", " "), model: row.model, modes: [] };
+    const part = parts.get(row.model) ?? { id: row.model, name: row.model.replace(/^muse-/, "Muse ").replaceAll("-", " ").replace(/\b[a-z]/g, c => c.toUpperCase()), model: row.model, modes: [] };
     if (!part.modes.includes(row.step)) part.modes.push(row.step);
     parts.set(row.model, part);
   }

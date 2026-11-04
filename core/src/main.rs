@@ -4876,6 +4876,7 @@ mod tests {
         let models = super::models(&core);
         let named = |step: &str| models.as_array().unwrap().iter().find(|m| m["step"] == step).map(|m| m["model"].as_str().unwrap().to_string());
         assert_eq!(named("places").as_deref(), Some(core.placer_model.name()));
+        assert_eq!(named("flow").as_deref(), Some(crate::flow::MODEL));
         // A placement's lanes, each model once, and only the lanes that race (placer.rs `MODELS`).
         let places = |race: usize| {
             let path = std::env::temp_dir().join(format!("e2a2o-main-{}.jsonl", uuid::Uuid::new_v4()));
