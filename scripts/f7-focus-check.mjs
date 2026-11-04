@@ -84,7 +84,15 @@ const reload = async b => {
 };
 const layout = async b => {
   assert.ok(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page overflow");
-  assert.ok(await b.evaluate(`(() => { const r = document.querySelector('${card}').getBoundingClientRect(); const c = document.querySelector('[aria-label="Type a thought"]').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= c.top && c.bottom <= innerHeight; })()`), "focus card leaves the input visible");
+  assert.ok(await b.evaluate(`(() => {
+    const panel = document.querySelector('${card}');
+    const input = document.querySelector('[aria-label="Type a thought"]');
+    const r = panel.getBoundingClientRect(), c = input.getBoundingClientRect();
+    const inside = box => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+    const separate = r.right <= c.left || c.right <= r.left || r.bottom <= c.top || c.bottom <= r.top;
+    const exposed = input.contains(document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2));
+    return panel.checkVisibility() && input.checkVisibility() && inside(r) && inside(c) && separate && exposed;
+  })()`), "focus card and thought input stay visible, separate and reachable");
 };
 const socketMark = () => core.heard.length;
 const noFocusSend = mark => {

@@ -105,6 +105,14 @@ try {
   await evaluate(`document.querySelector('.action-estimates > details').open=true`);
   assert.ok(await evaluate(`document.querySelector('.action-estimates').textContent.includes('Source topic: Outline · Proposed') && document.querySelector('.action-estimates').textContent.includes('Source topic: Preparation · Handled')`), "current actions and source states are available independently of agenda");
   const row = id => `document.querySelector('[data-estimate-action="${id}"]')`;
+  const reachableBesideComposer = control => `(() => {
+    const node = ${control}, composer = document.querySelector('.shell-composer');
+    const field = node.getBoundingClientRect(), input = composer?.getBoundingClientRect();
+    const inside = field.left >= 0 && field.right <= innerWidth && field.top >= 0 && field.bottom <= innerHeight;
+    const separate = !input || field.right <= input.left || input.right <= field.left || field.bottom <= input.top || input.bottom <= field.top;
+    const exposed = node.contains(document.elementFromPoint(field.left + field.width / 2, field.top + field.height / 2));
+    return node.checkVisibility() && inside && separate && exposed;
+  })()`;
   async function clickRow(id, text) {
     await evaluate(`[...${row(id)}.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(text)}).click()`);
   }
@@ -184,7 +192,7 @@ try {
     await evaluate(`${row('effort-a')}.querySelector('input[inputmode=numeric]').scrollIntoView({block:'center'})`);
     await sleep(100);
     assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth+1`), "no horizontal page overflow at 200% text");
-    assert.ok(await evaluate(`(() => { const field=${row('effort-a')}.querySelector('input[inputmode=numeric]').getBoundingClientRect(); const composer=document.querySelector('textarea.composer, #composer, .shell-composer, .composer')?.getBoundingClientRect(); return field.left>=0 && field.right<=innerWidth && field.top>=0 && field.bottom<=innerHeight && (!composer || field.bottom<=composer.top); })()`), "editor reachable above composer");
+    assert.ok(await until(reachableBesideComposer(`${row('effort-a')}.querySelector('input[inputmode=numeric]')`)), "estimate field stays visible and reachable beside the thought input");
     const png = await page("Page.captureScreenshot", { format: "png" });
     writeFileSync(join(evidence, `${width}-${theme}-200-reduced.png`), Buffer.from(png.data, "base64"));
     await clickRow("effort-a", "Cancel");
@@ -193,7 +201,7 @@ try {
   await page("Emulation.setDeviceMetricsOverride", { width: 390, height: 560, deviceScaleFactor: 1, mobile: false });
   await clickRow("effort-a", "Edit");
   await evaluate(`${row('effort-a')}.querySelector('button[type=submit]').scrollIntoView({block:'center'})`);
-  assert.ok(await evaluate(`(() => { const save=${row('effort-a')}.querySelector('button[type=submit]').getBoundingClientRect(); const composer=document.querySelector('.shell-composer').getBoundingClientRect(); return save.top>=0 && save.bottom<=composer.top; })()`), "Save remains reachable in a shortened phone viewport");
+  assert.ok(await until(reachableBesideComposer(`${row('effort-a')}.querySelector('button[type=submit]')`)), "Save remains visible and reachable in a shortened phone viewport");
   await clickRow("effort-a", "Cancel");
   await evaluate(`document.documentElement.style.fontSize=''`);
   await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
