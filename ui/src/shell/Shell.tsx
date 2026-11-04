@@ -103,6 +103,8 @@ export type StatusState = {
   stalled: string;
   /** Typed while away from the core: they go once it's back. */
   queued: number;
+  saved?: boolean;
+  savedId?: string;
   connected: boolean;
 };
 
@@ -163,7 +165,7 @@ export const StatusLine = memo(function StatusLine({ state, openHistory, childre
       {[
         waiting && <span key="wait" className={cls("shell-status-wait", !!state.stalled && "shell-amber")}><i aria-hidden="true" />{waiting}</span>,
         state.queued > 0 && <span key="queued" className="shell-status-wait shell-amber"><i aria-hidden="true" />{state.queued} to send when connected</span>,
-        state.connected && !state.queued && <span key="saved">Saved</span>,
+        state.saved && !state.queued && <span key="saved" data-saved-id={state.savedId}>Saved</span>,
       ].filter(Boolean).flatMap((item, i) => (i ? [<span key={`sep${i}`} className="shell-status-sep" aria-hidden="true" />, item] : [item]))}
     </button>
     {children}

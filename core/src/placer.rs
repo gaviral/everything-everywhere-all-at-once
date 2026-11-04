@@ -567,7 +567,7 @@ fn retry_in(round: u32) -> Duration {
 /// Places one thought, asking the model at `url` and giving each call `limit` for its room; when the turn moved on to
 /// another topic partway, returns the rest's id.
 async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Duration) -> anyhow::Result<Option<String>> {
-    if crate::stay::place_waiting(core, thought_id) {
+    if crate::stay::try_place_waiting(core, thought_id)? {
         return Ok(None);
     }
     core.key()?;
@@ -667,7 +667,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     let waiting = |w: &World| w.thoughts.iter().any(|t| t.id == thought_id && !t.placed);
     let (changes, rest, rule, landed) = loop {
         // A pin set while the model was answering wins, keeping the original words whole.
-        if crate::stay::place_waiting(core, thought_id) {
+        if crate::stay::try_place_waiting(core, thought_id)? {
             return Ok(None);
         }
         let moves = !moved_meanwhile && !core.placing.stays(thought_id) && !said_since(&world, &thought, now).any(|t| t.speaker == thought.speaker);
@@ -691,7 +691,7 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
         // The ask for a new thread is spent only when the words land: placed again, they still start it.
         let landed = if new_thread { changes.clone() } else { Vec::new() };
         let traced_line = || traced(&world, &thought, answer.clone(), new_thread, &changes, rest.as_deref());
-        if core.commit_if(|w| w.stay_here.is_none() && waiting(w) && there(w) && !(moves && moved(w)), changes.clone()) {
+        if core.try_commit_if(|w| w.stay_here.is_none() && waiting(w) && there(w) && !(moves && moved(w)), changes.clone())? {
             core.trace.write(traced_line);
             break (changes, rest, rule, landed);
         }
@@ -3144,6 +3144,25 @@ mod tests {
         let placer = core.clone();
         tokio::spawn(async move { super::serve(placer, queue, &url, super::PATIENCE).await });
         (core, path)
+    }
+
+    #[tokio::test]
+    async fn a_failed_placement_save_keeps_the_thought_pending_for_retry() {
+        for pinned in [false, true] {
+            let (url, prompts) = scripted(Vec::new(), 300).await;
+            let (core, path) = placing_core(url);
+            if pinned { core.commit(vec![Change::ThreadAdded { thread: thread("T1") }]); }
+            core.add_thought("you", "Keep this pending while the disk is unavailable");
+            let id = id_of(&core, "Keep this pending while the disk is unavailable");
+            until(Duration::from_secs(2), || !prompts.lock().unwrap().is_empty()).await;
+            if pinned { core.commit(vec![Change::StayChanged { thread_id: Some("T1".into()) }]); }
+            *core.journal.lock().unwrap() = crate::world::Journal::read_only(&path).unwrap();
+            until(Duration::from_secs(2), || core.placing.failed(&id)).await;
+            assert!(!core.snapshot().thoughts.iter().find(|thought| thought.id == id).unwrap().placed);
+            let (_, saved) = crate::world::Journal::open(&path).unwrap();
+            assert!(!saved.thoughts.iter().find(|thought| thought.id == id).unwrap().placed);
+            std::fs::remove_file(path).unwrap();
+        }
     }
 
     /// The video's opening (its first 30 seconds), said through `add_thought` as the mic hands it over, with

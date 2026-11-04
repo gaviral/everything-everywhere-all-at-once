@@ -26,10 +26,6 @@ const DRAG = 4;
  *  Reduce Motion they cross-fade in half that. */
 const GLIDE_MS = 300;
 const FADE_MS = 150;
-/** Reading, as the app's notices count it (notice-rules.ts): 238 words a minute (Brysbaert 2019), a 200 ms look first. */
-const READ_WPM = 238;
-const LOOK_MS = 200;
-const readMs = (text: string) => LOOK_MS + Math.round((text.trim().split(/\s+/).filter(Boolean).length * 60_000) / READ_WPM);
 /** A thought that landed while its bubble is still in the air keeps its slot open this long at most: the longest
  *  flight (640 ms) and a frame. */
 const ARRIVE_MAX_MS = 700;
@@ -190,8 +186,6 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
   const [following, setFollowing] = useState(true);
   const [originals, setOriginals] = useState<ReadonlySet<string>>(new Set());
-  const [handMoving, setHandMoving] = useState(false);
-  const [heldAt, setHeldAt] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, Position | null>>({});
   const [drag, setDrag] = useState<{ key: string; dx: number; dy: number } | null>(null);
@@ -216,7 +210,6 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   const [moving, setMoving] = useState<Record<string, string>>({});
   // The named topic a carried spine is over, while it's carried: dropped, it goes under it.
   const [dropTo, setDropTo] = useState<string | null>(null);
-  const touched = useRef(0);
   const timers = useRef(new Set<number>());
   useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
   const later = (run: () => void, ms: number) => {
@@ -488,8 +481,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     camera.aim(item.box, { ring: item.key });
   }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
-  const touch = () => { touched.current = Date.now(); setHeldAt(touched.current); };
-  const stopFollowing = () => { touch(); setFollowing(false); camera.hold(); };
+  const stopFollowing = () => { setFollowing(false); camera.hold(); };
   const startFollowing = () => {
     setFollowing(true);
     const g = goal();
@@ -507,23 +499,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
     return best;
   };
-  /** A quiet moment: enough still time to read the visible thoughts and their comments. */
-  const quietFor = () => {
-    const a = area(), v = flow.getViewport();
-    const visible = layout.items.filter(({ box: b }) => b.x * v.zoom + v.x < a.x1 && (b.x + b.w) * v.zoom + v.x > a.x0
-      && b.y * v.zoom + v.y < a.y1 && (b.y + b.h) * v.zoom + v.y > a.y0);
-    return readMs(visible.map((item) => [item.title, item.shown ?? item.text, item.latest,
-      ...(item.entries ?? []).map((entry) => entry.text), ...(item.tucks ?? []).flatMap((tuck) => tuck.entries.map((entry) => entry.text))].filter(Boolean).join(" ")).join(" "));
-  };
   const transform = (): [number, number, number] => { const v = flow.getViewport(); return [v.x, v.y, v.zoom]; };
-
-  // Stillness starts when the hand lets go, and lasts long enough to read what is actually in view.
-  // Keep a pending follow even if no further thought arrives after that pause.
-  useEffect(() => {
-    if (!staying || following || handMoving || drag || selecting || picking) return;
-    const timer = window.setTimeout(() => setFollowing(true), Math.max(0, heldAt + quietFor() - Date.now()));
-    return () => window.clearTimeout(timer);
-  }, [staying, following, handMoving, drag, selecting, picking, heldAt, layout]);
 
   // A thought landing: its slot fills once its flight is in (a ring), the newest landing says what put it there, and
   // out of view an edge chip says where.
@@ -558,13 +534,11 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       if (mine && !reduced && inAir(thoughtId)) arrive(thoughtId, item);
       else ring(item.key);
     }
-    const quiet = Date.now() - touched.current > quietFor();
-    if (mine && !staying && !following && !handMoving && quiet) setFollowing(true);
-    else if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
+    if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
       const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
-  });
+  }, "spine");
   // Your first thought on an empty map: this view is only drawn once the map has a thread, so it mounts after that
   // thought landed (its `landed` came before this view was here) with its bubble waiting in the air. It arrives as a
   // later one does: the slot holds its place until the bubble is in.
@@ -625,7 +599,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
 
   const acts = useMemo<Acts>(() => ({
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
-    pick: (item) => { touched.current = Date.now(); setPicked(item.key); actions.select(item.thread); },
+    pick: (item) => { setPicked(item.key); actions.select(item.thread); },
     words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
@@ -826,9 +800,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
             acts.moveToTopic(item.thread, to);
           } else put(item.id, node.position.x, node.position.y);
         }}
-        onMoveStart={(event) => { if (event) { setHandMoving(true); stopFollowing(); if (!picking?.typing) unpick(); } }}
-        onMove={(event) => { if (event) touched.current = Date.now(); }}
-        onMoveEnd={(event) => { if (event) { setHandMoving(false); touch(); } }}
+        onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}
         onPaneClick={() => { setPicked(null); if (!picking?.typing) unpick(); }}
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}

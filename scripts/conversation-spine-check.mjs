@@ -62,9 +62,14 @@ try {
   await page("Input.dispatchMouseEvent", { type: "mouseReleased", x: 1250, y: 620, button: "left", buttons: 0, clickCount: 1 });
   await sleep(500);
   assert.equal(await camera(), held, "arrival respects recent pan after release");
-  assert.ok(await until(`document.querySelector('.spine-follow').getAttribute('aria-pressed')==='true'`, 60000), "follow resumes after reading without needing another arrival");
+  // Keep the old 60-second observation window: elapsed reading time must not override a manual pan.
+  await sleep(60000);
+  assert.equal(await evaluate(`document.querySelector('.spine-follow').getAttribute('aria-pressed')`), 'false', 'manual pan stays held until explicit Follow');
+  assert.equal(await camera(), held, 'reading time does not move the held camera');
+  await click('.spine-follow');
+  assert.ok(await until(`document.querySelector('.spine-follow').getAttribute('aria-pressed')==='true'`), "explicit Follow resumes without another arrival");
   await sleep(700);
-  assert.ok(await newestVisible(12), "newest thought is visible after stillness");
+  assert.ok(await newestVisible(12), "newest thought is visible after explicit Follow");
   const rows = await evaluate(`(() => {
     const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
     return {points:[...document.querySelectorAll('.spine-point')].map(e=>({id:e.dataset.thought,...box(e.closest('.react-flow__node'))})),

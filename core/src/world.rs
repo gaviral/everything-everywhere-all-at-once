@@ -134,6 +134,13 @@ pub struct Action {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CaptureReceipt {
+    pub id: String,
+    pub text: String,
+    pub thought_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpeechDraft {
     pub id: String,
     pub speaker: String,
@@ -142,6 +149,8 @@ pub struct SpeechDraft {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default, skip_serializing)]
+    pub captures: std::collections::HashMap<(String, String), CaptureReceipt>,
     #[serde(default, skip_serializing)]
     pub speech_drafts: std::collections::HashMap<String, SpeechDraft>,
     #[serde(default, skip_serializing)]
@@ -410,6 +419,17 @@ pub enum Change {
 }
 
 impl World {
+    pub(crate) fn capture(&mut self, speaker: &str, id: &str, text: Option<&str>, change: &Change) {
+        let receipt = self.captures.entry((speaker.into(), id.into())).or_insert_with(|| CaptureReceipt {
+            id: id.into(), text: text.unwrap_or_default().into(), thought_ids: Vec::new(),
+        });
+        if let Some(text) = text { receipt.text = text.into(); }
+        if let Change::ThoughtAdded { thought } = change {
+            if receipt.text.is_empty() { receipt.text = thought.text.clone(); }
+            if !receipt.thought_ids.contains(&thought.id) { receipt.thought_ids.push(thought.id.clone()); }
+        }
+    }
+
     /// Sets an idea's or a task's words, day and status; false when there's no such item.
     fn set_item(&mut self, id: &str, to: &ItemState) -> bool {
         if let Some(s) = self.suggestions.iter_mut().find(|s| s.id == id) {
@@ -483,6 +503,9 @@ impl World {
                     self.thoughts.insert(i + 1, rest.clone());
                 }
                 self.split_from.insert(rest.id.clone(), thought_id.clone());
+                for capture in self.captures.values_mut().filter(|capture| capture.thought_ids.contains(thought_id)) {
+                    if !capture.thought_ids.contains(&rest.id) { capture.thought_ids.push(rest.id.clone()); }
+                }
             }
             // Its note stays, as the journal keeps its words: "scratch that", then Undo, brings the thought back joined
             // as it was (chunks.rs); a note for a thought off the map shows nothing. Its place on the canvas goes.
@@ -988,16 +1011,17 @@ impl World {
 #[derive(Clone, Default)]
 pub(crate) struct SourceStatus { pub accepted: bool, pub failed: bool }
 #[derive(Clone)]
-struct Source { speaker: String, id: String, status: SourceStatus }
+struct Source { speaker: String, id: String, text: String, status: SourceStatus }
 thread_local! { static SOURCE: std::cell::RefCell<Option<Source>> = const { std::cell::RefCell::new(None) }; }
-pub(crate) fn source_active() -> bool { SOURCE.with(|source| source.borrow().is_some()) }
-pub(crate) fn source_failed() -> bool { SOURCE.with(|source| source.borrow().as_ref().is_some_and(|source| source.status.failed)) }
+pub(crate) fn source_capture() -> Option<(String, String, String)> {
+    SOURCE.with(|source| source.borrow().as_ref().map(|s| (s.speaker.clone(), s.id.clone(), s.text.clone())))
+}
 
 /// A synchronous accepted turn: only this thread's writes receive its source ID, never unrelated background work.
-pub(crate) fn with_source<T>(speaker: &str, id: &str, work: impl FnOnce() -> T) -> (T, SourceStatus) {
+pub(crate) fn with_source<T>(speaker: &str, id: &str, text: &str, work: impl FnOnce() -> T) -> (T, SourceStatus) {
     struct Restore(Option<Source>);
     impl Drop for Restore { fn drop(&mut self) { SOURCE.with(|source| { source.replace(self.0.take()); }); } }
-    let old = SOURCE.with(|source| source.replace(Some(Source { speaker: speaker.into(), id: id.into(), status: SourceStatus::default() })));
+    let old = SOURCE.with(|source| source.replace(Some(Source { speaker: speaker.into(), id: id.into(), text: text.into(), status: SourceStatus::default() })));
     let _restore = Restore(old);
     let result = work();
     let status = SOURCE.with(|source| source.borrow().as_ref().unwrap().status.clone());
@@ -1072,7 +1096,7 @@ impl Journal {
                         // The source is in the same durable record as its effect, so a missing later receipt is safe.
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
                             if let (Some(speaker), Some(id)) = (value["source"]["speaker"].as_str(), value["source"]["id"].as_str()) {
-                                if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); }
+                                if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); world.capture(speaker, id, value["source"]["text"].as_str(), &change); }
                             }
                         }
                     }
@@ -1096,18 +1120,24 @@ impl Journal {
 
     pub fn map_id(&self) -> &str { &self.map_id }
 
-    pub fn append(&mut self, change: &Change) -> anyhow::Result<()> {
+    pub fn append(&mut self, change: &Change) -> anyhow::Result<()> { self.append_many(std::slice::from_ref(change)) }
+
+    pub fn append_many(&mut self, changes: &[Change]) -> anyhow::Result<()> {
+        if changes.is_empty() { return Ok(()); }
         let source = SOURCE.with(|source| source.borrow().clone());
         let result = (|| {
-            let mut value = serde_json::to_value(change)?;
-            if let Some(source) = &source {
-                value["source"] = serde_json::json!({ "speaker": source.speaker, "id": source.id });
+            let mut batch = String::new();
+            for change in changes {
+                let mut value = serde_json::to_value(change)?;
+                if let Some(source) = &source {
+                    value["source"] = serde_json::json!({ "speaker": source.speaker, "id": source.id, "text": source.text });
+                }
+                batch.push_str(&serde_json::to_string(&value)?);
+                batch.push('\n');
             }
-            let mut line = serde_json::to_string(&value)?;
-            line.push('\n');
-            self.file.write_all(line.as_bytes())?;
+            self.file.write_all(batch.as_bytes())?;
             self.file.flush()?;
-            if source.is_some() { self.file.sync_data()?; }
+            self.file.sync_data()?;
             Ok(())
         })();
         SOURCE.with(|source| { if let Some(source) = source.borrow_mut().as_mut() {

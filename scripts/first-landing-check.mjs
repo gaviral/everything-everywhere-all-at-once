@@ -48,9 +48,11 @@ const place = () => {
     { type: "active_changed", thread_id: "T1", speaker: "you" },
   ]) core.send({ type: "change", change });
 };
-const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
+const core = await standInCore(() => [{ type: "map_identity", id: "first-landing-map" }, { type: "snapshot", world: shown }], {
   onMessage: (message) => {
+    if (message.type === "heartbeat") { core.send(message); return; }
     if (message.type !== "text") return;
+    core.send({ type: "text_received", id: message.id });
     const at = Date.now();
     thought = { id: "t1", speaker: "you", text: message.text, point: "", thread_id: null, placed: false, unclear: "", guess: "", heard: "", fixed: "",
       complete: true, at_ms: at, place_ms: null, decided: false };
@@ -109,7 +111,6 @@ try {
     await page("Page.enable");
     await page("Page.addScriptToEvaluateOnNewDocument", { source: `
       localStorage.clear(); sessionStorage.clear();
-      localStorage.setItem("e2a2o.toured", "1");
       localStorage.setItem("e2a2o.brick.bubble-flight.hinted", "true");
       window.__errors = [];
       addEventListener("error", e => {
@@ -171,6 +172,14 @@ try {
       if (!hold) {
         const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
         writeFileSync(join(shots, `first-landing-landed-${width}-${scheme}.png`), Buffer.from(data, "base64"));
+      }
+      // Reviewable 100 ms samples, alongside the original frame stream and the settled PNG.
+      const sampled = frames.filter(f => f.at >= placedAt - 300).sort((a,b) => a.at-b.at);
+      let previous = -Infinity, sample = 0;
+      for (const f of sampled) {
+        if (f.at - previous < 100) continue;
+        previous = f.at;
+        writeFileSync(join(shots, "frames", `100ms-${width}-${scheme}-${hold}-${sample++}.jpg`), Buffer.from(f.data, "base64"));
       }
       // The browser draws only when something changes, and hands frames over a little out of order: by time, then.
       for (const [i, f] of frames.filter((f) => f.at >= placedAt - 200 && f.at <= placedAt + 900 + hold).sort((a, b) => a.at - b.at).entries()) {

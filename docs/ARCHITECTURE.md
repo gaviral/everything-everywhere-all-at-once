@@ -7,6 +7,7 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 ```
 Browser, one page per window (ui/src)
   App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
+  RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches

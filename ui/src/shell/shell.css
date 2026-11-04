@@ -359,3 +359,14 @@ html.shell2 .shell-sample { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   html.shell2 :is(.shell-find-field, .shell-switch, .shell-switch i) { transition: none; }
 }
+
+/* Canonical source words stay reachable while the separate decorative flight comes and goes. */
+html.shell2 .capture-pending { max-height: min(34vh, 280px); overflow: auto; overscroll-behavior: contain; display: grid; gap: 8px; }
+html.shell2 .capture-item { border: 1px dashed var(--amber); border-radius: 10px; background: var(--card); padding: 10px 12px; color: var(--ink); }
+html.shell2 .capture-item p { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+html.shell2 .capture-state { font-size: 12px; color: var(--muted); }
+html.shell2 .capture-item button { margin-left: 8px; min-height: 44px; }
+html.shell2 .capture-placed { padding: 6px 10px; border-radius: 8px; background: var(--card); font-size: 12px; }
+html.shell2 .capture-placed p { white-space: pre-wrap; overflow-wrap: anywhere; }
+html.shell2 .sample-recovery-actions { position: fixed; top: 68px; left: 16px; z-index: 12; display: flex; gap: 8px; }
+html.shell2 .keyless-help { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }

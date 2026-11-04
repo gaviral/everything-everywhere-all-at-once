@@ -135,6 +135,7 @@ export interface MapSnapshot {
   readonly partial: string;
   /** Whether the core is there: while it isn't, actions that change the map say so instead. */
   readonly connected: boolean;
+  readonly placingUnavailable?: boolean;
 }
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
@@ -216,7 +217,8 @@ export interface BrickEvents {
 }
 
 /** Listens for one kind of event; returns the way to stop. */
-export type BrickOn = <K extends keyof BrickEvents>(name: K, listener: (value: BrickEvents[K]) => void) => () => void;
+// A named landed consumer may receive the newest event once, within five seconds of a late mount.
+export type BrickOn = <K extends keyof BrickEvents>(name: K, listener: (value: BrickEvents[K]) => void, consumer?: string) => () => void;
 
 /** A live navigation request, kept while a view's code loads; a repeated destination has a new revision. */
 export type ViewDestination = { threadId: string; thoughtId: string | null; revision: number };
@@ -246,8 +248,8 @@ export const SLOTS = ["top-left", "top-right", "bottom-left", "bottom-right", "s
 
 /** `on` as a hook: calls `listener` for each `name` event while the brick is on the page. The latest listener, so it
  *  can read fresh props. */
-export function useBrickEvent<K extends keyof BrickEvents>(on: BrickOn, name: K, listener: (value: BrickEvents[K]) => void) {
+export function useBrickEvent<K extends keyof BrickEvents>(on: BrickOn, name: K, listener: (value: BrickEvents[K]) => void, consumer?: string) {
   const latest = useRef(listener);
   useLayoutEffect(() => { latest.current = listener; });
-  useEffect(() => on(name, (value) => latest.current(value)), [on, name]);
+  useEffect(() => on(name, (value) => latest.current(value), consumer), [on, name, consumer]);
 }

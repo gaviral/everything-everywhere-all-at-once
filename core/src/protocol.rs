@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    CaptureSaved { capture: crate::world::CaptureReceipt, replay: bool },
     MapIdentity { id: String },
     Heartbeat { id: String },
     RecoverableSpeech { id: String, text: String },
@@ -209,6 +210,7 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    RetryPlacement { id: String },
     Heartbeat { id: String },
     RecoverSpeech { id: String, keep: bool },
     Partner { on: bool },

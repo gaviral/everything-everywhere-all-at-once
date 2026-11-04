@@ -111,7 +111,7 @@ pub fn note_speaking(core: &Arc<Core>, speaker: &str, thought_id: &str, quote: &
                     None => w.thread(&thread_id).is_none() && !w.merged.contains_key(&thread_id),
                 }
         };
-        if core.commit_speaking(still, changes, speak) {
+        if core.commit_speaking(still, changes, speak).map_err(|_| "Couldn't save this note. Keep your words and try again.")? {
             return Ok(thread_id);
         }
     }

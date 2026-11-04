@@ -33,6 +33,7 @@ const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
       assert.ok(!receipts.has(message.id), "each explicit submission has its own id");
       receipts.add(message.id);
       core.send({ type: "text_received", id: message.id });
+      core.send({ type: "capture_saved", capture: { id: message.id, text: message.text, thought_ids: [] }, replay: false });
       return;
     }
     if (message.type !== "focus") return;

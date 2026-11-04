@@ -34,9 +34,9 @@ const MODEL_WAIT_MS = 1000;
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
+  const map = useMemo(() => ({ ...snapshotOf(world, me, connected, rooms, partial, jobs, usage), placingUnavailable }), [world, me, connected, rooms, partial, jobs, usage, placingUnavailable]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);
@@ -64,17 +64,19 @@ export function useBrickHost(world: World, revision: number, me: string, connect
     return actions;
   }, [sends]);
   const [events] = useState(brickEvents);
-  const on = useMemo<BrickOn>(() => (name, listener) => name === "loudness" ? onReading(listener as (level: number) => void) : events.on(name, listener), [events]);
+  const on = useMemo<BrickOn>(() => (name, listener, consumer) => name === "loudness" ? onReading(listener as (level: number) => void) : events.on(name, listener, consumer), [events]);
   // The guide hears what the bricks hear (your words: a caption steps back when you talk over it, a held question
   // waits for your pause).
   useEffect(() => hearFrom(on), [on]);
 
   // Landings, each with who added it and, once its route has said, the model that placed it.
   const [landings] = useState(landingWatcher);
+  const lastRevision = useRef(revision);
   const thoughtsNow = useRef(world.thoughts);
   thoughtsNow.current = world.thoughts;
   const waiting = useRef(new Map<string, { landing: Omit<BrickEvents["landed"], "model">; timer: number }>());
   useEffect(() => {
+    if (lastRevision.current !== revision) { events.clearReplay(); lastRevision.current = revision; }
     sends.see(world.thoughts, me, Date.now(), revision);
     for (const thought of landings(world.thoughts, revision)) {
       const brick = sends.by(thought.id);
