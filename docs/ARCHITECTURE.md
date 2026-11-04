@@ -124,7 +124,7 @@ Core, one process (core/src: axum, tokio)
   dev_build.rs   optional build-file notifications and connected-page activity for idle reloads
   code_canvas.rs optional local-only source and Git branch map; delegates part summaries and agent state to code_canvas/
   clarify.rs     asks Muse Spark for the one word in a thought it can't place; keeps nothing
-  crew.rs        splits what was said into parts, builds each on its own git branch with Muse Spark, merges what works up to main, keeps a catalog
+  crew.rs        splits what was said into parts, builds each on its own git branch with Muse Spark, merges what works up to main, keeps finished parts
   draw.rs        Muse Spark reads a sketch, Muse Image draws it back; keeps nothing
   system_view.rs live connections and frames behind the agent work view
   flow.rs        Meta-powered text boxes, streamed transformations and publishing results back to their source topic
