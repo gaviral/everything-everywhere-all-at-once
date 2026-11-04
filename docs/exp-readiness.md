@@ -84,3 +84,17 @@ The first gate reproduced `demo-jobs-check` receiving a null child exit status u
 Validation: 670 Rust tests passed (13 ignored); the reported core failure did not reproduce. Both UI build modes, the projection invariants, and the whole projection, conversation-spine and all-threads Chrome checks passed. Brick contract rules passed. Live model calls were not exercised.
 
 Final `PRECHECK_PAGES=0 sh scripts/precheck.sh` passed: all 54 enabled Node checks, core tests, builds and static guards. Browser phases ran separately as listed above. Existing release-content warnings remain; no running app was available for live probes. No commit or push.
+
+## I-turns gate repair
+
+Integrated main at `052f8ef` without conflicts, retaining saved spoken turns and main's notice fixes, Bubbles removal and first-placement timeout. Each offline Vite server now owns a temporary optimizer cache, removed on close, so concurrent checks cannot invalidate another page's module imports; SSR-only checks skip client dependency scans. The demo CLI check allows 15 seconds for subprocess startup instead of three; observed Node startup reached 2.8 seconds. Playback keeps its seven-second bound after connection, and the child watchdog includes the startup allowance. CLI pacing is measured at actual WebSocket sends in the child process, since receiver callbacks can batch previously paced packets. Payloads are still checked at the receiver; argument, exit-code, pacing and no-connection assertions remain, with explicit subprocess-error diagnostics. Updated the architecture and feature descriptions for durable captions and silent catch-up.
+
+The launch fixture also reproduced a 15-second startup timeout twice: `run.sh` starts Node four times before launching its Node fixture core. Its whole-launch bound is now 45 seconds; the single-process preflight keeps its 15-second bound. No launch behavior assertion changed.
+
+The edge-cue fixture child signals when its module has loaded. Startup gets a separate 45-second bound; synchronous placement fixtures retain the original 15-second collision-loop watchdog and every placement assertion.
+
+Validation at `052f8ef`: `PRECHECK_PAGES=0 PRECHECK_JOBS=1 sh scripts/precheck.sh` exited 0, including all 55 static checks, the production UI build and Rust tests. The rebuilt core passed caption reload/restart again after integrating the placement timeout. Call, full guide, partner, conversation spine, recovery speech, complete demo and repaired startup/edge-cue checks passed; two page-speech checks passed concurrently with separate Vite caches. Cache cleanup on close was verified. These checks use synthetic fixtures and no model calls. Live precheck probes were skipped because its port had no app; existing release-content warnings remain.
+
+## Merge resolution: conversation spine and I-turns
+
+Preserved both gate-repair records above. The merged checks keep the 60-second cold-start allowances for demo CLI processes, launch/preflight fixtures and edge-cue loading. CLI playback retains its separate seven-second bound; its child watchdog includes startup plus ten seconds. Edge-cue loading signals readiness over IPC before the separate 15-second placement watchdog begins. Explicit subprocess errors, receiver payload checks, controlled-time pacing and actual child-send pacing assertions all remain. The merged UI-server cache isolation and caption documentation remain unchanged. The next gate must validate this combined tree; prior validation records describe their original snapshots.

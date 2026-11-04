@@ -4,9 +4,14 @@ import { spawn } from "node:child_process";
 import { uiServer } from "./ui-server.mjs";
 
 if (!process.argv.includes("--fixtures")) {
-  const child = spawn(process.execPath, [new URL(import.meta.url).pathname, "--fixtures"], { stdio: "inherit" });
-  // Include cold Vite startup under concurrent gate load; a collision loop still has a bounded deadline.
-  const timeout = setTimeout(() => { child.kill("SIGKILL"); console.error("edge-cues-check: placement timed out"); }, 60_000);
+  const child = spawn(process.execPath, [new URL(import.meta.url).pathname, "--fixtures"], { stdio: ["inherit", "inherit", "inherit", "ipc"] });
+  const fail = (phase) => { child.kill("SIGKILL"); console.error(`edge-cues-check: ${phase} timed out`); };
+  // Starting Node and loading Vite are separate from the synchronous collision-loop budget.
+  let timeout = setTimeout(() => fail("startup"), 60_000);
+  child.once("message", () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fail("placement"), 15000);
+  });
   const code = await new Promise((resolve) => child.once("exit", (code) => resolve(code ?? 1)));
   clearTimeout(timeout);
   assert.equal(code, 0, "placement fixtures failed or timed out");
@@ -15,6 +20,7 @@ if (!process.argv.includes("--fixtures")) {
   const server = await uiServer();
   try {
     const { placeCues } = await server.ssrLoadModule("/src/bricks/spine/cues.tsx");
+    process.send?.("fixtures-ready");
     // Availability is a fixture expectation, independent of whether placement returned any chips.
     const check = (cues, area, avoid = [], legalSlot = [area.x0, area.y0, area.x1, area.y1].every(Number.isFinite)
       && Number.isFinite(area.x1 - area.x0) && Number.isFinite(area.y1 - area.y0) && area.x1 > area.x0 && area.y1 > area.y0) => {
