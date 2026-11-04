@@ -17,7 +17,7 @@ function MemoryIntroduction({ index }: { index: MemoryIndex }) {
   return <div className="project-memory-intro">
     <div>
       <p className="project-memory-eyebrow">Project memory <span>Read only</span></p>
-      <h1>Pick up<br />the thread.</h1>
+      <h1>Pick up where<br />you left off.</h1>
       <p className="project-memory-deck">The choices, pieces and open questions.<br />Together, for the next whole-project revision.</p>
       <p className="project-memory-privacy">{index.example ? "Synthetic public example · " : "Supplied public records · "}{index.title}<br />Private records stay outside this index.</p>
     </div>
