@@ -27,7 +27,7 @@ try {
   assert.equal(typingIn({ tagName: "DIV", isContentEditable: true }), true);
   assert.equal(typingIn({ tagName: "BODY", isContentEditable: false }), false);
   assert.equal(typingIn(null), false);
-  assert.match(ui("find.ts"), /if \(!typingIn\(document\.activeElement\)\) target\.focus/, "the jump asks before taking focus");
+  assert.match(ui("find.ts"), /if \(!found\.preserveFocus && !typingIn\(document\.activeElement\)\) target\.focus/, "the jump respects preserved focus and asks before taking focus from a field");
 
   // Undo of a Delete brings the point back as a fresh thought: no landing, so the map doesn't follow it and it
   // doesn't take the "latest" mark; a thought placed for the first time is one.
