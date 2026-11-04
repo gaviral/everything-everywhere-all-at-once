@@ -12,6 +12,7 @@ import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
 import { useReadPosition } from "./talk/read";
 import { useJobs } from "./work-jobs";
+import { useFilmWords } from "./film";
 import { builtInOn, useBuiltInsOn } from "./shell/features";
 import { PluginStateContext } from "./bricks/contract";
 import { savedState } from "./plugin-store";
@@ -44,6 +45,7 @@ const MODEL_WAIT_MS = 1000;
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false, captureContext?: { mapKey: string | null; confirmedMapKey?: string | null; captures: readonly Capture[] }): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+  partial = useFilmWords(partial);
   const jobs = useJobs();
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
