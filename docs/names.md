@@ -54,7 +54,7 @@ The new word is added and the old one keeps working. “What can I say?” shows
 
 ## Not renamed
 
-Kept as they were: map (the whole), thought, point, Bubbles, Shelf, Why here, Model line, Notice, Guide, Held questions, Send countdown, Status, Recap, Import chats, Export, Listening, Live words, Tiny transcript, Level meter, Apps (the small apps you ask for), and the feature **Work spine**, which is another feature's own name.
+Kept as they were: map (the whole), thought, point, Shelf, Why here, Model line, Notice, Guide, Held questions, Send countdown, Status, Recap, Import chats, Export, Listening, Live words, Tiny transcript, Level meter, Apps (the small apps you ask for), and the feature **Work spine**, which is another feature's own name.
 
 ## The check
 

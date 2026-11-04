@@ -73,7 +73,6 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   "tiny-transcript": { name: "Tiny transcript", aka: "Small live words, compact transcript", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
   "notice-timeline": { name: "Notification history", aka: "Recent notices", does: "Every notice kept, each with what takes it back.", lives: "History" },
   "read-progress": { name: "Mark replies as read", does: "Remembers replies you view or tap. A dot means unread; a line shows where you left off.", lives: "Canvas and Talk" },
-  bubbles: { name: "Bubbles", aka: "Floating circles", does: "Each topic floats as a bubble, sized by its points.", lives: "A view" },
   keys: { name: "Keyboard shortcuts", aka: "Keyboard controls", does: "Arrows or h j k l move between topics and points.", lives: "Everywhere" },
   level: { name: "Level meter", aka: "Loudness meter", does: "Every loudness reading, to set a volume feature's level.", lives: "Bottom left" },
   "brick-chip": { name: "Source attribution", aka: "Source tag, added by", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },

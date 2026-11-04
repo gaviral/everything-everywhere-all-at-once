@@ -90,13 +90,14 @@ try {
       // Scrolled far enough that the lane sticks under the header (a laptop's is 62 px lower at the page's top).
       const scrolled = async () => { const m = await look(phone ? 600 : 400); assert.ok(m.scrollY >= 100, `${where}: the page scrolls (${m.scrollY})`); return m; };
 
-      // Cards now take one reading turn each. Every long card must still fit,
+      // The live countdown interrupts reading; the earlier cards resume in order.
+      // Every long card must still fit,
       // scroll, and keep its own controls reachable at the top and down the map.
       core.send(pulls(1));
       core.send(note(1));
       core.send(send);
       core.send(note(2));
-      for (const [name, selector, close] of [["GitHub", ".pulls-card.is-ready", ".pulls-card-close"], ["note", ".note-card", ".note-card-close"], ["message", ".send-card.is-counting", null], ["note", ".note-card", ".note-card-close"]]) {
+      for (const [name, selector, close] of [["message", ".send-card.is-counting", null], ["GitHub", ".pulls-card.is-ready", ".pulls-card-close"], ["note", ".note-card", ".note-card-close"], ["note", ".note-card", ".note-card-close"]]) {
         assert.ok(await until(`!!document.querySelector('${selector}')`), `${where}: ${name} reaches the head of the queue`);
         together(`${where}, ${name}, at the top`, await look(0), [name], { underDock: phone });
         together(`${where}, ${name}, scrolled`, await scrolled(), [name]);
