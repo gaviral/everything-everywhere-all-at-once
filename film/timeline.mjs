@@ -26,7 +26,7 @@ export function timeline(config) {
   if (!Array.isArray(config.shots) || !config.shots.length) throw new Error('shots must be a nonempty array');
   let cursor = 0;
   const shots = config.shots.map((shot, index) => {
-    if (!['title', 'plane', 'planes', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (!['title', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
     let duration = positive(shot.seconds, `shot ${index + 1} seconds`);
     if (shot.kind === 'title') words(shot.words, 'title words');
     if (shot.kind === 'card') words(shot.word, 'card word');
@@ -35,6 +35,16 @@ export function timeline(config) {
     if (shot.kind === 'planes') {
       if (!Array.isArray(shot.clips) || shot.clips.length < 2 || shot.clips.length > 3) throw new Error('planes needs two or three clips');
       shot.clips.forEach(plane);
+    }
+    if (shot.kind === 'wall') {
+      if (!Array.isArray(shot.tiles) || !shot.tiles.length) throw new Error('wall needs real image or clip tiles');
+      if (!shot.tiles[0].clip) throw new Error('wall starts on a clip');
+      for (const tile of shot.tiles) {
+        if (Boolean(tile.clip) === Boolean(tile.image)) throw new Error('Each wall tile needs exactly one image or clip');
+        if (tile.clip) plane(tile);
+        else if (typeof tile.image !== 'string' || !tile.image) throw new Error('wall image needs a filename');
+        if (tile.loopSeconds !== undefined) positive(tile.loopSeconds, 'loopSeconds');
+      }
     }
     if (shot.zoom !== undefined) {
       if (!Array.isArray(shot.zoom) || shot.zoom.length !== 2) throw new Error('zoom needs [from, to]');
