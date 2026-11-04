@@ -484,7 +484,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, angle, !inline, true);
+  const readingZoom = new URLSearchParams(location.search).has("rehearse") ? Math.min(2, Math.max(1, window.innerWidth / 1920)) : 1;
+  const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, angle, !inline, true, readingZoom);
   const savedCamera = useRef<ReturnType<typeof flow.getViewport> | null>(null);
   const wasInline = useRef(false);
   useLayoutEffect(() => {
@@ -537,8 +538,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     if (capture && !map.threads.length && captureNodes.box) {
       const free = area();
       void flow.setViewport({ x: (narrow ? Math.min(28, Math.max(10, (width - 300) / 2)) : 96) - captureNodes.box.x, y: free.y0 + (narrow ? 32 : 64) - captureNodes.box.y, zoom: 1 }, { duration: 0 });
-    } else if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
-    else if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    } else if (opening) camera.aim(opening.box, { zoom: readingZoom, instant: true, alignTop: true });
+    else if (g) camera.aim(g.box, { zoom: readingZoom, instant: true }); else camera.fit(all(), readingZoom, minZoom, { instant: true });
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
@@ -557,8 +558,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       return;
     }
     const g = goal();
-    if (box.right > 0) camera.fit(all(), 1, minZoom, { instant: true });
-    else if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    if (box.right > 0) camera.fit(all(), readingZoom, minZoom, { instant: true });
+    else if (g) camera.aim(g.box, { zoom: readingZoom, instant: true }); else camera.fit(all(), readingZoom, minZoom, { instant: true });
   }, [width, box?.tall]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
   // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
@@ -827,7 +828,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     const item = key && layout.byKey.get(key);
     if (!item) return;
     visitAfterLens.current = null;
-    camera.aim(item.box, { ring: item.key, zoom: 1, instant: true });
+    camera.aim(item.box, { ring: item.key, zoom: readingZoom, instant: true });
     requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(item.key)}"] [data-spine-target]`)?.focus({ preventScroll: true }));
   }, [layout]);
   const acts = useMemo<Acts>(() => ({
@@ -839,7 +840,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       }
       stopFollowing();
       setPicked(key);
-      camera.aim(item.box, { ring: key, zoom: 1, instant: true });
+      camera.aim(item.box, { ring: key, zoom: readingZoom, instant: true });
       requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"] [data-spine-target]`)?.focus({ preventScroll: true }));
     },
     resume: (id,keyboard) => { actions.resume?.(id,keyboard); },
@@ -849,7 +850,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(viewItem(item), transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
     openOnMap: (thread) => actions.openThread(thread),
-    read: (item) => { stopFollowing(); camera.aim(item.box, { zoom: 1, ring: item.key }); },
+    read: (item) => { stopFollowing(); camera.aim(item.box, { zoom: readingZoom, ring: item.key }); },
     shelve: (item) => keep(item.id),
     unpin: (item) => { put(item.id, null, null); },
     select: (item, x, y) => {
@@ -982,7 +983,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     if (next === "words") {
       const g = following ? goal() : null;
       const target = g?.box ?? middle()?.box;
-      if (target) camera.aim(target, { zoom: 1, ring: g?.ring });
+      if (target) camera.aim(target, { zoom: readingZoom, ring: g?.ring });
       return;
     }
     stopFollowing();
@@ -990,7 +991,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     const titleZoom = (G.titleW * 13 / 18 + 2 * 6) / G.colW;
     camera.fit(all(), next === "titles" ? 0.6 : 0.42, next === "titles" ? Math.max(minZoom, titleZoom) : minZoom);
   };
-  const seeAll = () => { stopFollowing(); camera.fit(all(), 1, minZoom); };
+  const seeAll = () => { stopFollowing(); camera.fit(all(), readingZoom, minZoom); };
 
   // Keys, from anywhere on the page but a field or a dialog: 1 2 3 the stops, 0 everything, F follow, N the newest edge
   // chip, S the shelf, + and − zoom. Picking words: Enter answers them, Esc lets them go.
@@ -1102,10 +1103,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         <CanvasShapes />
         <CanvasToolControls hold={stopFollowing} />
         <CaptureAccess box={captureNodes.activeBox} free={area()} reveal={() => {
-          if (captureNodes.activeBox) camera.aim(captureNodes.activeBox, { zoom: 1 });
+          if (captureNodes.activeBox) camera.aim(captureNodes.activeBox, { zoom: readingZoom });
           capture?.host.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
         }} />
-        <PhoneNavigation map={map} layout={layout} hold={stopFollowing} overview={() => { setOriginals(new Set()); setOpen(null); camera.fit(all(), 1, minZoom); }} reveal={(thread, thought, opened) => {
+        <PhoneNavigation map={map} layout={layout} hold={stopFollowing} overview={() => { setOriginals(new Set()); setOpen(null); camera.fit(all(), readingZoom, minZoom); }} reveal={(thread, thought, opened) => {
           stopFollowing();
           const topic = map.threads.find((t) => t.id === thread);
           if (topic?.parent_id) setOpen({ id: thread, by: "you" });

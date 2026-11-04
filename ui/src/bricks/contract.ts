@@ -288,6 +288,10 @@ export interface BrickActions {
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;
+  /** Flow uses the host's held stack and natural pause, never a separate interruption timer. */
+  holdFlowQuestion?(id: string, ask: () => void): void;
+  dropFlowQuestion?(id: string): void;
+  flowPause?(): number;
   resume?(pauseId: string, keyboard?: boolean): boolean;
   /** Inspect an exact live destination without changing the routing or the draft. */
   openPoint(threadId: string, thoughtId: string | null): void;

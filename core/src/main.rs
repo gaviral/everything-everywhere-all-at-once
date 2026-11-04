@@ -700,7 +700,7 @@ impl Core {
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool, window: Option<u64>) {
         self.touch();
         if typed { messages::speech_end(self, speaker, false); }
-        if !spoken::stops_listening(text) && flow::take_turn(speaker, text) { return; }
+
         // These are window preferences, never thoughts or requests for the model.
         if let Some(show) = notice_control(text) {
             self.send_to(speaker, ServerMsg::NoticeControl { show });
@@ -710,6 +710,7 @@ impl Core {
         if helpers::said(self, speaker, text) || messages::said(self, speaker, text) {
             return;
         }
+        if !spoken::stops_listening(text) && flow::take_turn(self, speaker, text) { return; }
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
         let asked = self.snapshot().thoughts.iter().max_by_key(|t| t.said_at(now)).is_some_and(|t| t.text.trim_end().ends_with('?'));
@@ -1500,6 +1501,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/room", get(room_info))
         .route("/terse", post(terse::read))
         .route("/flow/plan", post(flow::plan))
+        .route("/flow/finish", post(flow::finish))
+        .route("/flow/send", post(flow::send))
         .route("/flow/run", post(flow::run))
         .route("/flow/turns", get(flow::turns))
         .route("/flow/library", get(flow::library).post(flow::save))

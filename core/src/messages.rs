@@ -417,12 +417,18 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         }
         return None;
     };
+    Some(queue(core, speaker, ask))
+}
+
+/// Shared card and Stop path for speech and the final Flow box. No alternate sender.
+pub fn queue(core: &Arc<Core>, speaker: &str, ask: Ask) -> Done {
+    let email = ask.channel == Channel::Email;
     // As the Add button: Messages is the host's, on the laptop running the core.
     if !core.is_host(speaker) {
         core.send_to(speaker, ServerMsg::Notice { message: if email {
             "Only the host can send email: it goes from their Mac.".into()
         } else { "Only the host can send messages: they go from their Mac.".into() } });
-        return Some(Done::missed(Act::Message));
+        return Done::missed(Act::Message);
     }
     let in_ms = countdown_ms(&format!("{} {}", ask.subject, ask.text));
     let live = core.messages.live(ask.channel);
@@ -431,7 +437,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         if state.counting.is_some() || state.sending.is_some() || crate::helpers::counting(core) {
             drop(state);
             core.send_to(speaker, ServerMsg::Notice { message: "One message at a time: say “stop”, or wait for it to send.".into() });
-            return Some(Done::missed(Act::Message));
+            return Done::missed(Act::Message);
         }
         state.next += 1;
         let id = state.next;
@@ -449,7 +455,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         finish(&core, id).await;
     });
     // "No, I meant …" takes this one down before it redoes the request (catalog.rs `redo`).
-    Some(Done::with(Act::Message, Some(crate::catalog::Undo::Unsend { id })))
+    Done::with(Act::Message, Some(crate::catalog::Undo::Unsend { id }))
 }
 
 /// The speaker's card, for a window that just (re)connected: their message still counting down, with the time the count

@@ -34,7 +34,7 @@ const AIM = 0.55;
 const COMFORT = { left: 0.08, right: 0.92, top: 0.1, bottom: 0.8 };
 export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined, angle = 0, active = true, contain = false) {
+export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined, angle = 0, active = true, contain = false, readingZoom = 1) {
   const enabled = useRef(active);
   enabled.current = active;
   useEffect(() => { if (!active) { window.clearTimeout(waiting.current); fade.current?.cancel(); } }, [active]);
@@ -104,7 +104,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
   const viewFor = useCallback((box: Box, zoom?: number): Viewport => {
     const a = area();
     const was = flow.getViewport();
-    const z = zoom ?? (was.zoom < READ ? 1 : was.zoom);
+    const z = zoom ?? (readingZoom > 1 ? readingZoom : was.zoom < READ ? 1 : was.zoom);
     // A box taller than the free part shows its top: the tip, with its slot under it.
     const h = Math.min(box.h, (a.y1 - a.y0) * 0.6 / z);
     const next = anchorAt({ x: box.x + box.w / 2, y: box.y + h / 2 }, { x: (a.x0 + a.x1) / 2, y: a.y0 + (a.y1 - a.y0) * AIM }, z, angle);
@@ -113,7 +113,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
       next.y += Math.max(a.y0 + 12 - projected.y, Math.min(0, a.y1 - 12 - (projected.y + projected.h)));
     }
     return next;
-  }, [flow, area, angle, contain]);
+  }, [flow, area, angle, contain, readingZoom]);
 
   /** Puts `box` where you'd look for it, at once (the opening frame) or as a move. */
   const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean; alignTop?: boolean } = {}) => {
@@ -146,8 +146,8 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const view = flow.getViewport();
     const b = screenBounds(box, { ...view, angle });
     const sx = b.x - a.x0, sy = b.y - a.y0;
-    return view.zoom >= READ && sx >= w * COMFORT.left && sx + b.w <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(b.h, h * 0.6) <= h * COMFORT.bottom;
-  }, [area, flow, angle]);
+    return view.zoom >= Math.max(READ, readingZoom) && sx >= w * COMFORT.left && sx + b.w <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(b.h, h * 0.6) <= h * COMFORT.bottom;
+  }, [area, flow, angle, readingZoom]);
 
   /** The follow: `target()` (asked when the move is due, so it's the latest) into the comfortable middle, if it left it;
    *  spaced at least SPACING_MS from the camera's last move. */
