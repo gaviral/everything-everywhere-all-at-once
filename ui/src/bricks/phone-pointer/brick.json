@@ -1,0 +1,8 @@
+{
+  "id": "phone-pointer",
+  "name": "Desktop pointer",
+  "does": "Use a phone as a Mac trackpad, with keyboard controls and an optional screen preview.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": false
+}

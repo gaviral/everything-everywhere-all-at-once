@@ -1,0 +1,51 @@
+.phone-pointer { position: fixed; inset: 0; z-index: 2100; overflow: auto; background: radial-gradient(ellipse at 15% 0%, #283f3f, transparent 65%), #111b21; color: #f4f1df; font: 18px/1.5 system-ui, sans-serif; padding: 24px; overscroll-behavior: contain; }
+.phone-pointer *, .phone-pointer *::before { box-sizing: border-box; }
+.phone-pointer main { max-width: 780px; margin: 48px auto 32px; }
+.phone-pointer h2 { font-size: clamp(32px, 6vw, 58px); line-height: 1.12; letter-spacing: -.04em; margin: 8px 0 18px; color: inherit; }
+.phone-pointer p { color: #c8d2ca; }
+.phone-pointer button, .phone-pointer-launch { font: inherit; color: inherit; border: 1px solid #6e8784; border-radius: 18px; padding: 12px 18px; background: #24383e; cursor: pointer; min-height: 48px; }
+.phone-pointer button:disabled { opacity: .4; cursor: default; }
+.phone-pointer button:focus-visible, .phone-pointer input:focus-visible { outline: 3px solid #dafa9a; outline-offset: 3px; }
+.phone-pointer button[aria-pressed="true"] { color: #152720; background: #dafa9a; }
+.phone-pointer-close { position: absolute; top: 16px; right: 20px; }
+.phone-pointer-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.phone-pointer-heading > div > span { color: #dafa9a; font-size: 13px; letter-spacing: .18em; }
+.phone-pointer-heading h2 { font-size: clamp(30px, 5vw, 46px); }
+.phone-pointer-status { font-size: 17px; }
+.phone-pointer .phone-pointer-problem { color: #ffcfab; }
+.phone-pointer-pad { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; min-height: 260px; border-radius: 42px; background: radial-gradient(ellipse at 50% 30%, #37535b, #21343c); box-shadow: inset 0 0 0 1px #718983; touch-action: none; user-select: none; -webkit-user-select: none; }
+.phone-pointer-pad[aria-disabled="true"] { opacity: .5; }
+.phone-pointer-orbit { display: grid; place-items: center; height: 78px; width: 78px; border-radius: 50%; background: #dafa9a; color: #1c302b; font-size: 42px; box-shadow: 0 0 0 14px #dafa9a0a; margin-bottom: 18px; }
+.phone-pointer-pad strong { font-size: 26px; font-weight: 550; }
+.phone-pointer-pad span:not(.phone-pointer-orbit), .phone-pointer small { color: #b6c7c4; }
+.phone-pointer-clicks, .phone-pointer-keyrow { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.phone-pointer-clicks button { flex: 1; }
+.phone-pointer-keyboard { padding: 18px 0; margin-top: 18px; border: 0; min-width: 0; }
+.phone-pointer-keyboard legend { font-size: 22px; width: 100%; }
+.phone-pointer-keyboard legend small { display: block; font-size: 14px; }
+.phone-pointer-keyrow button { flex: 1; min-width: 52px; padding: 10px; }
+.phone-pointer-keyboard label { display: block; font-size: 16px; }
+.phone-pointer input { display: block; width: 100%; min-width: 0; padding: 12px; margin: 8px 0; border: 1px solid #6e8784; border-radius: 14px; color: #f4f1df; background: #1b2c33; font: inherit; }
+.phone-pointer-keyboard form { display: flex; align-items: end; gap: 10px; }
+.phone-pointer-keyboard form label { flex: 1; min-width: 0; }
+.phone-pointer-keyboard form button { margin-bottom: 8px; }
+.phone-pointer-shortcut { margin-top: 12px; }
+.phone-pointer-preview { padding: 20px; background: #ffffff06; border: 1px solid #526a6b; border-radius: 26px; }
+.phone-pointer-preview > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.phone-pointer-preview img { display: block; width: 100%; margin: 16px 0; border-radius: 12px; }
+.phone-pointer-preview small { display: block; font-size: 13px; }
+.phone-pointer-setup { font-size: 22px; }
+.phone-pointer-setup li { margin: 22px 0; padding-left: 6px; }
+.phone-pointer-setup code { display: block; margin-top: 16px; padding: 18px; background: #ffffff0a; border-radius: 16px; font-size: 15px; white-space: normal; overflow-wrap: anywhere; }
+.phone-pointer-launch { position: fixed; left: 20px; bottom: 90px; z-index: 100; color: #f4f1df; box-shadow: 0 6px 24px #0003; }
+.phone-pointer-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 480px) {
+  .phone-pointer { padding: 16px; font-size: 16px; }
+  .phone-pointer main { margin-top: 58px; }
+  .phone-pointer-heading { align-items: start; }
+  .phone-pointer-heading > button { font-size: 13px; max-width: 112px; padding: 10px; }
+  .phone-pointer-pad { min-height: 240px; }
+  .phone-pointer-pad small { font-size: 12px; }
+  .phone-pointer-setup { font-size: 18px; }
+  .phone-pointer-preview { padding: 16px; }
+}
