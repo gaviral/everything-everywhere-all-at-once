@@ -13,6 +13,7 @@ dotenvy = "0.15"
 futures-util = "0.3"
 # Reads Muse Image's WebP and writes the small copy the map shows (pure Rust, two tiny dependencies).
 image-webp = "0.2"
+base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
 # Room certificates and a TLS adapter for axum's existing Listener API.
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }

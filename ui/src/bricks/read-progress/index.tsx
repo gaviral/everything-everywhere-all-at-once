@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { BrickActions, BrickProps, MapSnapshot } from "../contract";
-import "./read-progress.css";
+import pluginStyle0 from "./read-progress.css?inline";
 
 const PREFIX = "e2a2o.brick.read-progress.";
 const DWELL_MS = 1500;
@@ -219,3 +219,6 @@ export default function ReadProgress({ map, actions }: BrickProps) {
   useEffect(() => { watcher.current?.sync(map); }, [map.thoughts, map.threads, map.me, map.readThrough]);
   return null;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

@@ -1,3 +1,4 @@
+import { usePluginState } from "../contract";
 // The Work spine itself: the jobs as bubbles on a line, oldest at the top and the newest at the foot ("Just now"), each
 // with its state in words, side jobs folded under their parent. The lane (beside the Canvas) and the card in the dock
 // (a phone, a narrow window) both show this and differ only in what's around it.
@@ -194,27 +195,40 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
   const many = useMemo(() => new Set(jobs.map((job) => job.by)).size > 1, [jobs]);
   const asks = useMemo(() => questions(jobs), [jobs]);
   const scroller = useRef<HTMLDivElement>(null);
-  const stuck = useRef(true);
+  const [scroll, setScroll] = usePluginState("job-scroll", 0);
+  const [following, setFollowing] = usePluginState("job-following", true);
+  // A following list goes to the current foot; only an older reading position needs its saved offset.
+  useLayoutEffect(() => { if (scroller.current && !following) scroller.current.scrollTop = scroll; }, []);
+  const stuck = useRef(following);
+  const followScroll = useRef<number | null>(null);
   /** When a hand last touched the list (wheel, finger, key, press): for that moment its place is the hand's, whether or not
    *  the scroll event has come yet. */
   const handAt = useRef(0);
-  const byHand = () => { handAt.current = Date.now(); };
-  const [away, setAway] = useState(false);
+  const byHand = () => { handAt.current = Date.now(); followScroll.current = null; };
+  const [away, setAway] = useState(!following);
+  const followFoot = (value: boolean) => {
+    if (stuck.current !== value) setFollowing(value);
+    stuck.current = value;
+    setAway(!value);
+  };
   const atFoot = (box: HTMLElement) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const scrollToFoot = (box: HTMLElement) => {
+    const before = box.scrollTop;
+    box.scrollTop = box.scrollHeight;
+    if (box.scrollTop !== before) followScroll.current = box.scrollTop;
+  };
   const follow = () => {
     const box = scroller.current;
     if (!box) return;
     if (box.scrollHeight <= box.clientHeight + 1) {
       // With nothing to scroll there's nothing to hold your place in: following resumes.
-      stuck.current = true;
-      setAway(false);
+      followFoot(true);
     } else if (Date.now() - handAt.current < HAND_MS) {
       // A hand is on it: a render landing between its scroll and the scroll event must not pull the list back.
-      stuck.current = atFoot(box);
-      setAway(!stuck.current);
+      followFoot(atFoot(box));
       return;
     }
-    if (stuck.current) box.scrollTop = box.scrollHeight;
+    if (stuck.current) scrollToFoot(box);
   };
   useLayoutEffect(follow);
   const empty = tree.length === 0;
@@ -231,18 +245,25 @@ export function JobList({ jobs, now, open, toggle, fresh, ai }: { jobs: readonly
     const box = scroller.current;
     if (!box) return;
     handAt.current = 0;
-    stuck.current = true;
-    setAway(false);
-    box.scrollTop = box.scrollHeight;
+    followFoot(true);
+    scrollToFoot(box);
   };
   const scrolled = () => {
     const box = scroller.current;
     if (!box) return;
-    stuck.current = atFoot(box);
-    setAway(!stuck.current);
+    // A follow scroll can arrive after a new job grows the list. It isn't a hand releasing follow.
+    const ownScroll = followScroll.current === box.scrollTop;
+    followScroll.current = null;
+    if (ownScroll && stuck.current) {
+      follow();
+      setScroll(box.scrollTop);
+      return;
+    }
+    setScroll(box.scrollTop);
+    followFoot(atFoot(box));
   };
   // Reserve Latest's row in the same render that opens a fold, before its contents are brought into view.
-  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => { stuck.current = false; setAway(true); } };
+  const shared: Shared = { now, open, toggle, fresh, latest: justNow(jobs, now), asks, many, ai, release: () => followFoot(false) };
   return <div className="work-spine-listbox">
     <div ref={scroller} className="work-spine-scroll" tabIndex={0} role="region" aria-label="Jobs, oldest first" onScroll={scrolled}
       onWheel={byHand} onTouchMove={byHand} onKeyDown={byHand} onPointerDown={byHand}>

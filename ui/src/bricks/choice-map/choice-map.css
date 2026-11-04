@@ -1,0 +1,15 @@
+.choice-map { color: var(--ink); background: var(--bg); padding: 1rem; box-sizing: border-box; width: 100%; height: 100%; overflow: auto; overscroll-behavior: contain; padding-bottom: 7rem; overflow-wrap: anywhere; }
+.choice-map h2 { margin-top: 0; }
+.choice-map form, .choice-map label { display: grid; gap: .5rem; margin-block: .75rem; }
+.choice-map select { width: 100%; min-width: 0; font: inherit; color: inherit; background: var(--bg); padding: .5rem; }
+.choice-map button { min-height: 44px; max-width: 100%; white-space: normal; }
+.choice-map-controls { display: flex; gap: .5rem; flex-wrap: wrap; }
+.choice-map li { margin-block: .75rem; }
+.choice-map-list { padding-left: 1.25rem; }
+.choice-map ul ul { padding-left: 1rem; border-left: 1px solid currentColor; }
+.choice-map blockquote { margin: .5rem 0; white-space: pre-wrap; }
+.choice-map-confirm { border: 1px solid currentColor; padding: .75rem; }
+.choice-map :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+/* The retained Canvas stays mounted behind optional views. Give this list its own
+   opaque reading surface, below the shell's corners and above the retained map. */
+.choice-map { position: fixed; inset: 64px 0 calc(var(--dock-height, 120px) + 64px); z-index: 8; height: auto; padding: 1rem max(1rem, calc((100vw - 50rem) / 2)); }

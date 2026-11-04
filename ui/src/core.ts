@@ -16,6 +16,8 @@ import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "./work-jobs";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
+import type { ConnectionRequest, ConnectionReply } from "./app-connections-core";
+import { playTune } from "./apps-audio";
 import { recipeOf } from "./bricks/app-recipes/rules";
 import type { RecipeSave, RecipeResult } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
@@ -72,7 +74,7 @@ export interface Thought {
   place_ms: number | null;
   /** The words say a decision was made (the core's decided.rs); placements before it have none. */
   decided?: boolean;
-  /** Who agreed, when the room agreed on it (✓ Agreed). Not sent yet: the core knows only that it was decided. */
+  /** Legacy optional field; consent is read only from World.agreements for the exact source revision. */
   agreed_by?: string[];
 }
 
@@ -104,6 +106,19 @@ export type ItemState = { status: ItemStatus; text: string; when: string };
 
 // An answer to "Explain"; failed when there's none, with a short reason.
 export type Explanation = { text: string; failed: boolean };
+export type AnswerSource = { thought_id: string; field: "text" | "point"; excerpt: string; revision: string };
+export type KeptAnswer = { id: string; source: AnswerSource; phrase: string; answer: string; model: string; owner: string; at_ms: number; revision: number; removed: boolean };
+
+export function sourceRevision(thought: Thought): string {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(JSON.stringify([thought.text, thought.point]))) hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
+  return hash.toString(16).padStart(16, "0");
+}
+export function answerSourceState(world: World, source: AnswerSource): "available" | "changed" | "missing" {
+  const thought = world.thoughts.find(t => t.id === source.thought_id);
+  if (!thought || !thought.thread_id || !world.threads.some(t => t.id === thought.thread_id)) return "missing";
+  return sourceRevision(thought) === source.revision && thought[source.field] === source.excerpt ? "available" : "changed";
+}
 
 // An answer to "Why here?" (whyhere.tsx); pending until it comes, failed when there's none.
 export type WhyAnswer = { text: string; failed: boolean; pending?: boolean };
@@ -172,14 +187,39 @@ export interface ImportStatus {
   note: string;
 }
 
+export type Citation = { title: string; url: string; start: number; end: number };
+export type ResearchKept = { id: string; owner: string; thought_id: string; quote: string; source_point?: string; topic_id: string; topic_title: string; query: string; answer: string; citations: readonly Readonly<Citation>[]; at_ms: number; model: string; simulated: boolean; revision: number; removed: boolean; request_id: string };
+export type ResearchCommand = { request_id: string; op: "run" | "keep" | "remove" | "undo"; thought_id?: string; quote?: string; query?: string; answer_id?: string; revision?: number };
+export type ResearchResult = { request_id: string; ok: boolean; message: string; answer: ResearchKept | null };
+export type DiscussionStatus = { thread_id: string; status: "open" | "resolved"; actor: string; at_ms: number; revision: number; request_id: string; observed_revision: number; reply_count: number };
+export type DiscussionResult = { request_id: string; ok: boolean; message: string; discussion: DiscussionStatus | null };
+export type Agreement = { revision: string; agreed_by: string[]; requests: string[] };
+export type AgreementStatus = { request_id: string; pending: boolean; message: string };
+
 export type Question = { id: string; owner: string; question: string; thought_id: string | null; answer: string; status: "open" | "answered" | "archived"; revision: number; updated_ms: number };
 export type QuestionInput = { id: string; text: string; thought_id: string | null; answer: string; status: Question["status"]; expected_revision: number };
 export type QuestionResult = { id: string; revision: number; ok: boolean; error?: string };
+export interface EvidencePoint { index:number; text:string; region:[number,number,number,number]|null }
+export interface EvidenceKept { request_id:string; extraction_id:string; image_id:string; actor:string; target:string; title:string; width:number; height:number; model:string; points:readonly Readonly<EvidencePoint>[]; thought_ids:readonly string[]; removed:boolean }
+export type EvidenceRequest = {type:"cancel_evidence";request_id:string} | {type:"evidence_chunk";request_id:string;target:string;title:string;index:number;data:string} | {type:"extract_evidence";request_id:string} | {type:"keep_evidence";request_id:string;extraction_id:string;points:EvidencePoint[]} | {type:"undo_evidence";request_id:string;keep_id:string};
+export interface EvidenceResult { request_id:string;ok:boolean;message:string;data:{extraction_id?:string;points?:EvidencePoint[];preview?:string;width?:number;height?:number;model?:string;kept?:EvidenceKept;undone?:string}|null }
+
+export interface ChoiceRelation { id: string; source_id: string; role: string; option_id: string | null; actor: string; excerpt: string; speaker: string; revision: number; removed_by: string | null }
+export interface ChoiceMap { id: string; revision: number; relations: readonly Readonly<ChoiceRelation>[]; votes: readonly Readonly<{ actor: string; option_id: string; revision: number }>[] }
+export interface ChoiceRequest { request_id: string; choice_id: string; revision: number; operation: string; relation_id?: string; source_id?: string; observed?: string; role?: string; option_id?: string | null; undo_of?: string | null }
+export interface ChoiceResult { request_id: string; ok: boolean; message: string }
+
 export interface World extends AppsWorld {
+  evidence_kept?: EvidenceKept[];
+  choice_maps?: ChoiceMap[];
+  research?: ResearchKept[];
+  discussions?: DiscussionStatus[];
   action_estimates?: ActionEstimate[];
   questions?: Question[];
   point_edits?: readonly PointEdit[];
   aliases?: VoiceAlias[];
+  kept_answers?: KeptAnswer[];
+  agreements?: Record<string, Agreement>;
   pauses?: Pause[];
   recaps: RecapData[];
   threads: Thread[];
@@ -208,9 +248,17 @@ export interface World extends AppsWorld {
 }
 
 type Change =
+  | {type:"evidence_kept";evidence:EvidenceKept}
+  | { type: "choice_map_saved"; choice: ChoiceMap; actor: string; request: ChoiceRequest }
   | { type: "action_estimate_set"; estimate: ActionEstimate }
   | { type: "question_saved"; question: Question }
+  | { type: "discussion_status"; discussion: DiscussionStatus }
+  | { type: "research_kept"; research: ResearchKept }
   | { type: "alias_changed"; alias: VoiceAlias; request_id: string; signature: string }
+  | { type: "answer_kept"; answer: KeptAnswer }
+  | { type: "kept_answer_visibility"; id: string; revision: number; removed: boolean }
+  | { type: "agreement_source"; thought_id: string; revision: string }
+  | { type: "thought_agreement"; thought_id: string; revision: string; speaker: string; agree: boolean; request_id: string }
   | { type: "caption_added"; caption: import("./talk/call-core").Caption }
   | {type:"paused";pause:Pause}
   | {type:"pause_resolved";id:string;by_thought:string}
@@ -279,9 +327,14 @@ export type ReturnResult = { request_id: string | null; anchor: ReturnAnchor | n
 export type Capture = { id: string; text: string; thought_ids: string[]; saved: boolean; local: boolean; replay: boolean; mapped?: boolean; receivedOnly?: boolean; at: number };
 
 type ServerMsg =
+  | ({type:"evidence_result"} & EvidenceResult)
+  | ({ type: "choice_result" } & ChoiceResult)
+  | ({ type: "research_result" } & ResearchResult)
+  | ({ type: "discussion_result" } & DiscussionResult)
   | ({ type: "action_estimate_result" } & EstimateResult)
   | ({ type: "question_result" } & QuestionResult)
   | ({ type: "alias_result"; window: number } & AliasResult)
+  | { type: "agreement_result"; request_id: string; thought_id: string; ok: boolean; message: string }
   | { type: "returned"; request_id: string | null; anchor: ReturnAnchor | null; message: string }
   | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
   | { type: "helpers_available" }
@@ -443,6 +496,26 @@ export function actionFailed(world: World, id: string, message: string): World {
 /** The window's copy of a change, as the core applies it (world.rs `World::apply`). A thread or thought that leaves the
  *  map takes its place on the canvas with it (positions-core.ts). */
 export function apply(world: World, raw: Change): World {
+  if (raw.type === "answer_kept") {
+    let kept = world.kept_answers ?? [];
+    if (kept.some(a => a.id === raw.answer.id) || new TextEncoder().encode(raw.answer.answer).length > 2048) return world;
+    if (kept.length >= 30) { const i = kept.findIndex(a => a.removed); if (i >= 0) kept = kept.filter((_, n) => n !== i); }
+    return kept.length < 30 ? { ...world, kept_answers: [...kept, raw.answer] } : world;
+  }
+  if (raw.type === "kept_answer_visibility") return { ...world, kept_answers: (world.kept_answers ?? []).map(a => a.id === raw.id && a.revision + 1 === raw.revision ? { ...a, revision: raw.revision, removed: raw.removed } : a) };
+  if (raw.type === "agreement_source") {
+    if (world.agreements?.[raw.thought_id]?.revision === raw.revision) return world;
+    return { ...world, agreements: { ...world.agreements, [raw.thought_id]: { revision: raw.revision, agreed_by: [], requests: [] } } };
+  }
+  if (raw.type === "thought_agreement") {
+    const state = world.agreements?.[raw.thought_id] ?? { revision: "", agreed_by: [], requests: [] };
+    const key = `${raw.speaker}:${raw.request_id}`;
+    if (state.revision !== raw.revision || state.requests.includes(key) || state.requests.length >= 6000
+      || (!state.agreed_by.includes(raw.speaker) && state.agreed_by.length >= 40)
+      || world.ai?.includes(raw.speaker) || !world.thoughts.some(t => t.id === raw.thought_id && t.placed)) return world;
+    const agreed_by = raw.agree ? [...new Set([...state.agreed_by, raw.speaker])] : state.agreed_by.filter(s => s !== raw.speaker);
+    return { ...world, agreements: { ...world.agreements, [raw.thought_id]: { ...state, agreed_by, requests: [...state.requests, key] } } };
+  }
   if (raw.type === "positioned") return applyPosition(world, raw);
   // Its thread id isn't followed through merges, as the core's isn't: the note's thread is new when it's tied.
   if (raw.type === "anchored") return applyAnchored(world, raw);
@@ -455,7 +528,16 @@ export function apply(world: World, raw: Change): World {
   return { ...next, aliases: next.aliases.map(alias => missing(alias) ? { ...alias, enabled: false, unavailable: true, revision: alias.revision + 1 } : alias) };
 }
 
-function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange | TopicChange>): World {
+function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange | TopicChange | {type:"agreement_source"} | {type:"thought_agreement"} | { type: "answer_kept" | "kept_answer_visibility" }>): World {
+  if (raw.type === "evidence_kept") {
+    const old=world.evidence_kept?.find(e=>e.request_id===raw.evidence.request_id);
+    return {...world,evidence_kept:old?world.evidence_kept!.map(e=>e===old?raw.evidence:e):[...(world.evidence_kept??[]),raw.evidence]};
+  }
+  if (raw.type === "choice_map_saved") {
+    const old = world.choice_maps?.find(c => c.id === raw.choice.id);
+    if (old && old.revision >= raw.choice.revision) return world;
+    return { ...world, choice_maps: old ? world.choice_maps!.map(c => c === old ? raw.choice : c) : [...(world.choice_maps ?? []), raw.choice] };
+  }
   if (raw.type === "alias_changed") {
     const old = world.aliases?.find(a => a.id === raw.alias.id && a.owner === raw.alias.owner);
     if (old && old.revision >= raw.alias.revision) return world;
@@ -487,6 +569,18 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "research_kept": {
+      const old = world.research ?? [];
+      const previous = old.find(s => s.id === c.research.id);
+      if (previous && previous.revision > c.research.revision) return world;
+      return { ...world, research: previous ? old.map(s => s === previous ? c.research : s) : [...old, c.research] };
+    }
+    case "discussion_status": {
+      const old = world.discussions ?? [];
+      const previous = old.find(s => s.thread_id === c.discussion.thread_id);
+      if (previous && previous.revision > c.discussion.revision) return world;
+      return { ...world, discussions: previous ? old.map(s => s === previous ? c.discussion : s) : [...old, c.discussion] };
+    }
     case "question_saved": {
       const questions = world.questions ?? [];
       return { ...world, questions: questions.some(q => q.id === c.question.id) ? questions.map(q => q.id === c.question.id ? c.question : q) : [...questions, c.question] };
@@ -779,6 +873,21 @@ export type TextEditRequest =
   | { type: "edit_point"; request_id: string; thought_id: string; observed: string; replacement: string; undo_of?: string };
 
 export function useCore(speaker?: string) {
+  const evidenceOn = useRef(false);
+  const evidenceWaits = useRef(new Map<string,(result:EvidenceResult)=>void>());
+  const failEvidenceWaits = (message:string) => { for(const [request_id,done] of evidenceWaits.current) done({request_id,ok:false,message,data:null});evidenceWaits.current.clear(); };
+  const choiceOn = useRef(false);
+  const choiceWaits = useRef(new Map<string, (r: ChoiceResult) => void>());
+  const failChoiceWaits = (message: string) => {
+    for (const [request_id, resolve] of choiceWaits.current) resolve({request_id, ok:false, message});
+    choiceWaits.current.clear();
+  };
+  const researchOn = useRef(false);
+  const researchWaits = useRef(new Map<string, (r: ResearchResult) => void>());
+  const failResearch = (message: string) => { for (const [request_id, done] of researchWaits.current) done({ request_id, ok: false, message, answer: null }); researchWaits.current.clear(); };
+  const discussionOn = useRef(false);
+  const discussionWaits = useRef(new Map<string, (r: DiscussionResult) => void>());
+  const failDiscussions = (message: string) => { for (const [request_id, done] of discussionWaits.current) done({ request_id, ok: false, message, discussion: null }); discussionWaits.current.clear(); };
   const estimatesOn = useRef(false);
   const estimateWaits = useRef(new Map<string, { resolve: (result: EstimateResult) => void; timer: ReturnType<typeof setTimeout> }>());
   const failEstimateWaits = (message: string) => {
@@ -797,6 +906,8 @@ export function useCore(speaker?: string) {
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
   const questionWaiters = useRef(new Map<string, { revision: number; create: boolean; input: QuestionInput; receive: (result: QuestionResult) => void }>());
+  const [agreementStatus, setAgreementStatus] = useState<Record<string, AgreementStatus>>({});
+  const agreementPending = useRef(new Map<string, string>());
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
@@ -915,6 +1026,23 @@ export function useCore(speaker?: string) {
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
   const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
+  const connectionPending = useRef(new Map<string, { resolve: (r: ConnectionReply) => void; timer: number }>());
+  const connectionsOn = useBricksOn().has("app-connections");
+  const connectionSocket = useRef<WebSocket | null>(null);
+  useEffect(() => {
+    const ws = socket.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "connections_switch", on: connectionsOn }));
+      connectionSocket.current = connectionsOn ? ws : null;
+    }
+    if (!connectionsOn || !connected) {
+      for (const [request_id, pending] of connectionPending.current) {
+        clearTimeout(pending.timer);
+        pending.resolve({ request_id, plans: [], play: false, message: "Connection ended or feature off. Refresh to review; nothing is retried." });
+      }
+      connectionPending.current.clear();
+    }
+  }, [connectionsOn, connected]);
   const recipeOptedSocket = useRef<WebSocket | null>(null);
   const recipesOn = useBricksOn().has("app-recipes");
   const recipePending = useRef(new Map<string, { resolve: (r: RecipeResult) => void; timer: number }>());
@@ -961,6 +1089,20 @@ export function useCore(speaker?: string) {
     };
     // Room's existing partner handler runs first; this operation never enables partner on its own.
     const unwatchFormat = watchBuiltIns(() => { if (formatOn && (!builtInOn("reply-format") || !builtInOn("partner"))) stopReplyFormat(); queueMicrotask(formatPreference); });
+    let savedWasOn = false;
+    const savedPreference = () => {
+      const on = builtInOn("saved-answers");
+      if (socket.current?.readyState === WebSocket.OPEN && on !== savedWasOn) {
+        socket.current.send(JSON.stringify({ type: "saved_answers", on }));
+        savedWasOn = on;
+      }
+    };
+    const unwatchSaved = watchBuiltIns(savedPreference);
+    const agreementPreference = () => {
+      if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "agreement_switch", on: builtInOn("explicit-agreement") }));
+      if (!builtInOn("explicit-agreement")) { agreementPending.current.clear(); setAgreementStatus({}); }
+    };
+    const unwatchAgreement = watchBuiltIns(agreementPreference);
     const shownSwarms = new Set<string>();
     const asked = movesAsked(speaker);
 
@@ -976,12 +1118,19 @@ export function useCore(speaker?: string) {
       const heartbeatId = thoughtId();
       let lastReply = Date.now();
       ws.onopen = () => {
+        noticeQueue.reset("note");
         ws.send(JSON.stringify({type:"voice_shortcuts",on:aliasesOn.current}));
         if (isOn("app-recipes")) { ws.send(JSON.stringify({ type: "recipes_switch", on: true })); recipeOptedSocket.current = ws; }
         formatOn = undefined;
         connectReplyFormat(message => { if (ws.readyState !== WebSocket.OPEN || ended) return false; ws.send(JSON.stringify(message)); return true; });
         formatPreference();
         noticeQueue.reset("note");
+        if (evidenceOn.current) ws.send(JSON.stringify({type:"image_evidence",on:true}));
+        if (choiceOn.current) ws.send(JSON.stringify({ type: "choice_maps", on: true }));
+        if (researchOn.current) ws.send(JSON.stringify({ type: "research_feature", on: true }));
+        if (discussionOn.current) ws.send(JSON.stringify({ type: "discussion_feature", on: true }));
+        savedWasOn = false;
+        savedPreference();
         if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         resetApps();
         resetSteps();
@@ -989,6 +1138,7 @@ export function useCore(speaker?: string) {
         setHelpersAvailable(false);
         setConnected(true);
         if (builtInOn("review-text-edits")) ws.send(JSON.stringify({ type: "review_text_edits", on: true }));
+        agreementPreference();
         retry = 500;
         cardTold = null;
         // One pressed while this connection was still opening goes now, ahead of everything else.
@@ -1017,6 +1167,15 @@ export function useCore(speaker?: string) {
         if (ignorePartner(event.data)) return;
         const incoming = JSON.parse(event.data as string);
         if (incoming.type === "build_available") { window.dispatchEvent(new Event("e2a2o-build")); return; }
+        if (incoming.type === "app_connection_result") {
+          const pending = connectionPending.current.get(incoming.request_id);
+          if (pending) {
+            clearTimeout(pending.timer); connectionPending.current.delete(incoming.request_id);
+            if (incoming.play && !playTune(false)) incoming.message = "Tune confirmed, but browser audio is unavailable. Calendar receipt is unchanged.";
+            pending.resolve(incoming);
+          }
+          return;
+        }
         if (incoming.type === "recipe_result") {
           if (!isOn("app-recipes")) return;
           const pending = recipePending.current.get(incoming.request_id);
@@ -1050,6 +1209,20 @@ export function useCore(speaker?: string) {
         }
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "evidence_result": {
+            if(evidenceOn.current){ const done=evidenceWaits.current.get(msg.request_id);if(done){evidenceWaits.current.delete(msg.request_id);done(msg);} }
+            break;
+          }
+          case "choice_result": {
+            if (choiceOn.current) { const done = choiceWaits.current.get(msg.request_id); if (done) { choiceWaits.current.delete(msg.request_id); done(msg); } }
+            break;
+          }
+          case "research_result": {
+            researchWaits.current.get(msg.request_id)?.(msg); researchWaits.current.delete(msg.request_id); break;
+          }
+          case "discussion_result": {
+            discussionWaits.current.get(msg.request_id)?.(msg); discussionWaits.current.delete(msg.request_id); break;
+          }
           case "action_estimate_result": {
             if (!estimatesOn.current) break;
             const wait = estimateWaits.current.get(msg.request_id);
@@ -1124,7 +1297,14 @@ export function useCore(speaker?: string) {
           case "usage":
             setUsage(msg.data);
             break;
+          case "agreement_result":
+            if (builtInOn("explicit-agreement") && agreementPending.current.get(msg.thought_id) === msg.request_id) {
+              agreementPending.current.delete(msg.thought_id);
+              setAgreementStatus(was => ({ ...was, [msg.thought_id]: { request_id: msg.request_id, pending: false, message: msg.message } }));
+            }
+            break;
           case "snapshot":
+            agreementPending.current.clear(); setAgreementStatus({});
             setUsage(null);
             resetJobs();
             setFound(null);
@@ -1149,6 +1329,10 @@ export function useCore(speaker?: string) {
             break;
           case "change": {
             const change = msg.change;
+            if (change.type === "agreement_source") {
+              agreementPending.current.delete(change.thought_id);
+              setAgreementStatus(was => Object.fromEntries(Object.entries(was).filter(([id]) => id !== change.thought_id)));
+            }
             if (change.type === "thought_split") setCaptures(was => was.map(capture => capture.thought_ids.includes(change.thought_id)
               ? { ...capture, thought_ids: [...new Set([...capture.thought_ids, change.rest.id])] } : capture));
             // An AI rename, a merge, or one undone: said above the map, with Undo where it can be taken back.
@@ -1284,6 +1468,10 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        failEvidenceWaits("Connection lost. Unkept image expired; keep your draft and extract again explicitly.");
+        failChoiceWaits("Save unconfirmed: connection lost. Draft kept.");
+        failResearch("Research unconfirmed: connection lost. Query kept; retry explicitly.");
+        failDiscussions("Save unconfirmed: connection lost. Retry explicitly.");
         failEstimateWaits("Save unconfirmed: connection lost. Your draft is kept; retry explicitly.");
         for (const [id, waiter] of questionWaiters.current) waiter.receive({ id, revision: 0, ok: false, error: "Disconnected before confirmation. Review the saved list after reconnecting. Nothing will retry automatically." });
         questionWaiters.current.clear();
@@ -1293,6 +1481,7 @@ export function useCore(speaker?: string) {
         ended = true;
         connectReplyFormat(null);
         resetReplyFormat();
+        agreementPending.current.clear(); setAgreementStatus({});
         window.clearInterval(heartbeat);
         identityReady.current = false;
         setRecovery(state => ({ ...state, onlinePending: false }));
@@ -1312,6 +1501,9 @@ export function useCore(speaker?: string) {
         recapDisconnected();
         setConnected(false);
         endRecipes("Connection lost. Draft kept; retry explicitly.");
+        connectionSocket.current = null;
+        for (const [request_id, pending] of connectionPending.current) { clearTimeout(pending.timer); pending.resolve({ request_id, plans: [], play: false, message: "Connection lost. Refresh to review; nothing is retried." }); }
+        connectionPending.current.clear();
         localMic.current = false;
         micTail.current = 0;
         stopListeningStep();
@@ -1341,10 +1533,15 @@ export function useCore(speaker?: string) {
       unwatchFormat();
       connectReplyFormat(null);
       resetReplyFormat();
+      unwatchSaved();
+      unwatchAgreement();
+      agreementPending.current.clear();
       closed = true;
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);
       window.clearTimeout(handoffTimer);
+      failEvidenceWaits("Window closed. Draft not confirmed.");
+      failChoiceWaits("Save unconfirmed: window closed. Draft kept.");
       failEstimateWaits("Save unconfirmed: window closed.");
       socket.current?.close();
     };
@@ -1418,6 +1615,53 @@ export function useCore(speaker?: string) {
   };
 
   return {
+    setImageEvidenceOn:(on:boolean)=>{const changed=evidenceOn.current!==on;evidenceOn.current=on;if(changed)send(JSON.stringify({type:"image_evidence",on}));if(!on)failEvidenceWaits("Image evidence is off. Unkept image discarded.");},
+    imageEvidence:(request:EvidenceRequest):Promise<EvidenceResult>=>new Promise(resolve=>{
+      const fail=(message:string)=>resolve({request_id:request.request_id,ok:false,message,data:null});
+      if(!evidenceOn.current){fail("Image evidence is off.");return;}
+      if(request.type==="evidence_chunk"){if(send(JSON.stringify(request)))resolve({request_id:request.request_id,ok:true,message:"Upload queued; extraction and save are unconfirmed.",data:null});else fail("Not connected. Image not uploaded.");return;}
+      if(evidenceWaits.current.has(request.request_id)){fail("Already waiting for this request.");return;}
+      const timer=setTimeout(()=>{evidenceWaits.current.delete(request.request_id);fail("No acknowledgement. Draft kept; retry explicitly.");},60000);
+      const done=(result:EvidenceResult)=>{clearTimeout(timer);resolve(result);};evidenceWaits.current.set(request.request_id,done);
+      if(!send(JSON.stringify(request))){evidenceWaits.current.delete(request.request_id);done({request_id:request.request_id,ok:false,message:"Not connected. Draft kept.",data:null});}
+    }),
+    setChoiceMapsOn: (on: boolean) => {
+      const changed = choiceOn.current !== on; choiceOn.current = on;
+      if (changed) send(JSON.stringify({type:"choice_maps", on}));
+      if (!on) failChoiceWaits("Choice map is off. Draft kept.");
+    },
+    saveChoice: (request: ChoiceRequest): Promise<ChoiceResult> => new Promise(resolve => {
+      if (!choiceOn.current) { resolve({request_id:request.request_id,ok:false,message:"Choice map is off."}); return; }
+      if (choiceWaits.current.has(request.request_id)) { resolve({request_id:request.request_id,ok:false,message:"Already waiting for this save."}); return; }
+      const timer = setTimeout(() => { choiceWaits.current.delete(request.request_id); resolve({request_id:request.request_id,ok:false,message:"Save unconfirmed. Draft kept; retry explicitly."}); }, 12000);
+      const done = (r: ChoiceResult) => { clearTimeout(timer); resolve(r); };
+      choiceWaits.current.set(request.request_id, done);
+      if (!send(JSON.stringify({type:"save_choice",request}))) { choiceWaits.current.delete(request.request_id); done({request_id:request.request_id,ok:false,message:"Not connected. Draft kept; retry explicitly."}); }
+    }),
+    setResearchOn: (on: boolean) => {
+      researchOn.current = on; send(JSON.stringify({ type: "research_feature", on }));
+      if (!on) failResearch("Research this question is off.");
+    },
+    cancelResearch: () => { send(JSON.stringify({ type: "cancel_research" })); failResearch("Research cancelled. Your query is kept."); },
+    research: (request: ResearchCommand): Promise<ResearchResult> => new Promise(resolve => {
+      const failed = (message: string): ResearchResult => ({ request_id: request.request_id, ok: false, message, answer: null });
+      if (!researchOn.current) { resolve(failed("Research this question is off.")); return; }
+      if (researchWaits.current.has(request.request_id)) { resolve(failed("This request is already pending.")); return; }
+      const timer = setTimeout(() => { researchWaits.current.delete(request.request_id); resolve(failed("Research unconfirmed. Query kept; retry explicitly.")); }, 55000);
+      researchWaits.current.set(request.request_id, r => { clearTimeout(timer); resolve(r); });
+      if (!send(JSON.stringify({ type: "research_action", ...request }))) { researchWaits.current.get(request.request_id)?.(failed("Not connected. Query kept; retry explicitly.")); researchWaits.current.delete(request.request_id); }
+    }),
+    setDiscussionOn: (on: boolean) => {
+      discussionOn.current = on; send(JSON.stringify({ type: "discussion_feature", on }));
+      if (!on) failDiscussions("Discussion status is off.");
+    },
+    setDiscussion: (thread_id: string, status: "open" | "resolved", observed_revision: number): Promise<DiscussionResult> => new Promise(resolve => {
+      const request_id = crypto.randomUUID();
+      if (!discussionOn.current) { resolve({ request_id, ok: false, message: "Discussion status is off.", discussion: null }); return; }
+      const timer = setTimeout(() => { discussionWaits.current.delete(request_id); resolve({ request_id, ok: false, message: "Save unconfirmed. Retry explicitly.", discussion: null }); }, 12000);
+      discussionWaits.current.set(request_id, r => { clearTimeout(timer); resolve(r); });
+      if (!send(JSON.stringify({ type: "set_discussion", request_id, thread_id, status, observed_revision }))) { discussionWaits.current.get(request_id)?.({ request_id, ok: false, message: "Not connected. Retry explicitly.", discussion: null }); discussionWaits.current.delete(request_id); }
+    }),
     setActionEstimatesOn: (on: boolean) => {
       const changed = estimatesOn.current !== on;
       estimatesOn.current = on;
@@ -1458,6 +1702,18 @@ export function useCore(speaker?: string) {
         }
       });
     },
+    appConnection: (request: ConnectionRequest): Promise<ConnectionReply> => new Promise(resolve => {
+      const request_id = crypto.randomUUID();
+      const fail = (message: string) => resolve({ request_id, plans: [], play: false, message });
+      const ws = socket.current;
+      if (!isOn("app-connections") || ws?.readyState !== WebSocket.OPEN) { fail("Not connected or App connections is off. Nothing was sent."); return; }
+      if (connectionSocket.current !== ws) { ws.send(JSON.stringify({ type: "connections_switch", on: true })); connectionSocket.current = ws; }
+      const timer = window.setTimeout(() => { connectionPending.current.delete(request_id); fail("No receipt. Refresh to review the step before starting a new plan. Nothing is retried."); }, 25000);
+      connectionPending.current.set(request_id, { resolve, timer });
+      if (!send(JSON.stringify({ type: "app_connection", request_id, ...request }))) {
+        clearTimeout(timer); connectionPending.current.delete(request_id); fail("Connection lost. Refresh to review; nothing is retried.");
+      }
+    }),
     exportRecipe: (app: import("./apps-core").MiniApp) => JSON.stringify(recipeOf(app), null, 2),
     saveRecipe: (save: RecipeSave): Promise<RecipeResult> => new Promise(resolve => {
       if (!isOn("app-recipes") || socket.current?.readyState !== WebSocket.OPEN) { resolve({ request_id: save.request_id, app_id: null, message: "Not connected or App recipes is off. Draft kept." }); return; }
@@ -1466,6 +1722,15 @@ export function useCore(speaker?: string) {
       recipePending.current.set(save.request_id, { resolve, timer });
       if (!send(JSON.stringify({ type: "save_recipe", save }))) endRecipes("Connection lost. Draft kept; retry explicitly.");
     }),
+    agreementStatus,
+    agreeThought: (thought_id: string, revision: string, agree: boolean) => {
+      if (!builtInOn("explicit-agreement") || !identityReady.current || agreementPending.current.has(thought_id)) return false;
+      const request_id = thoughtId();
+      if (!send(JSON.stringify({ type: "agree_thought", thought_id, revision, request_id, agree }))) return false;
+      agreementPending.current.set(thought_id, request_id);
+      setAgreementStatus(was => ({ ...was, [thought_id]: { request_id, pending: true, message: "Saving agreement…" } }));
+      return true;
+    },
     returnResult,
     clearReturn: () => setReturnResult(null),
     resumePause: (pause_id: string) => {
@@ -1475,6 +1740,7 @@ export function useCore(speaker?: string) {
     pauseChoice: (pause_id: string, later: boolean) => send(JSON.stringify({type:"pause_choice",pause_id,later})),
     captures,
     mapIdentity: mapId.current,
+    confirmedMapIdentity: connected && identityReady.current ? mapId.current : null,
     retryCapture: (id: string) => {
       const capture = captures.find(capture => capture.id === id);
       if (!capture || !identityReady.current) return false;
@@ -1683,8 +1949,10 @@ export function useCore(speaker?: string) {
       }
       setWhys((w) => ({ ...w, [thought_id]: { text: "", failed: false, pending: true } }));
     }, [send]),
-    explain: (id: string, text: string, context: string, thread_id: string | null, reuse = false) =>
-      send(JSON.stringify({ type: "explain", id, text, context, thread_id, reuse })),
+    explain: (id: string, text: string, context: string, thread_id: string | null, reuse = false, source?: AnswerSource) =>
+      send(JSON.stringify({ type: "explain", id, text, context, thread_id, reuse, ...(builtInOn("saved-answers") && source ? { source } : {}) })),
+    keepAnswer: (id: string) => builtInOn("saved-answers") && send(JSON.stringify({ type: "keep_answer", id })),
+    savedAnswerVisibility: (id: string, revision: number, removed: boolean) => builtInOn("saved-answers") && send(JSON.stringify({ type: "kept_answer_visibility", id, revision, removed })),
     // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.
     mark: (kind: "explain" | "recap", id: string, off: boolean) => send(JSON.stringify({ type: "mark", kind, id, off })),
     importStatus,

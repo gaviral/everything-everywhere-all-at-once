@@ -1,0 +1,13 @@
+.plugins { color: var(--ink); padding: 16px; overflow-wrap: anywhere; }
+.plugins h2 { margin: 0 0 12px; font-size: 20px; }
+.plugins p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.plugins ul { list-style: none; padding: 0; }
+.plugins li { border-top: 1px solid var(--line, #8885); padding: 14px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.plugins li > div { flex: 1 1 180px; }
+.plugins small { opacity: .7; }
+.plugins button, .plugins input { min-height: 44px; max-width: 100%; }
+.plugins button { cursor: pointer; background: var(--surface-2, ButtonFace); color: var(--ink, ButtonText); border: 1px solid var(--line, #8885); border-radius: 6px; padding: 8px 10px; }
+.plugins-modal { width: min(680px, calc(100vw - 32px)); max-height: 85dvh; background: var(--paper, Canvas); color: var(--ink, CanvasText); border: 1px solid var(--line, #888); border-radius: 12px; }
+.plugins-modal::backdrop { background: #0006; }
+
+.talk-plugins { position: fixed; top: 60px; right: 16px; z-index: 30; min-height: 44px; }

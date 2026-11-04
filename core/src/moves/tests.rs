@@ -45,8 +45,10 @@ impl Fixture {
 
     /// The map as the journal replays it over `base` (the fixture's map isn't in it), to hold it to the live one.
     fn replayed(&self, mut base: World) -> World {
-        for line in std::fs::read_to_string(&self.path).unwrap().lines() {
-            base.apply(&serde_json::from_str(line).unwrap());
+        for line in std::fs::read_to_string(&self.path).unwrap().split_inclusive('\n') {
+            for (change, _) in crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap() {
+                base.apply(&change);
+            }
         }
         base
     }

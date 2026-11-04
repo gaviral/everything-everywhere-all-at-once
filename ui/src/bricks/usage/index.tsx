@@ -1,5 +1,5 @@
 import type { BrickProps, UsageRow } from "../contract";
-import "./usage.css";
+import pluginStyle0 from "./usage.css?inline";
 
 const money = (amount: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(amount);
 const number = (amount: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(amount);
@@ -41,3 +41,6 @@ export default function Usage({ map, brick }: BrickProps) {
     </ul>
   </aside>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
 
-const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8") + "\n" + readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8");
 const server = await uiServer();
 try {
   const { searchMatches, searchFields, heldOpen, mapQuery, OPEN_LIMIT, RANK_LIMIT, steady, sameCard } = await server.ssrLoadModule("/src/search-rules.ts");

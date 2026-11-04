@@ -4,12 +4,19 @@ import "./flow-layout.css";
 import { CaptureContext } from "./bricks/spine/capture";
 import { micWords } from "./shell/Shell";
 import { ReplyFormat, FormattedReply } from "./ReplyFormat";
+import { answerSourceState } from "./core";
+import { AgreementContext } from "./bricks/spine/nodes";
 import { createPortal } from "react-dom";
 import { FullContentProvider } from "./FullContent";
 import { cancelPageReply, usePlayback, watchPageSpeech, pageSpeaking } from "./page-speech";
 import { VoicePolicyComparison } from "./VoicePolicyComparison";
-import { SuggestPoint, useTextEditReview } from "./TextEditReview";
+import { useTextEditReview } from "./TextEditReview";
+import { DiscussionProvider } from "./discussion-ui";
 import { TextEditReviewContext } from "./bricks/contract";
+import { PluginStateContext } from "./bricks/contract";
+import { savedState } from "./plugin-store";
+import { Plugins, PluginsModal } from "./Plugins";
+import { restorePlugins } from "./plugins-core";
 import RecoveryPanel from "./RecoveryPanel";
 import { cancelPartner } from "./partner";
 import RecoveryComparison from "./RecoveryComparison";
@@ -19,65 +26,57 @@ import { useShapes } from "./shapes-core";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
 import { useCardNotice } from "./notice-queue";
-import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
+import { LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
 import { saveFile, saveRecipeFile } from "./save-file";
 import { ImportChats, ON_THIS_MACHINE } from "./Import";
-import { StayHere, StayProvider } from "./StayHere";
+import { StayProvider } from "./StayHere";
 import { Away, useAway } from "./Away";
-import { usePicture, useReadyPictures } from "./pictures";
-import { actionLine, dismissable } from "./action-line";
+import { useReadyPictures } from "./pictures";
 
-type Handlers = {
-  setItem: (id: string, status: ItemStatus) => void;
-  approve: (id: string) => void;
-  tag: (threadId: string, tag: string, keep: boolean) => void;
-  correct: (thoughtId: string, accept: boolean) => void;
-  unlink: (thoughtId: string) => void;
-};
+import { MapCards, ThreadPicture, Fixes } from "./MapCards";
 import { micFailure, micPlace, startMic, watchMicPermission } from "./mic";
 import { Apps, buildInTheWay, DockBuild, DockTune } from "./Apps";
-import { Explain } from "./Explain";
+import { Explain, SavedAnswers } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 import { hasToured, Tour } from "./Tour";
-import { leftBy, RoomControl, useMe, sendToCore } from "./room";
+import { RoomControl, useMe, sendToCore } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump, viewAfterJump } from "./find";
 import { landedNow } from "./landed";
 import { resolveMerged } from "./merges";
 import { UndoButton } from "./Undo";
-import { ProposalRows, TidyProvider, useWaitingProposals } from "./Tidy";
-import { MovePoint, MovesProvider, ThreadTitle, useDropPoint } from "./Moves";
+import { TidyProvider } from "./Tidy";
+import { MovesProvider } from "./Moves";
 import { useRevert } from "./revert";
-import { ideaCounts, NotesContext, PointNote, useIdeas, useNote, wordsSaid } from "./chunks";
-import { hoverTitle, WhyContext, WhyHere, whyLine } from "./whyhere";
-import { ARRIVE, AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, ThisTag, UnseenDot, useAttention, usePointMarks } from "./Attention";
-import { intoColumns, POINT_OWN, saidDiffers, useSaidOpen, useTalking, useTwoColumns } from "./legible";
+import { ideaCounts, NotesContext } from "./chunks";
+import { WhyContext } from "./whyhere";
+import { AttentionNote, AttentionProvider, look, ThisEcho, wordsIn, useAttention } from "./Attention";
+import { useTalking } from "./legible";
 import { isUndoKey, micNotice, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel, undoUpFor, upFor } from "./notice-rules";
 
 /** ⌘ or Ctrl: which one Undo uses here. */
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-import { emptyLine, headClickToggles, liveLine, showsLiveLine } from "./ux-rules";
-import { heldOpen, mapQuery, RANK_LIMIT, sameCard, searchFields, searchMatches, steady } from "./search-rules";
+import { emptyLine, liveLine, showsLiveLine } from "./ux-rules";
+import { heldOpen, mapQuery, RANK_LIMIT, searchFields, searchMatches, steady } from "./search-rules";
 import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { useOnScreen } from "./onscreen";
-import { downloadIcs, keyWords, modelsLine, moreSamples, useSite } from "./site";
+import { keyWords, modelsLine, moreSamples, useSite } from "./site";
 import { ModelLine } from "./ModelLine";
-import { useLanes, useRouteMark } from "./route";
-const ROUTE_CLASS = { candidate: "route-candidate", here: "route-here", via: "route-via" } as const;
+import { useLanes } from "./route";
 import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
-import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
+import { COMPOSER_ID, opensHelp } from "./keys";
 import { cardAt, dismiss, dropKey, pauseOffer, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, putOff, useHidden } from "./unfinished";
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
-import { BRICKS, brickChoice, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
+import { useBrickRegistry, brickChoice, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import type { ViewDestination } from "./bricks/contract";
 import { Catalog } from "./Catalog";
@@ -112,6 +111,7 @@ function readSession(key: string) { try { return sessionStorage.getItem(key) ===
 function writeSession(key: string, on: boolean) { try { if (on) sessionStorage.setItem(key, "1"); else sessionStorage.removeItem(key); } catch { /* private mode */ } }
 
 export default function App() {
+  const BRICKS = useBrickRegistry();
   const me = useMe();
   const core = useCore(me);
   const site = useSite();
@@ -264,6 +264,7 @@ export default function App() {
   const dockRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [pluginsModal, setPluginsModal] = useState(false);
   const [railTab, setRailTab] = useState<RailTab | null>(null);
   // Native Features controls live in the shared rail. Closing it returns keyboard focus to its opener.
   const railReturn = useRef<HTMLElement | null>(null);
@@ -616,6 +617,7 @@ export default function App() {
   // still meets mic.ts's check that a click or key press is under way in this tab.
   const [keyHelp, setKeyHelp] = useState(false);
   const toggleMic = async (event?: { isTrusted: boolean }) => {
+    if (!listeningOn && !liveStop.current && !micStart.current) return;
     if (event && !event.isTrusted) return;
     if (micStart.current) { micStart.current.abort(); if (voicePolicy.snapshot().enabled) voicePolicy.end(); core.listen(false); return; }
     if (!core.connected && !liveStop.current) return;
@@ -1210,6 +1212,10 @@ export default function App() {
   // caption, here only (guide-core.ts `showHint`).
   const review = useTextEditReview({ actor: me, edits: world.point_edits, thoughts: world.thoughts, connected: core.connected, result: core.textEditResult, send: core.sendTextEdit });
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
+    imageEvidence:request=>isOn("image-evidence")?core.imageEvidence(request):Promise.resolve({request_id:request.request_id,ok:false,message:"Image evidence is off.",data:null}),
+    saveChoice: request => isOn("choice-map") ? core.saveChoice(request) : Promise.resolve({request_id:request.request_id,ok:false,message:"Choice map is off."}),
+    research: core.research,
+    cancelResearch: core.cancelResearch,
     setActionEstimate: (request) => isOn("action-estimates") ? core.setActionEstimate(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is off.", estimate: null }),
     saveTextFile: (name, text, mime) => { if (mime === "application/json") saveRecipeFile(text); else saveFile(text, mime, name); return true; },
     saveQuestion: core.saveQuestion,
@@ -1217,6 +1223,7 @@ export default function App() {
     voiceShortcut: core.voiceShortcut,
     exportRecipe: core.exportRecipe,
     saveRecipe: core.saveRecipe,
+    appConnection: core.appConnection,
     addThought: core.sendText,
     holdFlowQuestion: (id, ask) => holdQuestion({ id, by: "Flow", ai: true, main: "Waiting for your pause", answer: ask }),
     dropFlowQuestion: dropHeld,
@@ -1266,14 +1273,32 @@ export default function App() {
     annotate: core.annotate,
     openCatalog: (id) => openCatalogAt(id ?? null),
     hint: showHint,
-  }, destination, core.usage, core.noKey || core.keyRefused || core.resting, { mapKey: core.mapIdentity, captures: core.captures });
+  }, destination, core.usage, core.noKey || core.keyRefused || core.resting, { mapKey: core.mapIdentity, confirmedMapKey: core.confirmedMapIdentity, captures: core.captures });
   const bricksOn = useBricksOn();
+  const imageEvidenceOn = bricksOn.has("image-evidence");
+  useEffect(()=>{core.setImageEvidenceOn(imageEvidenceOn);},[imageEvidenceOn]);
+  const choiceMapsOn = bricksOn.has("choice-map");
+  useEffect(() => { core.setChoiceMapsOn(choiceMapsOn); }, [choiceMapsOn]);
+  const researchOn = bricksOn.has("question-research");
+  useEffect(() => { core.setResearchOn(researchOn); }, [researchOn]);
   const actionEstimatesOn = bricksOn.has("action-estimates");
   useEffect(() => { core.setActionEstimatesOn(actionEstimatesOn); }, [actionEstimatesOn]);
   const shapes = useShapes(bricksOn.has("shapes"));
   const shortcutsOn = bricksOn.has("voice-shortcuts");
   useEffect(() => { core.voiceShortcuts(shortcutsOn); }, [shortcutsOn, core.connected]);
   const builtIns = useBuiltInsOn();
+  const discussionEnabled = builtIns.has("discussion-status");
+  useEffect(() => { core.setDiscussionOn(discussionEnabled); }, [discussionEnabled]);
+  const savedOn = builtIns.has("saved-answers");
+  const [savedOpen, setSavedOpen] = useState(false);
+  useEffect(() => { setSavedOpen(savedOn); }, [savedOn]);
+  const savedAnswers = savedOn && savedOpen ? <SavedAnswers world={world} close={() => setSavedOpen(false)} connected={core.connected}
+    visibility={core.savedAnswerVisibility} jump={answer => {
+      const thought = world.thoughts.find(t => t.id === answer.source.thought_id);
+      if (!thought?.thread_id || answerSourceState(world, answer.source) !== "available") { core.showNotice("Source changed or is no longer available."); return; }
+      setSavedOpen(false); setRailTab(null); jumps.jumped(world, thought.thread_id);
+      reveal(thought.thread_id, thought.id); core.focus(thought.thread_id);
+    }} /> : null;
   // Only an ID and a focus return address live here; World remains the source of the panel's words.
   const [inspection, setInspection] = useState<{ id: string; invoker: HTMLElement } | null>(null);
   const bringHereOn = builtIns.has("bring-here");
@@ -1295,6 +1320,12 @@ export default function App() {
   const toolsWereOn = useRef(false);
 
   useReadyPictures(builtIns.has("warm-pictures"), world.threads, world.active, core.partial || core.handoff || "", core.connected);
+  const pluginsOn = builtIns.has("plugins");
+  const pluginScope = `${location.host}:${core.mapIdentity ?? "local"}:${me}`;
+  const pluginState = useMemo(() => pluginsOn ? savedState(`${pluginScope}:builtins`) : null, [pluginScope, pluginsOn]);
+  const importState = useMemo(() => savedState(`${pluginScope}:import`), [pluginScope]);
+  useEffect(() => { if (!pluginsOn && railTab === "plugins") setRailTab(null); }, [pluginsOn, railTab]);
+  useEffect(() => { if (pluginsOn) void restorePlugins(); }, [pluginsOn]);
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -1302,7 +1333,15 @@ export default function App() {
   // A view that's gone while it's shown hands the window back to the map: a view brick switched off, or the shell's Cards
   // (the Features page's built-in view; the classic page has no such view, its map is the cards) switched off or never on.
   const viewGone = !talk && (view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick);
-  useEffect(() => { if (viewGone && !inspectingCatalog) showView("map"); }, [viewGone, inspectingCatalog]);
+  useEffect(() => {
+    if (inspectingCatalog) return;
+    const missingCanvas = pluginsOn && view === "map" && !bricksOn.has("spine");
+    const missingPictures = pluginsOn && view === "palace" && !builtIns.has("pictures");
+    if (viewGone || missingCanvas || missingPictures) {
+      const next = !pluginsOn ? "map" : viewBricks[0]?.info.id ?? (builtIns.has("cards") ? (SHELL2 ? "cards" : "map") : builtIns.has("pictures") ? "palace" : "map");
+      if (next !== view) showView(next);
+    }
+  }, [viewGone, inspectingCatalog, pluginsOn, view, bricksOn, builtIns]);
   // An explicit Open original waits for the destination's words, then gives that exact source the existing focus
   // ring. It also works after a lazy Canvas mount. Nothing watches until the action is used; navigation cancels it.
   useEffect(() => {
@@ -1374,7 +1413,7 @@ export default function App() {
     for (const notice of core.takeNotices()) brickHost.emit("notice", { ...notice, text: noticeText(notice.text) });
   });
   // The shell's own state (shell/): the rail's tab, the built-ins' switches, History, the mode.
-  const listeningOn = !SHELL2 || builtIns.has("listening");
+  const listeningOn = (!SHELL2 && !pluginsOn) || builtIns.has("listening");
   const catalogOpen = useCatalogOpen();
   const catalogAt = useCatalogAt();
   // The rail that enabled canvas tools gives way to typing; later panel requests focus their canvas node.
@@ -1420,8 +1459,13 @@ export default function App() {
   // The mic's time, from when it started listening.
   const [micSince, setMicSince] = useState<number | null>(null);
   useEffect(() => setMicSince(stopMic ? Date.now() : null), [stopMic]);
-  // Listening switched off in the Catalog stops a mic that runs.
-  useEffect(() => { if (!listeningOn) { if (voicePolicy.snapshot().enabled) voicePolicy.end(); if (releaseMic()) core.listen(false); } }, [listeningOn]);
+  // Listening switched off also cancels a start awaiting permission or the audio worklet.
+  useEffect(() => {
+    if (listeningOn) return;
+    micStart.current?.abort();
+    if (voicePolicy.snapshot().enabled) voicePolicy.end();
+    if (releaseMic()) core.listen(false);
+  }, [listeningOn]);
   // The sample map, loaded from the first screen (or ?sample): stamped SAMPLE until the map is emptied.
   const [sampleMap, setSampleMap] = useState(() => SAMPLE_FLAG || readSession(SAMPLE_KEY));
   const sawThreads = useRef(false);
@@ -1463,10 +1507,10 @@ export default function App() {
     if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
     if (canvasTools && event.key === "Escape" && !railTab) { event.preventDefault(); focusTool(null); return; }
     if (event.key === "Escape" && railTab) { event.preventDefault(); formatFocusReturn(); setRailTab(null); return; }
-    if (talk) return;
+    if (talk && event.key.toLowerCase() !== "p") return;
     const key = event.key.toLowerCase();
     const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
-    if (tab && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
+    if (tab && (tab !== "plugins" || pluginsOn) && !(tab === "talk" && callOn(call))) { event.preventDefault(); toggleTab(tab); return; }
     if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
     if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
     if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
@@ -1487,9 +1531,37 @@ export default function App() {
   }}>All features</button>;
 
   // The classic page (`?shell=1`, kept for one release; `?cards` too), and the shell after it.
+  // A view's Show: takes you to it, and the rail gets out of its way (a sheet over it on a phone; on a laptop it covers
+  // the cards' right-hand column, where the buttons are).
+  const openView = (id: string) => { setRailTab(null); showView(id); };
+  const partsState: AppPartsState = { connected: core.connected, noKey: core.noKey, keyRefused: core.keyRefused,
+    resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic };
+  const rows: CatalogRow[] = [
+    { id: "preset-talk", kind: "panel" as const, name: "Talk", does: "Keep just what you need to talk. Turn off to bring your features back.",
+      on: talk, savedOn: talk, core: false, toggle: switchTalk },
+    ...BRICKS.map(({ info }): CatalogRow => {
+      const named = FEATURE_NAMES[info.id];
+      return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
+        on: bricksOn.has(info.id), savedOn: brickChoice(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
+      show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
+    }),
+    ...BUILT_INS.filter((b) => featureAvailable(b.id) && (b.id !== "email" || site.email)).map((b): CatalogRow => {
+      const named = FEATURE_NAMES[b.id];
+      const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
+      const available = b.id !== "import" || ON_THIS_MACHINE;
+      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id) && available, savedOn: builtInChoice(b.id), core: false, parts: b.id === "phone-remote" && builtIns.has(b.id) ? <PhonePair /> : undefined,
+        disabled: !available, disabledReason: !available ? "Available on the computer running E2A2O" : undefined,
+        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view && !inspectingCatalog) showView("map"); }, show: b.id === "saved-answers" && savedOn ? () => { setRailTab(null); setSavedOpen(true); } : shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
+    }),
+    ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, savedOn: app.enabled, core: false,
+      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected, disabledReason: !core.connected ? "Connect to change this app's saved choice." : undefined,
+      parts: <AppParts app={app} apps={world.apps} state={partsState} /> })),
+  ].map(row => ({ ...row, suspended: talk && !["preset-talk", "plugins", "spine", "tiny-transcript", "usage", "listening"].includes(row.id) ? "Suspended by Talk" : undefined })).sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
   if (!SHELL2) return (
+    <AgreementContext.Provider value={builtIns.has("explicit-agreement") ? { thoughts: world.thoughts, agreements: world.agreements ?? {}, me, connected: core.connected, status: core.agreementStatus, change: core.agreeThought } : null}>
+<PluginStateContext.Provider value={pluginState}>
     <MotionConfig reducedMotion="user">
-    <TextEditReviewContext.Provider value={review.context}>
+    <DiscussionProvider world={world} enabled={discussionEnabled} set={core.setDiscussion}><TextEditReviewContext.Provider value={review.context}>
     {review.panel}
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
@@ -1505,6 +1577,7 @@ export default function App() {
       {/* The page's first stop: Tab, then Enter, and you're typing (it took 46 Tabs past the header and the map). */}
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); composerRef.current?.focus(); }}>Skip to Type a thought</a>
       {talkExit}
+      {talk && pluginsOn && <button type="button" className="talk-plugins" onClick={() => setRailTab("plugins")}>Plugins</button>}
       <header ref={headerRef}>
         <div className="brand" data-slot="top-left">
           E2A2O
@@ -1541,10 +1614,10 @@ export default function App() {
           <div>Select map text with Shift + arrows, then Enter to explain · Esc dismisses it</div>
           <Symbols />
         </div></details>
-        <button className="recap-button" data-guide="recap" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>
-        <ImportChats core={core} />
+        {(!pluginsOn || builtIns.has("recap")) && <button className="recap-button" data-guide="recap" onClick={(event) => { event.currentTarget.focus(); core.requestRecap(); }}>Recap</button>}
+        {(!pluginsOn || builtIns.has("import")) && <PluginStateContext.Provider value={importState}><ImportChats core={core} /></PluginStateContext.Provider>}
         {/* Import's other half, in its shape (an arrow out on a phone); once anything's said, placed or not. */}
-        {(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown" data-guide="export">
+        {(!pluginsOn || builtIns.has("export")) && (world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()} aria-label="Export map as Markdown" data-guide="export">
           <span className="import-long">Export</span>
           <span className="import-short"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3" /></svg></span>
         </button>}
@@ -1604,7 +1677,8 @@ export default function App() {
       </div>
       </div>
 
-      <Explain explanations={core.explanations} explain={(id, text, context, threadId) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"))} mark={core.mark} />
+      <Explain explanations={core.explanations} explain={(id, text, context, threadId, source) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"), source)} mark={core.mark} world={world} savedOn={savedOn} keep={core.keepAnswer} />
+      {savedAnswers}
 
       {!talk && world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
@@ -1622,9 +1696,9 @@ export default function App() {
         </div>
         {view === "map" && search && <div className="search-summary" role="status">{matches.size} {matches.size === 1 ? "topic" : "topics"} found <button onClick={() => setQuery("")}>Clear</button></div>}
       </nav>}
-      {talk && spine ? <BrickMount brick={spine} host={brickHost} />
+      {talk && spine ? <BrickMount key={spine.info.id} brick={spine} host={brickHost} />
         : view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && (world.threads.length > 0 || view === "decisions" || viewBrick.info.id === "focused-find" || (shapes.enabled && viewBrick.info.id === "spine")) ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
+        : viewBrick && (world.threads.length > 0 || view === "decisions" || viewBrick.info.id === "choice-map" || viewBrick.info.id === "focused-find" || (shapes.enabled && viewBrick.info.id === "spine")) ? <BrickMount key={viewBrick.info.id} brick={viewBrick} host={brickHost} /> : pluginsOn && !builtIns.has("cards") ? <main className="map" aria-label="Thought list"><ol>{world.thoughts.map(thought => <li key={thought.id}>{thought.text}</li>)}</ol></main> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1739,7 +1813,7 @@ export default function App() {
               aria-label="Type a thought"
             />
             <ModelLine hearing={!!core.partial} hidden={!!draft} />
-            <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} />
+            {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} />}
           </form>
         </div>
       </section>
@@ -1748,11 +1822,13 @@ export default function App() {
       {!talk && <TalkRail host={brickHost} />}
       <BrickSlot kind="input" host={brickHost} />
       {!talk && <Tips />}
+      {pluginsOn && <button type="button" onClick={() => setPluginsModal(true)}>Plugins</button>}
+      {pluginsOn && pluginsModal && <PluginsModal rows={rows} close={() => setPluginsModal(false)} />}
       {!talk && <Catalog apps={world.apps} state={{ connected: core.connected, noKey: core.noKey, keyRefused: core.keyRefused,
         resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic }} />}
       {/* Another participant pointing at a part of the screen, or saying a caption (docs/guide.md). */}
       <Guide world={world} view={view} query={query} focus={focusMode} />
-      <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap view={talk || (pluginsOn && !builtIns.has("recap")) ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
         requestAnimationFrame(() => {
@@ -1768,8 +1844,10 @@ export default function App() {
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
-    </TextEditReviewContext.Provider>
+    </TextEditReviewContext.Provider></DiscussionProvider>
     </MotionConfig>
+</PluginStateContext.Provider>
+    </AgreementContext.Provider>
   );
 
   // The shell (the default, shell/): four corners, the stage, the status line, the rail.
@@ -1788,32 +1866,7 @@ export default function App() {
     reveal(thread.id, thoughtId);
     core.focus(thread.id);
   };
-  // A view's Show: takes you to it, and the rail gets out of its way (a sheet over it on a phone; on a laptop it covers
-  // the cards' right-hand column, where the buttons are).
-  const openView = (id: string) => { setRailTab(null); showView(id); };
-  const partsState: AppPartsState = { connected: core.connected, noKey: core.noKey, keyRefused: core.keyRefused,
-    resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic };
-  const rows: CatalogRow[] = [
-    { id: "preset-talk", kind: "panel" as const, name: "Talk", does: "Keep just what you need to talk. Turn off to bring your features back.",
-      on: talk, savedOn: talk, core: false, toggle: switchTalk },
-    ...BRICKS.map(({ info }): CatalogRow => {
-      const named = FEATURE_NAMES[info.id];
-      return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
-        on: bricksOn.has(info.id), savedOn: brickChoice(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
-      show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
-    }),
-    ...BUILT_INS.filter((b) => featureAvailable(b.id) && (b.id !== "email" || site.email)).map((b): CatalogRow => {
-      const named = FEATURE_NAMES[b.id];
-      const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
-      const available = b.id !== "import" || ON_THIS_MACHINE;
-      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id) && available, savedOn: builtInChoice(b.id), core: false, parts: b.id === "phone-remote" && builtIns.has(b.id) ? <PhonePair /> : undefined,
-        disabled: !available, disabledReason: !available ? "Available on the computer running E2A2O" : undefined,
-        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view && !inspectingCatalog) showView("map"); }, show: shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
-    }),
-    ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, savedOn: app.enabled, core: false,
-      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected, disabledReason: !core.connected ? "Connect to change this app's saved choice." : undefined,
-      parts: <AppParts app={app} apps={world.apps} state={partsState} /> })),
-  ].sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
+
   const undoEntry = (entry: Entry) => {
     const undo = entry.undo;
     if (!undo) return;
@@ -1834,6 +1887,7 @@ export default function App() {
     ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
   ];
   const tabs: RailTab[] = callOn(call) ? ["history", "catalog", "settings"] : ["talk", "history", "catalog", "settings"];
+  if (pluginsOn) tabs.push("plugins");
   const canvasVisible = canvasTools || talk || !(view === "palace" || view === "cards" || (viewBrick && viewBrick.info.id !== "spine"));
   const captureInPlace = canvasVisible && !canvasTools && !talk && !brickHost.map.terse && !brickHost.map.conversationSpine && !brickHost.map.comparePhoneReading;
   const captureState = { mic, comparison: policy.enabled, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
@@ -1845,8 +1899,9 @@ export default function App() {
       waiting: waitingCaptures.some(row => row.id === capture.id), status: captureLabel(capture), saved: capture.saved,
       retry: !capture.receivedOnly && (!capture.saved || captureLabel(capture).includes("placement failed")) ? () => core.retryCapture(capture.id) : undefined })) } : null;
   return (
-    <MotionConfig reducedMotion="user">
-    <TextEditReviewContext.Provider value={review.context}>
+    <AgreementContext.Provider value={builtIns.has("explicit-agreement") ? { thoughts: world.thoughts, agreements: world.agreements ?? {}, me, connected: core.connected, status: core.agreementStatus, change: core.agreeThought } : null}>
+    <PluginStateContext.Provider value={pluginState}><MotionConfig reducedMotion="user">
+    <DiscussionProvider world={world} enabled={discussionEnabled} set={core.setDiscussion}><TextEditReviewContext.Provider value={review.context}>
     {review.panel}
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
@@ -1889,6 +1944,7 @@ export default function App() {
           recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />, toolSlots.history)}
       {createPortal(<><CatalogPanel rows={rows} at={catalogAt?.id ?? null} currentView={view} active={railTab === "catalog" || canvasTools} eligible={ORGANIZABLE} /><ReplyFormat /></>, toolSlots.features)}
       {talkExit}
+      {talk && pluginsOn && <button type="button" className="talk-plugins" onClick={() => setRailTab("plugins")}>Plugins</button>}
       <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty}
         sampleTools={sampleMap ? { returnResult: core.returnResult, onReturn: () => core.sendText("Where was I?"), onPictures: () => showView("palace") } : undefined} />
       <TopRight>
@@ -1896,7 +1952,7 @@ export default function App() {
           inspect={bringHereOn ? inspectHere : undefined} inspecting={bringHereOn && !!inspection?.invoker.closest(".shell-find")} />}
         {builtIns.has("export") && (world.threads.length > 0 || world.thoughts.length > 0) &&
           <CornerButton icon="export" label={NAMES.export} keyName="E" keyAria="E" onClick={() => exportMap()} guide="export" />}
-        {builtIns.has("import") && <ImportChats core={core} />}
+        {builtIns.has("import") && <PluginStateContext.Provider value={importState}><ImportChats core={core} /></PluginStateContext.Provider>}
         <CornerButton icon="catalog" label={NAMES.catalog} keyName={RAIL_KEYS.catalog} keyAria={RAIL_KEYS.catalog} pressed={railTab === "catalog"}
           onClick={() => toggleTab("catalog")} guide="catalog" controls="shell-tabpanel" />
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
@@ -1908,7 +1964,8 @@ export default function App() {
 
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
-      <Explain explanations={core.explanations} explain={(id, text, context, threadId) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"))} mark={core.mark} />
+      <Explain explanations={core.explanations} explain={(id, text, context, threadId, source) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"), source)} mark={core.mark} world={world} savedOn={savedOn} keep={core.keepAnswer} />
+      {savedAnswers}
 
       {/* Keep the ordinary Canvas mounted and dimensioned across Show; hiding cannot reset its camera effects. */}
       {ORGANIZABLE && <div className="persistent-canvas" style={{ display: "contents", visibility: canvasVisible ? "visible" : "hidden" }} inert={!canvasVisible} aria-hidden={!canvasVisible}>
@@ -1920,7 +1977,7 @@ export default function App() {
             <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
-        : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions" || viewBrick.info.id === "focused-find") ? <BrickMount brick={viewBrick} host={brickHost} />
+        : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions" || viewBrick.info.id === "choice-map" || viewBrick.info.id === "focused-find") ? <BrickMount key={viewBrick.info.id} brick={viewBrick} host={brickHost} />
         : (!empty || shapes.enabled || captureInPlace) && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
@@ -1931,7 +1988,7 @@ export default function App() {
               <span>A student's week. Add your own thoughts.</span>
               {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">{choice.label}</button>)}
             </p> : null} />}
-          {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
+          {!empty && !spine && <ol aria-label="Thought list">{world.thoughts.map(thought => <li key={thought.id}>{thought.text}</li>)}</ol>}
         </main>}
       {!canvasTools && view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
         <button type="button" className="shell-pill shell-button" onClick={() => {
@@ -2040,22 +2097,23 @@ export default function App() {
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
 
-      {!talk && railTab && (!canvasTools || (railTab !== "history" && railTab !== "catalog")) && <Rail tab={railTab} setTab={setRailTab} close={() => { formatFocusReturn(); setRailTab(null); }} tabs={tabs}>
+      {(!talk || railTab === "plugins") && railTab && (!canvasTools || (railTab !== "history" && railTab !== "catalog")) && <Rail tab={railTab} setTab={setRailTab} close={() => { formatFocusReturn(); setRailTab(null); }} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
         {railTab === "history" && <ToolSlot host={toolSlots.history} />}
         {railTab === "catalog" && <ToolSlot host={toolSlots.features} />}
+        {railTab === "plugins" && pluginsOn && <Plugins rows={rows} />}
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
       </Rail>}
 
       {!talk && <TalkRail host={brickHost} />}
       {/* Floating features; the Notice timeline's list is History's here. */}
-      {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline" && !(captureInPlace && ["tiny-transcript", "bubble-flight"].includes(brick.info.id)))
+      {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && (pluginsOn || brick.info.id !== "notice-timeline") && !(captureInPlace && ["tiny-transcript", "bubble-flight"].includes(brick.info.id)))
         .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
       {!talk && <Tips />}
       <Guide world={world} view={view} query={query} focus={focusMode} />
       {keyHelp && <AISetup onClose={() => setKeyHelp(false)} />}
-      <Recap onSetup={core.noKey && !core.resting ? () => { core.recap.close(); setKeyHelp(true); } : undefined} view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      <Recap onSetup={core.noKey && !core.resting ? () => { core.recap.close(); setKeyHelp(true); } : undefined} view={talk || (pluginsOn && !builtIns.has("recap")) ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
       }} />
@@ -2069,8 +2127,10 @@ export default function App() {
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
-    </TextEditReviewContext.Provider>
+    </TextEditReviewContext.Provider></DiscussionProvider>
     </MotionConfig>
+</PluginStateContext.Provider>
+    </AgreementContext.Provider>
   );
 }
 
@@ -2290,10 +2350,6 @@ function useDockRoom(ref: RefObject<HTMLElement | null>) {
   }), []);
 }
 
-/** How a dismissed suggestion or action leaves: a 150 ms fade, as a card's body folds (ThreadCard). A fade isn't motion,
- *  so it stays under Reduce Motion, where the rows below snap up instead of gliding (MotionConfig "user"). */
-const EXIT = { opacity: 0, transition: { duration: 0.15 } };
-
 function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: T[]) {
   const grouped = new Map<string, T[]>();
   for (const item of items) if (item.status !== "dismissed") {
@@ -2303,152 +2359,6 @@ function groupItems<T extends { thread_id: string; status: ItemStatus }>(items: 
   }
   return grouped;
 }
-
-type MapProps = {
-  active: string | null; on: Handlers; activePath: Set<string>; rooms: Map<string, string>;
-  childrenByParent: Map<string | null, Thread[]>; thoughtsByThread: Map<string, Thought[]>;
-  ideasByThread: Map<string, Suggestion[]>; actionsByThread: Map<string, Action[]>;
-  /** Found cards search holds open (search-rules.ts). */
-  held: Set<string>; expanded: Record<string, boolean>;
-  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  keptOpen: React.MutableRefObject<Set<string>>;
-};
-
-// The composer, live transcript and pull-back timer update independently of the map.
-const MapCards = memo(function MapCards(props: MapProps) {
-  const roots = props.childrenByParent.get(null) ?? [];
-  // A wide window holds two columns (legible.ts); a lone thread sits in the middle (legible.css).
-  const two = useTwoColumns();
-  if (roots.length === 0) return <p className="no-results">Nothing found. Try different words.</p>;
-  if (!two) return roots.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />);
-  return intoColumns(roots).map((column, i) => <div key={i} className="map-column">{column.map((thread) => <ThreadCard key={thread.id} thread={thread} {...props} />)}</div>);
-});
-
-// A card skips re-rendering while nothing it shows changed (sameCard), so a letter that leaves it as it was costs it nothing.
-const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activePath, childrenByParent, thoughtsByThread, ideasByThread, actionsByThread, held, expanded, setExpanded, keptOpen, depth = 2 }: MapProps & { thread: Thread; depth?: number }) {
-  const reducedMotion = useReducedMotion();
-  const thoughts = thoughtsByThread.get(thread.id) ?? [];
-  // Two parts said across a pause show as one point (chunks.tsx).
-  const points = useIdeas(thoughts);
-  const ideas = ideasByThread.get(thread.id) ?? [];
-  const actions = actionsByThread.get(thread.id) ?? [];
-  const waiting = ideas.filter((idea) => idea.status === "new").length + actions.filter((action) => action.status === "new").length + useWaitingProposals(thread.id);
-  const branches = childrenByParent.get(thread.id) ?? [];
-  const isActive = active === thread.id;
-  const collapsed = held.has(thread.id) ? false : expanded[thread.id] ?? !activePath.has(thread.id);
-  // Your own unfinished thread is flagged; someone else's tag just says whose it is.
-  const me = useMe();
-  const by = thread.status === "dropped" ? leftBy(thread, me) : "";
-  // A point dragged by its Move lands on the card under it (Moves.tsx).
-  const drop = useDropPoint(thread.id);
-  // Live routing (route.ts): lit while the placer weighs it, or on the path a thought just took.
-  const route = useRouteMark(thread.id, active);
-  const routeClasses = route ? `route-lit ${ROUTE_CLASS[route.kind]}${route.deep ? " route-deep" : ""}` : "";
-  const classes = ["thread", isActive ? "active" : "", collapsed ? "collapsed" : "", thread.status === "dropped" && thread.dropped_by === me ? "dropped" : "", drop.over ? "drop-over" : "", routeClasses].join(" ");
-
-  const toggle = (event: React.MouseEvent) => {
-    if (held.has(thread.id)) return;
-    // Option-click opens or folds every branch under it too, as "expand …" does.
-    const under = (id: string): string[] => (childrenByParent.get(id) ?? []).flatMap((b) => [b.id, ...under(b.id)]);
-    const ids = event.altKey ? [thread.id, ...under(thread.id)] : [thread.id];
-    for (const id of ids) if (event.altKey && collapsed) keptOpen.current.add(id); else keptOpen.current.delete(id);
-    setExpanded((state) => ({ ...state, ...Object.fromEntries(ids.map((id) => [id, !collapsed])) }));
-  };
-
-  return (
-    <motion.section
-      layout={reducedMotion ? false : true}
-      id={`thread-${thread.id}`}
-      data-guide={`thread:${thread.id}`}
-      aria-labelledby={`title-${thread.id}`}
-      className={classes}
-      style={roomStyle(rooms.get(thread.id))}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={spring}
-      {...drop.props}
-    >
-      <ThisTag thread={thread.id} />
-      {route?.tag && <span key={route.tag} className={`route-tag ${route.kind}`} title={route.title ?? undefined}>{route.tag}{route.title && <span className="sr-only"> · {route.title}</span>}</span>}
-      {/* The whole head opens or folds the card (ux-rules.ts); the button stays for the keyboard and screen readers. */}
-      <div className="thread-head" onClick={(event) => {
-        if (headClickToggles(event.target as Element, window.getSelection()?.toString())) toggle(event);
-      }}>
-        <UnseenDot thread={thread.id} />
-        <ThreadPicture thread={thread} marked />
-        <div className="head-text">
-          <div className="head-line">
-            <ThreadTitle thread={thread} depth={depth} onOpen={toggle} />
-            <StayHere thread={thread.id} title={thread.title} />
-            {thread.status === "dropped" && <span className="chip dropped">{by ? `${by} left off` : "left off"}</span>}
-            {isActive && <span className="chip now">active</span>}
-            <span className="thread-count">{points.length} {points.length === 1 ? "thought" : "thoughts"}</span>
-            {/* Folding a thread mustn't hide what waits for you there: the AI's proposals still to keep or dismiss. */}
-            {collapsed && waiting > 0 && <span className="chip waiting">{waiting} new</span>}
-          </div>
-          {/* A suggested tag waits until the thread has said enough (3 thoughts) for it to add anything; kept tags always show. */}
-          {!collapsed && (thread.tags ?? []).some((t) => t.kept || thoughts.length >= 3) && (
-            <div className="tags">
-              {thread.tags.filter((t) => t.kept || thoughts.length >= 3).map((t) => (
-                <button
-                  key={t.name}
-                  className={t.kept ? "tag kept" : "tag"}
-                  aria-label={`${t.kept ? "Kept tag" : "AI-suggested tag"}: ${t.name}`}
-                  aria-pressed={t.kept}
-                  title={t.kept ? "Remove tag" : undefined}
-                  data-tip={t.kept ? undefined : TIPS.tag}
-                  onClick={() => on.tag(thread.id, t.name, !t.kept)}
-                >
-                  {!t.kept && <span aria-hidden="true">✦ </span>}{t.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <button className="collapse thread-toggle" aria-expanded={!collapsed} aria-disabled={held.has(thread.id)} onClick={toggle}>{collapsed ? "Show" : "Hide"} <span className="sr-only">{thread.title}</span></button>
-      </div>
-      <AnimatePresence initial={false}>
-      {!collapsed && <motion.div key="body" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : 0.15 }}>
-      <ul className="points">
-        {points.map(({ thought: t, heads }) => (
-          <Point key={t.id} thought={t} heads={heads} on={on} />
-        ))}
-      </ul>
-      {/* A dismissed row fades out (EXIT) and the rows below glide up, rather than the row vanishing under the click. */}
-      <AnimatePresence initial={false}>
-      {ideas.map((s) => (
-        <motion.div key={s.id} id={`item-${s.id}`} layout className={`ai ${s.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
-          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={s.status === "kept" ? TIPS.kept : TIPS.suggestion}>✦</span>
-          <span>{s.text}</span>
-          {s.status === "new" && (
-            <span className="ai-actions">
-              <button aria-label={`Keep suggestion: ${s.text}`} onClick={() => on.setItem(s.id, "kept")}>Keep</button>
-              <button className="quiet" onClick={() => on.setItem(s.id, "dismissed")} aria-label={`Dismiss suggestion: ${s.text}`}>
-                ×
-              </button>
-            </span>
-          )}
-        </motion.div>
-      ))}
-      </AnimatePresence>
-      <ProposalRows thread={thread.id} />
-      <AnimatePresence initial={false}>
-      {actions.map((a) => (
-        <ActionRow key={a.id} action={a} on={on} />
-      ))}
-      </AnimatePresence>
-      </motion.div>}
-      </AnimatePresence>
-      {branches.length > 0 && (
-        <div className="branches">
-          {branches.map((b) => (
-            <ThreadCard key={b.id} thread={b} active={active} rooms={rooms} on={on} activePath={activePath} childrenByParent={childrenByParent} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </motion.section>
-  );
-}, sameCard);
 
 function UnfinishedQuote({ text }: { text: string }) {
   const quote = useRef<HTMLDivElement>(null);
@@ -2471,163 +2381,6 @@ function UnfinishedQuote({ text }: { text: string }) {
   </>;
 }
 
-/** A thread's picture slot, there from the start with the thread's first letter (as in the Palace): a picture that
- *  arrives later fades in over it once decoded and moves nothing; one that fails to load leaves the letter (the
- *  rule in pictures.ts). A card used to grow 5–19 px when its picture came, its title sliding right, and a picture
- *  that failed showed a broken-image glyph. ✦ marks a picture only once one shows. */
-function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
-  const { shown, img } = usePicture(thread.picture ? [thread.picture] : []);
-  return (
-    <span className="picture-wrap">
-      <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>
-      {img && <img key={img.src} {...img} className={`picture ${img.className}`} />}
-      {marked && shown && <span className="picture-mark" role="img" aria-label="AI-generated picture" data-tip={TIPS.picture}>✦</span>}
-    </span>
-  );
-}
-
-const Point = memo(function Point({ thought, heads, on }: { thought: Thought; heads: Thought[]; on: Handlers }) {
-  // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
-  const me = useMe();
-  const other = thought.speaker !== me && thought.speaker !== "you";
-  const reducedMotion = useReducedMotion();
-  // "Latest" while it's your newest point; under Reduce Motion a point arriving fades in instead of jumping.
-  const { latest, arriving } = usePointMarks(thought.id);
-  const fade = reducedMotion && arriving ? ARRIVE : { transition: spring };
-  // Every point takes focus from a tap, so a phone shows its Move (moves.css); only one with a placement time to read
-  // is a stop for Tab, as Move and Words said are their own.
-  // The words behind the point open under it by click or tap anywhere on it, not by hover alone (a phone has none);
-  // from the keyboard or a screen reader, by its "Words said" button (legible.css shows its focus on the whole point).
-  // Joined across a pause, the words are each part as said; "why here" opens with them, and every placed point has
-  // one to ask for (whyhere.tsx), so every placed point opens. The hover card says it too once it's known (C225).
-  const why = whyLine(useNote(thought.id), useContext(WhyContext).whys[thought.id]);
-  const words = heads.length ? wordsSaid(heads, thought) : `“${thought.text.trim()}”`;
-  // Words that only repeat the point stay out (legible.ts); then it opens to its reason alone.
-  const differ = heads.length > 0 || saidDiffers(thought.text, thought.point);
-  const said = differ || thought.placed;
-  const [open, flip] = useSaidOpen(thought.id);
-  const toggle = said ? (event: React.MouseEvent) => {
-    // Its own controls (legible.ts `POINT_OWN`; marks' tips in Tips.tsx) and selecting words to explain keep their jobs.
-    if ((event.target as HTMLElement).closest(POINT_OWN) || !(window.getSelection()?.isCollapsed ?? true)) return;
-    flip();
-  } : undefined;
-  // No layoutDependency: a point measures its box every time it renders. Measuring only when its thread's thoughts
-  // changed left a point that had just landed in a branch drawn ≈ 100 px under its card for 13–15 s after "Show" on a
-  // card above (its card moved, Motion projected it from its old box: the move counted twice). scripts/points-check.mjs.
-  return (
-    <motion.li id={`point-${thought.id}`} data-guide={`point:${thought.id}`} layout={reducedMotion ? false : true} layoutId={reducedMotion ? undefined : thought.id} {...fade} data-latest={latest || undefined} data-heads={heads.map((h) => h.id).join(" ") || undefined} title={said && !open ? hoverTitle(differ ? (heads.length ? words : thought.text) : "", why) || undefined : undefined} className={[other ? "other" : "", said ? "has-said" : "", open ? "said-open" : ""].filter(Boolean).join(" ") || undefined} tabIndex={thought.place_ms != null ? 0 : -1} onClick={toggle}
-      onKeyDown={said ? (event) => { if (togglesPoint({ key: event.key, onPoint: event.target === event.currentTarget, taken: event.defaultPrevented })) { event.preventDefault(); flip(); } } : undefined}>
-      {other && <span className="speaker">{thought.speaker}</span>}
-      {/* Every point is a short version of the person's own words, so it stays unmarked: ✦ is for what the AI adds or proposes. */}
-      {/* Said in so many words ("Decided: …", decided.rs in the core), so it's the person's own mark, not ✦: it says
-          which points are settled at a glance, and they're what Recap leads with. */}
-      {thought.decided && <span className="decided"><span aria-hidden="true">✓ </span>Decided</span>}
-      <span><Markdown text={capitalized(thought.point)} /></span>
-      {latest && <span className="sr-only">(your latest thought)</span>}
-      {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
-      {thought.placed && <SuggestPoint ids={[...heads.map(h => h.id), thought.id]} />}
-      <MovePoint thought={thought} />
-      <PointNote thought={thought} heads={heads} unlink={on.unlink} />
-      {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}
-      {heads.map((head) => <Fixes key={head.id} thought={head} on={on} />)}
-      <Fixes thought={thought} on={on} />
-      {thought.place_ms != null && <><span className="speed" aria-hidden="true">{(thought.place_ms / 1000).toFixed(1)} s</span><span className="sr-only">Placed in {(thought.place_ms / 1000).toFixed(1)} seconds</span></>}
-      {said && <span id={`said-${thought.id}`} className="said" hidden={!open}>{differ && [...heads, thought].flatMap((part, i) => [i > 0 ? " … " : "", "“", <Markdown key={part.id} text={part.text.trim()} />, "”"])}{thought.placed && open && <WhyHere thoughtId={thought.id} />}</span>}
-    </motion.li>
-  );
-});
-
-/** A point's speech fixes: "✦ fixed" (one tap puts the words back) and "Did you mean …?". */
-function Fixes({ thought, on }: { thought: Thought; on: Handlers }) {
-  return (
-    <>
-      {thought.heard && thought.fixed && (
-        // Fixed without asking: quiet until you look, and one tap puts the words back.
-        <button className="fixed" onClick={() => on.correct(thought.id, false)} aria-label={`Undo fix: heard “${thought.heard}”`}>
-          <span><span aria-hidden="true">✦</span> fixed</span>
-          <span><span aria-hidden="true">✦</span> heard “<Markdown text={thought.heard} />” · undo</span>
-        </button>
-      )}
-      {thought.unclear && thought.guess ? (
-        <span className="did-you-mean">
-          {/* title="": the point's own title (its words said) would show a second, system tip over this one. */}
-          <span className="ai-mark" role="img" aria-label="AI suggestion" data-tip={TIPS.guess} title="">✦</span> Did you mean “<Markdown text={thought.guess} />”?
-          <button onClick={() => on.correct(thought.id, true)}>Yes</button>
-          <button className="quiet" onClick={() => on.correct(thought.id, false)} aria-label={`No, keep “${thought.unclear}”`}>
-            No
-          </button>
-        </span>
-      ) : (
-        thought.unclear && (
-          <span className="unclear" data-tip={TIPS.unclear(thought.unclear)} title="" role="img" aria-label={`Might be misheard: ${thought.unclear}`}>
-            ?
-          </span>
-        )
-      )}
-    </>
-  );
-}
-
-// A real YYYY-MM-DD day, as the core checks it: "Saturday" or "2026-11-31" (which a Date rolls over to December 1) isn't one.
-function day(when: string): Date | null {
-  const [y, m, d] = when.split("-").map(Number);
-  const date = new Date(y, m - 1, d, 9);
-  return /^\d{4}-\d{2}-\d{2}$/.test(when) && y >= 2000 && y <= 2100 && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
-}
-
-function ActionRow({ action, on }: { action: Action; on: Handlers }) {
-  // Matches the core: an event without a real date goes to Reminders.
-  const date = day(action.when);
-  const app = action.kind === "event" && date ? "Calendar" : "Reminders";
-  const when = date ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
-  // How soon it's due, in words and in amber's shade (what needs you): overdue darkest, today full, later quiet.
-  const days = date ? Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000) : null;
-  const due = days == null || action.status === "done" ? "" : days < 0 ? "overdue" : days === 0 ? "today" : days === 1 ? "tomorrow" : "";
-  const dueText = due === "overdue" ? `Overdue · ${when}` : due === "today" ? "Today" : due === "tomorrow" ? "Tomorrow" : when;
-  // Off a Mac, or hosted, a dated item saves as a calendar file instead (site.ts).
-  const { calendarFile } = useSite();
-  const line = actionLine(action, app, calendarFile);
-  // Add pressed from the keyboard: its button goes while Apple's side runs, so focus waits on the row instead of
-  // falling to the page, and goes to "Try again" if it comes back (unless you've moved on). A click's isn't moved.
-  const row = useRef<HTMLDivElement>(null);
-  const add = useRef<HTMLButtonElement>(null);
-  const keyed = useRef(false);
-  const approve = () => {
-    keyed.current = !!add.current?.matches(":focus-visible");
-    if (keyed.current) row.current?.focus({ preventScroll: true });
-    // The file is saved here, in the browser; the core then marks it saved for every window.
-    if (calendarFile && !downloadIcs(action)) return;
-    on.approve(action.id);
-  };
-  useEffect(() => {
-    if (action.status === "kept" || !keyed.current) return;
-    keyed.current = false;
-    const focused = document.activeElement;
-    if (action.status === "new" && (focused === row.current || focused === document.body)) add.current?.focus({ preventScroll: true });
-  }, [action.status]);
-  return (
-    <motion.div ref={row} tabIndex={-1} id={`item-${action.id}`} layout className={`action ${action.status}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={EXIT}>
-      <span className="action-icon" role="img" aria-label={action.status === "done" ? "Added" : "AI-proposed action"}
-        data-tip={calendarFile ? TIPS.file(action.status === "done", !!line.button) : action.status === "done" ? TIPS.added(app) : action.status === "kept" ? TIPS.adding(app) : TIPS.action(app)}>{action.status === "done" ? "✓" : "✦"}</span>
-      <span>
-        {action.title}
-        {when && <span className={`when${due ? ` due ${due}` : ""}`}> · {dueText}</span>}
-        {/* Under the title, beside its "Try again", where the click was: a notice elsewhere is missed on camera. */}
-        {line.failed && <span className="action-failed" role="alert">{line.failed}</span>}
-      </span>
-      {/* × on every waiting item: one with no day has nothing to download hosted, but can still be dismissed. */}
-      {dismissable(action) && (
-        <span className="ai-actions">
-          {line.button && <button ref={add} aria-label={line.label} onClick={approve}>{line.button}</button>}
-          <button className="quiet" onClick={() => on.setItem(action.id, "dismissed")} aria-label={`Dismiss ${action.title}`}>
-            ×
-          </button>
-        </span>
-      )}
-      {line.status && <span className="when ai-actions" role="status">{line.status}</span>}
-    </motion.div>
-  );
-}
 
 /** A thought on its way to the map, and honestly where it stands (`pendingLabel`). */
 /** `words`: false while a flight carries them (Bubble flight), so the pill says only where it stands, not them twice. */

@@ -78,7 +78,7 @@ try {
 
   // The map: cards and the pill read the store; an outline, never a border or size, so nothing moves; reduced motion
   // drops the delay and the fade; the quiet-while-talking rule leaves a lit card at full strength.
-  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8") + "\n" + readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8");
   const core = readFileSync(new URL("../ui/src/core.ts", import.meta.url), "utf8");
   const css = readFileSync(new URL("../ui/src/route.css", import.meta.url), "utf8");
   const legible = readFileSync(new URL("../ui/src/legible.css", import.meta.url), "utf8");

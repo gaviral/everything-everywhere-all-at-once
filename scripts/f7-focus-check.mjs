@@ -88,7 +88,8 @@ const layout = async b => {
 };
 const socketMark = () => core.heard.length;
 const noFocusSend = mark => {
-  const sends = core.heard.slice(mark).filter(m => m.type !== "heartbeat");
+  // A Features change may repeat the connection's explicit-agreement-off preference; no map write occurs.
+  const sends = core.heard.slice(mark).filter(m => m.type !== "heartbeat" && !(m.type === "agreement_switch" && m.on === false && Object.keys(m).length === 2));
   assert.deepEqual(sends, [], "focus editing/toggling sends no socket mutation");
 };
 const typeThought = async (b, text) => {

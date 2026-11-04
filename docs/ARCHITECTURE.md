@@ -7,6 +7,7 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 ```
 Browser, one page per window (ui/src)
   App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
+  MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
@@ -38,6 +39,7 @@ Browser, one page per window (ui/src)
   shapes-core.tsx local shape definitions and instances, canvas attachment and placement; no persistence or core messages
   positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
   annotate-core.ts comments as the window holds them, mirroring annotate.rs (a comment is a tangent anchored to words), the comment as sent, and the topics a feature is handed with their anchors
+  discussion-ui.tsx anchored discussion controls, resolve/reopen status, source warnings and the resolved-discussion shelf
   topics-core.ts themes (named `topic` in code) as the window holds them, mirroring topics.rs (by the ids as given, only for a topic on the map), each topic's theme and the themes in order as features get them, and a feature's rename or move sent to the core
   onscreen.ts    keeps a popover anchored to a button (Share, Help, Move) whole on screen with a 16 px gutter, before its first frame (held by `scripts/onscreen-check.mjs`)
   ModelLine.tsx  the Meta model doing each step, in the input box: the step you wait on, what just finished and in how long, what runs behind, the model listening; rules name no model
@@ -63,10 +65,15 @@ Browser, one page per window (ui/src)
   landed.ts      which placed thoughts are a landing: one an Undo brings back isn't followed and takes no "latest" mark
   rooms.ts       the color of each topic and its tangents, for the map's rails and the Pictures view, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
+  app-connections-core.ts typed connection plans, explicit step confirmations and core-owned receipts; the browser never retries a confirmation
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
   AppParts.tsx   read-only app parts disclosure: availability, reuse, source and settings
   app-parts.ts   derives each saved app's parts, availability reasons and reuse counts
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
+  Plugins.tsx    gated Plugins rail/modal, folder input and lifecycle controls (plugins.css)
+  plugins-core.ts subscribed lifecycle status, validated local package import and imported descriptors
+  plugin-store.ts IndexedDB prepared packages and host-owned synchronous draft state with visit-only fallback
+  plugin-api.ts  versioned single-React bridge used by prepared bundles
   bricks-core.ts the features (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
   BrickSlot.tsx  where features mount (a view beside Cards and Pictures, a card in the bottom bar, a panel or an input over the page), each lazily and behind its own boundary
   work-jobs.ts   the AI helpers' jobs as the core relays them (`job` messages, the latest of each replayed to a window that joins; core/src/guide.rs): kept per connection, never on the map, and handed to features as `map.jobs` (the Work spine's)
@@ -125,6 +132,8 @@ Core, one process (core/src: axum, tokio)
   tidy.rs        the refiner's renames and merges: sure ones land with Undo, the rest wait on the card as proposals
   pictures.rs    one picture per topic
   explain.rs     one sentence on a selected phrase
+  evidence.rs    selected-image extraction proposals; only Keep saves a sanitized image and attributed, source-linked thoughts, with Undo
+  research.rs    explicit research on a thought, provider citations checked against the answer, and source-linked saved results
   whyhere.rs     why a thought is on its topic, on request: from the map (move, first thought), else one fast call kept as its note
   recap.rs       a recap of today or this session
   find.rs        "where did I talk about …?": Take me there
@@ -133,6 +142,7 @@ Core, one process (core/src: axum, tokio)
   terse.rs       optional short presentation lines from existing thoughts; keeps source words and journal unchanged
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   annotate.rs    comments, a person's or an AI participant's: the first on words starts their tangent under the point's topic, tied to them; a later one answers in it; journaled, to every window; no model call
+  discussion.rs explicit, journaled resolve/reopen status on an anchored discussion, independent of its topic's status
   topics.rs      themes (on screen; `topic` in code): the AI sorts top-level topics under at most 6 short names, reusing the names there (a topic keeps its theme once given); a pass at most once a minute while a topic waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
   call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the AI helper's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent. A Remote (`?remote` on the socket, `call::join_remote`) is listed with `remote: true` and is never one of the two: it starts no call and counts toward none, and once one has joined `call` is told with `started_ms` 0 until a call starts, so the shared map never hides a window
   catalog.rs     the command list (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no

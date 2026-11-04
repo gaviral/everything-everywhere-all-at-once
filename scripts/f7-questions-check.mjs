@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { openPage, ready, sleep, standInCore } from './headless.mjs';
 import { uiServer } from './ui-server.mjs';
+import { decodeJournal } from './journal-fixture.mjs';
 
 // This acceptance command always runs page checks, even when a broader precheck disables them.
 process.env.PRECHECK_PAGES = '1';
@@ -93,7 +94,7 @@ async function openCard() {
   await key('Enter', 'Enter', 13);
   await wait(visible('.saved-questions-body'), 'keyboard opens card');
 }
-const changes = () => readFileSync(journal, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+const changes = () => decodeJournal(readFileSync(journal, 'utf8'));
 const questions = () => { const m = new Map(); for (const c of changes()) if (c.type === 'question_saved') m.set(c.question.id, c.question); return [...m.values()]; };
 async function saved(revision) {
   await wait(`document.querySelector('${card} [role="status"]')?.textContent === 'Saved' && document.querySelector('[data-revision="${revision}"]') !== null`, `Saved only after revision ${revision} acknowledgement and world`);

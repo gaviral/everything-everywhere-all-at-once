@@ -2386,8 +2386,10 @@ mod tests {
         assert_eq!(item(&core.snapshot(), "sg-2c3d4e5f6a7b").status, ItemStatus::New);
         // The journal rebuilds the same map, Undo state included.
         let mut replayed = start;
-        for line in std::fs::read_to_string(&path).unwrap().lines() {
-            replayed.apply(&serde_json::from_str(line).unwrap());
+        for line in std::fs::read_to_string(&path).unwrap().split_inclusive('\n') {
+            for (change, _) in crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap() {
+                replayed.apply(&change);
+            }
         }
         let now = core.snapshot();
         assert_eq!(serde_json::to_string(&replayed).unwrap(), serde_json::to_string(&*now).unwrap());

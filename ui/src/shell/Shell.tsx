@@ -252,12 +252,18 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
 
 // ── The rail ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RailTab = "talk" | "history" | "catalog" | "settings";
-export const RAIL_KEYS: Record<RailTab, string> = { talk: "T", history: "Y", catalog: "C", settings: "," };
-const TAB_ICONS: Record<RailTab, Parameters<typeof Icon>[0]["name"]> = { talk: "talk", history: "history", catalog: "catalog", settings: "settings" };
+export type RailTab = "talk" | "history" | "catalog" | "settings" | "plugins";
+export const RAIL_KEYS: Record<RailTab, string> = { plugins: "P", talk: "T", history: "Y", catalog: "C", settings: "," };
+const TAB_ICONS: Record<RailTab, Parameters<typeof Icon>[0]["name"]> = { plugins: "catalog", talk: "talk", history: "history", catalog: "catalog", settings: "settings" };
 
 export function Rail({ tab, setTab, close, tabs, children }: { tab: RailTab; setTab: (tab: RailTab) => void; close: () => void; tabs: RailTab[]; children: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (tab !== "plugins") return;
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.querySelector<HTMLElement>('[data-tab="plugins"]')?.focus({ preventScroll: true });
+    return () => previous?.focus({ preventScroll: true });
+  }, []);
   // Arrows move between the tabs, as a tab list's do.
   const arrows = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -266,7 +272,7 @@ export function Rail({ tab, setTab, close, tabs, children }: { tab: RailTab; set
     setTab(next);
     requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>(`[data-tab="${next}"]`)?.focus());
   };
-  return <aside ref={panel} className="shell-rail" data-slot="rail" aria-label={NAMES.tabs[tab]}>
+  return <aside ref={panel} className="shell-rail" data-page={tab} data-slot="rail" aria-label={NAMES.tabs[tab]}>
     <div className="shell-tabs" role="tablist" aria-label="Panel" onKeyDown={arrows}>
       {tabs.map((t) => <button key={t} type="button" role="tab" data-tab={t} id={`shell-tab-${t}`} aria-selected={t === tab} aria-controls="shell-tabpanel"
         tabIndex={t === tab ? 0 : -1} aria-keyshortcuts={RAIL_KEYS[t]} className={cls("shell-tab", t === tab && "shell-on")} onClick={() => setTab(t)}>
@@ -323,7 +329,7 @@ export const HistoryTab = memo(function HistoryTab({ onSetup, setupText, entries
 
 export type CatalogRow = { id: string; kind: BrickKind | "app"; name: string; aka?: string; does: string; lives?: string; on: boolean; core: boolean;
   savedOn?: boolean;
-  toggle?: (on: boolean) => void; disabled?: boolean; disabledReason?: string; parts?: ReactNode; /** A view that's on: shows it. */ show?: () => void };
+  suspended?: string; toggle?: (on: boolean) => void; disabled?: boolean; disabledReason?: string; parts?: ReactNode; /** A view that's on: shows it. */ show?: () => void };
 
 /** One short page: a row per feature, grouped by kind, each with its switch (the core's: on, built in). Arrows move
  *  between the switches; Space switches the one focused. */

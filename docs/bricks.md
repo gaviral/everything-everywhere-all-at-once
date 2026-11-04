@@ -55,6 +55,7 @@ Where each kind shows:
 - `openThought(thoughtId)`: opens the exact placed thought on the map, with its original words and highlight, even when newer thoughts follow it. A missing source leaves the view in place and says why. `closeView()`: leaves a view for the map and returns focus to Features. These also work through the playground host.
 - `on(name, listener)`, or `useBrickEvent(on, name, listener)` in a component:
   - `landed`: a thought just placed, `{ thoughtId, threadId, mine, model, ms, by }`: `model` the model that placed it ("Muse Spark 1.3"; null when a rule did, or this window didn't hear which), `ms` how long placing took, from said to landed (the point's own time), `by` who acted: `{ kind: "brick", id, name }` when a feature's `addThought` added it in this window, else `{ kind: "person", name }`.
+    A late-mounted consumer receives only the newest landing within five seconds, once for that consumer; unmounting and remounting does not replay the same landing twice.
   - `words`: your words as they're heard, each time they change (as `map.partial` then); "" once the turn ends or the mic stops.
   - `loudness`: the mic's level, 0 to 1, every 320 ms while it's on.
   - `notice`: a notice or map update as this window shows it, a repeat too: `{ text, kind, time }`, `kind` being `notice`, `error` or `map-change`.
@@ -88,7 +89,9 @@ The page's regions, each an element marked `data-slot="<name>"` while it's on sc
 | `held` | questions waiting for your pause | Shell (default): `HeldStack` marks the stack or closed phone chip inside bottom-right, only while questions or held captions exist; Guide supplies its cards through `holdQuestion`. Classic page (`?shell=1`): Guide draws its floating stack at the bottom right (a phone chip), without this marker. |
 | `slot:<thought id>` | where a thought on its way will land | Both layouts: marked by the view that shows it (the Canvas's dashed slot or arriving point); a fly-in aims there. |
 
-A fly-in under way marks its bubble `data-flight="<thought id>"` (Fly-in), so a view can wait for it to arrive. A view that mounts after its thought landed (the Canvas, with the map's first topic) looks for the marks when it mounts, and the bubble waits for it.
+Capture starts in place on the map by default, with one canonical source per capture ID and Saved only after the durable receipt. The original words remain reachable while placement is pending; neither ordinary nor reduced-motion capture requires a separate floating bubble.
+
+The optional Fly-in alternative marks its bubble `data-flight="<thought id>"`, so a view can wait for it to arrive. A view that mounts after its thought landed (the Canvas, with the map's first topic) looks for the marks when it mounts, and the bubble waits for it. Historical placements do not replay flight on reload.
 
 ## On and off
 
@@ -171,3 +174,55 @@ The card says “Saved” only after the core confirms the record. These records
 Run `node scripts/f7-questions-check.mjs` after building the core and UI.
 
 - `flow-canvas` (panel, off, demo-safe): **Flow** runs a thought through serial text boxes with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [Flow](flow.md) for the runtime and live smoke check.
+
+## Plugins (off by default)
+
+Features → Plugins adds a Plugins rail page; the classic layout has a modal. Both pages
+use the Features switches. With Plugins on even Canvas can unload. With no view loaded,
+the host keeps a read-only thought list and its input box. Saved apps keep their existing
+map-wide switch; other choices belong to this browser. Talk suspends masked choices.
+
+`plugin-api.ts` exposes `globalThis.__E2A2O_PLUGIN_V1__`: React, ReactDOM, both JSX runtimes
+and this contract. Prepare a trusted local feature with:
+
+```
+node scripts/package-plugin.mjs ui/src/bricks/_template --out /tmp/prepared/_template
+```
+
+For an installable plugin copy the template to a folder with a new lowercase ID first.
+The prepared folder name must equal its manifest ID and contain `brick.json`,
+`plugin.json` (`apiVersion: 1`, `entry: "index.js"`, optional `css: "style.css"`),
+`index.js` and optional `style.css`. Imports must be bundled and assets self-contained;
+5 MiB total. Add folder validates before retaining it in IndexedDB. Imported plugins
+start Unloaded. Load runs trusted code with this page's privileges; it is not sandboxed.
+
+A mount gets `state.get/set` and `lifetime.signal/cleanup`. Use `usePluginState(key, initial)`
+from the contract for synchronous draft write-through, including the final input event.
+Choose stable keys including a node ID for repeated child components. The host scopes
+state by map address, speaker and plugin ID. Do not store DOM nodes, promises or functions.
+Register timers, observers and external subscriptions with `lifetime.cleanup`, and check
+`lifetime.signal.aborted` after asynchronous work. The host revokes actions and event
+listeners at unmount; React effects must release resources they create. Accepted core
+operations and the journal remain host owned. Reload creates a fresh boundary and mount;
+ES modules stay in the browser cache. Imported styles detach on unload. Package/state
+storage falls back to memory when denied, labelled “For this visit only”.
+
+Run `node scripts/plugins-check.mjs` against a built UI for the synthetic mounted import
+and lifecycle checks. `node scripts/plugins-lifecycle-check.mjs` covers unloading a pending
+microphone start and preserving Work spine's scroll position and following choice.
+`node scripts/plugins-state-check.mjs` checks gate changes during a deadline edit and
+a pending Import upload resolving after unload/reload, including denied storage and
+upload refusal. Request completion notifies the currently mounted host-state subscriber.
+No model, microphone or real external application is used.
+
+## Sticky notes
+
+**Sticky notes** starts off in Features, is not marked demo-safe, and never opens its form automatically. Enable it, open its card, choose an existing thought and press **Pin thought**. Up to twelve references form a local grid; **Move earlier** changes only their local order. Distinct thought IDs stay distinct even when their text is identical. **Open source** uses the existing exact-thought navigation. Native buttons and source selection work by keyboard; Escape closes the card and returns focus.
+
+**Local layout · this tab** means session storage, partitioned by the map identity confirmed by this connection’s server handshake and the current speaker. Reload in that tab restores reference order and the scratch draft. Switch-off hides the card and removes its keyboard listener without deleting the stored state. Closing the tab ends this recovery scope; nothing is shared with other viewers. Storage failures are shown; unreadable or future-version storage is preserved rather than overwritten. The standalone playground uses its sample name as a separate synthetic namespace.
+
+Live notes show the source thought's verbatim `text`, topic and speaker. A source edit updates that reference; deletion leaves **Source no longer on map** and its last observed historical quote. The quote is a recovery snapshot attached to the source ID, not a new accepted thought. A source deleted while the feature is off retains the last quote observed while enabled.
+
+The **Unsent scratch draft** is separate from accepted speech. **Add to topic** is pending: the existing typed `addThought(text): boolean` action provides neither an explicit topic target nor a correlated server acknowledgement, so the card never sends or clears the draft. No new contract, connection, server capability, protocol event, model call or Notes/Files adapter is added. Existing journals and clients are unchanged. The host supplies its confirmed connection identity; another tab changing the last-map cache cannot select this tab’s layout.
+
+Run `npm --prefix ui run build`, `node scripts/bricks-check.mjs sticky-notes` and `node scripts/asks-sticky-notes-check.mjs`. Page checks require Chrome and `PRECHECK_PAGES=1` when the environment disables them. The last command mounts the real app against a synthetic WebSocket fixture and writes temporary desktop/390px screenshots; it does not prove live-service operation or human acceptance.

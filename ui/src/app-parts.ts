@@ -63,6 +63,9 @@ export function appParts(app: MiniApp, state: PartsState): AppPart[] {
         w.kind === "volume" ? "Silly tune" : "Light tune", offline || (state.sound ? "" : "Browser audio is not running"))
       : p.kind === "card"
         ? part("publisher:card", "Show a card", "core/src/apps.rs · execute → SuggestionAdded", p.text)
+        : p.kind === "app_block"
+          ? part("publisher:app-block", "Propose connection steps", "core/src/apps.rs → core/src/app_blocks/mod.rs",
+            `Match: ${p.block.query}\nCalendar date: ${p.block.when}\nReminders → Calendar → tune; each step requires local confirmation`)
         : part("publisher:reminder", "Propose a reminder", "core/src/apps.rs · execute → ActionProposed",
           `${p.title}\nWhen: ${p.when || "No date"}\nApproval is required before adding to Reminders`);
     // App-request watchers use search/offer, not execute. The stored publisher is part of

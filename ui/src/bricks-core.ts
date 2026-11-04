@@ -11,6 +11,7 @@ import { landedNow } from "./landed";
 import { THOUGHT_MAX } from "./limits";
 import { topicsOf } from "./topics-core";
 import { talkOn, watchTalk } from "./talk-preset";
+import { builtInOn, watchBuiltIns } from "./shell/features";
 import { CORE_BRICKS } from "./shell/flag";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
@@ -19,8 +20,8 @@ const APP_FLAGS = ["room", "recording", "film", "brick", "bricks", "sample", "sh
 /** Ids a view brick can't take: they're the app's own views. */
 const APP_VIEWS = ["map", "palace"];
 
-export type BrickModule = { default: ComponentType<BrickProps> };
-export type Brick = { info: BrickInfo; load: () => Promise<BrickModule> };
+export type BrickModule = { default: ComponentType<BrickProps>; styles?: string };
+export type Brick = { info: BrickInfo; revision?: string; load: () => Promise<BrickModule> };
 
 /** What's wrong with a brick.json in `folder` (its folder's name), in words a builder can act on; empty when it's right.
  *  scripts/bricks-check.mjs says the same before a merge; here a broken one is left out of the app. */
@@ -60,7 +61,7 @@ export function discover(infos: Record<string, unknown>, modules: Record<string,
     const load = loaders.get(folder);
     if (!load) wrong.push("no index.tsx");
     if (wrong.length || !load) { problems[folder] = wrong; continue; }
-    bricks.push({ info: infos[path!] as BrickInfo, load });
+    bricks.push({ info: infos[path!] as BrickInfo, revision: "bundled-v1", load });
   }
   const flags = new Map<string, string>();
   for (const { info } of bricks) {
@@ -79,7 +80,21 @@ const found = discover(
   import.meta.glob<BrickModule>(["./bricks/*/index.tsx", "!./bricks/_*/index.tsx"]),
 );
 for (const [folder, wrong] of Object.entries(found.problems)) console.warn(`Feature "${folder}" left out: ${wrong.join("; ")} (docs/bricks.md)`);
-export const BRICKS: readonly Brick[] = found.bricks;
+export let BRICKS: readonly Brick[] = found.bricks;
+const registryWatchers = new Set<() => void>();
+let registrySnapshot = BRICKS;
+function registryChanged() {
+  registrySnapshot = builtInOn("plugins") ? BRICKS : BRICKS.filter(b => !importedIds.has(b.info.id));
+  for (const fn of registryWatchers) fn();
+}
+export function addBrick(brick: Brick) {
+  BRICKS = [...BRICKS, brick];
+  changed();
+  registryChanged();
+}
+export function useBrickRegistry() {
+  return useSyncExternalStore(fn => { registryWatchers.add(fn); return () => { registryWatchers.delete(fn); }; }, () => registrySnapshot, () => registrySnapshot);
+}
 
 // Which bricks are on, in this browser: only what was switched in the Catalog is kept (by id); every other brick
 // follows its brick.json's defaultOn. A brick whose flag is in the address is on for this visit until it's switched,
@@ -99,11 +114,11 @@ function readSwitches(): Switches {
 /** The ids on, given what was switched (`switches`), what the address turned on for this visit (`flagged`) and the
  *  shell's core (`core`, shell/flag.ts): on with no switch, unless one broke and was switched off this visit (`off`). */
 export function onIds(bricks: readonly Brick[], switches: Switches, flagged: ReadonlySet<string>, core: readonly string[] = [], off: ReadonlySet<string> = new Set()): ReadonlySet<string> {
-  return new Set(bricks.filter(({ info }) => (core.includes(info.id) && !off.has(info.id)) || (info.id !== "app-recipes" && flagged.has(info.id)) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
+  return new Set(bricks.filter(({ info }) => (core.includes(info.id) && !off.has(info.id)) || (!["app-recipes", "question-research"].includes(info.id) && flagged.has(info.id)) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
 }
 
 /** A feature the shell is built around (shell/flag.ts `CORE_BRICKS`): the Catalog shows it on, with no switch. */
-export const isCore = (id: string) => CORE_BRICKS.includes(id);
+export const isCore = (id: string) => !builtInOn("plugins") && CORE_BRICKS.includes(id);
 
 const browser = typeof window !== "undefined";
 const params = browser ? new URLSearchParams(location.search) : new URLSearchParams();
@@ -112,7 +127,8 @@ const listed = new Set((params.get("bricks") ?? "").split(",").map((id) => id.tr
 const flagged = new Set(BRICKS.filter(({ info }) => (info.flag && params.has(info.flag)) || listed.has(info.id)).map(({ info }) => info.id));
 // A core brick that broke and was switched off from its "stopped working" line: off for this visit only.
 const coreOff = new Set<string>();
-const currentIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"]) : onIds(BRICKS, switches, flagged, CORE_BRICKS, coreOff);
+const currentIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"].filter(id => !builtInOn("plugins") || switches[id] !== false)) : onIds(BRICKS.filter(b => !importedIds.has(b.info.id) || builtInOn("plugins")), builtInOn("plugins") ? Object.fromEntries(BRICKS.map(b => [b.info.id, switches[b.info.id] ?? (CORE_BRICKS.includes(b.info.id) || b.info.defaultOn)])) : switches, flagged, builtInOn("plugins") ? [] : CORE_BRICKS, coreOff);
+export const importedIds = new Set<string>();
 let on = currentIds();
 /** Whether a brick is enabled now, including core bricks and this visit's switches. */
 export const isOn = (id: string) => on.has(id);
@@ -121,6 +137,7 @@ export const brickChoice = (id: string) => readSwitches()[id] ?? BRICKS.find((b)
 const watchers = new Set<() => void>();
 const changed = () => { on = currentIds(); for (const watcher of watchers) watcher(); };
 watchTalk(changed);
+watchBuiltIns(() => { changed(); registryChanged(); });
 const watch = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 // Switched in another window of this browser: this one follows.
 if (browser) window.addEventListener("storage", (event) => { if (event.key === STORE) { switches = readSwitches(); changed(); } });
@@ -198,6 +215,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
   const notes = world.notes ?? {};
   const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
+    research: (world.research ?? []).filter(r => r.owner === me),
     questions: (world.questions ?? []).filter(q => q.owner === me),
     aliases: world.aliases?.filter(a => a.owner === me),
     threads: sorted.threads,
@@ -207,6 +225,8 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     active: world.active_by[me] ?? world.active,
     suggestions: world.suggestions,
     reminders: world.actions,
+    evidenceKept: world.evidence_kept ?? [],
+    choiceMaps: world.choice_maps ?? [],
     actionEstimates: world.action_estimates ?? [],
     apps: world.apps,
     notes,

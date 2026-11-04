@@ -1,3 +1,4 @@
+import { usePluginState } from "../contract";
 // The Work spine: what the AI helpers are doing, as jobs on a spine of their own beside your thoughts: running (with a live
 // clock), done (how long, and what it found), failed (why), waiting (the question it holds for you). Beside the Canvas on
 // a laptop in the new shell: a lane at the page's right that the Canvas gives room to, never under it. Anywhere narrower
@@ -8,7 +9,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { createPortal } from "react-dom";
 import type { BrickProps, Job } from "../contract";
 import { Counts, DemoLabel, isDemo, JobList, useFresh, useNow } from "./list";
-import "./work-spine.css";
+import pluginStyle0 from "./work-spine.css?inline";
 
 /** The lane needs a window this wide in the new shell: the Canvas keeps at least 600 px beside it. */
 const LANE_MIN = 1000;
@@ -124,7 +125,7 @@ function Lane({ jobs, now, open, toggle, fresh, ai }: Shared) {
  *  the dock as a sheet, so nothing moves and the composer is never covered; Esc, the card again, or a press anywhere
  *  else puts it away. */
 function DockCard({ jobs, now, open, toggle, fresh, ai }: Shared) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = usePluginState('work-spine/index.tsx:expanded', false);
   const bar = useRef<HTMLButtonElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
   const sheetId = useId();
@@ -180,7 +181,7 @@ export default function WorkSpine({ map }: BrickProps) {
   const lane = useLane();
   const now = useNow(jobs);
   const fresh = useFresh(jobs);
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = usePluginState<ReadonlySet<string>>("work-spine/index.tsx:open", new Set());
   const seenSwarms = useRef(new Set<string>());
   useEffect(() => {
     const fresh = jobs.filter((job) => job.id.startsWith("helpers:") && !job.parent && !seenSwarms.current.has(job.id));
@@ -194,3 +195,6 @@ export default function WorkSpine({ map }: BrickProps) {
   // In the lane nothing is drawn where the dock's cards go, so the dock takes no room for it.
   return lane ? <Lane {...shared} /> : <DockCard {...shared} />;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

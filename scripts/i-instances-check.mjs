@@ -91,9 +91,11 @@ try {
   await key("Escape", "Escape", 27);
   await features(); await click(switcher);
   assert.ok(await browser.until('!document.querySelector(".view-instances")'), "off unmounts all editors");
-  await click(switcher); await key("Escape", "Escape", 27); await click('.view-instances-trigger');
+  await click(switcher); await key("Escape", "Escape", 27);
+  assert.ok(await browser.until('!!document.querySelector(".view-instances-trigger")'), "reenabled view-instance control is mounted");
+  await click('.view-instances-trigger');
   assert.deepEqual(await values(), expected, "off/on leaves records alone");
-  assert.deepEqual(core.heard.slice(baseline).filter(m => !['heartbeat', 'identify'].includes(m.type)), [], "no socket mutation");
+  assert.deepEqual(core.heard.slice(baseline).filter(m => !['heartbeat', 'identify'].includes(m.type) && !(m.type === 'agreement_switch' && m.on === false && Object.keys(m).length === 2)), [], "no socket mutation");
   await browser.page('Page.reload');
   assert.ok(await browser.until('!!document.querySelector(".view-instances-trigger")'));
   await click('.view-instances-trigger');

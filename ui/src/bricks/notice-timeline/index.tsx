@@ -1,6 +1,7 @@
+import { usePluginState } from "../contract";
 import { useEffect, useId, useRef, useState } from "react";
 import { useBrickEvent, type BrickEvents, type BrickProps } from "../contract";
-import "./notice-timeline.css";
+import pluginStyle0 from "./notice-timeline.css?inline";
 
 // What just happened: every notice and map update this window shows while the brick is on (`on("notice")`), newest
 // first, behind a small clock above the dock. A notice is up only for its reading time, so one missed while looking
@@ -24,8 +25,8 @@ function ago(time: number, now: number) {
 }
 
 export default function NoticeTimeline({ on }: BrickProps) {
-  const [kept, setKept] = useState<Kept[]>([]);
-  const count = useRef(0);
+  const [kept, setKept] = usePluginState<Kept[]>('notice-timeline/index.tsx:kept', []);
+  const count = useRef(Math.max(0, ...kept.map(entry => entry.n)));
   useBrickEvent(on, "notice", (notice) => {
     if (!notice.text.trim()) return;
     const entry = { ...notice, n: ++count.current };
@@ -33,7 +34,7 @@ export default function NoticeTimeline({ on }: BrickProps) {
   });
 
   // Opened from the clock, the list takes focus, so arrows scroll it; opened by the ask, focus stays where you type.
-  const [open, setOpen] = useState<"clock" | "ask" | null>(null);
+  const [open, setOpen] = usePluginState<"clock" | "ask" | null>('notice-timeline/index.tsx:open', null);
   useBrickEvent(on, "asked", ({ what }) => { if (what === "notices") setOpen("ask"); });
 
   const root = useRef<HTMLDivElement>(null);
@@ -94,3 +95,6 @@ export default function NoticeTimeline({ on }: BrickProps) {
     </div>}
   </div>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

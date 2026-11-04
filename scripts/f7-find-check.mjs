@@ -93,9 +93,10 @@ try {
   };
   assert.ok(await until(`!!document.querySelector('.spine-ready')`, 15000), 'baseline canvas');
   assert.equal(await evaluate(`!!document.querySelector('[data-brick="focused-find"]')`), false);
+  const disabledCapability = m => ['partner','voice_shortcuts','reply_format','agreement_switch','connections_switch'].includes(m.type) && m.on === false && Object.keys(m).length === 2;
   const baseline = core.heard.length;
   await sleep(250);
-  assert.deepEqual(core.heard.slice(baseline).filter(m => !['heartbeat','this','read'].includes(m.type)), [], 'fresh storage has no feature messages');
+  assert.deepEqual(core.heard.slice(baseline).filter(m => !['heartbeat','this','read'].includes(m.type) && !disabledCapability(m)), [], 'fresh storage has no enabled feature or mutation messages');
   assert.deepEqual(requests.filter(url => /focused-find|\/images\//.test(url)), [], 'off means no feature code or picture warm requests');
   await catalog();
   assert.equal(await evaluate(`document.querySelector('[data-row="focused-find"] [role=switch]').getAttribute('aria-checked')`), 'false');
@@ -187,7 +188,6 @@ try {
   await key('Enter', 'Enter', 13);
   assert.ok(await until(`!!document.querySelector('.spine-ready')`));
   assert.deepEqual(core.heard.filter(m => m.type === 'email'), Array.from({ length: connections }, () => ({ type: 'email', on: true })), 'only the existing email capability handshake, once per connection');
-  const disabledCapability = m => ['partner','voice_shortcuts','reply_format'].includes(m.type) && m.on === false && Object.keys(m).length === 2;
   assert.deepEqual(core.heard.filter(m => !['email','heartbeat','this','read','focus','cancel_find','attention'].includes(m.type) && !disabledCapability(m)), [], 'no model, connector, mutation, microphone or enabled feature requests');
 
   // An empty map is a real enabled view too, not just a playground rendering.

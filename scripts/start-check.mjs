@@ -93,10 +93,15 @@ const noLan = async () => null;
 // No key anywhere, or only an empty one: demo and room stop; the copy hint only when .env is missing.
 let r = await check(["demo"], {}, repo());
 assert.equal(r.code, 1);
-assert.match(r.err, /cp \.env\.example \.env, then paste/);
+assert.match(r.err, /intentionally blank template: cp \.env\.example \.env/);
+assert.match(r.err, /add the full MODEL_API_KEY= line/);
+assert.match(r.err, /Save \.env, then restart \.\/run\.sh demo/);
+assert.match(r.err, /Keychain is an optional alternative when \.env is absent/);
 r = await check(["room"], {}, repo('MODEL_API_KEY=""\n'));
 assert.equal(r.code, 1);
 assert.doesNotMatch(r.err, /cp \.env\.example/);
+assert.match(r.err, /add the full MODEL_API_KEY= line/);
+assert.match(r.err, /Save \.env, then restart \.\/run\.sh room/);
 assert.match(r.err, /No key\? \.\/run\.sh sample/);
 // A key written the ways dotenvy accepts passes.
 const spare = await hold("127.0.0.1");

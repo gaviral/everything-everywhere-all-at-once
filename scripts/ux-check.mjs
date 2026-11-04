@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
 
 const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url), "utf8");
-const styles = src("styles.css"), palace = src("palace.css"), app = src("App.tsx");
+const styles = src("styles.css"), palace = src("palace.css"), app = src("App.tsx") + "\n" + src("MapCards.tsx");
 
 // WCAG relative luminance and contrast, for hex colors.
 const lum = (hex) => {

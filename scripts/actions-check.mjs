@@ -43,10 +43,10 @@ try {
   const away = failureNotice("Send rent", why, false, "");
   assert.ok(away?.startsWith("Couldn't add “Send rent”: macOS blocked it.") && away.endsWith("then try again."), away);
   assert.equal(failureNotice("Send rent", why, true, "Adding “Send rent”…"), away, "said aloud: the notice that said Adding takes it back");
-  // A keyboard Add keeps focus: on the row while it's added, then on "Try again" (App.tsx ActionRow). Source-level,
+  // A keyboard Add keeps focus: on the row while it's added, then on "Try again" (MapCards.tsx ActionRow). Source-level,
   // since the checks here run without a browser; the e2e run is in the card.
-  const app = (await import("node:fs")).readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
-  const rowFn = app.slice(app.indexOf("function ActionRow"), app.indexOf("function PendingThought"));
+  const app = (await import("node:fs")).readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8");
+  const rowFn = app.slice(app.indexOf("function ActionRow"), app.length);
   for (const part of ["ref={row} tabIndex={-1}", "ref={add}", "onClick={approve}", ':focus-visible', "add.current?.focus("]) assert.ok(rowFn.includes(part), `ActionRow keeps keyboard focus (${part})`);
   console.log("actions-check: ok");
 } finally {

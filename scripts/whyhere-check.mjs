@@ -75,7 +75,7 @@ try {
   // A dismissed card forgets its open rows, so a later card never opens one (and asks the model) by itself.
   assert.match(away, /useEffect\(\(\) => \{ if \(!incoming\.length\) setWhy\([^]*\}, \[incoming\.length\]\);/, "clearing the source card resets open reasons even while queued");
   assert.match(away, /const items = notice\.data \?\? \[\];\s*if \(!items\.length \|\| !notice\.visible\) return null;/, "empty or queued cards render no reasons");
-  const app = ui("App.tsx");
+  const app = ui("App.tsx") + "\n" + ui("MapCards.tsx");
   assert.match(app, /const said = differ \|\| thought\.placed/);
   assert.match(app, /\{differ \? "Words said" : "Why here"\}/, "the toggle says what it opens");
   assert.match(app, /title=\{said && !open \? hoverTitle\(/);

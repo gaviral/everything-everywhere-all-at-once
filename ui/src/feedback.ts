@@ -34,6 +34,27 @@ const OFFLINE = "disabled while the core is away";
 const NOT_CONNECTED = "notice: “Not connected — try again when connected.”";
 
 export const ACTIONS: Action[] = [
+  // Composed opt-in features; verified with their mounted checks.
+  {"id": "plugins-open-rail", "how": "click", "at": [["App.tsx", "onClick={() => setRailTab(\"plugins\")}"]], "pressed": "press", "done": "the Plugins rail opens with current feature states"},
+  {"id": "plugins-open-modal", "how": "click", "at": [["App.tsx", "onClick={() => setPluginsModal(true)}"]], "pressed": "press", "done": "the classic Plugins dialog opens"},
+  {"id": "plugins-feature-toggle", "how": "click", "at": [["Catalog.tsx", "onClick={() => switchBuiltIn(\"plugins\","]], "pressed": "press", "done": "the Plugins switch and controls reflect the current choice"},
+  {"id": "explain-keep-answer", "how": "click", "at": [["Explain.tsx", "onClick={() => keep(picked.id)}"]], "pressed": "press", "done": "the matching saved answer appears after the core acknowledgement", "waits": "core", "failed": "a save failure leaves the original answer visible"},
+  {"id": "saved-answers-keyboard", "how": "key", "at": [["Explain.tsx", "aria-label=\"Saved answers\" onKeyDown="]], "pressed": "instant", "done": "Escape closes the saved answers and restores focus"},
+  {"id": "saved-answers-close", "how": "click", "at": [["Explain.tsx", "onClick={close}"]], "pressed": "press", "done": "the saved answers panel closes and restores focus"},
+  {"id": "saved-answer-open", "how": "click", "at": [["Explain.tsx", "onClick={() => setOpened(a.id)}"]], "pressed": "press", "done": "the exact historical answer, model, source and state appear"},
+  {"id": "saved-answer-source", "how": "click", "at": [["Explain.tsx", "onClick={() => jump(answer)}"]], "pressed": "press", "done": "the exact source opens; changed or missing sources disable the control"},
+  {"id": "saved-answer-remove", "how": "click", "at": [["Explain.tsx", "onClick={() => visibility(answer.id, answer.revision, true)}"]], "pressed": "press", "done": "the saved answer disappears after acknowledgement and Undo becomes available", "waits": "core", "failed": "the retained answer remains visible when the save fails"},
+  {"id": "saved-answer-undo", "how": "click", "at": [["Explain.tsx", "onClick={() => visibility(removed.id, removed.revision, false)}"]], "pressed": "press", "done": "the removed historical answer returns after acknowledgement", "waits": "core", "failed": "the answer stays removed when the core refuses the operation"},
+  {"id": "plugins-add-folder", "how": "pick", "at": [["Plugins.tsx", "onChange={async event =>"]], "pressed": "instant", "done": "the validated prepared plugin appears unloaded", "waits": "file", "working": "the folder chooser and load controls are disabled during import", "failed": "the import error appears without loading rejected code"},
+  {"id": "plugins-load-toggle", "how": "click", "at": [["Plugins.tsx", "onClick={() => { if (row.toggle)"]], "pressed": "press", "done": "the feature loads or unloads and its lifecycle status updates", "waits": "core", "failed": "a load failure appears in the lifecycle status"},
+  {"id": "plugins-show", "how": "click", "at": [["Plugins.tsx", "onClick={row.show}"]], "pressed": "press", "done": "the selected feature view opens"},
+  {"id": "plugins-close-dialog", "how": "click", "at": [["Plugins.tsx", "onClick={close}"]], "pressed": "press", "done": "the Plugins dialog closes and restores focus"},
+  {"id": "discussions-list-toggle", "how": "click", "at": [["discussion-ui.tsx", "onClick={() => setOpen(!open)}"]], "pressed": "press", "done": "the discussion list opens or closes"},
+  {"id": "discussions-show-resolved", "how": "pick", "at": [["discussion-ui.tsx", "onChange={e => host.setShowResolved"]], "pressed": "instant", "done": "resolved discussions show or hide without altering their saved status"},
+  {"id": "discussion-open", "how": "click", "at": [["discussion-ui.tsx", "onClick={() => { setOpen(true); setMessage(\"\"); }}"]], "pressed": "press", "done": "the anchored discussion opens with its source and replies"},
+  {"id": "discussion-status-save", "how": "click", "at": [["discussion-ui.tsx", "onClick={() => void save()}"]], "pressed": "press", "done": "the acknowledged resolved or reopened status and actor appear", "waits": "core", "working": "Saving appears and the status controls are disabled while pending", "failed": "the core refusal appears in the discussion status"},
+  {"id": "discussion-close", "how": "click", "at": [["discussion-ui.tsx", "onClick={close}"]], "pressed": "press", "done": "the discussion closes and its invoking control receives focus"},
+
   { id: "sample-actions-toggle", how: "click", at: [["shell/SampleTools.tsx", "onClick={() => setOpen(value => !value)}"]], pressed: PRESS, done: "the sample actions open or close; the toggle reflects their expanded state" },
   { id: "sample-actions-return", how: "click", at: [["shell/SampleTools.tsx", "onClick={() => act(onReturn)}"]], pressed: PRESS, waits: "core", done: "sample actions close and the returned source is shown", failed: NOT_CONNECTED },
   { id: "sample-actions-pictures", how: "click", at: [["shell/SampleTools.tsx", "onClick={() => act(onPictures)}"]], pressed: PRESS, done: "sample actions close and Pictures opens" },
@@ -221,30 +242,30 @@ export const ACTIONS: Action[] = [
   { id: "reload-after-crash", how: "click", at: [["Crash.tsx", "location.reload()"]], pressed: PRESS, done: "the page reloads" },
 
   // A card.
-  { id: "card-head", how: "click", at: [["App.tsx", `<div className="thread-head" onClick`]], pressed: INSTANT, done: "the card opens or folds, its body fading" },
-  { id: "card-show-hide", how: "click", at: [["App.tsx", "onClick={toggle}>{collapsed"]], pressed: PRESS, done: "the card opens or folds; the button says Show or Hide" },
+  { id: "card-head", how: "click", at: [["MapCards.tsx", `<div className="thread-head" onClick`]], pressed: INSTANT, done: "the card opens or folds, its body fading" },
+  { id: "card-show-hide", how: "click", at: [["MapCards.tsx", "onClick={toggle}>{collapsed"]], pressed: PRESS, done: "the card opens or folds; the button says Show or Hide" },
   { id: "title", how: "click", at: [["Moves.tsx", "titleTap(press.current.type"], ["Moves.tsx", "onDoubleClick={rename}"], ["Moves.tsx", "onContextMenu="]], pressed: PRESS,
     done: "the title becomes a field with its words selected (a tap on touch opens the card instead)" },
   { id: "rename", how: "key", at: [["Moves.tsx", "onKeyDown={(event) => {"], ["Moves.tsx", "onBlur={(event) => finish(event.currentTarget.value)}"]], pressed: INSTANT, waits: "core", done: "Enter or leaving keeps the new title on the card; Esc keeps the old one", failed: NOT_CONNECTED },
-  { id: "tag", how: "click", at: [["App.tsx", "on.tag(thread.id"]], pressed: PRESS, waits: "core", done: "the tag turns kept (solid), or goes", failed: NOT_CONNECTED },
-  { id: "keep-suggestion", how: "click", at: [["App.tsx", `on.setItem(s.id, "kept")`]], pressed: PRESS, waits: "core", done: "its buttons go and the row settles as kept", failed: NOT_CONNECTED },
-  { id: "dismiss-suggestion", how: "click", at: [["App.tsx", `on.setItem(s.id, "dismissed")`]], pressed: PRESS, waits: "core", done: "the row fades out and the rows below close the gap", failed: NOT_CONNECTED },
-  { id: "add-to-reminders", how: "click", at: [["App.tsx", "onClick={approve}"]], pressed: PRESS, waits: "apple",
+  { id: "tag", how: "click", at: [["MapCards.tsx", "on.tag(thread.id"]], pressed: PRESS, waits: "core", done: "the tag turns kept (solid), or goes", failed: NOT_CONNECTED },
+  { id: "keep-suggestion", how: "click", at: [["MapCards.tsx", `on.setItem(s.id, "kept")`]], pressed: PRESS, waits: "core", done: "its buttons go and the row settles as kept", failed: NOT_CONNECTED },
+  { id: "dismiss-suggestion", how: "click", at: [["MapCards.tsx", `on.setItem(s.id, "dismissed")`]], pressed: PRESS, waits: "core", done: "the row fades out and the rows below close the gap", failed: NOT_CONNECTED },
+  { id: "add-to-reminders", how: "click", at: [["MapCards.tsx", "onClick={approve}"]], pressed: PRESS, waits: "apple",
     working: "“Adding to Reminders…” (or Calendar) on the row", done: "“Added to Reminders · 1.2 s” with ✓, or “Saved as .ics” off a Mac",
     failed: "the row says why under the title and offers Try again", says: ["Adding to ", "Added to ", "Saved as .ics", "Try again"] },
-  { id: "dismiss-action", how: "click", at: [["App.tsx", `on.setItem(action.id, "dismissed")`]], pressed: PRESS, waits: "core", done: "the row fades out and the rows below close the gap", failed: NOT_CONNECTED },
+  { id: "dismiss-action", how: "click", at: [["MapCards.tsx", `on.setItem(action.id, "dismissed")`]], pressed: PRESS, waits: "core", done: "the row fades out and the rows below close the gap", failed: NOT_CONNECTED },
   { id: "tidy", how: "click", at: [["Tidy.tsx", "tidy.decide(p.id, true)"], ["Tidy.tsx", "tidy.decide(p.id, false)"]], pressed: PRESS, waits: "core",
     done: "Rename or Merge applies it, with Undo; × keeps yours and the proposal goes", failed: NOT_CONNECTED },
 
   // A point.
-  { id: "point", how: "click", at: [["App.tsx", `<motion.li id={\`point-`]], pressed: INSTANT, done: "the words said and why here open under it, or close" },
-  { id: "point-keys", how: "key", at: [["App.tsx", "togglesPoint({ key: event.key"]], pressed: INSTANT, done: "Enter or Space opens or closes its words, as a click" },
-  { id: "words-said", how: "click", at: [["App.tsx", "className=\"said-toggle\""]], pressed: PRESS, done: "the words open under the point; the button is expanded" },
+  { id: "point", how: "click", at: [["MapCards.tsx", `<motion.li id={\`point-`]], pressed: INSTANT, done: "the words said and why here open under it, or close" },
+  { id: "point-keys", how: "key", at: [["MapCards.tsx", "togglesPoint({ key: event.key"]], pressed: INSTANT, done: "Enter or Space opens or closes its words, as a click" },
+  { id: "words-said", how: "click", at: [["MapCards.tsx", "className=\"said-toggle\""]], pressed: PRESS, done: "the words open under the point; the button is expanded" },
   { id: "why-here", how: "click", at: [["whyhere.tsx", "onClick={asking}>Why here?"], ["whyhere.tsx", "onClick={asking}>Try again"]], pressed: PRESS, waits: "model",
     working: "“Why here: …”, breathing quietly until the answer", done: "“Why here: …” with the reason, read out politely", failed: "the reason it couldn't, with Try again",
     says: ["Why here: …", "Try again", "why-wait"] },
-  { id: "undo-fix", how: "click", at: [["App.tsx", "on.correct(thought.id, false)} aria-label={`Undo fix"]], pressed: PRESS, waits: "core", done: "the heard words come back and the mark goes", failed: NOT_CONNECTED },
-  { id: "did-you-mean", how: "click", at: [["App.tsx", "on.correct(thought.id, true)"], ["App.tsx", "on.correct(thought.id, false)} aria-label={`No, keep"]], pressed: PRESS, waits: "core",
+  { id: "undo-fix", how: "click", at: [["MapCards.tsx", "on.correct(thought.id, false)} aria-label={`Undo fix"]], pressed: PRESS, waits: "core", done: "the heard words come back and the mark goes", failed: NOT_CONNECTED },
+  { id: "did-you-mean", how: "click", at: [["MapCards.tsx", "on.correct(thought.id, true)"], ["MapCards.tsx", "on.correct(thought.id, false)} aria-label={`No, keep"]], pressed: PRESS, waits: "core",
     done: "the question goes: the guess swapped in, or the heard words kept", failed: NOT_CONNECTED },
   { id: "keep-apart", how: "click", at: [["chunks.tsx", "unlink(thought.id)"]], pressed: PRESS, waits: "core", done: "the joined words split into two points; focus stays on the point", failed: NOT_CONNECTED },
   { id: "delete-point", how: "click", at: [["Moves.tsx", "remove(thought.id)"]], pressed: PRESS, waits: "core", done: "the point goes: “Deleted “…”” with Undo", failed: NOT_CONNECTED },
@@ -344,6 +365,7 @@ export const ACTIONS: Action[] = [
 
 /** Handlers that aren't actions of their own: each says why. */
 export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] = [
+  { at: ["Explain.tsx", "onKeyDown={event => event.stopPropagation()}"], why: "keeps explanation keys inside the current card; performs no action" },
   { at: ["shell/SampleTools.tsx", 'document.addEventListener("pointerdown", outside)'], why: "a press outside closes the sample actions; the list going away is the feedback" },
   { at: ["shell/SampleTools.tsx", 'document.addEventListener("keydown", escape, true)'], why: "Escape closes sample actions and returns focus to the toggle when focus was inside" },
   { at: ["BringHere.tsx", "onKeyDown={(event) => event.stopPropagation()}"], why: "keeps inspection keystrokes from controlling the map beneath it" },

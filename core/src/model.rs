@@ -457,7 +457,13 @@ impl Core {
         }
         .await;
         step.end(result.is_ok());
-        self.trace.call(body, started, result.as_ref(), extra);
+        // Image input must never enter prompt logs, even when tracing is enabled.
+        if extra["feature"] == "image-evidence" {
+            let redacted = serde_json::json!({"model": body["model"], "messages": "selected image and topic omitted"});
+            let summary=serde_json::json!({"data":[],"usage":result.as_ref().ok().map(|v|v["usage"].clone())});
+            let redacted_error=anyhow::anyhow!("image evidence provider unavailable");
+            self.trace.call(&redacted, started, if result.is_ok(){Ok(&summary)}else{Err(&redacted_error)}, extra);
+        } else { self.trace.call(body, started, result.as_ref(), extra); }
         result
     }
 

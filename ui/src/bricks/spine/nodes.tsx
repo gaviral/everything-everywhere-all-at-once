@@ -1,13 +1,61 @@
+import { usePluginState } from "../contract";
 // What each thing on the Spine looks like (layout.ts places them; index.tsx puts them on the canvas). Far out, words
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
-// line, the Friend's with ✦; what was agreed carries both marks.
+// line, the Friend's with ✦; explicit agreement has its own disclosure.
+import { DiscussionBadge, DiscussionBody } from "../contract";
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
 import { TextEditReviewContext, SpeechFixesContext, SemanticZoomContext, FullContentContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 import { C, topicShortcutHeight } from "./conversation";
+import "./spine.css";
+import type { Agreement, AgreementStatus } from "../contract";
+
+export const AgreementContext = createContext<null | {
+  thoughts: readonly Thought[];
+  agreements: Record<string, Agreement>;
+  me: string;
+  connected: boolean;
+  status: Record<string, AgreementStatus>;
+  change(id: string, revision: string, agree: boolean): boolean;
+}>(null);
+
+/** One disclosure, with a separate explicit action for every exact source in a joined point. */
+export function AgreementControls({ ids }: { ids: readonly string[] }) {
+  const agreement = useContext(AgreementContext);
+  const panelId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  if (!agreement) return null;
+  const sources = agreement.thoughts.filter(t => ids.includes(t.id) && t.placed);
+  if (!sources.length) return null;
+  const stateFor = (id: string) => agreement.agreements[id] ?? { revision: "", agreed_by: [], requests: [] };
+  const count = sources.length === 1 ? stateFor(sources[0].id).agreed_by.length : null;
+  const amount = (n: number) => `${n} ${n === 1 ? "agreement" : "agreements"}`;
+  return <span className="spine-agreement-controls nodrag nopan" onClick={event => event.stopPropagation()} onKeyDown={event => {
+    if (panel.current?.matches(":popover-open") || event.key === "Enter" || event.key === " ") event.stopPropagation();
+  }}>
+    <button type="button" className="spine-agreement-disclosure" popoverTarget={panelId} aria-label={count === null ? `Agreement for ${sources.length} exact sources` : `${amount(count)}. Show identities and agreement controls`}>{count === null ? `Agreement · ${sources.length} sources` : amount(count)}</button>
+    <div ref={panel} id={panelId} popover="auto" className="spine-agreement-panel" role="region" aria-label="Explicit agreement">
+      <strong>Explicit agreement</strong>
+      <p>Agree only as yourself. Viewing or reading never agrees.</p>
+      {sources.map(thought => {
+        const state = stateFor(thought.id);
+        const mine = state.agreed_by.includes(agreement.me);
+        const status = agreement.status[thought.id];
+        return <section key={thought.id} data-agreement-source={thought.id}>
+          <p className="spine-agreement-source">{thought.text}</p>
+          <p>{amount(state.agreed_by.length)}</p>
+          {state.agreed_by.length ? <ul aria-label="People who explicitly agree">{state.agreed_by.map(name => <li key={name}>{name}</li>)}</ul> : <p>No one has agreed.</p>}
+          <button type="button" disabled={!agreement.connected || status?.pending} onClick={() => agreement.change(thought.id, state.revision, !mine)}>{mine ? "Withdraw my agreement" : "Agree as myself"}</button>
+          {status && <p role="status">{status.message}</p>}
+        </section>;
+      })}
+      <button type="button" popoverTarget={panelId} popoverTargetAction="hide">Close</button>
+    </div>
+  </span>;
+}
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -116,6 +164,7 @@ function Tools({ item }: { item: Item }) {
   const review = useContext(TextEditReviewContext);
   const thread = item.kind === "head" || item.kind === "card" || item.kind === "aside";
   return <span className="spine-tools">
+    <AgreementControls ids={item.thoughts ?? (item.kind === "point" ? [item.id] : [])} />
     <InspectAction item={item} />
     {review.enabled && !!item.thoughts?.length && <button type="button" className="spine-tool nodrag nopan" aria-label="Suggest a shorter point" title="Suggest a shorter point"
       onClick={event => { event.stopPropagation(); review.open(item.thoughts!, event.currentTarget); }}>✎</button>}
@@ -170,7 +219,8 @@ function Group({ data }: { data: ItemData }) {
   const acts = useContext(ActsContext)!;
   const zoomedOut = useFar();
   const name = item.group ?? "";
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = usePluginState(`theme-edit:${name}`, false);
+  const [draft, setDraft] = usePluginState(`theme-draft:${name}`, name);
   // Shown at once while the core makes it so (the header comes back under its new name); a refused one lets go.
   const [pending, setPending] = useState<string | null>(null);
   const done = useRef(false);
@@ -194,7 +244,7 @@ function Group({ data }: { data: ItemData }) {
   const start = () => { if (name) { done.current = false; setEditing(true); } };
   return <div className={cls("spine-group", !name && "spine-group-unsorted", data.hot && "spine-group-hot", zoomedOut && "spine-group-far", data.fresh && "spine-fresh")}>
     {editing
-      ? <input className="spine-group-field nodrag nopan" defaultValue={name} maxLength={40} autoFocus aria-label={`New name for the theme ${name}`}
+      ? <input className="spine-group-field nodrag nopan" value={draft} onChange={event => setDraft(event.target.value)} maxLength={40} autoFocus aria-label={`New name for the theme ${name}`}
         onFocus={(event) => event.currentTarget.select()} onBlur={(event) => finish(event.currentTarget.value)}
         onKeyDown={(event) => {
           event.stopPropagation();
@@ -308,11 +358,10 @@ function SpeechCheck({ thought, controls, children }: { thought: Thought; contro
   </>;
 }
 
-/** Under a point: ✓ Decided (or ✓ Agreed with who agreed), Left off. */
+/** Decision and unfinished flags; explicit agreement remains separate. */
 function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
   return <span className="spine-chips" style={{ left: item.look!.textX, top: item.lines!.length * item.look!.line + offset + 5 }}>
-    {item.decided && (item.agreed ? <span className="spine-chip spine-agreed">✓ Agreed{item.agreed.map((who) => <Initial key={who.name} who={who} small />)}</span>
-      : <span className="spine-chip">✓ Decided</span>)}
+    {item.decided && <span className="spine-chip">✓ Decided</span>}
     {item.left && <span className="spine-chip spine-chip-left">Left off</span>}
   </span>;
 }
@@ -341,7 +390,7 @@ function Point({ data }: { data: ItemData }) {
   const lines = item.lines ?? [0];
   const textH = lines.length * look.line;
   const wordsH = item.wordsOpen === undefined ? 0 : G.pointLine + G.pointGap;
-  const label = `${item.who ? `${item.who.name}: ` : ""}${item.text}${item.decided ? item.agreed ? " (agreed)" : " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
+  const label = `${item.who ? `${item.who.name}: ` : ""}${item.text}${item.decided ? " (decided)" : ""}${item.left ? " (left off)" : ""}${here ? ", your latest point" : ""}`;
   const keys = (event: KeyboardEvent) => {
     // The page's word-selection handler needs Enter without defaultPrevented to open Reply.
     if (event.key === "Enter" && data.selecting) return;
@@ -375,7 +424,7 @@ function Point({ data }: { data: ItemData }) {
           <span className="spine-tuck-title">{`${tuck.title} · tangent`}</span>
           {tuck.entries.map((entry, i) => <span key={i} className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}><span className="spine-speaker">{entry.who.name}: </span>{entry.text}</span>)}
         </button>
-        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><AnchorStatus warning={tuck.anchorWarning} source={tuck.sourceRevision} /><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
+        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><AnchorStatus warning={tuck.anchorWarning} source={tuck.sourceRevision} /><DiscussionBody thread={tuck.margin}><Entries entries={tuck.entries} thread={tuck.margin} /></DiscussionBody><DiscussionBadge thread={tuck.margin} /></span>)}
     </span>}
     <PausedSources data={data} />
     <Tools item={item} />
@@ -430,7 +479,7 @@ function ConversationPoint({ data }: { data: ItemData }) {
       {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
     </span>
     <PausedSources data={data} />
-    <span className="spine-tools"><InspectAction item={item} /></span>
+    <span className="spine-tools"><AgreementControls ids={item.thoughts ?? [item.id]} /><InspectAction item={item} /></span>
   </div>;
 }
 
@@ -452,7 +501,7 @@ function TopicProjection({ data }: { data: ItemData }) {
       aria-label={`Back to ${member.speaker}: ${member.text}`} onClick={() => acts.visit(member.key)}>
       <span>{member.speaker}</span><span>{member.text}</span>
     </button>)}</div>}
-    <span className="spine-tools"><InspectAction item={item} /></span>
+    <span className="spine-tools"><AgreementControls ids={item.thoughts ?? [item.id]} /><InspectAction item={item} /></span>
   </div>;
 }
 
@@ -571,7 +620,7 @@ function Margin({ data }: { data: ItemData }) {
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
     aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
     <AnchorStatus warning={item.anchorWarning} source={item.sourceRevision} />
-    <Entries entries={item.entries ?? []} thread={item.margin} />
+    <DiscussionBody thread={item.margin!}><Entries entries={item.entries ?? []} thread={item.margin} /></DiscussionBody><DiscussionBadge thread={item.margin!} />
     {item.more && <span className="spine-margin-more">{`${item.more} more`}</span>}
     <button type="button" className="spine-margin-reply nodrag" onClick={() => acts.reply(item)}>Reply</button>
   </div>;

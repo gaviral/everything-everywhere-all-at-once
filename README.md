@@ -145,8 +145,10 @@ The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The 
 
 See [Local configuration](docs/configuration.md) for all model, helper, and connector options.
 
+`.env.example` is intentionally blank. Copy it below, then open `.env` and add the full `MODEL_API_KEY=` line with your own Meta key immediately after `=` on the same line. Save the file before starting; after any key change, restart the app. No key is needed for a sample. On macOS, the login Keychain is an optional alternative when `.env` is absent; see [Features](docs/FEATURES.md).
+
 ```sh
-cp .env.example .env                                # then add MODEL_API_KEY= with your own Meta key
+cp .env.example .env                                # blank template; add the full key line and save before starting
 ./run.sh demo                                       # its own external demo map
 node scripts/demo.mjs scripts/story-talk.jsonl      # in a second terminal: the synthetic story, including optional app requests
 ```

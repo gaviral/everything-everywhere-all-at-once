@@ -5,6 +5,7 @@
 // does and the call as the core tells it (call-core.ts). The rail's Talk tab once the shell has one; until then
 // TalkRail.tsx stands in under the shell.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { DiscussionBadge, DiscussionBody } from "../bricks/contract";
 import type { AnchorContext, BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
@@ -122,8 +123,8 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
         onShow={() => actions.hint("Here on the map", `point:${turn.note?.thoughtId ?? turn.parts[0].thoughtId}`)}
         reply={noteOf && replying?.key !== turn.key ? () => setReplying(noteOf) : undefined} />}
       {turn.note && <div className="talk-on">on “{turn.note.quote}”</div>}
-      <div className="talk-words">
-        {turn.parts.map((part) => <span key={part.thoughtId} data-part={part.thoughtId} data-placed={String(part.placed)} data-turn-key={turn.key}>{part.text} </span>)}
+      <div className="talk-words">{turn.note && <DiscussionBadge thread={turn.note.threadId} />}
+        <DiscussionBody thread={turn.note?.threadId ?? ""}>{turn.parts.map((part) => <span key={part.thoughtId} data-part={part.thoughtId} data-placed={String(part.placed)} data-turn-key={turn.key}>{part.text} </span>)}</DiscussionBody>
       </div>
       {seenHere && <span className="talk-seen" title={`${seenHere.join(", ")} read up to here`}>
         {seenHere.map((name) => <span key={name} className="talk-seen-mark" aria-hidden="true">{initialOf(name)}</span>)}

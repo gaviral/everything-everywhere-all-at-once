@@ -61,7 +61,7 @@ try {
 
   // The map wires them: every point has a Move, every card title renames, every card takes a dropped point, and the
   // help list says both.
-  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8") + "\n" + readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8");
   assert.match(app, /<MovePoint thought=\{thought\} \/>/);
   assert.match(app, /<ThreadTitle thread=\{thread\} depth=\{depth\}[^>]*\/>/);
   assert.match(app, /useDropPoint\(thread\.id\)[\s\S]*\{\.\.\.drop\.props\}/);

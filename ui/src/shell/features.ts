@@ -7,10 +7,14 @@ import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 import { speechAvailable, watchSpeechAvailability } from "../speech-voice";
 
-export type BuiltIn = { id: "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "explicit-agreement" | "saved-answers" | "discussion-status" | "plugins" | "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "plugins", kind: "panel", defaultOn: false },
+  { id: "discussion-status", kind: "panel", defaultOn: false },
   { id: "reply-format", kind: "panel", defaultOn: false },
+  { id: "saved-answers", kind: "panel", defaultOn: false },
+  { id: "explicit-agreement", kind: "panel", defaultOn: false },
   { id: "full-content", kind: "panel", defaultOn: false },
   { id: "canvas-tools", kind: "panel", defaultOn: false },
   { id: "terse", kind: "view", defaultOn: false },
@@ -64,7 +68,7 @@ watchTalk(changed);
 watchSpeechAvailability(changed);
 
 function onOf(kept: Switches): ReadonlySet<BuiltIn["id"]> {
-  if (talkOn()) return new Set(["listening", ...(speechAvailable() && (kept["built-in-speech"] ?? true) ? ["built-in-speech" as const] : [])]);
+  if (talkOn()) return new Set([...(kept.plugins && kept.listening === false ? [] : ["listening" as const]), ...(kept.plugins ? ["plugins" as const] : []), ...(speechAvailable() && (kept["built-in-speech"] ?? true) ? ["built-in-speech" as const] : [])]);
   return new Set(BUILT_INS.filter((b) => featureAvailable(b.id) && (kept[b.id] ?? b.defaultOn)).map((b) => b.id));
 }
 

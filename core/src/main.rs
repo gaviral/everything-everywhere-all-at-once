@@ -4,8 +4,11 @@
 //! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
 mod annotate;
+mod discussion;
+mod research;
 mod apple;
 mod apps;
+mod app_blocks;
 mod asr;
 mod call;
 mod conversation;
@@ -17,6 +20,7 @@ mod storage;
 mod decided;
 mod dev_build;
 mod explain;
+mod evidence;
 mod find;
 mod flow;
 mod github;
@@ -139,6 +143,61 @@ pub struct Core {
 }
 
 impl Core {
+    fn save_choice(&self, actor: &str, enabled: bool, req: world::ChoiceRequest) -> Result<(), String> {
+        if !enabled { return Err("Choice map is off. Enable it in Features.".into()); }
+        let id_ok = |s: &str| !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b));
+        if !id_ok(&req.request_id) || !id_ok(&req.choice_id) || req.observed.chars().count() > protocol::THOUGHT_MAX { return Err("Invalid choice request.".into()); }
+        let before = self.snapshot();
+        if let Some((saved, _)) = before.choice_receipts.get(&(actor.into(), req.request_id.clone())) {
+            return if saved == &req { Ok(()) } else { Err("Request ID already used; start a new edit.".into()) };
+        }
+        let previous = before.choice_maps.iter().find(|c| c.id == req.choice_id);
+        if previous.map_or(0, |c| c.revision) != req.revision { return Err("Choice changed. Inspect it before retrying; draft kept.".into()); }
+        if previous.is_none() && (before.choice_maps.len() >= 20 || req.operation != "add" || req.role != "question") { return Err("Start with a Question; at most 20 choices per map.".into()); }
+        let mut choice = previous.cloned().unwrap_or(world::ChoiceMap { id: req.choice_id.clone(), revision: 0, relations: vec![], votes: vec![] });
+        choice.revision += 1;
+        match req.operation.as_str() {
+            "add" => {
+                if !id_ok(&req.relation_id) || choice.relations.len() >= 40 || choice.relations.iter().any(|r| r.id == req.relation_id) { return Err("Use a new relation ID; at most 40 relations per choice, including removed roles.".into()); }
+                let source = before.thoughts.iter().find(|t| t.id == req.source_id && t.text == req.observed).ok_or("Source missing or changed. Inspect original before retrying.")?;
+                match req.role.as_str() {
+                    "question" if choice.relations.iter().all(|r| r.role != "question") && req.option_id.is_none() => {},
+                    "option" if req.option_id.is_none() && choice.relations.iter().any(|r| r.role == "question" && r.removed_by.is_none()) => {},
+                    "supports" | "challenges" if req.option_id.as_ref().is_some_and(|id| choice.relations.iter().any(|r| &r.id == id && r.role == "option" && r.removed_by.is_none())) => {},
+                    _ => return Err("A reason must reference an active Option in this choice; cycles are not allowed.".into()),
+                }
+                choice.relations.push(world::ChoiceRelation { id: req.relation_id.clone(), source_id: source.id.clone(), role: req.role.clone(), option_id: req.option_id.clone(), actor: actor.into(), excerpt: source.text.clone(), speaker: source.speaker.clone(), revision: choice.revision, removed_by: None });
+            }
+            "choose" => {
+                if !choice.relations.iter().any(|r| r.id == req.relation_id && r.role == "option" && r.removed_by.is_none()) { return Err("Choose an active Option.".into()); }
+                choice.votes.retain(|v| v.actor != actor);
+                choice.votes.push(world::ChoiceVote { actor: actor.into(), option_id: req.relation_id.clone(), revision: choice.revision });
+            }
+            "remove" => {
+                let role = choice.relations.iter().find(|r| r.id == req.relation_id && r.removed_by.is_none()).ok_or("Role already removed or missing.")?.role.clone();
+                for r in &mut choice.relations {
+                    if r.removed_by.is_none() && (role == "question" || r.id == req.relation_id || r.option_id.as_ref() == Some(&req.relation_id)) { r.removed_by = Some(req.request_id.clone()); r.revision = choice.revision; }
+                }
+            }
+            "undo" => {
+                let receipt = req.undo_of.as_ref().and_then(|id| before.choice_receipts.get(&(actor.into(), id.clone()))).ok_or("Only your own removal can be undone.")?;
+                if receipt.0.operation != "remove" || receipt.0.choice_id != choice.id || receipt.1.revision != req.revision { return Err("Choice changed since removal; inspect it before undoing.".into()); }
+                for r in &mut choice.relations { if r.removed_by == req.undo_of { r.removed_by = None; r.revision = choice.revision; } }
+            }
+            _ => return Err("Unknown choice operation.".into()),
+        }
+        let valid = |w: &World| {
+            w.choice_maps.iter().find(|c| c.id == req.choice_id).map_or(0, |c| c.revision) == req.revision
+            && (previous.is_some() || w.choice_maps.len() < 20)
+            && (req.operation != "add" || w.thoughts.iter().any(|t| t.id == req.source_id && t.text == req.observed))
+            && !w.choice_receipts.contains_key(&(actor.into(), req.request_id.clone()))
+        };
+        match self.try_commit_if(valid, vec![Change::ChoiceMapSaved { choice, actor: actor.into(), request: req.clone() }]) {
+            Ok(true) => Ok(()), Ok(false) => Err("Choice or source changed. Inspect it before retrying; draft kept.".into()),
+            Err(_) => Err("Save unconfirmed. Draft kept; retry explicitly with the same request.".into()),
+        }
+    }
+
     /// Connection opt-in and source/revision checks are repeated under the World commit lock.
     fn set_action_estimate(&self, owner: &str, enabled: &std::sync::atomic::AtomicBool, request: world::EstimateRequest) -> Result<world::ActionEstimate, String> {
         use std::sync::atomic::Ordering;
@@ -298,7 +357,7 @@ impl Core {
         Arc::clone(&self.world.lock().unwrap())
     }
 
-    /// Applies a batch of changes together, journals each one, then tells every UI.
+    /// Appends one complete journal transaction, then applies its changes and tells every UI.
     pub fn commit(&self, changes: Vec<Change>) {
         self.commit_if(|_| true, changes);
     }
@@ -319,7 +378,7 @@ impl Core {
             if !still(&world) {
                 return Ok(false);
             }
-            let changes = world.with_pauses(changes, now_ms());
+            let changes = world.with_agreement_sources(world.with_pauses(changes, now_ms()));
             let mut journal = self.journal.lock().unwrap();
             if let Err(error) = journal.append_many(&changes) {
                 self.journal_save_failed(&error);
@@ -337,6 +396,25 @@ impl Core {
             }
         }
         Ok(true)
+    }
+
+    fn agree_thought(&self, speaker: &str, enabled: bool, request: protocol::AgreementRequest) {
+        let mut world = self.world.lock().unwrap();
+        let valid = enabled && speaker == normalized_speaker_name(speaker) && !speaker.is_empty()
+            && uuid::Uuid::parse_str(&request.request_id).is_ok() && request.thought_id.len() <= 128
+            && request.revision.len() <= 128
+            && world.can_agree(&request.thought_id, &request.revision, speaker, &request.request_id);
+        let change = Change::ThoughtAgreement { thought_id: request.thought_id.clone(), revision: request.revision,
+            speaker: speaker.into(), agree: request.agree, request_id: request.request_id.clone() };
+        let saved = valid && match self.journal.lock().unwrap().append(&change) {
+            Ok(()) => { Arc::make_mut(&mut world).apply(&change); true }
+            Err(error) => { self.journal_save_failed(&error); false }
+        };
+        // Under the same world lock: journal → initiating speaker's acknowledgment → shared Change.
+        // Other windows cannot see provisional consent, and source edits cannot race validation.
+        self.send_to(speaker, ServerMsg::AgreementResult { request_id: request.request_id, thought_id: request.thought_id,
+            ok: saved, message: if saved { "Agreement saved." } else { "Agreement not saved. Reopen the current thought and try again." }.into() });
+        if saved { self.send(ServerMsg::Change { change }); }
     }
 
     /// Journals a change that only the record keeps (an Explain answer, a mark on one): the world and the windows
@@ -1512,6 +1590,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/flow/library", get(flow::library).post(flow::save))
         .route("/helper-result", post(helper_result::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
+        .route("/evidence/{id}", get(evidence::read))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
         .layer(middleware::from_fn_with_state(core.clone(), gate))
@@ -2049,11 +2128,19 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     }
     // This window's number: guide messages, tours and jobs go to every window but this one (guide.rs).
     let window = guide::window();
+    let research_gate = Arc::new(Mutex::new(research::Session::default()));
+    let mut research_task: Option<tokio::task::JoinHandle<()>> = None;
+    let discussion_on = std::sync::atomic::AtomicBool::new(false);
+    let evidence_gate = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let evidence_state = Arc::new(Mutex::new(evidence::Session::default()));
+    let mut evidence_task: Option<tokio::task::JoinHandle<()>> = None;
+    let choice_maps_on = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let estimates_on = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let recipe_gate = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (recipe_tx, recipe_rx) = mpsc::unbounded_channel();
-    let forwarding = tokio::spawn(forward_with_estimates(out, updates, core.clone(), speaker.clone(), window, estimates_on.clone(), recipe_rx, recipe_gate.clone()));
+    let forwarding = tokio::spawn(forward_with_estimates(out, updates, core.clone(), speaker.clone(), window, estimates_on.clone(), choice_maps_on.clone(), evidence_gate.clone(), recipe_rx, recipe_gate.clone(), research_gate.clone()));
     let mut recipe_epoch = 0u64;
+    let mut connections_on = false;
     if here {
         core.hosts.lock().unwrap().insert(speaker.clone());
     }
@@ -2073,6 +2160,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let mut partner: Option<conversation::Here> = None;
     let review = Arc::new(Mutex::new(annotate::PointReview::default()));
     let mut shorter: Option<tokio::task::JoinHandle<()>> = None;
+
+    let saved_answers = Arc::new(Mutex::new(explain::SavedSession::default()));
+    let mut agreement_on = false;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -2084,6 +2174,76 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::CancelEvidence { request_id }) => {
+                    if let Some(task)=evidence_task.take(){task.abort();}
+                    evidence_gate.fetch_add(1,std::sync::atomic::Ordering::SeqCst);
+                    let mut state=evidence_state.lock().unwrap();let on=state.on;*state=evidence::Session::enabled(on);
+                    evidence::reply(&core,&speaker,window,&evidence_gate,&request_id,Ok(serde_json::json!({"cancelled":true})));
+                }
+                Ok(ClientMsg::ImageEvidence { on }) => {
+                    if let Some(task) = evidence_task.take() { task.abort(); }
+                    evidence_gate.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let allowed = on && here && !remote && !ai && !hosted() && core.room.is_none();
+                    *evidence_state.lock().unwrap() = evidence::Session::enabled(allowed);
+                    if on && !allowed { core.send_to(&speaker, ServerMsg::EvidenceResult { request_id: String::new(), ok: false, message: "Image evidence is available only on the local host's unshared map.".into(), data: serde_json::Value::Null, window, epoch: evidence_gate.load(std::sync::atomic::Ordering::SeqCst) }); }
+                }
+                Ok(ClientMsg::EvidenceChunk { request_id, target, title, index, data }) => {
+                    let result = evidence_state.lock().unwrap().chunk(&core, &request_id, &target, &title, index, &data);
+                    if let Err(message) = result { evidence::reply(&core, &speaker, window, &evidence_gate, &request_id, Err(message)); }
+                }
+                Ok(ClientMsg::ExtractEvidence { request_id }) => {
+                    if let Some(task) = evidence_task.take() { task.abort(); }
+                    let core = core.clone(); let state = evidence_state.clone(); let gate = evidence_gate.clone(); let actor = speaker.clone();
+                    let epoch = gate.load(std::sync::atomic::Ordering::SeqCst);
+                    evidence_task = Some(tokio::spawn(async move { evidence::extract(core, state, gate, epoch, actor, window, request_id).await; }));
+                }
+                Ok(ClientMsg::KeepEvidence { request_id, extraction_id, points }) => {
+                    let result = evidence::keep(&core, &speaker, &evidence_state.lock().unwrap(), &request_id, &extraction_id, points);
+                    evidence::reply(&core, &speaker, window, &evidence_gate, &request_id, result);
+                }
+                Ok(ClientMsg::UndoEvidence { request_id, keep_id }) => {
+                    let result = evidence::undo(&core, &speaker, evidence_state.lock().unwrap().on, &keep_id);
+                    evidence::reply(&core, &speaker, window, &evidence_gate, &request_id, result);
+                }
+                Ok(ClientMsg::ChoiceMaps { on }) => { choice_maps_on.store(on && !remote && !ai, std::sync::atomic::Ordering::SeqCst); }
+                Ok(ClientMsg::SaveChoice { request }) => {
+                    let request_id = request.request_id.clone();
+                    let result = core.save_choice(&speaker, choice_maps_on.load(std::sync::atomic::Ordering::SeqCst), request);
+                    let ok = result.is_ok();
+                    core.send_to(&speaker, ServerMsg::ChoiceResult { request_id, ok, message: result.err().unwrap_or("Choice saved to this map.".into()), window });
+                }
+                Ok(ClientMsg::ResearchFeature { on }) => {
+                    research_gate.lock().unwrap().invalidate(on);
+                    if let Some(task) = research_task.take() { task.abort(); }
+                }
+                Ok(ClientMsg::CancelResearch) => {
+                    let mut s = research_gate.lock().unwrap(); let on = s.on; s.invalidate(on);
+                    if let Some(task) = research_task.take() { task.abort(); }
+                }
+                Ok(ClientMsg::ResearchAction { request }) => {
+                    let mut gate = research_gate.lock().unwrap();
+                    let target = annotate::review_target(window);
+                    if request.op == "run" {
+                        let prepared = if !gate.on { Err("Research this question is off.") } else if gate.busy { Err("One research request at a time. Cancel or wait.") } else { research::source(&core.snapshot(), &speaker, &request) };
+                        match prepared {
+                            Ok(record) => {
+                                gate.busy = true; gate.preview = None; gate.epoch += 1;
+                                if let Some(task) = research_task.take() { task.abort(); }
+                                research_task = Some(tokio::spawn(research::run(core.clone(), research_gate.clone(), record, gate.epoch, target)));
+                            }
+                            Err(message) => core.send_to(&target, ServerMsg::ResearchResult { request_id: request.request_id, ok: false, message: message.into(), answer: None, epoch: gate.epoch }),
+                        }
+                    } else {
+                        let result = research::mutate(&core, &gate, &speaker, &request);
+                        core.send_to(&target, ServerMsg::ResearchResult { request_id: request.request_id, ok: result.is_ok(), message: result.as_ref().err().cloned().unwrap_or_else(|| "Research saved to this map.".into()), answer: result.ok(), epoch: gate.epoch });
+                    }
+                }
+                Ok(ClientMsg::DiscussionFeature { on }) => { discussion_on.store(on, std::sync::atomic::Ordering::SeqCst); }
+                Ok(ClientMsg::SetDiscussion { request_id, thread_id, status, observed_revision }) => {
+                    let result = discussion::set(&core, &discussion_on, &speaker, &request_id, &thread_id, &status, observed_revision);
+                    let current = core.snapshot().discussions.iter().find(|s| s.thread_id == thread_id).cloned();
+                    core.send_to(&annotate::review_target(window), ServerMsg::DiscussionResult { request_id, ok: result.is_ok(), message: result.as_ref().err().cloned().unwrap_or_else(|| "Discussion saved.".into()), discussion: result.ok().or(current) });
+                }
                 Ok(ClientMsg::ActionEstimates { on }) => { estimates_on.store(on, std::sync::atomic::Ordering::SeqCst); }
                 Ok(ClientMsg::SetActionEstimate { request }) => {
                     let request_id = request.request_id.clone();
@@ -2130,6 +2290,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                         }
                     }
                 }
+                Ok(ClientMsg::AgreementSwitch { on }) => { agreement_on = on && !ai && !remote; }
+                Ok(ClientMsg::AgreeThought(request)) => core.agree_thought(&speaker, agreement_on && !ai && !remote, request),
                 Ok(ClientMsg::Resume { pause_id, request_id }) => core.queue_command(&speaker, placer::Job::Resume { speaker: speaker.clone(), pause_id, request_id }),
                 Ok(ClientMsg::PauseChoice { pause_id, later }) => core.pause_choice(&speaker, &pause_id, later),
                 Ok(ClientMsg::RetryPlacement { id }) => {
@@ -2165,6 +2327,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     // A refusal without opt-in is visible, but cannot opt this connection in.
                     let _ = recipe_tx.send((epoch, ServerMsg::RecipeResult { request_id: save.request_id, app_id, message }));
                 }
+                Ok(ClientMsg::ConnectionsSwitch { on }) => connections_on = on,
+                Ok(ClientMsg::AppConnection { request_id, request }) => {
+                    let reply = app_blocks::handle(&core, &request_id, request, here && !ai && !remote, connections_on).await;
+                    core.send_to(&annotate::review_target(window), ServerMsg::AppConnectionResult { reply });
+                }
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
                 Ok(ClientMsg::DecideApp { build_id, keep }) => {
                     catalog::clicked(&core, &speaker);
@@ -2189,8 +2356,14 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
-                Ok(ClientMsg::Explain { id, text, context, thread_id, reuse }) => {
-                    tokio::spawn(explain::run(core.clone(), id, text, context, thread_id, speaker.clone(), reuse));
+                Ok(ClientMsg::SavedAnswers { on }) => saved_answers.lock().unwrap().switch(on && !ai && !remote),
+                Ok(ClientMsg::KeepAnswer { id, extra }) => {
+                    if extra.is_empty() { explain::keep(&core, &speaker, &saved_answers, &id); }
+                    else { core.send_to(&speaker, ServerMsg::Notice { message: "Keep refused: send only the served request ID.".into() }); }
+                }
+                Ok(ClientMsg::KeptAnswerVisibility { id, revision, removed }) => explain::visibility(&core, &speaker, &saved_answers, &id, revision, removed),
+                Ok(ClientMsg::Explain { id, text, context, thread_id, reuse, source }) => {
+                    explain::request(core.clone(), speaker.clone(), saved_answers.clone(), id, text, context, thread_id, reuse, source);
                 }
                 Ok(ClientMsg::WhyHere { thought_id }) => {
                     tokio::spawn(whyhere::run(core.clone(), speaker.clone(), thought_id));
@@ -2320,11 +2493,19 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
             _ => {}
         }
     }
+    if let Some(task) = evidence_task.take() { task.abort(); }
+    evidence_gate.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    *evidence_state.lock().unwrap() = evidence::Session::default();
+    choice_maps_on.store(false, std::sync::atomic::Ordering::SeqCst);
+    research_gate.lock().unwrap().invalidate(false);
+    if let Some(task) = research_task { task.abort(); }
+    discussion_on.store(false, std::sync::atomic::Ordering::SeqCst);
     estimates_on.store(false, std::sync::atomic::Ordering::SeqCst);
     review.lock().unwrap().switch(false);
     if let Some(task) = shorter { task.abort(); }
     core.alias_switch(&speaker, window, false);
     recipe_gate.store(0, std::sync::atomic::Ordering::SeqCst);
+    saved_answers.lock().unwrap().switch(false);
     forwarding.abort();
     apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
@@ -2338,10 +2519,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 #[cfg(test)]
 async fn forward(out: SplitSink<WebSocket, Message>, updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
     let (_, recipes) = mpsc::unbounded_channel();
-    forward_with_estimates(out, updates, core, speaker, window, Arc::new(std::sync::atomic::AtomicBool::new(false)), recipes, Arc::new(std::sync::atomic::AtomicU64::new(0))).await;
+    forward_with_estimates(out, updates, core, speaker, window, Arc::new(std::sync::atomic::AtomicBool::new(false)), Arc::new(std::sync::atomic::AtomicBool::new(false)), Arc::new(std::sync::atomic::AtomicU64::new(0)), recipes, Arc::new(std::sync::atomic::AtomicU64::new(0)), Arc::new(Mutex::new(research::Session::default()))).await;
 }
 
-async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64, estimates_on: Arc<std::sync::atomic::AtomicBool>, mut recipes: mpsc::UnboundedReceiver<(u64, ServerMsg)>, recipe_gate: Arc<std::sync::atomic::AtomicU64>) {
+async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64, estimates_on: Arc<std::sync::atomic::AtomicBool>, choice_maps_on: Arc<std::sync::atomic::AtomicBool>, evidence_gate: Arc<std::sync::atomic::AtomicU64>, mut recipes: mpsc::UnboundedReceiver<(u64, ServerMsg)>, recipe_gate: Arc<std::sync::atomic::AtomicU64>, research_gate: Arc<Mutex<research::Session>>) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
     let mut replayed = 0usize;
     loop {
@@ -2367,6 +2548,9 @@ async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut upda
                 // Consume all pre-replay messages, forwarding non-jobs with the usual privacy rules.
                 if to.as_deref().is_some_and(|to| to != speaker && to != annotate::review_target(window)) { continue; }
                 match message {
+                    ServerMsg::EvidenceResult { window: target, epoch, .. } if *target != window || *epoch != evidence_gate.load(std::sync::atomic::Ordering::SeqCst) => continue,
+                    ServerMsg::ChoiceResult { window: target, ok, .. } if *target != window || (*ok && !choice_maps_on.load(std::sync::atomic::Ordering::SeqCst)) => continue,
+                    ServerMsg::ResearchResult { epoch, ok, .. } if { let s = research_gate.lock().unwrap(); (*ok && !s.on) || *epoch != s.epoch } => continue,
                     ServerMsg::ActionEstimateResult { window: target, ok, .. } if *target != window || (*ok && !estimates_on.load(std::sync::atomic::Ordering::SeqCst)) => continue,
                     ServerMsg::AliasResult { window: origin, .. } if *origin != window || !core.alias_enabled(&speaker, window) => continue,
                     ServerMsg::ReplyFormatState { window: origin, .. } | ServerMsg::PartnerReply { window: origin, .. }
@@ -2511,6 +2695,175 @@ mod tests {
         let (journal, _) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = mpsc::unbounded_channel();
         (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
+    }
+
+    fn asks_agreement_fixture() -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
+        let (core, queue, path) = keyless(World::default());
+        let mut thought = said("p1", "Helper", "T1", 1);
+        thought.text = "Plant herbs by the window.".into(); thought.point = thought.text.clone();
+        core.commit(vec![Change::ThreadAdded { thread: thread("T1", 1, "") }, Change::AiJoined { speaker: "Helper".into() }, Change::ThoughtAdded { thought }]);
+        (core, queue, path)
+    }
+
+    fn asks_agreement_request(core: &Core, id: &str, agree: bool) -> crate::protocol::AgreementRequest {
+        crate::protocol::AgreementRequest { thought_id: id.into(), revision: core.snapshot().agreements.get(id).map(|a|a.revision.clone()).unwrap_or_default(), request_id: uuid::Uuid::new_v4().to_string(), agree }
+    }
+
+    #[test]
+    fn asks_agreement_two_speakers_restart_and_mirror_fixture() {
+        let (core, _queue, path) = asks_agreement_fixture();
+        let initial = core.snapshot();
+        let mut updates = core.updates.subscribe();
+        assert!(initial.agreements["p1"].agreed_by.is_empty(), "AI authorship implies no consent");
+        let mut changes = Vec::new();
+        let mut worlds = Vec::new();
+        let mut receipts = Vec::new();
+        for (speaker, agree) in [("A", true), ("B", true), ("A", false)] {
+            let request = asks_agreement_request(&core, "p1", agree);
+            let request_id = request.request_id.clone();
+            core.agree_thought(speaker, true, request);
+            let ack = updates.try_recv().unwrap();
+            assert_eq!(ack.to.as_deref(), Some(speaker));
+            assert!(matches!(&ack.message, ServerMsg::AgreementResult { ok: true, request_id: id, .. } if *id == request_id));
+            receipts.push(serde_json::to_value(&ack.message).unwrap());
+            let shared = updates.try_recv().unwrap();
+            assert!(shared.to.is_none());
+            let ServerMsg::Change { change } = shared.message else { panic!("shared change follows acknowledgment"); };
+            assert!(matches!(change, Change::ThoughtAgreement {..}));
+            changes.push(change);
+            // A restart at the exact acknowledgment already has the same durable state.
+            let (_, restarted) = crate::Journal::open(&path).unwrap();
+            assert_eq!(serde_json::to_value(&restarted).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap());
+            worlds.push(core.snapshot());
+            if speaker == "A" && agree {
+                assert_eq!(core.snapshot().agreements["p1"].agreed_by, ["A"]);
+                let before = serde_json::to_value(&*core.snapshot()).unwrap();
+                let _ = crate::call::read(&core, "B", "p1");
+                let _ = super::subscribe_catch_up(&core, "B");
+                assert_eq!(serde_json::to_value(&*core.snapshot()).unwrap(), before, "B viewing/reading does not agree");
+            }
+        }
+        assert_eq!(core.snapshot().agreements["p1"].agreed_by, ["B"]);
+        assert_eq!(core.snapshot().thoughts[0].text, initial.thoughts[0].text);
+        assert_eq!(core.snapshot().thoughts[0].decided, initial.thoughts[0].decided);
+        assert!(core.snapshot().actions.is_empty());
+        if let Ok(dir) = std::env::var("E2A2O_AGREEMENT_FIXTURE_DIR") {
+            std::fs::write(std::path::Path::new(&dir).join("agreement.json"), serde_json::to_vec(&serde_json::json!({"initial":initial,"changes":changes,"worlds":worlds,"receipts":receipts,"world":core.snapshot()})).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn asks_agreement_rejects_off_duplicate_identity_and_stale_sources() {
+        let (core, _queue, path) = asks_agreement_fixture();
+        let old = asks_agreement_request(&core, "p1", true);
+        let old_id = old.request_id.clone();
+        let old_revision = old.revision.clone();
+        core.agree_thought("A", false, asks_agreement_request(&core, "p1", true));
+        core.agree_thought("Helper", true, asks_agreement_request(&core, "p1", true));
+        assert!(core.snapshot().agreements["p1"].agreed_by.is_empty());
+        let forged = serde_json::json!({"type":"agree_thought","thought_id":"p1","revision":old_revision,"request_id":old_id,"agree":true,"speaker":"B"});
+        assert!(serde_json::from_value::<crate::protocol::ClientMsg>(forged).is_err(), "caller cannot submit another identity");
+        core.agree_thought("A", true, old);
+        core.agree_thought("A", true, asks_agreement_request(&core, "p1", false));
+        core.agree_thought("A", true, crate::protocol::AgreementRequest { thought_id:"p1".into(), revision:old_revision.clone(),request_id:old_id.clone(),agree:true });
+        assert!(core.snapshot().agreements["p1"].agreed_by.is_empty(), "replayed Agree cannot undo a later Withdraw");
+        let (_, restarted) = crate::Journal::open(&path).unwrap();
+        assert!(!restarted.can_agree("p1", &old_revision, "A", &old_id), "duplicate suppressed after restart too");
+        core.agree_thought("B", true, asks_agreement_request(&core, "p1", true));
+        core.agree_thought("B", false, asks_agreement_request(&core, "p1", false));
+        assert_eq!(core.snapshot().agreements["p1"].agreed_by, ["B"], "off retains records and refuses withdrawal");
+        // Decision flags, AI rename marks, read/seen and placement elsewhere are independent.
+        core.commit(vec![Change::ThoughtDecided {thought_id:"p1".into(),decided:true}, Change::ThreadRetitled {thread_id:"T1".into(),title:"Plants".into(),was:"T1".into()}]);
+        assert_eq!(core.snapshot().agreements["p1"].agreed_by, ["B"]);
+        let stale = asks_agreement_request(&core, "p1", true);
+        core.commit(vec![Change::ThoughtRepointed {thought_id:"p1".into(),point:"Use a sunny shelf.".into()}]);
+        assert!(core.snapshot().agreements["p1"].agreed_by.is_empty());
+        let mut updates = core.updates.subscribe();
+        core.agree_thought("A", true, stale);
+        assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::AgreementResult {ok:false,..}));
+        core.commit(vec![Change::ThoughtRepointed {thought_id:"p1".into(),point:"Plant herbs by the window.".into()}]);
+        assert_ne!(core.snapshot().agreements["p1"].revision, old_revision, "ABA edits cannot reuse an old revision");
+        let replacement_stale = asks_agreement_request(&core, "p1", true);
+        let replacement = core.snapshot().thoughts[0].clone();
+        core.commit(vec![Change::ThoughtSkipped {thought_id:"p1".into()}, Change::ThoughtAdded {thought:replacement}]);
+        core.agree_thought("A", true, replacement_stale);
+        assert!(core.snapshot().agreements["p1"].agreed_by.is_empty(), "same-id source replacement is stale");
+    }
+
+    #[test]
+    fn asks_agreement_failed_journal_write_never_broadcasts_or_acknowledges_success() {
+        let (core, _queue, path) = asks_agreement_fixture();
+        let before = serde_json::to_value(&*core.snapshot()).unwrap();
+        *core.journal.lock().unwrap() = crate::Journal::read_only(&path).unwrap();
+        let mut updates = core.updates.subscribe();
+        core.agree_thought("A", true, asks_agreement_request(&core, "p1", true));
+        assert_eq!(serde_json::to_value(&*core.snapshot()).unwrap(), before);
+        let mut refused = false;
+        while let Ok(update) = updates.try_recv() {
+            match update.message {
+                ServerMsg::Change {change:Change::ThoughtAgreement {..}} | ServerMsg::AgreementResult {ok:true,..} => panic!("failed write fabricated agreement"),
+                ServerMsg::AgreementResult {ok:false,..} => refused = true,
+                _ => {}
+            }
+        }
+        assert!(refused);
+        let (_, restarted) = crate::Journal::open(&path).unwrap();
+        assert_eq!(serde_json::to_value(&restarted).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn asks_agreement_connection_opt_in_and_server_identity() {
+        use tokio_tungstenite::tungstenite::Message;
+        let (core, _queue, _path) = asks_agreement_fixture();
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await.unwrap(); });
+        let (mut a, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=A")).await.unwrap();
+        let (mut b, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=B")).await.unwrap();
+        for window in [&mut a, &mut b] {
+            while received(window).await["type"] != "snapshot" {}
+        }
+        let packet = |request: crate::protocol::AgreementRequest| serde_json::json!({"type":"agree_thought","thought_id":request.thought_id,"revision":request.revision,"request_id":request.request_id,"agree":request.agree});
+        let mut request = packet(asks_agreement_request(&core,"p1",true));
+        a.send(Message::Text(request.to_string().into())).await.unwrap();
+        loop { let msg=received(&mut a).await; if msg["type"]=="agreement_result" { assert_eq!(msg["ok"],false); break; } }
+        a.send(Message::Text(serde_json::json!({"type":"agreement_switch","on":true}).to_string().into())).await.unwrap();
+        // Unknown identity fields are refused, never interpreted as B's consent. A heartbeat fences parsing.
+        request["speaker"] = "B".into();
+        a.send(Message::Text(request.to_string().into())).await.unwrap();
+        a.send(Message::Text(serde_json::json!({"type":"heartbeat","id":"fence"}).to_string().into())).await.unwrap();
+        while received(&mut a).await["type"]!="heartbeat" {}
+        assert!(core.snapshot().agreements["p1"].agreed_by.is_empty());
+        request.as_object_mut().unwrap().remove("speaker");
+        a.send(Message::Text(request.to_string().into())).await.unwrap();
+        loop { let msg=received(&mut a).await; if msg["type"]=="agreement_result" { assert_eq!(msg["ok"],true); break; } }
+        loop { let msg=received(&mut b).await; if msg["type"]=="change" && msg["change"]["type"]=="thought_agreement" { assert_eq!(msg["change"]["speaker"],"A"); break; } }
+        // A's opt-in grants B no authority; B must opt in on B's own connection.
+        b.send(Message::Text(packet(asks_agreement_request(&core,"p1",true)).to_string().into())).await.unwrap();
+        loop { let msg=received(&mut b).await; if msg["type"]=="agreement_result" { assert_eq!(msg["ok"],false); break; } }
+        a.send(Message::Text(serde_json::json!({"type":"agreement_switch","on":false}).to_string().into())).await.unwrap();
+        a.send(Message::Text(packet(asks_agreement_request(&core,"p1",false)).to_string().into())).await.unwrap();
+        loop { let msg=received(&mut a).await; if msg["type"]=="agreement_result" { assert_eq!(msg["ok"],false); break; } }
+        assert_eq!(core.snapshot().agreements["p1"].agreed_by,["A"]);
+        a.close(None).await.unwrap(); b.close(None).await.unwrap();
+        server.abort(); let _=server.await;
+    }
+
+    #[test]
+    fn asks_agreement_old_journals_and_snapshots_load_empty() {
+        let (core, _queue, _) = asks_agreement_fixture();
+        let mut snapshot = serde_json::to_value(&*core.snapshot()).unwrap();
+        snapshot.as_object_mut().unwrap().remove("agreements");
+        let old: World = serde_json::from_value(snapshot).unwrap();
+        assert!(old.agreements.is_empty());
+        let path = std::env::temp_dir().join(format!("e2a2o-agreement-legacy-{}.jsonl",uuid::Uuid::new_v4()));
+        std::fs::write(&path, serde_json::to_string(&Change::ThoughtAdded {thought:old.thoughts[0].clone()}).unwrap()+"\n").unwrap();
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        assert!(world.agreements.is_empty());
+        let core = Core::test(journal, world);
+        core.agree_thought("A", true, asks_agreement_request(&core, "p1", true));
+        assert_eq!(core.snapshot().agreements["p1"].agreed_by,["A"]);
     }
 
     #[test]
@@ -2678,7 +3031,9 @@ mod tests {
         super::mark(&core, "Ana", "explain".into(), "../../etc".into(), true);
         super::mark(&core, "Ana", "explain".into(), "x".repeat(81), true);
         let lines: Vec<serde_json::Value> =
-            std::fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+            std::fs::read_to_string(&path).unwrap().lines()
+                .flat_map(|line| crate::world::journal_record(line.as_bytes(), true).unwrap())
+                .map(|(_, value)| value).collect();
         let marks: Vec<(&str, &str, bool)> = lines
             .iter()
             .filter(|l| l["type"] == "answer_marked")
@@ -4160,6 +4515,16 @@ mod tests {
         let change = received(&mut window).await;
         assert_eq!((change["type"].as_str(), change["change"]["type"].as_str()), (Some("change"), Some("thought_added")));
         assert_eq!(core.snapshot().thoughts[0].text, "the rent is due Friday");
+        // A new source gets its own revision before correction feedback; the stamp grants nobody consent.
+        let thought_id = change["change"]["thought"]["id"].as_str().unwrap();
+        let source = received(&mut window).await;
+        let world = core.snapshot();
+        let agreement = &world.agreements[thought_id];
+        assert!(uuid::Uuid::parse_str(&agreement.revision).is_ok(), "new source has a valid revision");
+        assert!(agreement.agreed_by.is_empty(), "source revision implies no agreement");
+        assert_eq!(source, serde_json::json!({"type": "change", "change": {
+            "type": "agreement_source", "thought_id": thought_id, "revision": agreement.revision
+        }}));
         // How long that turn can be corrected, and that undoing it moves nobody (catalog.rs `Correctable`).
         assert_eq!(received(&mut window).await, serde_json::json!({"type": "correctable", "for_ms": 120_000, "back_to": null}));
         window.send(Message::Text(r#"{"type":"listen","on":true}"#.into())).await.unwrap();
@@ -5032,5 +5397,65 @@ mod c10_estimates_tests {
         broken.journal = Mutex::new(Journal::read_only(&broken_path).unwrap());
         assert!(broken.set_action_estimate("you", &enabled, request("a", 0, Some(15))).is_err());
         assert!(broken.snapshot().action_estimates.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod c10_arguments_tests {
+    use super::*;
+    fn fixture() -> (Core, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("c10-arguments-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        for (id, text, speaker) in [("q","How should we travel?","Sam"),("a","Take the train","Sam"),("b","Take the bus","Lee"),("pro","Train is quicker","Lee"),("con","Train costs more","Sam")] {
+            core.commit(vec![Change::ThoughtAdded { thought: world::Thought { id:id.into(),text:text.into(),speaker:speaker.into(),point:text.into(),thread_id:None,placed:false,unclear:String::new(),guess:String::new(),heard:String::new(),fixed:String::new(),complete:true,at_ms:1,place_ms:None,decided:false } }]);
+        }
+        (core,path)
+    }
+    fn add(core:&Core,id:&str,role:&str,option:Option<&str>) -> world::ChoiceRequest {
+        let w=core.snapshot();
+        world::ChoiceRequest {request_id:uuid::Uuid::new_v4().to_string(),choice_id:"travel".into(),revision:w.choice_maps.first().map_or(0,|c|c.revision),operation:"add".into(),relation_id:id.into(),source_id:id.into(),observed:w.thoughts.iter().find(|t|t.id==id).unwrap().text.clone(),role:role.into(),option_id:option.map(Into::into),undo_of:None}
+    }
+    #[test]
+    fn c10_arguments_roles_votes_remove_undo_replay_and_refusals() {
+        let (core,path)=fixture();
+        let first=add(&core,"q","question",None);
+        assert!(core.save_choice("Sam",false,first.clone()).is_err());
+        core.save_choice("Sam",true,first.clone()).unwrap();
+        core.save_choice("Sam",true,first.clone()).unwrap();
+        assert_eq!(core.snapshot().choice_maps[0].revision,1);
+        for (id,role,opt) in [("a","option",None),("b","option",None),("pro","supports",Some("a")),("con","challenges",Some("a"))] {core.save_choice("Sam",true,add(&core,id,role,opt)).unwrap();}
+        let words=serde_json::to_string(&core.snapshot().thoughts).unwrap();
+        let mut req=add(&core,"pro","supports",Some("pro"));
+        assert!(core.save_choice("Sam",true,req.clone()).is_err(),"reason cannot target another reason or itself");
+        req.option_id=Some("missing".into()); assert!(core.save_choice("Sam",true,req.clone()).is_err());
+        req=add(&core,"q","option",None);req.observed="changed".into();assert!(core.save_choice("Sam",true,req).is_err());
+        for (actor,id) in [("Sam","a"),("Lee","b")] {
+            let mut req=add(&core,id,"option",None);req.operation="choose".into();core.save_choice(actor,true,req).unwrap();
+        }
+        assert_eq!(core.snapshot().choice_maps[0].votes.len(),2);
+        assert!(core.snapshot().thoughts.iter().all(|t|!t.decided));
+        let mut req=add(&core,"a","option",None);req.operation="remove".into();let removal=req.request_id.clone();
+        core.save_choice("Sam",true,req.clone()).unwrap();
+        assert_eq!(core.snapshot().choice_maps[0].relations.iter().filter(|r|r.removed_by.is_some()).count(),3);
+        req.operation="undo".into();req.request_id=uuid::Uuid::new_v4().to_string();req.undo_of=Some(removal);req.revision+=1;
+        assert!(core.save_choice("Lee",true,req.clone()).is_err());
+        core.save_choice("Sam",true,req).unwrap();
+        assert!(core.snapshot().choice_maps[0].relations.iter().all(|r|r.removed_by.is_none()));
+        assert!(core.save_choice("Sam",true,first).is_ok(),"old exact request remains idempotent");
+        assert_eq!(serde_json::to_string(&core.snapshot().thoughts).unwrap(),words);
+        let (_,replayed)=Journal::open(&path).unwrap();
+        assert_eq!(replayed.choice_maps,core.snapshot().choice_maps);
+        let stale=add(&core,"q","option",None);let mut bad=stale.clone();bad.revision-=1;assert!(core.save_choice("Sam",true,bad).is_err());
+    }
+    #[test]
+    fn c10_arguments_bounds_and_write_failure() {
+        let (core,_)=fixture();core.save_choice("Sam",true,add(&core,"q","question",None)).unwrap();
+        for n in 1..40 {let mut req=add(&core,"a","option",None);req.relation_id=format!("option-{n}");core.save_choice("Sam",true,req).unwrap();}
+        assert!(core.save_choice("Sam",true,add(&core,"b","option",None)).is_err());
+        let (mut broken,path)=fixture();
+        broken.journal=Mutex::new(Journal::read_only(&path).unwrap());
+        assert!(broken.save_choice("Sam",true,add(&broken,"q","question",None)).is_err());
+        assert!(broken.snapshot().choice_maps.is_empty(),"failed journal write cannot become saved state");
     }
 }

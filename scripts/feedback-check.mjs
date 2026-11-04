@@ -103,7 +103,7 @@ if (!/\.mic[^{]*:active[^{]*\{[^}]*transform:\s*none[^}]*opacity:\s*\.75/.test(r
 if (!/\*\s*\{\s*animation:\s*none !important;\s*transition:\s*none !important;/.test(reduced)) problems.push("styles.css: Reduce Motion must stop every animation and transition");
 
 // 4. A suggestion or action you dismiss fades out, so the rows below close the gap instead of jumping.
-const app = src["App.tsx"];
+const app = read("ui/src/MapCards.tsx");
 const row = (start) => app.slice(app.indexOf(start), app.indexOf(">", app.indexOf(start)));
 for (const [name, start] of [["suggestion", "<motion.div key={s.id}"], ["action", "<motion.div ref={row}"]]) {
   if (!/\bexit=\{/.test(row(start))) problems.push(`App.tsx: a dismissed ${name} row vanishes (no exit)`);

@@ -15,7 +15,7 @@ try {
   // (bug hunt 17); its buttons and marks keep theirs. The point's click handler asks `closest` with this list.
   const own = new Set(POINT_OWN.split(",").map((s) => s.trim()));
   for (const control of ["button", "input", ".move-menu", "[data-tip]"]) assert.ok(own.has(control), control);
-  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /\.closest\(POINT_OWN\)/);
+  assert.match(readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8"), /\.closest\(POINT_OWN\)/);
 
   // A point opens its words only when they say more than the point: case and punctuation don't count.
   assert.equal(saidDiffers("Okay so the deadline is tomorrow at 9 PM", "Deadline tomorrow 9 PM"), true, "a short version");
@@ -67,7 +67,7 @@ try {
   }
 
   // The words behind a point open by a real disclosure button (name, expanded state, what it opens), not a bare <li>.
-  const point = read("App.tsx").match(/const Point = memo[\s\S]*?\n\}\);/)[0];
+  const point = read("MapCards.tsx").match(/const Point = memo[\s\S]*?\n\}\);/)[0];
   assert.match(point, /<button type="button" className="said-toggle" aria-expanded=\{open\} aria-controls=\{`said-\$\{thought\.id\}`\}[^>]*>(Words said|\{differ \? "Words said" : "Why here"\})<\/button>/, "a Words said button (Why here when the words only repeat the point)");
   assert.match(point, /id=\{`said-\$\{thought\.id\}`\}/, "the words it controls carry the id");
   // The button stays the screen readers' path; Enter or Space on the focused point itself does what a click does, as

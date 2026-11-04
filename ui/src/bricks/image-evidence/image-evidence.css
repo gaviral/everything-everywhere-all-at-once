@@ -1,0 +1,15 @@
+.image-evidence { color: var(--ink); max-width: min(35rem,calc(100vw - 2rem)); overflow-wrap: anywhere; }
+.image-evidence summary { padding: .65rem; cursor: pointer; font-weight: 600; }
+.image-evidence-body { max-height: 46dvh; overflow: auto; padding: .75rem; scroll-padding: .5rem; overscroll-behavior: contain; }
+.image-evidence label { display: grid; gap: .5rem; margin: .75rem 0; }
+.image-evidence input, .image-evidence select, .image-evidence textarea { min-width: 0; max-width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--bg); }
+.image-evidence select,.image-evidence textarea { width: 100%; padding: .5rem; }
+.image-evidence button { min-height: 44px; max-width: 100%; white-space: normal; margin: .25rem; }
+.image-evidence figure { margin: .5rem 0; }
+.image-evidence img { max-width: 100%; max-height: 20rem; object-fit: contain; display: block; }
+.image-evidence-point { border-top: 1px solid currentColor; padding-block: .5rem; }
+.image-evidence textarea { min-height: 5rem; }
+.image-evidence-region { display: inline-block; position: relative; max-width: 100%; }
+.image-evidence-region img { width: 100%; height: auto; max-height: none; }
+.image-evidence-region span { position: absolute; box-sizing: border-box; border: 3px dashed currentColor; pointer-events: none; }
+.image-evidence :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

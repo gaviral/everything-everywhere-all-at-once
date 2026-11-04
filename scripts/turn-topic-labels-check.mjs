@@ -1,11 +1,14 @@
 // Synthetic same-turn memberships in the mounted production UI. No live core or account.
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ready, standInCore, openPage, sleep } from './headless.mjs';
 
 if (ready()) throw new Error(ready());
-const shots = process.env.SHOTS || 'artifacts/topic-labels';
+const shots = process.env.SHOTS || mkdtempSync(join(tmpdir(), 'e2a2o-topic-labels-'));
 mkdirSync(shots, { recursive: true });
+console.log(`turn-topic-labels evidence: ${shots}`);
 const at = Date.UTC(2026, 10, 3, 12);
 const draft = 'Keep this exact unsent draft: blue samples + rent?  ';
 const longTitle = 'Try blue by the window before choosing the paint for the shared room — daylight and sunset comparison';

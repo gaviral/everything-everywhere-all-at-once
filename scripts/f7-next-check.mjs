@@ -99,7 +99,9 @@ const clean = async browser => {
   assert.deepEqual(await browser.evaluate("__errors"), [], "no browser errors");
   assert.ok(browser.requests.every(url => url.startsWith(base + "/") || url.startsWith(base.replace("http:", "ws:") + "/") || url.startsWith("data:")), "no external or provider requests");
   assert.ok(browser.requests.every(url => !/approve|connector|\/import|warm/i.test(new URL(url).pathname)), "no approval, connector or warm request");
-  assert.ok(!core.heard.some(message => /approve|connect|import|sample|listen|position|next-steps/.test(message.type) || message.type === "text"), "view never sends an approval, model, capture, device or connector action");
+  // Connection capability-off handshake changes only this socket's opt-in, never map data or a connector.
+  const mutations = core.heard.filter(message => !(message.type === "connections_switch" && message.on === false && Object.keys(message).length === 2));
+  assert.ok(!mutations.some(message => /approve|connect|import|sample|listen|position|next-steps/.test(message.type) || message.type === "text"), "view never sends an approval, model, capture, device or connector action");
 };
 const shot = async (browser, name) => {
   const { data } = await browser.page("Page.captureScreenshot", { format: "png" });

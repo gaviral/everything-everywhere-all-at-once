@@ -1,6 +1,7 @@
+import { usePluginState } from "../contract";
 import { useEffect, useId, useRef, useState } from "react";
 import type { BrickProps } from "../contract";
-import "./countdown.css";
+import pluginStyle0 from "./countdown.css?inline";
 
 // Your deadlines in a corner, nearest first: the next two as "<label> in 21 h 14 m" (a phone shows the nearest only),
 // amber in the last three hours. A click or Enter opens a small editor; every change is kept in this browser at once
@@ -41,9 +42,9 @@ function localTime(at: string) {
 }
 
 export default function Countdown(_props: BrickProps) {
-  const [deadlines, setDeadlines] = useState(readDeadlines);
+  const [deadlines, setDeadlines] = usePluginState('countdown/index.tsx:deadlines', readDeadlines);
   const [now, setNow] = useState(Date.now);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePluginState('countdown/index.tsx:open', false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const editor = useRef<HTMLDivElement>(null);
@@ -153,3 +154,6 @@ export default function Countdown(_props: BrickProps) {
     </div>}
   </div>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

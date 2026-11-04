@@ -441,3 +441,8 @@ html.shell2 .ai-setup :is(p, li) { font-size: 15px; line-height: 1.5; }
 html.shell2 .ai-setup ol { padding-left: 22px; }
 html.shell2 .ai-setup li + li { margin-top: 12px; }
 html.shell2 .ai-setup .shell-btn { min-height: 44px; }
+/* Plugins keeps its Load/Unload controls and the host input reachable together. */
+html.shell2 .shell-rail[data-page="plugins"] .shell-tabs { overflow-x: auto; }
+@media (max-width: 700px) {
+  html.shell2 .shell-rail[data-page="plugins"] { bottom: max(88px, env(safe-area-inset-bottom)); height: min(65dvh, calc(100dvh - 170px)); }
+}

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { BrickProps } from "../contract";
-import "./brick-chip.css";
+import pluginStyle0 from "./brick-chip.css?inline";
 
 // A small chip on each point that came while this brick is on, anyone's, naming the brick: at the head of the point's
 // own Delete and Move, so it shows when they do (pointing at the point, or tapping it on a phone). Which brick acted on
@@ -42,3 +42,6 @@ export default function BrickChip({ on, brick }: BrickProps) {
   }, [on, brick.name]);
   return null;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

@@ -117,6 +117,11 @@ try {
         let at = await state();
         for (let waited = 0; waited < ms && !Object.entries(want).every(([k, v]) => at[k] === v); waited += 50) { await sleep(50); at = await state(); }
         for (const [k, v] of Object.entries(want)) assert.equal(at[k], v, `${label}: ${what} (${k}: wanted ${v}, got ${at[k]})`);
+        if (at.view !== "map") {
+          const opacity = await evaluate(`[...document.querySelectorAll('.persistent-canvas .spine-frame')].map(e => getComputedStyle(e).opacity)`);
+          assert.ok(opacity.length > 0, `${label}: retained Canvas is available for the opacity guard`);
+          assert.ok(opacity.every(value => value === "0"), `${label}: hidden Canvas has zero opacity in ${at.view}`);
+        }
       };
       const healthy = async (when) => {
         assert.deepEqual(await evaluate("__errors"), [], `${label}: browser errors ${when}`);

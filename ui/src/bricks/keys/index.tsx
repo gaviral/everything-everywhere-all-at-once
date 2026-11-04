@@ -4,7 +4,7 @@
 // and the Palace or a view brick keeps its own arrows; Esc and Enter stay the page's when the brick has nothing to act on.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrickProps, MapSnapshot } from "../contract";
-import "./keys.css";
+import pluginStyle0 from "./keys.css?inline";
 
 const HINTED = "e2a2o.brick.keys.hinted";
 let seenThisVisit = false;
@@ -184,3 +184,6 @@ export default function Keys({ map, actions }: BrickProps) {
     </>}
   </aside>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

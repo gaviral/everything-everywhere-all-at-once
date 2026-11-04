@@ -478,8 +478,10 @@ mod tests {
         assert_eq!(shape_without_titles(&core.snapshot()), shape(&before));
         // Replayed from the journal (as a restart does), the map is the same.
         let mut replayed = start;
-        for line in std::fs::read_to_string(&path).unwrap().lines() {
-            replayed.apply(&serde_json::from_str(line).unwrap());
+        for line in std::fs::read_to_string(&path).unwrap().split_inclusive('\n') {
+            for (change, _) in crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap() {
+                replayed.apply(&change);
+            }
         }
         assert_eq!(shape(&replayed), shape(&core.snapshot()));
         assert_eq!(replayed.titled, core.snapshot().titled);
@@ -504,11 +506,13 @@ mod tests {
         assert_eq!(shape(&now), shape(&start), "nothing renamed or merged");
         assert_eq!(now.proposals.iter().map(|p| p.status).collect::<Vec<_>>(), [ItemStatus::Dismissed, ItemStatus::Dismissed]);
         assert!(now.titled.contains("T4") && !now.titled.contains("T2"), "a rename turned down makes the title theirs; a merge doesn't");
-        let lines: Vec<String> = std::fs::read_to_string(&path).unwrap().lines().map(String::from).collect();
+        let lines: Vec<String> = std::fs::read_to_string(&path).unwrap().split_inclusive('\n').map(String::from).collect();
         assert_eq!(lines.len(), 2, "one line per answer: {lines:?}");
         let mut replayed = start;
         for line in &lines {
-            replayed.apply(&serde_json::from_str(line).unwrap());
+            for (change, _) in crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap() {
+                replayed.apply(&change);
+            }
         }
         assert_eq!((shape(&replayed), &replayed.titled), (shape(&now), &now.titled));
         std::fs::remove_file(&path).unwrap();
@@ -598,12 +602,11 @@ mod tests {
     /// as the earliest live and as the newest once the clock passed it.
     #[test]
     fn an_undone_merge_replays_to_the_card_it_showed() {
-        // Reason for 300 ms: ahead of the clock when the undo runs, behind it once the test has waited 600 ms.
-        const AHEAD_MS: u64 = 300;
         let now = crate::now_ms();
         let mut world = World { threads: vec![thread("T1", None), thread("T2", None)], thoughts: vec![said("a", "T1"), said("b", "T2"), said("c", "T2")], ..World::default() };
         world.thoughts[1].at_ms = now - 60_000;
-        world.thoughts[2].at_ms = now + AHEAD_MS;
+        // Stay ahead regardless of journal setup or scheduler delays.
+        world.thoughts[2].at_ms = u64::MAX;
         world.threads[1].last_point = "c".into();
         world.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
         let start = world.clone();
@@ -611,11 +614,16 @@ mod tests {
         super::undo(&core, "you", Kind::Merge, "T2");
         let live = core.snapshot().thread("T2").unwrap().last_point.clone();
         assert_eq!(live, "b", "a point dated ahead counts as the earliest");
-        std::thread::sleep(std::time::Duration::from_millis(2 * AHEAD_MS));
         let mut replayed = start;
-        for line in std::fs::read_to_string(&path).unwrap().lines() {
-            replayed.apply(&serde_json::from_str(line).unwrap());
+        // Simulate the clock passing c by moving only its synthetic timestamp behind the clock.
+        // No real-time wait: without the recorded last_point, replay would now choose c.
+        replayed.thoughts[2].at_ms = now - 1;
+        for line in std::fs::read_to_string(&path).unwrap().split_inclusive('\n') {
+            for (change, _) in crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap() {
+                replayed.apply(&change);
+            }
         }
+        assert_eq!(super::newest(&replayed, "T2", crate::now_ms()).as_deref(), Some("c"));
         assert_eq!(replayed.thread("T2").unwrap().last_point, live);
         std::fs::remove_file(&path).unwrap();
     }

@@ -1,0 +1,8 @@
+{
+  "id": "image-evidence",
+  "name": "Image evidence",
+  "does": "Extract proposed points from a selected still image and keep the points you choose.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

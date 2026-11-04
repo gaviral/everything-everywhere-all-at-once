@@ -1,0 +1,8 @@
+{
+  "id": "app-connections",
+  "name": "App connections",
+  "does": "Review a Reminders → Calendar → tune plan, confirming each step separately on your Mac.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

@@ -1,0 +1,14 @@
+.app-connections { max-width: 100%; color: var(--ink, #e9e9ee); }
+.app-connections button, .app-connections input { min-height: 44px; font: inherit; }
+.app-connections button { cursor: pointer; }
+.app-connections button:disabled { cursor: default; opacity: .55; }
+.app-connections button:focus-visible, .app-connections input:focus-visible { outline: 2px solid #91caff; outline-offset: 3px; }
+.app-connections-body { width: min(580px, 100%); max-height: min(65vh, 650px); overflow: auto; padding: 16px; box-sizing: border-box; border: 1px solid #59616e; border-radius: 14px; background: #20242c; color: #f0f2f5; }
+.app-connections-body p { line-height: 1.45; overflow-wrap: anywhere; }
+.app-connections-body form { display: grid; gap: 10px; }
+.app-connections-body label { display: grid; gap: 5px; }
+.app-connections-body input { width: 100%; min-width: 0; box-sizing: border-box; color: #f0f2f5; background: #151820; border: 1px solid #7c8491; border-radius: 6px; padding: 8px; }
+.app-connections-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.app-connections-plan { margin-top: 14px; border-top: 1px solid #7c8491; padding-top: 14px; overflow-wrap: anywhere; }
+.app-connections-plan ol { padding-left: 22px; }
+.app-connections-plan li { padding: 8px 0; }

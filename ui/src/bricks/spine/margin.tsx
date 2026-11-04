@@ -1,9 +1,12 @@
+import { usePluginState } from "../contract";
 // Margin notes: words picked in a point and answered, by anyone, beside those words (layout.ts places them, nodes.tsx
 // draws them). One mechanism with tangents: a note is a tangent anchored to words (contract.ts `Thread.anchor`), a thread
 // under the point's thread whose thoughts are the note and its replies, made with `actions.annotate`, so a note made
 // here reaches every window the way a tangent does. Picking words: double-click a point's words (a press and drag still
 // moves the point), then drag or shift-click to take more; R on a focused point answers all its words.
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useContext } from "react";
+import { DiscussionContext } from "../contract";
+import { useEffect, useMemo, useRef, type FormEvent } from "react";
 import type { AnchorContext, BrickActions, MapSnapshot, Thread } from "../contract";
 import type { MarginInput } from "./layout";
 
@@ -17,6 +20,8 @@ const asks = (text: string) => /\?\s*$/.test(text);
 /** The map's margin notes, as the layout takes them; the threads that are notes, not tangents; and the way to add one. */
 export function useMargins(map: MapSnapshot, actions: BrickActions) {
   // Worked out again only when the map changes: the layout redoes everything when these do.
+  const discussion = useContext(DiscussionContext);
+  const controls = !!discussion?.enabled;
   const { margins, anchored } = useMemo(() => {
     const anchored = new Set<string>();
     const margins: MarginInput[] = [];
@@ -29,10 +34,10 @@ export function useMargins(map: MapSnapshot, actions: BrickActions) {
       const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ thoughtId: t.id, by: t.speaker || "you", text: (t.point || t.text).trim() }));
       // An unanswered question from someone else folds to "…?" until it's opened; yours never hides from you.
       const theirs = entries[0] && entries[0].by !== map.me && entries[0].by !== "you";
-      margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }), entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
+      margins.push({ controls, id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }), entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
     }
     return { margins, anchored };
-  }, [map.threads, map.thoughts, map.me]);
+  }, [map.threads, map.thoughts, map.me, controls]);
 
   // For every window, by you: the first note on those words starts their note, a later one answers in it.
   const add = (thoughtId: string, quote: string, text: string, context?: AnchorContext) => actions.annotate(thoughtId, quote, text, context);
@@ -55,8 +60,8 @@ export interface Picking {
 const short = (quote: string) => (quote.length > 28 ? `${quote.slice(0, 26).trimEnd()}…` : quote);
 
 /** "Reply" under the picked words; then the box to type it in. */
-export function Reply({ picking, start, send, cancel, width }: { picking: Picking; start(): void; send(text: string): void; cancel(): void; width: number }) {
-  const [text, setText] = useState("");
+export function Reply({ picking, start, send, cancel, width }: { picking: Picking; start(): void; send(text: string): boolean; cancel(): void; width: number }) {
+  const [text, setText] = usePluginState(`reply:${picking.thoughtId}:${picking.quote}`, "");
   const field = useRef<HTMLInputElement>(null);
   useEffect(() => { if (picking.typing) field.current?.focus(); }, [picking.typing]);
   const left = Math.max(8, Math.min(picking.x, width - (picking.typing ? 300 : 110)));
@@ -69,7 +74,7 @@ export function Reply({ picking, start, send, cancel, width }: { picking: Pickin
   }
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (text.trim()) send(text.trim());
+    if (text.trim() && send(text.trim())) setText("");
   };
   return <form className="spine-reply" style={{ left, top: picking.y + 6 }} onSubmit={submit}>
     <input ref={field} className="spine-reply-field" value={text} onChange={(event) => setText(event.target.value)} maxLength={500}

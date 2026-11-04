@@ -3,13 +3,21 @@
 // the map as it is now (read-only), the few actions it may take, and `on`, for what passes (a thought landing, your
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
-import { createElement, createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createElement, createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import type { ConnectionRequest, ConnectionReply } from "../app-connections-core";
+export type { ConnectionRequest, ConnectionReply, ConnectionPlan } from "../app-connections-core";
+export { DiscussionBadge, DiscussionBody, DiscussionContext, discussionCollapsed } from "../discussion-ui";
 import type { AppRecipe, RecipeSave, RecipeResult, MiniApp } from "../apps-core";
 import type { Anchor, AnchorContext } from "../annotate-core";
 export { anchorRange, codePointOffset } from "../annotate-core";
 import type { ActionEstimate, EstimateRequest, EstimateResult, Question, QuestionInput, QuestionResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
+export type { ChoiceMap, ChoiceRequest, ChoiceResult, ChoiceRelation } from "../core";
+import type { ChoiceMap, ChoiceRequest, ChoiceResult } from "../core";
+
+export type {EvidenceKept,EvidencePoint,EvidenceRequest,EvidenceResult} from "../core";
+import type {EvidenceKept,EvidenceRequest,EvidenceResult} from "../core";
 export type CanvasToolId = "composer" | "features" | "history";
 /** Browser presentation only: existing shell bodies, never a second connection or mutation owner. */
 export type CanvasToolSlots = Record<CanvasToolId, HTMLElement>;
@@ -62,6 +70,7 @@ export const PhoneRemoteContext = createContext<{
 
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
+export type { Citation, ResearchKept, ResearchCommand, ResearchResult } from "../core";
 export type { AppRecipe, RecipeSave, RecipeResult, ActionEstimate, EstimateRequest, EstimateResult, Question, QuestionInput, QuestionResult, Action, Anchor, AnchorContext, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
@@ -199,6 +208,11 @@ export type ThoughtSource = { readonly id: string; readonly text: string; readon
 export type CaptureSource = { readonly requestId: string; readonly thoughtIds: readonly string[] };
 
 export interface MapSnapshot {
+  readonly evidenceKept?: readonly Readonly<EvidenceKept>[];
+  readonly choiceMaps?: readonly Readonly<ChoiceMap>[];
+  readonly research?: readonly Readonly<import("../core").ResearchKept>[];
+  /** Identity confirmed by this connection; absent until its server handshake completes. */
+  readonly mapIdentity?: string | null;
   /** Only your deliberate saved questions; underlying records live on this shared map. */
   readonly questions: readonly Question[];
   /** Current map and speaker; visit-only helpers must clear their memory when it changes. */
@@ -270,7 +284,12 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  appConnection?(request: ConnectionRequest): Promise<ConnectionReply>;
+  research(request: import("../core").ResearchCommand): Promise<import("../core").ResearchResult>;
+  cancelResearch(): void;
   /** Resolves only with the matching write acknowledgement, or an explicit failure. */
+  imageEvidence?(request:EvidenceRequest):Promise<EvidenceResult>;
+  saveChoice?(request: ChoiceRequest): Promise<ChoiceResult>;
   setActionEstimate?(request: EstimateRequest): Promise<EstimateResult>;
   /** Portable data only; throws on unsupported blocks. Never starts the app. */
   exportRecipe(app: MiniApp): string;
@@ -380,7 +399,39 @@ export type BrickOn = <K extends keyof BrickEvents>(name: K, listener: (value: B
 export type ViewDestination = { threadId: string; thoughtId: string | null; revision: number };
 
 /** The props a brick's index.tsx gets: its default export is a component taking these. */
+export interface PluginState { readonly scope?: string; subscribe?(watcher: () => void): () => void; get<T>(key: string): T | undefined; set<T>(key: string, value: T): void }
+export interface PluginLifetime { signal: AbortSignal; cleanup(fn: () => void): () => void }
+export const PluginStateContext = createContext<PluginState | null>(null);
+/** Synchronous write-through: a final keystroke survives an immediate unmount. */
+export function usePluginState<T>(key: string, initial: T | (() => T)): [T, (next: T | ((old: T) => T)) => void] {
+  const store = useContext(PluginStateContext);
+  const [value, update] = useState<T>(() => store?.get<T>(key) ?? (typeof initial === "function" ? (initial as () => T)() : initial));
+  const latest = useRef(value);
+  const previous = useRef({ scope: store?.scope, key });
+  useLayoutEffect(() => {
+    if (!store) return;
+    if (previous.current.key !== key || (previous.current.scope !== undefined && previous.current.scope !== store.scope)) {
+      latest.current = store.get<T>(key) ?? (typeof initial === "function" ? (initial as () => T)() : initial);
+      update(latest.current);
+    }
+    previous.current = { scope: store.scope, key };
+    // This hook is already mounted: its live edit wins when the Plugins gate changes.
+    // A new mount has read the saved value in its initializer above.
+    store.set(key, latest.current);
+    return store.subscribe?.(() => {
+      const kept = store.get<T>(key);
+      if (kept !== undefined && !Object.is(kept, latest.current)) { latest.current = kept; update(kept); }
+    });
+  }, [store, key]);
+  const set = useCallback((next: T | ((old: T) => T)) => {
+    const value = typeof next === "function" ? (next as (old: T) => T)(latest.current) : next;
+    latest.current = value; store?.set(key, value); update(value);
+  }, [store, key]);
+  return [value, set];
+}
 export interface BrickProps {
+  state?: PluginState;
+  lifetime?: PluginLifetime;
   map: MapSnapshot;
   actions: BrickActions;
   on: BrickOn;
@@ -431,3 +482,7 @@ export interface AliasRequest {
   readonly id: string; readonly revision: number; readonly phrase: string; readonly target: AliasTarget; readonly enabled: boolean;
 }
 export interface AliasResult { readonly request_id: string; readonly ok: boolean; readonly message: string }
+
+/** Explicit per-source agreement supplied by the host, separate from authorship. */
+export type Agreement = { revision: string; agreed_by: string[]; requests: string[] };
+export type AgreementStatus = { request_id: string; pending: boolean; message: string };

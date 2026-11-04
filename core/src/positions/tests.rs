@@ -31,7 +31,7 @@ impl Fixture {
 
     /// The journal's place lines, in order.
     fn lines(&self) -> Vec<Value> {
-        std::fs::read_to_string(&self.path).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|c| c["type"] == "positioned").collect()
+        std::fs::read_to_string(&self.path).unwrap().split_inclusive('\n').flat_map(|line| crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap()).map(|(change, _)| serde_json::to_value(change).unwrap()).filter(|c| c["type"] == "positioned").collect()
     }
 
     /// The map a restart opens.
