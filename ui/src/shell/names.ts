@@ -20,6 +20,8 @@ export const NAMES = {
   close: "Close",
   backToMap: "Back to the Canvas",
   show: "Show",
+  inspectHere: "Inspect here",
+  openOriginal: "Open original",
   tabs: { talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
   composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
@@ -59,6 +61,7 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
   terse: { name: "Terse", does: "Read short nested lines; tap any line for its complete original.", lives: "The Canvas" },
+  "bring-here": { name: "Bring here", does: "Inspect a live topic beside Find or History without moving the Canvas. Open original goes to its place.", lives: "Find and History" },
   // Built in: switched here, as the features are.
   email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },

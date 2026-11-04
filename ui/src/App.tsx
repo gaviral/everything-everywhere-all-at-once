@@ -73,6 +73,7 @@ import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
+import { BringHere } from "./BringHere";
 import { BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
@@ -1132,6 +1133,17 @@ export default function App() {
   const bricksOn = useBricksOn();
   const shapes = useShapes(bricksOn.has("shapes"));
   const builtIns = useBuiltInsOn();
+  // Only an ID and a focus return address live here; World remains the source of the panel's words.
+  const [inspection, setInspection] = useState<{ id: string; invoker: HTMLElement } | null>(null);
+  const bringHereOn = builtIns.has("bring-here");
+  useEffect(() => { if (!bringHereOn) setInspection(null); }, [bringHereOn]);
+  const inspectHere = (id: string, invoker: HTMLElement) => {
+    if (world.threads.some((thread) => thread.id === id)) setInspection({ id, invoker });
+  };
+  const closeInspection = () => {
+    setInspection(null);
+    if (inspection?.invoker.isConnected) inspection.invoker.focus({ preventScroll: true });
+  };
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -1619,7 +1631,8 @@ export default function App() {
       {talkExit}
       <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
       <TopRight>
-        {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={goToMatch} />}
+        {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={goToMatch}
+          inspect={bringHereOn ? inspectHere : undefined} inspecting={bringHereOn && !!inspection?.invoker.closest(".shell-find")} />}
         {builtIns.has("export") && (world.threads.length > 0 || world.thoughts.length > 0) &&
           <CornerButton icon="export" label={NAMES.export} keyName="E" keyAria="E" onClick={() => exportMap()} guide="export" />}
         {builtIns.has("import") && <ImportChats core={core} />}
@@ -1627,6 +1640,9 @@ export default function App() {
           onClick={() => toggleTab("catalog")} guide="catalog" controls="shell-tabpanel" />
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
       </TopRight>
+
+      {bringHereOn && inspection && <BringHere id={inspection.id} world={world} close={closeInspection}
+        openOriginal={() => { setInspection(null); show(inspection.id); }} />}
 
       {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
       <div className="sr-only" role="status">{friendlyNotice}</div>
@@ -1758,6 +1774,8 @@ export default function App() {
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
         {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
+          inspectAction={bringHereOn ? (id) => world.threads.some((thread) => thread.id === id) && <button type="button" className="shell-link"
+            onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspectHere(id, event.currentTarget)}>{NAMES.inspectHere}</button> : undefined}
           recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
         {railTab === "catalog" && <CatalogTab rows={rows} at={catalogAt?.id ?? null} />}
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}
