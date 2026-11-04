@@ -1,0 +1,34 @@
+.part-dimensions { color: #173b35; background: #f6f8f4; padding: clamp(16px, 3vw, 40px); border: 1px solid #c4d1c7; border-radius: 20px; font: 1rem/1.5 system-ui, sans-serif; }
+.part-dimensions * { box-sizing: border-box; }
+.part-dimensions header { display: flex; gap: 16px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.part-dimensions h2 { font-size: clamp(1.5rem, 3vw, 2.25rem); line-height: 1.2; margin: 4px 0 12px; }
+.part-dimensions h3 { margin: 0 0 8px; }
+.part-dimensions p { margin: 8px 0 16px; }
+.part-dimensions .pd-eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; margin: 0; }
+.pd-control { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; font: .9375rem/1.4 system-ui, sans-serif; }
+.pd-control input { width: 18px; height: 18px; accent-color: #246052; }
+.part-dimensions button { font: inherit; color: inherit; cursor: pointer; min-height: 44px; border: 1px solid #9eb3a8; border-radius: 10px; background: #fff; padding: 10px 12px; text-align: left; }
+.part-dimensions button:hover { background: #eaf1eb; }
+.part-dimensions button:focus-visible, .pd-control input:focus-visible { outline: 3px solid #8b4c07; outline-offset: 3px; }
+.part-dimensions .pd-version, .part-dimensions .pd-hint { color: #476158; font-size: .875rem; }
+.pd-sequence { display: flex; gap: 24px; list-style: none; margin: 24px 0; padding: 0 0 8px; overflow-x: auto; }
+.pd-sequence li { position: relative; flex: 1 0 180px; }
+.pd-sequence button { width: 100%; height: 100%; display: grid; gap: 6px; }
+.pd-guides li + li::before { content: '→'; position: absolute; left: -21px; top: 22px; }
+.part-dimensions button[aria-current="step"] { background: #173f35; border-color: #173f35; color: white; }
+.pd-sequence li[data-connected="true"] button { box-shadow: inset 0 -4px #b85b09; }
+.pd-step { border-top: 1px solid #c4d1c7; padding-top: 20px; }
+.pd-dimensions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.part-dimensions .pd-dimensions [aria-pressed="true"] { background: #dce9df; border-color: #246052; font-weight: 650; }
+.pd-trees { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; align-items: start; }
+.pd-tree { min-width: 0; background: #edf2eb; border: 1px solid #c4d1c7; padding: 16px; border-radius: 12px; }
+.pd-tree ul { list-style: none; margin: 0; padding: 0; }
+.pd-node > ul { margin: 10px 0 10px 12px; padding-left: 10px; border-left: 1px solid #82998c; }
+.pd-node + .pd-node { margin-top: 10px; }
+.pd-node-row { display: flex; gap: 6px; align-items: start; }
+.part-dimensions .pd-expand { flex: 0 0 44px; text-align: center; padding: 8px; }
+.part-dimensions .pd-part { flex: 1; min-width: 0; width: 100%; }
+.part-dimensions .pd-part[aria-pressed="true"] { border-color: #a35408; background: #fff0d7; box-shadow: inset 4px 0 #a35408; }
+.pd-identity { display: grid; gap: 5px; overflow-wrap: anywhere; }
+.pd-identity > span, .pd-identity small { font-size: .75rem; color: #475e54; }
+@media (max-width: 600px) { .part-dimensions { padding: 16px; border-radius: 12px; } .pd-trees { grid-template-columns: 1fr; } }
