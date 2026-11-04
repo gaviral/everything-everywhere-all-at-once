@@ -2,7 +2,6 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from "re
 import { Panel, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { ToolSlot, type MapSnapshot } from "../contract";
 import type { Box, Layout } from "./layout";
-import "./capture.css";
 
 export type CaptureRow = { id: string; text: string; thoughtIds: string[]; waiting: boolean; status: string; saved: boolean; retry?: () => void };
 export const CaptureContext = createContext<{

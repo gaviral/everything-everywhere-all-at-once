@@ -50,6 +50,7 @@ for(const [width,height,scheme,reduced] of [[1440,900,'light',false],[390,844,'l
     await shot('landed');
     const continuity=await evaluate(`window.sampleCapture=false;captureFrames`);
     assert.ok(continuity.length>=5&&continuity.every(Boolean),`${label}: source or structured words remain visible on every sampled handoff frame`);
+    await settle();
     const clear=await evaluate(`(()=>{const a=document.querySelector('[data-map-capture=active]').getBoundingClientRect(),p=document.querySelector('.spine-point').getBoundingClientRect();return{clear:a.right<=p.left||a.left>=p.right||a.bottom<=p.top||a.top>=p.bottom,gap:Math.min(Math.abs(a.left-p.right),Math.abs(a.top-p.bottom)),visible:a.left>=0&&a.right<=innerWidth&&a.top>=60&&a.bottom<innerHeight-30}})()`);
     assert.ok(clear.clear&&clear.visible,`${label}: next input is clear and visible: ${JSON.stringify(clear)}`);
     assert.ok(clear.gap<=120,`${label}: next thought stays near the landing`);
