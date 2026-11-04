@@ -1,0 +1,48 @@
+.canvas-workflow {
+  position: fixed; top: 92px; left: 24px; right: calc(var(--room-right, 0px) + 24px);
+  z-index: 38; max-width: 1180px; max-height: calc(100dvh - 112px - var(--dock-height, 120px));
+  overflow: auto; overscroll-behavior: contain; box-sizing: border-box; padding: clamp(18px, 2.5vw, 36px);
+  border: 1px solid var(--line, #d6d9d2); border-radius: 30px; color: var(--ink, #1c2926);
+  background: radial-gradient(ellipse at top right, color-mix(in srgb, var(--accent, #367c65) 12%, transparent), transparent 60%), var(--bg, #f6f6ef);
+  box-shadow: 0 20px 70px #172b2426; font: 20px/1.45 system-ui, sans-serif;
+}
+.canvas-workflow * { box-sizing: border-box; }
+.canvas-workflow-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.canvas-workflow-heading p { margin: 0 0 6px; color: var(--muted, #59645f); font-size: 13px; letter-spacing: .13em; font-weight: 700; }
+.canvas-workflow h2 { margin: 0; font-size: clamp(28px, 3.1vw, 46px); line-height: 1.1; letter-spacing: -.035em; }
+.canvas-workflow-badge { border: 1px solid var(--line, #d6d9d2); padding: 8px 16px; border-radius: 100px; font-size: 17px; }
+.canvas-workflow-progress { margin-top: 24px; }
+.canvas-workflow-status { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 10px; font-size: 19px; }
+.canvas-workflow progress { display: block; width: 100%; height: 10px; border: 0; border-radius: 100px; overflow: hidden; accent-color: var(--accent, #367c65); background: var(--line, #d6d9d2); }
+.canvas-workflow progress::-webkit-progress-bar { background: var(--line, #d6d9d2); border-radius: 100px; }
+.canvas-workflow progress::-webkit-progress-value { background: var(--accent, #367c65); border-radius: 100px; }
+.canvas-workflow progress::-moz-progress-bar { background: var(--accent, #367c65); border-radius: 100px; }
+.canvas-workflow-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.canvas-workflow button { min-height: 48px; padding: 9px 24px; border: 1px solid var(--line, #d6d9d2); border-radius: 100px; background: var(--card, white); color: inherit; cursor: pointer; font: 600 19px/1.4 system-ui, sans-serif; }
+.canvas-workflow button.canvas-workflow-primary { color: var(--bg, #f6f6ef); background: var(--ink, #1c2926); border-color: var(--ink, #1c2926); }
+.canvas-workflow button:hover { filter: brightness(.92); }
+.canvas-workflow :is(button, summary):focus-visible { outline: 3px solid var(--accent, #367c65); outline-offset: 4px; }
+.canvas-workflow-controls > span { font-size: 15px; color: var(--muted, #59645f); }
+.canvas-workflow-source { margin: 0 0 22px; padding: 14px 18px; border-radius: 18px; background: color-mix(in srgb, var(--accent, #367c65) 7%, var(--bg, #f6f6ef)); }
+.canvas-workflow-source summary { cursor: pointer; font-size: 17px; font-weight: 600; }
+.canvas-workflow-source ul { display: flex; flex-wrap: wrap; gap: 10px 30px; margin: 12px 0 0; padding-left: 22px; font-size: 17px; }
+.canvas-workflow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; list-style: none; padding: 0; margin: 0; }
+.canvas-workflow-step { position: relative; min-width: 0; display: flex; flex-direction: column; padding: 22px; border: 1px solid var(--line, #d6d9d2); border-radius: 22px; background: var(--card, white); overflow-wrap: anywhere; }
+.canvas-workflow-step[data-state="Running"] { border-color: var(--accent, #367c65); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #367c65) 35%, transparent); }
+.canvas-workflow-step[data-state="Paused"] { border-color: var(--amber, #9a701f); }
+.canvas-workflow-step[data-state="Done"] { background: color-mix(in srgb, var(--accent, #367c65) 8%, var(--card, white)); }
+.canvas-workflow-step-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 16px; }
+.canvas-workflow-number { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--bg, #f6f6ef); font-size: 20px; font-weight: 700; }
+.canvas-workflow h3 { font-size: 25px; line-height: 1.15; margin: 20px 0 10px; letter-spacing: -.025em; }
+.canvas-workflow-step > p { font-size: 17px; margin: 0 0 18px; }
+.canvas-workflow-step > .canvas-workflow-pending { color: var(--muted, #59645f); margin-top: 8px; min-height: 70px; }
+.canvas-workflow-output { list-style: none; padding: 0; margin: 0 0 22px; font-size: 18px; }
+.canvas-workflow-output li + li { margin-top: 12px; }
+.canvas-workflow-handoff { margin-top: auto; padding-top: 16px; font-size: 15px; font-weight: 600; color: var(--muted, #59645f); }
+.canvas-workflow-footnote { margin: 20px 0 0; font-size: 14px; color: var(--muted, #59645f); }
+@media (max-width: 700px) {
+  .canvas-workflow { left: 10px; right: 10px; top: 84px; max-height: calc(100dvh - 104px - var(--dock-height, 120px)); padding: 18px; border-radius: 22px; }
+  .canvas-workflow-steps { grid-template-columns: 1fr; }
+  .canvas-workflow-step { padding: 18px; }
+  .canvas-workflow-status { font-size: 17px; }
+}

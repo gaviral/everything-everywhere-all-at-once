@@ -1,0 +1,9 @@
+{
+  "id": "canvas-workflow",
+  "name": "Canvas workflow",
+  "does": "Run a three-step local example on the Canvas. Pause, resume or cancel at any step.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "canvas-workflow"
+}
