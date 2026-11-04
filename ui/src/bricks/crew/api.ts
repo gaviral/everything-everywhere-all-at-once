@@ -15,8 +15,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 export const planParts = (said: string) => post<{ run: string; name: string; parts: Part[]; ms: number }>("/crew/plan", { said });
 export type Built = { spec: Spec; commit: string; reused: boolean; broke: string | null; ms: number };
-export const buildPart = (run: string, part: Part, made: string[], repair?: { broke: string; before: Spec }) =>
-  post<Built>("/crew/build", { run, part, made, ...repair });
+export const buildPart = (run: string, part: Part, made: string[], extra?: { broke: string; before: Spec } | { fault: true }) =>
+  post<Built>("/crew/build", { run, part, made, ...extra });
 export const mergePart = (run: string, id: string) => post<{ commit: string }>("/crew/merge", { run, id });
 export const promote = (run: string, to: "staging" | "main", keep: unknown[] = []) =>
   post<{ commit: string; commits: string; catalog: number }>("/crew/promote", { run, to, keep });
