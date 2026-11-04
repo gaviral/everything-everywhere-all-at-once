@@ -1,0 +1,8 @@
+{
+  "id": "sketch-exchange",
+  "name": "Sketch exchange",
+  "does": "Draw and exchange sketches between two example sessions on this page.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

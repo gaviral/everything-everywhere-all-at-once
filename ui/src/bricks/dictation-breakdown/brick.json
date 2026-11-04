@@ -1,0 +1,8 @@
+{
+  "id": "dictation-breakdown",
+  "name": "Dictation breakdown",
+  "does": "Split an example transcript into items you can review and correct.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
