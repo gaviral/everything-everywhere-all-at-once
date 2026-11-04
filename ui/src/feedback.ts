@@ -248,6 +248,8 @@ export const ACTIONS: Action[] = [
   { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Features page opens: every feature with its line and its switch" },
   { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Features" },
   { id: "catalog-backdrop", how: "click", at: [["Catalog.tsx", "if (event.target === event.currentTarget) closeCatalog()"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
+  { id: "helpers-switch", how: "click", at: [["Catalog.tsx", 'switchBuiltIn("helpers", !builtIns.has("helpers"))']], pressed: PRESS,
+    done: "the Thinking helpers switch says On or Off and its checked state updates immediately", says: ["Thinking helpers", "On", "Off"] },
   { id: "brick-switch", how: "click", at: [["Catalog.tsx", "switchBrick(info.id, !shown)"], ["BrickSlot.tsx", "switchBrick(info.id, false)"]], pressed: PRESS,
     done: "the switch says On or Off and the feature shows or goes at once (a view's name joins or leaves Cards and Pictures); a broken feature's line goes" },
 

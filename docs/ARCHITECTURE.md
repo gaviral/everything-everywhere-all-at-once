@@ -126,6 +126,7 @@ Core, one process (core/src: axum, tokio)
   call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the AI helper's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent. A Remote (`?remote` on the socket, `call::join_remote`) is listed with `remote: true` and is never one of the two: it starts no call and counts toward none, and once one has joined `call` is told with `started_ms` 0 until a call starts, so the shared map never hides a window
   catalog.rs     the command list (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the app builder
+  helpers.rs     host-only thinking and coding helpers: launch card, cancellation and Work spine rows; helpers/coding.rs runs local commands in isolated Git worktrees and commits as E2A2O Helper
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled

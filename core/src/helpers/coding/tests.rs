@@ -15,9 +15,9 @@ async fn repository() -> PathBuf {
         &repo,
         &[
             "-c",
-            "user.name=User",
+            "user.name=E2A2O Helper",
             "-c",
-            "user.email=12901566+gaviral@users.noreply.github.com",
+            "user.email=helper@example.invalid",
             "commit",
             "-q",
             "--no-gpg-sign",
@@ -165,7 +165,7 @@ async fn acceptance(command: Option<String>) {
             git(&repo, &["log", "-1", "--format=%an <%ae>", branch])
                 .await
                 .unwrap(),
-            "Avi <12901566+gaviral@users.noreply.github.com>"
+            "E2A2O Helper <helper@example.invalid>"
         );
     }
     assert_eq!(git(&repo, &["rev-parse", "HEAD"]).await.unwrap(), base);

@@ -107,7 +107,7 @@ Full preset connectors (Demo remains the default):
 | Messages | “Ask Mia to confirm what to bring” | `MESSAGES_TO`; `MESSAGES_SEND=on` for live sending |
 | Email | “Email Mia that the cut is ready” | Features → Email, `EMAIL_TO`; `EMAIL_SEND=on` for Mail.app on the host laptop; otherwise a dry run. Hosted stays talk. Subject: first eight body words, immediately. Stop by voice, typing, Esc or button. |
 | GitHub | “Show me the open pull requests” | Local `gh`, read only |
-| Notes | “Save this thread as a note” | `NOTES_WRITE=on` for a real write |
+| Notes | “Save this topic as a note” | `NOTES_WRITE=on` for a real write |
 
 ## Run it
 
