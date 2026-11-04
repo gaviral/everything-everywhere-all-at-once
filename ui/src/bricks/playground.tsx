@@ -16,6 +16,8 @@ import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
 import { receiveJob, type JobMsg } from "../work-jobs";
 import type { BrickActions, BrickEvents } from "./contract";
+import { ShapesContext } from "./contract";
+import { useShapes } from "../shapes-core";
 import "../styles.css";
 import "./playground.css";
 
@@ -87,6 +89,8 @@ function Playground() {
   const [notice, setNotice] = useState("");
   const [errors, setErrors] = useState(0);
   const brick = found.bricks.find((b) => b.info.id === id);
+  const shapes = useShapes(id === "shapes");
+  const shapeCanvas = found.bricks.find((b) => b.info.id === "spine");
   const said = (line: string) => setLog((was) => [line, ...was].slice(0, 40));
   const title = (thread: string | null) => world.threads.find((t) => t.id === thread)?.title ?? thread ?? "none";
   const count = useRef(0);
@@ -267,11 +271,14 @@ function Playground() {
     </div>
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>
       : <p className="playground-about playground-wrong">{found.problems[id] ? `“${id}” can't load: ${found.problems[id].join("; ")}.` : `No feature “${id}” here. Pick one above.`}</p>}
+    <ShapesContext.Provider value={shapes}>
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
+      {id === "shapes" && shapeCanvas && <BrickMount brick={shapeCanvas} host={host} />}
       {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} /></div>
         : brick && <BrickMount key={id} brick={brick} host={host} />}
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>
+    </ShapesContext.Provider>
     <aside className="playground-log" aria-label="What the feature asked for">
       <strong>What it asked for</strong>
       {log.length ? <ol>{log.map((line, i) => <li key={log.length - i}>{line}</li>)}</ol> : <p>Nothing yet. Its actions show here.</p>}

@@ -9,7 +9,7 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { useBrickEvent, SemanticZoomContext, type BrickEvents, type BrickProps, type Position } from "../contract";
+import { useBrickEvent, SemanticZoomContext, ShapesContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
 import { filmHeld } from "./film";
 import { Corner, type Stop } from "./corner";
@@ -22,6 +22,7 @@ import { useStayingHere } from "../../StayHere";
 import { CONVERSATION, conversationLayout } from "./conversation";
 import "./spine.css";
 import { semanticBlend } from "./semantic-zoom";
+import { CanvasShapes } from "./shapes";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
 const DRAG = 4;
@@ -44,8 +45,9 @@ const cls = (...names: (string | false | undefined | null)[]) => names.filter(Bo
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
+  const shapes = useContext(ShapesContext);
   const conversation = !!props.map.conversationSpine;
-  if (!props.map.threads.length && !(conversation && props.map.thoughts.length)) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
+  if (!props.map.threads.length && !(conversation && props.map.thoughts.length) && !shapes?.enabled) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
   return <ReactFlowProvider key={String(conversation)}><Canvas {...props} conversation={conversation} /></ReactFlowProvider>;
 }
 
@@ -836,6 +838,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         aria-label={conversation ? "Your conversation in time order, with linked topics beside it. Drag the canvas to look around; follow a topic link to explore and a turn link to return." : "Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures"}>
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar semantic={semantic} />
+        <CanvasShapes />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             {layout.links.map((link) => {

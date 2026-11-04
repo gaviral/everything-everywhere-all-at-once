@@ -13,6 +13,25 @@ import type { Position } from "../positions-core";
 /** This browser's optional readable Canvas overview; the playground keeps the default. */
 export const SemanticZoomContext = createContext(false);
 
+/** Optional presentation objects, local to this visit. Never World thoughts or positions. */
+export type ShapeSize = { width: number; height: number; radius: number };
+export type ShapeDefinition = Readonly<ShapeSize & { id: "rounded-rectangle"; name: "Rounded rectangle" }>;
+export type ShapeInstance = Readonly<ShapeSize & { id: string; definitionId: ShapeDefinition["id"]; x: number; y: number }>;
+export interface ShapeHost {
+  placementPoint(): { x: number; y: number };
+}
+export interface Shapes {
+  readonly enabled: boolean;
+  readonly definitions: readonly ShapeDefinition[];
+  readonly instances: readonly ShapeInstance[];
+  readonly canvasReady: boolean;
+  attachCanvas(host: ShapeHost): () => void;
+  place(definitionId: ShapeDefinition["id"], size: ShapeSize): string | null;
+  update(id: string, patch: Partial<ShapeSize & { x: number; y: number }>): void;
+  remove(id: string): void;
+}
+export const ShapesContext = createContext<Shapes | null>(null);
+
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
 export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
