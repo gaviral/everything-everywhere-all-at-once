@@ -51,7 +51,7 @@ export function Cluster({ groupId, features, tryFeature }: { groupId: GroupId; f
   const group = GROUPS.find(item => item.id === groupId)!;
   const items = featuresIn(features, groupId);
   return <section className="catalog-canvas-detail" style={ink(group.color)} aria-label={`${group.name} features`}>
-    <div className="catalog-canvas-root"><p>{group.why}</p><h2>{group.name}<span className="catalog-canvas-root-dot">.</span></h2><p>{items.length} ways to start. Follow a branch.</p></div>
+    <div className="catalog-canvas-root"><p>{group.why}</p><h2>{group.name}<span className="catalog-canvas-root-dot">.</span></h2><p>{items.length} ways to start. Choose a feature.</p></div>
     <div className="catalog-canvas-branches">
       {items.map((feature, index) => <div className="catalog-canvas-branch" key={feature.id}>
         <svg viewBox="0 0 140 160" preserveAspectRatio="none" aria-hidden="true"><path d={index % 2 === 0 ? 'M140 0 C139 110 105 80 0 109' : 'M0 0 C2 98 32 100 140 84'} /></svg>

@@ -12,7 +12,7 @@ export const GROUPS = [
     'flow-canvas', 'workshop', 'app-recipes', 'helpers', 'work-spine', 'canvas-workflow', 'work-list',
     'dependency-sequences', 'worktree-map', 'workflow-inspector', 'live-area', 'part-dimensions',
     'app-connections', 'plugins', 'action-estimates', 'next-steps', 'session-focus', 'countdown',
-    'machine-demo', 'native-receipts', 'usage', 'canvas-tools', 'learned-action-labels', 'typed-lists',
+    'machine-demo', 'native-receipts', 'usage', 'canvas-tools', 'learned-action-labels', 'typed-lists', 'crew',
   ] },
   { id: 'understand', name: 'Understand', why: 'Find the meaning in it.', color: '#b7c991', ids: [
     'advisor', 'clarification', 'question-research', 'research-walkthrough', 'related-thoughts',
