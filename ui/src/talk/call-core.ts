@@ -1,7 +1,7 @@
 // The call as the core tells it (core/src/call.rs): who is on the map now and since when, who has the floor, how far
 // each person has read the turns, and how far the Friend may interrupt. room.tsx hands this every message its socket
 // hears (`heard`: a glance at its start, so nothing else is parsed twice) and sends what Talk says back (a read mark,
-// the level). Alone the core never sends a call, so nothing here shows. Pure helpers below the store, so
+// the level). Saved captions keep Talk accessible even with no live call. Pure helpers below the store, so
 // scripts/call-check.mjs runs them without a browser.
 import { useSyncExternalStore } from "react";
 
@@ -49,13 +49,11 @@ export const LEVELS: readonly { id: Level; name: string; says: string }[] = [
   { id: "stop", name: "Interrupt", says: "It may stop you mid-sentence, after your last few words." },
 ];
 
-/** Something a participant said or showed through the guide (a caption: Speak; a point with words: Glance), as this
- *  window heard it (core/src/guide.rs relays them, never journaled): Talk keeps an AI participant's as turns once
- *  they're down, so the call reads in order, even what came while Talk was closed. */
-export type Said = { text: string; by: string; at: number; level: "Speak" | "Mark" };
-
-/** The newest this window keeps. */
-const SAID_MAX = 50;
+/** A completed caption, with stable server identity and ordering; legacy live captions have no id. */
+export type Said = { id?: string; order?: number; ai?: boolean; text: string; by: string; at: number; level: "Speak" | "Mark" };
+export type Caption = { id: string; order: number; ai: boolean; text: string; by: string; at_ms: number };
+const asSaid = (c: Caption): Said => ({ id: c.id, order: c.order, ai: c.ai, text: c.text, by: c.by, at: c.at_ms, level: "Speak" });
+const historyCall: Call = { started_ms: 0, people: [], level: "glance", level_by: "" };
 
 // ---- The store: the call this window was last told, or none, and what was said through the guide.
 
@@ -81,11 +79,25 @@ function set(next: Call | null) {
  *  world that ends a catch-up. */
 export function heard(data: unknown) {
   if (typeof data !== "string") return;
+  if (data.startsWith('{"type":"snapshot"')) {
+    try {
+      const { world } = JSON.parse(data) as { world: { captions?: Caption[] } };
+      // Replace with the authoritative record on reload, reconnect or switching maps.
+      said = (world.captions ?? []).map(asSaid).sort((a, b) => a.order! - b.order!);
+      if (fresh) { fresh = false; set(null); }
+      else for (const watcher of watchers) watcher();
+    } catch { /* not a snapshot */ }
+    return;
+  }
   if (data.startsWith('{"type":"guide"')) {
     try {
-      const { kind, text, by, at_ms } = JSON.parse(data) as { kind: string; text: string; by: string; at_ms: number };
-      if (!text || !by) return;
-      said = [...said, { text, by, at: at_ms || Date.now(), level: kind === "caption" ? "Speak" as const : "Mark" as const }].slice(-SAID_MAX);
+      const { kind, text, by, at_ms, caption } = JSON.parse(data) as { kind: string; text: string; by: string; at_ms: number; caption?: Caption };
+      // Arrows and held questions stay transient; only completed captions form the conversation record.
+      if (kind !== "caption" || !text || !by) return;
+      if (caption) {
+        if (said.some((s) => s.id === caption.id && s.by === caption.by)) return;
+        said = [...said, asSaid(caption)].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      } else said = [...said, { text, by, at: at_ms || Date.now(), level: "Speak" }];
       for (const watcher of watchers) watcher();
     } catch { /* not a guide message after all */ }
     return;
@@ -96,9 +108,6 @@ export function heard(data: unknown) {
       const { started_ms, people, level, level_by } = JSON.parse(data) as Call;
       set({ started_ms, people, level, level_by });
     } catch { /* not a call after all */ }
-  } else if (fresh && data.startsWith('{"type":"snapshot"')) {
-    fresh = false;
-    set(null);
   }
 }
 
@@ -121,9 +130,16 @@ export function useCall(): Call | null {
 }
 
 const saidNow = () => said;
-/** What participants said or showed through the guide in this window, oldest first (the newest 50). */
+/** Completed conversational captions in server order, restored from the journal on catch-up. */
 export function useSaid(): readonly Said[] {
   return useSyncExternalStore(subscribe, saidNow, saidNow);
+}
+
+/** Keep the conversation accessible after the live call ends or the core restarts. */
+export function useTalkCall(): Call | null {
+  const live = useCall();
+  const captions = useSaid();
+  return live ?? (captions.some((s) => s.id) ? historyCall : null);
 }
 
 /** Calls `listener` each time someone takes or gives back the floor (the bricks' `speaking`, BrickSlot.tsx); returns

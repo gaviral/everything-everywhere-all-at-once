@@ -71,6 +71,9 @@ try {
     send({ ...caption, kind: "hold" });
     send({ type: "snapshot", world: { thoughts: [{ text: "Old reply", speak: true }] } });
     check(spoken.length === 0, "unflagged, held and replayed words stay silent");
+    send({ type: "snapshot", world: { captions: [{ id: "old-caption", by: "Helper" }] } });
+    send({ ...caption, caption: { id: "old-caption", by: "Helper" } });
+    check(spoken.length === 0, "caption already restored by a snapshot cannot speak from a queued live relay");
     send(caption);
     check(spoken.length === 0 && logs.length === 0, "empty asynchronous list never uses an unspecified voice");
     check(frameIs("0,0"), "waiting for voices keeps capture paused");
@@ -115,6 +118,11 @@ try {
     const count = cancelled;
     speech.stopPageSpeech();
     check(cancelled === count && frameIs("123,-456"), "disconnect cancels once and releases mic");
+    const countBeforeIdentified = spoken.length;
+    send({ ...caption, caption: { id: "new-caption", by: "Helper" } });
+    send({ ...caption, caption: { id: "new-caption", by: "Helper" } });
+    check(spoken.length === countBeforeIdentified + 1, "duplicate live caption identity speaks once");
+    speech.stopPageSpeech();
     window.throwSpeech = true; send(caption); window.throwSpeech = false;
     check(!speech.pageSpeaking() && frameIs("123,-456"), "synchronous speech failure releases mic");
     check(logs.length === 1 && logs[0].includes("English Premium"), "chosen voice is logged once");

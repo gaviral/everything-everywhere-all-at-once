@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { BrickHost } from "../BrickSlot";
 import { copyInvite, useJoin, useLeave } from "../room";
 import { SHELL2 } from "../shell/flag";
-import { inCall, peopleHere, shownCode, useCall } from "./call-core";
+import { inCall, peopleHere, shownCode, useTalkCall, useSaid } from "./call-core";
 import { Talk, TALK } from "./Talk";
 import { turnIndex, turnsOf, unreadOf, newerMark } from "./turns";
 
@@ -29,10 +29,11 @@ function usePhone() {
 }
 
 export function TalkRail({ host }: { host: BrickHost }) {
-  const call = useCall();
+  const call = useTalkCall();
   const phone = usePhone();
   const [chosen, setChosen] = useState<boolean | null>(remembered);
-  const on = SHELL2 && inCall(call);
+  const saved = useSaid().some((s) => s.id);
+  const on = SHELL2 && (inCall(call) || saved);
   if (!on) return null;
   const open = chosen ?? (!phone && peopleHere(call) >= 2);
   const choose = (value: boolean) => {
@@ -64,7 +65,7 @@ function RailHead({ close }: { close: () => void }) {
 
 /** Talk, closed: a pill that opens it, with the turns that wait unread. */
 function TalkPill({ host, phone, show }: { host: BrickHost; phone: boolean; show: () => void }) {
-  const call = useCall();
+  const call = useTalkCall();
   const me = host.map.me;
   const turns = turnsOf(host.map.thoughts, host.map.threads);
   let mark: string | null = null;

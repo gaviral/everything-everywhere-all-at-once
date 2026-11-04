@@ -133,10 +133,25 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+/// A completed conversational caption. Playback flags belong only to its live relay.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Caption {
+    pub id: String,
+    pub by: String,
+    pub text: String,
+    pub at_ms: u64,
+    pub order: u64,
+    pub ai: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
+    #[serde(default)]
+    pub captions: Vec<Caption>,
     /// Saved receipts survive a restart even if the thought is later moved or deleted.
     #[serde(default, skip_serializing)]
     pub received_text: std::collections::HashSet<(String, String)>,
@@ -230,6 +245,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    CaptionAdded { caption: Caption },
     TextReceived { speaker: String, id: String },
     RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
@@ -433,6 +449,11 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::CaptionAdded { caption } => {
+                if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
+                    self.captions.push(caption.clone());
+                }
+            }
             Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
@@ -1843,11 +1864,13 @@ mod tests {
             Change::StayChanged { thread_id: Some("T4".into()) },
             Change::StayChanged { thread_id: None },
             Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
+            Change::CaptionAdded { caption: super::Caption { id: "caption-1".into(), by: "Helper".into(), text: "A completed answer.".into(), at_ms: 200, order: 1, ai: true, to: Some("you".into()) } },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
             match change {
-                Change::RecapSaved { .. }
+                Change::CaptionAdded { .. }
+                | Change::RecapSaved { .. }
                 | Change::AppRegistered { .. }
                 | Change::AppEnabled { .. }
                 | Change::AppRemoved { .. }
@@ -1907,7 +1930,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 50, "one of each kind of change");
+        assert_eq!(kinds.len(), 51, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

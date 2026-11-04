@@ -160,6 +160,7 @@ export interface World extends AppsWorld {
   recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
+  captions?: import("./talk/call-core").Caption[];
   /** Where the talk is now; `active_by` has each speaker's own thread. */
   active: string | null;
   active_by: Record<string, string>;
@@ -183,6 +184,7 @@ export interface World extends AppsWorld {
 }
 
 type Change =
+  | { type: "caption_added"; caption: import("./talk/call-core").Caption }
   | { type: "recap_saved"; recap: RecapData }
   | AppChange
   | TidyChange
@@ -370,7 +372,7 @@ export function jumpTracker() {
   };
 }
 
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
+const EMPTY: World = { captions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
 // when lowercasing keeps the length, so the cut lines up.
@@ -428,6 +430,9 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "caption_added":
+      return world.captions?.some((old) => old.id === c.caption.id && old.by === c.caption.by) ? world
+        : { ...world, captions: [...(world.captions ?? []), c.caption] };
     case "recap_saved":
       return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
     case "ai_joined":

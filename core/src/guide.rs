@@ -1,7 +1,7 @@
 //! Pointing, captions, held questions and tours: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
 //! the person one exact part of the screen, with an arrow and a one-line caption, says a line as a caption, or holds a
-//! question for the person's next pause, instead of adding a thought to the map. All are of the moment: relayed as
-//! they come to every window but the one that sent them, never journaled, and no model is asked. Jobs also replay
+//! question for the person's next pause, instead of adding a thought to the map. Completed captions are journaled;
+//! arrows, held questions and tours remain transient. Live relays exclude the originating window. No model is asked. Jobs also replay
 //! their latest states to joining windows; answers go only to their recipient's windows. Each window keeps
 //! its held questions and asks one when the person pauses (ui/src/guide-core.ts). The names are the window's
 //! `data-guide` names (docs/guide.md); ui/src/Guide.tsx draws them.
@@ -190,12 +190,38 @@ pub fn caption(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: S
     caption_speaking(core, speaker, window, pace, text, false);
 }
 
+#[cfg(test)]
 pub fn caption_speaking(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, speak: bool) {
+    caption_with_id(core, speaker, window, pace, text, speak, None);
+}
+
+pub fn caption_with_id(core: &Core, speaker: &str, window: u64, pace: &mut Pace, text: String, speak: bool, id: Option<String>) {
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
     if allowed(core, speaker, pace, refused) {
-        core.send_speaking(ServerMsg::Guide { kind: Kind::Caption, target: None, text, by: speaker.into(), at_ms: crate::now_ms(), urgent: false, from: window }, speak);
+        completed(core, speaker, window, text, speak, id, None);
     }
+}
+
+/// Save once, then publish the live caption under the world lock, in journal order.
+/// A supplied id is scoped to the speaker, so retries (including after restart) cannot speak twice.
+#[allow(clippy::too_many_arguments)]
+pub fn completed(core: &Core, speaker: &str, window: u64, text: String, speak: bool, id: Option<String>, to: Option<String>) {
+    let mut world = core.world.lock().unwrap();
+    let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if world.captions.iter().any(|c| c.id == id && c.by == speaker) { return; }
+    let caption = crate::world::Caption {
+        id, by: speaker.into(), text: text.clone(), at_ms: crate::now_ms(),
+        order: world.captions.last().map_or(1, |c| c.order + 1),
+        ai: speaker == crate::conversation::NAME || world.ai.iter().any(|name| name == speaker),
+        to: to.clone(),
+    };
+    let change = crate::world::Change::CaptionAdded { caption: caption.clone() };
+    std::sync::Arc::make_mut(&mut world).apply(&change);
+    if let Err(e) = core.journal.lock().unwrap().append(&change) { core.journal_save_failed(&e); }
+    let message = ServerMsg::Guide { caption: Some(caption.clone()), kind: Kind::Caption, target: None,
+        text, by: speaker.into(), at_ms: caption.at_ms, urgent: false, from: window };
+    let _ = core.updates.send(crate::protocol::Outgoing { to, message, speak });
 }
 
 /// `text`, a question for the other windows to hold until the person pauses and then ask, with an arrow at `target`
@@ -281,7 +307,7 @@ pub fn malformed_answer(core: &Core, speaker: &str, pace: &mut Pace) {
 #[allow(clippy::too_many_arguments)]
 fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, urgent: bool, refused: Option<String>) {
     if allowed(core, speaker, pace, refused) {
-        core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
+        core.send(ServerMsg::Guide { caption: None, kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
     }
 }
 
@@ -421,6 +447,43 @@ mod tests {
     }
 
     #[test]
+    fn completed_captions_keep_identity_order_and_retry_receipts_after_restart() {
+        let (core, path, mut queue) = prepared();
+        let mut updates = core.updates.subscribe();
+        let publish = |core: &Core, by: &str, id: &str, to: Option<String>| {
+            super::completed(core, by, 42, "Same words.".into(), true, Some(id.into()), to);
+        };
+        publish(&core, "Helper", "first", None);
+        publish(&core, "Helper", "first", None);
+        publish(&core, "Helper", "second", Some("you".into()));
+        publish(&core, "Other", "first", None);
+        let records = core.snapshot().captions.clone();
+        assert_eq!(records.iter().map(|c| (c.by.as_str(), c.id.as_str(), c.order)).collect::<Vec<_>>(),
+            [("Helper", "first", 1), ("Helper", "second", 2), ("Other", "first", 3)]);
+        assert_eq!(std::iter::from_fn(|| updates.try_recv().ok()).count(), 3, "a retry never speaks again");
+        let journal = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(journal.lines().filter(|line| line.contains("caption_added")).count(), 3);
+        assert!(!journal.contains("speak"));
+        assert!(core.snapshot().thoughts.is_empty());
+        assert!(queue.try_recv().is_err(), "no model work");
+        drop(core);
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let reopened = Core::test(journal, world);
+        let mut updates = reopened.updates.subscribe();
+        publish(&reopened, "Helper", "first", None);
+        assert!(updates.try_recv().is_err(), "retry receipt survives restart");
+        publish(&reopened, "Helper", "third", None);
+        assert_eq!(reopened.snapshot().captions.last().unwrap().order, 4);
+        let captions_for = |who: &str| crate::catch_up(&reopened, who).into_iter().find_map(|msg| match msg {
+            crate::protocol::ServerMsg::Snapshot { world } => Some(world.captions.clone()), _ => None,
+        }).unwrap();
+        assert_eq!(captions_for("you").len(), 4);
+        assert_eq!(captions_for("guest").len(), 3, "private partner replies stay private on catch-up");
+        assert!(crate::catch_up(&reopened, "you").iter().all(|m| !matches!(m, crate::protocol::ServerMsg::Guide { .. })), "catch-up restores text without live playback");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn speech_flags_are_live_only_and_silent_messages_keep_their_wire_shape() {
         let (core, path, _) = prepared();
         let mut updates = core.updates.subscribe();
@@ -445,7 +508,7 @@ mod tests {
         assert_eq!(thoughts[0]["speak"], true);
         let journal = std::fs::read_to_string(&path).unwrap();
         assert!(!journal.contains("\"speak\""));
-        assert!(!journal.contains("Speak this caption"));
+        assert!(journal.contains("Speak this caption"));
         assert!(crate::catch_up(&core, "avi2").iter().all(|m| serde_json::to_value(m).unwrap().get("speak").is_none()));
         for kind in ["caption", "text"] {
             assert!(serde_json::from_value::<crate::protocol::ClientMsg>(serde_json::json!({"type":kind,"text":"Old clients remain silent."})).is_ok());
@@ -468,7 +531,7 @@ mod tests {
             .layer(axum::middleware::from_fn(|mut request: axum::extract::Request, next: axum::middleware::Next| async move {
                 if request.uri().query().unwrap_or_default().contains("name=avi2") {
                     request.extensions_mut().insert(axum::extract::ConnectInfo(crate::Link {
-                        from: "192.168.1.20:51000".parse().unwrap(), to: "192.168.1.179:4360".parse().unwrap(), tls: true,
+                        from: "192.168.1.20:51000".parse().unwrap(), to: "192.168.1.179:48266".parse().unwrap(), tls: true,
                     }));
                 }
                 next.run(request).await
@@ -479,8 +542,8 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await });
         let guest = || {
             let mut request = format!("ws://{address}/ws?name=avi2&room=bridgevoice").into_client_request().unwrap();
-            request.headers_mut().insert("host", HeaderValue::from_static("192.168.1.179:4360"));
-            request.headers_mut().insert("origin", HeaderValue::from_static("https://192.168.1.179:4360"));
+            request.headers_mut().insert("host", HeaderValue::from_static("192.168.1.179:48266"));
+            request.headers_mut().insert("origin", HeaderValue::from_static("https://192.168.1.179:48266"));
             request
         };
         let (mut claude, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude&ai")).await.unwrap();
@@ -500,7 +563,11 @@ mod tests {
         assert_eq!(shown[1]["kind"], "point");
         assert_eq!(shown[2]["kind"], "hold");
         assert!(shown.iter().all(|m| m["by"] == "Claude" && m.get("to").is_none() && m.get("from").is_none()));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        let journal = std::fs::read_to_string(&path).unwrap();
+        assert!(journal.starts_with(&before));
+        assert_eq!(journal.lines().count(), before.lines().count() + 1, "only the completed caption is journaled");
+        assert_eq!(core.snapshot().captions.len(), 1);
+        assert!(!journal.contains("Type here.") && !journal.contains("Shall we continue?"), "gestures stay transient");
         claude.send(send(serde_json::json!({"type":"text", "text":"I think the answer belongs here.", "speak":true}))).await.unwrap();
         let live = drain(&mut avi2, 30).await;
         let thought = live.iter().find(|m| m["change"]["type"] == "thought_added").unwrap();
@@ -511,7 +578,8 @@ mod tests {
         assert!(!core.hosts.lock().unwrap().contains("avi2"), "exercise a genuine guest identity");
         let (mut rejoined, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
         let replay = drain(&mut rejoined, 30).await;
-        assert!(replay.iter().any(|m| m["type"] == "snapshot"));
+        let snapshot = replay.iter().find(|m| m["type"] == "snapshot").unwrap();
+        assert_eq!(snapshot["world"]["captions"][0], shown[0]["caption"], "guest catch-up restores the same caption identity and order");
         assert!(replay.iter().all(|m| m.get("speak").is_none() && m["type"] != "guide"));
         drop(queue);
         server.abort();
@@ -1247,8 +1315,8 @@ mod tests {
     }
 
     /// A point and a caption from one window (Claude's, over the bridge) reach every other window, the person's two
-    /// and another of Claude's, exactly as sent, with who sent them; never the window they came from; never the
-    /// journal, the map or a model. Too long, not a name, or past 4 a second: only the sender hears why.
+    /// and another of Claude's, exactly as sent, with who sent them; never the window they came from. Only completed
+    /// captions enter the journal, without entering the map or asking a model. Too long, not a name, or past 4 a second: only the sender hears why.
     #[tokio::test]
     async fn a_point_and_a_caption_reach_every_other_window_and_nothing_else() {
         let (core, address, path, mut queue) = served().await;
@@ -1307,8 +1375,10 @@ mod tests {
         let seen = drain(&mut ears, 300).await;
         assert!(seen.iter().any(|m| m["type"] == "guide" && m["target"] == "mic" && m["by"] == "you"), "{seen:?}");
 
-        // Nothing journaled, nothing on the map, nothing for the placer (so no model call).
-        assert_eq!(journaled(), before, "never journaled");
+        // Only completed captions journaled; nothing on the map or queued for a model.
+        assert_ne!(journaled(), before, "completed captions are journaled");
+        assert_eq!(core.snapshot().captions.len(), 2);
+        assert!(!journaled().contains("Your rent notes are here."), "arrows stay transient");
         assert!(core.snapshot().thoughts.is_empty(), "nothing on the map");
         assert!(queue.try_recv().is_err(), "nothing queued for a model");
         let _ = std::fs::remove_file(&path);
@@ -1356,7 +1426,7 @@ mod tests {
         claude.send(send(serde_json::json!({"type": "hold", "text": at_cap}))).await.unwrap();
         assert_eq!(next(&mut you, 500).await.unwrap()["text"], at_cap, "a question at the cap is held");
 
-        assert_eq!(journaled(), before, "never journaled");
+        assert_eq!(journaled(), before, "held questions stay transient");
         assert!(core.snapshot().thoughts.is_empty(), "nothing on the map");
         assert!(queue.try_recv().is_err(), "nothing queued for a model");
         let _ = std::fs::remove_file(&path);
