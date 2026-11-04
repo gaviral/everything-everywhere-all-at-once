@@ -1,4 +1,5 @@
 // The crew's four calls to the core.
+import type { Spec } from "./kit";
 import type { Part } from "./run";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -13,8 +14,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const planParts = (said: string) => post<{ run: string; name: string; parts: Part[]; ms: number }>("/crew/plan", { said });
-export type Built = { html: string; commit: string; reused: boolean; ms: number };
-export const buildPart = (run: string, part: Part, made: string[], repair?: { broke: string; before: string }) =>
+export type Built = { spec: Spec; commit: string; reused: boolean; broke: string | null; ms: number };
+export const buildPart = (run: string, part: Part, made: string[], repair?: { broke: string; before: Spec }) =>
   post<Built>("/crew/build", { run, part, made, ...repair });
 export const mergePart = (run: string, id: string) => post<{ commit: string }>("/crew/merge", { run, id });
 export const promote = (run: string, to: "staging" | "main", keep: unknown[] = []) =>

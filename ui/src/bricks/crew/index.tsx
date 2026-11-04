@@ -1,13 +1,13 @@
 // Crew: say many things at once; each becomes a part on its own branch; what works merges up to main.
-// This file only orders the steps: split, build, try in a sealed frame, repair once or turn off, merge, promote.
+// This file only orders the steps: split, fill, check, repair once or turn off, merge, promote.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBrickEvent, type BrickProps } from "../contract";
 import { buildPart, mergePart, planParts, promote } from "./api";
 import { Board } from "./Board";
-import { tryPart } from "./frame";
 import { count, inDependencyOrder, merged, started, withPart, type Part, type Run } from "./run";
 import { Tree } from "./Tree";
 import "./crew.css";
+import "./kit.css";
 
 const BUILD_ALL = /\b(build|make|do) (it |that |this )?all( of)?( that| this| it)?\b|\bbuild everything\b/i;
 const opensAtOnce = () => new URLSearchParams(location.search).has("crew");
@@ -34,15 +34,13 @@ export default function Crew({ on, actions, map }: BrickProps) {
     try {
       const made = (latest.current ? merged(latest.current) : []).map(done => done.name);
       let built = await buildPart(id, part, made);
-      set({ stage: "trying", html: built.html, commit: built.commit, ms: built.ms, reused: built.reused });
-      let tried = await tryPart(built.html);
-      if (!tried.ok) {
-        set({ stage: "fixing", why: tried.why });
-        built = await buildPart(id, part, made, { broke: tried.why ?? "It failed", before: built.html });
-        set({ stage: "trying", html: built.html, commit: built.commit, fixed: true });
-        tried = await tryPart(built.html);
+      set({ stage: "trying", spec: built.spec, commit: built.commit, ms: built.ms, reused: built.reused });
+      if (built.broke) {
+        set({ stage: "fixing", why: built.broke });
+        built = await buildPart(id, part, made, { broke: built.broke, before: built.spec });
+        set({ stage: "trying", spec: built.spec, commit: built.commit, fixed: true });
       }
-      if (!tried.ok) throw new Error(tried.why);
+      if (built.broke) throw new Error(built.broke);
       const joined = await mergePart(id, part.id);
       set({ stage: "merged", commit: joined.commit });
     } catch (error) {
@@ -70,7 +68,7 @@ export default function Crew({ on, actions, map }: BrickProps) {
         change(old => ({ ...old, staging: "moving" }));
         await promote(plan.run, "staging");
         change(old => ({ ...old, staging: "done", main: "moving" }));
-        const landed = await promote(plan.run, "main", worked.map(({ id, name, job, html }) => ({ id, name, job, html })));
+        const landed = await promote(plan.run, "main", worked.map(({ id, name, job, spec }) => ({ id, name, job, spec })));
         change(old => ({ ...old, main: "done", commit: landed.commit, commits: landed.commits, catalog: landed.catalog }));
       }
       change(old => ({ ...old, doneMs: Date.now() - old.startedAt }));
@@ -95,15 +93,14 @@ export default function Crew({ on, actions, map }: BrickProps) {
   return <div className="crew" role="dialog" aria-label="Crew">
     <header className="crew-head">
       <div>
-        <h2>{run?.name ?? "Say many things at once."}</h2>
+        <h2>{run?.name ?? "Say it all at once."}</h2>
         {run && <p className="crew-said">{run.said}</p>}
       </div>
       {run && <dl className="crew-count">
-        <div><dt>parts</dt><dd>{run.parts.length}</dd></div>
-        <div><dt>merged</dt><dd>{count(run, "merged")}</dd></div>
-        {run.parts.some(part => part.fixed) && <div><dt>fixed</dt><dd>{run.parts.filter(part => part.fixed).length}</dd></div>}
-        {count(run, "off") > 0 && <div><dt>turned off</dt><dd>{count(run, "off")}</dd></div>}
-        <div><dt>Muse Spark</dt><dd>{(elapsed / 1000).toFixed(1)} s</dd></div>
+        <div><dd>{count(run, "merged")} of {run.parts.length}</dd><dt>parts on main</dt></div>
+        {run.parts.some(part => part.fixed) && <div><dd>{run.parts.filter(part => part.fixed).length}</dd><dt>repaired</dt></div>}
+        {count(run, "off") > 0 && <div><dd>{count(run, "off")}</dd><dt>turned off</dt></div>}
+        <div><dd>{(elapsed / 1000).toFixed(1)} s</dd><dt>Muse Spark</dt></div>
       </dl>}
       <button className="crew-close" onClick={() => setOpen(false)}>Close</button>
     </header>

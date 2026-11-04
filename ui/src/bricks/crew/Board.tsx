@@ -1,14 +1,11 @@
-// The board: the thing being built, part by part, as each one merges.
-import { framed, SEALED } from "./frame";
+// The board: what's been built so far, part by part, as each one merges.
+import { PartView } from "./kit";
 import { merged, type Run } from "./run";
 
 export function Board({ run }: { run: Run }) {
   const parts = merged(run);
   return <section className="crew-board" aria-label="What's merged so far">
-    {parts.map(part => <figure key={part.id} className="crew-card">
-      <iframe title={part.name} sandbox={SEALED} srcDoc={framed(part.html ?? "")} />
-      <figcaption>{part.name}<span>{part.commit}</span></figcaption>
-    </figure>)}
-    {!parts.length && <p className="crew-board-empty">Parts appear here as they merge.</p>}
+    {parts.map(part => part.spec && <div key={part.id} className="crew-card"><PartView spec={part.spec} /></div>)}
+    {!parts.length && <p className="crew-board-empty">Parts land here as they merge.</p>}
   </section>;
 }

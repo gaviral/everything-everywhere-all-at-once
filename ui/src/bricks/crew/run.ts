@@ -1,8 +1,10 @@
+import type { Spec } from "./kit";
+
 // A run: what was said, the parts it became, and how far each has climbed. Nothing here talks to anything.
 export type Stage = "waiting" | "building" | "trying" | "fixing" | "merged" | "off";
 export type Level = "waiting" | "moving" | "done";
 export type Part = { id: string; name: string; job: string; needs: string[]; reuse?: string | null };
-export type PartRun = Part & { stage: Stage; html?: string; commit?: string; ms?: number; reused?: boolean; fixed?: boolean; why?: string };
+export type PartRun = Part & { stage: Stage; spec?: Spec; commit?: string; ms?: number; reused?: boolean; fixed?: boolean; why?: string };
 export type Run = {
   id: string; name: string; said: string; startedAt: number; planMs: number; parts: PartRun[];
   staging: Level; main: Level; commit?: string; commits?: string; catalog?: number; doneMs?: number;

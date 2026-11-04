@@ -254,7 +254,7 @@ Parts of the app can be features: a view, a card, an input or a panel, each in a
 
 ### Crew
 
-Off by default; switch it on in Features, or open with `?crew`. Say or type several things at once, then “build all that”. Muse Spark splits them into small parts and builds each at the same time, on its own line of a real Git repository beside the map's folder. Each part runs in a sealed frame with no network; one that fails is repaired once, then turned off while the rest carry on. What works merges up from dev through staging to main, and is kept, so a later run reuses a part instead of building it again.
+Off by default; switch it on in Features, or open with `?crew`. Say or type several things at once, then “build all that”. Muse Spark splits them into small parts and fills each at the same time, on its own line of a real Git repository beside the map's folder. Spark chooses words and known blocks, and the app draws them. A part that fails its check is repaired once, then turned off while the rest carry on. What works merges up from dev through staging to main, and is kept, so a later run reuses a part instead of building it again.
 
 ### Draw
 
