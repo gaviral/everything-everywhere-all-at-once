@@ -1,0 +1,8 @@
+{
+  "id": "populated-variants",
+  "name": "Populated variants",
+  "does": "Compare populated outlines and cards and keep a review choice.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

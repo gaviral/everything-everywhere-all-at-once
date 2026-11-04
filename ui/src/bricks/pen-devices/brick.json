@@ -1,0 +1,8 @@
+{
+  "id": "pen-devices",
+  "name": "Pen and touch",
+  "does": "Draw original marks into one of two local example sessions.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

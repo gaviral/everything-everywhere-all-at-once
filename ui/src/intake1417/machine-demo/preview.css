@@ -1,0 +1,11 @@
+body:has(.machine-demo-preview) { margin: 0; background: #eef2ed; }
+.machine-demo-preview { max-width: 1080px; margin: auto; padding: 24px; font: 1rem/1.55 system-ui, sans-serif; color: #20312e; overflow-wrap: anywhere; }
+.machine-demo-preview, .machine-demo-preview * { box-sizing: border-box; min-width: 0; }
+.machine-demo-preview h1 { line-height: 1.2; }
+.machine-demo-preview-controls { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.machine-demo-preview-controls label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 100%; }
+.machine-demo-preview select { max-width: 100%; min-height: 44px; color: inherit; background: white; font: inherit; border: 1px solid #6f8879; border-radius: 6px; padding: 8px; }
+.machine-demo-preview input[type=checkbox] { width: 24px; height: 24px; }
+.machine-demo-preview :is(input, select):focus-visible { outline: 3px solid #315cbb; outline-offset: 4px; }
+.machine-demo-host { background: white; padding: 24px; border: 1px solid #bdcbc2; border-radius: 12px; }
+@media (max-width: 480px) { .machine-demo-preview { padding: 12px; } }
