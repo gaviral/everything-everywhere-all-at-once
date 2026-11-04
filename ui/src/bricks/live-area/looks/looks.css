@@ -1,0 +1,38 @@
+.live-area-look-switch { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 0 16px; }
+.live-area-look-switch span { margin-right:8px; font-weight:700; }
+.live-area-look-switch button { border:1px solid #a8b6be; border-radius:999px; background:transparent; color:inherit; padding:5px 16px; cursor:pointer; }
+.live-area-look-switch button[aria-pressed=true] { background:#183c51; border-color:#183c51; color:white; }
+.live-area-look-switch button:focus-visible { outline:3px solid #397af0; outline-offset:2px; }
+.live-area-example:not([data-look=current]) { background:#111824; color:#f6f8fc; border-color:#344356; }
+.live-area-example:not([data-look=current]) .intake1411-live-area { border:0; color:inherit; }
+.live-area-example:not([data-look=current]) :is(.la-row) { border:0; border-radius:22px; padding:20px; }
+.live-area-example:not([data-look=current]) :is(.la-slot) { border:0; border-radius:16px; padding:14px; }
+.live-area-example:not([data-look=current]) :is(.la-sources) { border:0; border-radius:999px; padding:12px 18px; }
+.live-area-example:not([data-look=current]) :is(h3,.wm-branch-title) { font-size:1.3em !important; }
+.live-area-example[data-look=orbit] .intake1411-live-area { background:radial-gradient(circle at 88% 0%,#244d69,transparent 38%),#142738; }
+.live-area-example[data-look=orbit] :is(.la-row) { background:#213e50; color:#f4fcfa; box-shadow:0 8px 24px #0002; }
+.live-area-example[data-look=orbit] :is(.la-slot) { background:#183243; color:#f4fcfa; }
+.live-area-example[data-look=orbit] :is(.la-sources) { background:#315e68; color:#e7fffa; }
+.live-area-example[data-look=orbit] :is(.la-header p, .la-identity, .la-slot h4) { color:#b6d6db; }
+.live-area-example[data-look=signal] .intake1411-live-area { background:radial-gradient(circle at 95% 5%,#682d56,transparent 38%),#211b35; }
+.live-area-example[data-look=signal] :is(.la-row) { background:#f7f2e8; color:#221d35; box-shadow:0 8px 24px #0002; }
+.live-area-example[data-look=signal] :is(.la-slot) { background:#e9e0ed; color:#221d35; }
+.live-area-example[data-look=signal] :is(.la-sources) { background:#ffe77a; color:#221d35; }
+.live-area-example[data-look=signal] :is(.la-header p, .la-identity, .la-slot h4) { color:#e7cde6; }
+.live-area-example[data-look=paper] .intake1411-live-area { background:#e3eddd; }
+.live-area-example[data-look=paper] :is(.la-row) { background:#fffdf6; color:#263832; box-shadow:0 8px 24px #0002; }
+.live-area-example[data-look=paper] :is(.la-slot) { background:#f0f4e9; color:#263832; }
+.live-area-example[data-look=paper] :is(.la-sources) { background:#c9ddbe; color:#263832; }
+.live-area-example[data-look=paper] :is(.la-header p, .la-identity, .la-slot h4) { color:#425e63; }
+.live-area-example[data-look=paper] { background:#eee7d9; color:#263832; border-color:#d1c5b2; }
+@media (prefers-reduced-motion:no-preference) { .live-area-example:not([data-look=current]) :is(.la-row) { animation:live-area-arrive .35s ease-out both; } @keyframes live-area-arrive { from { opacity:0; transform:translateY(8px); } } }
+.live-area-example:not([data-look=current]) .la-rows { grid-template-columns:repeat(auto-fit,minmax(min(100%, 340px),1fr)); }
+.live-area-example:not([data-look=current]) .la-slots { grid-template-columns:1fr; gap:10px; }
+.live-area-example[data-look=orbit] .la-freshness[data-freshness=current] { color:#91edca; }
+.live-area-example[data-look=orbit] .la-freshness[data-freshness=stale] { color:#ffcf8b; }
+.live-area-example:not([data-look=current]) > div:nth-child(3) { margin-bottom:16px; }
+.live-area-example:not([data-look=current]) .la-row-heading > span { background:#dcebe5; color:#203a37; }
+.live-area-example[data-look=orbit] .la-row-heading > span { background:#315e68; color:#fff; }
+.live-area-example[data-look=signal] .la-header p { color:#e7cde6; }
+.live-area-example[data-look=signal] :is(.la-identity,.la-slot h4) { color:#54475b; }
+.live-area-example:not([data-look=current]) > div:nth-child(3) button { color:inherit; background:transparent; border:1px solid #80939c; border-radius:999px; padding:5px 14px; }
