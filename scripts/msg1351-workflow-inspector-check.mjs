@@ -1,17 +1,12 @@
 // Focused contract and rendered acceptance. No core, model calls or microphone.
 // node scripts/msg1351-workflow-inspector-check.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import { openPage } from "./headless.mjs";
 
-const server = await createServer({
-  configFile: false, root: new URL("../ui", import.meta.url).pathname,
-  cacheDir: mkdtempSync(join(tmpdir(), "workflow-inspector-vite-")),
-  server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false, ws: false, watch: null },
-});
+const server = await uiServer({ configFile: false }, { port: 0 });
 const shots = process.env.SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 let browser;

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { build } from '../ui/node_modules/vite/dist/node/index.js';
+import { buildUi as build } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
