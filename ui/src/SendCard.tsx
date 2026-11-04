@@ -26,6 +26,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
   // The digit changes on each whole second left, not on a fixed beat, so it never shows a second it has passed.
   useEffect(() => {
     if (!card) return;
+    if (card.state === "running") return;
     if (card.state !== "counting") {
       if (hovered || focused) return;
       const timer = window.setTimeout(() => onGone(card.id), lingerMs(card));
@@ -45,7 +46,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
 
   // Before the map's own Esc (it folds threads), and wherever focus is: stopping a message comes first.
   useEffect(() => {
-    if (!card || card.state !== "counting") return;
+    if (!card || (card.state !== "counting" && card.state !== "running")) return;
     const key = (event: KeyboardEvent) => {
       if (!stopsOnKey(card, event.key, Date.now())) return;
       event.preventDefault();
@@ -72,11 +73,12 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
       onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="send-card-head" aria-hidden="true">{words.heading}</div>
+      {card.channel === "email" && <div className="send-card-subject"><strong>Subject:</strong> {card.subject}</div>}
       <p className="send-card-text"><Markdown text={card.text} /></p>
       <div className="send-card-foot">
         <span className="send-card-status" aria-hidden="true">{words.status}</span>
         {words.stop && (
-          <button type="button" className="send-card-stop" onClick={() => onStop(card.id)} aria-label={`Stop: don't send to ${card.to}`}>
+          <button type="button" className="send-card-stop" onClick={() => onStop(card.id)} aria-label={card.purpose === "helpers" ? "Stop helpers" : `Stop: don't send to ${card.to}`}>
             Stop <kbd>esc</kbd>
           </button>
         )}

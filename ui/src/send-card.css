@@ -12,6 +12,7 @@
   color: var(--ink);
   animation: send-card-in 180ms ease-out;
 }
+.send-card-subject { padding: 4px 0; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
 .send-card-head { color: var(--muted); font-size: 12px; }
 .send-card-text { margin: 4px 0 10px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
 .send-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }

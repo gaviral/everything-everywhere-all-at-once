@@ -72,7 +72,7 @@ import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
-import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
@@ -1569,7 +1569,7 @@ export default function App() {
         on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
       show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
     }),
-    ...BUILT_INS.map((b): CatalogRow => {
+    ...BUILT_INS.filter((b) => featureAvailable(b.id) && (b.id !== "email" || site.email)).map((b): CatalogRow => {
       const named = FEATURE_NAMES[b.id];
       const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
       return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false,

@@ -122,7 +122,8 @@ export interface Job {
   /** What it is, one line (80 characters at most). */
   readonly title: string;
   readonly status: JobStatus;
-  /** One line (160 characters at most): what a done job found, why a failed one stopped, the question a waiting one asks (a
+  /** A relayed job has one line (160 characters at most); in-core thinking helpers can carry up to 120 words.
+   *  What a done job found, why a failed one stopped, the question a waiting one asks (a
    *  waiting job whose side job is the one waiting has a summary here instead: the side job asks). */
   readonly result?: string;
   /** The job this is a side job of; a parent that isn't here (yet) leaves it standing alone. */
@@ -133,8 +134,8 @@ export interface Job {
   readonly by: string;
   /** When its state last changed, as the core stamped it (ms since 1970). */
   readonly at_ms: number;
-  /** When this window first saw it running, and first saw it end (the core's `at_ms` of each). Only what was seen: a
-   *  window that joined after a job ended has no start, so no length either; none is made up. */
+  /** Execution start from the core for thinking helpers; otherwise when this window first saw it running.
+   *  The end is the core's state-change time. Replayed helpers retain their execution duration. */
   readonly started_ms?: number;
   readonly ended_ms?: number;
 }

@@ -54,6 +54,9 @@ pub fn window() -> u64 {
 /// A live job update; identity and time are added by the server when relaying it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
+    /// In-core jobs retain their actual execution start across reconnects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_ms: Option<u64>,
     pub id: String,
     pub title: String,
     pub status: String,
@@ -72,6 +75,20 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// In-core work has its own identity and bypasses a remote window's rate budget.
+    /// Publish under the replay lock, exactly as the relay does.
+    pub fn publish_core(&self, core: &Core, job: Job) {
+        let mut jobs = self.jobs.lock().unwrap();
+        let row = jobs.iter().position(|m| matches!(m, ServerMsg::Job { job: old, .. } if old.id == job.id));
+        let message = ServerMsg::Job { job, by: "Helpers".into(), at_ms: crate::now_ms(), from: 0 };
+        if let Some(row) = row { jobs[row] = message.clone(); }
+        else {
+            if jobs.len() >= 60 { jobs.pop_front(); }
+            jobs.push_back(message.clone());
+        }
+        core.send(message);
+    }
+
     /// Subscribe and capture replay under the publication lock: queued jobs are strictly after this replay.
     pub fn subscribe(&self, core: &Core) -> (tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>, Vec<ServerMsg>) {
         let jobs = self.jobs.lock().unwrap();
@@ -595,7 +612,7 @@ mod tests {
     fn job_row(id: &str, revision: usize) -> super::Job {
         super::Job {
             id: id.into(), title: format!("Revision {revision}"), status: "running".into(),
-            result: Some(revision.to_string()), parent: None, demo: false,
+            result: Some(revision.to_string()), parent: None, demo: false, started_ms: None,
         }
     }
 
