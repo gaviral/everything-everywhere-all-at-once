@@ -114,6 +114,7 @@ pub struct Runtime {
     max: usize,
     hosted: bool,
     url: String,
+    coding: coding::Settings,
     state: Mutex<State>,
 }
 #[derive(Default)]
@@ -132,6 +133,8 @@ struct Run {
     context: String,
     end: Instant,
     counting: AtomicBool,
+    coding: bool,
+    stopped: AtomicBool,
     started: Mutex<HashMap<usize, u64>>,
     cancel: Notify,
 }
@@ -141,6 +144,7 @@ impl Default for Runtime {
             max: 12,
             hosted: false,
             url: URL.into(),
+            coding: coding::Settings::default(),
             state: Mutex::default(),
         }
     }
@@ -154,6 +158,7 @@ impl Runtime {
                 .filter(|n| *n > 0)
                 .unwrap_or(12),
             hosted: crate::hosted(),
+            coding: coding::Settings::from_env(),
             ..Self::default()
         }
     }
@@ -172,7 +177,13 @@ pub fn switch(core: &Core, speaker: &str, on: bool) {
         state.off.insert(speaker.into());
     }
     let pending = (!on)
-        .then(|| state.active.as_ref().filter(|r| r.speaker == speaker).map(|r| r.id))
+        .then(|| {
+            state
+                .active
+                .as_ref()
+                .filter(|r| r.speaker == speaker)
+                .map(|r| r.id)
+        })
         .flatten();
     drop(state);
     if let Some(id) = pending {
@@ -218,7 +229,11 @@ fn card(run: &Run, state: SendState, message: &str) -> ServerMsg {
     ServerMsg::SendCard {
         id: run.id,
         to: format!("{} helpers", run.ask.count),
-        text: format!("Think about {}", run.ask.topic),
+        text: format!(
+            "{} {}",
+            if run.coding { "Work on" } else { "Think about" },
+            run.ask.topic
+        ),
         state,
         in_ms: if state == SendState::Counting {
             run.end
@@ -241,8 +256,18 @@ pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
     state
         .active
         .as_ref()
-        .filter(|r| r.speaker == speaker && r.counting.load(Ordering::Relaxed))
-        .map(|r| card(r, SendState::Counting, ""))
+        .filter(|r| {
+            r.speaker == speaker
+                && !r.stopped.load(Ordering::Relaxed)
+                && (r.coding || r.counting.load(Ordering::Relaxed))
+        })
+        .map(|r| {
+            if r.counting.load(Ordering::Relaxed) {
+                card(r, SendState::Counting, "")
+            } else {
+                card(r, SendState::Running, "Coding helpers running")
+            }
+        })
 }
 pub fn counting(core: &Core) -> bool {
     core.helpers
@@ -256,34 +281,52 @@ pub fn counting(core: &Core) -> bool {
 pub fn stop(core: &Core, id: u64) -> bool {
     let run = {
         let mut state = core.helpers.state.lock().unwrap();
-        if !state
-            .active
-            .as_ref()
-            .is_some_and(|r| r.id == id && r.counting.load(Ordering::Relaxed))
-        {
+        if !state.active.as_ref().is_some_and(|r| {
+            r.id == id
+                && !r.stopped.load(Ordering::Relaxed)
+                && (r.coding || r.counting.load(Ordering::Relaxed))
+        }) {
             return false;
         }
-        state.active.take().unwrap()
+        if state.active.as_ref().unwrap().coding {
+            state.active.as_ref().unwrap().clone()
+        } else {
+            state.active.take().unwrap()
+        }
     };
     run.counting.store(false, Ordering::Relaxed);
+    run.stopped.store(true, Ordering::Relaxed);
+    run.cancel.notify_waiters();
     run.cancel.notify_one();
-    end_card(core, &run, SendState::Stopped, "Stopped: helpers won't run");
+    end_card(core, &run, SendState::Stopped, "Stopped: helpers halted");
     row(
         core,
         &run,
         None,
-        "Thinking helpers",
+        if run.coding {
+            "Coding helpers"
+        } else {
+            "Thinking helpers"
+        },
         "failed",
-        Some("Stopped before starting".into()),
+        Some("Stopped".into()),
     );
     for i in 0..run.ask.count {
         row(
             core,
             &run,
             Some(i),
-            &format!("Helper {}", i + 1),
+            &format!(
+                "{} {}",
+                if run.coding {
+                    "Coding helper"
+                } else {
+                    "Helper"
+                },
+                i + 1
+            ),
             "failed",
-            Some("Stopped before starting".into()),
+            Some("Stopped".into()),
         );
     }
     core.trace
@@ -365,7 +408,12 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         return false;
     }
     if crate::messages::withdrawn(text) {
-        core.send_to(speaker, ServerMsg::Notice { message: "Helpers won't start: you said “stop” at the end.".into() });
+        core.send_to(
+            speaker,
+            ServerMsg::Notice {
+                message: "Helpers won't start: you said “stop” at the end.".into(),
+            },
+        );
         return true;
     }
     let world = core.snapshot();
@@ -401,6 +449,8 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
     let run = Arc::new(Run {
         id: FIRST_ID + state.next,
         speaker: speaker.into(),
+        coding: coding::requested(&ask.topic, &text.to_lowercase()),
+        stopped: AtomicBool::new(false),
         ask,
         topic,
         context,
@@ -416,7 +466,11 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         core,
         &run,
         None,
-        "Thinking helpers",
+        if run.coding {
+            "Coding helpers"
+        } else {
+            "Thinking helpers"
+        },
         "running",
         Some(format!(
             "{} helpers · starts after the countdown",
@@ -428,7 +482,15 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
             core,
             &run,
             Some(i),
-            &format!("Helper {}", i + 1),
+            &format!(
+                "{} {}",
+                if run.coding {
+                    "Coding helper"
+                } else {
+                    "Helper"
+                },
+                i + 1
+            ),
             "running",
             None,
         );
@@ -436,10 +498,14 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
     core.trace.write(|| json!({"kind":"helpers_first_row", "swarm":run.id, "speech_end_to_first_row_ms":speech_end.elapsed().as_millis() as u64, "count":run.ask.count}));
     let core = core.clone();
     tokio::spawn(async move {
-        tokio::select! {
-            biased;
-            _ = run.cancel.notified() => {},
-            _ = execute(&core, &run) => {},
+        if run.coding {
+            coding::execute(&core, &run).await;
+        } else {
+            tokio::select! {
+                biased;
+                _ = run.cancel.notified() => {},
+                _ = execute(&core, &run) => {},
+            }
         }
         let mut state = core.helpers.state.lock().unwrap();
         if state.active.as_ref().is_some_and(|r| r.id == run.id) {
@@ -618,3 +684,5 @@ async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
 
 #[cfg(test)]
 mod tests;
+
+mod coding;

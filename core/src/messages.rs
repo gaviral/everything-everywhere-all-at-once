@@ -148,6 +148,8 @@ fn messages_app() -> Sender {
 pub enum SendState {
     /// Up, counting down: it sends when the count ends.
     Counting,
+    /// Local coding helpers are executing; their card still offers Stop.
+    Running,
     /// Stopped before the count ended: nothing was sent.
     Stopped,
     /// Messages took it.

@@ -88,7 +88,16 @@ try {
   const dry = received(card, msg("dry_run", { message: "Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to Mia." }), t0 + 5000);
   assert.match(cardWords(dry, t0 + 5000).status, /^Dry run: nothing sent/);
   assert.equal(cardWords(received(card, msg("failed"), t0 + 5000), t0 + 5000).status, "Not sent");
-  assert.deepEqual(Object.keys(STATE_CLASS).sort(), ["counting", "dry_run", "failed", "sent", "stopped"]);
+  assert.deepEqual(Object.keys(STATE_CLASS).sort(), ["counting", "dry_run", "failed", "running", "sent", "stopped"]);
+
+  const running = received(card, msg("running", { purpose: "helpers", to: "3 helpers", message: "Coding helpers running" }), t0 + 6000);
+  assert.equal(cardWords(running, t0 + 9000).stop, true, "running helpers retain Stop");
+  assert.equal(stopsOnKey(running, "Escape", t0 + 9000), true);
+  assert.equal(lingerMs(running), 0, "running helpers do not expire");
+  assert.equal(caughtUp(running, null), null, "a stale running card is cleared after reconnect");
+  assert.equal(received(null, msg("running", { purpose: "helpers" }), t0).state, "running", "running card replays to a fresh window");
+  assert.equal(comesFirst(running), true);
+  assert.equal(received(running, msg("stopped"), t0 + 9000).state, "stopped");
 
   // A modal sheet (Recap, Import) makes the rest of the window inert and covers it: a message that starts counting
   // closes them, so its countdown and Stop are in view and clickable while it can still be stopped (the sheet says

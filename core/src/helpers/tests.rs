@@ -37,7 +37,7 @@ fn whole_turn_rule_numbers_cap_and_talk() {
     }
 }
 
-fn fixture(full: bool, hosted: bool, guest: bool) -> (Arc<Core>, std::path::PathBuf) {
+pub(super) fn fixture(full: bool, hosted: bool, guest: bool) -> (Arc<Core>, std::path::PathBuf) {
     let path = std::env::temp_dir().join(format!("e2a2o-helpers-{}.jsonl", uuid::Uuid::new_v4()));
     let (journal, mut world) = crate::world::Journal::open(&path).unwrap();
     world.apply(&Change::ThreadAdded {
