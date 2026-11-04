@@ -106,7 +106,7 @@ const until = expression => browser.until(expression, 10_000);
 const open = async ({ width = 1440, height = 900, extra = "" } = {}) => {
   browser = await openPage("about:blank", { width, height });
   await browser.page("Page.enable");
-  await browser.page("Page.addScriptToEvaluateOnNewDocument", { source: probe + extra });
+  await browser.page("Page.addScriptToEvaluateOnNewDocument", { source: probe + extra + `;localStorage.setItem("e2a2o.bricks", JSON.stringify({...JSON.parse(localStorage.getItem("e2a2o.bricks")||"{}"), "topic-images":true}));` });
   // WebP fixtures are generated here from solid synthetic canvas pixels, never read from app stores.
   const fixture = async (w, h) => Buffer.from(await ev(`(() => { const c = document.createElement('canvas'); c.width=${w}; c.height=${h}; const x=c.getContext('2d'); x.fillStyle='#286d65'; x.fillRect(0,0,c.width,c.height); x.fillStyle='#efdca8'; x.fillRect(0,0,c.width/2,c.height/2); return c.toDataURL('image/webp').split(',')[1]; })()`), "base64");
   webp ??= await fixture(64, 64); huge ??= await fixture(3000, 2000); medium ??= await fixture(1200, 1000);

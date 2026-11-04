@@ -1,4 +1,4 @@
-import { usePluginState, useBuiltInsOn } from "../contract";
+import { usePluginState, useBuiltInsOn, useTopicImages } from "../contract";
 import { Placement } from "./placement";
 // What each thing on the Spine looks like (layout.ts places them; index.tsx puts them on the canvas). Far out, words
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
@@ -261,11 +261,12 @@ function Group({ data }: { data: ItemData }) {
 }
 
 function Tile({ item }: { item: Item }) {
+  const images = useTopicImages();
   const [shown, setShown] = useState(false);
   const letter = Array.from((item.title ?? "").trim())[0]?.toLocaleUpperCase() ?? "?";
   return <span className="spine-tile" aria-hidden="true">
     <span className="spine-letter">{letter}</span>
-    {item.picture && <img className={cls("spine-picture", shown && "spine-picture-shown")} src={item.picture} alt="" draggable={false}
+    {images && item.picture && <img className={cls("spine-picture", shown && "spine-picture-shown")} src={item.picture} alt="" draggable={false}
       onLoad={() => setShown(true)} onError={() => setShown(false)} />}
   </span>;
 }

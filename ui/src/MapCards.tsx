@@ -6,6 +6,7 @@ import { AgreementControls } from "./bricks/spine/nodes";
 import { SuggestPoint } from "./TextEditReview";
 import { StayHere } from "./StayHere";
 import { usePicture } from "./pictures";
+import { useTopicImages } from "./topic-images";
 import { actionLine, dismissable } from "./action-line";
 import { leftBy, useMe } from "./room";
 import { roomStyle } from "./rooms";
@@ -205,7 +206,8 @@ const ThreadCard = memo(function ThreadCard({ thread, active, rooms, on, activeP
  *  rule in pictures.ts). A card used to grow 5–19 px when its picture came, its title sliding right, and a picture
  *  that failed showed a broken-image glyph. ✦ marks a picture only once one shows. */
 export function ThreadPicture({ thread, marked = false }: { thread: Thread; marked?: boolean }) {
-  const { shown, img } = usePicture(thread.picture ? [thread.picture] : []);
+  const images = useTopicImages();
+  const { shown, img } = usePicture(images && thread.picture ? [thread.picture] : []);
   return (
     <span className="picture-wrap">
       <span className="picture picture-letter" aria-hidden="true">{firstLetter(thread.title)}</span>

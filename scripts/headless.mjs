@@ -115,9 +115,9 @@ export async function standInCore(joinReply, { heartbeat = true, door = { room: 
 const running = new Map(); // each Chrome that hasn't exited yet, with its throwaway profile
 let watching = false;
 function endWhatIsLeft() {
-  for (const [chrome, profile] of running) {
+  for (const [chrome, { profile, preserveProfile }] of running) {
     try { chrome.kill("SIGKILL"); } catch { /* already gone */ }
-    try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* the OS clears its temp folder */ }
+    try { if (!preserveProfile) rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* the OS clears its temp folder */ }
   }
   running.clear();
 }
@@ -129,11 +129,11 @@ function watchExit() {
 }
 
 /** Headless Chrome with one page at `url`, `width` × `height`, light, the app's own motion. */
-export async function openPage(url, { width = 1440, height = 900, debugPort = 0, chromeArgs = [] } = {}) {
+export async function openPage(url, { width = 1440, height = 900, debugPort = 0, chromeArgs = [], preserveProfile = false } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "page-check-"));
   const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, "--no-first-run",
     "--no-default-browser-check", "--use-mock-keychain", "--password-store=basic", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, ...chromeArgs, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-  running.set(chrome, profile);
+  running.set(chrome, { profile, preserveProfile });
   chrome.once("exit", () => running.delete(chrome));
   watchExit();
   const close = async () => {
@@ -148,7 +148,7 @@ export async function openPage(url, { width = 1440, height = 900, debugPort = 0,
     chrome.stderr.destroy();
     chrome.unref();
     // The throwaway profile in the system's temp folder; Chrome may still be closing files in it.
-    try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the OS clears its temp folder */ }
+    try { if (!preserveProfile) rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the OS clears its temp folder */ }
   };
   try {
     const devtools = await new Promise((resolve, reject) => {
