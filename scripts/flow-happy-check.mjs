@@ -1,0 +1,116 @@
+// Explicit live-service smoke test. Leaves its temporary browser profile and screenshots for inspection.
+// Start the core on an isolated map first, then FLOW_URL=http://localhost:4457 node scripts/flow-happy-check.mjs.
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const base = process.env.FLOW_URL;
+assert(base, 'Set FLOW_URL to the isolated live core explicitly');
+const artifacts = mkdtempSync(join(tmpdir(), 'flow-happy-'));
+const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${artifacts}/profile`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic', '--window-size=1920,1080', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+let browser;
+try {
+  const address = await new Promise((resolve, reject) => {
+    let log = ''; const timer = setTimeout(() => reject(new Error('Chrome did not start')), 15000);
+    chrome.stderr.on('data', d => { log += d; const match = log.match(/DevTools listening on (ws:\/\/\S+)/); if (match) { clearTimeout(timer); resolve(match[1]); } });
+    chrome.once('exit', () => { clearTimeout(timer); reject(new Error('Chrome exited')); });
+  });
+  browser = new WebSocket(address); await new Promise(resolve => browser.addEventListener('open', resolve, { once: true }));
+  let n = 0; const waiting = new Map();
+  browser.onmessage = ({data}) => { const m = JSON.parse(data); if (m.id) { const item = waiting.get(m.id); waiting.delete(m.id); if (m.error) item?.reject(new Error(m.error.message)); else item?.resolve(m.result); } };
+  const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => { const id = ++n; waiting.set(id, {resolve, reject}); browser.send(JSON.stringify({ id, method, params, sessionId })); });
+  const {targetId} = await send('Target.createTarget', {url:'about:blank'});
+  const {sessionId} = await send('Target.attachToTarget', {targetId, flatten:true});
+  const cdp = (m,p) => send(m,p,sessionId);
+  const evaluate = async expression => { const r = await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true}); if(r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result.value; };
+  const until = async (expression, timeout = 60000) => { const end = Date.now()+timeout; while(Date.now()<end) { if(await evaluate(expression)) return; await new Promise(r=>setTimeout(r,100)); } throw new Error(`Timed out: ${expression}\n${await evaluate('document.body.innerText')}`); };
+  const type = async (selector,text,enter=false) => { assert(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`)); await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus();document.querySelector(${JSON.stringify(selector)}).select()`); await cdp('Input.insertText',{text}); if(enter) { await cdp('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}); await cdp('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}); } };
+  const click = async selector => { assert(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`)); await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`); };
+  const command = async text => {
+    if (process.env.FLOW_COMMANDS !== 'turns') return type('.flow-canvas-command textarea',text,true);
+    await until(`!document.querySelector('.flow-canvas-mic').disabled`);
+    await evaluate(`(async () => { if (!window.flowCommandSocket) { window.flowCommandSocket = new WebSocket(location.origin.replace('http','ws')+'/ws'); } if (flowCommandSocket.readyState !== WebSocket.OPEN) { await new Promise((resolve,reject)=>{flowCommandSocket.onopen=resolve;flowCommandSocket.onerror=reject}); } })()`);
+    const before = await evaluate(`document.querySelector('.flow-canvas-status').textContent`);
+    await evaluate(`flowCommandSocket.send(JSON.stringify({type:'text',text:${JSON.stringify(text)}}))`);
+    await until(`document.querySelector('.flow-canvas-status').textContent !== ${JSON.stringify(before)}`);
+  };
+  const screenshot = async name => { const {data} = await cdp('Page.captureScreenshot',{format:'png'}); writeFileSync(join(artifacts,`${name}.png`),Buffer.from(data,'base64')); };
+  await cdp('Emulation.setDeviceMetricsOverride',{width:1920,height:1080,deviceScaleFactor:1,mobile:false});
+  await cdp('Page.navigate',{url:`${base}/?flow`});
+  await until(`!!document.querySelector('.flow-canvas-command textarea')`);
+  await evaluate(`window.flowStreams = []; const nativeFetch = window.fetch; window.fetch = async (...args) => { const response = await nativeFetch(...args); if (String(args[0]).includes('/flow/run')) { const log = {events:[], request:JSON.parse(args[1].body)}; window.flowStreams.push(log); const reader = response.clone().body.getReader(); void (async () => { const decoder=new TextDecoder(); let pending=''; for (;;) { const r=await reader.read(); pending+=decoder.decode(r.value,{stream:!r.done}); const lines=pending.split('\\n'); pending=lines.pop()||''; lines.filter(Boolean).forEach(l=>log.events.push(JSON.parse(l))); if(r.done)break; } })(); } return response; };`);
+  await command('Make a pipeline: fix the grammar, then enrich it, then red-team it.');
+  await until(`document.querySelectorAll('.flow-canvas-box').length === 3`);
+  console.log('PASS live typed sentence created 3 Spark-planned boxes');
+  await screenshot('01-boxes');
+  if(process.env.FLOW_PHASE === 'boxes') { console.log(`Artifacts: ${artifacts}`); }
+  else {
+    await command("Let's test it");
+    await until(`document.querySelector('.flow-canvas-status').textContent.includes('Ready. Say or type')`);
+    await command('we has a idea for a community garden it help neighbors grow food and meet each other');
+    await until(`document.querySelectorAll('.flow-canvas-run-state').length === 3 && [...document.querySelectorAll('.flow-canvas-run-state')].every(e=>e.textContent.includes('Complete'))`,120000);
+    assert(await evaluate(`[...document.querySelectorAll('.flow-canvas-output')].every(e=>e.textContent.trim().length>20)`));
+    await until(`window.flowStreams.length === 3 && window.flowStreams.every(s=>s.events.some(e=>e.done))`);
+    assert(await evaluate(`window.flowStreams.every(s=>s.events.filter(e=>e.delta).length > 1 && s.events.at(-1).ms > 0)`));
+    assert(await evaluate(`window.flowStreams.slice(1).every((s,i)=>s.request.input === window.flowStreams[i].events.filter(e=>e.delta).map(e=>e.delta).join(''))`));
+    console.log('PASS real incremental streaming, sequential inputs and measured times');
+    await screenshot('02-run');
+    await command('Open the enrich box');
+    await until(`!!document.querySelector('.flow-canvas-inspect')`);
+    const before = await evaluate(`document.querySelector('.flow-canvas-inspect textarea').value`);
+    await command('Make it shorter and punchier.');
+    await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')`,120000);
+    assert.notEqual(await evaluate(`document.querySelector('.flow-canvas-inspect textarea').value`),before);
+    console.log('PASS in-place prompt edit and same-input rerun');
+    await screenshot('03-inspect');
+    await command('Show me two versions');
+    await until(`document.querySelectorAll('.flow-canvas-run-state').length === 6 && [...document.querySelectorAll('.flow-canvas-run-state')].every(e=>e.textContent.includes('Complete'))`,120000);
+    assert(await evaluate(`[...document.querySelectorAll('.flow-canvas-box')].every(box => { const [a,b] = [...box.querySelectorAll('.flow-canvas-result')].map(e=>e.getBoundingClientRect()); return b.left > a.left && Math.abs(a.top-b.top) < 2; })`));
+    console.log('PASS two live versions side by side on identical source input');
+    await command('Add a box after red team that writes it as a tweet.');
+    await until(`document.querySelectorAll('.flow-canvas-box').length === 4`,60000);
+    await until(`document.querySelectorAll('.flow-canvas-run-state').length === 8 && [...document.querySelectorAll('.flow-canvas-run-state')].every(e=>e.textContent.includes('Complete'))`,120000);
+    console.log('PASS add tweet box and rerun both versions');
+    await screenshot('04-versions');
+    await command('Save the pipeline');
+    await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Saved.')`);
+    const library = await (await fetch(`${base}/flow/library`)).json();
+    assert(library.flows.some(p=>p.steps.length===4));
+    await cdp('Page.reload');
+    await until(`!!document.querySelector('.flow-canvas-command textarea')`);
+    await click('.flow-canvas-tools button');
+    await until(`!!document.querySelector('.flow-canvas-library button')`);
+    await click('.flow-canvas-library button');
+    await until(`document.querySelectorAll('.flow-canvas-box').length === 4`);
+    console.log('PASS saved to core disk and reopened after reload');
+    await until(`!document.querySelector('.flow-canvas-mic').disabled`);
+    await evaluate(`window.flowTurnSocket = new WebSocket(location.origin.replace('http','ws')+'/ws'); new Promise((resolve,reject)=>{flowTurnSocket.onopen=resolve;flowTurnSocket.onerror=reject})`);
+    await evaluate(`flowTurnSocket.send(JSON.stringify({type:'text',text:'Open the enrich box'}))`);
+    await until(`!!document.querySelector('.flow-canvas-inspect')`);
+    console.log('PASS existing core turn path opens the named box');
+    await evaluate(`flowTurnSocket.close()`);
+    await send('Browser.grantPermissions',{origin:base,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});
+    await evaluate(`document.querySelectorAll('.flow-canvas-tools button')[2].click()`);
+    await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Link copied.')`);
+    const shared = await evaluate(`navigator.clipboard.readText()`);
+    assert(new URL(shared).hash.startsWith('#flow='));
+    await cdp('Page.navigate',{url:shared});
+    await until(`document.querySelectorAll('.flow-canvas-box').length === 4`);
+    console.log('PASS shared link reopens the graph without test input');
+    assert.equal(await evaluate(`document.querySelector('#flow-input').value`),'');
+    await cdp('Emulation.setDeviceMetricsOverride',{width:3840,height:2160,deviceScaleFactor:1,mobile:false});
+    await screenshot('05-tv');
+    await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+    await cdp('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+    assert(await evaluate(`document.querySelector('.flow-canvas').scrollWidth <= 390`));
+    await screenshot('06-phone');
+    console.log(`PASS phone bounds and reduced-motion rendering; artifacts: ${artifacts}`);
+  }
+} finally {
+  browser?.close();
+  chrome.kill('SIGTERM');
+  await new Promise(resolve => { if(chrome.exitCode !== null) resolve(); else chrome.once('exit',resolve); });
+  chrome.stderr.destroy();
+  chrome.unref();
+}

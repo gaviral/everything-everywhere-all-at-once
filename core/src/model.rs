@@ -461,6 +461,43 @@ impl Core {
         result
     }
 
+    /// Stream a foreground feature through the same key, budget, status and step accounting.
+    pub async fn stream_model(&self, body: &Value, mut emit: impl FnMut(&str)) -> anyhow::Result<String> {
+        let key = self.key()?;
+        self.spend()?;
+        let extra = serde_json::json!({"feature":"flow"});
+        let step = self.step_began(body, &extra);
+        let started = std::time::Instant::now();
+        let result = async {
+            let mut response = self.http.post("https://api.meta.ai/v1/chat/completions")
+                .bearer_auth(key).timeout(Duration::from_secs(90)).json(body).send().await?;
+            self.check(response.status())?;
+            let mut pending = Vec::new();
+            let mut output = String::new();
+            let mut done = false;
+            while let Some(chunk) = response.chunk().await? {
+                pending.extend_from_slice(&chunk);
+                while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+                    let line = String::from_utf8(pending.drain(..=end).collect())?;
+                    let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { continue };
+                    if data == "[DONE]" { done = true; continue; }
+                    let event: Value = serde_json::from_str(data)?;
+                    if event.get("error").is_some() { anyhow::bail!("The model stream reported an error"); }
+                    if let Some(text) = event["choices"][0]["delta"]["content"].as_str() {
+                        output.push_str(text); emit(text);
+                    }
+                    if event["choices"][0]["finish_reason"].as_str().is_some() { done = true; }
+                }
+            }
+            anyhow::ensure!(done && !output.trim().is_empty(), "The model stream ended without a complete answer");
+            Ok(output)
+        }.await;
+        step.end(result.is_ok());
+        let traced = result.as_ref().map(|_| serde_json::json!({"streamed":true}));
+        self.trace.call(body, started, traced.as_ref().map_err(|e| *e), extra);
+        result
+    }
+
     /// Tells every window a model call began: the model asked and the step it's for (`ServerMsg::Step`). The
     /// guard tells its end, sharing the id: `end` with the answer, or as dropped when the call is dropped unanswered
     /// (a placement's slower racing call, a search past its patience, an import stopped), so no window waits on it

@@ -17,6 +17,7 @@ mod storage;
 mod decided;
 mod explain;
 mod find;
+mod flow;
 mod github;
 mod guide;
 mod helpers;
@@ -699,6 +700,7 @@ impl Core {
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool, window: Option<u64>) {
         self.touch();
         if typed { messages::speech_end(self, speaker, false); }
+        if !spoken::stops_listening(text) && flow::take_turn(speaker, text) { return; }
         // These are window preferences, never thoughts or requests for the model.
         if let Some(show) = notice_control(text) {
             self.send_to(speaker, ServerMsg::NoticeControl { show });
@@ -1497,6 +1499,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(connect))
         .route("/room", get(room_info))
         .route("/terse", post(terse::read))
+        .route("/flow/plan", post(flow::plan))
+        .route("/flow/run", post(flow::run))
+        .route("/flow/turns", get(flow::turns))
+        .route("/flow/library", get(flow::library).post(flow::save))
         .route("/helper-result", post(helper_result::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
