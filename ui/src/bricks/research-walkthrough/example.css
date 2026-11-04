@@ -1,0 +1,11 @@
+.research-walkthrough-example { position: fixed; inset: 78px 24px 160px; z-index: 39; overflow: auto; overscroll-behavior: contain; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: var(--shadow); font: 20px/1.5 system-ui, sans-serif; }
+.research-walkthrough-example > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; }
+.research-walkthrough-example :is(button, input, select, textarea) { font: inherit; min-height: 44px; }
+.research-walkthrough-example * { font-size: inherit !important; }
+.research-walkthrough-example header { display: block; position: static; z-index: auto; padding: 0; background: transparent; backdrop-filter: none; }
+.research-walkthrough-example header::after { content: none; }
+.research-walkthrough-example :is(h1, h2) { font-size: 1.3em !important; }
+.research-walkthrough-example svg { max-width: 100%; }
+@media (max-width: 600px) { .research-walkthrough-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }
+
+.research-walkthrough-example textarea { display: block; width: 100%; min-height: 140px; }

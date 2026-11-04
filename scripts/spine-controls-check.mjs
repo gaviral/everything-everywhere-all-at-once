@@ -29,6 +29,8 @@ for (const [width, height] of [[1440, 900], [390, 844], [320, 844]]) for (const 
     const { page, evaluate, until } = browser;
     await page('Page.enable');
     await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+    // These acceptance cases exercise opted-in presentation features. Fresh defaults have their own check.
+    await page('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('e2a2o.features', JSON.stringify({'quiet-solo-attribution':true,'placement-details':true,'stable-topic-titles':true,'phone-topic-overview':true}))` });
     await page('Page.navigate', { url: `http://127.0.0.1:${core.port}/` });
     assert.ok(await until(`!!document.querySelector('.spine-ready [data-thought="a"]')`, 10000), 'source map is ready');
     const key = async (key, code = key, windowsVirtualKeyCode) => {

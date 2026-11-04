@@ -11,10 +11,10 @@ export type BuiltIn = { id: "learned-action-labels" | "quiet-solo-attribution" |
 
 export const BUILT_INS: readonly BuiltIn[] = [
   { id: "learned-action-labels", kind: "panel", defaultOn: false },
-  { id: "quiet-solo-attribution", kind: "panel", defaultOn: true },
-  { id: "placement-details", kind: "panel", defaultOn: true },
-  { id: "stable-topic-titles", kind: "panel", defaultOn: true },
-  { id: "phone-topic-overview", kind: "panel", defaultOn: true },
+  { id: "quiet-solo-attribution", kind: "panel", defaultOn: false },
+  { id: "placement-details", kind: "panel", defaultOn: false },
+  { id: "stable-topic-titles", kind: "panel", defaultOn: false },
+  { id: "phone-topic-overview", kind: "panel", defaultOn: false },
   { id: "plugins", kind: "panel", defaultOn: false },
   { id: "discussion-status", kind: "panel", defaultOn: false },
   { id: "reply-format", kind: "panel", defaultOn: false },

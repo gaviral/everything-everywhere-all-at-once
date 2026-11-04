@@ -4,7 +4,6 @@
 .demo-variants-example button { min-height: 44px; font: inherit; }
 .demo-variants-example header { position: static; z-index: auto; top: auto; padding: 0; background: transparent; backdrop-filter: none; }
 .demo-variants-example header::after { content: none; }
-.demo-variants-example :is(.clarification, .part-dimensions, .demo-variants, .dictation-breakdown, .sketch-exchange, .workflow-inspector) { font-size: 20px; max-width: none; }
+.demo-variants-example .demo-variants { font-size: 20px; max-width: none; }
 .demo-variants-example textarea { width: 100%; min-height: 110px; font: inherit; }
-.demo-variants-example-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; }
 @media (max-width: 600px) { .demo-variants-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }

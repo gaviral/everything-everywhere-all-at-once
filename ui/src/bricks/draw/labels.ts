@@ -18,7 +18,7 @@ export function clausesIn(words: string): string[] {
   return starts.map((match, index) => {
     const from = (match.index ?? 0) + match[0].length;
     const to = index + 1 < starts.length ? starts[index + 1].index ?? words.length : words.length;
-    return words.slice(from, to).replace(/[,.;:!?]+\s*$/, "").replace(OPENING, "").trim();
+    return words.slice(from, to).replace(/[,.;:!?\s]+$/, "").replace(/\s+(?:and|then|so|but)$/i, "").replace(OPENING, "").trim();
   });
 }
 
