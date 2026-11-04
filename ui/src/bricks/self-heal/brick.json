@@ -1,0 +1,8 @@
+{
+  "id": "self-heal",
+  "name": "Self-heal",
+  "does": "Review features that stopped and turn them back on. Recovery is always ready.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
