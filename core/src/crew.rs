@@ -33,7 +33,7 @@ Blocks:
 {"kind":"note","prompt": what to write here}
 {"kind":"done","label": what the ticks in this part add up to}
 {"kind":"ask","question": one short question for the person}
-Do the job, don't restate it: if it asks for a line, write the line; if it asks what needs them, name the real things from what they said. Use their words and draft what a good helper would actually write. Never invent facts about real people. Say less."#;
+Do the job, don't restate it: if it asks for a line, write the line; if it asks what needs them, name the real things from what they said. Use their words and draft what a good helper would actually write. Use only the days, times, places, names and numbers they gave: never invent or change one, and leave out what they did not say. Say less."#;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Part {
