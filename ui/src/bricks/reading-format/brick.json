@@ -1,0 +1,8 @@
+{
+  "id": "reading-format",
+  "name": "Reading format",
+  "does": "Read existing items with clear kinds, decision emphasis and separate What, Why and How.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
