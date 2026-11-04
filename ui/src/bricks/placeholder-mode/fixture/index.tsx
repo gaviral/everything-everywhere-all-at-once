@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import PlaceholderMode, { styles } from "../index";
 
-const example = Object.freeze({ name: "Alex Morgan", email: "alex.morgan@example.org", phone: "+44 20 7946 0958", recipient: "Unlisted Recipient" });
+const example = Object.freeze({ name: "Alex Morgan", email: "alex.morgan@example.com", phone: "+44 20 7946 0958", recipient: "Unlisted Recipient" });
 declare global { interface Window { fixture: { source: typeof example; sent: unknown[]; errors: string[] } } }
 window.fixture = { source: example, sent: [], errors: [] };
 window.addEventListener("error", event => window.fixture.errors.push(event.message));
@@ -17,7 +17,7 @@ function Fixture() {
     <button id="update" onClick={() => setRevision(value => value + 1)}>Update example</button>
     <article key={revision}>
       <h2 id="person">{example.name}</h2>
-      <p id="contact">Write to <a href={`mailto:${example.email}`} title={example.email}>{revision ? "updated@example.org" : example.email}</a> or call {example.phone}.</p>
+      <p id="contact">Write to <a href={`mailto:${example.email}`} title={example.email}>{revision ? "updated@example.com" : example.email}</a> or call {example.phone}.</p>
       <p id="date">Meeting: 2026-11-04 · 42 items</p>
       <div className="send-card">
         <div className="send-card-head">Message to {revision ? "Different Recipient" : example.recipient} · dry run</div>
