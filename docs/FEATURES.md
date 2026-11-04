@@ -2,6 +2,8 @@
 
 Every feature, setting and detail, moved here from the [README](../README.md) so the README can stay short; nothing was dropped. Spoken commands with every variant are in [COMMANDS.md](COMMANDS.md), the parts and the life of a thought in [ARCHITECTURE.md](ARCHITECTURE.md), and every model call in one real run in [trace.md](trace.md).
 
+Evidence status: model timings here are dated earlier measurements, not a final-build or human reliability result. Fresh hosted guest verification and the final video are pending. The local sample is a preloaded public fixture; its saved pictures and proposed actions are examples. Remote's in-page demo uses simulated jobs, not live remote work.
+
 ## Every model call, with its setting
 
 Every model the app calls at runtime is Meta's, through the Meta Model API; `scripts/precheck.sh` fails on any other model SDK, endpoint or model name in the app's code.
@@ -36,11 +38,11 @@ Get the code and step into its folder:
 git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ```
 
-The first run downloads and compiles the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01). When the terminal says `E2A2O core on`, open the URL printed on that line. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
+The first run downloads and compiles the Rust core: about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01). The launcher prints UI and core build stages. When the terminal says `E2A2O core on`, open the launcher's sample URL (`http://localhost:4321/?sample` by default) to retain the SAMPLE label. Without a key, it also prints a `WARN ... MODEL_API_KEY is not set`; the sample does not need one. Press Ctrl+C to stop it.
 
 To keep it in your Dock: in Chrome, the install icon at the end of the address bar; in Safari, File › Add to Dock.
 
-If port 4321 is busy, `run.sh` says so before building; use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400. For the talk scripts below, also pass `--port 4400`.
+If port 4321 is busy, `run.sh` says so before building; use another one: `PORT=4400 ./run.sh sample`. Open http://localhost:4400/?sample. For the talk scripts below, also pass `--port 4400`.
 
 **No key, no mic: a sample map.**
 

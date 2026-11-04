@@ -5,13 +5,13 @@
 
 ## Try it
 
-<!-- hosted: draft, confirm a real sign-in and the mic on the site before this ships -->
-- **In a browser, nothing to install:** https://e2a2o.aviralgarg.com → Create an account (any email) → Try a sample map, or talk.
-- **Run it yourself:** `./run.sh sample` (no key or mic; [setup](#run-it), source build ≈ 4 min).
+<!-- hosted: draft, confirm fresh guest entry and the served build before leading with it -->
+- **Local example:** `./run.sh sample` → printed `/?sample` URL (no key or mic; [setup](#run-it), cold source build ≈ 4 min).
+- **Hosted preview, verification pending:** https://e2a2o.aviralgarg.com
 
 ![19 seconds of one recorded take, at normal speed. A synthesized voice says “Mom's birthday is Saturday…”, which becomes a new topic, Mom's Birthday Saturday. “Okay, decided: if it's under eighty dollars, I'm booking it tonight” lands on that topic marked ✓ Decided. “My stats midterm is Thursday” starts a topic of its own, and “Decided: I'll study with Priya on Wednesday night” lands on it, marked ✓ Decided. Dark labels name the model at each step: Muse Voice Transcribe 1.0 hears you, Muse Spark 1.2 placed it in 2.5 to 3.3 s.](docs/screens/hero.gif)
 
-*One take at normal speed, default models; zoom, labels and captions added in editing; synthesized voice.*
+*Earlier take, synthesized voice; zoom, labels and captions added. Historical timings below.*
 
 ## Meta models it runs on
 
@@ -50,7 +50,7 @@ The AI shows its work: everything it adds is marked ✦ and says what it did and
 
 ## One minute of talk
 
-The story the video tells, line by line. Play it yourself with [scripts/story-talk.jsonl](scripts/story-talk.jsonl) ([Run it](#run-it)); titles and a placement or two may differ in your run.
+The scripted story for the demo, line by line. The final video link and its build are pending. Play it yourself with [scripts/story-talk.jsonl](scripts/story-talk.jsonl) ([Run it](#run-it)); titles and a placement or two may differ in your run.
 
 | You say | What happens |
 |---|---|
@@ -102,7 +102,7 @@ Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](doc
 
 ## Run it
 
-**Hosted sample:** follow the browser path above, sign in, and choose **Try a sample map**. The page that opens is the shell the video shows; nothing to add to the address. A fresh hosted sign-in and microphone check remain unverified.
+**Hosted preview:** fresh guest entry, example → “where was I?” → Pictures → refresh, and the hosted boot commit comparison remain pending on the final build. This link is not yet a verified judge route. Use the local example below in the meantime. Hosted pictures may be disabled; fixture pictures are pre-generated.
 
 Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
@@ -126,11 +126,11 @@ git clone https://github.com/gaviral/e2a2o-app.git && cd e2a2o-app
 ./run.sh sample
 ```
 
-The first source build takes about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. When the terminal says `E2A2O core on`, open the URL on that line. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample`.
+The first source build takes about 4 minutes with nothing cached (10-core Apple-silicon Mac, measured 2026-11-01); later runs start in seconds. The launcher prints the UI and core stages. When the terminal says `E2A2O core on`, open the sample URL printed by the launcher: `http://localhost:4321/?sample` by default. Without a key it also logs `MODEL_API_KEY is not set`; the sample doesn't need one. If port 4321 is busy, `run.sh` says so before building: `PORT=4400 ./run.sh sample` prints `http://localhost:4400/?sample`.
 
-**No key: a sample map.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. Try its Unfinished thought card, `j`/`k` and Enter, `/` to search, and the “Did you mean BC Hydro?” question, which is written into the sample. Cards and Pictures start off: switch one on in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”. `./run.sh sample founder` opens a founder's day.
+**No key: a sample map, labelled SAMPLE.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. These are public fixtures dated for the week of Nov 3, 2026; their deadlines are examples. Type “where was I?” to return to the unfinished topic, then “pictures” to open its saved pictures. You can also try `j`/`k` and Enter, `/` to search, and the “Did you mean BC Hydro?” question written into the sample. Cards and Pictures start off: switch one on in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”; new text needs a working key for automatic placement. `./run.sh sample founder` opens a founder's day, also labelled SAMPLE. Each sample start restores its fixture.
 
-The page that opens is the shell the video shows, at `http://localhost:4321/`. The classic page it replaced (a header across the top and a bottom bar) stays for one more release at `http://localhost:4321/?shell=1`.
+The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The earlier classic page (a header across the top and a bottom bar) stays at `http://localhost:4321/?shell=1`.
 
 **With a key: watch the story build itself.**
 

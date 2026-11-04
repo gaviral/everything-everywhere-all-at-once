@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { bundledCore, check, coreAddresses, corePort, free, lanIp, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
+import { bundledCore, check, coreAddresses, corePort, free, lanIp, launchUrl, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
 
@@ -57,6 +57,10 @@ assert.equal(corePort({ PORT: "4400" }), 4400);
 assert.equal(corePort({ PORT: "+4400" }), 4400);
 assert.equal(corePort({ PORT: "70000" }), 4321);
 assert.equal(corePort({ PORT: "44 00" }), 4321);
+assert.equal(launchUrl(4321, "sample"), "http://localhost:4321/?sample");
+assert.equal(launchUrl(4411, "sample"), "http://localhost:4411/?sample");
+assert.equal(launchUrl(4411, "demo"), "http://localhost:4411/");
+assert.equal(launchUrl(4411), "http://localhost:4411/");
 
 // The addresses, as main.rs binds them.
 assert.deepEqual(coreAddresses({}, "192.168.1.5").addresses, ["127.0.0.1"]);
@@ -272,7 +276,14 @@ assert.equal(bundle.events(), "");
 // There are no Rust, Xcode or Linux build tools in PATH, nor a Cargo manifest to read.
 assert.equal(launched(bundle, bundle.run()).data, "../fixture-data");
 assert.equal(bundle.events(), "npm install --no-audit --no-fund --no-update-notifier\nnpm run build\ncore\n");
-const sampled = launched(bundle, bundle.run(["sample"]));
+const sampleRun = bundle.run(["sample"]);
+const sampled = launched(bundle, sampleRun);
+assert.match(sampleRun.stdout, /sample fixture \(no key or mic\): http:\/\/localhost:0\/\?sample\n/);
+assert.match(sampleRun.stdout, /Building UI\.\.\.\nUI build complete\.\n[\s\S]*Starting bundled core\.\.\./);
+const customSample = bundle.run(["sample"], { PORT: String(sparePort) });
+assert.equal(customSample.status, 0, customSample.stderr);
+assert.ok(customSample.stdout.includes(`sample fixture (no key or mic): http://localhost:${sparePort}/?sample\n`));
+assert.equal(JSON.parse(customSample.stdout.trim().split("\n").at(-1)).port, String(sparePort));
 assert.equal(sampled.data, "../data/sample");
 assert.equal(sampled.sample, "fixture sample\n");
 assert.equal(readFileSync(join(bundle.dir, "data/sample/images/picture.txt"), "utf8"), "fixture picture\n");
@@ -310,6 +321,7 @@ assert.equal(blocked.events(), "npm install --no-audit --no-fund --no-update-not
 r = blocked.run([], { BUILD_EXIT: "9" });
 assert.equal(r.status, 1);
 assert.match(r.stderr, /The UI build failed/);
+assert.doesNotMatch(r.stdout, /UI build complete|Starting bundled core|Building and starting Rust core/);
 assert.equal(blocked.events(), "npm install --no-audit --no-fund --no-update-notifier\nnpm install --no-audit --no-fund --no-update-notifier\nnpm run build\n");
 assert.doesNotMatch(blocked.events(), /core/);
 
@@ -343,7 +355,9 @@ for (const kind of ["missing", "non-executable", "other-architecture", "director
     executable(join(f.dir, "bin", cmd), `#!/bin/sh\necho "probe ${cmd} $*" >> "$FIXTURE_LOG"\necho 'rustc 1.100.0'\n`);
   }
   executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\nexec ../fixture-core\n');
-  const payload = launched(f, f.run(["sample"], { CORE_EXIT: "17" }), 17);
+  const sourceRun = f.run(["sample"], { CORE_EXIT: "17" });
+  const payload = launched(f, sourceRun, 17);
+  assert.match(sourceRun.stdout, /Building UI\.\.\.\nUI build complete\.\n[\s\S]*Building and starting Rust core \(cold source build: about 4 min\)\.\.\./);
   assert.equal(payload.data, "../data/sample");
   assert.match(f.events(), /probe rustc --version/);
   assert.match(f.events(), /cargo run --release\ncore\n$/);
