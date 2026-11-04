@@ -13,7 +13,7 @@ for(const [width,height,scheme,reduced] of [[1440,900,'light',false],[390,844,'l
   try {
     browser=await capturePage(core,{width,height,scheme,reduced});
     const {evaluate,until,page}=browser;
-    const settle=()=>evaluate(`new Promise(resolve=>{let prior='',same=0;const tick=()=>{const e=document.querySelector('[data-map-capture=active]'),r=e?.getBoundingClientRect(),s=r&&[r.x.toFixed(1),r.y.toFixed(1),r.height.toFixed(1)].join();same=s===prior?same+1:0;prior=s;if(same>=5)resolve(true);else requestAnimationFrame(tick)};tick()})`);
+    const settle=()=>evaluate(`new Promise(resolve=>{let prior='',same=0;const tick=()=>{const s=JSON.stringify([...document.querySelectorAll('[data-map-capture=active],.spine-point')].map(e=>{const r=e.getBoundingClientRect();return[r.x.toFixed(1),r.y.toFixed(1),r.height.toFixed(1)]}));same=s===prior?same+1:0;prior=s;if(same>=5)resolve(true);else requestAnimationFrame(tick)};tick()})`);
     const shot=async name=>{if(!shots)return;await settle();const {data}=await page('Page.captureScreenshot',{format:'png'});writeFileSync(`${shots}/${label}-${name}.png`,Buffer.from(data,'base64'));};
     const tapMic=async()=>{
       await settle();
