@@ -12,6 +12,7 @@ import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
 import { useReadPosition } from "./talk/read";
 import { useJobs } from "./work-jobs";
+import { useBuiltInsOn } from "./shell/features";
 import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
@@ -37,9 +38,10 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
+  const conversationSpine = useBuiltInsOn().has("conversation-spine");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark }), [snapshot, reading.mark]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine }), [snapshot, reading.mark, conversationSpine]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
