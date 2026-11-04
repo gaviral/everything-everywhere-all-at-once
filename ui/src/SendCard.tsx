@@ -68,7 +68,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
   // Without motion, the bar steps with the digits instead (`--left`, the share of the count still to go).
   const bar = counting ? { animationDuration: `${card.total}ms`, animationDelay: `-${Math.round(done * card.total)}ms`, "--left": 1 - elapsed(card, now) } as React.CSSProperties : undefined;
   return (
-    <section ref={element} className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card"
+    <section ref={element} className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card" data-action-id={card.id}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="sr-only" role="status">{announcement(card)}</div>

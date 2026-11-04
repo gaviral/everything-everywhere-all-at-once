@@ -1827,7 +1827,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
     // card back with its Stop; one whose count ended while the window was away gets how it ended.
-    let mut messages: Vec<ServerMsg> = crate::helpers::card_for(core, speaker).or_else(|| crate::messages::card_for(core, speaker)).into_iter().collect();
+    let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).or_else(|| crate::helpers::card_for(core, speaker)).into_iter().collect();
     // The call comes before the world too: a window that hears the world with no call before it knows the call it
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
