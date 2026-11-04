@@ -1,0 +1,10 @@
+.pen-preview { margin: 0 auto; padding: 1rem; max-width: 1100px; color: #172b39; font: 1rem/1.5 system-ui, sans-serif; }
+.pen-preview button { min-height: 44px; max-width: 100%; padding: .5rem .8rem; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.pen-preview :focus-visible { outline: 3px solid #b55d12; outline-offset: 3px; }
+.pen-preview-switch { margin-bottom: 1rem; }
+.pen-preview-fixture { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; min-width: 0; border: 1px solid #9bafb5; }
+.pen-preview-fixture label { display: flex; align-items: center; min-height: 44px; gap: .5rem; }
+.pen-preview-destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1rem; }
+.pen-preview-destinations > section { width: 100%; align-self: start; }
+.pen-preview-marks { position: relative; height: 180px; border: 1px solid #9bafb5; background: white; }
+.pen-preview-destinations ul { padding-left: 1rem; overflow-wrap: anywhere; }

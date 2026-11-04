@@ -1,0 +1,17 @@
+.pen-devices { box-sizing: border-box; min-width: 0; color: #172b39; font: 1rem/1.5 system-ui, sans-serif; padding: 1.25rem; border: 1px solid #9bafb5; border-radius: 16px; background: #f8fbfa; max-width: 850px; margin: auto; }
+.pen-devices * { box-sizing: border-box; }
+.pen-devices h2, .pen-devices h3 { margin: 0 0 .5rem; }
+.pen-devices header p { margin-top: 0; }
+.pen-devices .pen-controls { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
+.pen-devices label { display: grid; gap: .3rem; flex: 1 1 180px; min-width: 0; }
+.pen-devices select, .pen-devices button { min-height: 44px; min-width: 0; max-width: 100%; font: inherit; color: inherit; border: 1px solid #677e88; border-radius: 8px; background: white; padding: .5rem .65rem; }
+.pen-devices button { cursor: pointer; background: #173f4b; color: white; }
+.pen-devices :focus-visible { outline: 3px solid #b55d12; outline-offset: 3px; }
+.pen-devices .pen-drawing { position: relative; display: grid; place-items: center; height: 280px; border: 2px dashed #67868b; border-radius: 10px; background: white; overflow: hidden; user-select: none; }
+.pen-devices svg { width: 100%; height: 100%; position: absolute; inset: 0; pointer-events: none; }
+.pen-devices polyline { fill: none; stroke: #154d61; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pen-devices .pen-receipts { padding-left: 1.3rem; }
+.pen-devices .pen-receipts li { padding: .6rem 0; }
+.pen-devices .pen-receipts span, .pen-devices .pen-receipts small, .pen-devices .pen-receipts code { display: block; overflow-wrap: anywhere; }
+.pen-devices code { font-size: .85em; }
+@media (max-width: 420px) { .pen-devices { padding: .8rem; } .pen-devices .pen-controls > * { flex-basis: 100%; width: 100%; } }
