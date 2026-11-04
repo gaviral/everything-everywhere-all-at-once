@@ -720,7 +720,7 @@ export function layout(input: LayoutInput): Layout {
       keys.push(item.key);
       // A pinned conversation is rows: leave the full comment's height before the next thought.
       const besideHeight = t.id === input.staying ? shape.beside.reduce((height, m) => height + marginHeight(shownEntries(m, true)
-        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + G.stack, 0) : 0;
+        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + (m.anchorWarning ? 72 : 0) + G.stack, 0) : 0;
       y = box.y + Math.max(box.h, besideHeight) + gap;
     }
     const slots: string[] = [];
