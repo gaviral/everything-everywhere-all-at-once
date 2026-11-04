@@ -99,7 +99,7 @@ export function whoIs(name: string, me: string, speakers?: ReadonlyMap<string, S
   return { name: mine ? "you" : friend ? "AI helper" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
 }
 
-export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin" | "group";
+export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin" | "group" | "conversation" | "topic";
 
 /** Words picked in a point, answered in a margin note: where they are in its words, and whether the note is folded. */
 export interface Quote {
@@ -130,6 +130,12 @@ export interface Entry {
 
 /** A thing on the canvas. */
 export interface Item {
+  /** Conversation projection only. Its turns retain their original thought ids and topic destinations. */
+  conversation?: boolean;
+  memberships?: { thread: string; title: string }[];
+  members?: { key: string; text: string; speaker: string }[];
+  parentTopic?: { thread: string; title: string };
+  replyTo?: string;
   /** The canvas's id for it: "t:" a thread (head, card or aside), "p:" a point, "n:" where a point was, "s:" a slot,
    *  "m:" a margin note. */
   key: string;

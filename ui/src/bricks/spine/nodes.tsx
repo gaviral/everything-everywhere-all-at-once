@@ -7,6 +7,7 @@ import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
 import { SpeechFixesContext, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
+import { C } from "./conversation";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -32,6 +33,8 @@ export type ItemNode = Node<ItemData, "item">;
 
 /** What a thing on the canvas can ask of the view. */
 export interface Acts {
+  /** Jump along a projection link on this canvas. */
+  visit(key: string): void;
   toggle(thread: string): void;
   pick(item: Item): void;
   words(item: Item): void;
@@ -343,6 +346,53 @@ function Point({ data }: { data: ItemData }) {
   </div>;
 }
 
+function ConversationPoint({ data }: { data: ItemData }) {
+  const { item } = data;
+  const acts = useContext(ActsContext)!;
+  const who = item.who!;
+  const textH = item.lines!.length * G.pointLine;
+  return <div className={cls("spine-point", "spine-conversation-turn", data.picked && "spine-picked", data.cut && "spine-cut")}
+    data-thread={item.thread || undefined} data-thought={item.id} data-guide={`point:${item.id}`}>
+    <Initial who={who} style={{ left: G.lineX, top: C.speaker + G.dotY }} />
+    <span className="spine-turn-speaker" style={{ left: G.textX }}>{who.ai ? `✦ ${who.name}` : who.name}</span>
+    <span className="spine-text" data-spine-target tabIndex={0} role="button" style={{ left: G.textX, top: C.speaker, width: G.textW, WebkitLineClamp: item.lines!.length }}
+      aria-label={`${who.name}: ${item.text}`} onFocus={() => acts.focus(item)} onClick={() => acts.pick(item)}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); } }}>
+      <Words item={item} />
+    </span>
+    <span className="spine-turn-status" style={{ left: G.textX, top: C.speaker + textH }}>
+      {item.decided ? "✓ Decided" : item.left ? "Left off" : ""}
+    </span>
+    <span className="spine-turn-topics" style={{ left: G.textX, top: C.speaker + textH + C.status, width: G.textW }}>
+      {item.replyTo && <button type="button" className="nodrag nopan" aria-label="Back to the turn these words answer" onClick={() => acts.visit(item.replyTo!)}>↖ Reply to</button>}
+      {item.memberships?.map((topic) => <button key={topic.thread} type="button" className="nodrag nopan" title={topic.title}
+        aria-label={`Topic: ${topic.title}`} onClick={() => acts.visit(`t:${topic.thread}`)}>↗ {topic.title}</button>)}
+      {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
+    </span>
+  </div>;
+}
+
+function ConversationHead({ item }: { item: Item }) {
+  return <div className="spine-conversation-head"><strong>Conversation</strong><span>{item.count} turns · topics linked beside your words</span></div>;
+}
+
+function TopicProjection({ data }: { data: ItemData }) {
+  const { item } = data;
+  const acts = useContext(ActsContext)!;
+  return <div className={cls("spine-topic", data.picked && "spine-picked")} data-thread={item.thread} style={roomStyle(item.room)}>
+    <span className="spine-topic-count">{item.count} {item.count === 1 ? "turn" : "turns"} · topic</span>
+    <button type="button" data-spine-target className="spine-topic-title nodrag nopan" title={item.title} aria-expanded={!!item.open}
+      aria-label={`${item.title}: ${item.count} turns. ${item.open ? "Fold" : "Show linked turns"}`}
+      onFocus={() => acts.focus(item)} onClick={() => acts.toggle(item.thread)}>{item.title}<span aria-hidden="true">{item.open ? " −" : " +"}</span></button>
+    {item.parentTopic && <button type="button" className="spine-topic-parent nodrag nopan" title={item.parentTopic.title}
+      onClick={() => acts.visit(`t:${item.parentTopic!.thread}`)}>Tangent of {item.parentTopic.title}</button>}
+    {item.open && <div className="spine-topic-members">{item.members?.map((member) => <button key={member.key} type="button" className="spine-topic-member nodrag nopan"
+      aria-label={`Back to ${member.speaker}: ${member.text}`} onClick={() => acts.visit(member.key)}>
+      <span>{member.speaker}</span><span>{member.text}</span>
+    </button>)}</div>}
+  </div>;
+}
+
 /** A folded question's "…?", over the room its words keep for it (measured where the browser set it): open shows the
  *  note. */
 function Fold({ margin }: { margin: string }) {
@@ -473,9 +523,11 @@ export const NowContext = createContext(Date.now());
 export const ItemView = memo(function ItemView({ data, dragging }: NodeProps<ItemNode>) {
   const now = useContext(NowContext);
   switch (data.item.kind) {
+    case "conversation": return <ConversationHead item={data.item} />;
+    case "topic": return <TopicProjection data={data} />;
     case "head": return <Head data={data} now={now} />;
     case "card": return <Card data={data} now={now} />;
-    case "point": return <Point data={data} />;
+    case "point": return data.item.conversation ? <ConversationPoint data={data} /> : <Point data={data} />;
     case "slot": return <Slot data={data} />;
     case "aside": return <Aside data={data} dragging={dragging} />;
     case "margin": return <Margin data={data} />;

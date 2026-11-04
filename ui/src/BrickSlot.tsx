@@ -11,6 +11,7 @@ import { placedBy, watchDecided } from "./route";
 import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
 import { useJobs } from "./work-jobs";
+import { useBuiltInsOn } from "./shell/features";
 import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
@@ -36,7 +37,8 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
+  const conversationSpine = useBuiltInsOn().has("conversation-spine");
+  const map = useMemo(() => ({ ...snapshotOf(world, me, connected, rooms, partial, jobs, usage), conversationSpine }), [world, me, connected, rooms, partial, jobs, usage, conversationSpine]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);

@@ -69,6 +69,8 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   // Features in their own folders.
   countdown: { name: "Deadlines", aka: "Countdown", does: "Keeps upcoming deadlines in view and lets you add or change them.", lives: "Above the camera" },
   spine: { name: "Canvas", aka: "One big board", does: "Your talk as a canvas: each topic a column, tangents beside their words.", lives: "The map" },
+  // names-ok: the chronological presentation is distinct from the existing Canvas feature.
+  "conversation-spine": { name: "Conversation spine", does: "Keep turns in time order on the Canvas, with automatic topics linked beside them. Turn off to compare the current layout.", lives: "The Canvas" },
   "bubble-flight": { name: "Fly-in", aka: "Words fly to their place", does: "Carries your words from the input box to the topic where they land.", lives: "The Canvas" },
   "tiny-transcript": { name: "Tiny transcript", aka: "Small live words, compact transcript", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
   "notice-timeline": { name: "Notification history", aka: "Recent notices", does: "Every notice kept, each with what takes it back.", lives: "History" },
