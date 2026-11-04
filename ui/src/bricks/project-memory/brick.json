@@ -1,0 +1,8 @@
+{
+  "id": "project-memory",
+  "name": "Project memory",
+  "does": "Revisit decisions, parts, open asks and revisions with their sources and history.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
