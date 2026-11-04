@@ -56,7 +56,7 @@ try {
   const state = (extra) => micState({ ...base, ...extra });
   assert.equal(state({}), "off");
   assert.equal(state({ starting: true }), "starting");
-  assert.equal(state({ capturing: true }), "starting", "capturing before the speech service says it listens");
+  assert.equal(state({ capturing: true }), "capturing", "capturing before the speech service says it listens");
   assert.equal(state({ capturing: true, serviceOn: true }), "listening");
   assert.equal(state({ capturing: true, serviceOn: true, words: true }), "hearing");
   assert.equal(state({ paused: true }), "paused");
@@ -88,11 +88,11 @@ try {
   assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /micEnds\(\{ connected: core\.connected,[^]*?\}, \[core\.connected, core\.listening,/);
   // Never "off" (or paused, or keyless) while the browser is taking sound, whatever else is true.
   for (const connected of [true, false]) for (const noKey of [true, false]) for (const paused of [true, false]) for (const serviceOn of [true, false]) {
-    assert.ok(["starting", "listening", "hearing"].includes(state({ capturing: true, connected, noKey, paused, serviceOn })));
+    assert.ok(["capturing", "starting", "listening", "hearing"].includes(state({ capturing: true, connected, noKey, paused, serviceOn })));
   }
   // Each state has its own words, and its own placeholder where one shows.
   const states = Object.keys(MIC_WORDS);
-  assert.equal(states.length, 10);
+  assert.equal(states.length, 13);
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].tip)).size, states.length, "every state's tip differs");
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].label)).size, states.length, "every state's name differs");
   for (const s of ["off", "starting", "paused", "nokey", "refused", "resting", "blocked", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);

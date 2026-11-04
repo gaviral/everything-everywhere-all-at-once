@@ -199,14 +199,15 @@ pub fn caption_with_id(core: &Core, speaker: &str, window: u64, pace: &mut Pace,
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
     if allowed(core, speaker, pace, refused) {
-        completed(core, speaker, window, text, speak, id, None);
+        completed(core, speaker, window, text, speak, id, None, None);
     }
 }
 
 /// Save once, then publish the live caption under the world lock, in journal order.
 /// A supplied id is scoped to the speaker, so retries (including after restart) cannot speak twice.
+/// The reply id only accompanies the live message for cancellation; it is never journaled.
 #[allow(clippy::too_many_arguments)]
-pub fn completed(core: &Core, speaker: &str, window: u64, text: String, speak: bool, id: Option<String>, to: Option<String>) {
+pub fn completed(core: &Core, speaker: &str, window: u64, text: String, speak: bool, id: Option<String>, to: Option<String>, reply_id: Option<String>) {
     let mut world = core.world.lock().unwrap();
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     if world.captions.iter().any(|c| c.id == id && c.by == speaker) { return; }
@@ -219,7 +220,7 @@ pub fn completed(core: &Core, speaker: &str, window: u64, text: String, speak: b
     let change = crate::world::Change::CaptionAdded { caption: caption.clone() };
     std::sync::Arc::make_mut(&mut world).apply(&change);
     if let Err(e) = core.journal.lock().unwrap().append(&change) { core.journal_save_failed(&e); }
-    let message = ServerMsg::Guide { caption: Some(caption.clone()), kind: Kind::Caption, target: None,
+    let message = ServerMsg::Guide { caption: Some(caption.clone()), reply_id, kind: Kind::Caption, target: None,
         text, by: speaker.into(), at_ms: caption.at_ms, urgent: false, from: window };
     let _ = core.updates.send(crate::protocol::Outgoing { to, message, speak });
 }
@@ -307,7 +308,7 @@ pub fn malformed_answer(core: &Core, speaker: &str, pace: &mut Pace) {
 #[allow(clippy::too_many_arguments)]
 fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, urgent: bool, refused: Option<String>) {
     if allowed(core, speaker, pace, refused) {
-        core.send(ServerMsg::Guide { caption: None, kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
+        core.send(ServerMsg::Guide { caption: None, reply_id: None, kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
     }
 }
 
@@ -451,7 +452,7 @@ mod tests {
         let (core, path, mut queue) = prepared();
         let mut updates = core.updates.subscribe();
         let publish = |core: &Core, by: &str, id: &str, to: Option<String>| {
-            super::completed(core, by, 42, "Same words.".into(), true, Some(id.into()), to);
+            super::completed(core, by, 42, "Same words.".into(), true, Some(id.into()), to, None);
         };
         publish(&core, "Helper", "first", None);
         publish(&core, "Helper", "first", None);

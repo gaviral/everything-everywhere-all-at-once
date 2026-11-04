@@ -12,7 +12,7 @@ import { useOnScreen } from "./onscreen";
 import { REMOTE, REMOTE_NAME, remoteLink } from "./remote/flag";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 import { TIPS } from "./Tips";
-import { hearPageSpeech, stopPageSpeech } from "./page-speech";
+import { cancelPageReply, hearPageSpeech } from "./page-speech";
 import { closed as callClosed, heard as callHeard, hereNow, named, opened as callOpened, remotesHere, shownCode, stateWord, useCall } from "./talk/call-core";
 
 type Seat = { me: string; code: string };
@@ -154,11 +154,11 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
     const was = partnerOn;
     partnerOn = next;
     if (!REMOTE) ws.send(JSON.stringify({ type: "partner", on: next }));
-    if (was && !next) { stopPageSpeech(); resetPartner(); }
+    if (was && !next) { cancelPageReply(); resetPartner(); }
   };
   const unwatchPartner = watchBuiltIns(partner);
   ws.addEventListener("open", () => { callOpened(); partner(); recheck(); });
-  ws.addEventListener("close", () => { unwatchPartner(); if (socketNow === ws) { socketNow = null; stopPageSpeech(); resetPartner(); } callClosed(); recheck(); });
+  ws.addEventListener("close", () => { unwatchPartner(); if (socketNow === ws) { socketNow = null; cancelPageReply(); resetPartner(); } callClosed(); recheck(); });
   // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
   ws.addEventListener("message", (event) => { if (ignorePartner(event.data)) return; callHeard(event.data); hearPartner(event.data); hearPageSpeech(event.data); });
   return ws;

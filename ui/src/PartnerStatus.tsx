@@ -1,22 +1,25 @@
-import { useEffect, useState } from "react";
-import { usePartner } from "./partner";
-import { pageSpeaking, stopPageSpeech, watchPageSpeech } from "./page-speech";
+import { cancelPartner, usePartner } from "./partner";
+import { cancelPageReply, retryPageReply, usePlayback } from "./page-speech";
 import { sendToCore } from "./room";
 import { useBuiltInsOn } from "./shell/features";
 import "./partner.css";
 
-export function PartnerStatus() {
+export function PartnerStatus({ onStopConversation, captureActive = false }: { onStopConversation: () => void; captureActive?: boolean }) {
   const enabled = useBuiltInsOn().has("partner");
   const partner = usePartner();
-  const [speaking, setSpeaking] = useState(pageSpeaking);
-  useEffect(() => watchPageSpeech(setSpeaking), []);
-  if (!enabled) return null;
-  const busy = partner.state === "thinking" || speaking;
-  return <div className="partner-status" data-guide="partner" aria-label="Conversation partner">
-    <span role="status"><b>E2A2O</b> · {speaking ? "Speaking…" : partner.message}</span>
+  const playback = usePlayback();
+  const playing = playback.phase === "playing" || playback.phase === "queued";
+  if (!enabled && !playing && playback.phase !== "failed" && !captureActive) return null;
+  const busy = (enabled && partner.state === "thinking" && playback.phase !== "failed") || playing;
+  return <div className="partner-status" data-guide="partner" data-playback={playback.phase} aria-label="Spoken exchange">
+    <span role="status">{playback.phase === "failed" ? playback.error : playing ? (playback.phase === "playing" ? "Reply playing" : "Preparing reply audio…") : enabled ? <><b>E2A2O</b> · {partner.state === "error" && /MODEL_API_KEY|configuration/i.test(partner.message) ? "Conversation unavailable. You can type below; open Details to enable replies." : partner.message}</> : "Microphone open"}</span>
     {busy && <button type="button" onClick={() => {
-      stopPageSpeech();
+      cancelPageReply();
+      cancelPartner();
       sendToCore({ type: "partner_cancel" });
-    }}>Cancel reply</button>}
+    }}>Stop reply</button>}
+    {enabled && partner.state === "error" && /MODEL_API_KEY|configuration/i.test(partner.message) && <details><summary>Details</summary>{partner.message}</details>}
+    {playback.phase === "failed" && <button type="button" onClick={retryPageReply}>Retry audio</button>}
+    {(enabled || captureActive || playing) && <button type="button" onClick={onStopConversation}>Stop conversation</button>}
   </div>;
 }

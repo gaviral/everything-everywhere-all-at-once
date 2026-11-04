@@ -96,7 +96,7 @@ export function whoIs(name: string, me: string, speakers?: ReadonlyMap<string, S
   const mine = name === me || name === "you";
   const friend = !mine && AI_NAME.test(name.trim());
   const ai = !mine && (friend || !!speakers?.get(name)?.ai);
-  return { name: mine ? "you" : friend ? "AI helper" : name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
+  return { name, initial: ai ? "✦" : (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase(), ai, me: mine };
 }
 
 export type Kind = "head" | "point" | "card" | "notch" | "slot" | "aside" | "margin" | "group";
@@ -490,7 +490,7 @@ export function layout(input: LayoutInput): Layout {
   // Sizes, before anything is placed.
   const headLines = (t: Thread) => wrap(t.title, "title", G.titleW, G.titleMax);
   const headHeight = (lines: number[]) => Math.max(G.tile, lines.length * G.titleLine + G.headMeta);
-  const entryOf = (by: string, text: string, w: number, full = false): Entry => ({ who: who(by), text, lines: wrap(text, "small", w, full ? Infinity : G.marginMax) });
+  const entryOf = (by: string, text: string, w: number, full = false): Entry => ({ who: who(by), text, lines: [0, ...wrap(text, "small", w, full ? Infinity : G.marginMax)] });
   const stayingOn = (idea: Idea) => ideaOwner.get(idea.key)?.thread === input.staying;
   const shapes = new Map<string, Shape>();
   const shapeOf = (idea: Idea, look: Look): Shape => {
@@ -545,7 +545,8 @@ export function layout(input: LayoutInput): Layout {
     }
     // The ✦ after words the AI changed takes room on the line too.
     if (idea.parts.some((p) => p.fixed && p.heard && p.fixed !== p.heard)) measured += " ✦";
-    const lines = wrap(measured, look.font, look.textW, (wordsOpen || pending) ? Infinity : look.max);
+    const lines = [0, ...wrap(measured, look.font, look.textW, (wordsOpen || pending) ? Infinity : look.max)];
+    for (const end of ends.values()) end.line += 1;
     const chips = idea.decided || left;
     const landing = landingOn === idea.key ? input.landing!.text : undefined;
     const h = lines.length * look.line + (staying || wordsOpen ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
@@ -579,7 +580,7 @@ export function layout(input: LayoutInput): Layout {
     return { titleLines, latest: last?.text ?? "", latestLines: [], h: h - (list.length || slotsFor(t).length ? 8 : 0) + G.pad };
   };
   const asideSize = (idea: Idea) => {
-    const lines = wrap(idea.text, "small", G.asideMax - 2 * G.asideIn, 2);
+    const lines = [...wrap(who(idea.parts[0].speaker || "you").name, "small", G.asideMax - 2 * G.asideIn, 1), ...wrap(idea.text, "small", G.asideMax - 2 * G.asideIn, 2)];
     return { lines, w: Math.ceil(Math.max(...lines) + 2 * G.asideIn + 4), h: lines.length * G.asideLine + 2 * G.asidePad };
   };
 
@@ -631,7 +632,7 @@ export function layout(input: LayoutInput): Layout {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
       room: rooms.get(thread), depth, fixes, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
       wordsOpen: stayingOn(idea) || input.originals?.has(idea.key) ? !!input.originals?.has(idea.key) : undefined,
-      thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker.me ? undefined : speaker,
+      thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker,
       agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,
       landing: shape.landing, quotes: shape.quotes.length ? shape.quotes : undefined, tucks: shape.tucks.length ? shape.tucks : undefined,
     };
@@ -737,7 +738,7 @@ export function layout(input: LayoutInput): Layout {
       const box = exact ? at : clear(s, at);
       const speaker = who(idea.parts[0].speaker || "you");
       add(s, threadItem(t, box, "aside", { text: idea.text, shown: idea.text, lines: size.lines, thoughts: idea.parts.map((p) => p.id), at: idea.at, count: 1, since: idea.at,
-        who: speaker.me ? undefined : speaker }));
+        who: speaker }));
       if (s === out) tips.set(t.id, `t:${t.id}`);
       return;
     }

@@ -336,3 +336,5 @@
 .spine-fixes { position: fixed; inset: auto; margin: 0; padding: 0; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }
+
+.spine-speaker { display: block; font-size: .8em; font-weight: 600; opacity: .8; }

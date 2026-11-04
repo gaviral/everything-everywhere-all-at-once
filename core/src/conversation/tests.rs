@@ -160,6 +160,15 @@ async fn fake_meta_reply_speaks_three_intact_sentences() {
     .await
     .unwrap();
     assert!(reply.speak);
+    let payload = serde_json::to_value(&reply).unwrap();
+    let world = f.core.snapshot();
+    assert_eq!(payload["reply_id"], world.thoughts[0].id, "cancellation identifies the question's reply");
+    assert_eq!(payload["caption"]["id"], format!("reply-{}", world.thoughts[0].id));
+    assert_eq!(payload["caption"]["text"], expected);
+    assert_eq!(world.captions.len(), 1, "reply also has one durable caption");
+    assert!(world.ai.iter().any(|name| name == NAME));
+    assert!(world.thoughts.iter().any(|thought| thought.speaker == NAME && thought.text == expected), "reply survives playback on the existing map path");
+    assert!(std::fs::read_to_string(&f.path).unwrap().contains(expected), "reply is journaled");
     assert!(matches!(reply.message, ServerMsg::Guide { text, .. } if text == expected));
 }
 
@@ -259,10 +268,15 @@ async fn unrelated_retractions_leave_pending_replies_alone_and_delete_cancels_on
             .is_none(),
         "Undo never revives cancelled work"
     );
-    tokio::time::sleep(Duration::from_millis(160)).await;
-    let replies = captions(&mut updates);
-    assert_eq!(replies.len(), 1);
-    assert_eq!(replies[0].to.as_deref(), Some("guest"));
+    // Wait for publication: saving the retained reply may outlast a fixed 160 ms under load.
+    let reply = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let outgoing = updates.recv().await.unwrap();
+            if matches!(outgoing.message, ServerMsg::Guide { .. }) { break outgoing; }
+        }
+    }).await.unwrap();
+    assert_eq!(reply.to.as_deref(), Some("guest"));
+    assert!(captions(&mut updates).is_empty());
     let speakers = f.core.conversation.speakers.lock().unwrap();
     assert!(speakers["you"].history.is_empty());
     assert_eq!(speakers["guest"].history.len(), 1);
@@ -297,8 +311,8 @@ async fn off_is_inert_then_question_reply_follow_up_and_identity() {
     state(&mut updates, "idle").await;
     assert_eq!(
         f.core.snapshot().thoughts.len(),
-        1,
-        "question uses existing map path"
+        2,
+        "question and reply use existing map path"
     );
     assert!(request(&f.core, "you", 1, "Partner, make that more concrete."));
     state(&mut updates, "idle").await;
@@ -314,12 +328,12 @@ async fn off_is_inert_then_question_reply_follow_up_and_identity() {
     assert!(std::fs::read_to_string(&f.path)
         .unwrap()
         .contains("What should I try?"));
-    assert!(
-        std::fs::read_to_string(&f.path)
-            .unwrap()
-            .contains("Try one small step"),
-        "completed partner replies are journaled"
-    );
+    let journal = std::fs::read_to_string(&f.path).unwrap();
+    assert!(journal.contains("Try one small step"), "reply words remain on the spine");
+    assert!(journal.lines().all(|line| {
+        let change: Value = serde_json::from_str(line).unwrap();
+        change["type"] != "guide" && change.get("speak").is_none() && change.get("reply_id").is_none()
+    }), "playback events stay transient and cannot replay from the journal");
 }
 
 #[tokio::test]
@@ -639,7 +653,7 @@ async fn asr_checks_the_originating_windows_current_opt_in() {
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0]["messages"].as_array().unwrap().last().unwrap()["content"], "Why from enabled B?");
     assert_eq!(calls[1]["messages"].as_array().unwrap().last().unwrap()["content"], "Why from enabled A?");
-    assert_eq!(f.core.snapshot().thoughts.len(), 4, "all words still use the map path");
+    assert_eq!(f.core.snapshot().thoughts.len(), 6, "all words still use the map path");
 }
 
 #[tokio::test]

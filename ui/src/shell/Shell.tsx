@@ -114,8 +114,11 @@ const clock = (ms: number) => {
 
 /** The mic's state in the line's words, and its dot. Each state is named here once, and nowhere else on screen. */
 export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn"; text: string } {
-  if (s.typingOnly && s.mic !== "listening" && s.mic !== "hearing") return { dot: "off", text: "Typing only" };
+  if (s.typingOnly && s.mic !== "listening" && s.mic !== "hearing" && s.mic !== "reply-paused" && s.mic !== "capturing") return { dot: "off", text: "Typing only" };
   switch (s.mic) {
+    case "capturing": return { dot: "on", text: "Mic open · connecting speech…" };
+    case "reply-paused": return { dot: "on", text: "Mic open · capture paused during reply" };
+    case "failed": return { dot: "warn", text: "Mic stopped · retry or type" };
     case "offline": return { dot: "wait", text: "Connecting…" };
     case "starting": return { dot: "wait", text: "Starting the mic…" };
     case "listening":

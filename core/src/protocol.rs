@@ -38,7 +38,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 pub enum ServerMsg {
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
-    PartnerState { state: String, message: String },
+    PartnerState { state: String, message: String, #[serde(skip_serializing_if = "Option::is_none")] reply_id: Option<String> },
     /// The window owns which kinds of notices this person wants to see.
     NoticeControl { show: bool },
     TextReceived { id: String },
@@ -126,6 +126,9 @@ pub enum ServerMsg {
         /// Durable caption identity, absent on transient guide gestures.
         #[serde(skip_serializing_if = "Option::is_none")]
         caption: Option<crate::world::Caption>,
+        /// Live reply identity for cancellation; never persisted with the caption.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_id: Option<String>,
         kind: crate::guide::Kind,
         target: Option<String>,
         text: String,
