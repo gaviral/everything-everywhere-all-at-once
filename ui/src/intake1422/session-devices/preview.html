@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Session devices · synthetic preview</title>
+<style>body{margin:0;background:#eaf1f2;color:#172c31;font:16px/1.5 system-ui,sans-serif}main{max-width:1500px;margin:auto;padding:24px}nav{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0}nav button{font:inherit;min-height:44px;border:1px solid #779c9d;border-radius:8px;background:white;padding:8px 14px;cursor:pointer}.sd-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}@media(max-width:1050px){.sd-preview-grid{grid-template-columns:1fr}}</style>
+<div id="root"><p>Device sharing is off. This preview requires explicit feature opt-in.</p></div>
+<script type="module">
+if(new URLSearchParams(location.search).get('feature') === 'intake1422-session-devices') import('./preview.tsx');
+</script></html>
