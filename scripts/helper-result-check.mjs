@@ -2,17 +2,33 @@
 // acceptance only; this fixture makes no claim about a live provider or film.
 // Build the core tests using the workspace's approved wrapper, then set CORE_TEST_BIN.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { ready, openPage } from "./headless.mjs";
 
-const why = ready() || (!process.env.CORE_TEST_BIN && "set CORE_TEST_BIN to this worktree's built core test executable");
+const why = ready();
 if (why) { console.log(`SKIP helper-result-check: ${why}`); process.exit(3); }
 const root = new URL("../", import.meta.url).pathname;
 const shots = process.env.SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
-const app = spawn(process.env.CORE_TEST_BIN, ["--ignored", "--exact", "helper_result::tests::app", "--nocapture"], { cwd: join(root, "core"), stdio: ["ignore", "pipe", "pipe"] });
+// Cargo's authoritative test artifact avoids accidentally launching a normal app binary.
+// Keep the candidate target directory and lease metadata for nested admission.
+let testBinary = process.env.CORE_TEST_BIN;
+if (!testBinary) {
+  const output = execFileSync("cargo", ["test", "--manifest-path", join(root, "core/Cargo.toml"), "--no-run", "--message-format=json"],
+    { cwd: root, env: process.env, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+  const binaries = new Set(output.split("\n").flatMap(line => {
+    let artifact; try { artifact = JSON.parse(line); } catch { return []; }
+    return artifact.reason === "compiler-artifact" && artifact.profile?.test === true
+      && artifact.target?.name === "e2a2o-core" && artifact.target.kind.includes("bin")
+      && resolve(artifact.target.src_path) === resolve(root, "core/src/main.rs") && artifact.executable
+      ? [artifact.executable] : [];
+  }));
+  assert.equal(binaries.size, 1, "Cargo must identify exactly this core's test executable");
+  testBinary = [...binaries][0];
+}
+const app = spawn(testBinary, ["--ignored", "--exact", "helper_result::tests::app", "--nocapture"], { cwd: join(root, "core"), stdio: ["ignore", "pipe", "pipe"] });
 let output = "", browser;
 app.stdout.on("data", s => { output += s; }); app.stderr.on("data", s => { output += s; });
 try {

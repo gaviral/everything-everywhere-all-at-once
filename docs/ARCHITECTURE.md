@@ -132,6 +132,7 @@ Core, one process (core/src: axum, tokio)
   catalog.rs     the command list (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the app builder
   helpers.rs     host-only thinking and coding helpers: launch card, cancellation and Work spine rows; helpers/coding.rs runs local commands in isolated Git worktrees and commits as E2A2O Helper
+  helper_result.rs bounded read-only proposed results and redacted diffs, tied to server-owned helper identity
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
