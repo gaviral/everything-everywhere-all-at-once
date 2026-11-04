@@ -5,8 +5,8 @@ import { uiServer } from "./ui-server.mjs";
 
 if (!process.argv.includes("--fixtures")) {
   const child = spawn(process.execPath, [new URL(import.meta.url).pathname, "--fixtures"], { stdio: "inherit" });
-  // Module loading competes with parallel builds too; keep the collision-loop watchdog bounded at one minute.
-  const timeout = setTimeout(() => { child.kill("SIGKILL"); console.error("edge-cues-check: placement timed out"); }, 60000);
+  // Include cold Vite startup under concurrent gate load; a collision loop still has a bounded deadline.
+  const timeout = setTimeout(() => { child.kill("SIGKILL"); console.error("edge-cues-check: placement timed out"); }, 60_000);
   const code = await new Promise((resolve) => child.once("exit", (code) => resolve(code ?? 1)));
   clearTimeout(timeout);
   assert.equal(code, 0, "placement fixtures failed or timed out");

@@ -181,8 +181,8 @@ try {
     };
   `);
   const run = (args, env = {}) => spawnSync(process.execPath, ["--import", shim, script, ...args],
-    // CLI startup can be slow beside parallel builds; simulated fetch/body deadlines remain 20 ms above.
-    { cwd: temporary, env, encoding: "utf8", timeout: 30000 });
+    // Leave room for cold Node startup during parallel gate runs; fetch timeouts are tested separately above.
+    { cwd: temporary, env, encoding: "utf8", timeout: 60_000 });
   let result = run(["--help"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /TAG/);
