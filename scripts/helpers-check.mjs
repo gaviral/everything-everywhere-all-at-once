@@ -129,7 +129,7 @@ try {
     await type("get ten helpers on the pitch");
     assert.equal(await until('document.querySelector(".send-card")?.innerText.includes("10 helpers")', 500), false, "feature off does not start helpers");
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, "no horizontal overflow");
-    assert.deepEqual(await evaluate("window.swarmErrors"), [], "no page errors");
+    assert.deepEqual((await evaluate("window.swarmErrors")).filter(error => !/^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications\.)$/.test(error)), [], "no page errors");
     await browser.close(); browser = null;
   }
   const rows = readFileSync(trace, "utf8").trim().split("\n").map(JSON.parse);

@@ -132,15 +132,18 @@ try {
         let r = await rectOf(selector, nth);
         assert.ok(r, `${label}: ${selector} is there to press`);
         await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: r.x, y: r.y });
-        let stable = false;
-        for (let attempt = 0; attempt < 40; attempt++) {
+        let stable = false, settled = 0;
+        for (let attempt = 0; attempt < 60; attempt++) {
           await sleep(50);
           const next = await rectOf(selector, nth);
-          if (next && ["left", "right", "top", "bottom"].every((edge) => Math.abs(next[edge] - r[edge]) < 0.5)) {
-            stable = true; r = next; break;
-          }
+          const hit = next && await evaluate(`(() => {
+            const el = document.querySelectorAll(${JSON.stringify(selector)})[${nth}];
+            return !!el && el.contains(document.elementFromPoint(${next.x}, ${next.y}));
+          })()`);
+          settled = next && hit && ["left", "right", "top", "bottom"].every((edge) => Math.abs(next[edge] - r[edge]) < 0.5) ? settled + 1 : 0;
           r = next;
           assert.ok(r, `${label}: ${selector} stays available before the press`);
+          if (settled >= 4) { stable = true; break; }
         }
         assert.ok(stable, `${label}: ${selector} settles before the press`);
         await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: r.x, y: r.y });

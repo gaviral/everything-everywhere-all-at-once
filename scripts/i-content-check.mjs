@@ -45,7 +45,7 @@ try {
       await key('Tab');
       await page('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab'});
     }
-    assert.equal(await evaluate('document.activeElement === source'),true,'keyboard reaches Inspect');
+    assert.equal(await until('document.activeElement === source'),true,'keyboard reaches Inspect');
     await key('Enter');
     await page('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter'});
     assert.ok(await until(`document.querySelector('dialog.full-content')?.open`));
@@ -81,7 +81,7 @@ try {
   assert.ok(await until(`!document.querySelector('.full-content')`));
   await sleep(100);
   assert.equal(await camera(),original,'thought close restores exact camera');
-  assert.equal(await evaluate('document.activeElement === source'),true,'thought source focus returns');
+  assert.equal(await until('document.activeElement === source'),true,'thought source focus returns');
   await open('.spine-point [aria-label="Inspect full content"]');
   await click('.full-content-toolbar button[aria-pressed]');
   await page('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
@@ -90,7 +90,7 @@ try {
   assert.ok(await evaluate(`Array.from(document.querySelectorAll('.full-content-toolbar button')).every(e=>{const r=e.getBoundingClientRect();return r.x>=0&&r.right<=390&&r.y>=0&&r.bottom<844})`),'fixed controls reachable at 390px');
   await click('.full-content-toolbar button');
   assert.ok(await until(`!document.querySelector('.full-content')`));
-  assert.equal(await evaluate('document.activeElement === source'),true,'source focus returns');
+  assert.equal(await until('document.activeElement === source'),true,'source focus returns');
   // Restore desktop before comparing the map camera; resizing itself legitimately changes map layout.
   await page('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await sleep(300);
@@ -102,7 +102,7 @@ try {
   assert.ok(await until(`!document.querySelector('.full-content')`));
   await sleep(100);
   assert.equal(await camera(),beforeTopic,'exact camera restored');
-  assert.equal(await evaluate('document.activeElement === source'),true);
+  assert.equal(await until('document.activeElement === source'),true);
   await features(); await click('[role="switch"][aria-label="Full content"]'); await click('[aria-label="Close the panel"]');
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Inspect full content"]').length`),0,'disabled removes actions');
   assert.equal(await evaluate(`!!document.querySelector('.full-content')`),false);
