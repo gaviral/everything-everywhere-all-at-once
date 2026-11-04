@@ -248,3 +248,13 @@ Build the UI, then run `node scripts/intro-parts-check.mjs`. It renders the buil
 ## Topic images
 
 **Topic images** starts off. Enabling it shows existing images on the Canvas and Cards; disabling it restores their initial and title visuals without moving topics. The separate Pictures view keeps its gallery behavior. This presentation choice starts no model or microphone and never deletes saved images.
+
+## Quiet screen
+
+The default shell mounts `quiet-screen` from its top-right part. Its discoverable input manifest stays `defaultOn: false`; the shell owns this default appearance, so disabling the optional playground mount does not disable the shell's quiet screen. Multiple mounts share one activity listener and release it when the last mount leaves.
+
+After two seconds without pointer, key, touch or text activity, the camera controls, Shelf, Agent work link and navigation controls fade in place. Flow's toolbar and populated command row do the same. Any activity reveals them immediately without consuming the event. A held pointer or key and unfinished text composition keep them visible. Focused controls remain visible, focus and tab order stay intact, and no element is removed or resized. Reduced motion makes the fade instant.
+
+The empty map keeps its input; a populated map keeps focused input and live capture visible. Flow keeps its input before it has boxes, focused editing stays visible, and its source text, results and questions remain on screen. This part changes only presentation and never starts capture or a model request.
+
+Build the UI, then run `node scripts/quiet-screen-check.mjs`. This focused browser check uses synthetic map and Flow data, preserves its temporary Chrome profile, and covers empty/full maps, Flow, keyboard focus, typing, composition, touch, stable geometry and an empty phone with reduced motion.
