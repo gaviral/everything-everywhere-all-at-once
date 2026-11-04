@@ -20,6 +20,7 @@ Every model the app calls at runtime is Meta's, through the Meta Model API; `scr
 | Muse Spark 1.2 (`IMPORT_EXTRACT_MODEL`, default) | Chat import: extracts ideas from message parts | minimal | — |
 | Muse Spark 1.3 (`IMPORT_MERGE_MODEL`, default) | Chat import: groups the extracted ideas into topics | low | — |
 | Muse Image 1.0 | Draws a topic picture after it has settled; draws a sketch back when you ask | — (low for a sketch) | — |
+| Muse Spark 1.3 | Crew: splits what you said into parts, builds and repairs each; off by default | minimal | — |
 | Muse Spark 1.3 | Reads a sketch on the Draw sheet, at each pause in the drawing or when asked; off by default | minimal | — |
 | Muse Spark 1.3 | Ask about words: picks at most one word in a thought it can't place; off by default | minimal | — |
 
@@ -250,6 +251,10 @@ An app is a watcher (a new thought, a phrase, a topic, loud voices for some seco
 ### Features
 
 Parts of the app can be features: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. The Features page lists them, each with its line and an on/off switch kept in this browser. The Level meter is one optional feature (also `?level`). Each feature sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [`docs/bricks.md`](bricks.md).
+
+### Crew
+
+Off by default; switch it on in Features, or open with `?crew`. Say or type several things at once, then “build all that”. Muse Spark splits them into small parts and builds each at the same time, on its own git branch in a real repository beside the map's folder. Each part runs in a sealed frame with no network; one that fails is repaired once, then turned off while the rest carry on. What works merges up from dev through staging to main, and joins a catalog, so a later run reuses a part instead of building it again.
 
 ### Draw
 

@@ -1,0 +1,53 @@
+/* Warm paper, ink, one green for what's merged. The tree is the picture; everything else stays quiet. */
+.crew {
+  --crew-paper: #f6f0e4; --crew-ink: #2a241c; --crew-soft: #8d8373; --crew-faint: #dcd2bf; --crew-work: #2f7f86; --crew-try: #c98a13; --crew-done: #2f8a5b; --crew-off: #c0472f;
+  position: fixed; inset: 0; z-index: 880; display: flex; flex-direction: column; gap: 10px; padding: 18px 26px 12px;
+  background: var(--crew-paper); color: var(--crew-ink); font-family: system-ui, sans-serif; overflow: hidden;
+}
+.crew .crew-head { position: static; display: flex; align-items: flex-start; gap: 24px; padding: 0; background: none; border: 0; backdrop-filter: none; height: auto; }
+.crew-head > div:first-child { flex: 1; min-width: 0; }
+.crew-head h2 { margin: 0; font-size: clamp(26px, 2.7vw, 56px); line-height: 1.05; letter-spacing: -0.02em; }
+.crew-said { margin: 6px 0 0; color: var(--crew-soft); font-size: clamp(15px, 1.15vw, 24px); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.crew-count { display: flex; gap: 26px; margin: 0; }
+.crew-count div { text-align: right; }
+.crew-count dt { color: var(--crew-soft); font-size: clamp(12px, 0.9vw, 19px); }
+.crew-count dd { margin: 0; font-size: clamp(24px, 2.4vw, 50px); font-weight: 700; font-variant-numeric: tabular-nums; }
+.crew-close, .crew-ask button, .crew-open {
+  min-height: 44px; padding: 0 18px; border-radius: 15px 20px 14px 21px; border: 1.5px solid var(--crew-ink); background: transparent;
+  color: var(--crew-ink); font: 600 clamp(15px, 1.1vw, 22px) system-ui, sans-serif; cursor: pointer;
+}
+.crew-work { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 10fr); gap: 20px; }
+.crew-tree { width: 100%; height: 100%; min-height: 0; }
+.crew-tree path { fill: none; stroke-linecap: round; }
+.crew-line-base { stroke: var(--crew-faint); stroke-width: 4; }
+.crew-line { stroke: var(--crew-work); stroke-width: 6; stroke-dasharray: 1 1; transition: stroke-dashoffset 700ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke 300ms; }
+.crew-trying .crew-line, .crew-fixing .crew-line { stroke: var(--crew-try); }
+.crew-merged .crew-line, .crew-level-done .crew-line, .crew-level-moving .crew-line { stroke: var(--crew-done); }
+.crew-off .crew-line { stroke: var(--crew-off); stroke-dasharray: 0.02 0.03; }
+.crew-message { fill: var(--crew-work); }
+.crew-trying .crew-message, .crew-fixing .crew-message { fill: var(--crew-try); }
+.crew-level-moving .crew-message { fill: var(--crew-done); }
+.crew-leaf { fill: var(--crew-paper); stroke: var(--crew-soft); stroke-width: 3; transition: fill 300ms, stroke 300ms; }
+.crew-building .crew-leaf, .crew-fixing .crew-leaf, .crew-trying .crew-leaf { stroke: var(--crew-work); }
+.crew-merged .crew-leaf { fill: var(--crew-done); stroke: var(--crew-done); }
+.crew-off .crew-leaf { fill: var(--crew-off); stroke: var(--crew-off); }
+.crew-leaf-mark { fill: #fff; font-size: 18px; font-weight: 700; text-anchor: middle; }
+.crew-leaf-name { fill: var(--crew-ink); font-size: 21px; font-weight: 600; text-anchor: middle; }
+.crew-leaf-time { fill: var(--crew-soft); font-size: 17px; text-anchor: middle; }
+.crew-node circle { fill: var(--crew-paper); stroke: var(--crew-faint); stroke-width: 5; transition: fill 300ms, stroke 300ms; }
+.crew-node-lit circle { fill: var(--crew-done); stroke: var(--crew-done); }
+.crew-node-name { fill: var(--crew-ink); font-size: 30px; font-weight: 700; }
+.crew-node-detail { fill: var(--crew-soft); font-size: 19px; }
+.crew-board { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); grid-auto-rows: min-content; gap: 14px; align-content: start; padding: 2px; }
+.crew-board-empty { color: var(--crew-soft); font-size: clamp(18px, 1.4vw, 28px); }
+.crew-card { margin: 0; background: #fffdf8; border-radius: 16px 22px 18px 24px; box-shadow: 0 6px 22px rgba(70, 50, 20, 0.14); overflow: hidden; animation: crew-land 460ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+.crew-card iframe { display: block; width: 100%; height: 260px; border: 0; background: #fffdf8; }
+.crew-card figcaption { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; color: var(--crew-soft); font-size: clamp(13px, 0.95vw, 19px); border-top: 1px solid var(--crew-faint); }
+.crew-card figcaption span { font-family: ui-monospace, monospace; }
+.crew-ask { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+.crew-ask textarea { flex: 1; resize: none; border: 2px dashed var(--crew-faint); border-radius: 18px 26px 20px 28px; background: transparent; padding: 18px; color: var(--crew-ink); font: 500 clamp(20px, 1.9vw, 40px) / 1.3 system-ui, sans-serif; }
+.crew-ask button { align-self: flex-start; min-height: 54px; }
+.crew-foot { margin: 0; color: var(--crew-soft); font-size: clamp(14px, 1vw, 21px); }
+.crew-open { position: fixed; right: 92px; bottom: 112px; z-index: 40; background: #f6f0e4; font-weight: 700; }
+@keyframes crew-land { from { opacity: 0; transform: translateY(14px) scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .crew-card { animation: none; } .crew-line { transition: none; } }
