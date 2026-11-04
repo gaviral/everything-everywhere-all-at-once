@@ -63,7 +63,7 @@ Browser, one page per window (ui/src)
   Catalog.tsx    the Features page (Features in the top bar): every feature with its line and switch
   shell/         the default layout; `?shell=1` opens the classic header and bottom bar instead
     flag.ts      SHELL2 (true unless `?shell=1` or `?cards`), CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core features are built in
-    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Features page wording
+    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome
     parts.tsx    Icon, Keycap, Stamp and Mode; mod and modAria for platform-specific key labels
     names.ts     NAMES, FEATURE_NAMES, KIND_NAMES and FeatureName: shell labels, stamps and feature descriptions
     features.ts  BUILT_INS and BuiltIn; useBuiltInsOn and switchBuiltIn, browser-local switches in e2a2o.features, shared through storage events
@@ -79,7 +79,6 @@ Browser, one page per window (ui/src)
     TalkRail.tsx the current call rail or phone sheet, mounted separately from the shell's Rail; hosts Talk, join-code copying and Leave, or a closed pill with unread turns; remembers open/closed in sessionStorage
   bricks/        one folder per feature, and contract.ts, the one file a feature imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
-    bubbles/     a view: every topic as a bubble in a place of its own, sized by its points
     bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your topic while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the input box (the status line once there is one), in place of the bottom bar's big line
@@ -99,7 +98,7 @@ Core, one process (core/src: axum, tokio)
   protocol.rs    ServerMsg, ClientMsg
   conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
   replies.rs       deterministic, bounded anchors and command speech: no model calls, no saved replies
-  guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
+  guide.rs       validates point, caption, hold, tour, job and answer; journals completed captions, relays transient guidance, retains latest jobs in memory for replay, addresses answers to a speaker's windows; no model (below)
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the topics weighed, then where it went and why)
   stay.rs        journaled map-wide pin: everyone's new thoughts land whole in one topic without model placing or splitting; “stay here” and “let go”
@@ -162,12 +161,12 @@ No `USAGE_FILE`, an unreadable or malformed file, or a disconnected core keeps t
 
 ## Guide relay and runtime jobs
 
-`protocol.rs` defines the existing WebSocket messages; `main.rs` dispatches them to `guide.rs`. They do not change `World`, write the journal or start model work. The core adds the sender's identity on the shared map (`by`) and server time (`at_ms`). Live point/caption/hold, tour and job messages go to every window except the originating window, including other windows of the same speaker. Answers use the recipient route instead.
+`protocol.rs` defines the existing WebSocket messages; `main.rs` dispatches them to `guide.rs`. Completed captions enter `World.captions` through journaled `CaptionAdded` records; other guide messages remain outside the journal. No guide message starts model work. The core adds the sender's identity on the shared map (`by`) and server time (`at_ms`). Live point/caption/hold, tour and job messages go to every window except the originating window, including other windows of the same speaker. Answers use the recipient route instead.
 
 | Sent by a window | Core behavior |
 |---|---|
 | `point { target?, caption? }` | Relays `guide` with `kind: "point"`. A target is an existing `data-guide` name to look up in the receiving page; the core validates its syntax, not whether it is on screen. Caption: at most 140 characters. Null or omitted target takes the sender's point down and discards its caption. |
-| `caption { text }` | Relays `guide` with `kind: "caption"`, no target; requires nonempty text, at most 400 characters. Guide draws it above the input box, or holds it while the person is busy. |
+| `caption { text, id?, speak? }` | Saves a completed caption and relays `guide` with `kind: "caption"`, no target; requires nonempty text, at most 400 characters. An optional id deduplicates retries per speaker, including after restart; absent ids are generated by the core. Guide draws it above the input box, or holds it while the person is busy. Audio flags are live only. |
 | `hold { text, target?, urgent? }` | Relays `guide` with `kind: "hold"`; at most 140 characters, optional target for when asked. `urgent` moves it ahead of other waiting questions at the next pause. Empty text takes back that sender's held items and question being asked. Each receiving window owns the pause/held state; Guide projects its cards into `shell/held.ts` in the shell. |
 | `tour { steps }` | Validates the whole ordered list before relaying `tour`: at most 20 steps, each with nonempty text of at most 140 characters and an optional target. Empty steps clear the sender's tour. This is relay only; the current guide receiver handles `guide` messages, without tour playback. |
 | `job { id, title, status, result?, parent?, demo? }` | Relays a flat `job` update and retains the latest accepted state per id in core memory. Title: nonempty, at most 80 characters; result: at most 160. Status: running, done, failed or waiting; demo defaults false. Id and optional parent use the same syntax as target names. |
@@ -175,7 +174,7 @@ No `USAGE_FILE`, an unreadable or malformed file, or a disconnected core keeps t
 
 Text is normalized to one line before length checks. Target names allow 1–100 ASCII letters, digits, `:`, `-`, `_` or `.`. All six message kinds share a limit of four accepted messages per second per window (a whole tour counts once); refusals go only to the sender's windows as `Not shown: …`, at most once a second. Malformed job/answer fields use that same refusal route.
 
-Points, captions, held questions, tours and answers are transient and have no reconnect replay. Jobs also never persist to disk, but survive window disconnects while the core runs: `guide::Runtime` retains at most 60 distinct ids in first-appearance order, replaces an existing id in place, and evicts the oldest row for a new id past the cap. `main.rs` subscribes and captures job replay under the publication lock, sends the snapshot and placing state before the latest jobs, then forwards newer updates. Lag recovery repeats that catch-up, skips queued jobs superseded by replay, and keeps forwarding buffered non-job messages, including recipient-only answers. Restarting the core clears the jobs. `ui/src/work-jobs.ts` keeps the connection's job list outside the map for `map.jobs`; `core.ts` resets it on each snapshot before replay, and start/end times derive only from states this window saw.
+Points, held questions, tours and answers are transient and have no reconnect replay. Completed captions return in snapshots in journal order, with recipient-only captions filtered to their speaker; Talk restores their rows, while page speech marks them already heard. Jobs never persist to disk, but survive window disconnects while the core runs: `guide::Runtime` retains at most 60 distinct ids in first-appearance order, replaces an existing id in place, and evicts the oldest row for a new id past the cap. `main.rs` subscribes and captures job replay under the publication lock, sends the snapshot and placing state before the latest jobs, then forwards newer updates. Lag recovery repeats that catch-up, skips queued jobs superseded by replay, and keeps forwarding buffered non-job messages, including recipient-only answers. Restarting the core clears the jobs. `ui/src/work-jobs.ts` keeps the connection's job list outside the map for `map.jobs`; `core.ts` resets it on each snapshot before replay, and start/end times derive only from states this window saw.
 
 ## State and the journal
 

@@ -225,7 +225,9 @@ process.exit(Number(process.env.CORE_EXIT ?? 0));
     FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: "../fixture-data",
     OPENSSL_DIR: "/fixture/ssl" };
   const run = (args = [], extra = {}) => spawnSync(join(dir, "run.sh"), args,
-    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: 15000 });
+    // run.sh starts Node four times before the fixture core starts a fifth process.
+    // Bound the whole launch separately from the single-process preflight below.
+    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: 45000 });
   const events = () => { try { return readFileSync(env.FIXTURE_LOG, "utf8"); } catch { return ""; } };
   const binary = join(dir, `e2a2o-core-${process.platform}-${process.arch}`);
   return { dir, env, run, events, binary };

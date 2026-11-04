@@ -87,8 +87,8 @@ export function ImportChats({ core }: { core: ImportCore }) {
 
   // A message that starts counting comes first: this modal sheet would cover its countdown and make its Stop inert.
   useEffect(() => {
-    if (comesFirst(core.sendCard)) setOpen(false);
-  }, [core.sendCard?.id, core.sendCard?.state]);
+    if (open && comesFirst(core.sendCard)) setOpen(false);
+  }, [open, core.sendCard?.id, core.sendCard?.state]);
 
   const reset = () => {
     setStep("choose");

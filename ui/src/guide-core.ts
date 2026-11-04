@@ -48,8 +48,6 @@ export const NAMES: Record<string, string> = {
   pending: "the thoughts finding their place",
   "send-card": "the message about to send",
 };
-/** The names made from an id. */
-export const PATTERNS = ["thread:", "point:", "view:"] as const;
 
 type Map = Pick<World, "threads" | "thoughts" | "merged">;
 
