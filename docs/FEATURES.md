@@ -19,7 +19,9 @@ Every model the app calls at runtime is Meta's, through the Meta Model API; `scr
 | Muse Spark 1.3 (`RECAP_MODEL`, else `REFINER_MODEL`, else default) | Keeps a Recap draft current as thoughts land (only while the hour has calls to spare), and when you ask for Recap with something newer | minimal | One call alone on the demo map: 2.5–3.0 s with minimal vs 5.2–9.5 s with low (n = 3 each, 2026-11-01); asking shows the kept draft in 5–11 ms (n = 3). Contributor mode (`RECAP_MODEL=muse-spark-1.3-contributor`) was slower: drafts median 13.3 s vs 3.0 s (n = 32 vs 54, side by side, 2026-11-02) |
 | Muse Spark 1.2 (`IMPORT_EXTRACT_MODEL`, default) | Chat import: extracts ideas from message parts | minimal | — |
 | Muse Spark 1.3 (`IMPORT_MERGE_MODEL`, default) | Chat import: groups the extracted ideas into topics | low | — |
-| Muse Image 1.0 | Draws a topic picture after it has settled | — | — |
+| Muse Image 1.0 | Draws a topic picture after it has settled; draws a sketch back when you ask | — (low for a sketch) | — |
+| Muse Spark 1.3 | Reads a sketch on the Draw sheet, at each pause in the drawing or when asked; off by default | minimal | — |
+| Muse Spark 1.3 | Ask about words: picks at most one word in a thought it can't place; off by default | minimal | — |
 
 Chat models use `https://api.meta.ai/v1/chat/completions`; speech uses `wss://api.meta.ai/v1/asr/realtime`; pictures use `https://api.meta.ai/v1/images/generations`. Settings go in `.env`; see `.env.example`.
 
@@ -248,6 +250,18 @@ An app is a watcher (a new thought, a phrase, a topic, loud voices for some seco
 ### Features
 
 Parts of the app can be features: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. The Features page lists them, each with its line and an on/off switch kept in this browser. The Level meter is one optional feature (also `?level`). Each feature sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [`docs/bricks.md`](bricks.md).
+
+### Draw
+
+Off by default; switch it on in Features, or open with `?draw`. A sheet covers the page and a pen, a mouse or a finger draws on it. Saying “this is the mic” while drawing names the strokes around that moment, and the name grows as you talk; a lasso picks strokes to name by hand, and See through keeps the app visible underneath to mark it up.
+
+- **Read along:** at each pause in the drawing Muse Spark reads the sketch, with your names and what you said, and marks what it sees in teal, with one sentence and its measured time. It asks at most one question, and only at a pause.
+- **“What do you see?”** asks at once. **“Draw it back”** asks Muse Image for a clean drawing with your labels, beside yours. **“Build this”** hands the steps to Flow, and they run on the thought you were on.
+- The drawing stays in this browser. A sketch goes to the model only as the two calls above; nothing is kept in the core.
+
+### Ask about words
+
+Off by default. After each of your thoughts Muse Spark picks at most one word it can't place, such as a private name or a project term. At your next pause the word gets a dotted underline and a thin arrow to a handwritten question. What you say next is kept as a note on that word, or Got it waves it off.
 
 ### Recap
 

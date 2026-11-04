@@ -10,6 +10,7 @@ Browser, one page per window (ui/src)
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
+  topic-images.ts the topic pictures a view shows
   dev-build.ts   defers optional development-build reloads while the page is speaking, typing or sending
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
@@ -122,6 +123,9 @@ Core, one process (core/src: axum, tokio)
   protocol.rs    ServerMsg, ClientMsg
   dev_build.rs   optional build-file notifications and connected-page activity for idle reloads
   code_canvas.rs optional local-only source and Git branch map; delegates part summaries and agent state to code_canvas/
+  clarify.rs     asks Muse Spark for the one word in a thought it can't place; keeps nothing
+  draw.rs        Muse Spark reads a sketch, Muse Image draws it back; keeps nothing
+  system_view.rs live connections and frames behind the agent work view
   flow.rs        Meta-powered text boxes, streamed transformations and publishing results back to their source topic
   workshop.rs    configured Meta model trials, optional event data and explicit Workshop commands
   conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
