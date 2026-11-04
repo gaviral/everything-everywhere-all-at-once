@@ -102,6 +102,10 @@ export const ACTIONS: Action[] = [
   { id: "guide-choice", how: "click", at: [["Guide.tsx", "onClick={() => send(choice)}"]], pressed: PRESS, waits: "core",
     done: "the answer goes to whoever asked, once; its buttons go and a line says what went and to whom: “You sent … to …”", failed: "the question stays, with “Not sent: the connection is down. Try again in a moment.”",
     says: ["Not sent: the connection is down. Try again in a moment."] },
+  // The same two answers on the held stack's card, before the question is asked (Guide.tsx `HeldCard`).
+  { id: "guide-held-choice", how: "click", at: [["Guide.tsx", "onClick={() => pick(choice)}"]], pressed: PRESS, waits: "core",
+    done: "the answer goes to whoever asked, once; the card leaves the stack and the stage says what went: “You sent … to …”", failed: "the card stays, with “Not sent: the connection is down. Try again in a moment.”",
+    says: ["Not sent: the connection is down. Try again in a moment."] },
   { id: "guide-answer-open", how: "click", at: [["Guide.tsx", "onClick={() => openAnswer(said.n)}"]], pressed: INSTANT,
     done: "a box for your own words opens in its place, with Send, and you're in it; Esc closes it, a second Esc drops the question" },
   { id: "guide-answer-type", how: "form", at: [["Guide.tsx", "<form className=\"guide-answer\" onSubmit={submit}>"], ["Guide.tsx", "onChange={(event) => { setWords(event.target.value); setProblem(\"\"); }}"],
