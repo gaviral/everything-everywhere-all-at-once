@@ -115,10 +115,11 @@ Browser, one page per window (ui/src)
   page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
+  system_view.rs passive local projection of core messages, without prompts, identities or saved words
   code_canvas.rs local source-map metadata and inspectable part relationships, without source bodies or machine paths
   dev_build.rs   optional local build status and per-window activity receipts
   flow.rs        validates and runs saved serial Meta prompt pipelines
-  workshop.rs    model trial catalog, saved Flow parts and optional configured event data
+  workshop.rs    model trial list, saved Flow parts and optional configured event data
   storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
