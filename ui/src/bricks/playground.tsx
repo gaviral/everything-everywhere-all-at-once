@@ -73,6 +73,8 @@ function Playground() {
   const [id, setId] = useState(params.get("brick") ?? found.bricks[0]?.info.id ?? "");
   const [sample, setSample] = useState(params.get("sample") ?? (SAMPLES["student-week"] ? "student-week" : "empty"));
   const [world, setWorld] = useState(() => sampleWorld(sample));
+  const estimateWorld = useRef(world);
+  estimateWorld.current = world;
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
@@ -170,6 +172,24 @@ function Playground() {
 
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
+    setActionEstimate: async request => {
+      const w = estimateWorld.current;
+      const current = w.action_estimates?.find(e => e.owner === "you" && e.action_id === request.action_id);
+      const failed = (message: string) => ({ request_id: request.request_id, ok: false, message, estimate: null });
+      if (!connected || id !== "action-estimates") return failed("Playground connection is off; draft kept.");
+      if (!w.actions.some(a => a.id === request.action_id && a.title === request.source_title && a.thread_id === request.source_thread_id) || (current?.revision ?? 0) !== request.observed_revision) return failed("Source or revision changed. Inspect the action before retrying.");
+      if ((request.minutes !== null && (!Number.isInteger(request.minutes) || request.minutes < 1 || request.minutes > 1440)) || [...request.reason].length > 160) return failed("Use 1–1440 whole minutes and a reason of at most 160 characters.");
+      if (!current && (w.action_estimates ?? []).filter(e => e.owner === "you").length >= 100) return failed("The 100-record limit was reached.");
+      if (request.undo_of && (!current?.cleared || current.request.request_id !== request.undo_of || current.minutes !== null || current.cleared.minutes !== request.minutes || current.cleared.reason !== request.reason)) return failed("Clear changed; Undo is unavailable.");
+      const estimate = { action_id: request.action_id, owner: "you", source_title: request.source_title, source_thread_id: request.source_thread_id,
+        source_topic: w.threads.find(t => t.id === request.source_thread_id)?.title ?? request.source_thread_id,
+        minutes: request.minutes, reason: request.reason, revision: (current?.revision ?? 0) + 1, request,
+        cleared: request.minutes === null && current?.minutes != null ? { minutes: current.minutes, reason: current.reason } : null };
+      const next = apply(w, { type: "action_estimate_set", estimate });
+      estimateWorld.current = next; setWorld(next);
+      said(`estimate ${request.action_id}: simulated playground acknowledgement`);
+      return { request_id: request.request_id, ok: true, message: "Playground estimate updated; no server save.", estimate };
+    },
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);

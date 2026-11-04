@@ -6,7 +6,7 @@
 import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Anchor } from "../annotate-core";
-import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
+import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
 /** The app's existing speech-correction controls, attached to a thought by a view. */
@@ -15,7 +15,7 @@ export const SemanticZoomContext = createContext(false);
 
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -159,6 +159,8 @@ export interface MapSnapshot {
   readonly suggestions: readonly Suggestion[];
   /** Reminders and calendar events the AI proposed from what was said (the map's `actions`). */
   readonly reminders: readonly Action[];
+  /** Manual effort metadata; other owners are display-only. */
+  readonly actionEstimates?: readonly Readonly<ActionEstimate>[];
   /** The apps people made (a watcher, a prompt, publishers), and whether each is on. */
   readonly apps: readonly MiniApp[];
   /** Why a thought went where it went, by thought id, where the placer said. */
@@ -196,6 +198,8 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Resolves only with the matching write acknowledgement, or an explicit failure. */
+  setActionEstimate?(request: EstimateRequest): Promise<EstimateResult>;
   /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
   readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this

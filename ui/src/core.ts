@@ -145,6 +145,10 @@ export interface Action {
   failed?: string;
 }
 
+export type EstimateRequest = { request_id: string; action_id: string; source_title: string; source_thread_id: string; observed_revision: number; minutes: number | null; reason: string; undo_of?: string | null };
+export type ActionEstimate = { action_id: string; owner: string; source_title: string; source_thread_id: string; source_topic: string; minutes: number | null; reason: string; revision: number; request: EstimateRequest; cleared?: { minutes: number; reason: string } | null };
+export type EstimateResult = { request_id: string; ok: boolean; message: string; estimate: ActionEstimate | null };
+
 // How an import of past chats is going (core/src/import.rs).
 export interface ImportStatus {
   id: string;
@@ -162,6 +166,7 @@ export interface ImportStatus {
 }
 
 export interface World extends AppsWorld {
+  action_estimates?: ActionEstimate[];
   pauses?: Pause[];
   recaps: RecapData[];
   threads: Thread[];
@@ -190,6 +195,7 @@ export interface World extends AppsWorld {
 }
 
 type Change =
+  | { type: "action_estimate_set"; estimate: ActionEstimate }
   | { type: "caption_added"; caption: import("./talk/call-core").Caption }
   | {type:"paused";pause:Pause}
   | {type:"pause_resolved";id:string;by_thought:string}
@@ -257,6 +263,7 @@ export type ReturnResult = { request_id: string | null; anchor: ReturnAnchor | n
 export type Capture = { id: string; text: string; thought_ids: string[]; saved: boolean; local: boolean; replay: boolean; mapped?: boolean; receivedOnly?: boolean; at: number };
 
 type ServerMsg =
+  | ({ type: "action_estimate_result" } & EstimateResult)
   | { type: "returned"; request_id: string | null; anchor: ReturnAnchor | null; message: string }
   | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
   | { type: "map_identity"; id: string }
@@ -454,6 +461,12 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     case "caption_added":
       return world.captions?.some((old) => old.id === c.caption.id && old.by === c.caption.by) ? world
         : { ...world, captions: [...(world.captions ?? []), c.caption] };
+    case "action_estimate_set": {
+      const estimates = world.action_estimates ?? [];
+      const previous = estimates.find(e => e.action_id === c.estimate.action_id && e.owner === c.estimate.owner);
+      if (previous && previous.revision > c.estimate.revision) return world;
+      return { ...world, action_estimates: previous ? estimates.map(e => e === previous ? c.estimate : e) : [...estimates, c.estimate] };
+    }
     case "paused": return { ...world, pauses: [...(world.pauses ?? []).filter(p=>p.id!==c.pause.id), c.pause] };
     case "pause_resolved": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,resolved:true}:p) };
     case "pause_choice": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,later_count:c.later_count,offer_after_ms:c.offer_after_ms,hidden:c.hidden}:p) };
@@ -717,6 +730,12 @@ export function movesAsked(speaker?: string) {
 const MIC_TAIL_MS = 4_000;
 
 export function useCore(speaker?: string) {
+  const estimatesOn = useRef(false);
+  const estimateWaits = useRef(new Map<string, { resolve: (result: EstimateResult) => void; timer: ReturnType<typeof setTimeout> }>());
+  const failEstimateWaits = (message: string) => {
+    for (const [request_id, wait] of estimateWaits.current) { clearTimeout(wait.timer); wait.resolve({ request_id, ok: false, message, estimate: null }); }
+    estimateWaits.current.clear();
+  };
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
@@ -871,6 +890,7 @@ export function useCore(speaker?: string) {
       const heartbeatId = thoughtId();
       let lastReply = Date.now();
       ws.onopen = () => {
+        if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         noticeQueue.reset("note");
         resetApps();
         resetSteps();
@@ -913,6 +933,12 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "action_estimate_result": {
+            if (!estimatesOn.current) break;
+            const wait = estimateWaits.current.get(msg.request_id);
+            if (wait) { clearTimeout(wait.timer); estimateWaits.current.delete(msg.request_id); wait.resolve(msg); }
+            break;
+          }
           case "returned": {
             setReturnResult(was => ({ ...msg, revision: (was?.revision ?? 0) + 1 }));
             if (msg.anchor?.thread_id && msg.anchor.current_text !== null) {
@@ -1128,6 +1154,7 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        failEstimateWaits("Save unconfirmed: connection lost. Your draft is kept; retry explicitly.");
         if (ended) return;
         ended = true;
         window.clearInterval(heartbeat);
@@ -1177,6 +1204,7 @@ export function useCore(speaker?: string) {
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);
       window.clearTimeout(handoffTimer);
+      failEstimateWaits("Save unconfirmed: window closed.");
       socket.current?.close();
     };
   }, [receiveApps, resetApps, receiveRecap, recapDisconnected, closeRecap, speaker]);
@@ -1239,6 +1267,22 @@ export function useCore(speaker?: string) {
   };
 
   return {
+    setActionEstimatesOn: (on: boolean) => {
+      const changed = estimatesOn.current !== on;
+      estimatesOn.current = on;
+      if (changed) send(JSON.stringify({ type: "action_estimates", on }));
+      if (!on) failEstimateWaits("Action estimates is off. Your draft has not been confirmed.");
+    },
+    setActionEstimate: (request: EstimateRequest): Promise<EstimateResult> => new Promise(resolve => {
+      const failed = (message: string) => resolve({ request_id: request.request_id, ok: false, message, estimate: null });
+      if (!estimatesOn.current) { failed("Action estimates is off."); return; }
+      if (estimateWaits.current.has(request.request_id)) { failed("This estimate is already waiting for a save acknowledgement."); return; }
+      const timer = setTimeout(() => { estimateWaits.current.delete(request.request_id); failed("Save unconfirmed. Your draft is kept; retry explicitly."); }, 12000);
+      estimateWaits.current.set(request.request_id, { resolve, timer });
+      if (!send(JSON.stringify({ type: "set_action_estimate", ...request }))) {
+        clearTimeout(timer); estimateWaits.current.delete(request.request_id); failed("Not connected. Your draft is kept; retry explicitly.");
+      }
+    }),
     returnResult,
     clearReturn: () => setReturnResult(null),
     resumePause: (pause_id: string) => {

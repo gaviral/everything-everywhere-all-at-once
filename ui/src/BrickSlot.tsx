@@ -52,6 +52,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      setActionEstimate: (request) => latest.current.setActionEstimate?.(request) ?? Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is unavailable.", estimate: null }),
       readThought: (id) => read.current(id),
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {

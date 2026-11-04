@@ -1112,6 +1112,7 @@ export default function App() {
   // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
   // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
+    setActionEstimate: (request) => isOn("action-estimates") ? core.setActionEstimate(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is off.", estimate: null }),
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
@@ -1129,6 +1130,8 @@ export default function App() {
     hint: showHint,
   }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
   const bricksOn = useBricksOn();
+  const actionEstimatesOn = bricksOn.has("action-estimates");
+  useEffect(() => { core.setActionEstimatesOn(actionEstimatesOn); }, [actionEstimatesOn]);
   const builtIns = useBuiltInsOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));

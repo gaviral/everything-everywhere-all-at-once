@@ -202,6 +202,7 @@ export function snapshotOf(world: World, me: string, connected: boolean, rooms: 
     active: world.active_by[me] ?? world.active,
     suggestions: world.suggestions,
     reminders: world.actions,
+    actionEstimates: world.action_estimates ?? [],
     apps: world.apps,
     notes,
     points: pointCounts(world.thoughts, notes),
