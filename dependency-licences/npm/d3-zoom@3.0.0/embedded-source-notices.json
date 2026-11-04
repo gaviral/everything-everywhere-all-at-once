@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-zoom.js",
+    "source_sha256": "780722030b4275b4d9ccfc79e69f4b85cf222baf81cb7738479e2ef8528cabe3",
+    "line": 1,
+    "text": "// https://d3js.org/d3-zoom/ v3.0.0 Copyright 2010-2021 Mike Bostock\n"
+  },
+  {
+    "source_file": "dist/d3-zoom.min.js",
+    "source_sha256": "4fdce9b830b78225c58e27258296084253c41a5eaf8cad9bd9ccfe3025daf1cf",
+    "line": 1,
+    "text": "// https://d3js.org/d3-zoom/ v3.0.0 Copyright 2010-2021 Mike Bostock\n"
+  }
+]

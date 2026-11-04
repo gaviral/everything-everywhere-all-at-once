@@ -54,6 +54,9 @@ pub fn window() -> u64 {
 /// A live job update; identity and time are added by the server when relaying it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
+    /// In-core jobs retain their actual execution start across reconnects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_ms: Option<u64>,
     pub id: String,
     pub title: String,
     pub status: String,
@@ -72,6 +75,20 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// In-core work has its own identity and bypasses a remote window's rate budget.
+    /// Publish under the replay lock, exactly as the relay does.
+    pub fn publish_core(&self, core: &Core, job: Job) {
+        let mut jobs = self.jobs.lock().unwrap();
+        let row = jobs.iter().position(|m| matches!(m, ServerMsg::Job { job: old, .. } if old.id == job.id));
+        let message = ServerMsg::Job { job, by: "Helpers".into(), at_ms: crate::now_ms(), from: 0 };
+        if let Some(row) = row { jobs[row] = message.clone(); }
+        else {
+            if jobs.len() >= 60 { jobs.pop_front(); }
+            jobs.push_back(message.clone());
+        }
+        core.send(message);
+    }
+
     /// Subscribe and capture replay under the publication lock: queued jobs are strictly after this replay.
     pub fn subscribe(&self, core: &Core) -> (tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>, Vec<ServerMsg>) {
         let jobs = self.jobs.lock().unwrap();
@@ -510,14 +527,14 @@ mod tests {
         let journal = std::fs::read_to_string(&path).unwrap();
         assert!(!journal.contains("\"speak\""));
         assert!(journal.contains("Speak this caption"));
-        assert!(crate::catch_up(&core, "avi2").iter().all(|m| serde_json::to_value(m).unwrap().get("speak").is_none()));
+        assert!(crate::catch_up(&core, "guest2").iter().all(|m| serde_json::to_value(m).unwrap().get("speak").is_none()));
         for kind in ["caption", "text"] {
             assert!(serde_json::from_value::<crate::protocol::ClientMsg>(serde_json::json!({"type":kind,"text":"Old clients remain silent."})).is_ok());
         }
         let _ = std::fs::remove_file(path);
     }
 
-    /// The bridge is local; avi2 reaches the same room over its HTTPS LAN address. Guide delivery is room-wide,
+    /// The bridge is local; guest2 reaches the same room over its HTTPS LAN address. Guide delivery is room-wide,
     /// while a live speech flag is never written to the journal or replayed to a reconnecting page.
     #[tokio::test]
     async fn bridge_voice_reaches_named_room_guests_without_replaying_speech() {
@@ -530,7 +547,7 @@ mod tests {
             // A loopback test socket cannot itself have a LAN peer or TLS. Supply the Link that the HTTPS listener
             // gives the gate in production, keeping admission, identity and forwarding on their real paths.
             .layer(axum::middleware::from_fn(|mut request: axum::extract::Request, next: axum::middleware::Next| async move {
-                if request.uri().query().unwrap_or_default().contains("name=avi2") {
+                if request.uri().query().unwrap_or_default().contains("name=guest2") {
                     request.extensions_mut().insert(axum::extract::ConnectInfo(crate::Link {
                         from: "192.168.1.20:51000".parse().unwrap(), to: "192.168.1.179:48266".parse().unwrap(), tls: true,
                     }));
@@ -542,15 +559,15 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await });
         let guest = || {
-            let mut request = format!("ws://{address}/ws?name=avi2&room=bridgevoice").into_client_request().unwrap();
+            let mut request = format!("ws://{address}/ws?name=guest2&room=bridgevoice").into_client_request().unwrap();
             request.headers_mut().insert("host", HeaderValue::from_static("192.168.1.179:48266"));
             request.headers_mut().insert("origin", HeaderValue::from_static("https://192.168.1.179:48266"));
             request
         };
         let (mut claude, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude&ai")).await.unwrap();
-        let (mut host, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=User")).await.unwrap();
-        let (mut avi2, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
-        for window in [&mut claude, &mut host, &mut avi2] { drain(window, 30).await; }
+        let (mut host, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=host")).await.unwrap();
+        let (mut guest2, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
+        for window in [&mut claude, &mut host, &mut guest2] { drain(window, 30).await; }
         let before = std::fs::read_to_string(&path).unwrap();
         for payload in [
             serde_json::json!({"type":"caption", "text":"Here is the answer.", "speak":true}),
@@ -558,7 +575,7 @@ mod tests {
             serde_json::json!({"type":"hold", "text":"Shall we continue?", "target":"mic"}),
         ] { claude.send(send(payload)).await.unwrap(); }
         let shown = drain(&mut host, 30).await;
-        assert_eq!(drain(&mut avi2, 30).await, shown);
+        assert_eq!(drain(&mut guest2, 30).await, shown);
         assert_eq!(shown.len(), 3);
         assert_eq!(shown[0]["speak"], true);
         assert_eq!(shown[1]["kind"], "point");
@@ -570,13 +587,13 @@ mod tests {
         assert_eq!(core.snapshot().captions.len(), 1);
         assert!(!journal.contains("Type here.") && !journal.contains("Shall we continue?"), "gestures stay transient");
         claude.send(send(serde_json::json!({"type":"text", "text":"I think the answer belongs here.", "speak":true}))).await.unwrap();
-        let live = drain(&mut avi2, 30).await;
+        let live = drain(&mut guest2, 30).await;
         let thought = live.iter().find(|m| m["change"]["type"] == "thought_added").unwrap();
         assert_eq!(thought["speak"], true);
         assert_eq!(thought["change"]["thought"]["speaker"], "Claude");
         let journal = std::fs::read_to_string(&path).unwrap();
         assert!(!journal.contains("\"speak\""), "playback is never journaled");
-        assert!(!core.hosts.lock().unwrap().contains("avi2"), "exercise a genuine guest identity");
+        assert!(!core.hosts.lock().unwrap().contains("guest2"), "exercise a genuine guest identity");
         let (mut rejoined, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
         let replay = drain(&mut rejoined, 30).await;
         let snapshot = replay.iter().find(|m| m["type"] == "snapshot").unwrap();
@@ -595,7 +612,7 @@ mod tests {
     fn job_row(id: &str, revision: usize) -> super::Job {
         super::Job {
             id: id.into(), title: format!("Revision {revision}"), status: "running".into(),
-            result: Some(revision.to_string()), parent: None, demo: false,
+            result: Some(revision.to_string()), parent: None, demo: false, started_ms: None,
         }
     }
 

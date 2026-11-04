@@ -35,7 +35,7 @@ export function noticeQueue() {
     push<K extends Kind>(kind: K, key: string, value: Values[K], group: string = kind) {
       const id = `${kind}:${key}`;
       const entry = { kind, key, value, group } as Entry;
-      const counting = entry.kind === "send" && entry.value.state === "counting";
+      const counting = entry.kind === "send" && (entry.value.state === "counting" || entry.value.state === "running");
       if ((!counting && read.has(id)) || hidden.includes(group)) return;
       // A restarted core may reuse an id whose old completion was already read.
       if (counting) read.delete(id);
@@ -45,7 +45,7 @@ export function noticeQueue() {
         // Core owns one current send per person. A new count supersedes an older
         // count, but completed cards and other unread answers resume afterwards.
         items = [entry, ...items.filter((e) => !(e.kind === kind && e.key === key)
-          && !(e.kind === "send" && e.value.state === "counting"))];
+          && !(e.kind === "send" && (e.value.state === "counting" || e.value.state === "running")))];
       } else items = at < 0 ? [...items, entry] : items.map((e, i) => i === at ? entry : e);
       publish();
     },

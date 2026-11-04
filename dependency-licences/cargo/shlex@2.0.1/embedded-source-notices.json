@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "src/bytes.rs",
+    "source_sha256": "14ac6d79be6cd93543de6cbba8a4c07181aacf7d02d01a1e5f51b63a89bf11c0",
+    "line": 1,
+    "text": "// Copyright 2015 Nicholas Allegra (comex).\n// Licensed under the Apache License, Version 2.0 <https://www.apache.org/licenses/LICENSE-2.0> or\n// the MIT license <https://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "d707a605a9dbe52b48c53f5d0209ab457d1db535f10acad060883b6c3d8d7a91",
+    "line": 1,
+    "text": "// Copyright 2015 Nicholas Allegra (comex).\n// Licensed under the Apache License, Version 2.0 <https://www.apache.org/licenses/LICENSE-2.0> or\n// the MIT license <https://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  }
+]

@@ -101,7 +101,7 @@ export function stateOf(job: Job, now: number): { mark: string; word: string; cl
   switch (job.status) {
     case "running": return { mark: "", word: "Running", clock: job.started_ms !== undefined ? clock(now - job.started_ms) : undefined };
     case "done": return { mark: "✓", word: took ? `Done in ${took}` : "Done" };
-    case "failed": return { mark: "✕", word: took ? `Failed after ${took}` : "Failed" };
+    case "failed": return { mark: "✕", word: job.result?.startsWith("Stopped") ? (took ? `Stopped after ${took}` : "Stopped") : took ? `Failed after ${took}` : "Failed" };
     case "waiting": return { mark: "?", word: "Waiting for you" };
   }
 }

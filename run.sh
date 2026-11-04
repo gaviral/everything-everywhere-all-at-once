@@ -50,7 +50,7 @@ url="$(node scripts/start.mjs --open-url "$port" "${1:-}")"
 if [ "$1" = "sample" ]; then
   case "${2:-}" in founder) map=founder-day ;; "") map=student-week ;; *) echo "Unknown sample: $2 (try ./run.sh sample founder)" >&2; exit 2 ;; esac
   mkdir -p data/sample/images
-  cp "samples/$map.jsonl" data/sample/journal.jsonl
+  node scripts/sample-seed.mjs "samples/$map.jsonl" data/sample/journal.jsonl
   cp "samples/images/$map"/* data/sample/images/
 fi
 if [ -n "$1" ]; then

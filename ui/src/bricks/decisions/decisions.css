@@ -1,0 +1,20 @@
+.decisions { max-width: 760px; margin: 0 auto; padding: 88px 24px calc(var(--dock-room, var(--dock-height, 150px)) + 80px); color: var(--ink); font-size: 1rem; overflow-wrap: anywhere; }
+.decisions h1 { margin: 0; font-size: 1.8rem; }
+.decisions :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.decisions-intro, .decisions-scope, .decisions-count, .decisions-empty { color: var(--muted); line-height: 1.5; }
+.decisions-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.decisions button { min-height: 44px; max-width: 100%; padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--card); font: inherit; cursor: pointer; }
+.decisions button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.decisions-list { display: grid; gap: 16px; padding: 0; list-style: none; }
+.decisions-row { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.decisions-row h2 { margin: 0 0 12px; font-size: 1.15rem; line-height: 1.5; }
+.decisions-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+.decisions-words { margin-block: 12px; }
+.decisions-words summary { width: fit-content; min-height: 44px; padding-block: 10px; cursor: pointer; }
+.decisions-words p { white-space: pre-wrap; line-height: 1.6; }
+.decisions-open { margin-top: 4px; }
+@media (max-width: 560px) {
+  .decisions { padding: 96px 16px calc(var(--dock-room, var(--dock-height, 150px)) + 96px); }
+  .decisions-row { padding: 16px; }
+  .decisions-meta { flex-direction: column; gap: 4px; }
+}

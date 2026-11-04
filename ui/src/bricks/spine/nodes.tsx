@@ -3,9 +3,9 @@
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
 // line, the Friend's with ✦; what was agreed carries both marks.
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { useStore, type Node, type NodeProps } from "@xyflow/react";
+import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
-import { SpeechFixesContext, SemanticZoomContext, type Pause, type Thought } from "../contract";
+import { SpeechFixesContext, SemanticZoomContext, FullContentContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 import { C } from "./conversation";
 
@@ -115,6 +115,7 @@ function Tools({ item }: { item: Item }) {
   const acts = useContext(ActsContext)!;
   const thread = item.kind === "head" || item.kind === "card" || item.kind === "aside";
   return <span className="spine-tools">
+    <InspectAction item={item} />
     {thread && <button type="button" className="spine-tool nodrag" aria-label={`Open ${item.title} on the map`} title="Open on the map" onClick={() => acts.openOnMap(item.thread)}>↗</button>}
     <button type="button" className="spine-tool nodrag" aria-label="Keep on the shelf" title="Keep on the shelf" onClick={() => acts.shelve(item)}>⤓</button>
     {item.kind === "head" && acts.topics.length >= 2 && <TopicTool item={item} />}
@@ -123,6 +124,18 @@ function Tools({ item }: { item: Item }) {
       <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 1.5h6l-1 4.5 2.5 2.5h-9L6 6z M8 8.5v6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /></svg>
     </button>}
   </span>;
+}
+
+function InspectAction({ item }: { item: Item }) {
+  const inspect = useContext(FullContentContext);
+  const flow = useReactFlow();
+  const thread = item.kind === "head" || item.kind === "card" || item.kind === "aside";
+  return <>{inspect && <button type="button" className="spine-tool nodrag nopan" aria-label="Inspect full content" title="Inspect full content" onClick={(event) => {
+      event.stopPropagation();
+      const camera = flow.getViewport();
+      inspect({ threadId: item.thread, thoughtIds: thread || item.kind === "topic" ? undefined : item.thoughts ?? [item.id], displayedPoint: thread || item.kind === "topic" ? undefined : item.text,
+        restoreCamera: () => { void flow.setViewport(camera, { duration: 0 }); } }, event.currentTarget);
+    }}>⤢</button>}</>;
 }
 
 /** A spine's topic, picked from the named ones: the keyboard's and a phone's way to move it, as dragging it onto another
@@ -391,11 +404,12 @@ function ConversationPoint({ data }: { data: ItemData }) {
       {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
     </span>
     <PausedSources data={data} />
+    <span className="spine-tools"><InspectAction item={item} /></span>
   </div>;
 }
 
 function ConversationHead({ item }: { item: Item }) {
-  return <div className="spine-conversation-head"><strong>Conversation</strong><span>{item.count} turns · topics linked beside your words</span></div>;
+  return <div className="spine-conversation-head" data-spine-target tabIndex={-1} data-session={item.session ? item.id : undefined}><strong>{item.title ?? "Conversation"}</strong><span>{item.subtitle ?? `${item.count} turns · topics linked beside your words`}</span></div>;
 }
 
 function TopicProjection({ data }: { data: ItemData }) {
@@ -412,6 +426,7 @@ function TopicProjection({ data }: { data: ItemData }) {
       aria-label={`Back to ${member.speaker}: ${member.text}`} onClick={() => acts.visit(member.key)}>
       <span>{member.speaker}</span><span>{member.text}</span>
     </button>)}</div>}
+    <span className="spine-tools"><InspectAction item={item} /></span>
   </div>;
 }
 

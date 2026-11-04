@@ -6,13 +6,13 @@ import { upFor } from "./notice-rules";
 
 export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
 
-export type SendState = "counting" | "stopped" | "sent" | "dry_run" | "failed";
+export type SendState = "counting" | "running" | "stopped" | "sent" | "dry_run" | "failed";
 
 /** The core's `send_card` message. */
-export type SendCardMsg = { type: "send_card"; id: number; to: string; text: string; state: SendState; in_ms: number; live: boolean; message: string };
+export type SendCardMsg = { type: "send_card"; purpose?: "helpers"; id: number; to: string; text: string; channel?: "messages" | "email"; subject?: string; state: SendState; in_ms: number; live: boolean; message: string };
 
 /** The card shown: `until` is when the count ends on this window's clock, `total` how long the whole count was. */
-export type Card = { id: number; to: string; text: string; state: SendState; live: boolean; message: string; until: number; total: number; stopPending?: boolean };
+export type Card = { purpose?: "helpers"; id: number; to: string; text: string; channel?: "messages" | "email"; subject?: string; state: SendState; live: boolean; message: string; until: number; total: number; stopPending?: boolean };
 
 /** The card after the core's message at `now`: a new message's card replaces the one up; an end (stopped, sent…)
  *  changes only the card it's about, so a late word on an older one never takes down the newer, and the end a
@@ -21,9 +21,9 @@ export type Card = { id: number; to: string; text: string; state: SendState; liv
  *  length, so the bar runs on from where it was; the same end again leaves the card as it is, its time up included. */
 export function received(shown: Card | null, msg: SendCardMsg, now: number): Card | null {
   const same = shown?.id === msg.id;
-  if (msg.state !== "counting" && (!same || shown!.state === msg.state)) return shown;
-  const total = msg.state !== "counting" ? shown!.total : same && shown!.state === "counting" ? shown!.total : msg.in_ms;
-  return { id: msg.id, to: msg.to, text: msg.text, state: msg.state, live: msg.live, message: msg.message, until: now + msg.in_ms, total };
+  if (msg.state !== "counting" && msg.state !== "running" && (!same || shown!.state === msg.state)) return shown;
+  const total = msg.state !== "counting" ? (shown?.total ?? 0) : same && shown!.state === "counting" ? shown!.total : msg.in_ms;
+  return { ...(msg.channel ? { channel: msg.channel, subject: msg.subject } : {}), ...(msg.purpose ? { purpose: msg.purpose } : {}), id: msg.id, to: msg.to, text: msg.text, state: msg.state, live: msg.live, message: msg.message, until: now + msg.in_ms, total };
 }
 
 /** The card once a (re)connection's snapshot came: the core sends the speaker's card before it (`card_for`), so a card
@@ -31,7 +31,7 @@ export function received(shown: Card | null, msg: SendCardMsg, now: number): Car
  *  restarted, or another window stopped it and a newer one ended since): it goes, never stuck on "Sending…". An end
  *  still up for its reading time stays. */
 export function caughtUp(shown: Card | null, told: number | null): Card | null {
-  return shown?.state === "counting" && shown.id !== told ? null : shown;
+  return (shown?.state === "counting" || shown?.state === "running") && shown.id !== told ? null : shown;
 }
 
 /** Whole seconds left, as the count shows them: 5 at the start, 1 in its last second, never below 0. */
@@ -53,12 +53,22 @@ export function nextTick(card: Card, now: number): number {
 }
 
 /** The card's class for its state: whole words, so the stylesheet check can see each one used. */
-export const STATE_CLASS: Record<SendState, string> = { counting: "is-counting", stopped: "is-stopped", sent: "is-sent", dry_run: "is-dry-run", failed: "is-failed" };
+export const STATE_CLASS: Record<SendState, string> = { counting: "is-counting", running: "is-counting", stopped: "is-stopped", sent: "is-sent", dry_run: "is-dry-run", failed: "is-failed" };
 
 /** The card's words: its heading, the line under the message, and whether Stop is offered. */
 export function cardWords(card: Card, now: number): { heading: string; status: string; stop: boolean } {
-  const heading = card.live ? `Message to ${card.to}` : `Message to ${card.to} · dry run`;
+  if (card.purpose === "helpers") {
+    const heading = card.to;
+    if (card.state === "counting") {
+      const s = secondsLeft(card, now);
+      return { heading, status: card.stopPending ? STOP_WAITS : s > 0 ? `Starts in ${s}` : "Starting…", stop: !card.stopPending && s > 0 };
+    }
+    return { heading, status: card.stopPending ? STOP_WAITS : card.message, stop: card.state === "running" && !card.stopPending };
+  }
+  const what = card.channel === "email" ? "Email" : "Message";
+  const heading = card.live ? `${what} to ${card.to}` : `${what} to ${card.to} · dry run`;
   switch (card.state) {
+    case "running": return { heading, status: card.message, stop: false };
     case "counting": {
       if (card.stopPending) return { heading, status: STOP_WAITS, stop: false };
       const s = secondsLeft(card, now);
@@ -75,23 +85,26 @@ export function cardWords(card: Card, now: number): { heading: string; status: s
 export function announcement(card: Card): string {
   if (card.state !== "counting" || card.stopPending) return cardWords(card, card.until).status;
   const seconds = Math.round(card.total / 1000);
+  if (card.purpose === "helpers") return `${card.to} start in ${seconds} seconds. ${card.text}. Say stop or press Escape to stop them.`;
   const what = card.live ? "Sends" : "Dry run: would send";
-  return `${what} “${card.text}” to ${card.to} in ${seconds} seconds. Say stop or press Escape to stop it.`;
+  const subject = card.subject ? `Subject: ${card.subject}. ` : "";
+  return `${subject}${what} “${card.text}” to ${card.to} in ${seconds} seconds. Say stop or press Escape to stop it.`;
 }
 
 /** Esc stops the message while it counts, wherever focus is: the one key that is always in reach. */
 export function stopsOnKey(card: Card | null, key: string, now: number): card is Card {
-  return !!card && !card.stopPending && key === "Escape" && card.state === "counting" && card.until > now;
+  return !!card && !card.stopPending && key === "Escape" && (card.state === "running" || (card.state === "counting" && card.until > now));
 }
 
 /** A message that starts counting comes first: a modal sheet (Recap, Import) makes the rest of the window inert and
  *  covers it, so the countdown and its Stop would be out of view and out of reach while the message can be stopped.
  *  The window closes them for it; the card's end leaves a sheet opened since alone. */
 export function comesFirst(card: { state: SendState } | null): boolean {
-  return card?.state === "counting";
+  return card?.state === "counting" || card?.state === "running";
 }
 
 /** How long an ended card stays up: its line's reading time (notice-rules.ts `upFor`), as any answer gets. */
 export function lingerMs(card: Card): number {
-  return card.state === "counting" ? 0 : upFor(`${cardWords(card, card.until).heading} ${card.text} ${cardWords(card, card.until).status}`);
+  const text = card.subject ? `${card.subject} ${card.text}` : card.text;
+  return card.state === "counting" || card.state === "running" ? 0 : upFor(`${cardWords(card, card.until).heading} ${text} ${cardWords(card, card.until).status}`);
 }

@@ -34,6 +34,18 @@ const OFFLINE = "disabled while the core is away";
 const NOT_CONNECTED = "notice: “Not connected — try again when connected.”";
 
 export const ACTIONS: Action[] = [
+  { id: "inspection-close", how: "click", at: [["BringHere.tsx", "onClick={close}"]], pressed: PRESS,
+    done: "the temporary inspection closes and focus returns to its invoking control" },
+  { id: "inspection-escape", how: "key", at: [["BringHere.tsx", 'document.addEventListener("keydown", escape, true)']], pressed: INSTANT,
+    done: "Escape closes the temporary inspection and returns focus to its invoking control" },
+  { id: "inspection-original", how: "click", at: [["BringHere.tsx", "onClick={openOriginal}"]], pressed: PRESS,
+    done: "the inspection closes and the source topic is revealed; disabled if its source has gone" },
+  { id: "full-content-close", how: "click", at: [["FullContent.tsx", "onClick={close}"]], pressed: PRESS,
+    done: "the inspector closes, focus returns to Inspect and the original camera is restored" },
+  { id: "full-content-wrap", how: "click", at: [["FullContent.tsx", "onClick={() => { setWrap(!wrap)"]], pressed: PRESS,
+    done: "the full words toggle wrapping, Wrap reflects its pressed state and the inspector returns to its starting view" },
+  { id: "full-content-keys", how: "key", at: [["FullContent.tsx", "onKeyDown={(event) => {"]], pressed: INSTANT,
+    done: "arrow keys pan the inspector immediately; Tab keeps focus between Close and Wrap" },
   { id: "partner-cancel", how: "click", at: [["PartnerStatus.tsx", "onClick={() => {"]], pressed: PRESS, waits: "core",
     done: "browser speech stops immediately, the thinking state clears and Reply stopped appears; the core cancels a pending answer", failed: "local speech stops and the thinking state clears even while disconnected" },
   { id: "partner-retry-audio", how: "click", at: [["PartnerStatus.tsx", "onClick={retryPageReply}"]], pressed: PRESS,
@@ -127,6 +139,10 @@ export const ACTIONS: Action[] = [
   // A question that reads "A, or B?" (Guide.tsx `Answers`): each answer a button that sends it to whoever asked; or your own words.
   { id: "guide-choice", how: "click", at: [["Guide.tsx", "onClick={() => send(choice)}"]], pressed: PRESS, waits: "core",
     done: "the answer goes to whoever asked, once; its buttons go and a line says what went and to whom: “You sent … to …”", failed: "the question stays, with “Not sent: the connection is down. Try again in a moment.”",
+    says: ["Not sent: the connection is down. Try again in a moment."] },
+  // The same two answers on the held stack's card, before the question is asked (Guide.tsx `HeldCard`).
+  { id: "guide-held-choice", how: "click", at: [["Guide.tsx", "onClick={() => pick(choice)}"]], pressed: PRESS, waits: "core",
+    done: "the answer goes to whoever asked, once; the card leaves the stack and the stage says what went: “You sent … to …”", failed: "the card stays, with “Not sent: the connection is down. Try again in a moment.”",
     says: ["Not sent: the connection is down. Try again in a moment."] },
   { id: "guide-answer-open", how: "click", at: [["Guide.tsx", "onClick={() => openAnswer(said.n)}"]], pressed: INSTANT,
     done: "a box for your own words opens in its place, with Send, and you're in it; Esc closes it, a second Esc drops the question" },
@@ -248,6 +264,8 @@ export const ACTIONS: Action[] = [
   { id: "catalog-open", how: "click", at: [["Apps.tsx", "onClick={openCatalog}"]], pressed: PRESS, done: "the Features page opens: every feature with its line and its switch" },
   { id: "catalog-close", how: "click", at: [["Catalog.tsx", "onClick={closeCatalog}"]], pressed: PRESS, done: "the sheet closes and focus goes back to Features" },
   { id: "catalog-backdrop", how: "click", at: [["Catalog.tsx", "if (event.target === event.currentTarget) closeCatalog()"]], pressed: INSTANT, done: "a click outside the sheet closes it" },
+  { id: "helpers-switch", how: "click", at: [["Catalog.tsx", 'switchBuiltIn("helpers", !builtIns.has("helpers"))']], pressed: PRESS,
+    done: "the Thinking helpers switch says On or Off and its checked state updates immediately", says: ["Thinking helpers", "On", "Off"] },
   { id: "brick-switch", how: "click", at: [["Catalog.tsx", "switchBrick(info.id, !shown)"], ["BrickSlot.tsx", "switchBrick(info.id, false)"]], pressed: PRESS,
     done: "the switch says On or Off and the feature shows or goes at once (a view's name joins or leaves Cards and Pictures); a broken feature's line goes" },
 
@@ -288,8 +306,10 @@ export const ACTIONS: Action[] = [
 
 /** Handlers that aren't actions of their own: each says why. */
 export const NOT_ACTIONS: { at: [file: string, marker: string]; why: string }[] = [
+  { at: ["BringHere.tsx", "onKeyDown={(event) => event.stopPropagation()}"], why: "keeps inspection keystrokes from controlling the map beneath it" },
+  { at: ["BringHere.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "inspection buttons preserve the current input focus until their click action runs" },
   { at: ["SendCard.tsx", "onBlur={(e) =>"], why: "moving focus within the card keeps its reading time paused; leaving resumes it" },
-  { at: ["shell/Shell.tsx", "onBlur={() => window.setTimeout(() => setFocused(false), 120)}"], why: "the field narrows back once focus leaves" },
+  { at: ["shell/Shell.tsx", 'onBlurCapture={() => window.setTimeout(() => setFocused(!!inputRef.current?.closest(".shell-find")?.contains(document.activeElement)), 120)}'], why: "the field stays open while focus moves within Find and narrows after focus leaves" },
   { at: ["shell/Shell.tsx", "onPointerDown={(event) => event.preventDefault()}"], why: "keeps focus in the field so a click on a topic lands" },
   { at: ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"], why: "each corner button's use in App.tsx is its own entry" },
   { at: ["shell/Shell.tsx", "onKeyDown={arrows}"], why: "arrow keys move focus between tabs or switches, with its ring" },

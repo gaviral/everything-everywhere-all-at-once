@@ -1,0 +1,8 @@
+{
+  "id": "related-thoughts",
+  "name": "Related thoughts",
+  "does": "Find possible connections to earlier thoughts without leaving your topic.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": true
+}

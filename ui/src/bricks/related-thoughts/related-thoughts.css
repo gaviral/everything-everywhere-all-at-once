@@ -1,0 +1,20 @@
+.related-thoughts { min-width: 0; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 0.875rem; overflow-wrap: anywhere; }
+.related-thoughts button { min-height: 40px; padding: 8px 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: inherit; cursor: pointer; }
+.related-thoughts :focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.related-thoughts-trigger { width: 100%; text-align: left; }
+.related-thoughts-tray { max-height: min(46dvh, 460px); overflow-y: auto; overscroll-behavior: contain; padding: 12px; }
+.related-thoughts-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.related-thoughts-top h2 { margin: 6px 0; font-size: 1rem; }
+.related-thoughts-top button { flex: none; }
+.related-thoughts-note, .related-thoughts-meta { color: var(--muted); }
+.related-thoughts-note, .related-thoughts-coverage { margin: 8px 0; }
+.related-thoughts-coverage { border-left: 3px solid var(--amber); padding-left: 8px; }
+.related-thoughts-list { list-style: none; margin: 0; padding: 0; }
+.related-thoughts-list li { padding: 12px 0; border-top: 1px solid var(--line); }
+.related-thoughts-list h3 { margin: 0; font-size: 1rem; }
+.related-thoughts-meta { margin: 4px 0; }
+.related-thoughts-list blockquote, .related-thoughts-original { margin: 8px 0; white-space: pre-wrap; }
+.related-thoughts-reason { color: var(--muted); margin: 8px 0; }
+.related-thoughts-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.related-thoughts-original { padding: 8px; border-left: 2px solid var(--accent); }
+.related-thoughts-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

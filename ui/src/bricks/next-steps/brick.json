@@ -1,0 +1,8 @@
+{
+  "id": "next-steps",
+  "name": "Next steps",
+  "does": "See proposed reminders and events by day, with their source topics one click away.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

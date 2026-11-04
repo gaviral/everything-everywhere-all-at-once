@@ -9,10 +9,44 @@ import type { Anchor } from "../annotate-core";
 import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
-/** The app's existing speech-correction controls, attached to a thought by a view. */
+export type CanvasToolId = "composer" | "features" | "history";
+/** Browser presentation only: existing shell bodies, never a second connection or mutation owner. */
+export type CanvasToolSlots = Record<CanvasToolId, HTMLElement>;
+export type CanvasTools = {
+  slots: CanvasToolSlots;
+  request: { id: CanvasToolId | null; revision: number };
+  focus: (id: CanvasToolId | null) => void;
+  exit: () => void;
+};
+export const CanvasToolsContext = createContext<CanvasTools | null>(null);
+
 /** This browser's optional readable Canvas overview; the playground keeps the default. */
+/** A local inspector request; never changes the World or source layout. */
+export type FullContentRequest = { threadId: string; thoughtIds?: readonly string[]; displayedPoint?: string; restoreCamera: () => void };
+export const FullContentContext = createContext<((request: FullContentRequest, source: HTMLElement) => void) | null>(null);
+
 export const SemanticZoomContext = createContext(false);
 
+/** Optional presentation objects, local to this visit. Never World thoughts or positions. */
+export type ShapeSize = { width: number; height: number; radius: number };
+export type ShapeDefinition = Readonly<ShapeSize & { id: "rounded-rectangle"; name: "Rounded rectangle" }>;
+export type ShapeInstance = Readonly<ShapeSize & { id: string; definitionId: ShapeDefinition["id"]; x: number; y: number }>;
+export interface ShapeHost {
+  placementPoint(): { x: number; y: number };
+}
+export interface Shapes {
+  readonly enabled: boolean;
+  readonly definitions: readonly ShapeDefinition[];
+  readonly instances: readonly ShapeInstance[];
+  readonly canvasReady: boolean;
+  attachCanvas(host: ShapeHost): () => void;
+  place(definitionId: ShapeDefinition["id"], size: ShapeSize): string | null;
+  update(id: string, patch: Partial<ShapeSize & { x: number; y: number }>): void;
+  remove(id: string): void;
+}
+export const ShapesContext = createContext<Shapes | null>(null);
+
+/** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
 export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
@@ -122,7 +156,8 @@ export interface Job {
   /** What it is, one line (80 characters at most). */
   readonly title: string;
   readonly status: JobStatus;
-  /** One line (160 characters at most): what a done job found, why a failed one stopped, the question a waiting one asks (a
+  /** A relayed job has one line (160 characters at most); in-core thinking helpers can carry up to 120 words.
+   *  What a done job found, why a failed one stopped, the question a waiting one asks (a
    *  waiting job whose side job is the one waiting has a summary here instead: the side job asks). */
   readonly result?: string;
   /** The job this is a side job of; a parent that isn't here (yet) leaves it standing alone. */
@@ -133,8 +168,8 @@ export interface Job {
   readonly by: string;
   /** When its state last changed, as the core stamped it (ms since 1970). */
   readonly at_ms: number;
-  /** When this window first saw it running, and first saw it end (the core's `at_ms` of each). Only what was seen: a
-   *  window that joined after a job ended has no start, so no length either; none is made up. */
+  /** Execution start from the core for thinking helpers; otherwise when this window first saw it running.
+   *  The end is the core's state-change time. Replayed helpers retain their execution duration. */
   readonly started_ms?: number;
   readonly ended_ms?: number;
 }
@@ -143,6 +178,7 @@ export interface Job {
 export interface MapSnapshot {
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
+  readonly terse?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -196,6 +232,9 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Explicitly hands a plain text file to the browser, not proof it reached disk. Host bounds: plain filename
+   *  up to 80 characters, text/plain or text/markdown, and at most 64 KiB UTF-8. False on refusal or failure. */
+  saveTextFile(name: string, text: string, mime: string): boolean;
   /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
   readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
@@ -205,6 +244,8 @@ export interface BrickActions {
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
   openThread(threadId: string): void;
+  /** Opens this exact live placed thought through the shared jump path. False, with a notice, if it is gone. */
+  openThought(thoughtId: string): boolean;
   /** Makes a thread "this", as pointing at its card does: what "rename this" or "expand this" said next acts on.
    *  null lets it go. A view's own elements can skip this: one marked `data-thread={id}` is "this" while pointed at. */
   select(threadId: string | null): void;

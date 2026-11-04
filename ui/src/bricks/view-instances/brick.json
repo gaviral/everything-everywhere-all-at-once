@@ -1,0 +1,8 @@
+{
+  "id": "view-instances",
+  "name": "View instances",
+  "does": "Use one Topic reader definition with independent topics and local drafts until reload.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
