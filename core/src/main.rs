@@ -19,6 +19,7 @@ mod dev_build;
 mod explain;
 mod find;
 mod flow;
+mod workshop;
 mod github;
 mod guide;
 mod helpers;
@@ -711,6 +712,7 @@ impl Core {
         if helpers::said(self, speaker, text) || messages::said(self, speaker, text) {
             return;
         }
+        if !spoken::stops_listening(text) && workshop::take_turn(speaker, text) { return; }
         if !spoken::stops_listening(text) && flow::take_turn(self, speaker, text) { return; }
         // The latest thing said, by when (see `Thought::said_at`).
         let now = now_ms();
@@ -1365,6 +1367,7 @@ fn models(core: &Core) -> serde_json::Value {
     models.extend([
         serde_json::json!({ "step": "tidies", "model": tidy }),
         serde_json::json!({ "step": "builds", "model": tidy }),
+        serde_json::json!({ "step": "flow", "model": flow::MODEL }),
         serde_json::json!({ "step": "recaps", "model": recap }),
     ]);
     if pictures {
@@ -1504,6 +1507,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/build-id", get(dev_build::status))
         .route("/build-activity", post(dev_build::activity))
         .route("/terse", post(terse::read))
+        .route("/workshop/turns", get(workshop::turns))
+        .route("/workshop/catalog", get(workshop::catalog))
+        .route("/workshop/run", post(workshop::run))
+        .route("/workshop/hackathon", get(workshop::hackathon))
         .route("/flow/plan", post(flow::plan))
         .route("/flow/finish", post(flow::finish))
         .route("/flow/send", post(flow::send))
