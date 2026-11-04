@@ -6,12 +6,12 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build, createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { buildUi, uiServer } from './ui-server.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lane = resolve(root, 'ui/src/msg1351/dictation-breakdown');
 const artifacts = mkdtempSync(join(tmpdir(), 'dictation-breakdown-check-'));
-const result = await build({ configFile: false, logLevel: 'error', build: { write: false, minify: false,
+const result = await buildUi({ configFile: false, logLevel: 'error', build: { write: false, minify: false,
   lib: { entry: join(lane, 'engine.ts'), formats: ['es'] } } });
 const output = Array.isArray(result) ? result[0] : result;
 const engine = await import(`data:text/javascript;base64,${Buffer.from(output.output.find(chunk => chunk.type === 'chunk').code).toString('base64')}`);
@@ -127,7 +127,7 @@ async function launchBrowser(url) {
 }
 
 async function checkPage() {
-  const server = await createServer({ root: resolve(root, 'ui'), configFile: resolve(root, 'ui/vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false } });
+  const server = await uiServer({ appType: 'spa', logLevel: 'error' }, { port: 0 });
   let browser;
   try {
     await server.listen();

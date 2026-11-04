@@ -1,6 +1,6 @@
 // The window's own modules for the offline checks (scripts/*-check.mjs): Vite loads each as the page would, with no
 // browser and no extra dependencies. Load with `server.ssrLoadModule("/src/…")`; `server.close()` when done.
-// `config` adds plugins; an explicit port also serves browser module checks on loopback.
+// `config` adds plugins and fixture-specific server options; an explicit port also serves browser module checks on loopback.
 // The root and shared no-watcher/no-HMR settings remain the same in both modes.
 import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
 // Packaging also uses this UI toolchain, but builds a library without creating a server.
@@ -17,7 +17,7 @@ export async function uiServer(config = {}, { port } = {}) {
     const server = await createServer({ ...config, cacheDir, root: new URL("../ui", import.meta.url).pathname,
       // SSR-only checks do not serve client modules and need no browser dependency scan.
       ...(port === undefined ? { optimizeDeps: config.optimizeDeps ?? { noDiscovery: true, include: [] } } : {}),
-      server: { ...(port === undefined ? { middlewareMode: true } : { host: "127.0.0.1", port, strictPort: true }), hmr: false, ws: false, watch: null }, appType: "custom" });
+      server: { ...config.server, ...(port === undefined ? { middlewareMode: true } : { host: "127.0.0.1", port, strictPort: true }), hmr: false, ws: false, watch: null }, appType: config.appType ?? "custom" });
     const close = server.close.bind(server);
     server.close = async () => {
       try { await close(); }
