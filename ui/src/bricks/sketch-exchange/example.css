@@ -4,7 +4,7 @@
 .sketch-exchange-example button { min-height: 44px; font: inherit; }
 .sketch-exchange-example header { position: static; z-index: auto; top: auto; padding: 0; background: transparent; backdrop-filter: none; }
 .sketch-exchange-example header::after { content: none; }
-.sketch-exchange-example :is(.clarification, .part-dimensions, .demo-variants, .dictation-breakdown, .sketch-exchange, .workflow-inspector) { font-size: 20px; max-width: none; }
+.sketch-exchange-example .sketch-exchange { font-size: 20px; max-width: none; }
 .sketch-exchange-example textarea { width: 100%; min-height: 110px; font: inherit; }
 .sketch-exchange-example-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; }
 @media (max-width: 600px) { .sketch-exchange-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }

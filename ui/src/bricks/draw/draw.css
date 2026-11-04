@@ -9,6 +9,8 @@
 .draw-page { position: absolute; inset: 0; transform-origin: 0 40%; transition: transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 /* When the AI draws back, the person's page slides aside: two drawings, side by side. */
 .draw-page-shared { transform: scale(0.54); }
+/* Drawing over the app itself: the page shows through, to mark up what's on screen. */
+.draw-see-through { --draw-paper: rgba(20, 16, 12, 0.28); }
 .draw-ink { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .draw-ink[data-tool="lasso"] { cursor: cell; }
 .draw-notes { position: absolute; inset: 0; pointer-events: none; }

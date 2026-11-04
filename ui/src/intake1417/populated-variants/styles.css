@@ -1,0 +1,25 @@
+ .pv-root { color: #172c33; background: #f5f3ed; padding: clamp(1rem, 3vw, 2.5rem); font: 1rem/1.55 system-ui, sans-serif; max-width: 78rem; margin: auto; overflow-wrap: anywhere; }
+.pv-root *, .pv-root *::before, .pv-root *::after { box-sizing: border-box; }
+.pv-root h1 { font-size: clamp(1.8rem, 4vw, 2.7rem); line-height: 1.12; margin: .4em 0; }
+.pv-root h3, .pv-root h4 { line-height: 1.3; }
+.pv-eyebrow { text-transform: uppercase; letter-spacing: .1em; font-size: .8rem; font-weight: 700; color: #325c60; }
+.pv-root button, .pv-preview-toggle { font: inherit; min-height: 44px; padding: .6rem .85rem; border: 1px solid #597477; border-radius: .5rem; color: #173c42; background: #fff; cursor: pointer; white-space: normal; text-align: left; }
+.pv-root button:active, .pv-preview-toggle:active { background: #d4e8e3; }
+.pv-root :focus-visible, .pv-preview-toggle:focus-visible { outline: 3px solid #9b4e0d; outline-offset: 3px; }
+.pv-root button[aria-pressed=true], .pv-root button[aria-current=true] { background: #184e50; color: #fff; }
+.pv-candidates, .pv-versions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.pv-candidates > div { min-width: 0; padding: 1rem; background: #ebece4; border-radius: .6rem; }
+.pv-status { padding-left: 1.2rem; font-size: .9rem; }
+.pv-status li { margin: .25rem 0; }
+.pv-version { min-width: 0; border: 2px solid #ccd3cd; border-radius: .8rem; padding: 1rem; background: #fffefa; }
+.pv-chosen { border-color: #184e50; }
+.pv-provenance { font-size: .85rem; color: #52635f; }
+.pv-presentation h4 { font-size: 1.2rem; margin: .7rem 0; }
+.pv-step-outline { padding-left: 1.5rem; }
+.pv-step-outline li { margin-bottom: .9rem; }
+.pv-step-cards { list-style-position: inside; padding: 0; }
+.pv-step-cards li { background: #eaf1ed; border-left: 3px solid #477d70; padding: .8rem; margin: .6rem 0; border-radius: .2rem; }
+.pv-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin: 1rem 0; }
+.pv-root summary { cursor: pointer; min-height: 44px; padding: .6rem 0; }
+.pv-root [role=alert] { background: #fff0d4; padding: 1rem; }
+@media (max-width: 48rem) { .pv-candidates, .pv-versions { grid-template-columns: minmax(0, 1fr); } }
