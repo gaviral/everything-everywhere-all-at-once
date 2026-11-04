@@ -1,0 +1,8 @@
+{
+  "id": "draft-pocket",
+  "name": "Draft pocket",
+  "does": "Park unsent words in this tab, then choose whether to submit them as a thought.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}
