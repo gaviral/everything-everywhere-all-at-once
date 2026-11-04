@@ -9,6 +9,7 @@ Browser, one page per window (ui/src)
   App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
+  dev-build.ts   waits for speaking, typing and sends to finish before reloading a new served build
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
@@ -114,6 +115,10 @@ Browser, one page per window (ui/src)
   page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
+  code_canvas.rs local source-map metadata and inspectable part relationships, without source bodies or machine paths
+  dev_build.rs   optional local build status and per-window activity receipts
+  flow.rs        validates and runs saved serial Meta prompt pipelines
+  workshop.rs    model trial catalog, saved Flow parts and optional configured event data
   storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
