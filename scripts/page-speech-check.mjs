@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { uiServer } from "./ui-server.mjs";
 import { openPage, ready } from "./headless.mjs";
 
+if (process.argv.includes("--real-service")) {
+  console.log("UNAVAILABLE voice-events real-service: no live audio/service trace is configured; fixture evidence does not certify live conversation");
+  process.exit(3);
+}
 if (ready()) { console.log(`SKIP page-speech-check: ${ready()}`); process.exit(3); }
 const server = await uiServer({
   plugins: [{ name: "speech-check", configureServer(server) {
@@ -12,7 +16,7 @@ const server = await uiServer({
       res.end('<!doctype html><button class="guide-caption"><span>Partner says</span></button><button id="elsewhere">Elsewhere</button><textarea></textarea>');
     });
   } }],
-}, { port: Number(process.env.SPEECH_CHECK_PORT ?? 4620) });
+}, { port: Number(process.env.SPEECH_CHECK_PORT ?? 0) });
 let browser;
 try {
   await server.listen();
@@ -43,6 +47,12 @@ try {
     window.send = msg => speech.hearPageSpeech(JSON.stringify(msg));
     window.caption = { type: "guide", kind: "caption", text: "This is a reply.", speak: true };
     window.check = (ok, why) => { if (!ok) throw Error(why); };
+
+    // A local stop invalidates a service answer even before playback exists.
+    send({ type: "partner_state", state: "thinking", reply_id: "cancel-before-audio" });
+    speech.cancelPageReply();
+    send({ ...caption, reply_id: "cancel-before-audio" });
+    check(spoken.length === 0, "late stopped service answer never enters the browser queue");
 
     // Exercise the real capture callback, with an identifiable non-silent PCM frame.
     window.NativeWorkletNode = window.AudioWorkletNode;
@@ -331,4 +341,11 @@ try {
 } finally {
   await browser?.close();
   await server.close();
+}
+
+await import("./voice-events-page-check.mjs");
+
+if (!process.argv.includes("--fixture")) {
+  console.log("UNAVAILABLE voice-events real-service: fixture passed; live utterance, stopped reply and captured prefix/echo trace remain unverified");
+  process.exitCode = 3;
 }

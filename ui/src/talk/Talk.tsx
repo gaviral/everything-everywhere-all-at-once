@@ -1,4 +1,3 @@
-import { PartnerStatus } from "../PartnerStatus";
 // The Talk tab: who's in the call and what each is doing, what was said as messages ("as if people are sending messages
 // to each other"), "Speaking now…" for whoever has the floor (never their words: those come with the turn), how far
 // each person has read, a catch-up for what you missed, replies tied to the words they answer (margin notes, through
@@ -177,7 +176,6 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
   const friend = call.people.find((p) => p.ai && p.here);
   return (
     <section className="talk" aria-label="Talk">
-      <PartnerStatus />
       <People call={call} me={me} captioning={captioning?.by ?? null} />
       <div className="talk-list">
         {/* Over the list's top, so coming and going it moves no turn; it goes once the first you missed is in view. */}

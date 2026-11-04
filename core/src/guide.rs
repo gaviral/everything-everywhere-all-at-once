@@ -194,7 +194,7 @@ pub fn caption_speaking(core: &Core, speaker: &str, window: u64, pace: &mut Pace
     let text = one_line(&text);
     let refused = if text.is_empty() { Some("A caption needs words.".to_string()) } else { too_long(&text, CAPTION_MAX, "A caption") };
     if allowed(core, speaker, pace, refused) {
-        core.send_speaking(ServerMsg::Guide { kind: Kind::Caption, target: None, text, by: speaker.into(), at_ms: crate::now_ms(), urgent: false, from: window }, speak);
+        core.send_speaking(ServerMsg::Guide { reply_id: None, kind: Kind::Caption, target: None, text, by: speaker.into(), at_ms: crate::now_ms(), urgent: false, from: window }, speak);
     }
 }
 
@@ -281,7 +281,7 @@ pub fn malformed_answer(core: &Core, speaker: &str, pace: &mut Pace) {
 #[allow(clippy::too_many_arguments)]
 fn send(core: &Core, speaker: &str, window: u64, pace: &mut Pace, kind: Kind, target: Option<String>, text: String, urgent: bool, refused: Option<String>) {
     if allowed(core, speaker, pace, refused) {
-        core.send(ServerMsg::Guide { kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
+        core.send(ServerMsg::Guide { reply_id: None, kind, target, text, by: speaker.into(), at_ms: crate::now_ms(), urgent, from: window });
     }
 }
 

@@ -700,6 +700,7 @@ export function useCore(speaker?: string) {
   const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
   const mapChange = currentNotice?.kind === "map" ? currentNotice.value : null;
   const [partial, setPartial] = useState("");
+  const [voiceDraft, setVoiceDraft] = useState("");
   const [handoff, setHandoff] = useState("");
   const [voiceErrorRevision, setVoiceErrorRevision] = useState(0);
   // The words of the last voice error, so the window can say why the mic stopped (notice-rules.ts `micStopped`).
@@ -893,7 +894,8 @@ export function useCore(speaker?: string) {
               notices.current.push({ text: note.text, kind: "map-change", time: Date.now() });
               noticeQueue.push("map", String(id), { ...note, id });
             }
-            if (change.type === "thought_added" && change.thought.speaker === speaker && awaitingThought) {
+            if (change.type === "thought_added" && change.thought.speaker === speaker && (awaitingThought || (!!lastPartial && change.thought.text.trim() === lastPartial.trim()))) {
+              setVoiceDraft("");
               window.clearTimeout(handoffTimer);
               lastPartial = "";
               awaitingThought = false;
@@ -922,6 +924,7 @@ export function useCore(speaker?: string) {
             window.clearTimeout(handoffTimer);
             if (msg.text) {
               lastPartial = msg.text;
+              setVoiceDraft(msg.text);
               awaitingThought = false;
               setHandoff("");
             } else if (lastPartial) {
@@ -1135,6 +1138,8 @@ export function useCore(speaker?: string) {
     snapshotRevision,
     mapChange,
     partial,
+    voiceDraft,
+    clearVoiceDraft: () => setVoiceDraft(""),
     handoff,
     voiceErrorRevision,
     voiceError,

@@ -38,7 +38,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 pub enum ServerMsg {
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
-    PartnerState { state: String, message: String },
+    PartnerState { state: String, message: String, #[serde(skip_serializing_if = "Option::is_none")] reply_id: Option<String> },
     /// The window owns which kinds of notices this person wants to see.
     NoticeControl { show: bool },
     TextReceived { id: String },
@@ -122,6 +122,8 @@ pub enum ServerMsg {
     /// once asked, if anything. `text`: the point's caption, the caption, or the question (none takes back `by`'s
     /// questions still held).
     Guide {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_id: Option<String>,
         kind: crate::guide::Kind,
         target: Option<String>,
         text: String,
