@@ -36,7 +36,7 @@ function Preview() {
   });
   return <main className="research-preview">
     <header><p>Scoped preview · synthetic demonstration</p><h1>A short detour, with a way back</h1>
-      <p>This preview exercises the host contract. It is separate from the app's feature catalog.</p></header>
+      <p>This preview exercises the host contract. It is separate from the app's Features page.</p></header>
     <div className="research-preview-columns">
       <section className="research-preview-demo" aria-label="Synthetic demonstration" data-view={demo.view}>
         <h2>{demo.view}</h2>
