@@ -46,3 +46,43 @@ export function readWaiting(key: string): string[] {
 export function receivedWaiting(key: string, id: string): void {
   localStorage.removeItem(`${key}.${id}`);
 }
+
+export type RecoveryEntry = { id: string; text: string; kind: "legacy" | "speech"; message?: string; key?: string };
+export type RecoveryState = { entries: RecoveryEntry[]; storageUnavailable: boolean; onlinePending?: boolean; onlineAvailable?: boolean };
+const keyPart = (value: string) => encodeURIComponent(value).replace(/\./g, "%2E");
+export const waitingKey = (speaker: string, map: string) => `e2a2o.waiting.${keyPart(speaker)}.map.${keyPart(map)}`;
+
+/** Unknown and other-map words are available only through an explicit recovery action. */
+export function quarantined(speaker: string, map: string | null): RecoveryEntry[] {
+  const legacyBase = `e2a2o.waiting.${speaker}`;
+  const base = `e2a2o.waiting.${keyPart(speaker)}`;
+  const current = map ? waitingKey(speaker, map) : null;
+  const found: RecoveryEntry[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    const legacyItem = key.startsWith(`${legacyBase}.`) && /^[0-9a-f-]{36}$/i.test(key.slice(legacyBase.length + 1));
+    if ((key !== legacyBase && !legacyItem && !key.startsWith(`${base}.map.`)) || (current && key.startsWith(`${current}.`))) continue;
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const value = JSON.parse(raw);
+      const messages: string[] = Array.isArray(value) ? value : [value.message];
+      messages.forEach((message, index) => {
+        const parsed = JSON.parse(message);
+        if (typeof parsed.text === "string") found.push({ id: `${key}:${index}`, key, message, text: parsed.text, kind: "legacy" });
+      });
+    } catch { /* An unreadable entry is retained, never sent. */ }
+  }
+  return found;
+}
+
+export function discardQuarantined(entry: RecoveryEntry): void {
+  if (!entry.key) return;
+  const value = JSON.parse(localStorage.getItem(entry.key) ?? "null");
+  if (Array.isArray(value)) {
+    const remaining = value.filter((message) => message !== entry.message);
+    if (remaining.length) localStorage.setItem(entry.key, JSON.stringify(remaining));
+    else localStorage.removeItem(entry.key);
+  } else localStorage.removeItem(entry.key);
+}

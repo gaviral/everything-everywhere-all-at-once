@@ -36,6 +36,9 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    MapIdentity { id: String },
+    Heartbeat { id: String },
+    RecoverableSpeech { id: String, text: String },
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
     PartnerState { state: String, message: String, #[serde(skip_serializing_if = "Option::is_none")] reply_id: Option<String> },
@@ -213,6 +216,8 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    Heartbeat { id: String },
+    RecoverSpeech { id: String, keep: bool },
     Partner { on: bool },
     PartnerCancel,
     Recap { #[serde(default)] period: crate::recap::Period },

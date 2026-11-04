@@ -164,10 +164,14 @@ impl Core {
             }
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
+                // Accepted deliveries must reach disk before they can affect the map.
+                if world::source_active() {
+                    if let Err(error) = journal.append(change) { self.journal_save_failed(&error); return false; }
+                }
                 Arc::make_mut(&mut world).apply(change);
                 positions::settle(self, &world);
-                if let Err(e) = journal.append(change) {
-                    self.journal_save_failed(&e);
+                if !world::source_active() {
+                    if let Err(e) = journal.append(change) { self.journal_save_failed(&e); }
                 }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
@@ -384,13 +388,62 @@ impl Core {
         self.take_turn(speaker, text, true, true, false, None);
     }
 
+    // Recovery records are private to the speaker; they never broadcast as shared map changes.
+    fn recovery_change(&self, change: Change) -> bool {
+        let mut world = self.world.lock().unwrap();
+        if let Err(error) = self.journal.lock().unwrap().append(&change) {
+            self.journal_save_failed(&error);
+            return false;
+        }
+        Arc::make_mut(&mut world).apply(&change);
+        true
+    }
+
+    fn remember_speech(&self, draft: world::SpeechDraft) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        if self.snapshot().speech_resolved.contains(&draft.id) { return; }
+        if self.recovery_change(Change::SpeechRecovered { draft: draft.clone() }) {
+            self.send_to(&draft.speaker, ServerMsg::RecoverableSpeech { id: draft.id, text: draft.text });
+        }
+    }
+
+    fn resolve_speech(&self, speaker: &str, id: &str) {
+        if self.recovery_change(Change::SpeechResolved { id: id.into() }) {
+            self.send_to(speaker, ServerMsg::RecoverableSpeech { id: id.into(), text: String::new() });
+        }
+    }
+
+    fn source_work(&self, speaker: &str, id: &str, work: impl FnOnce()) -> bool {
+        let (_, status) = world::with_source(speaker, id, work);
+        if status.accepted { Arc::make_mut(&mut self.world.lock().unwrap()).received_text.insert((speaker.into(), id.into())); }
+        !status.failed
+    }
+
+    fn finish_speech(self: &Arc<Self>, speaker: &str, id: &str, text: &str, window: Option<u64>) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        if self.snapshot().speech_resolved.contains(id) { return; }
+        if !text.is_empty() && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
+            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, false, false, window)) { return; }
+        }
+        self.resolve_speech(speaker, id);
+    }
+
+    fn recover_speech(self: &Arc<Self>, speaker: &str, id: &str, keep: bool) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        let Some(draft) = self.snapshot().speech_drafts.get(id).filter(|draft| draft.speaker == speaker).cloned() else { return };
+        if keep && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
+            if !self.source_work(speaker, id, || { self.keep_complete(speaker, &draft.text, false, false); }) { return; }
+        }
+        self.resolve_speech(speaker, id);
+    }
+
     fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool, window: Option<u64>) {
         if uuid::Uuid::parse_str(id).is_err() { return; }
         // Two reconnecting windows can retry the same entry at once.
         let _receipt = self.typed_receipts.lock().unwrap();
         let key = (speaker.to_string(), id.to_string());
         if !self.snapshot().received_text.contains(&key) {
-            self.take_turn(speaker, text, true, true, speak, window);
+            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, true, speak, window)) { return; }
             let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
             let mut world = self.world.lock().unwrap();
             if let Err(e) = self.journal.lock().unwrap().append(&change) {
@@ -549,6 +602,10 @@ impl Core {
     }
 
     fn keep_speaking(&self, speaker: &str, text: &str, speak: bool) -> String {
+        self.keep_complete(speaker, text, speak, true)
+    }
+
+    fn keep_complete(&self, speaker: &str, text: &str, speak: bool, complete: bool) -> String {
         let mut thought = Thought {
             id: format!("th-{}", uuid::Uuid::new_v4().simple()),
             speaker: speaker.into(),
@@ -560,7 +617,7 @@ impl Core {
             guess: String::new(),
             heard: String::new(),
             fixed: String::new(),
-            complete: true,
+            complete,
             at_ms: now_ms(),
             place_ms: None,
             decided: false,
@@ -577,6 +634,7 @@ impl Core {
             if self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
                 break pinned;
             }
+            if world::source_failed() { return id; }
         };
         if pinned {
             self.new_threads.cancel(speaker);
@@ -1528,6 +1586,7 @@ fn port(value: &str, default: u16) -> Option<u16> {
 
 #[derive(serde::Deserialize)]
 struct Join {
+    identity: Option<String>,
     /// The name this window joined a room with; none alone.
     #[serde(default)]
     name: String,
@@ -1566,7 +1625,13 @@ async fn connect(
     let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
     let ai = join.ai.is_some() && speaker != "you" && speaker != GUEST;
     let remote = join.remote.is_some() && !ai;
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, ai, remote, seat))
+    upgrade.on_upgrade(move |mut socket| async move {
+        if join.identity.is_some() {
+            let id = core.journal.lock().unwrap().map_id().to_string();
+            if socket.send(Message::Text(serde_json::to_string(&ServerMsg::MapIdentity { id }).unwrap().into())).await.is_err() { return; }
+        }
+        session(socket, core, speaker, link.here(), renamed, ai, remote, seat).await
+    })
 }
 
 /// What another laptop is called when it asks for this machine's name, or for none.
@@ -1632,6 +1697,8 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     }
     messages.extend([ServerMsg::Snapshot { world }, core.placing.message()]);
     messages.push(usage::message(core));
+    messages.extend(core.snapshot().speech_drafts.values().filter(|draft| draft.speaker == speaker)
+        .map(|draft| ServerMsg::RecoverableSpeech { id: draft.id.clone(), text: draft.text.clone() }));
     messages.extend(jobs);
     messages.extend(apps::unsettled_build(core).map(|build| ServerMsg::AppsBuild { build }));
     messages.extend(core.imports.live_for(speaker).map(|status| ServerMsg::Import { status }));
@@ -1707,6 +1774,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::Heartbeat { id }) => {
+                    if id.len() <= 128 { core.send_to(&speaker, ServerMsg::Heartbeat { id }); }
+                }
+                Ok(ClientMsg::RecoverSpeech { id, keep }) => core.recover_speech(&speaker, &id, keep),
                 Ok(ClientMsg::Partner { on }) if !ai && !remote => {
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
                     else if !on { partner = None; }
@@ -2060,6 +2131,118 @@ mod tests {
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn delivery_identity_survives_restart_and_is_not_an_address() {
+        let first = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
+        let other = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::Journal::open(&first).unwrap();
+        let id = journal.map_id().to_string();
+        assert!(uuid::Uuid::parse_str(&id).is_ok());
+        drop(journal);
+        assert_eq!(crate::Journal::open(&first).unwrap().0.map_id(), id);
+        assert_ne!(crate::Journal::open(&other).unwrap().0.map_id(), id);
+        for path in [first, other] {
+            std::fs::remove_file(path.with_file_name(format!("{}.map-id", path.file_name().unwrap().to_string_lossy()))).unwrap();
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn delivery_identity_precedes_the_identified_sessions_snapshot() {
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?identity=1")).await.unwrap();
+        let first = received(&mut window).await;
+        assert_eq!(first["type"], "map_identity");
+        assert_eq!(first["id"], core.journal.lock().unwrap().map_id());
+        assert_eq!(received(&mut window).await["type"], "snapshot");
+        server.abort();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn delivery_persisted_effect_survives_a_missing_receipt() {
+        for kind in ["typed", "speech", "keep"] {
+            let (core, _queue, path) = keyless(World::default());
+            let id = uuid::Uuid::new_v4().to_string();
+            let text = "Keep the original words after a crash";
+            match kind {
+                "typed" => core.receive_typed("you", &id, text, false, None),
+                "speech" => core.finish_speech("you", &id, text, None),
+                _ => {
+                    core.remember_speech(crate::world::SpeechDraft { id: id.clone(), speaker: "you".into(), text: text.into() });
+                    core.recover_speech("you", &id, true);
+                }
+            }
+            // Crash boundary: the effect was persisted, its separate receipt/resolution was not.
+            let records = std::fs::read_to_string(&path).unwrap();
+            let prefix = records.lines().filter(|line| {
+                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                value["type"] != "text_received" && value["type"] != "speech_resolved"
+            }).collect::<Vec<_>>().join("\n") + "\n";
+            assert!(prefix.contains("\"source\""));
+            std::fs::write(&path, prefix).unwrap();
+            let (journal, world) = crate::Journal::open(&path).unwrap();
+            let reopened = Arc::new(Core::test(journal, world));
+            match kind {
+                "typed" => reopened.receive_typed("you", &id, text, false, None),
+                "speech" => reopened.finish_speech("you", &id, text, None),
+                _ => reopened.recover_speech("you", &id, true),
+            }
+            assert_eq!(reopened.snapshot().thoughts.len(), 1, "{kind}: replay cannot duplicate the persisted effect");
+            assert_eq!(reopened.snapshot().thoughts[0].text, text);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn delivery_failed_journal_does_not_acknowledge_or_insert() {
+        let path = std::env::temp_dir().join(format!("e2a2o-delivery-failure-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        drop(journal);
+        let journal = crate::Journal::read_only(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let mut updates = core.updates.subscribe();
+        core.receive_typed("you", &uuid::Uuid::new_v4().to_string(), "Keep my unsaved words", false, None);
+        assert!(core.snapshot().thoughts.is_empty());
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::TextReceived { .. })));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn delivery_heartbeat_replies_without_changing_the_map() {
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        window.send(tokio_tungstenite::tungstenite::Message::Text(r#"{"type":"heartbeat","id":"this-connection"}"#.into())).await.unwrap();
+        loop {
+            let message = received(&mut window).await;
+            if message["type"] == "heartbeat" { assert_eq!(message["id"], "this-connection"); break; }
+        }
+        assert!(core.snapshot().thoughts.is_empty());
+        server.abort();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn delivery_speech_reconnect_replays_only_the_owners_unfinished_words() {
+        let (core, _queue, path) = keyless(World::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        core.remember_speech(crate::world::SpeechDraft { id: id.clone(), speaker: "you".into(), text: "Unfinished across reconnect".into() });
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restarted = Core::test(journal, world);
+        let own = super::catch_up(&restarted, "you");
+        assert_eq!(own.iter().filter(|message| matches!(message, ServerMsg::RecoverableSpeech { id: got, text } if got == &id && text == "Unfinished across reconnect")).count(), 1);
+        assert!(super::catch_up(&restarted, "someone else").iter().all(|message| !matches!(message, ServerMsg::RecoverableSpeech { .. })));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]

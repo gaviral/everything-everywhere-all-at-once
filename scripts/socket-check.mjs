@@ -24,8 +24,8 @@ globalThis.localStorage = { get length() { return saved.size; }, key: (i) => [..
 Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", hostname: "localhost", search: "", pathname: "/" }, configurable: true });
 const sockets = [];
 globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
-  constructor() { sockets.push(this); queueMicrotask(() => this.onopen?.()); }
-  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); const m = JSON.parse(data); if (m.type === "text" && m.id) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "text_received", id: m.id }) })); }
+  constructor() { sockets.push(this); queueMicrotask(() => { this.onopen?.(); this.onmessage?.({ data: JSON.stringify({ type: "map_identity", id: "socket-check-map" }) }); }); }
+  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); const m = JSON.parse(data); if (m.type === "heartbeat") queueMicrotask(() => this.onmessage?.({ data: JSON.stringify(m) })); if (m.type === "text" && m.id) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "text_received", id: m.id }) })); }
   close() {} addEventListener() {} removeEventListener() {} };
 const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;

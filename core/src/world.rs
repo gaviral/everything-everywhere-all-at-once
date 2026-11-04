@@ -146,8 +146,19 @@ pub struct Caption {
     pub to: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpeechDraft {
+    pub id: String,
+    pub speaker: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default, skip_serializing)]
+    pub speech_drafts: std::collections::HashMap<String, SpeechDraft>,
+    #[serde(default, skip_serializing)]
+    pub speech_resolved: std::collections::HashSet<String>,
     pub threads: Vec<Thread>,
     pub thoughts: Vec<Thought>,
     #[serde(default)]
@@ -246,6 +257,8 @@ pub struct World {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
     CaptionAdded { caption: Caption },
+    SpeechRecovered { draft: SpeechDraft },
+    SpeechResolved { id: String },
     TextReceived { speaker: String, id: String },
     RecapSaved { recap: crate::recap::Recap },
     AppRegistered { app: crate::apps::MiniApp },
@@ -454,6 +467,8 @@ impl World {
                     self.captions.push(caption.clone());
                 }
             }
+            Change::SpeechRecovered { draft } => { if !self.speech_resolved.contains(&draft.id) { self.speech_drafts.insert(draft.id.clone(), draft.clone()); } }
+            Change::SpeechResolved { id } => { self.speech_drafts.remove(id); self.speech_resolved.insert(id.clone()); }
             Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
             Change::RecapSaved { recap } => {
                 self.recaps.retain(|r| r.period != recap.period);
@@ -991,17 +1006,55 @@ impl World {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct SourceStatus { pub accepted: bool, pub failed: bool }
+#[derive(Clone)]
+struct Source { speaker: String, id: String, status: SourceStatus }
+thread_local! { static SOURCE: std::cell::RefCell<Option<Source>> = const { std::cell::RefCell::new(None) }; }
+pub(crate) fn source_active() -> bool { SOURCE.with(|source| source.borrow().is_some()) }
+pub(crate) fn source_failed() -> bool { SOURCE.with(|source| source.borrow().as_ref().is_some_and(|source| source.status.failed)) }
+
+/// A synchronous accepted turn: only this thread's writes receive its source ID, never unrelated background work.
+pub(crate) fn with_source<T>(speaker: &str, id: &str, work: impl FnOnce() -> T) -> (T, SourceStatus) {
+    struct Restore(Option<Source>);
+    impl Drop for Restore { fn drop(&mut self) { SOURCE.with(|source| { source.replace(self.0.take()); }); } }
+    let old = SOURCE.with(|source| source.replace(Some(Source { speaker: speaker.into(), id: id.into(), status: SourceStatus::default() })));
+    let _restore = Restore(old);
+    let result = work();
+    let status = SOURCE.with(|source| source.borrow().as_ref().unwrap().status.clone());
+    (result, status)
+}
+
+/// A companion identity belongs to the journal, never to its address or current contents.
+fn map_identity(path: &Path) -> anyhow::Result<String> {
+    let identity = path.with_file_name(format!("{}.map-id", path.file_name().unwrap().to_string_lossy()));
+    if !identity.exists() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let temporary = identity.with_extension(format!("{id}.tmp"));
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&temporary)?;
+        file.write_all(id.as_bytes())?;
+        file.sync_all()?;
+        let linked = std::fs::hard_link(&temporary, &identity);
+        std::fs::remove_file(&temporary)?;
+        if let Err(error) = linked { if error.kind() != std::io::ErrorKind::AlreadyExists { return Err(error.into()); } }
+    }
+    let id = std::fs::read_to_string(identity)?;
+    uuid::Uuid::parse_str(&id)?;
+    Ok(id)
+}
+
 /// Append-only log of changes, written immediately; replayed on start so the app
 /// opens exactly where you left it.
 pub struct Journal {
     file: File,
+    map_id: String,
 }
 
 impl Journal {
     /// An existing test file whose appends fail regardless of the process's permission to change it.
     #[cfg(test)]
     pub(crate) fn read_only(path: &Path) -> anyhow::Result<Journal> {
-        Ok(Journal { file: File::open(path)? })
+        Ok(Journal { file: File::open(path)?, map_id: map_identity(path)? })
     }
 
     pub fn open(path: &Path) -> anyhow::Result<(Journal, World)> {
@@ -1035,7 +1088,15 @@ impl Journal {
                     continue;
                 }
                 match serde_json::from_str::<Change>(&line) {
-                    Ok(change) => world.apply(&change),
+                    Ok(change) => {
+                        world.apply(&change);
+                        // The source is in the same durable record as its effect, so a missing later receipt is safe.
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                            if let (Some(speaker), Some(id)) = (value["source"]["speaker"].as_str(), value["source"]["id"].as_str()) {
+                                if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); }
+                            }
+                        }
+                    }
                     Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n),
                 }
             }
@@ -1051,15 +1112,30 @@ impl Journal {
                 file.write_all(b"\n")?;
             }
         }
-        Ok((Journal { file }, world))
+        Ok((Journal { file, map_id: map_identity(path)? }, world))
     }
 
+    pub fn map_id(&self) -> &str { &self.map_id }
+
     pub fn append(&mut self, change: &Change) -> anyhow::Result<()> {
-        let mut line = serde_json::to_string(change)?;
-        line.push('\n');
-        self.file.write_all(line.as_bytes())?;
-        self.file.flush()?;
-        Ok(())
+        let source = SOURCE.with(|source| source.borrow().clone());
+        let result = (|| {
+            let mut value = serde_json::to_value(change)?;
+            if let Some(source) = &source {
+                value["source"] = serde_json::json!({ "speaker": source.speaker, "id": source.id });
+            }
+            let mut line = serde_json::to_string(&value)?;
+            line.push('\n');
+            self.file.write_all(line.as_bytes())?;
+            self.file.flush()?;
+            if source.is_some() { self.file.sync_data()?; }
+            Ok(())
+        })();
+        SOURCE.with(|source| { if let Some(source) = source.borrow_mut().as_mut() {
+            source.status.accepted |= result.is_ok();
+            source.status.failed |= result.is_err();
+        } });
+        result
     }
 }
 
@@ -1865,6 +1941,8 @@ mod tests {
             Change::StayChanged { thread_id: None },
             Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
             Change::CaptionAdded { caption: super::Caption { id: "caption-1".into(), by: "Helper".into(), text: "A completed answer.".into(), at_ms: 200, order: 1, ai: true, to: Some("you".into()) } },
+            Change::SpeechRecovered { draft: super::SpeechDraft { id: "speech-once".into(), speaker: "you".into(), text: "Unfinished words".into() } },
+            Change::SpeechResolved { id: "speech-once".into() },
         ];
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
@@ -1879,6 +1957,8 @@ mod tests {
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
                 | Change::TextReceived { .. }
+                | Change::SpeechRecovered { .. }
+                | Change::SpeechResolved { .. }
                 | Change::ThreadAdded { .. }
                 | Change::ThoughtPlaced { .. }
                 | Change::ThreadTouched { .. }
@@ -1930,7 +2010,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 51, "one of each kind of change");
+        assert_eq!(kinds.len(), 53, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
