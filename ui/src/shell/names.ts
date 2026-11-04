@@ -85,6 +85,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   "warm-pictures": { name: "Ready pictures", does: "After a quiet second, keeps existing pictures for your current topic and two nearby topics ready to open. Holds an estimated 16 MiB at most; pauses while you speak, away or saving data.", lives: "Pictures and topics" },
   "phone-remote": { name: "Phone remote", does: "Swipe on your phone to explore the Canvas without looking down.", lives: "Same Wi-Fi" },
   "semantic-zoom": { name: "Semantic zoom", aka: "Readable overview", does: "Zoom out to topic titles and thought counts; zoom in to read the thoughts.", lives: "The Canvas" },
+  "loose-topics": { name: "Loose topics", does: "Let topic thoughts sit loosely on the Canvas. Hover or focus a thought to see its connections; turn off to restore straight lines.", lives: "The Canvas" },
   "rotate-canvas": { name: "Rotate canvas", does: "Turn your view with Angle and Reset, or a rotation gesture in browsers that expose one. Thoughts keep their world positions.", lives: "The Canvas" },
   "built-in-speech": { name: "Built-in speech", does: "Read replies aloud with this browser’s voice when one is available. Replies remain visible as text.", lives: "This browser" },
   listening: { name: "Listening", aka: "Voice input", does: "The mic: tap it or press ⌘D, and your words land as you talk.", lives: "The input box" },

@@ -7,7 +7,7 @@ import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 import { speechAvailable, watchSpeechAvailability } from "../speech-voice";
 
-export type BuiltIn = { id: "explicit-agreement" | "saved-answers" | "discussion-status" | "plugins" | "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "loose-topics" | "explicit-agreement" | "saved-answers" | "discussion-status" | "plugins" | "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
   { id: "plugins", kind: "panel", defaultOn: false },
@@ -16,6 +16,7 @@ export const BUILT_INS: readonly BuiltIn[] = [
   { id: "saved-answers", kind: "panel", defaultOn: false },
   { id: "explicit-agreement", kind: "panel", defaultOn: false },
   { id: "full-content", kind: "panel", defaultOn: false },
+  { id: "loose-topics", kind: "panel", defaultOn: false },
   { id: "canvas-tools", kind: "panel", defaultOn: false },
   { id: "terse", kind: "view", defaultOn: false },
   { id: "bring-here", kind: "panel", defaultOn: false },

@@ -47,11 +47,12 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const comparePhoneReading = builtIns.has("compare-phone-reading");
   const terse = builtIns.has("terse");
   const partnerOn = builtIns.has("partner");
+  const looseTopics = builtIns.has("loose-topics");
   const rotateCanvas = builtIns.has("rotate-canvas");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage, reviewTextEdits), [world, me, connected, rooms, partial, jobs, usage, reviewTextEdits]);
   const captureSources = useMemo(() => captureSourcesOf(captureContext?.captures ?? []), [captureContext?.captures]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, mapIdentity: captureContext?.confirmedMapKey ?? null, captureSources, visitKey: JSON.stringify([captureContext?.mapKey ?? revision, me]), readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, captureSources, captureContext?.confirmedMapKey, captureContext?.mapKey, revision, me, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, mapIdentity: captureContext?.confirmedMapKey ?? null, captureSources, visitKey: JSON.stringify([captureContext?.mapKey ?? revision, me]), readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, looseTopics, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, captureSources, captureContext?.confirmedMapKey, captureContext?.mapKey, revision, me, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, looseTopics, rotateCanvas, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
