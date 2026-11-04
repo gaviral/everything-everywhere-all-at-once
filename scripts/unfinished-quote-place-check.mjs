@@ -17,6 +17,8 @@ const { ready, standInCore, openPage, sleep } = await import(tree
 const why = ready();
 if (why) { console.log(`SKIP unfinished-quote-place-check: ${why}`); process.exit(3); }
 const modules = await uiServer();
+globalThis.location = new URL("http://localhost/");
+const { apply } = await modules.ssrLoadModule("/src/core.ts");
 const { lingerMs } = await modules.ssrLoadModule("/src/unfinished.ts");
 await modules.close();
 const shots = output ? resolve(output) : process.env.SHOTS;
@@ -44,20 +46,46 @@ const world = {
     thought("imported", imported, "T2", { at_ms: now - 4000, place_ms: null }),
     thought("future", future, "T2", { at_ms: now + 3_600_000 }),
   ],
+  pauses: [{id:"pause-p2-1",thought_id:"p2",speaker:"you",thread_id:"T2",revision:1,excerpt:quote,at_ms:now,resolved:false,later_count:0,offer_after_ms:0,hidden:false}],
   active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true,
   recaps: [], notes: {}, proposals: [],
   positions: { p2: { x: 2200, y: 1800, by: "you", at_ms: now } },
 };
 let shown = world;
+const relayChange = change => { shown=apply(shown,change);core.send({type:"change",change}); };
+const returnSource = (pause, request_id=null, current=null) => {
+  const thought=shown.thoughts.find(t=>t.id===(pause?.thought_id??current?.id));
+  const anchor={pause:pause??null,thought_id:pause?.thought_id??current.id,thread_id:thought?.thread_id??null,excerpt:pause?.excerpt??current.text,current_text:thought?.text??null};
+  if(anchor.thread_id)relayChange({type:"active_changed",thread_id:anchor.thread_id,speaker:"you"});
+  core.send({type:"returned",request_id,anchor,message:thought?"Back to the exact interrupted words":"The source was deleted. Its interruption-time words are still here."});
+  if(anchor.thread_id)core.send({type:"found",thread_id:anchor.thread_id,thought_id:anchor.thought_id,message:"Back to the exact interrupted words"});
+};
 const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
   onMessage: (message) => {
+    if(message.type==="resume") {
+      const pause=(shown.pauses??[]).find(p=>p.id===message.pause_id&&p.speaker==="you"&&!p.resolved);
+      if(pause)returnSource(pause,message.request_id);
+      return;
+    }
+    if(message.type==="pause_choice") {
+      const p=shown.pauses.find(p=>p.id===message.pause_id);
+      if(p)relayChange({type:"pause_choice",id:p.id,later_count:p.later_count+Number(message.later),offer_after_ms:message.later?Date.now()+300000:p.offer_after_ms,hidden:p.hidden||!message.later||p.later_count+Number(message.later)>=2});
+      return;
+    }
+    if(message.type==="text"&&message.text.toLowerCase()==="where was i?") {
+      const latest=[...shown.thoughts].reverse().filter(t=>t.placed&&t.speaker==="you").sort((a,b)=>(b.at_ms>Date.now()?0:b.at_ms)-(a.at_ms>Date.now()?0:a.at_ms))[0];
+      const pause=[...(shown.pauses??[])].reverse().find(p=>p.speaker==="you"&&!p.resolved);
+      if(latest&&!latest.complete)returnSource((shown.pauses??[]).find(p=>p.thought_id===latest.id),null,latest);
+      else if(pause)returnSource(pause);
+      core.send({type:"text_received",id:message.id});
+      return;
+    }
     if (message.type !== "focus") return;
-    shown = { ...shown, active: message.thread_id, active_by: { you: message.thread_id } };
-    core.send({ type: "change", change: { type: "active_changed", thread_id: message.thread_id, speaker: "you" } });
+    relayChange({type:"active_changed",thread_id:message.thread_id,speaker:"you"});
   },
 });
 let browser;
-const timeout = setTimeout(() => { console.error("unfinished-quote-place-check: timed out"); process.exit(1); }, 240_000);
+const timeout = setTimeout(() => { console.error("unfinished-quote-place-check: timed out"); process.exit(1); }, 600_000);
 try {
   for (const [width, height] of [[1440, 900], [390, 844]]) for (const scheme of ["light", "dark"]) {
     browser = await openPage("about:blank", { width, height });
@@ -111,7 +139,7 @@ try {
           (!document.querySelector('.pullback-quote') || document.querySelector('.pullback-quote').checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))`), true, `${label}: card and quote displayed`);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".pullback-actions button")].map(el => el.textContent)'), ["Finish it", "Later", "Forget it"]);
       };
-      const relay = (change) => core.send({ type: "change", change });
+      const relay = relayChange;
       const move = async (id, to, undo = false) => {
         const from = shown.thoughts.find(t => t.id === id).thread_id;
         shown = { ...shown, thoughts: shown.thoughts.map(t => t.id === id ? { ...t, thread_id: to } : t) };
@@ -179,17 +207,17 @@ try {
         shotPaths.push(file);
       }
       await move("p2", "T1");
-      await expectQuote(older, "quoted words moved out: recompute from remaining words");
+      await expectQuote(quote, "moving the source retains its interruption-time excerpt");
       await move("p2", "T2", true);
       await expectQuote(quote, "undo restores the quote");
       await move("p2", "T1");
-      await expectQuote(older, "quoted words moved out again");
+      await expectQuote(quote, "moving the source again keeps the same excerpt");
       await move("p0", "T1");
-      await expectQuote(imported, "older import is the newest eligible word remaining");
+      await expectQuote(quote, "imports cannot replace the recorded source");
       await move("imported", "T1");
-      await expectQuote(future, "future-dated sample retains its earliest-word fallback");
+      await expectQuote(quote, "future dates cannot replace the recorded source");
       await move("future", "T1");
-      await expectQuote(null, "no eligible words: omit quote despite incoming thought and other speaker");
+      await expectQuote(quote, "source remains identifiable after all other words move");
 
       // Speech cannot take away a card being read, even when the new words reopen its thread.
       await evaluate(`navigator.mediaDevices.getUserMedia = async () => {
@@ -205,18 +233,19 @@ try {
       core.send({ type: "partial", text: "I am still explaining the picnic" });
       await check('document.body.textContent.includes("I am still explaining the picnic")', "live speech reached the page");
       await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
-      await expectQuote(null, "live speech leaves the card up after the pointer leaves");
+      await expectQuote(quote, "live speech leaves the exact source up after the pointer leaves");
       await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...await cardAt() });
       await check('document.querySelector(".pullback")?.matches(":hover")', "the pointer holds the current card position");
       const spoken = thought("spoken", "Choose a shady picnic spot before—", "T2", { at_ms: Date.now(), complete: false });
       relay({ type: "thought_added", thought: spoken });
       relay({ type: "thread_touched", thread_id: "T2", last_point: spoken.point, at_ms: spoken.at_ms });
-      await expectQuote(null, "new spoken turn keeps the card being read");
+      await expectQuote(quote, "new spoken turn keeps the recorded card being read");
       core.send({ type: "partial", text: "" });
       // An explicit Later still dismisses at once, despite the pointer holding the card.
       await evaluate('document.querySelector(".pullback-actions button:nth-child(2)").click()');
       await check('!document.querySelector(".pullback")', "Later dismisses the hovered card");
       relay({ type: "thread_status", thread_id: "T2", status: "dropped", speaker: "you" });
+      relay({type:"paused",pause:{id:"pause-spoken-1",thought_id:"spoken",speaker:"you",thread_id:"T2",revision:1,excerpt:spoken.text,at_ms:spoken.at_ms,resolved:false,later_count:0,offer_after_ms:0,hidden:false}});
       assert.equal(await evaluate('!!document.querySelector(".pullback-quote")'), false, `${label}: no offer during fresh-word pause`);
       await expectQuote(spoken.text, "newly dropped spoken turn quotes its own words");
       if (width === 1440 && scheme === "light") {
@@ -230,15 +259,100 @@ try {
         assert.ok(Date.now() - started >= lifetime - 1200, `${label}: card gets its full reading time`);
         core.send({ type: "partial", text: "" });
         await sleep(3000);
-        assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, `${label}: read card stays dismissed after the next pause`);
+        assert.equal(await evaluate('!!document.querySelector(".pullback")'), false, `${label}: read card stays collapsed after the next pause`);
+        assert.equal(shown.pauses.find(p=>p.id==="pause-spoken-1").hidden,false,"timer expiry is not Forget");
+        assert.ok(await evaluate('!!document.querySelector("[data-paused-source=pause-spoken-1]")'),"source remains discoverable after the offer expires");
       } else {
         await evaluate('document.querySelector(".pullback-actions button:last-child").click()');
         await check('!document.querySelector(".pullback")', "Forget it dismisses immediately");
       }
       await healthy();
+      console.log(`return fixture ${label}: ok`);
     }
     await browser.close();
     browser = null;
+  }
+  // Exact return contract: deliberately make the visible offer A and generic return B.
+  for (const [width,height] of [[1440,900],[390,844]]) for (const reduced of [false,true]) {
+    const sourceB="I need to finish the balcony plan before";
+    const fixture=structuredClone(world);
+    fixture.thoughts.find(t=>t.id==="p2").unclear="picnic";
+    fixture.threads.push(thread("T3","Appointments"));
+    fixture.thoughts.push(thought("b",sourceB,"T1",{complete:false,at_ms:Date.now()-2000}),thought("c","The appointment is booked","T3",{at_ms:Date.now()-1000}));
+    fixture.pauses.push({id:"pause-b-1",thought_id:"b",speaker:"you",thread_id:"T1",revision:1,excerpt:sourceB,at_ms:Date.now()-1500,resolved:false,later_count:0,offer_after_ms:0,hidden:true});
+    fixture.active="T3";fixture.active_by={you:"T3"};shown=fixture;
+    browser=await openPage(`http://127.0.0.1:${core.port}/`,{width,height});
+    const {page,evaluate,until}=browser;
+    const check=async (expression,reason,ms=8000)=>assert.ok(await until(expression,ms),`${width} reduced=${reduced}: ${reason}`);
+    const visible=id=>`(()=>{const e=document.querySelector('.spine-point[data-thought="${id}"] .spine-words');if(!e)return false;const r=e.getBoundingClientRect(),dock=document.querySelector('.dock').getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=dock.top})()`;
+    await page("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value:reduced?"reduce":"no-preference"}]});
+    await check('!!document.querySelector(".pullback-actions button")',"recorded A offer appears");
+    const draft="Keep my own draft 🙂 exactly as typed";
+    await evaluate(`(()=>{const f=document.querySelector('#type-a-thought');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(f,${JSON.stringify(draft)});f.dispatchEvent(new Event('input',{bubbles:true}));f.focus();f.setSelectionRange(2,17,'backward')})()`);
+    const editor=()=>evaluate(`(()=>{const f=document.querySelector('#type-a-thought');return [f.value,f.selectionStart,f.selectionEnd,f.selectionDirection,document.activeElement===f]})()`);
+    const before=await editor(),micStarts=core.heard.filter(m=>m.type==='listen'&&m.on).length;
+    returnSource(shown.pauses.find(p=>p.id==='pause-b-1'));
+    await check('document.querySelector(".return-receipt")?.dataset.returnedSource === "b"',"generic voice return resolves B");
+    await check(visible('b'),"generic return reveals B's original in context");
+    if(reduced){await check('!!document.querySelector(".spine-cut")',"reduced motion shows a static source outline");assert.equal(await evaluate('getComputedStyle(document.querySelector(".spine-cut")).animationName'),'none');}
+    await sleep(800);
+    assert.deepEqual(await editor(),before,"voice return preserves byte-identical draft, selection, caret and focus");
+    assert.equal(core.heard.filter(m=>m.type==='listen'&&m.on).length,micStarts,"return never starts a microphone");
+    assert.equal(shown.active_by.you,"T1");
+    await check('!!document.querySelector(".spine-paused-mark[data-source-thought=b]")',"static source marker remains after the offer disappears");
+    const marker=await evaluate('(()=>{const r=document.querySelector(".spine-paused-mark[data-source-thought=b]").getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()');
+    for(const type of ['mousePressed','mouseReleased'])await page('Input.dispatchMouseEvent',{type,...marker,button:'left',clickCount:1});
+    await check('document.querySelector(".return-receipt")?.dataset.returnedSource === "b"',"source marker returns to its own exact thought");
+    returnSource(shown.pauses.find(p=>p.id==='pause-b-1'));
+    await sleep(100);assert.equal(shown.active_by.you,"T1","repeated return does not bounce");
+    await evaluate('document.querySelector(".pullback-actions button").click()');
+    await check('document.querySelector(".return-receipt")?.dataset.returnedSource === "p2"',"named Finish A differs from generic B");
+    await check(visible('p2'),"named Finish reveals A's exact offscreen source");
+    assert.deepEqual((await editor()).slice(0,4),before.slice(0,4),"named return preserves existing draft and caret");
+    assert.equal(shown.active_by.you,"T2");
+    if(shots){const {data}=await page('Page.captureScreenshot',{format:'png'});writeFileSync(join(shots,`exact-return-${width}-${reduced?'reduced':'normal'}.png`),Buffer.from(data,'base64'));}
+    assert.ok(shown.pauses.every(p=>!p.resolved),"navigation completes no interruption");
+    relayChange({type:'thought_corrected',thought_id:'p2',accept:true,with:'garden'});
+    relayChange({type:'thought_moved',thought_id:'p2',thread_id:'T1',from:'T2'});
+    returnSource(shown.pauses.find(p=>p.id==='pause-p2-1'),'edited');
+    await check('document.querySelector(".return-receipt")?.textContent.includes("Current words:")',"edited source is distinguished from captured excerpt");
+    assert.ok(await evaluate(`document.querySelector('.return-receipt').textContent.includes(${JSON.stringify(quote)})`));
+    assert.equal(shown.active_by.you,"T1","moved source returns in its actual current topic");
+    const active=shown.active_by.you;
+    relayChange({type:'thought_skipped',thought_id:'p2'});
+    returnSource(shown.pauses.find(p=>p.id==='pause-p2-1'),'deleted');
+    await check('document.querySelector(".return-receipt")?.textContent.includes("Source deleted")',"deletion is explicit");
+    assert.equal(shown.active_by.you,active,"deleted source cannot navigate to a fabricated topic fallback");
+    assert.ok(await evaluate(`document.querySelector('.return-receipt').textContent.includes(${JSON.stringify(quote)})`),"deleted original remains available");
+    await page('Page.reload');
+    await check('!!document.querySelector("[data-paused-source=pause-p2-1]")',"source survives reload and vanished offer");
+    // Two explicit Later choices suppress the same revision; its source is still discoverable.
+    shown=structuredClone(world);await page('Page.reload');
+    await check('!!document.querySelector(".pullback-actions button")',"A offered for Later");
+    await evaluate('document.querySelector(".pullback-actions button:nth-child(2)").click()');
+    await check('!document.querySelector(".pullback")',"first Later hides the offer");
+    assert.equal(shown.pauses[0].later_count,1);assert.equal(shown.pauses[0].hidden,false);
+    await evaluate('window.actualNow=Date.now.bind(Date);Date.now=()=>actualNow()+300001');
+    await check('!!document.querySelector(".pullback-actions button")',"first Later returns after five minutes");
+    await evaluate('document.querySelector(".pullback-actions button:nth-child(2)").click()');
+    await check('!document.querySelector(".pullback")',"second Later suppresses revision");
+    assert.equal(shown.pauses[0].later_count,2);assert.equal(shown.pauses[0].hidden,true);
+    await page('Page.reload');
+    await check('!!document.querySelector(".paused-sources")',"suppressed source remains discoverable after reload");
+    assert.equal(await evaluate('!!document.querySelector(".pullback")'),false);
+    // A keyboard activation may focus an empty editor, only after the acknowledged return.
+    await evaluate('document.querySelector(".paused-sources").open=true;document.querySelector(".paused-sources button").focus()');
+    for(const type of ['keyDown','keyUp'])await page('Input.dispatchKeyEvent',{type,key:'Enter',code:'Enter',windowsVirtualKeyCode:13,...(type==='keyDown'?{text:'\r'}:{})});
+    await check('document.activeElement===document.querySelector("#type-a-thought")',"explicit keyboard return focuses empty editor after acknowledgement");
+    assert.equal(shown.pauses[0].resolved,false);
+    shown={...structuredClone(world),pauses:[]};await page('Page.reload');
+    await check('!!document.querySelector(".pullback")',"older topic can report missing identity");
+    assert.ok(await evaluate('document.querySelector(".pullback").textContent.includes("Exact interruption source unavailable")'));
+    assert.equal(await evaluate('document.querySelector(".pullback-actions button").disabled'),true,"topic-only fallback cannot pass as exact Finish");
+    await healthyReturn();
+    console.log(`exact return ${width} reduced=${reduced}: ok`);
+    await browser.close();browser=null;
+    async function healthyReturn(){assert.equal(await evaluate('!!document.querySelector(".brick-broke,.crash")'),false);assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'));}
   }
   if (shots) assert.equal(shotPaths.length, 4, "all four incoming-move shell fixtures captured");
   console.log(output ? JSON.stringify(shotPaths) : "unfinished-quote-place-check: ok");

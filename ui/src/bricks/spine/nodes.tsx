@@ -5,7 +5,7 @@
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
-import { SpeechFixesContext, type Thought } from "../contract";
+import { SpeechFixesContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 import { C } from "./conversation";
 
@@ -14,6 +14,7 @@ export const READ = 0.75;
 
 export type ItemData = {
   item: Item;
+  pauses?: readonly Pause[];
   here: boolean;
   pulse: number;
   fresh: boolean;
@@ -35,6 +36,7 @@ export type ItemNode = Node<ItemData, "item">;
 export interface Acts {
   /** Jump along a projection link on this canvas. */
   visit(key: string): void;
+  resume(id:string,keyboard:boolean): void;
   toggle(thread: string): void;
   pick(item: Item): void;
   words(item: Item): void;
@@ -343,8 +345,18 @@ function Point({ data }: { data: ItemData }) {
         </button>
         : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
     </span>}
+    <PausedSources data={data} />
     <Tools item={item} />
   </div>;
+}
+
+function PausedSources({ data }: { data: ItemData }) {
+  const acts = useContext(ActsContext)!;
+  const pauses = data.pauses ?? [];
+  return <>{pauses.map((pause, i) => <button key={pause.id} type="button" className="spine-paused-mark nodrag nopan"
+    data-paused-source={pause.id} data-source-thought={pause.thought_id} title={pause.excerpt} aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`}
+    style={{ left: data.item.look?.textX ?? G.textX, top: data.item.box.h - (pauses.length - i) * 44, height: 44 }}
+    onClick={event => { event.stopPropagation(); acts.resume(pause.id, event.detail === 0); }}>Paused here</button>)}</>;
 }
 
 function ConversationPoint({ data }: { data: ItemData }) {
@@ -370,6 +382,7 @@ function ConversationPoint({ data }: { data: ItemData }) {
         aria-label={`Topic: ${topic.title}`} onClick={() => acts.visit(`t:${topic.thread}`)}>↗ {topic.title}</button>)}
       {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
     </span>
+    <PausedSources data={data} />
   </div>;
 }
 

@@ -41,7 +41,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const conversationSpine = useBuiltInsOn().has("conversation-spine");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, placingUnavailable }), [snapshot, reading.mark, conversationSpine, placingUnavailable]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -53,6 +53,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
       readThought: (id) => read.current(id),
+      resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
         const sent = latest.current.addThought(text);
         if (sent) sends.sent(text, info);

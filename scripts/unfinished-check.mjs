@@ -6,7 +6,7 @@ import { uiServer } from "./ui-server.mjs";
 
 const server = await uiServer();
 try {
-  const { leftOff, cardAt, putOff, lastWords, lingerMs, NONE_HIDDEN, PAUSE_MS, LATER_MS } = await server.ssrLoadModule("/src/unfinished.ts");
+  const { pauseOffer, leftOff, cardAt, putOff, lastWords, lingerMs, NONE_HIDDEN, PAUSE_MS, LATER_MS } = await server.ssrLoadModule("/src/unfinished.ts");
   const { LOOK_MS } = await server.ssrLoadModule("/src/attention-core.ts");
   const { DECIDE_MS, REACH_MS } = await server.ssrLoadModule("/src/notice-rules.ts");
   assert.equal(lingerMs("Picnic", "Bring chairs"), 11 * 60_000 / 200 + LOOK_MS + DECIDE_MS + REACH_MS,
@@ -58,6 +58,19 @@ try {
   const changed = threads.map((t) => (t.id === "T3" ? { ...t, touched_ms: now + 3 * LATER_MS } : t));
   assert.equal(cardAt(leftOff(changed, "you", twice, now + 4 * LATER_MS), now + 4 * LATER_MS, said)?.id, "T3",
     "new words there make it a new card");
+  const pause={id:"pause-b-1",thought_id:"b",speaker:"you",thread_id:"T3",revision:1,excerpt:"I should set up autopay before—",at_ms:said,resolved:false,later_count:0,offer_after_ms:0,hidden:false};
+  const recorded={threads,thoughts,pauses:[pause]};
+  const offered=pauseOffer(recorded,"you",now,new Set());
+  assert.equal(offered.return_source.thought_id,"b");
+  assert.equal(lastWords([{...thoughts[0],text:"Newer unrelated words"}],offered,"you",now),pause.excerpt,"a recorded excerpt never follows the newest topic words");
+  assert.equal(pauseOffer({...recorded,pauses:[]},"you",now,new Set()),undefined,"a topic alone is not an interruption identity");
+  assert.equal(pauseOffer(recorded,"Sam",now,new Set()),undefined,"speaker ownership");
+  assert.equal(pauseOffer({...recorded,pauses:[{...pause,hidden:true}]},"you",now,new Set()),undefined);
+  assert.equal(pauseOffer({...recorded,pauses:[{...pause,offer_after_ms:now+LATER_MS}]},"you",now+LATER_MS-1,new Set()),undefined);
+  assert.equal(pauseOffer({...recorded,pauses:[{...pause,offer_after_ms:now+LATER_MS}]},"you",now+LATER_MS,new Set()).return_source.id,pause.id);
+  assert.equal(pauseOffer(recorded,"you",now,new Set([pause.id])),undefined,"presentation expiry hides only the offer");
+  assert.equal(recorded.pauses[0].resolved,false);
+  assert.equal(pauseOffer({...recorded,pauses:[{...pause,resolved:true}]},"you",now,new Set()),undefined);
   console.log("unfinished-check: ok");
 } finally {
   await server.close();

@@ -112,6 +112,7 @@ pub struct Core {
     hosts: Mutex<std::collections::HashSet<String>>,
     /// Where "where was I?" last sent each speaker, with their newest thought then (`go_back`).
     came_back: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
+    returned_anchor: Mutex<HashMap<String, world::ReturnAnchor>>,
     /// Model calls and placements, when `E2A2O_TRACE` is on (trace.rs).
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
@@ -166,6 +167,7 @@ impl Core {
             if !still(&world) {
                 return Ok(false);
             }
+            let changes = world.with_pauses(changes, now_ms());
             let mut journal = self.journal.lock().unwrap();
             if let Err(error) = journal.append_many(&changes) {
                 self.journal_save_failed(&error);
@@ -278,6 +280,39 @@ impl Core {
         self.commit(changes);
     }
 
+    fn pause_choice(&self, speaker: &str, id: &str, later: bool) {
+        let Some(pause) = self.snapshot().pauses.iter().find(|p|p.id==id && p.speaker==speaker && !p.resolved).cloned() else { return };
+        let count = pause.later_count + u32::from(later);
+        self.commit(vec![Change::PauseChoice { id: id.into(), later_count: count, offer_after_ms: if later { now_ms()+300_000 } else { pause.offer_after_ms }, hidden: pause.hidden || !later || count>=2 }]);
+    }
+
+    fn resume_pause(&self, speaker: &str, id: &str, request_id: Option<String>) {
+        let Some(pause)=self.snapshot().pauses.iter().find(|p|p.id==id && p.speaker==speaker && !p.resolved).cloned() else {
+            self.send_to(speaker,ServerMsg::Returned {request_id,anchor:None,message:"That exact interruption is no longer available.".into()}); return;
+        };
+        let anchor=self.snapshot().return_anchor(&pause);
+        self.return_to(speaker,anchor,request_id);
+    }
+
+    fn return_to(&self, speaker: &str, anchor: world::ReturnAnchor, request_id: Option<String>) {
+        let Some(thread)=anchor.thread_id.clone() else {
+            self.send_to(speaker,ServerMsg::Returned {request_id,anchor:Some(anchor),message:"The source was deleted. Its interruption-time words are still here.".into()}); return;
+        };
+        let mut changes=vec![Change::ActiveChanged {thread_id:thread.clone(),speaker:speaker.into()}];
+        if self.snapshot().thread(&thread).is_some_and(|t|t.status==ThreadStatus::Dropped) { changes.push(Change::ThreadStatus {thread_id:thread.clone(),status:ThreadStatus::Open,speaker:speaker.into()}); }
+        if let Some(pause)=&anchor.pause {changes.push(Change::ReturnFocused {speaker:speaker.into(),pause_id:pause.id.clone(),after:self.snapshot().thoughts.len()});}
+        if !self.commit_if(|w|w.thoughts.iter().any(|t|t.id==anchor.thought_id && t.speaker==speaker && t.thread_id.as_ref().is_some_and(|id|w.resolve(id)==thread))
+            && anchor.pause.as_ref().is_none_or(|pause|w.pauses.iter().any(|p|p.id==pause.id&&!p.resolved)),changes) {
+            self.send_to(speaker,ServerMsg::Returned {request_id,anchor:None,message:"Couldn't return to that exact source. Try again.".into()}); return;
+        }
+        self.placing.moved(speaker);
+        let title=self.snapshot().thread(&thread).map(|t|t.title.clone()).unwrap_or_default();
+        let message=format!("Back to {title}: “{}”",anchor.excerpt);
+        self.send_to(speaker,ServerMsg::Returned {request_id,anchor:Some(anchor.clone()),message:message.clone()});
+        self.send_to(speaker,ServerMsg::Found {thread_id:thread,thought_id:Some(anchor.thought_id),message:message.clone()});
+        self.reply_to(speaker,&message);
+    }
+
     /// "Where was I?": see `way_back`. With nowhere to go back to it still answers, as every request does (the
     /// tour teaches it on an empty map): where the speaker is, shown as Take me there shows a point, or why
     /// there's nothing yet.
@@ -289,8 +324,27 @@ impl Core {
             (w.active_by.get(speaker).map(|id| w.resolve(id)), w.thoughts.iter().rev().find(|t| t.speaker == speaker).map(|t| t.id.clone()))
         };
         let back_already = self.came_back.lock().unwrap().get(speaker) == Some(&mark(&world));
+        let latest = world.thoughts.iter().enumerate().filter(|(_,t)|t.placed && t.speaker==speaker).max_by_key(|(i,t)|(t.said_at(now_ms()),*i)).map(|(_,t)|t);
+        let remembered = if back_already { self.returned_anchor.lock().unwrap().get(speaker).cloned() } else { None };
+        let remembered = remembered.and_then(|anchor| match &anchor.pause {
+            Some(pause) => world.pauses.iter().find(|p|p.id==pause.id&&!p.resolved).map(|p|world.return_anchor(p)),
+            None => Some(anchor),
+        });
+        let current = latest.filter(|t|!t.complete).map(|t| {
+            world.pauses.iter().filter(|p|!p.resolved&&p.thought_id==t.id&&p.speaker==speaker).max_by_key(|p|p.revision)
+                .map(|p|world.return_anchor(p)).unwrap_or_else(||world::ReturnAnchor {pause:None,thought_id:t.id.clone(),thread_id:t.thread_id.clone(),excerpt:t.text.clone(),current_text:Some(t.text.clone())})
+        });
+        let exact=remembered.or(current).or_else(||world.pauses.iter().filter(|p|!p.resolved&&p.speaker==speaker).max_by_key(|p|(p.at_ms,p.revision)).map(|p|world.return_anchor(p)));
+        if let Some(anchor)=exact {
+            self.returned_anchor.lock().unwrap().insert(speaker.into(),anchor.clone());
+            drop(world); self.return_to(speaker,anchor,None);
+            self.came_back.lock().unwrap().insert(speaker.into(),mark(&self.snapshot())); return;
+        }
         if let Some(id) = way_back(&world, speaker, now_ms()).map(|id| world.resolve(&id)).filter(|id| !back_already && world.thread(id).is_some()) {
             let (thought_id, message) = replies::anchor(&world, speaker, &id, "Back to", now_ms());
+            if world.thread(&id).is_some_and(|t|t.status==ThreadStatus::Dropped) {
+                self.send_to(speaker,ServerMsg::Returned {request_id:None,anchor:None,message:"Exact interruption source unavailable for this older topic.".into()});
+            }
             self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
@@ -679,11 +733,14 @@ impl Core {
     /// waits for the other person's words, or for a retry: a thought that lands after its speaker moved on
     /// doesn't move them. A "new thread" said before it ends as it's said: the speaker chose a thread to be on.
     fn run_command(&self, speaker: &str, job: Command) {
+        self.queue_command(speaker, job(speaker.into()));
+    }
+
+    fn queue_command(&self, speaker: &str, job: placer::Job) {
         self.new_threads.cancel(speaker);
         // Without a working key none lands, so there's nothing to wait for.
         let waiting = self.key().is_ok()
             && self.snapshot().thoughts.iter().any(|t| !t.placed && t.speaker == speaker && !self.placing.failed(&t.id));
-        let job = job(speaker.into());
         if waiting {
             let _ = self.placer_queue.send(job);
         } else {
@@ -695,6 +752,7 @@ impl Core {
     pub(crate) fn act(&self, job: placer::Job) {
         match job {
             placer::Job::Back(speaker) => self.go_back(&speaker),
+            placer::Job::Resume { speaker, pause_id, request_id } => self.resume_pause(&speaker, &pause_id, Some(request_id)),
             placer::Job::Next(speaker) => self.go_next(&speaker),
             placer::Job::Previous(speaker) => self.go_previous(&speaker),
             placer::Job::Place(_) => {}
@@ -1190,6 +1248,7 @@ async fn main() -> anyhow::Result<()> {
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
         came_back: Default::default(),
+        returned_anchor: Default::default(),
         placing: placer::Placing::default(),
         room: room.as_deref().map(|code| Room { tunnel: tunnel.clone(), ..Room::from(code) }),
         key,
@@ -1807,6 +1866,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::Resume { pause_id, request_id }) => core.queue_command(&speaker, placer::Job::Resume { speaker: speaker.clone(), pause_id, request_id }),
+                Ok(ClientMsg::PauseChoice { pause_id, later }) => core.pause_choice(&speaker, &pause_id, later),
                 Ok(ClientMsg::RetryPlacement { id }) => {
                     if core.snapshot().thoughts.iter().any(|thought| thought.id == id && thought.speaker == speaker && !thought.placed) {
                         let _ = core.placer_queue.send(placer::Job::Place(id));
@@ -2087,6 +2148,7 @@ impl Core {
             new_threads: Default::default(),
             hosts: Default::default(),
             came_back: Default::default(),
+        returned_anchor: Default::default(),
             placing: Default::default(),
             room: None,
             key: None,
@@ -2169,6 +2231,119 @@ mod tests {
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
         let _ = std::fs::remove_file(&path);
+    }
+
+    fn return_fixture(keyed: bool) -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {
+        let (core, queue, path) = keyless(World::default());
+        let mut core = Arc::try_unwrap(core).ok().unwrap();
+        if keyed { core.key=Some("test".into()); }
+        let core=Arc::new(core);
+        core.commit(["A","B","C","D"].into_iter().map(|id|Change::ThreadAdded {thread:thread(id,1,"")}).collect());
+        (core,queue,path)
+    }
+
+    fn return_turn(core: &Core, id: &str, topic: &str, complete: bool, at: u64) {
+        let mut thought=said(id,"you",topic,at);thought.text=format!("Original {id} draft before");thought.point=thought.text.clone();thought.complete=complete;thought.placed=false;thought.unclear="draft".into();
+        core.commit(vec![Change::ThoughtAdded {thought:thought.clone()}]);
+        let world=core.snapshot();
+        let mut changes=vec![Change::ThoughtPlaced {thought_id:id.into(),thread_id:topic.into(),point:thought.text,unclear:"draft".into(),guess:String::new(),heard:String::new(),fixed:String::new(),complete,place_ms:10,decided:false},
+            Change::ThreadTouched {thread_id:topic.into(),last_point:id.into(),at_ms:at}];
+        if let Some(old)=world.active_by.get("you").filter(|old|old.as_str()!=topic) {
+            if world.thoughts.iter().rev().find(|t|t.placed&&t.speaker=="you"&&t.thread_id.as_ref()==Some(old)).is_some_and(|t|!t.complete) {
+                changes.push(Change::ThreadStatus {thread_id:old.clone(),status:ThreadStatus::Dropped,speaker:"you".into()});
+            }
+        }
+        changes.push(Change::ActiveChanged {thread_id:topic.into(),speaker:"you".into()});
+        core.commit(changes);
+    }
+
+    fn return_result(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoing>) -> crate::world::ReturnAnchor {
+        std::iter::from_fn(||updates.try_recv().ok()).filter_map(|out|match out.message {ServerMsg::Returned {anchor:Some(anchor),..}=>Some(anchor),_=>None}).last().expect("exact returned source")
+    }
+
+    #[test]
+    fn return_order_uses_exact_sources_and_named_finish_can_differ() {
+        for b_unfinished in [false,true] {
+            let (core,_queue,path)=return_fixture(false);let now=super::now_ms()-1000;
+            return_turn(&core,"a","A",false,now);return_turn(&core,"b","B",!b_unfinished,now+1);return_turn(&core,"c","C",true,now+2);
+            let mut updates=core.updates.subscribe();core.go_back("you");let target=return_result(&mut updates);
+            assert_eq!(target.thought_id,if b_unfinished {"b"} else {"a"});
+            assert_eq!(target.excerpt,format!("Original {} draft before",target.thought_id));
+            core.go_back("you");assert_eq!(return_result(&mut updates).thought_id,target.thought_id,"repeated return cannot bounce");
+            core.resume_pause("you","pause-a-1",Some("named".into()));assert_eq!(return_result(&mut updates).thought_id,"a");
+            assert!(core.snapshot().pauses.iter().all(|pause|!pause.resolved),"navigation does not complete a departure");
+            core.go_back("Sam");assert!(std::iter::from_fn(||updates.try_recv().ok()).all(|out|!matches!(out.message,ServerMsg::Returned {anchor:Some(_),..})),"never another speaker's source");
+            return_turn(&core,"d","D",false,now+3);core.go_back("you");assert_eq!(return_result(&mut updates).thought_id,"d","current trailing-off thought wins");
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn return_order_waits_for_first_try_but_not_retries() {
+        let (core,mut queue,path)=return_fixture(true);let now=super::now_ms()-1000;
+        return_turn(&core,"a","A",false,now);return_turn(&core,"b","B",false,now+1);
+        let pending=core.keep("you","An earlier placement is still pending");
+        core.queue_command("you",Job::Resume {speaker:"you".into(),pause_id:"pause-a-1".into(),request_id:"first".into()});
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str),Some("B"));
+        assert!(matches!(queue.try_recv(),Ok(Job::Place(id)) if id==pending));
+        assert!(matches!(queue.try_recv(),Ok(Job::Resume {..})),"named return is ordered behind the earlier first try");
+        core.placing.retry(&core,&pending,"you",std::time::Duration::from_secs(60));
+        let mut updates=core.updates.subscribe();core.queue_command("you",Job::Resume {speaker:"you".into(),pause_id:"pause-a-1".into(),request_id:"retry".into()});
+        assert_eq!(return_result(&mut updates).thought_id,"a","a failed first attempt cannot delay return for later retries");
+        assert!(queue.try_recv().is_err());
+        let count=core.snapshot().pauses.len();
+        core.commit(vec![Change::ThoughtPlaced {thought_id:pending.clone(),thread_id:"C".into(),point:"Late placement".into(),unclear:String::new(),guess:String::new(),heard:String::new(),fixed:String::new(),complete:true,place_ms:10,decided:false}]);
+        assert_eq!(core.snapshot().pauses.len(),count,"a late placement after return cannot invent another departure");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn return_sources_survive_suppression_edits_moves_deletion_and_restart() {
+        let (core,_queue,path)=return_fixture(false);let now=super::now_ms()-1000;
+        return_turn(&core,"a","A",false,now);return_turn(&core,"b","B",true,now+1);
+        let original=core.snapshot().pauses[0].clone();
+        core.pause_choice("you",&original.id,true);assert_eq!(core.snapshot().pauses[0].later_count,1);assert!(!core.snapshot().pauses[0].hidden);
+        core.pause_choice("you",&original.id,true);assert!(core.snapshot().pauses[0].hidden);
+        core.commit(vec![Change::ThoughtCorrected {thought_id:"a".into(),accept:true,with:"report".into()},Change::ThoughtMoved {thought_id:"a".into(),thread_id:"D".into(),from:"A".into(),undo:false}]);
+        let mut updates=core.updates.subscribe();core.resume_pause("you",&original.id,Some("edit".into()));let changed=return_result(&mut updates);
+        assert_eq!(changed.excerpt,original.excerpt);assert_eq!(changed.current_text.as_deref(),Some("Original a report before"));assert_eq!(changed.thread_id.as_deref(),Some("D"));
+        core.commit(vec![Change::ThoughtSkipped {thought_id:"a".into()}]);core.resume_pause("you",&original.id,Some("deleted".into()));let deleted=return_result(&mut updates);
+        assert_eq!(deleted.current_text,None);assert_eq!(deleted.thread_id,None);assert_eq!(deleted.excerpt,original.excerpt);
+        let (_,restored)=crate::Journal::open(&path).unwrap();assert_eq!(restored.pauses[0].excerpt,original.excerpt);assert!(restored.pauses[0].hidden);
+        assert!(restored.return_anchor(&restored.pauses[0]).current_text.is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn return_departure_revisions_keep_distinct_original_excerpts() {
+        let (core,_queue,path)=return_fixture(false);let now=super::now_ms()-1000;
+        return_turn(&core,"a","A",false,now);return_turn(&core,"b","B",true,now+1);
+        core.resume_pause("you","pause-a-1",None);
+        core.commit(vec![Change::ThoughtCorrected {thought_id:"a".into(),accept:true,with:"report".into()}]);
+        return_turn(&core,"c","C",true,now+2);
+        let pauses=core.snapshot().pauses.clone();
+        assert_eq!(pauses.len(),2);
+        assert_ne!(pauses[0].id,pauses[1].id);
+        assert_eq!(pauses[0].excerpt,"Original a draft before");
+        assert_eq!(pauses[1].excerpt,"Original a report before");
+        assert_eq!(pauses[1].revision,2);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn return_source_requires_a_committed_departure_and_resolves_only_on_continuation() {
+        let (core,_queue,path)=return_fixture(false);let now=super::now_ms()-1000;
+        return_turn(&core,"a","A",false,now);
+        core.focus("you","B");assert!(core.snapshot().pauses.is_empty(),"a manual look isn't a tangent");
+        let pending=core.keep("you","Words not yet placed");assert!(core.snapshot().pauses.is_empty(),"pending words aren't a committed departure");
+        return_turn(&core,"b","B",true,now+1);assert_eq!(core.snapshot().pauses.len(),1);
+        let mut continuation=said("joined","you","A",now+2);continuation.placed=false;
+        core.commit(vec![Change::ThoughtAdded {thought:continuation}]);
+        core.commit(vec![Change::ThoughtPlaced {thought_id:"joined".into(),thread_id:"A".into(),point:"Completed source".into(),unclear:String::new(),guess:String::new(),heard:String::new(),fixed:String::new(),complete:true,place_ms:10,decided:false},
+            Change::ThoughtNoted {thought_id:"joined".into(),note:crate::chunks::Note {continues:"a".into(),..Default::default()}}]);
+        assert!(core.snapshot().pauses[0].resolved);
+        assert!(!core.snapshot().thoughts.iter().find(|t|t.id==pending).unwrap().placed);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -2602,7 +2777,10 @@ mod tests {
             Job::Back(_) => "back",
             Job::Next(_) => "next",
             Job::Previous(_) => "previous",
+                    Job::Resume { .. } => "resume",
+
             Job::Place(_) => "place",
+
         };
         let previous = Some("previous");
         for (text, first, words, then) in [
@@ -3106,9 +3284,12 @@ mod tests {
             while let Ok(job) = queue.try_recv() {
                 out.push(match job {
                     Job::Place(_) => "place",
+
                     Job::Back(_) => "back",
                     Job::Next(_) => "next",
                     Job::Previous(_) => "previous",
+                    Job::Resume { .. } => "resume",
+
                 });
             }
             out
@@ -3934,9 +4115,12 @@ mod tests {
         let (core, mut queue, path) = test_core(None);
         let mut jobs = || std::iter::from_fn(|| queue.try_recv().ok()).map(|job| match job {
             Job::Place(_) => "place",
+
             Job::Back(_) => "back",
             Job::Next(_) => "next",
             Job::Previous(_) => "previous",
+                    Job::Resume { .. } => "resume",
+
         }).collect::<Vec<_>>();
         let unplaced = |id: &str, speaker: &str, at_ms| Thought { placed: false, thread_id: None, ..said(id, speaker, "", at_ms) };
         let now = super::now_ms();
@@ -4020,7 +4204,10 @@ mod tests {
         let jobs: Vec<&str> = std::iter::from_fn(|| queue.try_recv().ok())
             .map(|job| match job {
                 Job::Place(_) => "place",
+
                 Job::Previous(_) => "previous",
+                    Job::Resume { .. } => "resume",
+
                 _ => "other",
             })
             .collect();
@@ -4132,6 +4319,7 @@ mod tests {
                 Job::Back(speaker) => core.go_back(&speaker),
                 Job::Next(speaker) => core.go_next(&speaker),
                 Job::Previous(speaker) => core.go_previous(&speaker),
+                Job::Resume {speaker,pause_id,request_id} => core.resume_pause(&speaker,&pause_id,Some(request_id)),
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;

@@ -1,4 +1,4 @@
-import type { Thread, Thought } from "./core";
+import type { Thread, Thought, World } from "./core";
 import { readingTime } from "./notice-rules";
 import { useEffect, useMemo, useState, type SetStateAction } from "react";
 
@@ -59,7 +59,16 @@ export function useHidden(thoughts: Thought[], me: string): [Hidden, (change: Se
 }
 
 /** A thread as you left it: new words there make it a new one to offer. */
-export const dropKey = (t: Thread) => `${t.id}:${t.touched_ms}`;
+export const dropKey = (t: Thread) => t.return_source?.id ?? `${t.id}:${t.touched_ms}`;
+
+/** Only a recorded departure supplies an interruption-time identity. */
+export function pauseOffer(world: World, me: string, now: number, expired: ReadonlySet<string>): Thread | undefined {
+  const pause = [...(world.pauses ?? [])].reverse().find(p=>p.speaker===me&&!p.resolved&&!p.hidden&&p.offer_after_ms<=now&&!expired.has(p.id));
+  if(!pause) return;
+  const thread = world.threads.find(t=>t.id===pause.thread_id);
+  return {...thread, id:thread?.id??pause.thread_id, title:thread?.title??"Earlier topic", parent_id:thread?.parent_id??null, status:"dropped", dropped_by:me,
+    last_point:thread?.last_point??"", touched_ms:pause.at_ms, tags:thread?.tags??[], picture:thread?.picture??null, return_source:pause} as Thread;
+}
 
 /** What the card offers, or would at the next pause: the newest thread you left that isn't hidden. Only yours: in a
  *  room, the other person's are theirs to pick up. */
@@ -94,6 +103,7 @@ export function dismiss(hidden: Hidden, keys: string[]): Hidden {
 /** The words the card quotes: your last there, by when you said them, as the core's Thought::said_at: imported points
  *  land last in the list with their old times, and a time ahead of the clock (a sample map) counts as the earliest. */
 export function lastWords(thoughts: Thought[], thread: Thread, me: string, now: number): string {
+  if(thread.return_source) return thread.return_source.excerpt;
   const saidAt = (t: Thought) => (t.at_ms > now ? 0 : t.at_ms);
   return thoughts.filter((t) => t.placed && t.thread_id === thread.id && t.speaker === me)
     .reduce<Thought | undefined>((last, t) => (!last || saidAt(t) >= saidAt(last) ? t : last), undefined)?.text ?? "";

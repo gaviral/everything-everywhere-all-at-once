@@ -336,9 +336,11 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     return Object.keys(moving).length ? shown.map((t) => (moving[t.id] && t.topic !== moving[t.id] ? { ...t, topic: moving[t.id] } : t)) : shown;
   }, [map.threads, notes.anchored, moving]);
   const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
+  const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
+  const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
   const layout = useMemo(() => (conversation ? conversationLayout : place)({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
-  [conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
+  [pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -610,6 +612,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       camera.aim(item.box, { ring: key, zoom: 1, instant: true });
       requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"] [data-spine-target]`)?.focus({ preventScroll: true }));
     },
+    resume: (id,keyboard) => { actions.resume?.(id,keyboard); },
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
     pick: (item) => { setPicked(item.key); if (item.thread) actions.select(item.thread); },
     words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
@@ -666,7 +669,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
   const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
   const datas = useMemo(() => new Map(layout.items.map((item): [string, ItemData] => [item.key, {
-    item, here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
+    item, pauses: pauses.filter(p=>item.thoughts?.includes(p.thought_id)), here: item.key === hereKey, pulse: pulses[item.key] ?? 0, fresh: fresh.has(item.key), picked: picked === item.key,
     // A topic's header is where things are, never dimmed.
     dim: item.kind === "group" ? false : pointing ? item.thread !== pointing.thread : !!focusTopic && item.topic !== focusTopic,
     hot: item.kind === "group" && !!dropTo && item.group === dropTo,
@@ -674,7 +677,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     arriving: arriving && item.thoughts?.includes(arriving) ? arriving
       : item.kind === "card" && !item.open && item.thread === map.active && slots.length ? slots[0] : null,
     cut: camera.cut === item.key, selecting: selecting?.key === item.key,
-  }])), [layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
+  }])), [pauses, layout, hereKey, pulses, fresh, picked, focusTopic, pointing, arriving, camera.cut, selecting, map.active, slotKey, dropTo]);
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).

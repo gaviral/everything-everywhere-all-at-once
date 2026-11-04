@@ -28,7 +28,8 @@ export function conversationLayout(input: LayoutInput): Layout {
     const lines = wrap(text, "point", G.textW, Infinity);
     const memberships = [...new Set(parts.filter((part) => part.placed).map((part) => part.thread_id))]
       .flatMap((id) => { const thread = id && threadById.get(id); return thread ? [{ thread: thread.id, title: thread.title }] : []; });
-    const h = C.speaker + lines.length * G.pointLine + C.status + C.links;
+    const pauseHeight = parts.reduce((height, part) => height + (input.paused?.get(part.id) ?? 0), 0) * 44;
+    const h = C.speaker + lines.length * G.pointLine + C.status + C.links + pauseHeight;
     let offset = 0;
     const fixes = parts.flatMap((thought) => {
       const at = thought.unclear ? thought.text.trim().toLocaleLowerCase().indexOf(thought.unclear.toLocaleLowerCase()) : -1;

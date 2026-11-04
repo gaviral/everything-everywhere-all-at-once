@@ -36,6 +36,7 @@ export const DELIVERY_DEADLINE_MS = 15_000;
 export type ThreadStatus = "open" | "dropped";
 
 export interface Thread {
+  return_source?: Pause;
   id: string;
   title: string;
   parent_id: string | null;
@@ -161,6 +162,7 @@ export interface ImportStatus {
 }
 
 export interface World extends AppsWorld {
+  pauses?: Pause[];
   recaps: RecapData[];
   threads: Thread[];
   thoughts: Thought[];
@@ -189,6 +191,10 @@ export interface World extends AppsWorld {
 
 type Change =
   | { type: "caption_added"; caption: import("./talk/call-core").Caption }
+  | {type:"paused";pause:Pause}
+  | {type:"pause_resolved";id:string;by_thought:string}
+  | {type:"pause_choice";id:string;later_count:number;offer_after_ms:number;hidden:boolean}
+  | {type:"return_focused";speaker:string;pause_id:string}
   | { type: "recap_saved"; recap: RecapData }
   | AppChange
   | TidyChange
@@ -244,9 +250,14 @@ type Change =
   // An import's record of the messages it read; only the core uses it.
   | { type: "messages_read"; at_ms: number[] };
 
+export type Pause = { id: string; thought_id: string; speaker: string; thread_id: string; revision: number; excerpt: string; at_ms: number; resolved: boolean; later_count: number; offer_after_ms: number; hidden: boolean };
+export type ReturnAnchor = { pause: Pause | null; thought_id: string; thread_id: string | null; excerpt: string; current_text: string | null };
+export type ReturnResult = { request_id: string | null; anchor: ReturnAnchor | null; message: string; revision: number };
+
 export type Capture = { id: string; text: string; thought_ids: string[]; saved: boolean; local: boolean; replay: boolean; mapped?: boolean; receivedOnly?: boolean; at: number };
 
 type ServerMsg =
+  | { type: "returned"; request_id: string | null; anchor: ReturnAnchor | null; message: string }
   | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
   | { type: "map_identity"; id: string }
   | { type: "heartbeat"; id: string }
@@ -443,6 +454,10 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     case "caption_added":
       return world.captions?.some((old) => old.id === c.caption.id && old.by === c.caption.by) ? world
         : { ...world, captions: [...(world.captions ?? []), c.caption] };
+    case "paused": return { ...world, pauses: [...(world.pauses ?? []).filter(p=>p.id!==c.pause.id), c.pause] };
+    case "pause_resolved": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,resolved:true}:p) };
+    case "pause_choice": return { ...world, pauses: (world.pauses ?? []).map(p=>p.id===c.id ? {...p,later_count:c.later_count,offer_after_ms:c.offer_after_ms,hidden:c.hidden}:p) };
+    case "return_focused": return world;
     case "recap_saved":
       return { ...world, recaps: [...world.recaps.filter((r) => r.period !== c.recap.period), c.recap] };
     case "ai_joined":
@@ -773,6 +788,8 @@ export function useCore(speaker?: string) {
   // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
   const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
+  const [returnResult, setReturnResult] = useState<ReturnResult | null>(null);
+  const exactFound = useRef<{thread: string; thought: string} | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
   const [unfoldAsk, setUnfoldAsk] = useState<UnfoldAsk | null>(null);
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
@@ -896,12 +913,20 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "returned": {
+            setReturnResult(was => ({ ...msg, revision: (was?.revision ?? 0) + 1 }));
+            if (msg.anchor?.thread_id && msg.anchor.current_text !== null) {
+              exactFound.current = {thread: msg.anchor.thread_id, thought: msg.anchor.thought_id};
+              setFound(was => ({thread_id: msg.anchor!.thread_id!, thought_id: msg.anchor!.thought_id, revision: (was?.revision ?? 0)+1, preserveFocus: true}));
+            }
+            break;
+          }
           case "heartbeat":
             if (msg.id === heartbeatId) lastReply = Date.now();
             break;
           case "map_identity": {
             if (!msg.id) break;
-            if (mapId.current !== msg.id) setCaptures([]);
+            if (mapId.current !== msg.id) { setCaptures([]); setReturnResult(null); exactFound.current=null; }
             if (mapId.current !== msg.id) setRecovery(state => ({ ...state, entries: state.entries.filter(entry => entry.kind !== "speech") }));
             mapId.current = msg.id;
             identityReady.current = true;
@@ -1059,7 +1084,8 @@ export function useCore(speaker?: string) {
             setPlacing({ now: msg.now, retryAt: Object.fromEntries(msg.retries.map((r) => [r.thought_id, Date.now() + r.in_ms])) });
             break;
           case "found":
-            setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, revision: (previous?.revision ?? 0) + 1 }));
+            if (exactFound.current?.thread === msg.thread_id && exactFound.current?.thought === msg.thought_id) { exactFound.current = null; break; }
+            setFound((previous) => ({ thread_id: msg.thread_id, thought_id: msg.thought_id, preserveFocus: /^(Back to|You're on)/.test(msg.message), revision: (previous?.revision ?? 0) + 1 }));
             sayNotice(msg.message);
             setUndoId(null);
             answered();
@@ -1213,6 +1239,13 @@ export function useCore(speaker?: string) {
   };
 
   return {
+    returnResult,
+    clearReturn: () => setReturnResult(null),
+    resumePause: (pause_id: string) => {
+      const request_id = thoughtId();
+      return send(JSON.stringify({type:"resume",pause_id,request_id})) ? request_id : null;
+    },
+    pauseChoice: (pause_id: string, later: boolean) => send(JSON.stringify({type:"pause_choice",pause_id,later})),
     captures,
     retryCapture: (id: string) => {
       const capture = captures.find(capture => capture.id === id);

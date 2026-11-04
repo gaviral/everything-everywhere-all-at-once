@@ -6,13 +6,13 @@
 import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Anchor } from "../annotate-core";
-import type { Action, Note, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
+import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
 /** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { Action, Anchor, MiniApp, Note, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -188,6 +188,7 @@ export interface MapSnapshot {
   /** Whether the core is there: while it isn't, actions that change the map say so instead. */
   readonly connected: boolean;
   readonly placingUnavailable?: boolean;
+  readonly pauses?: readonly Pause[];
 }
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
@@ -197,6 +198,7 @@ export interface BrickActions {
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;
+  resume?(pauseId: string, keyboard?: boolean): boolean;
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
   openThread(threadId: string): void;

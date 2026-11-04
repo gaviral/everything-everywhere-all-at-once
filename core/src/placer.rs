@@ -136,6 +136,7 @@ const RECENT: usize = 20;
 pub enum Job {
     Place(String),
     Back(String),
+    Resume { speaker: String, pause_id: String, request_id: String },
     Next(String),
     Previous(String),
 }
@@ -376,6 +377,7 @@ impl Job {
         match self {
             Job::Place(_) => "",
             Job::Back(s) | Job::Next(s) | Job::Previous(s) => s,
+            Job::Resume { speaker, .. } => speaker,
         }
     }
 }
@@ -2069,6 +2071,28 @@ mod tests {
         assert_eq!(world.active_for("Ana"), last.thread_id.as_ref());
         eprintln!("burst of 12 (30 ms apart, 100 ms answers, 400 ms first try): from the first said, the 10 fine in {:?}, all 12 in {:?}", others_in + said_in, others_in + said_in + all_in);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn return_queued_named_target_is_released_after_first_failure() {
+        let path=std::env::temp_dir().join(format!("e2a2o-return-order-{}.jsonl",uuid::Uuid::new_v4()));
+        let (journal,_)=crate::world::Journal::open(&path).unwrap();
+        let mut source=thought("a","Ana",Some("A"),false);source.text="Original unfinished words".into();
+        let pending=thought("pending","Ana",None,true);
+        let pause=crate::world::Pause {id:"pause-a-1".into(),thought_id:"a".into(),speaker:"Ana".into(),thread_id:"A".into(),revision:1,excerpt:source.text.clone(),at_ms:1,resolved:false,later_count:0,offer_after_ms:0,hidden:false};
+        let world=World {threads:vec![thread("A"),thread("B")],thoughts:vec![source,pending],pauses:vec![pause],active_by:std::collections::HashMap::from([("Ana".into(),"B".into())]),..World::default()};
+        let core=Core::test(journal,world);
+        let mut line=std::collections::VecDeque::from([super::Job::Place("pending".into()),super::Job::Resume {speaker:"Ana".into(),pause_id:"pause-a-1".into(),request_id:"queued".into()}]);
+        let mut tries=std::collections::HashMap::new();
+        super::act_on_commands(&core,&mut line,&tries);
+        assert_eq!(line.len(),2,"first attempt keeps the queued return behind its words");
+        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str),Some("B"));
+        tries.insert("pending".into(),1);
+        super::act_on_commands(&core,&mut line,&tries);
+        assert_eq!(line.len(),1,"only the retry remains queued");
+        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str),Some("A"));
+        assert!(!core.snapshot().pauses[0].resolved,"navigation is not continuation");
+        std::fs::remove_file(path).unwrap();
     }
 
     /// A command waits for the speaker's own words still on their first try, and acts as soon as they land; it waits
