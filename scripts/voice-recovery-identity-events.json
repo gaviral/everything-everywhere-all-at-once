@@ -1,0 +1,378 @@
+{
+  "provenance": "Synthetic hypotheses from the brief's observable order: partial words, saved/placed final, stop, replay. Live upstream events/IDs were not captured or available here.",
+  "cases": [
+    {
+      "name": "anonymous partial, numbered completion",
+      "thoughts": [
+        "The amber lantern belongs beside the blue notebook."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "transcript",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "turnId": 12,
+          "audioProcessedMs": 6400
+        }
+      ]
+    },
+    {
+      "name": "changed string ID with audio boundary",
+      "thoughts": [
+        "The amber lantern belongs beside the blue notebook."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechStart",
+          "turnId": "draft-a",
+          "audioProcessedMs": 5000
+        },
+        {
+          "type": "transcript",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "turnId": "draft-a",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "turnId": "final-b",
+          "audioProcessedMs": 6400
+        },
+        {
+          "type": "transcript",
+          "transcript": "The amber lantern belongs",
+          "audioProcessedMs": 5500
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "audioProcessedMs": 6400
+        }
+      ]
+    },
+    {
+      "name": "all upstream IDs omitted",
+      "thoughts": [
+        "The amber lantern belongs beside the blue notebook."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechStart",
+          "audioProcessedMs": 5000
+        },
+        {
+          "type": "transcript",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "audioProcessedMs": 6400
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "The amber lantern belongs beside the blue notebook.",
+          "audioProcessedMs": 6400
+        },
+        {
+          "type": "transcript",
+          "transcript": "The amber lantern belongs",
+          "audioProcessedMs": 5500
+        }
+      ]
+    },
+    {
+      "name": "interrupted exact words, reordered partial",
+      "thoughts": [],
+      "unfinished": [
+        "  Amber—don't lose THIS…  "
+      ],
+      "events": [
+        {
+          "type": "speechStart",
+          "turnId": 1,
+          "audioProcessedMs": 5000
+        },
+        {
+          "type": "transcript",
+          "transcript": "  Amber—don't lose THIS…  ",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber",
+          "turnId": 1,
+          "audioProcessedMs": 5200
+        },
+        {
+          "type": "speechEnd",
+          "turnId": 1,
+          "audioProcessedMs": 6000
+        }
+      ]
+    },
+    {
+      "name": "intentional identical utterances with missing IDs",
+      "thoughts": [
+        "Amber lantern.",
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechStart",
+          "audioProcessedMs": 5000
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 6000
+        },
+        {
+          "type": "speechStart",
+          "audioProcessedMs": 7000
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 7600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 8000
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 6000
+        }
+      ]
+    },
+    {
+      "name": "late identified completion with next turn interrupted",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [
+        "Keep exact second words…"
+      ],
+      "events": [
+        {
+          "type": "speechStart",
+          "turnId": 1,
+          "audioProcessedMs": 5000
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "speechStart",
+          "turnId": 2,
+          "audioProcessedMs": 7000
+        },
+        {
+          "type": "transcript",
+          "transcript": "Keep exact second words…",
+          "audioProcessedMs": 7600
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": 1,
+          "audioProcessedMs": 6000
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber",
+          "turnId": 1,
+          "audioProcessedMs": 5400
+        }
+      ]
+    },
+    {
+      "name": "changed ID without timing is ambiguous: retain draft",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [
+        "Exact partial must survive…"
+      ],
+      "events": [
+        {
+          "type": "transcript",
+          "transcript": "Exact partial must survive…",
+          "turnId": "a"
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": "b"
+        }
+      ]
+    },
+    {
+      "name": "anonymous final adopts sole anonymous pending source without timing",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "transcript",
+          "transcript": "Amber"
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": "b"
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": "b"
+        }
+      ]
+    },
+    {
+      "name": "later unbounded words cannot be discarded as a stale partial",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [
+        "A new unfinished phrase"
+      ],
+      "events": [
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": 1,
+          "audioProcessedMs": 6000
+        },
+        {
+          "type": "transcript",
+          "transcript": "A new unfinished phrase",
+          "turnId": 1,
+          "audioProcessedMs": 7000
+        }
+      ]
+    },
+    {
+      "name": "reused ID at later audio survives as separate utterance",
+      "thoughts": [
+        "Amber lantern.",
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": 1,
+          "audioProcessedMs": 6000
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": 1,
+          "audioProcessedMs": 8000
+        }
+      ]
+    },
+    {
+      "name": "no IDs or timing: distinct finals remain distinct conservatively",
+      "thoughts": [
+        "Amber lantern.",
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern."
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern."
+        }
+      ]
+    },
+    {
+      "name": "anonymous reordered partials without a start preserve the latest words",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "transcript",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 5600
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber",
+          "audioProcessedMs": 5200
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "audioProcessedMs": 6400
+        }
+      ]
+    },
+    {
+      "name": "repeated identified boundaries and finals without timestamps",
+      "thoughts": [
+        "Amber lantern."
+      ],
+      "unfinished": [],
+      "events": [
+        {
+          "type": "speechStart",
+          "turnId": "one"
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber",
+          "turnId": "one"
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": "one"
+        },
+        {
+          "type": "speechStart",
+          "turnId": "one"
+        },
+        {
+          "type": "speechComplete",
+          "transcript": "Amber lantern.",
+          "turnId": "one"
+        },
+        {
+          "type": "transcript",
+          "transcript": "Amber",
+          "turnId": "one"
+        }
+      ]
+    }
+  ]
+}

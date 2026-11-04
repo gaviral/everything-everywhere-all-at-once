@@ -70,6 +70,8 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    #[cfg(test)]
+    asr_test_url: Option<String>,
     typed_receipts: Mutex<()>,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
@@ -1276,6 +1278,8 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        #[cfg(test)]
+        asr_test_url: None,
         typed_receipts: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
@@ -2198,6 +2202,7 @@ fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::ato
 impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
+            asr_test_url: None,
             typed_receipts: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
