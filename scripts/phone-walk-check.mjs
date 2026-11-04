@@ -157,13 +157,13 @@ try {
       await page("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
       await check(`innerWidth === ${w} && !!document.querySelector('.spine-corner-row') === ${w === 390}`, "responsive map controls rendered");
       await check(visible, `${w}×${h}: topics recentered`);
-      await check(`[...document.querySelectorAll('.spine-corner button')].some(b => b.textContent.startsWith('See all'))`, "See all remains available");
-      await tap('.spine-corner button[title="See everything (0)"]'); // See all holds the overview.
+      await check(`[...document.querySelectorAll('.spine-corner button')].some(b => b.textContent.startsWith('Fit map'))`, "Fit map remains available");
+      await tap('.spine-corner [data-camera-fit]'); // Fit map holds the overview.
     }
     await page("Input.dispatchMouseEvent", { type: "mouseWheel", x: 180, y: 400, deltaX: 10000, deltaY: 0 });
     await check(`!(${visible})`, "hand can pan away from all topics");
-    await tap('.spine-corner button[title="See everything (0)"]');
-    await check(visible, "See all brings the lost map back");
+    await tap('.spine-corner [data-camera-fit]');
+    await check(visible, "Fit map brings the lost map back");
     await shot("resized-recovered");
 
     // 4: A fifth thought lands while a named group and its heading are on a phone.

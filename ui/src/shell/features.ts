@@ -7,10 +7,14 @@ import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 import { speechAvailable, watchSpeechAvailability } from "../speech-voice";
 
-export type BuiltIn = { id: "learned-action-labels" | "loose-topics" | "explicit-agreement" | "saved-answers" | "discussion-status" | "plugins" | "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "learned-action-labels" | "quiet-solo-attribution" | "placement-details" | "stable-topic-titles" | "phone-topic-overview" | "loose-topics" | "explicit-agreement" | "saved-answers" | "discussion-status" | "plugins" | "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
   { id: "learned-action-labels", kind: "panel", defaultOn: true },
+  { id: "quiet-solo-attribution", kind: "panel", defaultOn: true },
+  { id: "placement-details", kind: "panel", defaultOn: true },
+  { id: "stable-topic-titles", kind: "panel", defaultOn: true },
+  { id: "phone-topic-overview", kind: "panel", defaultOn: true },
   { id: "plugins", kind: "panel", defaultOn: false },
   { id: "discussion-status", kind: "panel", defaultOn: false },
   { id: "reply-format", kind: "panel", defaultOn: false },

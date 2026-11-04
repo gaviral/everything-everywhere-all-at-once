@@ -37,6 +37,9 @@ export const Shelf = forwardRef<HTMLDivElement, Props>(function Shelf({ entries,
   const [lifted, setLifted] = useState<{ entry: Shelved; x: number; y: number; moved: boolean } | null>(null);
   const start = useRef({ x: 0, y: 0 });
   const self = useRef<HTMLDivElement | null>(null);
+  const head = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); head.current?.focus({ preventScroll: true }); };
+  useEffect(() => { if (open && !entries.length) self.current?.querySelector<HTMLButtonElement>(".spine-shelf-close")?.focus({ preventScroll: true }); }, [open, entries.length]);
 
   // Lifting one off: it follows the pointer; let go off the shelf, it's placed there.
   const liftedNow = useRef(lifted);
@@ -71,11 +74,11 @@ export const Shelf = forwardRef<HTMLDivElement, Props>(function Shelf({ entries,
     else if (ref) ref.current = element;
   };
   const empty = !entries.length;
-  const listed = open && !empty && !carrying;
+  const listed = open && !carrying;
   return <>
     <div ref={setRef} data-slot="shelf" className={cls("spine-shelf", carrying && "spine-shelf-ready", hot && "spine-shelf-hot", listed && "spine-shelf-open")}
-      role="region" aria-label="Shelf: things kept at hand">
-      {listed && <ul className="spine-shelf-list">
+      role="region" aria-label="Shelf: things kept at hand" onKeyDown={event => { if (event.key === "Escape" && open) { event.stopPropagation(); close(); } }}>
+      {listed && !empty && <ul className="spine-shelf-list">
         {entries.map((entry) => <li key={entry.id} className={cls("spine-shelf-item", lifted?.entry.id === entry.id && lifted.moved && "spine-shelf-lifted")} style={roomStyle(entry.room)}
           onPointerDown={(event) => {
             if (event.button !== 0 || (event.target as Element).closest("button")) return;
@@ -87,10 +90,15 @@ export const Shelf = forwardRef<HTMLDivElement, Props>(function Shelf({ entries,
           <button type="button" className="spine-shelf-back" aria-label={`Put “${entry.text}” back in its place`} title="Back to its place" onClick={() => putBack(entry.id)}>↩</button>
         </li>)}
       </ul>}
+      {listed && empty && <div className="spine-shelf-empty" role="region" aria-label="Empty Shelf">
+        <strong>Keep things at hand</strong>
+        <p>Drag a topic or thought here, or use “Keep on the shelf”.</p>
+        <button type="button" className="spine-shelf-close" onClick={close}>Close</button>
+      </div>}
       {carrying ? <p className="spine-shelf-tab" title="Drag anything here to keep it at hand">
         <Tray />{hot ? "Let go to keep it here" : "Drop here to keep it at hand"}
-      </p> : <button type="button" className="spine-shelf-head" aria-expanded={empty ? undefined : open}
-        title={empty ? "Drag anything here to keep it at hand" : open ? "Shut the shelf (S)" : "What's on the shelf (S)"} onClick={() => { if (!empty) setOpen(!open); }}>
+      </p> : <button ref={head} type="button" className="spine-shelf-head" aria-expanded={open} aria-keyshortcuts="S"
+        title={open ? "Close Shelf (S)" : "Keep things at hand: open Shelf (S)"} onClick={() => setOpen(!open)}>
         <Tray /><span>Shelf</span>{!empty && <span className="spine-shelf-count">{entries.length}</span>}{!narrow && !empty && <kbd className="spine-key">S</kbd>}
       </button>}
     </div>

@@ -1118,10 +1118,16 @@ try {
         const point = await nodeAt(`.react-flow__node[data-id="p:${id}"] .spine-point`);
         if (!slot || !point || point.x !== slot.x || Math.abs(point.y - slot.y) > 1) fail("spine", `the point didn't land in its slot (slot ${JSON.stringify(slot)}, point ${JSON.stringify(point)})`);
         // The landing names its model once its route says (the playground's comes 40 ms after the change, as the core's does).
-        const landingNote = `document.querySelector('.react-flow__node[data-id="p:${id}"] .spine-landing')?.textContent ?? ""`;
-        await until(`(${landingNote}) !== ""`, 2000);
-        const note = await evaluate(landingNote);
-        if (note !== "Muse Spark 1.3 put this here in 1.2 s") fail("spine", `the landing note says "${note}", not the model and how long placing took ("Muse Spark 1.3 put this here in 1.2 s")`);
+        const selector = `.react-flow__node[data-id="p:${id}"] .spine-landing`;
+        if (!await until(`!!document.querySelector(${JSON.stringify(selector)})`, 2000)) fail("spine", "landing confirmation never appears");
+        else {
+          const details = await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return {confirmation:e.querySelector('span').textContent,open:e.querySelector('details').open}})()`);
+          if (details.confirmation !== "Placed here" || details.open) fail("spine", "landing must confirm placement before optional details");
+          await evaluate(`document.querySelector(${JSON.stringify(selector + ' summary')}).click()`);
+          const detailText = await evaluate(`document.querySelector(${JSON.stringify(selector + ' details')}).open && document.querySelector(${JSON.stringify(selector + ' details p')}).textContent`);
+          if (detailText !== "Placement: 1.2 s · Model: Muse Spark 1.3") fail("spine", `placement Details say ${detailText}`);
+          await evaluate(`document.querySelector(${JSON.stringify(selector + ' summary')}).click()`);
+        }
       }
     }
     // A hand on the map holds the view; a landing then moves nothing, and out of view an edge chip says where.
@@ -1441,7 +1447,7 @@ try {
           lit: [...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join(),
           words: document.querySelectorAll(".spine-text").length, bars: document.querySelectorAll(".spine-point .spine-bars").length,
           heads: [...document.querySelectorAll(".spine-head .spine-title")].map((t) => t.textContent).sort().join(" | "),
-          labels: [...document.querySelectorAll(".spine-label")].filter((l) => l.checkVisibility()).map((l) => l.textContent).sort().join(" | "),
+          labels: [...document.querySelectorAll(".spine-head .spine-label")].filter((l) => l.checkVisibility()).map((l) => l.textContent).sort().join(" | "),
           labelMin: Math.min(...[...document.querySelectorAll(".spine-head .spine-label")].map((l) => parseFloat(getComputedStyle(l).fontSize))) * new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a,
           pictures: document.querySelector(".spine-frame").classList.contains("spine-stop-pictures"),
           cards: [...document.querySelectorAll(".spine-card")].map((c) => getComputedStyle(c).visibility).join(),
@@ -1463,20 +1469,20 @@ try {
       };
       const atWords = await level();
       const control = await evaluate(`({ stops: [...document.querySelectorAll(".spine-stop")].map((b) => b.textContent).join(), all: document.querySelector(".spine-camera-row .spine-pill")?.textContent })`);
-      if (control.stops !== "Words1,Titles2,Pictures3" || control.all !== "See all0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Words 1 · Titles 2 · Pictures 3 and See all 0`);
-      judge("it opens at Words", atWords, [[atWords.lit === "Words", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
+      if (control.stops !== "Read1,Topics2,Overview3" || control.all !== "Fit map0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Read 1 · Topics 2 · Overview 3 and Fit map 0`);
+      judge("it opens at Words", atWords, [[atWords.lit === "Read", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
         [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
-      const atTitles = await goTo("2", "Titles");
+      const atTitles = await goTo("2", "Topics");
       if (atTitles) judge("2 (Titles)", atTitles, [[atTitles.zoom < atWords.zoom, "the view didn't zoom out"], [!atTitles.words && atTitles.bars > 0, "words didn't turn to bars"],
         [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.labelMin >= 12.9, "Titles must keep names readable; See all fits the whole map"]]);
-      const atPictures = await goTo("3", "Pictures");
+      const atPictures = await goTo("3", "Overview");
       // Every thread shows there: a tangent as its own small picture where its card is (scripts/spine-all-threads-check.mjs holds where).
       if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [atPictures.tangents > 0 && atPictures.tangentPictures === atPictures.tangents, "a tangent has no picture"],
         [!atTitles || atPictures.tile > atTitles.tile * 1.5, "each topic's picture isn't bigger than at Titles"], [atPictures.inside, "the whole map isn't in view"]]);
-      const atBack = await goTo("1", "Words");
+      const atBack = await goTo("1", "Read");
       if (atBack) judge("1 (Words)", atBack, [[atBack.zoom >= atWords.zoom, "the view isn't back at reading size"], [atBack.words > 0 && !atBack.bars, "not every word shows"], [!atBack.labels && !atBack.pictures, "a far-out look stays on"]]);
       // Far out, with no stop asked for, the control says Titles: it tells where the view is.
-      const atAll = await goTo("0", "Titles");
+      const atAll = await goTo("0", "Topics");
       if (atAll) judge("0 (See all)", atAll, [[atAll.zoom < atWords.zoom, "the view didn't zoom out"], [atAll.inside, "the whole map isn't in view"], [!atAll.pictures, "it has the Pictures look"]]);
 
       // 3. In the app, where the stand-in core can send what the playground can't: notes as the core keeps them (a thread under the
@@ -1562,7 +1568,7 @@ try {
             // The same keys do work once the keyboard is the canvas's.
             await evaluate(`document.activeElement?.blur()`);
             await digit("2");
-            if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Titles"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Titles once the composer lets go of the keyboard");
+            if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Topics"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Topics once the composer lets go of the keyboard");
           }
         }
         // Legacy repeated words remain unresolved: never guess the first occurrence.
@@ -1625,7 +1631,8 @@ try {
 
     await key("0");
     await settle();
-    const from = await middle('.react-flow__node[data-id="t:T2"] .spine-title');
+    const titleSelector = await evaluate(`document.querySelector('.react-flow__node[data-id="t:T2"] .spine-landmark')?.checkVisibility() ? '.spine-landmark' : '.spine-title'`);
+    const from = await middle(`.react-flow__node[data-id="t:T2"] ${titleSelector}`);
     const to = await evaluate(`(() => { const r = document.querySelector('.react-flow__node[data-id="g:School and projects"]')?.getBoundingClientRect(); return r && { x: r.left + r.width / 2, y: r.bottom + 60 }; })()`);
     if (!from || !to) fail("spine", "no T2 head or School and projects header to drag between");
     else {

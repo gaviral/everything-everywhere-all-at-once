@@ -445,3 +445,39 @@
 
 /* Keep the host present when focus moves from its hover button into the top-layer disclosure. */
 .spine-tools:has(.spine-agreement-panel:popover-open) { display: flex; }
+
+/* Readable landmarks and explicit camera controls share the map's existing topic colors. */
+.spine-frame .spine-stable-title .spine-title { color: var(--ink); background: color-mix(in srgb, var(--spine-room, var(--line)) 8%, var(--card)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--spine-room, var(--line)) 8%, var(--card)); }
+.spine-stable-title .spine-label { color: var(--ink); background: color-mix(in srgb, var(--spine-room, var(--line)) 9%, var(--card)); }
+.spine-frame .spine-landmark { color: var(--ink); padding: calc(3px * var(--spine-k, 1)) calc(6px * var(--spine-k, 1)); font-size: calc(13px * var(--spine-k, 1)); line-height: calc(16px * var(--spine-k, 1)); font-weight: 600; border: 0; text-align: left; pointer-events: auto; cursor: pointer; }
+.spine-landmark:focus-visible { outline: calc(2px * var(--spine-k, 1)) solid var(--accent); outline-offset: calc(3px * var(--spine-k, 1)); }
+.spine-head-far.spine-stable-title > .stay-control, .spine-head-far.spine-stable-title > .staying-here, .spine-aside-far > .stay-control, .spine-aside-far > .staying-here { visibility: hidden; }
+.spine-aside-far .spine-aside-face { box-shadow: none; min-height: calc(40px * var(--spine-k, 1)); border: 0; padding: 0; background: none; }
+.spine-aside-landmark { min-height: calc(40px * var(--spine-k, 1)); -webkit-line-clamp: 3; text-align: left; }
+.spine-zoom-label { align-self: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.spine-phone-zoom { display: flex; flex: 1 0 100%; align-items: center; gap: 8px; }
+.spine-corner-row .spine-pill, .spine-corner-row .spine-shelf-head { padding-right: 10px; padding-left: 10px; gap: 6px; font-size: 12px; }
+.spine-corner-row .spine-stop { padding-right: 9px; padding-left: 9px; font-size: 12px; }
+.spine-shelf-empty { position: absolute; right: 0; bottom: calc(100% + 8px); width: min(280px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 13px; line-height: 1.5; }
+.spine-shelf-empty p { margin: 6px 0 12px; }
+.spine-frame .spine-shelf-close { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.spine-corner-row .spine-shelf-empty { position: absolute; right: 0; bottom: calc(100% + 8px); }
+.spine-landing { display: flex; align-items: baseline; gap: 10px; }
+.spine-placement-details { position: relative; font-size: 11px; }
+.spine-placement-details summary { min-height: 40px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.spine-placement-details[open] { z-index: 20; }
+.spine-placement-details p { position: absolute; z-index: 20; left: 0; bottom: 100%; width: 220px; box-sizing: border-box; margin: 0 0 6px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 12px; line-height: 1.5; white-space: normal; }
+.spine-placement-details summary:focus-visible, .spine-shelf-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+
+.spine-overview-index { flex: 1 0 100%; width: 100%; min-width: 0; color: var(--ink); }
+.spine-overview-heading { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 6px; font-size: 11px; }
+.spine-overview-heading span { color: var(--muted); }
+.spine-overview-scroll { display: flex; gap: 8px; max-width: 100%; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x proximity; }
+.spine-frame .spine-overview-scroll button { flex: 0 0 144px; min-height: 64px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.35; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; scroll-snap-align: start; }
+.spine-overview-scroll button > span { display: block; font-weight: 600; }
+.spine-overview-scroll small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.spine-overview-scroll button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.spine-placement-inline { color: var(--muted); white-space: normal; line-height: 16px; }
+.spine-landing.spine-landing-inline { position: static; flex-wrap: wrap; white-space: normal; }

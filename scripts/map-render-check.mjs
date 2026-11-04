@@ -149,12 +149,12 @@ try {
   const pinnedWorld = apply(world, { type: "stay_changed", thread_id: pinnedId });
   const staying = mapOf(draw({ world: pinnedWorld }));
   assert.equal(count(staying, 'class="staying-here nodrag nopan"'), 1, "only the pinned topic wears the chip");
-  assert.ok(staying.includes(`aria-label="Let go of ${world.threads.find((t) => t.id === pinnedId).title}"`), "release names its topic");
+  assert.ok(staying.includes(`aria-label="Stop sending new thoughts to ${world.threads.find((t) => t.id === pinnedId).title}"`), "release names its topic");
   const released = mapOf(draw({ world: apply(pinnedWorld, { type: "stay_changed", thread_id: null }) }));
   assert.ok(!released.includes('class="staying-here'), "release takes down the chip");
-  assert.equal(count(released, 'class="stay-here"'), world.threads.length, "every topic offers Stay here");
+  assert.equal(count(released, 'class="stay-here"'), world.threads.length, "every topic offers Send new thoughts here");
   const offline = mapOf(draw({ world: pinnedWorld, connected: false }));
-  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Let go of /, "disconnected release cannot silently disappear");
+  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Stop sending new thoughts to /, "disconnected release cannot silently disappear");
   assert.equal(junk(page), null, "the sample map");
   const opened = mapOf(page);
   const shown = text(opened);

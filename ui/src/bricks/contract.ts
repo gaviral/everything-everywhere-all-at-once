@@ -4,6 +4,7 @@
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
 import { createElement, createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+export { useBuiltInsOn } from '../shell/features';
 import type { ConnectionRequest, ConnectionReply } from "../app-connections-core";
 export type { ConnectionRequest, ConnectionReply, ConnectionPlan } from "../app-connections-core";
 export { DiscussionBadge, DiscussionBody, DiscussionContext, discussionCollapsed } from "../discussion-ui";

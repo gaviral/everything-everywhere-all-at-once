@@ -1,6 +1,6 @@
 import { CaptureAccess, CaptureContext, CaptureView, useCaptureNodes } from "./capture";
 import { codePointOffset } from "../contract";
-import { usePluginState } from "../contract";
+import { usePluginState, useBuiltInsOn } from "../contract";
 // The Spine: the map as one canvas you can pan and zoom without end. Each topic is a spine of its points, oldest at
 // the top; each tangent hangs beside the point it came from (layout.ts). The camera follows what you're talking about
 // and lets go the moment a hand moves the map (camera.ts). Your thought on its way has a dashed slot where it's
@@ -22,6 +22,7 @@ import { bounds, phoneParents, G, layout as place, type Box, type End, type Item
 import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
+import { PhoneOverview } from "./overview";
 import { useStayingHere } from "../../StayHere";
 import { C, CONVERSATION } from "./conversation";
 import { lensLayout, shiftLayout, type Lens } from "./lenses";
@@ -173,14 +174,13 @@ function useShelf(map: BrickProps["map"]) {
   };
 }
 
-/** "Muse Spark 1.3 put this here in 2.6 s": the landing note, from the model's id and the placing's time. */
+/** Actual placement data for the optional Details disclosure; confirmation stays separate. */
 export function landingNote(model: string | undefined, ms: number | null | undefined) {
   // "muse-spark-1.3-contributor" → "Muse Spark 1.3": the public name (contributor mode is how the key asks, not a model).
   const name = model ? (model.includes(" ") ? model : model.split("-").filter((part) => part && part !== "contributor")
     .map((part) => (/^\d/.test(part) ? part : part[0].toUpperCase() + part.slice(1))).join(" ")) : "";
-  const time = typeof ms === "number" && ms > 0 ? `${(ms / 1000).toFixed(1)} s` : "";
-  if (name) return time ? `${name} put this here in ${time}` : `${name} put this here`;
-  return time ? `Put here in ${time}` : "";
+  const time = typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? `${(ms / 1000).toFixed(1)} s` : "";
+  return [time ? `Placement: ${time}` : "", name ? `Model: ${name}` : ""].filter(Boolean).join(" · ") || "No placement details were reported.";
 }
 
 /** What floats over the canvas at its edges: the shell's four corners (their slots), the Talk pill under Find and
@@ -197,6 +197,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
 }
 
 function Canvas({ map, actions, on, destination, conversation: conversationEnabled, state }: BrickProps & { conversation: boolean }) {
+  const parts = useBuiltInsOn();
   const capture = useContext(CaptureContext);
   // A hidden, retained Canvas keeps its ordering while its input temporarily belongs to another view.
   const captureLayout = useRef(!!capture);
@@ -424,8 +425,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
   const layoutInput = useMemo(() => ({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    readingOrder, looseTopics: loose, me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
-  [loose, readingOrder, compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+    quietSolo: parts.has("quiet-solo-attribution"), readingOrder, looseTopics: loose, me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
+  [parts, loose, readingOrder, compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   const layout = useMemo(() => conversation && !compare ? shiftLayout(lensLayout(layoutInput, lens.view), lens) : place(layoutInput), [conversation, layoutInput, lens]);
   const threadReveal = useThreadReveal(layout, loose);
   const captureNodes = useCaptureNodes(layout, map);
@@ -989,13 +990,38 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
 
   // The zoom stops: one place at three distances. Words is reading size at what you follow (or the middle of the view);
   // Titles keeps the name's usual three-line measure at 13 px; larger maps need panning.
-  // Pictures fits the whole map, a little further out.
+  // Overview fits the map on desktop; on a phone its minimum scale keeps names readable, with panning for the rest.
   const farOut = useStore((s) => s.transform[2] < READ);
   const shownStop: Stop = farOut ? (stop === "words" ? "titles" : stop) : "words";
+  const overviewReading = useRef<string | null>(null);
+  const overviewFocus = useRef(0);
+  useEffect(() => {
+    if (!overviewReading.current) return;
+    const item = layout.byKey.get(`t:${overviewReading.current}`);
+    if (!item) return;
+    overviewReading.current = null;
+    setPicked(item.key);
+    camera.aim(item.box, { zoom: 1, ring: item.key, instant: true });
+    const focusEpoch = ++overviewFocus.current;
+    requestAnimationFrame(() => {
+      if (focusEpoch !== overviewFocus.current) return;
+      frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(item.key)}"] .spine-title, [data-id="${CSS.escape(item.key)}"] .spine-card-face, [data-id="${CSS.escape(item.key)}"] .spine-aside-face, [data-id="${CSS.escape(item.key)}"] .spine-topic-title, [data-id="${CSS.escape(item.key)}"] [data-spine-target]`)?.focus({ preventScroll: true });
+    });
+  }, [layout, stop, camera.aim]);
+  const readOverview = (id: string) => {
+    overviewReading.current = id;
+    stopFollowing();
+    if (conversation && lens.view === "time") switchLens("topics");
+    setStop("words");
+    if (map.threads.find(thread => thread.id === id)?.parent_id) setOpen({ id, by: "you" });
+  };
   const choose = (next: Stop) => {
+    overviewReading.current = null;
+    overviewFocus.current++;
     setStop(next);
     if (next === "words") {
-      const g = following ? goal() : null;
+      // Read is an explicit return to the active source/input, even while automatic following is paused.
+      const g = goal();
       const target = g?.box ?? middle()?.box;
       if (target) camera.aim(target, { zoom: readingZoom, ring: g?.ring });
       return;
@@ -1003,7 +1029,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     stopFollowing();
     // The usual title measure, resized from 18 px to 13 px, plus the label's 6 px padding.
     const titleZoom = (G.titleW * 13 / 18 + 2 * 6) / G.colW;
-    camera.fit(all(), next === "titles" ? 0.6 : 0.42, next === "titles" ? Math.max(minZoom, titleZoom) : minZoom);
+    camera.fit(all(), next === "titles" ? 0.6 : 0.42, next === "titles" ? Math.max(minZoom, titleZoom) : narrow ? Math.max(minZoom, 0.38) : minZoom);
   };
   const seeAll = () => { stopFollowing(); camera.fit(all(), readingZoom, minZoom); };
 
@@ -1025,7 +1051,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     else if (key === "0") seeAll();
     else if (key === "f") { if (following) stopFollowing(); else startFollowing(); }
     else if (key === "n" && cues.length) goTo([...cues].sort((a, b) => b.at - a.at)[0]);
-    else if (key === "s" && layout.shelf.length) setShelfOpen((was) => !was);
+    else if (key === "s") setShelfOpen((was) => !was);
     else if (key === "+" || key === "=") { stopFollowing(); void flow.zoomIn({ duration: reduced ? 0 : 200 }); }
     else if (key === "-") { stopFollowing(); void flow.zoomOut({ duration: reduced ? 0 : 200 }); }
     else return;
@@ -1165,6 +1191,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottomRight }}>
         {narrow && <Cues cues={cues} layout={cueLayout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
+        {narrow && parts.has("phone-topic-overview") && shownStop === "pictures" && <PhoneOverview topics={map.threads.map(thread => ({ id: thread.id, title: thread.title,
+          parent: map.threads.find(parent => parent.id === thread.parent_id)?.title, count: thoughtCounts.get(thread.id) ?? 0 }))} read={readOverview} />}
         {(narrow || !corner.shell) && <Corner following={following} lens={conversation ? lens.view : undefined} switchLens={switchLens} title={conversation ? (lens.view === "time" ? "Time" : "Topics") : activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}

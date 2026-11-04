@@ -35,7 +35,7 @@ export const G = {
   // Points at 15/22, up to three lines, 12 apart, the first 16 under the head; a point's dot sits on its first line.
   pointLine: 22, pointMax: 3, pointGap: 12, headGap: 16, dotY: 11,
   // Under a point's words: a row of marks (✓ Decided, Left off: 20 px chips, 5 above), then the landing note (11/16).
-  chips: 25, landLine: 18,
+  chips: 25, landLine: 40,
   // Where your thought on its way is expected: a dashed box as tall as a line with room around it.
   slotH: 28,
   // Where a point now placed elsewhere, or shelved, was: a small hollow mark that keeps the line's order.
@@ -202,6 +202,8 @@ export interface Item {
   marks?: Mark[];
   /** Said by someone else: their initial on the line instead of a dot (✦ for the Friend). */
   who?: Who;
+  /** Every known contributor is this person; visual attribution may be quiet, accessible attribution remains. */
+  solo?: boolean;
   /** ✓ Agreed, and by whom (a thought's `agreed_by`); without it a decision reads "✓ Decided". */
   agreed?: Who[];
   /** Said and not finished: amber, quoted, "Left off". */
@@ -327,6 +329,8 @@ export interface LayoutInput {
   staying?: string | null;
   comparePhone?: boolean;
   textScale?: number;
+  /** Presentation choice only; source identity and mixed-author attribution remain unchanged. */
+  quietSolo?: boolean;
   originals?: ReadonlySet<string>;
 }
 
@@ -440,6 +444,7 @@ export function layout(input: LayoutInput): Layout {
   const parents = input.comparePhone ? phoneParents(threads, input.thoughts) : null;
   const me = input.me ?? "you";
   const who = (name: string) => whoIs(name, me, input.speakers);
+  const solo = input.quietSolo !== false && input.thoughts.every(t => who(t.speaker || "you").me) && [...(input.speakers?.keys() ?? [])].every(name => who(name).me);
   const active = input.active ?? null;
   const pendingSlots = input.slots ?? [];
   const opened = input.opened ?? new Set<string>();
@@ -662,7 +667,7 @@ export function layout(input: LayoutInput): Layout {
   };
   const threadItem = (t: Thread, box: Box, kind: "head" | "card" | "aside", extra: Partial<Item>): Item => ({
     key: `t:${t.id}`, id: t.id, kind, thread: t.id, box, pinned: pins.has(t.id), by: pins.get(t.id)?.by, topic: topicOf(t.id),
-    room: rooms.get(t.id), depth: depthOf(t), title: t.title, picture: t.picture, dropped: t.status === "dropped", group: t.topic ?? "", ...extra,
+    solo, room: rooms.get(t.id), depth: depthOf(t), title: t.title, picture: t.picture, dropped: t.status === "dropped", group: t.topic ?? "", ...extra,
   });
   const pointItem = (idea: Idea, thread: string, box: Box, look: Look, up: string | undefined, depth: number): Item => {
     const shape = shapeOf(idea, look);
@@ -681,7 +686,7 @@ export function layout(input: LayoutInput): Layout {
       key: `p:${idea.key}`, id: idea.key, kind: "point", thread, box, pinned: pins.has(idea.key), by: pins.get(idea.key)?.by, up, topic: topicOf(thread),
       room: rooms.get(thread), depth, fixes, text: idea.text, shown: shape.shown, lines: shape.lines, look, decided: idea.decided,
       wordsOpen: stayingOn(idea) || input.originals?.has(idea.key) ? !!input.originals?.has(idea.key) : undefined,
-      thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker,
+      thoughts: idea.parts.map((p) => p.id), at: idea.at, marks: marksOf(idea), who: speaker, solo,
       agreed: idea.decided && agreed.length > 1 ? agreed : undefined, left: !idea.parts.at(-1)!.complete, chips: shape.chips,
       landing: shape.landing, quotes: shape.quotes.length ? shape.quotes : undefined, tucks: shape.tucks.length ? shape.tucks : undefined,
     };
@@ -763,7 +768,7 @@ export function layout(input: LayoutInput): Layout {
         const end = shape.ends.get(m.id)!;
         const from: End = end.x < 0
           ? { key: point.key, dx: Math.min(G.textX + shape.lines[0] + 8, G.colW + 8), dy: G.dotY }
-          : { key: point.key, dx: G.textX + end.x + 3, dy: end.line * G.pointLine + G.pointLine / 2 + 2 };
+          : { key: point.key, dx: G.textX + end.x + 3, dy: end.line * G.pointLine + G.pointLine / 2 + 2 - (point.solo ? G.pointLine : 0) };
         const staying = t.id === input.staying;
         const entries = shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, G.marginText, staying), thoughtId: e.thoughtId }));
         const more = m.entries.length - entries.length;

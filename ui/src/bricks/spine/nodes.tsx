@@ -1,4 +1,5 @@
-import { usePluginState } from "../contract";
+import { usePluginState, useBuiltInsOn } from "../contract";
+import { Placement } from "./placement";
 // What each thing on the Spine looks like (layout.ts places them; index.tsx puts them on the canvas). Far out, words
 // that couldn't be read become soft bars the length of their lines ("greeking"), and a topic's title grows to stay
 // readable; close in, every word shows. Origin without words: your points plain, another's with their initial on the
@@ -274,6 +275,7 @@ const LABEL_LINE = 16;
 const LABEL_PAD = 6;
 
 function Head({ data, now }: { data: ItemData; now: number }) {
+  const stableTitles = useBuiltInsOn().has("stable-topic-titles");
   const { item, here, picked } = data;
   const acts = useContext(ActsContext)!;
   const zoomedOut = useFar();
@@ -282,17 +284,17 @@ function Head({ data, now }: { data: ItemData; now: number }) {
   const lines = item.titleLines?.length ?? 1;
   const top = Math.max(0, (G.tile - lines * G.titleLine - G.headMeta) / 2);
   const meta = headMeta(item, now);
-  return <div className={cls("spine-head", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh",
+  return <div className={cls("spine-head", stableTitles && "spine-stable-title", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh",
     data.dim && "spine-dim", data.cut && "spine-cut", zoomedOut && "spine-head-far")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
     <Tile item={item} />
     <StayHere thread={item.thread} title={item.title} />
     <button type="button" className="spine-title" style={{ left: G.titleX, top, width: G.titleW, WebkitLineClamp: G.titleMax }}
-      title={item.title} onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
+      title={item.title} tabIndex={stableTitles && zoomedOut ? -1 : 0} aria-hidden={stableTitles && zoomedOut || undefined} onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       aria-label={`${item.title}: ${meta}${item.dropped ? ", left off" : ""}${here ? ", where you are" : ""}`}>
       {item.title}
     </button>
     <span className="spine-head-meta" style={{ left: G.titleX, top: top + lines * G.titleLine }} aria-hidden="true">{meta}</span>
-    {zoomedOut && <span className="spine-label" style={{ WebkitLineClamp: labelLines }} aria-hidden="true">{item.title}</span>}
+    {zoomedOut && (stableTitles ? <button type="button" className="spine-label spine-landmark nopan" style={{ WebkitLineClamp: labelLines }} aria-label={`Read topic: ${item.title}`} title={item.title} onClick={() => acts.read(item)}>{item.title}</button> : <span className="spine-label" style={{ WebkitLineClamp: labelLines }} aria-hidden="true">{item.title}</span>)}
     <Tools item={item} />
   </div>;
 }
@@ -401,7 +403,7 @@ function Point({ data }: { data: ItemData }) {
     data.fresh && "spine-fresh", data.dim && "spine-dim", item.left && "spine-point-left", arriving && "spine-arriving", data.cut && "spine-cut", data.selecting && "spine-selecting")}
     style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-command-thought={item.thoughts?.at(-1)} data-heads={item.thoughts?.join(" ")}
     data-readable={!zoomedOut && !arriving ? "true" : undefined} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
-    {item.who ? <Initial who={item.who} small={look.variant === "mini"} style={{ left: look.lineX, top: look.line / 2 }} />
+    {item.who && !item.solo ? <Initial who={item.who} small={look.variant === "mini"} style={{ left: look.lineX, top: look.line / 2 }} />
       : <span className={cls("spine-dot", item.decided && "spine-dot-decided")} style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
     {pulse > 0 && !arriving && <span key={pulse} className="spine-ring" style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
     {arriving && <span className="spine-slot-box" style={{ left: look.textX - 9, width: look.textW - 6, top: -3, height: textH + 6 }} aria-hidden="true" />}
@@ -409,14 +411,14 @@ function Point({ data }: { data: ItemData }) {
       : <span role="button" tabIndex={0} className={cls("spine-text", data.selecting && "nodrag nopan")} style={{ left: look.textX, width: look.textW, WebkitLineClamp: lines.length, fontSize: look.font === "phone" ? `${look.line * 2 / 3}px` : undefined, lineHeight: `${look.line}px` }}
         title={item.text} aria-label={label} onClick={(event) => { if (!data.selecting && !(event.target as Element).closest(".spine-fold")) acts.pick(item); }}
         onKeyDown={keys} onFocus={() => acts.focus(item)} onDoubleClick={(event: MouseEvent) => { if (!data.selecting) acts.select(item, event.clientX, event.clientY); }}>
-        <span className="spine-speaker">{item.who?.name ?? "you"}</span><Words item={item} />
+        {!item.solo && <span className="spine-speaker">{item.who?.ai ? `✦ ${item.who.name} · AI helper` : item.who?.name ?? "you"}</span>}<Words item={item} />
       </span>}
     {!zoomedOut && item.quotes?.filter((q) => q.folded && q.start >= 0).map((q) => <Fold key={q.margin} margin={q.margin} />)}
     {!zoomedOut && item.wordsOpen !== undefined && <button type="button" className="spine-original nodrag nopan"
       style={{ left: look.textX, top: textH, height: wordsH }} aria-expanded={item.wordsOpen}
       onClick={() => acts.words(item)}>{item.wordsOpen ? "Show less" : "Words said"}</button>}
     {!zoomedOut && item.chips && <Chips item={item} offset={wordsH} />}
-    {!zoomedOut && item.landing && <span className="spine-landing" style={{ left: look.textX, top: textH + wordsH + (item.chips ? G.chips : 0) + 2 }}>{item.landing}</span>}
+    {!zoomedOut && item.landing && <Placement note={item.landing} style={{ left: look.textX, top: textH + wordsH + (item.chips ? G.chips : 0) + 2, width: look.textW }} />}
     {!zoomedOut && item.tucks && <span className="spine-tucks" style={{ left: look.textX, width: look.textW, top: textH + wordsH + (item.chips ? G.chips : 0) + (item.landing ? G.landLine : 0) }}>
       {item.tucks.map((tuck) => tuck.thread
         ? <button key={tuck.margin} type="button" className="spine-tuck spine-tuck-tangent nodrag" data-thread={tuck.thread} onClick={() => acts.toggle(tuck.thread!)}
@@ -436,12 +438,12 @@ export function InlinePoint({ data }: { data: ItemData }) {
   const acts = useContext(ActsContext)!;
   const { item } = data;
   return <div className="inline-point" data-thought={item.id} data-thread={item.thread} data-heads={item.thoughts?.join(" ")}>
-    <span role="button" tabIndex={0} className="inline-words" onClick={() => acts.pick(item)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); } else if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); acts.reply(item); } }}>
-      <span className="spine-speaker">{item.who?.name ?? "you"}{item.who?.ai ? " ✦" : ""}</span><Words item={item} />
+    <span role="button" tabIndex={0} className="inline-words" aria-label={`${item.who?.name ?? "you"}: ${item.text}`} onClick={() => acts.pick(item)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); } else if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); acts.reply(item); } }}>
+      {!item.solo && <span className="spine-speaker">{item.who?.ai ? `✦ ${item.who.name} · AI helper` : item.who?.name ?? "you"}</span>}<Words item={item} />
     </span>
     {item.wordsOpen !== undefined && <button type="button" aria-expanded={item.wordsOpen} onClick={() => acts.words(item)}>{item.wordsOpen ? "Show less" : "Words said"}</button>}
     {item.decided && <span>{item.agreed ? "Agreed" : "Decided"}</span>}{item.left && <span>Left off</span>}
-    {item.landing && <span>{item.landing}</span>}
+    {item.landing && <Placement note={item.landing} inline />}
     <PausedSources data={data} /><Tools item={item} />
   </div>;
 }
@@ -528,13 +530,14 @@ function Fold({ margin }: { margin: string }) {
 const NAMED = 0.35;
 
 function Card({ data, now }: { data: ItemData; now: number }) {
+  const stableTitles = useBuiltInsOn().has("stable-topic-titles");
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
   const zoomedOut = useFar();
   const named = useStore((s) => s.transform[2] >= NAMED);
   const titleLines = item.titleLines ?? [0];
   const inner = G.cardW - 2 * G.pad;
-  return <div className={cls("spine-card", item.open && "spine-card-open", item.slim && "spine-card-slim", item.side === -1 && "spine-card-west", !!item.tangents && "spine-card-nest", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on",
+  return <div className={cls("spine-card", stableTitles && "spine-stable-title", item.open && "spine-card-open", item.slim && "spine-card-slim", item.side === -1 && "spine-card-west", !!item.tangents && "spine-card-nest", item.pinned && "spine-pinned", item.dropped && "spine-left", here && "spine-on",
     picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim", data.cut && "spine-cut")} style={roomStyle(item.room)} data-thread={item.thread} data-guide={`thread:${item.thread}`}
     data-slot={data.arriving ? `slot:${data.arriving}` : undefined}>
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
@@ -592,20 +595,21 @@ function useWhole(ref: RefObject<HTMLElement | null>): boolean {
  *  "more this way". It comes back, whole, as the canvas is moved to it. One you hold (dragged, on its way to the shelf) or
  *  have picked stays, as it is where your hand has it. */
 function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
+  const stableTitles = useBuiltInsOn().has("stable-topic-titles");
   const { item, here, pulse, picked } = data;
   const acts = useContext(ActsContext)!;
   const zoomedOut = useFar();
   const bubble = useRef<HTMLDivElement>(null);
   const whole = useWhole(bubble) || dragging || picked;
-  return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
-    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread}
+  return <div ref={bubble} className={cls("spine-aside", stableTitles && "spine-stable-title", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
+    data.cut && "spine-cut", stableTitles && zoomedOut && "spine-aside-far")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread}
     data-thought={item.thoughts?.[0]} data-command-thought={item.thoughts?.length === 1 ? item.thoughts.at(-1) : undefined} data-heads={item.thoughts?.join(" ")} data-readable={!zoomedOut && whole ? "true" : undefined} data-guide={`thread:${item.thread}`}>
     <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
-    <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
+    <button type="button" className="spine-aside-face" onClick={() => zoomedOut ? acts.read(item) : acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
       title={item.title} aria-label={`${item.who ? `${item.who.name}: ` : ""}${item.text}, an aside on its own (${item.title})`}>
-      {zoomedOut ? <Bars lines={item.lines ?? [0]} line={G.asideLine} x={G.asideIn} y={G.asidePad} />
-        : <span className="spine-aside-text" style={{ WebkitLineClamp: 3 }}>{item.who && <Initial who={item.who} small />}<span className="spine-speaker">{item.who?.name ?? "you"}</span>{item.text}</span>}
+      {zoomedOut ? stableTitles ? <span className="spine-label spine-aside-landmark">{item.title}</span> : <Bars lines={item.lines ?? [0]} line={G.asideLine} x={G.asideIn} y={G.asidePad} />
+        : <span className="spine-aside-text" style={{ WebkitLineClamp: 3 }}>{item.who && !item.solo && <Initial who={item.who} small />}{!item.solo && <span className="spine-speaker">{item.who?.ai ? `✦ ${item.who.name} · AI helper` : item.who?.name ?? "you"}</span>}{item.text}</span>}
     </button>
     <Tools item={item} />
   </div>;

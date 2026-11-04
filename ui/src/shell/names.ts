@@ -66,6 +66,10 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
   "learned-action-labels": { name: "Learned control icons", does: "Replace familiar control labels with icons after use; off keeps words and shortcut hints.", lives: "The shell" },
+  "quiet-solo-attribution": { name: "Quiet solo attribution", does: "Hide repeated self labels when you are alone; keep other speakers identified.", lives: "Canvas thoughts" },
+  "placement-details": { name: "Placement details", does: "Keep placement confirmation visible; reveal the model and timing in Details.", lives: "Canvas placement notes" },
+  "stable-topic-titles": { name: "Readable topic titles", does: "Keep topic titles readable and in a stable position as you zoom.", lives: "The Canvas" },
+  "phone-topic-overview": { name: "Phone topic overview", does: "Keep topic navigation and the return to readable thoughts visible on a phone.", lives: "The Canvas on a phone" },
   "discussion-status": { name: "Discussion status", does: "Resolve or reopen an anchored exchange. Replies and quoted words stay together.", lives: "Comments and Talk" },
   "reply-format": { name: "Reply format", does: "Check new Conversation partner replies against word, line and preamble rules; repair once if needed.", lives: "Features · for this conversation" },
   "saved-answers": { name: "Saved answers", does: "Deliberately keep an Explain answer. Reopen its exact words and historical source without asking again.", lives: "Features · Show" },
