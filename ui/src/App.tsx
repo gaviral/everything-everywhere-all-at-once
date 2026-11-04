@@ -1569,7 +1569,7 @@ export default function App() {
         on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
       show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
     }),
-    ...BUILT_INS.map((b): CatalogRow => {
+    ...BUILT_INS.filter((b) => b.id !== "email" || site.email).map((b): CatalogRow => {
       const named = FEATURE_NAMES[b.id];
       const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
       return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false,

@@ -41,6 +41,17 @@ try {
   assert.equal(cardWords(received(null, msg("counting", { in_ms: 5000, live: true }), t0), t0).heading, "Message to Mia", "a real send says no dry run");
   assert.match(announcement(card), /^Dry run: would send “Hi Mia, could you confirm what to bring\?” to Mia in 5 seconds\. Say stop or press Escape/);
 
+  // Email is the same countdown/Stop card with a subject and channel-specific heading.
+  const email = received(null, msg("counting", { channel: "email", subject: "the cut is ready", text: "Hi Mia, the cut is ready.", in_ms: 6000 }), t0);
+  assert.equal(email.subject, "the cut is ready");
+  assert.equal(cardWords(email, t0).heading, "Email to Mia · dry run");
+  assert.match(announcement(email), /^Subject: the cut is ready\. Dry run: would send/);
+  assert.equal(stopsOnKey(email, "Escape", t0 + 5999), true);
+  const emailEnd = received(email, msg("dry_run", { channel: "email", subject: email.subject, text: email.text }), t0 + 6000);
+  assert.equal(emailEnd.subject, email.subject);
+  assert.equal(emailEnd.text, email.text);
+  assert.match(src("SendCard.tsx"), /card.channel === "email"/);
+
   // Esc stops it only while it counts; other keys, or after the count, do nothing.
   assert.equal(stopsOnKey(card, "Escape", t0 + 4999), true);
   assert.equal(stopsOnKey(card, "Escape", t0 + 5000), false);

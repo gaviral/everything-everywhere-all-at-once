@@ -538,6 +538,7 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside. Only a live originating window may opt into the partner.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool, window: Option<u64>) {
         self.touch();
+        if typed { messages::speech_end(self, speaker, false); }
         // These are window preferences, never thoughts or requests for the model.
         if let Some(show) = notice_control(text) {
             self.send_to(speaker, ServerMsg::NoticeControl { show });
@@ -1547,6 +1548,7 @@ async fn room_info(
         _ => (None, None),
     };
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
+        "email": core.messages.settings.preset == messages::Preset::Full && !core.messages.settings.hosted,
         "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models,
         "code": code, "invite": invite }))
 }
@@ -1881,6 +1883,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
                     else if !on { partner = None; }
                 }
+                Ok(ClientMsg::Email { on }) if !ai => messages::email_switch(&core, &speaker, on),
                 Ok(ClientMsg::PartnerCancel) => conversation::cancel(&core, &speaker),
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
@@ -3423,7 +3426,7 @@ mod tests {
                 tunnel: tunneled.then(|| crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com").unwrap()),
                 ..Room::from("k7m2x9qpab")
             };
-            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false };
+            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false, ..messages::Settings::default() };
             let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("the test must never send a message") }));
             let core = Arc::new(Core { room: Some(room), messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
             let routes = axum::Router::new()
@@ -3691,7 +3694,7 @@ mod tests {
             *count.lock().unwrap() += 1;
             Box::pin(async { Ok(()) })
         });
-        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true };
+        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true, ..messages::Settings::default() };
         let core = Arc::new(Core { messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
         core.add_thought("you", "Ask Mia to confirm what to bring");
         for _ in 0..100 {

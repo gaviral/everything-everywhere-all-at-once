@@ -95,10 +95,19 @@ the map, live ◀── every change ─────────   journal: one 
 - **Meta models, all through `api.meta.ai`:** hearing (Voice Transcribe 1.0); placing, Did you mean and Why here (Spark 1.3 and 1.2 race, the first good answer wins); Explain and reading a correction no rule reads (Spark 1.2); tidying, Recap, apps and search by meaning (Spark 1.3); importing past chats (Spark 1.2 pulls out the ideas, Spark 1.3 groups them); pictures (Image 1.0).
 - **Rules in the core, no model:** spoken commands, filler, ✓ Decided, the jump back, search by words, the hourly call cap, the journal, and an app's watcher deciding when it fires.
 - **The browser:** the mic (`getUserMedia` and an AudioWorklet that sends 24 kHz audio), the app's tune (Web Audio), Export to Markdown, and the calendar file (`.ics`) where Calendar can't be reached.
-- **macOS:** Reminders and Calendar, through AppleScript, only when you approve an item. Messages only in the Full preset, after a send countdown you can stop, and as a dry run unless you turn sending on ([details](docs/FEATURES.md#presets-and-messages)).
+- **macOS:** Reminders and Calendar, through AppleScript, only when you approve an item. Messages and email only in the Full preset, after a send countdown you can stop, and as a dry run unless you turn sending on ([details](docs/FEATURES.md#presets-and-messages)).
 - **Nothing else at runtime.** `scripts/precheck.sh` fails on any non-Meta model SDK, endpoint or model name in the app's code. A friend's trial link (`scripts/trial.sh`) goes through a Cloudflare quick tunnel, which does no AI work.
 
 Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](docs/FEATURES.md#every-model-call-with-its-setting).
+
+Full preset connectors (Demo remains the default):
+
+| Connector | Words | Gate |
+| --- | --- | --- |
+| Messages | “Ask Mia to confirm what to bring” | `MESSAGES_TO`; `MESSAGES_SEND=on` for live sending |
+| Email | “Email Mia that the cut is ready” | Features → Email, `EMAIL_TO`; `EMAIL_SEND=on` for Mail.app on the host laptop; otherwise a dry run. Hosted stays talk. Subject: first eight body words, immediately. Stop by voice, typing, Esc or button. |
+| GitHub | “Show me the open pull requests” | Local `gh`, read only |
+| Notes | “Save this thread as a note” | `NOTES_WRITE=on` for a real write |
 
 ## Run it
 
@@ -218,7 +227,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 - Placing is a model's judgment. You can move or delete a thought and rename a topic, by voice or click, with Undo; you can't merge or split topics yourself, except by accepting the refiner's proposals.
 - One placement at a time, in the order said: in a burst, the last part can land long after you stop (27 s in one run, three speakers on a shared map); alone at a normal pace it keeps up.
 - One app can be built at a time; pictures come only during pauses. The loudness scale for volume apps comes from synthesized speech, not yet a real mic.
-- Tested on macOS. Reminders, Calendar and Messages need a Mac; elsewhere, and on the hosted site, a dated item saves as an `.ics` file.
+- Tested on macOS. Reminders, Calendar, Messages and Mail need a Mac; elsewhere, and on the hosted site, a dated item saves as an `.ics` file.
 - The hosted site seats 6 people at once and shares one daily model budget; past it, maps stay readable and new thoughts wait until the next day.
 - Shared maps work on one local network with a self-signed certificate; if both mics hear both people, the same words can be transcribed twice.
 - A Voice Transcribe session can end after 60 minutes, and the mic doesn't turn itself off when you stop talking. The journal only grows.
@@ -226,7 +235,7 @@ People who think by talking: a student with a midterm, rent and a birthday in on
 
 ## More detail
 
-- [docs/FEATURES.md](docs/FEATURES.md): everything in full: every model call and its setting, what you'll see, placing, the Unfinished thought card, Did you mean, the refiner, pictures and the Pictures view, apps, features, Recap, import, shared maps, places on the canvas, presets with Messages, GitHub and Notes, hosting, privacy, security.
+- [docs/FEATURES.md](docs/FEATURES.md): everything in full: every model call and its setting, what you'll see, placing, the Unfinished thought card, Did you mean, the refiner, pictures and the Pictures view, apps, features, Recap, import, shared maps, places on the canvas, presets with Messages, Email, GitHub and Notes, hosting, privacy, security.
 - [docs/COMMANDS.md](docs/COMMANDS.md): every spoken command, with its variants.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the parts, the journal, the life of a thought, every model call.
 - [docs/trace.md](docs/trace.md): every model call in one real run.

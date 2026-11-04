@@ -156,9 +156,17 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
     if (!REMOTE) ws.send(JSON.stringify({ type: "partner", on: next }));
     if (was && !next) { cancelPageReply(); resetPartner(); }
   };
+  let emailOn: boolean | undefined;
+  const email = () => {
+    const next = builtInOn("email");
+    if (ws.readyState !== WebSocket.OPEN || next === emailOn) return;
+    emailOn = next;
+    ws.send(JSON.stringify({ type: "email", on: next }));
+  };
+  const unwatchEmail = watchBuiltIns(email);
   const unwatchPartner = watchBuiltIns(partner);
-  ws.addEventListener("open", () => { callOpened(); partner(); recheck(); });
-  ws.addEventListener("close", () => { unwatchPartner(); if (socketNow === ws) { socketNow = null; cancelPageReply(); resetPartner(); } callClosed(); recheck(); });
+  ws.addEventListener("open", () => { callOpened(); partner(); email(); recheck(); });
+  ws.addEventListener("close", () => { unwatchPartner(); unwatchEmail(); if (socketNow === ws) { socketNow = null; cancelPageReply(); resetPartner(); } callClosed(); recheck(); });
   // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
   ws.addEventListener("message", (event) => { if (ignorePartner(event.data)) return; callHeard(event.data); hearPartner(event.data); hearPageSpeech(event.data); });
   return ws;
