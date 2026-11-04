@@ -91,6 +91,10 @@ pub fn enable(core: &Arc<Core>, speaker: &str, window: u64) -> Here {
     }
 }
 
+pub fn enabled(core: &Core, speaker: &str) -> bool {
+    core.conversation.speakers.lock().unwrap().get(speaker).is_some_and(|s| !s.windows.is_empty())
+}
+
 fn tell(core: &Core, speaker: &str, state: &str, message: &str) {
     core.send_to(
         speaker,

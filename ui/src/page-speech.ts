@@ -1,5 +1,6 @@
 // Live bridge replies play in this browser; its microphone sends silence until playback finishes.
-// No snapshot playback: only an explicitly flagged caption or newly added AI thought (including a Comment) speaks.
+// No snapshot playback: only flagged live replies, captions and newly added AI thoughts speak.
+import { builtInOn } from "./shell/features";
 import { slowReadMs } from "./notice-rules";
 import { NATURAL_PAUSE_MS } from "./legible";
 
@@ -54,8 +55,9 @@ export function hearPageSpeech(data: unknown) {
     stopPageSpeech();
     return;
   }
-  if (!msg.speak) return;
-  const text = msg.type === "guide" && msg.kind === "caption" ? msg.text
+  if (!msg.speak || (msg.type === "command_reply" && !builtInOn("partner"))) return;
+  const text = msg.type === "command_reply" ? msg.text
+    : msg.type === "guide" && msg.kind === "caption" ? msg.text
     : msg.type === "change" && msg.change?.type === "thought_added" ? msg.change.thought?.text : "";
   if (!text?.trim()) return;
   stopPageSpeech();

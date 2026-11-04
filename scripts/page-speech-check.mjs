@@ -130,6 +130,21 @@ try {
     check(spoken.at(-1).voice.name === "French installed", "an installed voice is explicit even without English");
     speech.stopPageSpeech(); voices = installed;
     speech.hearPageSpeech("invalid JSON");
+    window.features = await import("/src/shell/features.ts");
+    const reply = { type: "command_reply", speak: true, text: "Back to Workshop: We still need to" };
+    const beforeCommands = spoken.length;
+    send(reply);
+    check(spoken.length === beforeCommands && !speech.pageSpeaking(), "command speech defaults off");
+    features.switchBuiltIn("partner", true);
+    send({ ...reply, speak: false });
+    send({ type: "notice", speak: true, message: "Routine notification" });
+    check(spoken.length === beforeCommands, "unflagged commands and ordinary notices stay silent");
+    voices = installed; send(reply);
+    check(spoken.at(-1).text === reply.text, "opted-in command uses shared speech channel");
+    speech.stopPageSpeech(); features.switchBuiltIn("partner", false);
+    const beforeDisabled = spoken.length; send(reply);
+    check(spoken.length === beforeDisabled, "disabled window rejects late command speech");
+
   })()`);
 
   // Real browser key and pointer events reach the same listeners as a person's input.

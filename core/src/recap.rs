@@ -251,6 +251,11 @@ fn placing(world: &World, since: u64, now: u64) -> bool {
 }
 
 fn state(core: &Core, speaker: &str, period: Period, loading: bool, message: &str, recap: Option<Recap>) {
+    // Only the completed requested summary speaks, never saved drafts, progress or list entries.
+    if !loading {
+        let text = if !message.is_empty() { message } else { recap.as_ref().map(|r| r.summary.as_str()).unwrap_or("") };
+        core.reply_to(speaker, text);
+    }
     core.send_to(speaker, ServerMsg::RecapState { period, loading, message: message.into(), recap });
 }
 
@@ -605,6 +610,22 @@ mod tests {
     }
     fn answer() -> Answer {
         Answer { summary: "You made room for the demo.".into(), worked_on: vec![Item { thread_id: "T1".into(), text: "Made the demo smaller.".into() }], ..Answer::default() }
+    }
+
+    #[tokio::test]
+    async fn only_completed_requested_recap_summary_speaks() {
+        let fixture = Fixture::new(None);
+        let _enabled = crate::conversation::enable(&fixture.core, "you", 1);
+        let mut rx = fixture.core.updates.subscribe();
+        let source = slice(&sample(crate::now_ms()), Period::Today, crate::now_ms());
+        let recap = finish(source, answer(), "test".into());
+        state(&fixture.core, "you", Period::Today, true, "", Some(recap.clone()));
+        assert!(!rx.try_recv().unwrap().speak, "saved draft is silent while loading");
+        state(&fixture.core, "you", Period::Today, false, "", Some(recap.clone()));
+        let reply = rx.try_recv().unwrap();
+        assert!(reply.speak && reply.to.as_deref() == Some("you"));
+        assert!(matches!(reply.message, ServerMsg::CommandReply { text } if text == recap.summary));
+        assert!(!rx.try_recv().unwrap().speak, "full recap remains visual");
     }
 
     #[test]

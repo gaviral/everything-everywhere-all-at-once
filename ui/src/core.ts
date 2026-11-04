@@ -239,6 +239,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "command_reply"; text: string; speak?: boolean }
   | { type: "partner_state"; state: string; message: string }
   | { type: "text_received"; id: string }
   | JobMsg

@@ -26,7 +26,7 @@ fn told(updates: &mut tokio::sync::broadcast::Receiver<crate::protocol::Outgoing
             ServerMsg::View { view } => did.push(format!("{view:?}").to_lowercase()),
             ServerMsg::RecapState { .. } => did.push("recap".into()),
             ServerMsg::AppsBuild { .. } => did.push("app".into()),
-            ServerMsg::Notice { message } if message.starts_with("Back to ") => did.push(message),
+            ServerMsg::Found { message, .. } if message.starts_with("Back to ") => did.push(message),
             _ => {}
         }
     }
@@ -83,7 +83,7 @@ async fn the_videos_script_as_the_transcriber_sends_it_does_every_beats_job() {
         ("Uh, my biggest problem is that I never finish my", &["Uh, my biggest", "Uh, my biggest problem is that"], 0,
             &["My biggest problem is that I never finish my"], &[]),
         ("Oh, and rent is due Friday and I still haven't sent it.", &["Oh, and rent"], 1, &["Oh, and rent is due Friday and I still haven't sent it."], &[]),
-        ("Wait, where was I?", &["Wait, where"], 2, &[], &["Back to Never finish"]),
+        ("Wait, where was I?", &["Wait, where"], 2, &[], &["Back to Never finish: “My biggest problem is that I never finish my”"]),
         ("Sentences. I never finish my sentences.", &["Sentences."], 3, &["Sentences. I never finish my sentences."], &[]),
         ("Mom's birthday is Saturday. She keeps talking about that pottery class on Main Street.", &["Mom's birthday"], 4,
             &["Mom's birthday is Saturday. She keeps talking about that pottery class on Main Street."], &[]),
